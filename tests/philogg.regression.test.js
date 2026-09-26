@@ -2047,8 +2047,8 @@ group(21);
     fireClick(btnOpenSess, w);
     assert(!openMenuSess.classList.contains("hidden"), "clicking \"Open\" reveals the dropdown");
     const openActions = [...openMenuSess.querySelectorAll("[data-action]")].map(i => i.dataset.action);
-    assert(openActions.join(",") === "files,folder,zip,importSession",
-      "open menu offers File(s)…/Folder…/ZIP…/Import session…, got " + openActions.join(","));
+    assert(openActions.join(",") === "files,folder,zip,import",
+      "open menu offers File(s)…/Folder…/ZIP…/Import…, got " + openActions.join(","));
     fireClick(d.body, w);
     assert(openMenuSess.classList.contains("hidden"), "clicking outside the open menu closes it");
     assert(!!d.querySelector("#btnSave"), "\"Save\" button (session export) exists");
@@ -5584,8 +5584,8 @@ await withApp(async (w, d, T) => {
   const openMenu48a = d.querySelector("#openMenu");
   fireClick(btnOpen48a, w);
   assert(!openMenu48a.classList.contains("hidden"), "\"Open\" opens even with an empty tree");
-  const importItem = d.querySelector('#openMenu [data-action="importSession"]');
-  assert(importItem !== null, "Import session… is reachable from the sidebar header with zero files loaded");
+  const importItem = d.querySelector('#openMenu [data-action="import"]');
+  assert(importItem !== null, "Import… is reachable from the sidebar header with zero files loaded");
 
   // Right-clicking the empty tree background no longer produces a menu at
   // all (the whole special-cased empty-background context menu was removed
@@ -7275,7 +7275,7 @@ await withApp(async (w, d, T) => {
   assert(seps >= 4, "a filter node's context menu has at least 4 separators (meta + 3 group boundaries among edit/clipboard/library/danger), got " + seps);
 
   // Group order: edit (edit/invert) before clipboard (copy/cut) before
-  // library (saveFilter/loadFilter/applyFromLibrary) before danger (delete)
+  // library (saveFilter/applyFromLibrary) before danger (delete)
   // — verify relative order via each action's index.
   // ("Save to library…" moved out of this menu onto the sidebar toolbar's
   // "Add to library…" action; "Apply from library…" stays here. "Time
@@ -7287,9 +7287,9 @@ await withApp(async (w, d, T) => {
     "'Time context…'/'Count context…' no longer appear on a filter node's context menu — there is no user-facing way left to create a fresh one (FEATURE_BACKLOG.md #79)");
   assert(indexOf("edit") < indexOf("invert"), "edit group stays together and in order: edit, invert");
   assert(indexOf("invert") < indexOf("copy") && indexOf("copy") < indexOf("cut"), "clipboard group (copy, cut) comes after the edit group");
-  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("loadFilter") &&
-    indexOf("loadFilter") < indexOf("applyFromLibrary"),
-    "library group (save filter, load filter, apply from library) comes after clipboard, in order");
+  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("applyFromLibrary"),
+    "library group (save filter, apply from library) comes after clipboard, in order");
+  assert(indexOf("loadFilter") === -1, "'Load filter…' is gone from the context menu (the central Open → Import…/drop replaces it — GROUP 294)");
   assert(indexOf("saveToLibrary") === -1, "'Save to library…' is no longer a context-menu action (moved to the sidebar toolbar's 'Add to library…')");
   assert(indexOf("applyFromLibrary") < indexOf("delete"), "danger group (remove filter) comes last");
 
@@ -7326,9 +7326,9 @@ await withApp(async (w, d, T) => {
   fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
   const fileChildren = [...d.querySelector("#treeContextMenu").children];
   const fileIndexOf = action => fileChildren.findIndex(c => c.dataset && c.dataset.action === action);
-  assert(fileIndexOf("clockOffset") >= 0 && fileIndexOf("clockOffset") < fileIndexOf("loadFilter"),
+  assert(fileIndexOf("clockOffset") >= 0 && fileIndexOf("clockOffset") < fileIndexOf("applyFromLibrary"),
     "a file node's context menu offers 'Adjust clock…' in the edit group, before the library items");
-  assert(fileIndexOf("loadFilter") < fileIndexOf("applyFromLibrary") && fileIndexOf("applyFromLibrary") < fileIndexOf("delete"),
+  assert(fileIndexOf("loadFilter") === -1 && fileIndexOf("applyFromLibrary") < fileIndexOf("delete"),
     "a file node's context menu still groups library items before the danger (remove file) item");
   const libSep = fileChildren.filter(c => c.classList.contains("ctx-sep")).length;
   assert(libSep === 3, "file node menu has 3 separators (meta, edit->library, library->danger), got " + libSep);
@@ -9499,42 +9499,43 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("85b. Importing a custom theme JSON: validation, storage, activation, dropdown + list rendering");
+  section("85b. Importing a custom theme JSON: validation, editor prefill, storage, activation, dropdown + list rendering");
   fireClick(d.querySelector("#btnSettings"), w);
+  const editor = d.querySelector("#themeEditorDialog");
 
   assert(d.querySelector("#customThemeList .filter-library-empty"), "custom theme list starts empty");
 
-  // Not valid JSON at all.
-  w.importThemeJson("{not json");
-  assert(T.customThemes.length === 0, "malformed JSON is rejected, nothing added");
+  // Not a theme file at all -> false, so the central import can report it.
+  assert(w.importThemeJson("{not json") === false, "malformed JSON is not a theme file");
+  assert(w.importThemeJson(JSON.stringify({ name: "No tag", colors: {} })) === false, "a JSON file without the philogg-theme format tag is not a theme file");
+  // A theme file that can't be used -> handled (toast), no editor.
+  assert(w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 99, name: "Future", colors: {} })) === true && !isVisible(editor, w),
+    "a theme file from a newer version is rejected without opening the editor");
+  assert(w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "No colors" })) === true && !isVisible(editor, w),
+    "a theme file without colors is rejected without opening the editor");
+  assert(T.customThemes.length === 0, "nothing added so far");
 
-  // Valid JSON but missing the format tag.
-  w.importThemeJson(JSON.stringify({ name: "No tag", colors: {} }));
-  assert(T.customThemes.length === 0, "a JSON file without the philogg-theme format tag is rejected");
+  // A full, valid theme file: opens the theme editor prefilled; Save adds it.
+  const cs0 = w.getComputedStyle(d.documentElement);
+  const colors = {};
+  T.THEME_COLOR_KEYS.forEach(k => { colors[k] = cs0.getPropertyValue("--" + k).trim(); });
+  colors["bg-app"] = "#120018";
+  colors["accent"] = "#bb33ff";
+  assert(w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "My Purple Night", activeTextLight: true, colors })) === true, "a valid theme file is accepted");
+  assert(isVisible(editor, w), "...and opens the theme editor");
+  assert(d.querySelector("#themeEditorTitle").textContent === "Import theme", "the editor says it's an import, got " + d.querySelector("#themeEditorTitle").textContent);
+  assert(d.querySelector("#themeEditorName").value === "My Purple Night" && d.querySelector("#themeEditorTextLight").checked, "the editor is prefilled with the file's name and flags");
+  assert(T.customThemes.length === 0, "nothing is stored before Save");
+  fireClick(d.querySelector("#themeEditorSave"), w);
+  assert(!isVisible(editor, w), "Save closes the editor");
 
-  // Valid format tag but missing required color keys.
-  w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "Incomplete", colors: { "bg-app": "#111111" } }));
-  assert(T.customThemes.length === 0, "a theme file missing required color keys is rejected");
-
-  // A full, valid theme file — build it from the template generator itself,
-  // proving the round trip (template out -> tweak -> import back in) works.
-  const template = JSON.parse(w.buildThemeTemplateJson());
-  assert(template.format === "philogg-theme" && typeof template.colors === "object", "buildThemeTemplateJson seeds a valid, self-consistent template");
-  assert(T.THEME_COLOR_KEYS.every(k => typeof template.colors[k] === "string" && template.colors[k].length > 0),
-    "the template includes every required color key with a non-empty value");
-  template.name = "My Purple Night";
-  template.colors["bg-app"] = "#120018";
-  template.colors["accent"] = "#bb33ff";
-  template.activeTextLight = true;
-  w.importThemeJson(JSON.stringify(template));
-
-  assert(T.customThemes.length === 1, "a valid theme file is accepted and added to customThemes");
+  assert(T.customThemes.length === 1, "saving the imported theme adds it to customThemes");
   const imported = T.customThemes[0];
   assert(imported.name === "My Purple Night", "the imported theme's name is preserved");
   assert(imported.colors["bg-app"] === "#120018" && imported.colors["accent"] === "#bb33ff", "imported colors are preserved");
   assert(JSON.parse(w.localStorage.getItem("philogg-custom-themes"))[0].name === "My Purple Night", "custom themes persist to localStorage");
 
-  assert(d.documentElement.getAttribute("data-theme") === imported.id, "importing a theme switches to it immediately");
+  assert(d.documentElement.getAttribute("data-theme") === imported.id, "saving an imported theme switches to it immediately");
   const cs = w.getComputedStyle(d.documentElement);
   assert(cs.getPropertyValue("--bg-app").trim() === "#120018", "the custom theme's colors are applied as inline CSS vars, got " + cs.getPropertyValue("--bg-app"));
   assert(cs.getPropertyValue("--level-error-on").trim() === "#fff", "activeTextLight:true applies white active-button text");
@@ -19353,44 +19354,49 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("169f. Theme template download/import: optional syntaxHighlightColors round trip");
+  section("169f. Theme export/import: optional syntaxHighlightColors round trip");
+  const captured = [];
+  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  const cs0 = w.getComputedStyle(d.documentElement);
+  const colors = {};
+  T.THEME_COLOR_KEYS.forEach(k => { colors[k] = cs0.getPropertyValue("--" + k).trim(); });
+  const syntaxHighlightColors = {};
+  T.SYNTAX_COLOR_KEYS.forEach(k => { syntaxHighlightColors[k] = cs0.getPropertyValue("--" + k).trim(); });
+  syntaxHighlightColors["syntax-tag"] = "#ff00ff";
 
-  const template = JSON.parse(w.buildThemeTemplateJson());
-  assert(template.syntaxHighlightColors && typeof template.syntaxHighlightColors === "object",
-    "buildThemeTemplateJson includes a syntaxHighlightColors block");
-  assert(T.SYNTAX_COLOR_KEYS.every(k => typeof template.syntaxHighlightColors[k] === "string" && template.syntaxHighlightColors[k].length > 0),
-    "the block is seeded with every SYNTAX_COLOR_KEYS key from the active theme's computed colors");
-  assert(typeof template._syntaxHighlightColors_comment === "string" && /optional/i.test(template._syntaxHighlightColors_comment),
-    "a sibling hint field marks the block optional");
-
-  // Import WITH a custom syntaxHighlightColors block: those colors are
-  // applied inline as CSS vars (mirrors THEME_COLOR_KEYS' optional-set
-  // pattern), and the hint field is not stored on the custom theme object.
-  const withSyntax = JSON.parse(JSON.stringify(template));
-  withSyntax.name = "With Syntax Colors";
-  withSyntax.syntaxHighlightColors["syntax-tag"] = "#ff00ff";
-  w.importThemeJson(JSON.stringify(withSyntax));
+  // Import WITH a syntaxHighlightColors block: the editor keeps it as part
+  // of the theme, and those colors are applied inline as CSS vars.
+  w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "With Syntax Colors", colors, syntaxHighlightColors }));
+  assert(d.querySelector("#themeEditorIncludeSyntax").checked, "a file with syntax colors opens with 'Part of this theme' checked");
+  fireClick(d.querySelector("#themeEditorSave"), w);
   assert(T.customThemes.length === 1, "theme with a syntaxHighlightColors block imports fine");
   let imported = T.customThemes[0];
   assert(imported.syntaxColors && imported.syntaxColors["syntax-tag"] === "#ff00ff", "the custom syntax color is stored on the theme");
-  assert(!("_syntaxHighlightColors_comment" in imported), "the hint comment field is never stored on the custom theme object");
   let cs = w.getComputedStyle(d.documentElement);
   assert(cs.getPropertyValue("--syntax-tag").trim() === "#ff00ff", "the custom theme's syntax-tag color is applied inline as a CSS var, got " + cs.getPropertyValue("--syntax-tag"));
 
-  // Import WITHOUT any syntaxHighlightColors block at all: valid (not
-  // rejected, unlike a missing THEME_COLOR_KEYS entry), and the app falls
-  // back to whatever :root/[data-theme] declares — no inline var set.
-  const noSyntax = JSON.parse(JSON.stringify(template));
-  noSyntax.name = "No Syntax Colors";
-  delete noSyntax.syntaxHighlightColors;
-  delete noSyntax._syntaxHighlightColors_comment;
-  w.importThemeJson(JSON.stringify(noSyntax));
+  // Import WITHOUT any syntaxHighlightColors block at all: valid, the
+  // syntax group starts unchecked, no syntaxColors stored, and the app
+  // falls back to whatever :root/[data-theme] declares.
+  w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "No Syntax Colors", colors }));
+  assert(!d.querySelector("#themeEditorIncludeSyntax").checked, "a file without syntax colors opens with 'Part of this theme' unchecked");
+  assert(d.querySelector('.te-row[data-key="syntax-tag"] .te-value').disabled, "...and the syntax rows disabled");
+  fireClick(d.querySelector("#themeEditorSave"), w);
   assert(T.customThemes.length === 2, "a theme file with NO syntaxHighlightColors block is still accepted");
   imported = T.customThemes.find(t => t.name === "No Syntax Colors");
   assert(imported && !imported.syntaxColors, "no syntaxColors is stored for a theme that didn't provide the block");
   cs = w.getComputedStyle(d.documentElement);
   assert(cs.getPropertyValue("--syntax-tag").trim() === "#e8a94a",
     "with no per-theme override, --syntax-tag falls back to the :root default (Dark's own hardcoded value) via the cascade, got " + JSON.stringify(cs.getPropertyValue("--syntax-tag")));
+
+  // Export carries the block only when the theme has it.
+  await w.exportCustomThemeToFile(T.customThemes[0].id);
+  await w.exportCustomThemeToFile(imported.id);
+  assert(captured.length === 2, "two exports written, got " + captured.length);
+  const withBlock = JSON.parse(captured[0].json), withoutBlock = JSON.parse(captured[1].json);
+  assert(withBlock.format === "philogg-theme" && withBlock.syntaxHighlightColors["syntax-tag"] === "#ff00ff", "the export of a theme with syntax colors carries them");
+  assert(!("syntaxHighlightColors" in withoutBlock), "the export of a theme without them has no block");
+  assert(captured[0].name === "With_Syntax_Colors.theme.json", "suggested file name, got " + captured[0].name);
 });
 
 await withApp(async (w, d, T) => {
@@ -24394,34 +24400,36 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("210c. Importing a custom syntax scheme: validation, template round-trip, apply + persist, delete");
+  section("210c. Importing a custom syntax scheme: validation, editor prefill, export round-trip, apply + persist, delete");
   fireClick(d.querySelector("#btnSettings"), w);
+  const editor = d.querySelector("#themeEditorDialog");
   assert(d.querySelector("#customSyntaxSchemeList .filter-library-empty"), "the custom syntax scheme list starts empty");
 
-  w.importSyntaxSchemeJson("{not json");
-  assert(T.customSyntaxSchemes.length === 0, "malformed JSON is rejected");
-  w.importSyntaxSchemeJson(JSON.stringify({ name: "No tag", colors: {} }));
-  assert(T.customSyntaxSchemes.length === 0, "a JSON file without the philogg-syntax-scheme format tag is rejected");
-  w.importSyntaxSchemeJson(JSON.stringify({ format: "philogg-syntax-scheme", version: 1, name: "Incomplete", colors: { "syntax-tag": "#111111" } }));
-  assert(T.customSyntaxSchemes.length === 0, "a scheme file missing required keys is rejected");
+  assert(w.importSyntaxSchemeJson("{not json") === false, "malformed JSON is not a scheme file");
+  assert(w.importSyntaxSchemeJson(JSON.stringify({ name: "No tag", colors: {} })) === false, "a JSON file without the philogg-syntax-scheme format tag is not a scheme file");
+  assert(w.importSyntaxSchemeJson(JSON.stringify({ format: "philogg-syntax-scheme", version: 99, colors: {} })) === true && !isVisible(editor, w),
+    "a scheme file from a newer version is rejected without opening the editor");
+  assert(T.customSyntaxSchemes.length === 0, "nothing added so far");
 
-  // Template round trip: template out -> tweak -> import back in.
-  const template = JSON.parse(w.buildSyntaxSchemeTemplateJson());
-  assert(template.format === "philogg-syntax-scheme" && typeof template.colors === "object", "buildSyntaxSchemeTemplateJson seeds a valid template");
-  assert(T.SYNTAX_COLOR_KEYS.every(k => typeof template.colors[k] === "string" && template.colors[k].length > 0),
-    "the template includes every SYNTAX_COLOR_KEYS entry with a non-empty value");
-  template.name = "My Neon Syntax";
-  template.colors["syntax-tag"] = "#ff00aa";
-  template.colors["syntax-string"] = "#00ffcc";
-  w.importSyntaxSchemeJson(JSON.stringify(template));
+  const cs0 = w.getComputedStyle(d.documentElement);
+  const colors = {};
+  T.SYNTAX_COLOR_KEYS.forEach(k => { colors[k] = cs0.getPropertyValue("--" + k).trim(); });
+  colors["syntax-tag"] = "#ff00aa";
+  colors["syntax-string"] = "#00ffcc";
+  w.importSyntaxSchemeJson(JSON.stringify({ format: "philogg-syntax-scheme", version: 1, name: "My Neon Syntax", colors }));
+  assert(isVisible(editor, w), "a valid scheme file opens the editor");
+  assert(d.querySelector("#themeEditorTitle").textContent === "Import syntax scheme", "...as a syntax scheme import");
+  assert(d.querySelectorAll("#themeEditorGroups .te-row").length === T.SYNTAX_COLOR_KEYS.length, "...listing only the syntax colors");
+  assert(!isVisible(d.querySelector("#themeEditorTextLightRow"), w), "...without the theme-only text flag");
+  fireClick(d.querySelector("#themeEditorSave"), w);
 
-  assert(T.customSyntaxSchemes.length === 1, "a valid scheme file is accepted and added");
+  assert(T.customSyntaxSchemes.length === 1, "saving the imported scheme adds it");
   const imported = T.customSyntaxSchemes[0];
   assert(imported.name === "My Neon Syntax", "the imported scheme name is preserved");
   assert(imported.colors["syntax-tag"] === "#ff00aa", "imported colors are preserved");
   assert(JSON.parse(w.localStorage.getItem("philogg-custom-syntax-schemes"))[0].name === "My Neon Syntax", "custom schemes persist to localStorage");
 
-  assert(T.syntaxSchemeChoice === imported.id, "importing a scheme switches to it immediately");
+  assert(T.syntaxSchemeChoice === imported.id, "saving an imported scheme switches to it immediately");
   let cs = w.getComputedStyle(d.documentElement);
   assert(cs.getPropertyValue("--syntax-tag").trim() === "#ff00aa", "the custom scheme's colors are applied inline, got " + cs.getPropertyValue("--syntax-tag"));
   assert(cs.getPropertyValue("--syntax-string").trim() === "#00ffcc", "...for every key, got " + cs.getPropertyValue("--syntax-string"));
@@ -24431,6 +24439,15 @@ await withApp(async (w, d, T) => {
   assert(select.value === imported.id, "the dropdown reflects the newly-active custom scheme");
   const listRow = d.querySelector("#customSyntaxSchemeList .filter-library-row");
   assert(listRow && listRow.textContent.includes("My Neon Syntax"), "the imported scheme is listed in the card");
+
+  // Export button on the row: the file re-imports to the same colors.
+  const captured = [];
+  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  fireClick([...listRow.querySelectorAll("button")].find(b => b.textContent === "Export"), w);
+  await waitFor(() => captured.length === 1);
+  const file = JSON.parse(captured[0].json);
+  assert(file.format === "philogg-syntax-scheme" && file.name === "My Neon Syntax" && file.colors["syntax-string"] === "#00ffcc", "Export writes the scheme as a philogg-syntax-scheme file");
+  assert(captured[0].name.endsWith(".syntax.json"), "suggested file name, got " + captured[0].name);
 
   // Deleting the active custom scheme removes it everywhere and falls back to
   // follow-theme (which restores the app theme's own --syntax-* defaults).
@@ -32993,6 +33010,378 @@ await withApp(async (w, d, T) => {
   assert(view() === "done 20|work 5|tick 6" && cells() === "+15.0s|+5.0s|+5.0s", "Gap ≥ 0 per Thread sorted by Δt ranks the per-thread pauses, got " + view() + " / " + cells());
 });
 
+/* GROUP 293 — Log format JSON export/import: an Export button per
+   (non-meta) format writes its definition + mapped filename globs; an
+   imported file (central import, GROUP 294) opens the format wizard
+   prefilled, with the file's globs as checkboxes; Save creates a NEW
+   format plus the checked rules. Any other .json keeps loading as before. */
+group(293);
+await withApp(async (w, d, T) => {
+  section("293. Log format JSON export/import (Export button, drop → prefilled format wizard, pattern choice)");
+  await waitForFormatConfig(T);
+  const captured = [];
+  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  const src = T.state.logFormats.find(f => f.id === "fmt-demo-app");
+  T.state.formatRules.push({ id: "rule-a", order: 0, createdAt: 0, glob: "app-*.log", formatId: src.id },
+                           { id: "rule-b", order: 1, createdAt: 0, glob: "shared-*.log", formatId: "fmt-default" },
+                           { id: "rule-c", order: 2, createdAt: 0, glob: "shared-*.log", formatId: src.id });
+  w.renderFormatList();
+
+  // Export: one button per ordinary format, none on the meta-format.
+  const rowFor = name => [...d.querySelectorAll("#formatList .filter-library-row")].find(r => r.querySelector(".filter-library-row-name").textContent.startsWith(name));
+  const exportBtn = row => [...row.querySelectorAll("button")].find(b => b.textContent === "Export");
+  assert(!exportBtn(rowFor("App + Syslog (meta)")), "a meta-format has no Export button");
+  fireClick(exportBtn(rowFor(src.name)), w);
+  await waitFor(() => captured.length === 1);
+  const file = JSON.parse(captured[0].json);
+  assert(file.format === "philogg-log-format" && file.version === 1, "export carries the log-format file marker, got " + file.format);
+  assert(captured[0].name.endsWith(".logformat.json"), "suggested file name, got " + captured[0].name);
+  assert(file.logFormat.name === src.name && file.logFormat.regex === src.regex && file.logFormat.tsFormat === src.tsFormat, "export carries the definition");
+  assert(!("id" in file.logFormat) && !("builtin" in file.logFormat) && !("createdAt" in file.logFormat), "...without the store-local id/builtin/createdAt");
+  assert(file.fileNamePatterns.join(",") === "app-*.log,shared-*.log", "export carries the mapped globs in rule order, got " + file.fileNamePatterns);
+
+  // Parsing: not-a-format → null (loads normally), broken → error.
+  assert(w.parseLogFormatExport('{"format":"philogg-filters"}') === null, "another PhiLogg JSON is not a log-format file");
+  assert(w.parseLogFormatExport("[1,2]") === null && w.parseLogFormatExport("nope") === null, "arbitrary JSON / text is not a log-format file");
+  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 99, logFormat: {} })).error, "a newer version is rejected");
+  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 1, logFormat: { name: "x", mode: "regex", regex: "(" } })).error, "an invalid regex is rejected");
+  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 1, logFormat: { name: "x", mode: "meta" } })).error, "a meta-format is rejected");
+
+  // Drop the exported file anywhere (as on another machine — none of its
+  // globs mapped yet): routed to the format wizard, not loaded.
+  T.state.formatRules.length = 0;
+  const before = T.state.logFormats.length;
+  const nodesBefore = Object.keys(T.state.nodes).length;
+  const dlg = d.querySelector("#formatDialog");
+  await w.loadFileDescriptors([{ file: new w.File([captured[0].json], captured[0].name), handle: null }]);
+  await waitFor(() => isVisible(dlg, w));
+  assert(isVisible(dlg, w), "a dropped log-format file opens the format wizard");
+  assert(Object.keys(T.state.nodes).length === nodesBefore, "...and loads no file node");
+  assert(d.querySelector("#formatEditTitle").textContent === "Import log format", "the wizard says it's an import");
+  assert(d.querySelector("#formatEditName").value === src.name, "the exported name is prefilled, got " + d.querySelector("#formatEditName").value);
+  assert(d.querySelector("#formatEditTsFormat").value === src.tsFormat, "...and the timestamp format");
+  assert(d.querySelector("#formatEditRegex").value !== "", "...and the regex");
+  assert(isVisible(d.querySelector("#formatEditImportField"), w), "the import's filename-pattern section is shown");
+  const boxes = [...d.querySelectorAll("#formatEditImportRules input[type=checkbox]")];
+  assert(boxes.length === 2, "one checkbox per exported glob, got " + boxes.length);
+  assert(boxes.every(b => b.checked), "unmapped globs start checked, got " + boxes.map(b => b.checked));
+  boxes[1].checked = false;
+  d.querySelector("#formatEditName").value = "Imported app log";
+  const rulesBefore = T.state.formatRules.length;
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => T.state.logFormats.length === before + 1);
+  const imp = T.state.logFormats.find(f => f.name === "Imported app log");
+  assert(imp && imp.id !== src.id && !imp.builtin && imp.regex === src.regex && imp.tsFormat === src.tsFormat, "Save creates a new format with the imported definition, got " + (imp && imp.regex));
+  assert(T.state.logFormats.find(f => f.id === src.id).name === src.name, "the original format is untouched");
+  assert(!isVisible(dlg, w), "saving closes the wizard");
+  const newRules = T.state.formatRules.slice(rulesBefore);
+  assert(newRules.length === 1 && newRules[0].glob === "app-*.log" && newRules[0].formatId === imp.id, "only the checked glob becomes a rule, for the new format");
+  assert(newRules[0].order === 0, "the imported rule gets the next order slot");
+  assert(!!rowFor("Imported app log"), "the Format Manager lists the imported format");
+
+  // A glob another format already owns is offered unchecked; two imports
+  // queue up — the second opens once the first is cancelled.
+  T.state.formatRules.length = 0;
+  T.state.formatRules.push({ id: "rule-x", order: 0, createdAt: 0, glob: "app-*.log", formatId: "fmt-default" });
+  assert(w.importLogFormatText(captured[0].json) === true, "importLogFormatText accepts the export");
+  const boxes2 = [...d.querySelectorAll("#formatEditImportRules input[type=checkbox]")];
+  assert(!boxes2[0].checked && boxes2[1].checked, "an already-mapped glob starts unchecked, got " + boxes2.map(b => b.checked));
+  assert(d.querySelector("#formatEditImportRules").textContent.includes("already mapped to Default"), "...with a note naming its current format");
+  const second = JSON.parse(captured[0].json);
+  second.logFormat.name = "Second import";
+  second.fileNamePatterns = [];
+  w.importLogFormatText(JSON.stringify(second));
+  assert(d.querySelector("#formatEditName").value === src.name, "a second import waits while the wizard is open");
+  fireClick(d.querySelector("#formatEditCancel"), w);
+  assert(isVisible(dlg, w) && d.querySelector("#formatEditName").value === "Second import", "Cancel skips this file and opens the queued one");
+  assert(!isVisible(d.querySelector("#formatEditImportField"), w), "a file without patterns shows no pattern section");
+  fireClick(d.querySelector("#formatEditCancel"), w);
+  assert(!isVisible(dlg, w), "Cancel closes the wizard without importing");
+  assert(T.state.logFormats.length === before + 1, "...and creates nothing");
+
+  // Adding a format by hand never shows the import section.
+  fireClick(d.querySelector("#btnAddFormat"), w);
+  assert(!isVisible(d.querySelector("#formatEditImportField"), w), "the plain Add dialog has no import section");
+  fireClick(d.querySelector("#formatEditCancel"), w);
+
+  // The old dedicated import UI is gone.
+  assert(!d.querySelector("#btnImportFormat") && !d.querySelector("#logFormatImportDialog") && !d.querySelector("#logFormatFileInput"),
+    "Settings → Log Formats has no Import… button / own import dialog any more");
+
+  // Any other .json still loads as a normal file (inline viewer).
+  await w.loadFileDescriptors([{ file: new w.File(['{"hello":1}'], "data.json"), handle: null }]);
+  assert(!isVisible(dlg, w), "a plain JSON file does not open the wizard");
+  assert(T.state.looseInlineViewers.size === 1, "...it opens as before (inline viewer)");
+});
+
+/* GROUP 294 — Central import: Open → "Import…" (replaces "Import
+   session…") and a file dropped/opened anywhere both dispatch on the JSON
+   `format` marker (importPhiloggJsonText). A filter branch attaches under
+   the active node with a toast naming it; the other scattered import
+   entry points are gone. */
+group(294);
+await withApp(async (w, d, T) => {
+  section("294a. Central import: Open → Import…, dispatch by format marker, filter branch under the active node");
+  const toast = () => d.querySelector("#copyToast").textContent;
+  // Removed entry points.
+  ["#btnThemeImport", "#btnThemeTemplate", "#btnSyntaxImport", "#btnSyntaxTemplate", "#btnImportFormat",
+   "#filterFileInput", "#sessionFileInput", "#themeFileInput", "#syntaxSchemeFileInput"].forEach(sel => {
+    assert(!d.querySelector(sel), sel + " no longer exists");
+  });
+  assert(!d.querySelector('#openMenu [data-action="importSession"]'), "the Open menu has no 'Import session…' any more");
+
+  // Open → Import… goes through the (multi-file) hidden input.
+  let clicked = false;
+  const input = d.querySelector("#importFileInput");
+  input.click = () => { clicked = true; };
+  fireClick(d.querySelector("#btnOpen"), w);
+  const item = d.querySelector('#openMenu [data-action="import"]');
+  assert(item && item.textContent.trim() === "Import…", "the Open menu offers 'Import…'");
+  fireClick(item, w);
+  assert(clicked && input.multiple, "Import… opens the file picker (several files at once)");
+
+  // No file loaded yet: a filter file can't go anywhere.
+  const f0 = await w.addFile("a.log", makeLog(0, 20), () => {});
+  w.render();
+  const textNode = w.createFilterNode(f0.id, "text", "message 1");
+  w.render();
+  const branch = w.serializeFilterBranch(textNode.id, false);
+  const filterJson = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+
+  // Filter branch → under the ACTIVE node, toast says where.
+  T.state.activeId = f0.id;
+  const kidsBefore = T.state.nodes[f0.id].children.length;
+  assert(w.importPhiloggJsonText(filterJson) === true, "a filter file is a PhiLogg export");
+  assert(T.state.nodes[f0.id].children.length === kidsBefore + 1, "the filter is attached under the active node");
+  const added = T.state.nodes[T.state.nodes[f0.id].children[kidsBefore]];
+  assert(added.filterType === "text" && added.value === textNode.value, "...as a copy of the saved filter");
+  assert(T.state.activeId === added.id, "the imported filter becomes active");
+  assert(toast().includes("Filter imported under") && toast().includes("a.log"), "the toast names where it went, got " + toast());
+
+  // Picked through Import…: the change handler reads every file; a non-
+  // PhiLogg JSON is reported, not loaded.
+  T.state.activeId = textNode.id;
+  const childKids = T.state.nodes[textNode.id].children.length;
+  Object.defineProperty(input, "files", { configurable: true, value: [new w.File([filterJson], "f.json"), new w.File(['{"hello":1}'], "other.json")] });
+  input.dispatchEvent(new w.Event("change"));
+  await waitFor(() => toast().includes("other.json"));
+  assert(T.state.nodes[textNode.id].children.length === childKids + 1, "a picked filter file attaches under the (new) active node");
+  assert(toast().includes("other.json is not a PhiLogg export"), "a picked non-PhiLogg file is reported, got " + toast());
+  assert(T.state.looseInlineViewers.size === 0, "...and not opened");
+
+  // Session files go to the session import; dropped as well.
+  let sessionText = null;
+  w.importSessionJson = text => { sessionText = text; };
+  const sessionJson = JSON.stringify({ format: "philogg-session-export", version: 1, files: [] });
+  await w.loadFileDescriptors([{ file: new w.File([sessionJson], "s.json"), handle: null }]);
+  assert(sessionText === sessionJson, "a dropped session file runs the session import");
+
+  // Unknown / non-JSON text is not an export.
+  assert(w.importPhiloggJsonText('{"format":"something-else"}') === false && w.importPhiloggJsonText("nope") === false, "other JSON/text is not a PhiLogg export");
+});
+
+await withApp(async (w, d, T) => {
+  section("294b. Central import: no active node → toast; theme + scheme drops queue their editors");
+  const toast = () => d.querySelector("#copyToast").textContent;
+  assert(w.importPhiloggJsonText(JSON.stringify({ format: "philogg-filters", version: 2, roots: [] })) === true, "a filter file is handled even with nothing loaded");
+  assert(toast().startsWith("Open a log file first"), "...with a toast saying why nothing happened, got " + toast());
+
+  const editor = d.querySelector("#themeEditorDialog");
+  await w.loadFileDescriptors([
+    { file: new w.File([JSON.stringify({ format: "philogg-theme", version: 1, name: "Dropped theme", colors: { "bg-app": "#010203" } })], "t.json"), handle: null },
+    { file: new w.File([JSON.stringify({ format: "philogg-syntax-scheme", version: 1, name: "Dropped scheme", colors: { "syntax-tag": "#abcdef" } })], "s.json"), handle: null },
+  ]);
+  assert(isVisible(editor, w) && d.querySelector("#themeEditorName").value === "Dropped theme", "the first dropped export opens its editor");
+  assert(Object.keys(T.state.nodes).length === 0, "...and no file is loaded");
+  fireClick(d.querySelector("#themeEditorCancel"), w);
+  assert(isVisible(editor, w) && d.querySelector("#themeEditorName").value === "Dropped scheme", "closing it opens the queued second one");
+  assert(d.querySelector("#themeEditorTitle").textContent === "Import syntax scheme", "...in its own (syntax) mode");
+  fireClick(d.querySelector("#themeEditorCancel"), w);
+  assert(!isVisible(editor, w) && T.customThemes.length === 0 && T.customSyntaxSchemes.length === 0, "cancelling both adds nothing");
+});
+
+/* GROUP 295 — Theme editor: "+ New theme…"/"Edit" on a custom theme and
+   the same for syntax schemes open #themeEditorDialog (color groups + live
+   preview); soft variants derive from their base color unless Auto is
+   unchecked; colors come from the picker's plain mode or a typed value. */
+group(295);
+await withApp(async (w, d, T) => {
+  section("295a. Theme editor: new theme from the active colors, Auto soft variants, plain color picker, preview, save, edit + rename");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const editor = d.querySelector("#themeEditorDialog");
+  const row = key => d.querySelector('#themeEditorGroups .te-row[data-key="' + key + '"]');
+  const val = key => row(key).querySelector(".te-value");
+  const auto = key => row(key).querySelector(".te-auto-cb");
+  const prev = key => d.querySelector("#themeEditorPreview").style.getPropertyValue("--" + key);
+  const type = (key, v) => { val(key).value = v; fireInput(val(key), w); };
+
+  fireClick(d.querySelector("#btnThemeNew"), w);
+  assert(isVisible(editor, w) && d.querySelector("#themeEditorTitle").textContent === "New theme", "+ New theme… opens the editor");
+  assert(val("bg-app").value === "#10131a" && val("accent").value === "#4fc7c3", "a new theme starts from the active (Dark) colors, got " + val("bg-app").value);
+  assert(T.THEME_COLOR_KEYS.every(k => row(k)), "every theme color has a row");
+  assert(["accent-soft", "level-error-soft", "level-info-soft", "level-trace-soft", "border-soft"].every(k => auto(k) && auto(k).checked),
+    "Dark's soft variants match their derivation, so they start as Auto");
+  assert(val("level-error-soft").disabled && row("level-error-soft").querySelector(".te-swatch").disabled, "an Auto row can't be edited");
+  assert(prev("bg-app") === "#10131a", "the preview gets the colors as CSS vars");
+
+  // A base color change re-derives its soft variant, row and preview.
+  type("level-error", "#00ff00");
+  assert(val("level-error-soft").value === "rgba(0,255,0,.14)", "the ERROR background follows ERROR, got " + val("level-error-soft").value);
+  assert(prev("level-error-soft") === "rgba(0,255,0,.14)" && prev("level-error") === "#00ff00", "...in the preview too");
+  type("level-warn", "not a color");
+  assert(val("level-warn").classList.contains("te-invalid"), "an invalid typed color is marked");
+  assert(prev("level-warn") === "#e8a94a", "...and not applied");
+
+  // Auto off: an explicit override, kept from the derived value on.
+  auto("accent-soft").checked = false;
+  auto("accent-soft").dispatchEvent(new w.Event("change"));
+  assert(!val("accent-soft").disabled && val("accent-soft").value === "rgba(79,199,195,.14)", "unchecking Auto starts the override from the derived value");
+  type("accent-soft", "#123456");
+  type("accent", "#ff0000");
+  assert(val("accent-soft").value === "#123456", "an override doesn't follow its base color");
+
+  // The plain color picker: no Free/Theme toggle, no Clear, generic presets.
+  w.setColorPickerMode("theme");
+  fireClick(row("bg-panel").querySelector(".te-swatch"), w);
+  const picker = d.querySelector("#colorPickerPopup");
+  assert(isVisible(picker, w) && picker.classList.contains("cp-plain"), "a swatch opens the color picker in plain mode");
+  assert(!isVisible(picker.querySelector(".cp-clear"), w) && !isVisible(picker.querySelector(".cp-mode-row"), w), "...without Clear and the Free/Theme toggle");
+  assert(isVisible(picker.querySelector("#cpWheelWrap"), w), "...with the hue wheel even in Theme mode");
+  assert(picker.querySelectorAll(".cp-preset").length === T.HIGHLIGHT_PRESETS.length, "...and the generic presets, not the theme palette");
+  fireClick(picker.querySelector(".cp-preset"), w);
+  assert(val("bg-panel").value === T.HIGHLIGHT_PRESETS[0] && !isVisible(picker, w), "a preset sets the color and closes the picker");
+  fireClick(row("bg-panel").querySelector(".te-swatch"), w);
+  d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(!isVisible(picker, w) && isVisible(editor, w), "Esc closes the picker first, the editor stays");
+  fireClick(row("bg-panel").querySelector(".te-swatch"), w);
+  fireClick(d.querySelector("#themeEditorSave"), w);
+  assert(!isVisible(picker, w), "clicking elsewhere closes the picker");
+  assert(!picker.classList.contains("cp-plain"), "...and drops plain mode for the next (filter node) open");
+  assert(isVisible(editor, w) && isVisible(d.querySelector("#themeEditorError"), w) && T.customThemes.length === 0, "Save without a name shows an error");
+
+  d.querySelector("#themeEditorName").value = "Ocean";
+  fireClick(d.querySelector("#themeEditorSave"), w);
+  assert(!isVisible(editor, w) && T.customThemes.length === 1, "Save with a name adds the theme");
+  const t = T.customThemes[0];
+  assert(t.name === "Ocean" && t.colors["level-error"] === "#00ff00" && t.colors["level-error-soft"] === "rgba(0,255,0,.14)", "derived soft colors are stored");
+  assert(t.colors["accent-soft"] === "#123456" && t.colors["accent"] === "#ff0000", "overrides are stored");
+  assert(t.colors["level-warn"] === "#e8a94a", "the invalid typed value never replaced the color");
+  assert(!t.syntaxColors, "a new theme from a built-in carries no syntax colors unless included");
+  assert(d.documentElement.getAttribute("data-theme") === t.id, "a new theme is switched to");
+
+  // Edit + rename: same id, soft override remembered.
+  const listRow = d.querySelector("#customThemeList .filter-library-row");
+  fireClick([...listRow.querySelectorAll("button")].find(b => b.textContent === "Edit"), w);
+  assert(isVisible(editor, w) && d.querySelector("#themeEditorTitle").textContent === "Edit theme" && d.querySelector("#themeEditorName").value === "Ocean", "Edit opens the theme");
+  assert(!auto("accent-soft").checked && auto("level-error-soft").checked, "the override stays an override, the derived one stays Auto");
+  d.querySelector("#themeEditorName").value = "Deep Ocean";
+  d.querySelector("#themeEditorIncludeSyntax").checked = true;
+  d.querySelector("#themeEditorIncludeSyntax").dispatchEvent(new w.Event("change"));
+  type("syntax-tag", "#abcdef");
+  fireClick(d.querySelector("#themeEditorSave"), w);
+  assert(T.customThemes.length === 1 && T.customThemes[0].id === t.id && T.customThemes[0].name === "Deep Ocean", "saving an edit replaces the theme under its id (rename)");
+  assert(T.customThemes[0].syntaxColors["syntax-tag"] === "#abcdef", "included syntax colors are stored");
+  assert(w.getComputedStyle(d.documentElement).getPropertyValue("--syntax-tag").trim() === "#abcdef", "the edited active theme is re-applied");
+  assert(d.querySelector("#settingsThemeSelect").selectedOptions[0].textContent === "Deep Ocean", "the dropdown shows the new name");
+});
+
+await withApp(async (w, d, T) => {
+  section("295b. Theme editor: syntax scheme mode, import of a partial theme, light-background derivation");
+  fireClick(d.querySelector("#btnSettings"), w);
+  const editor = d.querySelector("#themeEditorDialog");
+  const val = key => d.querySelector('#themeEditorGroups .te-row[data-key="' + key + '"] .te-value');
+
+  fireClick(d.querySelector("#btnSyntaxNew"), w);
+  assert(isVisible(editor, w) && d.querySelector("#themeEditorTitle").textContent === "New syntax scheme", "+ New scheme… opens the editor in syntax mode");
+  assert(d.querySelectorAll("#themeEditorGroups .te-row").length === T.SYNTAX_COLOR_KEYS.length, "only the syntax colors are listed");
+  val("syntax-number").value = "#112233";
+  fireInput(val("syntax-number"), w);
+  d.querySelector("#themeEditorName").value = "Mono";
+  fireClick(d.querySelector("#themeEditorSave"), w);
+  assert(T.customSyntaxSchemes.length === 1 && T.customSyntaxSchemes[0].colors["syntax-number"] === "#112233", "the scheme is saved");
+  assert(T.syntaxSchemeChoice === T.customSyntaxSchemes[0].id, "...and switched to");
+  const sRow = d.querySelector("#customSyntaxSchemeList .filter-library-row");
+  fireClick([...sRow.querySelectorAll("button")].find(b => b.textContent === "Edit"), w);
+  assert(d.querySelector("#themeEditorTitle").textContent === "Edit syntax scheme" && val("syntax-number").value === "#112233", "Edit reopens the scheme");
+  d.querySelector("#themeEditorName").value = "Mono 2";
+  fireClick(d.querySelector("#themeEditorSave"), w);
+  assert(T.customSyntaxSchemes.length === 1 && T.customSyntaxSchemes[0].name === "Mono 2", "renaming keeps one scheme");
+
+  // A partial theme file: the missing colors come from the active ones, a
+  // missing soft key is derived (light background → the light alpha).
+  w.importThemeJson(JSON.stringify({ format: "philogg-theme", version: 1, name: "Partial", colors: { "bg-app": "#fafafa", "level-error": "#cc0000" } }));
+  assert(isVisible(editor, w) && val("bg-app").value === "#fafafa", "the file's colors are prefilled");
+  assert(val("text-primary").value === "#e7eaf1", "missing colors come from the active theme, got " + val("text-primary").value);
+  assert(val("level-error-soft").value === "rgba(204,0,0,.12)", "a missing soft color is derived (light alpha on a light background), got " + val("level-error-soft").value);
+  fireClick(d.querySelector("#themeEditorSave"), w);
+  assert(T.customThemes.length === 1 && T.customThemes[0].name === "Partial", "Save adds the imported theme under its own name");
+});
+
+/* GROUP 296 — Filter library presets: an Export button per preset
+   (philogg-filter-library file: name, icon, roots, activeRef); an imported
+   preset opens the "Save to filter library" dialog prefilled (name + icon),
+   which now also lets a normal save pick the icon. */
+group(296);
+await withApp(async (w, d, T) => {
+  section("296. Filter library preset export/import through the prefilled Save-to-library dialog; icon pick on save");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  w.render();
+  const textNode = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = textNode.id;
+  w.render();
+
+  // Normal save: pick an icon in the dialog.
+  w.openFilterLibrarySaveDialog(textNode.id);
+  const saveDialog = d.querySelector("#filterLibrarySaveDialog");
+  fireClick(d.querySelector("#filterLibrarySaveIconBtn"), w);
+  const grid = d.querySelector("#filterLibrarySaveIconGrid .filter-library-icon-grid");
+  assert(grid, "the icon button opens the icon grid in the dialog");
+  fireClick([...grid.querySelectorAll("button")].find(b => b.textContent === "🔥"), w);
+  assert(!d.querySelector("#filterLibrarySaveIconGrid .filter-library-icon-grid") && d.querySelector("#filterLibrarySaveIconBtn").textContent === "🔥", "picking closes the grid and shows the icon");
+  d.querySelector("#filterLibraryNameInput").value = "Hot";
+  fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
+  await new Promise(r => setTimeout(r, 0));
+  fireClick(d.querySelector("#exportScopeJustThis"), w);
+  await waitFor(async () => (await w.listFilterLibrary()).length === 1);
+  let records = await w.listFilterLibrary();
+  assert(records[0].name === "Hot" && records[0].icon === "emoji:🔥", "the chosen icon is saved with the preset, got " + records[0].icon);
+
+  // Export from the library dialog.
+  const captured = [];
+  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  await w.openFilterLibraryDialog(f.id);
+  const libRow = d.querySelector("#filterLibraryList .filter-library-row");
+  fireClick([...libRow.querySelectorAll("button")].find(b => b.textContent === "Export"), w);
+  await waitFor(() => captured.length === 1);
+  const file = JSON.parse(captured[0].json);
+  assert(file.format === "philogg-filter-library" && file.name === "Hot" && file.icon === "emoji:🔥" && file.roots.length === 1, "Export writes a philogg-filter-library file");
+  assert(captured[0].name.endsWith(".filterpreset.json"), "suggested file name, got " + captured[0].name);
+  w.closeFilterLibraryDialog();
+
+  // Parse errors.
+  assert(w.parseFilterLibraryExport('{"format":"philogg-filters"}') === null, "a filter file is not a preset file");
+  assert(w.parseFilterLibraryExport(JSON.stringify({ format: "philogg-filter-library", version: 1, roots: [] })).error, "a preset without filters is rejected");
+  assert(w.parseFilterLibraryExport(JSON.stringify({ format: "philogg-filter-library", version: 1, roots: [{ filterType: "bookmarks" }] })).error, "a preset with a filter this version can't load is rejected");
+
+  // Import: dropped → the Save dialog, prefilled; Save adds a new record.
+  await w.loadFileDescriptors([{ file: new w.File([captured[0].json], captured[0].name), handle: null }]);
+  assert(!saveDialog.classList.contains("hidden"), "a dropped preset file opens the Save-to-library dialog");
+  assert(d.querySelector("#filterLibraryNameInput").value === "Hot" && d.querySelector("#filterLibrarySaveIconBtn").textContent === "🔥", "...prefilled with its name and icon");
+  d.querySelector("#filterLibraryNameInput").value = "Hot (imported)";
+  fireClick(d.querySelector("#filterLibrarySaveConfirm"), w);
+  assert(d.querySelector("#exportScopeDialog").classList.contains("hidden"), "an import needs no export-scope prompt");
+  await waitFor(async () => (await w.listFilterLibrary()).length === 2);
+  records = await w.listFilterLibrary();
+  const rec = records.find(r => r.name === "Hot (imported)");
+  assert(rec && rec.icon === "emoji:🔥" && rec.showInToolbar === false && JSON.stringify(rec.roots) === JSON.stringify(file.roots), "the imported preset is a new record with the file's filter");
+  assert(Object.keys(T.state.nodes).length === 2, "importing a preset creates no filter node");
+
+  // Cancel imports nothing.
+  w.importPhiloggJsonText(captured[0].json);
+  fireClick(d.querySelector("#filterLibrarySaveCancel"), w);
+  assert(saveDialog.classList.contains("hidden") && (await w.listFilterLibrary()).length === 2, "Cancel adds nothing");
+}, { indexedDB: new IDBFactory() });
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -37321,4 +37710,19 @@ process.exitCode = failed ? 1 : 0;
       sorting; gap nodes rank their measured per-group gaps). Same session
       updated GROUP 13: Δt is no longer dashed out under a column sort, each
       row shows its chronological Δt instead.
+   Group 293 — 2026-09-26 (person-requested): log format JSON export (per-
+      format Export button, with mapped filename globs); rewritten the same
+      day for the unified import concept — an import opens the format wizard
+      prefilled, with a per-glob pick list (the dedicated import dialog and
+      Settings Import… button were removed).
+   Group 294 — 2026-09-26 (person-requested, unified import/export): central
+      Open → "Import…" + drop dispatch by format marker; a filter branch
+      lands under the active node. Same session updated GROUP 21/48a (Open
+      menu item), 60b (no "Load filter…" in the tree context menu).
+   Group 295 — same session: the theme / syntax scheme editor (new, edit +
+      rename, Auto soft variants, plain color picker, live preview). Same
+      session rewrote GROUP 85b/169f/210c (import opens the editor instead of
+      adding directly; the template download is gone).
+   Group 296 — same session: filter library preset export/import through
+      the prefilled Save-to-library dialog, which also gained the icon pick.
    ============================================================ */
