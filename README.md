@@ -55,8 +55,7 @@ deployments possible:
   whose buttons change with the current selection — Adjust clock for a
   file, Merge for 2+ files, Rename/Edit/Invert plus Add-to-library/Apply-
   from-library for a filter, AND/OR/Link… for 2+ filters — alongside the
-  tree's existing right-click menu (Copy/Cut/Save filter…/Load filter… stay
-  there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
+  tree's existing right-click menu (Copy/Cut/Save filter… stay there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
   shown in the tree instead of the raw pattern — handy for turning
   a chain into a readable narrative ("Step 3: calibration errors"). Editing a
@@ -278,7 +277,14 @@ deployments possible:
   restored session.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
   presets you apply across different files — pin a preset (with an icon of
-  your choice) to the Filter-Toolbar for one-click reuse.
+  your choice) to the Filter-Toolbar for one-click reuse. Presets can be
+  exported and shared like everything else (see below).
+- **One import for everything** — sessions, filters, filter presets, log
+  formats, themes and syntax schemes are all shared as JSON: every list has
+  an **Export** button, and **Open → Import…** (or simply dropping the file
+  onto the app) recognizes what it is and opens it in the same editor you'd
+  use to create it, prefilled — nothing is added until you save. A filter
+  file lands under the active node.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks, notes) to share with a colleague.
 - **Export / Share for tickets** (toolbar button or `Ctrl+Shift+E`) —
@@ -314,13 +320,18 @@ deployments possible:
   point it at an ordered list of target formats and a file matching it gets
   split by grammar and auto-merged (see "A merged file shows its 'Sources'"
   above) instead of being parsed as one grammar.
+  **Share formats as JSON**: each format has an **Export** button (the file
+  includes its filename patterns); importing it opens the format dialog
+  prefilled, where you pick which filename patterns to take over.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
-  Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
-  JSON (download a template, fill in your colors, import it back).
+  Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or your own: a
+  **theme editor** with a color picker per color and a live preview (starts
+  from the current colors; the lighter background tints follow their base
+  color automatically). Edit, rename and export your themes.
   **Syntax-highlight colors** for embedded XML/JSON in the entry detail are
   separately configurable: follow the app theme (default), pick a built-in
-  scheme, or import your own as JSON — independent of which app theme is
-  active. Pick a
+  scheme, or make your own in the same editor — independent of which app
+  theme is active. Pick a
   system-installed UI font family (the desktop wrapper additionally offers
   every font actually installed on your machine, e.g. Fira Code or
   Iosevka), and independently scale the overall UI
