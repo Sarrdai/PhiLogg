@@ -2,11 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
-- **feat: resizable Facet panel; Patterns moved to the first view tab (2026-09-26, person-requested)**. See `docs/ui-and-views.md` → "Facet panel" / "View Selector".
+- **feat: resizable, level-coloured Facet panel; Patterns moved to the first view tab (2026-09-26, person-requested)**. See `docs/ui-and-views.md` → "Facet panel" / "View Selector".
   - **Facet panel width**: new `#facetResizer` grip on the panel's left edge drags its width (180px … view area − 240px), session-only like the other resizers. It sits inside `#facetPanel`, so it hides with the panel.
+  - **Facet level colour**: each value's name is shown in the colour of the most severe level among its entries (follows the level quick-filter).
   - **Tab order**: `Patterns | Context | Filtered | Table | Plot` (Stacked: `Patterns | Stacked | Table | Plot`); `Ctrl+1` opens Patterns, `Ctrl+2`…`Ctrl+5` follow left to right.
-  - **Tests**: new **Group 288**; GROUP 72, 194d and 286b updated to the new positions.
-  - **Full suite**: **6144 passed, 0 failed**.
+  - **Tests**: new **Group 288** (288c: level colour); GROUP 72, 194d and 286b updated to the new positions.
+  - **Full suite**: **6150 passed, 0 failed**.
 
 - **feat: Patterns tab (message-pattern clustering) and Facet panel (value distribution per column) (2026-09-26, FEATURE_BACKLOG.md #23 + #84)**. Two analysis surfaces over the active node's result as the Filtered view sees it (level quick-filter included). Neither filters anything itself: every action adds an ordinary filter node under the active node, one undo step each. See `docs/ui-and-views.md` → "Patterns tab" / "Facet panel".
   - **Patterns tab** (`#fhTabs`, last: `… | Plot | Patterns`, `Ctrl+5`): the first line of each message is normalized by one regex pass (GUID, IPv4[:port], quoted string, Windows/UNC/Unix path, hex, number → placeholders) and identical shapes are grouped: Count, %, most severe Level, Pattern, First/Last, sortable (count ascending surfaces rare messages). Click → text filter on the message with every placeholder as `[*]`; Alt+click or ⊘ → the same as NOT, staying on Patterns; Extract → `[*:int]`/`[*:float]` per placeholder, opening the node's Table; → jumps to the group's first entry in Filtered. Virtualized like the extraction table.

@@ -106,7 +106,8 @@ deployments possible:
   panel (`Ctrl+Shift+F`, or the button at the right end of the view bar;
   drag its left edge to resize) shows the value distribution of every column (Thread, Location, Method,
   custom columns, Level, and Source for a merged file) over the current
-  filter result: the top values with count, share and a bar, "+k more" to
+  filter result: the top values with count, share and a bar, each value coloured by the most
+  severe level it occurs with, "+k more" to
   see the rest. Click a value to add a filter for exactly that value;
   Alt+click or right-click adds it as NOT to hide a dominant source of
   noise. Both features only ever add ordinary, undoable nodes to the filter

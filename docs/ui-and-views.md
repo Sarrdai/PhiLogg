@@ -667,6 +667,11 @@ Plot/Patterns), is hidden with the inline viewer, folder minimap, empty
 state and PiP, and reads "Not available for a link filter" on a `link` node
 (pair entries have no single column values).
 
+- **Level colour**: each value's name is drawn in the colour of the most
+  severe level among its entries in the current result (`createFacetAcc`
+  tracks a `levelSortRank` minimum per value, same ranking as the Patterns
+  tab's Level column; `levelClass` → `.facet-value-name.lvl-*`). A value
+  with only unrecognized levels keeps the default text colour.
 - **Width**: `#facetResizer`, a grip on the panel's left edge (same look as
   `#sidebarResizer`), drags the width via `flex-basis` — dragging left
   grows it, clamped to 180px … `#viewArea` width − 240px
