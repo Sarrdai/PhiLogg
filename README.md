@@ -29,20 +29,18 @@ deployments possible:
   OS's own webview, so the installer stays small. Desktop-only extras
   include close-to-system-tray and picture-in-picture: a diagonal `<->`
   window-control button shrinks the window to a small always-on-top content
-  view (with its own return-to-full and minimize buttons). See
-  `desktop/README.md`.
+  view (with its own return-to-full and minimize buttons). Log files opened
+  from disk are read and parsed natively (Rust, on all CPU cores) with the
+  same parsing rules as the browser build. See `desktop/README.md`.
 
 ## Screenshots
 
 | | |
 |---|---|
-| ![Log view](homepage/screenshots/01-log-view.png) Log view with filter tree | ![Extraction table](homepage/screenshots/02-extraction-table.png) Extraction table |
-| ![Plot](homepage/screenshots/03-plot.png) Plotting extracted values | ![Link view](homepage/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view |
-| ![Context/Filtered split](homepage/screenshots/05-highlight-split.png) Context/Filtered split — matches plus expandable gaps | ![Bookmarks](homepage/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel |
-| ![Dark theme](homepage/screenshots/07-dark-theme.png) Dark theme (default) | |
-
-A guided feature tour with more screenshots lives in [`homepage/index.html`](homepage/index.html) —
-open it in a browser to view it.
+| ![Log view](docs/screenshots/01-log-view.png) Log view with filter tree | ![Extraction table](docs/screenshots/02-extraction-table.png) Extraction table |
+| ![Plot](docs/screenshots/03-plot.png) Plotting extracted values | ![Link view](docs/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view |
+| ![Context/Filtered split](docs/screenshots/05-highlight-split.png) Context/Filtered split — matches plus expandable gaps | ![Bookmarks](docs/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel |
+| ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme (default) | |
 
 ## Key features
 
@@ -50,7 +48,9 @@ open it in a browser to view it.
   and nearest-neighbor link filters (time-context and count-context filters
   also exist and fully work, but creating a new one is temporarily
   unreachable — see `docs/filters.md`); each level narrows/transforms the
-  result of the one above it. The Files & Filters sidebar has its own icon
+  result of the one above it. Connector lines tie each filter to its
+  parent, and the path down to the selected filter is highlighted, so the
+  active chain reads straight off the tree. The Files & Filters sidebar has its own icon
   toolbar (same icon+hover-label style as the log view's own toolbars)
   whose buttons change with the current selection — Adjust clock for a
   file, Merge for 2+ files, Rename/Edit/Invert plus Add-to-library/Apply-
@@ -58,12 +58,15 @@ open it in a browser to view it.
   tree's existing right-click menu (Copy/Cut/Save filter…/Load filter… stay
   there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
-  shown in the tree/breadcrumb instead of the raw pattern — handy for turning
+  shown in the tree instead of the raw pattern — handy for turning
   a chain into a readable narrative ("Step 3: calibration errors"). Editing a
   filter's actual value moved to `Ctrl+E`. A text filter can be
   case-sensitive, restricted to specific columns, inverted (NOT),
   interpreted as a real regular expression, or limited to **whole-word
   matches** ("Test" matches "Test is active", not "Testing activated").
+  While you type, the filter dialog previews the result live: the match
+  count, a histogram of the matches over time, and the first matching rows
+  with the hit marked.
 - **Level bar can write into the filter tree** — by default, clicking
   ERROR/WARN/INFO/DEBUG on the level bar creates/edits a real, undoable
   filter-tree node at your current position, instead of a separate global
@@ -79,6 +82,15 @@ open it in a browser to view it.
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
+- **Find in the current view without creating a filter** — `Ctrl+G` opens a
+  small find bar over the log view: it searches only the rows the current
+  view (Context or Filtered) shows, marks every hit as you type, jumps to
+  the first one, and counts them ("3 / 41"). `F3`/`Shift+F3` (or
+  `Enter`/`Shift+Enter`) walk the hits with wrap-around; match-case and
+  regex toggles use the same query language as a text filter. When a search
+  turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
+  into a real filter node — `Ctrl+F` still opens the filter popup directly.
+  Stays fast on views with hundreds of thousands of rows.
 - **Highlight rules underline their own matches** — a colored text filter
   doesn't just tint the row's left edge: the matched substring itself is
   underlined in that rule's color, in both views and the entry detail. Each
@@ -125,8 +137,10 @@ open it in a browser to view it.
   drawn as a line down the gutter between two carets; click it anywhere to
   fold the block back. Jump match to match with Ctrl+↑/↓ or the toolbar's
   ‹ / › buttons without going back to the tree, with the opened lines
-  travelling along and the clicked line staying put on screen. Side by side
-  or stacked.
+  travelling along and the clicked line staying put on screen. Switching
+  to the Context tab opens the lines around the selected result too, and a
+  toolbar button opens that many lines around every match at once. Side by
+  side or stacked.
 - **Live tailing & folder watch** (Chromium, File System Access API — or
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
@@ -171,12 +185,21 @@ open it in a browser to view it.
   get pan/zoom/reset (drag-to-select a region to zoom, same as Plot View).
   Every opened one is closable the same way a log file is (✕ or middle-click
   its row).
+- **Filter text files line by line** — the text viewer's funnel button
+  ("Filter lines"), or simply Ctrl+F in the viewer, opens what it shows as a filterable file, one entry per
+  line: text, regex and wildcard filters (`"temp": [*:float>20]`), the
+  extraction Table and Plot all work, with the line number taking the place
+  of the timestamp. With JSON Pretty Print on, the filters see the
+  pretty-printed lines, so a minified one-line JSON document becomes
+  searchable field by field. The filterable version sits under its file in
+  the tree (file → text version → filters) and keeps the viewer's
+  indentation and JSON/XML syntax colors.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
-  now load and parse concurrently, each on its own Web Worker where
-  available, so several large logs loaded together actually parse on
-  separate cores at once instead of one at a time.
+  load and parse concurrently, and even a single large file is split across
+  every CPU core (Web Workers where available), so a 100 MB log is on screen
+  in about two seconds.
 - **A merged file shows its "Sources"** — an expandable row under any
   merged file (alongside Bookmarks/Notes, in that order) lists which
   physical file (or, for a multi-pattern file below, which grammar) each
@@ -218,12 +241,25 @@ open it in a browser to view it.
   the desired absolute time of the file's first line, with a live before→after
   preview; it's undoable and survives a reload.
 - **Session cache** — reload the browser tab and get your files, filters,
-  and settings back.
+  opened text/image files and settings back. In the desktop app a file is
+  re-read from disk on the next start instead of being copied into the
+  cache, so a file deleted or moved in the meantime is left out of the
+  restored session.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
   presets you apply across different files — pin a preset (with an icon of
   your choice) to the Filter-Toolbar for one-click reuse.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks, notes) to share with a colleague.
+- **Export / Share for tickets** (toolbar button or `Ctrl+Shift+E`) —
+  "Copy for ticket" puts a compact findings summary on the clipboard, ready
+  to paste into Jira, GitHub, GitLab or Azure DevOps: source file, time
+  range, the filter chain as a readable step-by-step narrative with counts,
+  "x of y entries matched", your bookmarks and notes, and a bounded excerpt
+  of the matching lines — as Markdown, Jira wiki markup or plain text
+  (remembered). The full current view saves as a ticket attachment:
+  `.log` (raw lines), `.csv`, `.tsv`, or a standalone HTML report anyone can
+  open without PhiLogg. Nothing leaves your machine unless you copy or save
+  it.
 - **Configurable log formats** (Settings → Format Manager) — define
   additional formats **by example**: paste or drop a few log lines and
   PhiLogg suggests a format right away, shown as a live table preview of how
@@ -278,14 +314,13 @@ open it in a browser to view it.
 - **Fullscreen focus mode** (desktop app) — `F11` (rebindable) drops into a
   distraction-free fullscreen: the header disappears, the sidebar and detail
   panel collapse to edge-hover overlays, and the active log/extraction view
-  takes the whole window; the tabs, level bar, breadcrumb and minimap stay.
+  takes the whole window; the tabs, level bar and minimap stay.
   `F11` again or `Esc` leaves it. Real OS fullscreen is desktop-only, so the
   shortcut is bound only in the desktop app — a plain browser keeps its own
   `F11`.
 
-See [`homepage/index.html`](homepage/index.html) for the full, illustrated
-feature list, and `PROJECT.md` for how each of these actually works
-internally.
+See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
+actually works internally.
 
 ## Getting started
 
@@ -336,17 +371,19 @@ in a different shape to try the Format Manager against.
 
 ```
 philogg.html                            the application — everything lives here
+LICENSE.md                              license terms (PolyForm Noncommercial 1.0.0 + commercial evaluation), shipped with every build
 tests/
   philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events)
+  fixtures/native-parse-golden.json     parsing golden file shared with the native parser's cargo test
   README.md                             testing conventions
 tools/
   log-simulator.html                    standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
+  perf/                                 performance measurement scripts (test data, jsdom render profile, headless desktop-app load timing) — see docs/performance-testing.md
 desktop/
   README.md                             desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
   src-tauri/                            Rust backend + tauri.conf.json (file associations + native file/folder opening, loads philogg.html unmodified)
-homepage/
-  index.html                            static feature-tour / marketing page
-  screenshots/                          screenshots used by the homepage and this README
+  src-tauri/logparse/                   native log parser (parallel, same rules as philogg.html's own), used by the desktop build
+  THIRD_PARTY_NOTICES.md                licenses of every Rust crate in the desktop build (generated by cargo-about from about.toml/about.hbs)
 examples/
   general.log                           a sample log file in the default format
   bracket-format.log                    a sample log file in a different format, for trying the Format Manager
@@ -354,9 +391,11 @@ scripts/
   install_pkgs.sh                       helper for installing test dependencies
   strip-comments.js                     release-only: strips every comment out of a copy of philogg.html (both build workflows run it)
 .github/workflows/build-tester-files.yml  manual workflow: builds the selected variants (HTML/Windows/Windows portable/macOS/Linux) as downloadable run artifacts, no release created
-.github/workflows/build-release.yml       manual workflow: same variant selection, published as a single GitHub Release
+.github/workflows/release-please.yml      two-stage release: proposes the version bump on demand, then tags + builds HTML/Windows/Windows portable when that release PR merges
+release-please-config.json              release-please configuration (+ .release-please-manifest.json, the current version)
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
-docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing)
+docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing, performance)
+  screenshots/                          screenshots used by this README
 CHANGELOG.md                            full chronological, dated changelog
 FEATURE_BACKLOG.md                      unelaborated feature ideas
 CLAUDE.md                               instructions for AI coding sessions on this repo
@@ -407,17 +446,32 @@ history via [release-please](https://github.com/googleapis/release-please)
 — a new feature bumps the minor number, a bugfix bumps the patch number),
 reviews the proposed release PR, and merges it when ready. That merge
 automatically tags the release, publishes a GitHub Release, and builds
-every variant (HTML, Windows, Windows portable, macOS, Linux) onto it.
+the HTML, Windows installer and Windows portable variants onto it (macOS
+and Linux builds are available only through the tester workflow below).
 
 Separately, **"Build Tester Files"**
 (`.github/workflows/build-tester-files.yml`) is a manual, unversioned path
 for handing testers an ad-hoc build (with its own checkboxes for which
-variants to build) without cutting a real release — it uploads downloadable
+variants to build, macOS and Linux included) without cutting a real release — it uploads downloadable
 workflow run artifacts, no GitHub Release involved.
 
 ## License
 
-PhiLogg is **proprietary software**, © Philipp Klein. All rights reserved.
-It is currently shared only for a limited testing phase; redistribution and
-modification are not permitted. See the in-app **Settings → License**
-section for the full terms, or contact philogg@kleinphilipp.de.
+PhiLogg is **source-available, not open source** — © Philipp Klein, licensed
+under the [PolyForm Noncommercial License 1.0.0](LICENSE.md) with an
+additional permission for commercial evaluation:
+
+- **Free** for personal use (study, hobby projects, private use), projects
+  without commercial application (such as private open-source projects) and
+  noncommercial organizations (charities, schools and universities, public research,
+  government bodies).
+- **Commercial evaluation:** anyone may try PhiLogg at work for up to 30 days
+  to decide whether their company wants a commercial license.
+- **Any other commercial use** requires a paid commercial license — contact
+  philogg@kleinphilipp.de.
+
+The full terms are in [`LICENSE.md`](LICENSE.md), which ships with every
+build and is also shown in the app under **Settings → License**, together
+with the third-party components PhiLogg uses (the Catppuccin color palettes;
+the desktop app additionally ships the licenses of its Rust crates in
+`THIRD_PARTY_NOTICES.md`).

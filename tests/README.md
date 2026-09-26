@@ -45,7 +45,7 @@ PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 
 `npm test` goes through `run.js`, which spawns one child per shard and sums
 their results back into the single `N passed, M failed` line the suite has
-always reported. **Always check that number** (5262 at the time of writing):
+always reported. **Always check that number** (5688 at the time of writing):
 a group that silently stopped running shows up as a lower count, not as a
 failure.
 
@@ -110,6 +110,18 @@ the same shard for the same reason. Top-level code *between* groups still runs
 in every shard: it defines the helpers and fixtures (`nativeFolderBridge`,
 `dirsA`/`bridgeA`, ...) that later groups close over.
 
+**Blobs in IndexedDB.** fake-indexeddb clones stored values with Node's own
+`structuredClone`, which can't see inside a jsdom `Blob`/`File` and would
+store an empty object. The session cache stores a loaded `File` as-is (see
+`docs/persistence-and-sync.md` → "Session cache"), so the suite wraps the
+global `structuredClone`: top-level jsdom Blob fields of a stored record
+become Node Blobs first (same bytes, same `text()`). A real browser's
+IndexedDB needs no such help.
+
+**Globals jsdom lacks** (`MessageChannel`, say) can be put in place before
+the page's script runs with `withApp(fn, { beforeParse: window => ... })` —
+GROUP 268f does that.
+
 State internal to the app (`state`,
 `fhLayout`, `undoStack`, ...) is exposed via a small bridge script injected
 into the same document — see the `withApp` helper's comment for why (jsdom
@@ -147,6 +159,14 @@ throwaway test from scratch. When a session adds a feature:
    Filter/Highlight switcher, the old destructive double-click jump, etc.).
 
 ## Known gaps (things this suite does NOT cover)
+
+- The desktop wrapper's native parser (`desktop/src-tauri/logparse`, Rust)
+  is never run by this suite. Group 264 pins the JS parser to
+  `fixtures/native-parse-golden.json` and exercises the page's side with a
+  stubbed `window.philogg.parseLogFile`; the same golden file is what the
+  crate's own `cargo test` checks the Rust side against. Regenerate it after
+  a deliberate JS parsing change with
+  `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test`.
 
 - Pure CSS/layout bugs — geometry, paint order, hit-testing — need
   manual/visual review instead (jsdom has no real layout engine). This does

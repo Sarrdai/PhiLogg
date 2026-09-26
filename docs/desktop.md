@@ -3,8 +3,8 @@
 The optional desktop wrapper around the **unmodified** `philogg.html`, in
 `desktop/`: the OS's own webview (WebView2 / WKWebView / WebKitGTK) plus a
 Rust backend (Tauri v2). It adds `.log` file associations, CLI-argument/double-click
-file opening, a frameless window with integrated window controls, a tray, a splash
-screen, `settings.json` mirroring, "Open File Location"/"Copy Path", a system font
+file opening, a frameless window with integrated window controls, a tray,
+`settings.json` mirroring, "Open File Location"/"Copy Path", a system font
 list for the UI font picker, a folder watch that does not go through the
 browser's File System Access API, and (Windows only) jumping from a log
 entry's Location straight into a running Visual Studio instance.
@@ -28,8 +28,8 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | file | role |
 |---|---|
 | `main.rs` | builder wiring, `setup`, the macOS-only `RunEvent` arms |
-| `protocol.rs` | the `philogg://` scheme (app page, splash page, local files) |
-| `windows.rs` | main/splash window creation, close-to-tray, PiP, file routing |
+| `protocol.rs` | the `philogg://` scheme (app page, local files) |
+| `windows.rs` | main window creation, close-to-tray, PiP, file routing |
 | `tray.rs` | tray icon + menu |
 | `settings.rs` | `settings.json` read/write and its directory |
 | `commands.rs` | everything the injected script may call |
@@ -37,6 +37,10 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | `state.rs` | the `localFiles` map, quit/close/PiP flags, caches |
 | `fonts.rs` | system font enumeration |
 | `vs_integration.rs` | Visual Studio COM automation (Running Object Table) |
+
+Plus one workspace crate beside `src/`: `logparse/` (`philogg-logparse`), the
+native log parser — Tauri-free on purpose, so `cargo test -p philogg-logparse`
+runs without the webview toolchain. See "Native parsing" below.
 
 ## The `philogg://` scheme, and why there is a `fetch` shim
 
@@ -47,9 +51,8 @@ page genuinely can't `fetch()` anything — see PROJECT.md → "Deep-link loadin
 Serving the page from its own scheme keeps that guard intact instead of needing a
 special case carved out of it.
 
-The scheme serves three things — `app/philogg.html` (the packaged copy, or the working
-copy in a `tauri dev` run), `app/splash.html` (generated in Rust, see below), and
-`local/<id>/<basename>` (a local file, `id` mapped to a path chosen only from
+The scheme serves two things — `app/philogg.html` (the packaged copy, or the working
+copy in a `tauri dev` run), and `local/<id>/<basename>` (a local file, `id` mapped to a path chosen only from
 OS-supplied input: argv, the OS file dialog, a native drop, or macOS's `Opened`
 event — the same trust level as a native file-open dialog; the URL's `<basename>`
 segment is only read by `philogg.html`'s own last-path-segment naming logic, the
@@ -82,13 +85,13 @@ before `philogg.html`'s top-level script runs, and what needs the DOM (behind
 `DOMContentLoaded`) — and survives a reload (which the tray's "Clear Cache" performs)
 with no re-injection hook on the Rust side at all. It is built by `inject.rs`, which
 substitutes four values into it: the settings snapshot, a per-process nonce, the
-platform's real scheme base, and whether this is macOS. The splash window deliberately
-gets no script (it ends by reporting "painted", which would dismiss the splash itself).
+platform's real scheme base, and whether this is macOS. Its `DOMContentLoaded` half ends by
+reporting "painted" (the `app_ready` command, see "Main window" below).
 
 **Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
 (`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
-`pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`, and
-`getPathForFile`. That last one returns `null` permanently — no system webview can
+`pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`,
+`parseLogFile` (see "Native parsing" below), and `getPathForFile`. That last one returns `null` permanently — no system webview can
 resolve a `File` object back to its OS path — which is why the wrapper opens files
 itself instead (next paragraph). `philogg.html` treats a null `getPathForFile` as "no
 path known", so nothing breaks; under this wrapper no route reaches that case any more.
@@ -113,6 +116,18 @@ path and URL — through `window.philoggLoadLocalFiles({ files, folders })`.
 placeholders, the multi-file merge prompt and tailing all work exactly as they do for
 a dropped `File`; `node.localPath` and `node.sourceUrl` are both set, so "Open File
 Location" and "Copy Path" are offered. Covered by tests **Groups 141-143**.
+
+**Byte-range reads of `philogg://local/…`** (2026-09-25). `protocol.rs`'s
+`read_local` honours a single `Range: bytes=a-b` / `bytes=a-` / `bytes=-n` header
+(`parse_range`, unit-tested): it seeks and reads only those bytes and answers 206 with
+`Content-Range: bytes a-b/<size>` (416 with `bytes */<size>` outside the file;
+`Access-Control-Expose-Headers: content-range` so the page can read it). No header — a
+full load — is served whole exactly as before. The page's tail poll, the folder
+minimap's head/tail probe and a windowed load read through it (`urlTailHandle`'s
+`getRangedFile`, see `docs/persistence-and-sync.md` → "Tailing"): an idle poll of an
+open 100 MB file went from re-reading all of it (~2.3 s, longer than the poll interval)
+to ~2 ms. A page talking to an older wrapper gets a 200 with the whole body and uses
+that.
 
 **`res.arrayBuffer()`, never `res.blob()`, when reading a `philogg://local/…`
 response.** Person-reported: a real ~80KB file failed to load through both drag&drop
@@ -297,6 +312,145 @@ Two details that are easy to get wrong:
 
 Covered by test **Group 145**.
 
+## Native parsing
+
+A log opened from disk is read and parsed by the Rust backend, not by the
+page: `window.philogg.parseLogFile(url, spec, onMessage)` → the
+`parse_log_file` command (`commands.rs`) → the `philogg-logparse` crate
+(`logparse/`). The file never travels through the webview as text — no
+`fetch` of `philogg://local/…`, no `FileReader`, no copy into a Web Worker —
+and parsing runs on every core at once, not one worker per file.
+
+**One definition of the parsing rules.** The page still compiles the format
+itself: `nativeFormatSpec(fmt)` (`philogg.html`, next to `compileOneFormat`,
+sharing its `compileFormatRegex`) hands over `{builtin, regex, dateRegex,
+dateOrder, wrapQuote}` — the *source* of the regex JS itself would run, the
+compiled `tsFormat` regex, and the quoted-message rule. Rust only executes
+that description:
+
+- `builtin` (the unedited default format) is a port of `HEADER_RE` +
+  `parseHeaderLine`.
+- `regex` runs through `jsregex::translate`, which rewrites the places where
+  the `regex` crate's syntax means something different from a no-flags JS
+  regex: `\d`/`\w`/`\b` become ASCII-only, `\s` becomes JS's own set, `.`
+  excludes `\r`/U+2028/U+2029, `\uHHHH` and Annex-B literal braces are
+  spelled out. Lookaround, backreferences and similar constructs are
+  **refused** — the command errors before streaming anything and the page
+  parses that file in JS as before. `null` (a regex that failed to compile)
+  reproduces the "every line is its own entry" fallback.
+- `applyFormatMatch`, `stripQuotes`, `formatLocation` (hand-written from the
+  end instead of a regex — it was half the parse time; a brute-force test
+  checks it against the regex), `appendContinuationLine`,
+  `parseTimestamp`/`parseTimestampGeneric` and `String.prototype.trim`'s
+  whitespace set are mirrored one function each; the Rust functions name
+  their JS counterpart.
+- Bytes are decoded like `FileReader.readAsText`: BOM sniffing for
+  UTF-8/UTF-16LE/UTF-16BE, U+FFFD per malformed sequence.
+
+**Timestamps come back naive.** Both JS timestamp parsers end in
+`new Date(y, mo, d, h, mi, s, ms)` — local time. Rust returns
+`Date.UTC(...)` of the same fields instead (with JS's `|| default`
+fallbacks, the 0..99 → 19xx year mapping and month/day rollover), and the
+page's `makeNaiveTsLocalizer` converts it with its own engine, caching one
+`Date` per distinct wall-clock minute. DST gaps/overlaps and the tz database
+are therefore the page's own, on every platform. A format with no
+`tsFormat` (free-form, `Date.parse`) gets `ts: null` from Rust and the page
+parses `tsRaw` itself.
+
+**Parallelism.** The text is cut into ~1 MB slices at line boundaries and
+parsed with rayon; each slice keeps the lines before its first header, and
+the stitch step appends those to the previous slice's last entry (they are
+its continuation lines — including the open-quote bookkeeping, which lives
+on the entry). The entries are then encoded into binary batches of 25,000
+in parallel, a few at a time, and sent over a Tauri IPC channel in order.
+
+**The transport is binary, not JSON** (`logparse/src/batch.rs` has the
+layout). The first version sent JSON and gained nothing over the JS path
+in a real build (person-reported, confirmed with a WebKitGTK run under
+Xvfb: 100 MB / 650k entries, Rust finished in 1.0 s, the page had the
+entries at 8.2 s vs. 8.6 s on the old path) — ~3 bytes of JSON per byte of
+log went through the IPC and `JSON.parse` ran on the main thread. A batch
+now carries all its strings in **one UTF-8 buffer**, decoded by a single
+`TextDecoder` call in `decodeNativeBatch`; every field is a `substring` of
+it, located by varint offsets relative to the entry's `raw`, and a field
+that already occurs inside `raw` (most of them) isn't written a second
+time. Timestamps travel as a `Float64Array` (NaN for none). Same run
+afterwards: the native part is done at ~2.8 s (IPC ~1.1 s, decode ~0.45 s,
+creating the entries/ids/`entryIndex` ~0.65 s), the whole load 4.3 s vs.
+8.4 s on the JS path. What is left is page-side and shared by both paths:
+the first `render()` of the loaded file. A follow-up (2026-09-24) removed
+a second full render every load paid and memoized the per-entry level
+work inside `render()` (see `docs/persistence-and-sync.md` → "File
+loading" and `docs/ui-and-views.md` → "Level bar"): the whole load is now
+~3.3 s here (JS path ~8.1 s).
+
+**The channel.** `inject.js` has a small stand-in for `@tauri-apps/api`'s
+`Channel` (reorders by `index` — large messages go through a separate fetch
+and can overtake each other — and resolves once the `{end: true}` marker
+says Rust dropped its side). Messages are `{type: "progress", fraction}`
+JSON while parsing (0–0.4 of the row's bar) and the batches as
+`ArrayBuffer`s (0.4–1, the fraction is in each batch's header).
+`decodeNativeBatch` builds each entry in the page's own shape and key order
+(one V8 hidden class for native and JS-parsed entries, custom-column-free
+entries sharing `EMPTY_ENTRY_FIELDS`); `parseLocalFileNatively` then
+assigns the page id, localizes `ts` and stamps `formatId`, so a native
+entry is indistinguishable from a JS-parsed one. A rejection rolls back
+whatever batches had already been appended.
+
+**Where it's used.** `canParseNatively(handle)` — the bridge exists and the
+handle is a `urlTailHandle` over a `philogg://local/…` URL — gates the three
+routes that open a file from disk: `loadFileDescriptors` (dialog, drop;
+`openFile()` is then never called), `loadFolderFile` (folder watch) and
+`loadUrlIntoTree` (file association / launch argument, filling the same node
+if it falls back). `loadOneFileIntoTree` takes `file = null` for these and
+falls back to `handle.getFile()` + the ordinary read/parse whenever the
+native call rejects. `parse_log_file` resolves the URL through the same
+`local_file_for_url` lookup as the protocol handler, so the page can only
+have files parsed that were already registered from OS-supplied input — it
+can't name an arbitrary path. The tail offset is the byte size Rust read.
+
+**Not native (unchanged JS paths):** meta-formats (split in JS first), live
+tailing appends (small, incremental), session-cache restore (the text comes
+from IndexedDB), the windowed/partial minimap load, ZIP entries, and the
+plain browser build.
+
+**gzip-compressed logs (`.gz`) are not parsed natively either.**
+`parse_and_stream` checks the bytes it just read with
+`philogg_logparse::is_gzip` (magic `1f 8b`) and rejects before streaming
+anything. That lands in the caller's ordinary fallback: `loadOneFileIntoTree`,
+`loadUrlIntoTree` and `reopenLocalPathForRestore` all catch the rejection,
+fetch the file and parse it in JS, where `DecompressionStream("gzip")`
+inflates it first (`docs/persistence-and-sync.md` → "gzip-compressed logs").
+Detection is by content, so a gzip file without the extension is covered
+too. Rust never inflates: no new crate, and the JS parser's rules stay the
+one definition, so the golden fixtures are unchanged. A crate test pins
+`is_gzip`, and jsdom GROUP 285d/e covers the page-side fallback with a stub
+that rejects the same way.
+
+**Known difference:** a non-unicode JS regex counts UTF-16 code units, so a
+counted quantifier over an astral character (`.{2}` against one emoji) can
+match in JS and not natively. Format regexes don't count characters that
+way in practice.
+
+**Measuring it.** `docs/performance-testing.md` describes how the numbers
+above were taken — including the headless run of the real app — and has the
+scripts (`tools/perf/`) and recorded baselines.
+
+**Keeping the two sides in step.** `tests/fixtures/native-parse-golden.json`
+holds inputs (text or raw bytes), the spec `nativeFormatSpec` builds, and
+the entries the **JS** parser produces (ts naive, generated under
+`TZ=UTC`). The jsdom suite's Group 264 checks the JS parser against it; the
+crate's `tests/golden.rs` checks the Rust parser against it at slice sizes
+from 1 byte to 1 MB. After a deliberate change to JS parsing, regenerate
+with `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test` (in `tests/`), then
+make `cargo test -p philogg-logparse` (in `desktop/src-tauri/`) pass again.
+The binary layout is pinned the same way across the language boundary:
+`tests/fixtures/native-batch-golden.json` holds every golden case encoded
+by Rust (`cargo test` checks the encoding is unchanged and round-trips),
+and Group 264 feeds exactly those bytes to the page's `decodeNativeBatch`
+and compares the result with the JS parser's entries. After a deliberate
+layout change: `UPDATE_NATIVE_BATCH=1 cargo test -p philogg-logparse`.
+
 ## Windows Explorer context-menu integration
 
 Windows-only. Three right-click verbs, added by the installer as an
@@ -348,8 +502,8 @@ returning which of two routes a launch needs:
   (mirroring `open_file`), or — on a cold launch, where there is no window
   and so no loaded page to eval into yet — creates the window plain
   (`create_main(app, None)`) and stashes the payload in a new
-  `AppState.pending_local_load`. `commands::app_ready` (already the exact
-  "page reported its first paint" signal used to dismiss the splash) calls
+  `AppState.pending_local_load`. `commands::app_ready` (the
+  "page reported its first paint" signal, see "Main window" below) calls
   the new `windows::flush_pending_local`, which runs the stashed payload
   once the page actually exists to receive it, then clears it.
 
@@ -398,9 +552,9 @@ against the new stock template and reapply the `; PHILOGG:`-marked edits
 rather than assuming this fork silently tracks upstream.
 
 **gzip-compressed logs (`.gz`).** All decompression happens in
-`philogg.html` (`DecompressionStream("gzip")`). The Rust side never reads
-log content, it only serves bytes over `philogg://local`, so there is no
-native inflate and no new crate. The wrapper-side touch points are:
+`philogg.html` (`DecompressionStream("gzip")`). The native parser refuses
+gzip bytes (see "Native parsing" above), so there is no native inflate and
+no new crate. The wrapper-side touch points are:
 - the `.gz` context-menu verb above;
 - `classify_launch` routing `.gz` as `LogFile`;
 - `pick_files` offering `gz` in its "Log files" filter;
@@ -466,6 +620,19 @@ of silently vanishing after a refresh even though the file is still the same one
 `tests/philogg.regression.test.js` Group 109 covers the menu-item gating (all three
 outcomes, plus "absent without `window.philogg`") and the cache round-trip, via a stub
 `window.philogg` — jsdom can't run a real webview host.
+
+**Session cache: a desktop file is cached as its path.** With `node.localPath`
+known and `philogg.openLocalPath` available, `persistFileNode` stores no content
+for the file at all (`fileCacheSource` → `"path"`); `restoreSessionFromCache`
+re-registers the path (`openLocalPath`, which rejects once the file is gone),
+parses it natively (or through the JS fallback) under its pinned format, and
+takes this run's `philogg://local/…` URL and a fresh tail from there. Decided
+by the person (2026-09-24): a file deleted or moved since is left out of the
+restored session rather than keeping a text copy of every opened file in
+IndexedDB. The launch-argument/file-association route (`loadUrlIntoTree`)
+writes no cache record when it opens a file and sets no `localPath` (only a
+later tail change persists it, as rebuilt text). See `docs/persistence-and-sync.md` → "Session
+cache".
 
 ## Clickable local file paths in log lines
 
@@ -612,6 +779,9 @@ PowerShell's `SystemFontFamilies` on Windows. macOS has neither out of the box, 
 there are approximated from the font files in the three standard font directories — the
 one place the list is less than exact. Any failure yields an empty list rather than
 throwing, so a headless or sandboxed OS just means no extra options appear.
+The Windows `powershell` call is spawned with `CREATE_NO_WINDOW`: the release exe is a
+GUI-subsystem binary with no console of its own, so without the flag Windows opened a
+fresh console window for the child on every app start.
 
 The same `listSystemFonts()` result feeds two independent pickers: `philogg.html`'s
 `initUiFont()`/`initLogFont()` each call it once (after applying their own curated default
@@ -707,9 +877,8 @@ sidestep Windows command-line quoting for a script this shape (embedded C#,
 here-strings); the actual variable, log-derived input (moniker/path/line)
 travels separately through `PHILOGG_VS_*` environment variables on the
 spawned process, never interpolated into the script text.
-`Command::creation_flags(CREATE_NO_WINDOW)` keeps every call from flashing a
-console window, since — unlike the once-per-run, cached font enumeration —
-this runs on every click.
+`Command::creation_flags(CREATE_NO_WINDOW)` keeps every call from opening a
+console window (same flag as the font enumeration above).
 
 Both scripts wrap their whole body in one top-level `try`/`catch`
 (`[Console]::Error.WriteLine($_.Exception.Message)` + `exit 1` on any
@@ -824,16 +993,16 @@ the tray's "Open Config Folder" and "Clear Cache" already go through `config_dir
 webview APIs, so they work unmodified in either mode. See "Release" below for how the
 portable `.zip` is assembled, and `desktop/README.md` for the user-facing description.
 
-## Tray, splash, close-to-tray, single instance
+## Main window, tray, close-to-tray, single instance
 
-- **Splash** (`FEATURE_BACKLOG.md` #51, the "startup takes several seconds with no
-  feedback" half): a small always-on-top undecorated window on `philogg://app/splash.html`,
-  generated as a string in `protocol.rs` so nothing extra needs packaging. It opens the
-  instant the main window is created; the main window is built `visible(false)` and shown
-  only once the page reports a first paint — two nested `requestAnimationFrame`s after
-  `DOMContentLoaded`, deliberately not the event itself, which would just swap one blank
-  window for another — via the `app_ready` command, which closes the splash at the same
-  moment.
+- **Main window**: there is no splash screen — startup is fast enough that the main
+  window is simply created visible right away. Its native background colour is set to the
+  dark theme's `#151924` (`#toolbar`/`--bg-panel`), so the moment before the page's own
+  background paints shows no white flash. The injected script still reports the page's
+  first paint — two nested `requestAnimationFrame`s after `DOMContentLoaded`, deliberately
+  not the event itself — via the `app_ready` command; its only job now is
+  `windows::flush_pending_local` (a cold-launch `.zip`/folder open that had to wait for the
+  page, see "Windows Explorer context-menu integration" above).
 - **Tray**: always created, not lazily on the first hide — with no application menu
   anywhere it is the only reachable place for "Open Config Folder" (opens the
   `settings.json` directory) and "Clear Cache" (wipes the IndexedDB session cache and

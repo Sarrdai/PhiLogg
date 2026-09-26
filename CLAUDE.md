@@ -39,9 +39,16 @@ and a frameless window around the unmodified `philogg.html` — see
   Two things the suite does **not** cover, so don't run it for them: a change
   confined to the Rust side or the Tauri config (`desktop/src-tauri/**`,
   `desktop/frontend/`) — nothing there is loaded, parsed or executed by the
-  suite, it needs `cd desktop && npm run build` instead — and a session that
+  suite, it needs `cd desktop && npm run build` instead (plus
+  `cargo test -p philogg-logparse` in `desktop/src-tauri/` when the native
+  parser changed — and when JS parsing changes, regenerate its golden
+  fixture, see `docs/desktop.md` → "Native parsing") — and a session that
   only touched Markdown (`PROJECT.md`, `docs/*.md`, `CHANGELOG.md`,
   `README.md`, `FEATURE_BACKLOG.md`, `CLAUDE.md`). Don't run it out of habit.
+- **Performance claims get measured in the real app**, not only in a
+  component benchmark — `docs/performance-testing.md` has the headless
+  desktop-app setup (`tools/perf/desktop-load-bench.sh`) that works in the
+  cloud container.
 - **Update the docs every session that changes behavior**: a dated,
   newest-first entry in `CHANGELOG.md`; the relevant `docs/*.md` file (or
   `PROJECT.md` itself for core architecture) updated to describe the
