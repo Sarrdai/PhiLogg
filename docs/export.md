@@ -107,7 +107,7 @@ than log columns).
 ### Saving files — browser and desktop
 
 The same mechanism every other file save in the app uses
-(`saveFilterToFile`, `saveCsvToFile`, theme templates): `showSaveFilePicker`
+(`saveFilterToFile`, `saveCsvToFile`, `saveJsonExportFile` for the JSON exports): `showSaveFilePicker`
 where the engine has it (Chromium browsers, and the Windows desktop build's
 WebView2), otherwise a `Blob` + `<a download>` (`downloadBlobFallback`).
 Cancelling the picker (`AbortError`) saves nothing and doesn't fall back.
