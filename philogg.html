@@ -1234,7 +1234,47 @@
   #levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
 
   /* ---------- Filter/Highlight split ---------- */
-  #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0;}
+  #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0; position:relative;}
+  /* Find bar (FEATURE_BACKLOG.md #3) — floats over #fhSplit's top-right
+     corner, out of flex flow, so opening/closing it never moves a log row
+     (same "the lines must not shift" rule #contextToolbar's show/hide
+     compensation exists for). */
+  #findBar{
+    position:absolute; top:4px; right:14px; z-index:30;
+    display:flex; align-items:center; gap:4px;
+    background:var(--bg-elevated); border:1px solid var(--border);
+    border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.35);
+    padding:4px 4px 4px 6px; max-width:calc(100% - 28px);
+  }
+  #findBar.hidden{display:none;}
+  #findInput{
+    width:220px; min-width:80px; flex:0 1 auto; background:var(--bg-app);
+    border:1px solid var(--border); border-radius:5px; padding:4px 7px;
+    color:var(--text-primary); font-family:var(--font-mono); font-size:12px; outline:none;
+  }
+  #findInput:focus{border-color:var(--accent);}
+  #findInput.input-regex-error{border-color:var(--level-error);}
+  .find-opt{
+    height:24px; min-width:26px; padding:0 5px; flex:0 0 auto;
+    font-family:var(--font-mono); font-size:11px; font-weight:650; color:var(--text-secondary);
+    background:transparent; border:1px solid transparent; border-radius:5px; cursor:pointer;
+  }
+  .find-opt:hover{background:var(--bg-elevated-2);}
+  .find-opt.active{background:var(--accent-soft); border-color:var(--accent-strong); color:var(--accent-strong);}
+  .find-count{
+    min-width:74px; padding:0 4px; text-align:center; white-space:nowrap; flex:0 0 auto;
+    font-size:11px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;
+  }
+  .find-count.warn{color:var(--warn);}
+  .find-count.error{color:var(--level-error);}
+  .find-nav-btn{
+    display:flex; align-items:center; justify-content:center; width:24px; height:24px; flex:0 0 auto;
+    background:transparent; border:none; border-radius:5px; color:var(--text-secondary); cursor:pointer;
+  }
+  .find-nav-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  .find-nav-btn:disabled, #findAddFilterBtn:disabled{opacity:.35; cursor:default; pointer-events:none;}
+  #findAddFilterBtn{padding:3px 8px; white-space:nowrap; flex:0 0 auto;}
+  #findCloseBtn{padding:4px;}
   #fhSplit .fh-panel{flex:1 1 auto; display:flex; flex-direction:column; min-height:0; min-width:0;}
   /* Tabs layout (default): only the active panel is shown. */
   #fhSplit.fh-layout-tabs .fh-panel{display:none;}
@@ -1593,6 +1633,18 @@
      too, harmlessly, so this rule doesn't silently depend on that.) Must
      stay AFTER mark.text-match-mark: same specificity, later wins. */
   mark.mark-seg{padding:0; border-radius:0;}
+  /* Find-bar hits (FEATURE_BACKLOG.md #3, see markCombinedHtml's findRanges):
+     accent-tinted rather than the filter mark's --warn so "what I'm
+     searching for right now" and "what the active filter matched" stay
+     distinguishable when both mark the same row; the selected row (which is
+     the current hit after every find step) gets a stronger fill. Must stay
+     AFTER mark.mark-seg — a segmented find mark keeps square corners too. */
+  mark.find-match-mark{
+    background:color-mix(in srgb, var(--accent) 38%, transparent); color:inherit;
+    border-radius:2px; padding:0; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+  }
+  mark.find-match-mark.mark-seg{border-radius:0;}
+  .log-row.selected mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
 
   .log-row{
     height:28px; box-sizing:border-box; position:relative;
@@ -2541,6 +2593,25 @@
     display:flex; align-items:center; justify-content:center;
   }
   #csvExportDialog.hidden{display:none;}
+
+  /* ---------- Export / Share dialog (docs/export.md) ---------- */
+  #exportDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #exportDialog.hidden{display:none;}
+  #exportDialog .link-dialog-card{width:min(600px, 94%); max-height:92vh; overflow:auto; box-sizing:border-box;}
+  #exportDialog .settings-row{padding:10px 2px; gap:16px; border-bottom:1px solid var(--border-soft);}
+  #exportDialog .settings-row:last-of-type{border-bottom:none;}
+  #exportDialog .settings-subsection-title{margin:16px 0 4px;}
+  #exportExcerptInput{width:80px; box-sizing:border-box; text-align:right;}
+  .export-summary{font-size:12px; color:var(--text-secondary);}
+  #exportPreview{
+    width:100%; height:180px; box-sizing:border-box; resize:vertical; margin-top:8px;
+    background:var(--bg-app); border:1px solid var(--border); border-radius:8px; color:var(--text-secondary);
+    font-family:var(--font-mono); font-size:11px; line-height:1.5; padding:8px 10px; white-space:pre;
+  }
+  .export-file-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
 
   /* ---------- Count context dialog (analogous to Time context above, but
      windows by entry count instead of milliseconds — see #countContextDialog
@@ -3940,16 +4011,21 @@
         <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" disabled></button>
         <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" disabled></button>
       </div>
+      <!-- Export / Share (docs/export.md): ticket snippet + view/report
+           attachments for the active view. -->
+      <button type="button" id="btnExport" class="toolbar-icon-btn" title="Export / Share (Ctrl+Shift+E)">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V10"/><path d="M9 2.5h4.5V7"/><path d="M13.5 2.5 7.5 8.5"/></svg>
+      </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
-      <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
+      <input type="file" id="fileInput" multiple hidden accept=".log,.txt,.gz,text/plain,application/gzip">
       <input type="file" id="zipInput" hidden accept=".zip,application/zip">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="themeFileInput" hidden accept=".json,application/json">
       <input type="file" id="syntaxSchemeFileInput" hidden accept=".json,application/json">
-      <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,text/plain">
+      <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,.gz,text/plain,application/gzip">
     </div>
   </header>
 
@@ -4156,6 +4232,27 @@
       </div>
 
       <div id="fhSplit">
+        <!-- Find bar (FEATURE_BACKLOG.md #3): incremental, non-destructive
+             search inside whichever log view is current (Context or
+             Filtered) — Ctrl+G opens it, F3/Shift+F3 (or Enter/Shift+Enter
+             in the input) walk the hits, "Add as filter" promotes the search
+             into a real "text" filter node only when that's actually wanted.
+             Floats over the top-right corner of #fhSplit (like an IDE find
+             widget) instead of sitting in the flex flow, so opening it never
+             shifts a single log row. Wired by the "Find bar" section in the
+             script (openFindBar/findStep/addFindAsFilter). -->
+        <div id="findBar" class="hidden" role="search">
+          <input type="text" id="findInput" placeholder="Find in view" autocomplete="off" spellcheck="false" aria-label="Find in view">
+          <button type="button" id="findCaseBtn" class="find-opt" aria-pressed="false" title="Match case">Aa</button>
+          <button type="button" id="findRegexBtn" class="find-opt" aria-pressed="false" title="Use regular expression">.*</button>
+          <span id="findCount" class="find-count"></span>
+          <button type="button" id="findPrevBtn" class="find-nav-btn" title="Previous match (Shift+F3 / Shift+Enter)"></button>
+          <button type="button" id="findNextBtn" class="find-nav-btn" title="Next match (F3 / Enter)"></button>
+          <button type="button" id="findAddFilterBtn" class="btn-mini-outline" title="Turn this search into a filter node under the active node (Ctrl+Enter)">Add as filter</button>
+          <button type="button" class="btn-icon" id="findCloseBtn" title="Close (Esc)">
+            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
+          </button>
+        </div>
         <div id="highlightWrap" class="fh-panel">
           <!-- Context view's own toolbar, grouped Settings | Controls |
                Actions (person-requested — no label on any group, just the
@@ -4287,7 +4384,7 @@
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
         <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>.</p>
+        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>, or just search the current view with <b>Ctrl+G</b>.</p>
       </div>
 
       <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
@@ -4724,6 +4821,49 @@
       <div class="link-dialog-actions">
         <button type="button" id="csvExportCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="csvExportConfirm" class="btn-mini">Export</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Export / Share (docs/export.md) — follows docs/ui-standard.md:
+       segmented .assert-mode-btn flavor switch, .settings-row rows,
+       .btn-mini-secondary/.btn-mini footer (secondary -> primary). -->
+  <div id="exportDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Export / Share — <span id="exportViewLabel" class="link-target-label"></span></div>
+      <div class="export-summary" id="exportSummary"></div>
+      <div class="settings-subsection-title">Copy for ticket</div>
+      <div class="settings-row">
+        <div class="settings-row-text">
+          <span class="settings-row-label">Format</span>
+          <span class="settings-row-hint">Markdown: Jira Cloud, GitHub, GitLab, Azure DevOps. Wiki: Jira Server.</span>
+        </div>
+        <div class="settings-row-control assert-mode-row">
+          <button type="button" class="assert-mode-btn" data-export-format="markdown">Markdown</button>
+          <button type="button" class="assert-mode-btn" data-export-format="jira">Jira wiki</button>
+          <button type="button" class="assert-mode-btn" data-export-format="plain">Plain text</button>
+        </div>
+      </div>
+      <div class="settings-row">
+        <div class="settings-row-text">
+          <label class="settings-row-label" for="exportExcerptInput">Excerpt lines</label>
+          <span class="settings-row-hint">Matching entries quoted in the snippet (0 = none).</span>
+        </div>
+        <div class="settings-row-control">
+          <input type="number" id="exportExcerptInput" min="0" max="500" step="1">
+        </div>
+      </div>
+      <textarea id="exportPreview" readonly spellcheck="false" aria-label="Ticket snippet preview"></textarea>
+      <div class="settings-subsection-title">Save as attachment (full view)</div>
+      <div class="export-file-row">
+        <button type="button" class="btn-mini-secondary" data-export-file="log">Log (.log)</button>
+        <button type="button" class="btn-mini-secondary" data-export-file="csv">CSV (.csv)</button>
+        <button type="button" class="btn-mini-secondary" data-export-file="tsv">TSV (.tsv)</button>
+        <button type="button" class="btn-mini-secondary" data-export-file="html">Report (.html)</button>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="exportClose" class="btn-mini-secondary">Close</button>
+        <button type="button" id="exportCopy" class="btn-mini">Copy for ticket</button>
       </div>
     </div>
   </div>
@@ -8532,11 +8672,13 @@ function getCompiledGlob(glob) {
 function invalidateGlobCompileCache() { globCompileCache.clear(); }
 
 // First matching rule wins (state.formatRules sorted by .order); a file
-// matching no rule falls back to the builtin default format.
+// matching no rule falls back to the builtin default format. A trailing
+// ".gz" is looked through (fileNameGlobTest), so "app.log.gz" resolves like
+// "app.log" unless a rule names the ".gz" itself.
 function resolveFormatIdForFilename(name) {
   const rules = state.formatRules.slice().sort((a, b) => a.order - b.order);
   for (const r of rules) {
-    if (getCompiledGlob(r.glob).test(name)) return r.formatId;
+    if (fileNameGlobTest(r.glob, name)) return r.formatId;
   }
   return DEFAULT_FORMAT_ID;
 }
@@ -11861,9 +12003,11 @@ function hlStripeGradient(colors) {
 // tokRanges (optional): syntax-token ranges ({start, end, cls}, sorted,
 // non-overlapping — jsonTokenRanges/xmlTokenRanges) of a plain-text line,
 // the innermost layer: each segment inside a token gets that token's span.
-function markCombinedHtml(text, ranges, hlRanges, tokRanges) {
+// findRanges (optional): find-bar hits ([start, end] pairs, see findMatchRanges).
+function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
   const hasTok = !!(tokRanges && tokRanges.length);
-  if ((!hlRanges || !hlRanges.length) && !hasTok) return markRangesHtml(text, ranges);
+  const hasFind = !!(findRanges && findRanges.length);
+  if ((!hlRanges || !hlRanges.length) && !hasTok && !hasFind) return markRangesHtml(text, ranges);
   hlRanges = hlRanges || [];
   const len = text.length;
   const bounds = new Set([0, len]);
@@ -11871,6 +12015,7 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges) {
   for (const [rs, re] of ranges) { addBound(rs); addBound(re); }
   for (const r of hlRanges) { addBound(r.start); addBound(r.end); }
   if (hasTok) for (const r of tokRanges) { addBound(r.start); addBound(r.end); }
+  if (hasFind) for (const [fs, fe] of findRanges) { addBound(fs); addBound(fe); }
   const pts = [...bounds].sort((a, b) => a - b);
   let out = "", ti = 0;
   for (let i = 0; i < pts.length - 1; i++) {
@@ -11882,16 +12027,21 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges) {
       if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '">' + slice + "</span>";
     }
     const marked = ranges.some(r => r[0] <= s && r[1] >= e);
+    // Find-bar hit (FEATURE_BACKLOG.md #3): its own background class, which
+    // takes precedence over the filter mark's for the same characters — the
+    // search is what the person is looking at right now. Rule stripes still
+    // stack on top of it exactly as they do on a filter mark.
+    const found = hasFind && findRanges.some(r => r[0] <= s && r[1] >= e);
     const colors = [];
     for (const r of hlRanges) {
       if (r.start <= s && r.end >= e && !colors.includes(r.color)) colors.push(r.color);
     }
-    if (!marked && !colors.length) { out += slice; continue; }
+    if (!marked && !found && !colors.length) { out += slice; continue; }
     const style = colors.length
       ? ' style="background-image:' + hlStripeGradient(colors) +
         ';background-repeat:no-repeat;background-position:left bottom;background-size:100% ' + HL_MATCH_STRIPE_H + 'px"'
       : "";
-    out += '<mark class="' + (marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg"' + style + '>' + slice + '</mark>';
+    out += '<mark class="' + (found ? "find-match-mark" : marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg"' + style + '>' + slice + '</mark>';
   }
   return out;
 }
@@ -11910,7 +12060,12 @@ function buildMatchMarkContext(includeFilterMatches) {
   return {
     nodes, specs: nodes.map(textFilterMatchSpec),
     hlNodes, hlSpecs: hlNodes.map(textFilterMatchSpec),
-    active: !!(nodes.length || hlNodes.length),
+    // The find bar's current query (FEATURE_BACKLOG.md #3) marks every
+    // displayed column, in every view, while the bar is open — the same
+    // "highlight all" a browser's find does, independent of both toggles
+    // above (it's an explicit, transient search, not a display preference).
+    findSpec: activeFindSpec(),
+    active: !!(nodes.length || hlNodes.length || activeFindSpec()),
   };
 }
 
@@ -11922,7 +12077,8 @@ function markFieldHtml(mm, text, columnKey, tokRanges) {
   return markCombinedHtml(text,
     matchRangesFor(text, columnKey, mm.nodes, mm.specs),
     highlightMatchRangesFor(text, columnKey, mm.hlNodes, mm.hlSpecs),
-    tokRanges);
+    tokRanges,
+    mm.findSpec ? findMatchRanges(text, mm.findSpec) : null);
 }
 
 // Clickable local file paths (desktop build only — see openFpPathMenu):
@@ -13439,6 +13595,7 @@ function applyFhView(view) {
     if (wasOnTableOrPlot) renderMainView(); // content component switches back from Table/Plot to #fhSplit
   }
   updateViewBarRowActions();
+  findRefresh(); // FEATURE_BACKLOG.md #3: a tab switch changes which view the find bar searches
   localStorage.setItem(FH_LAYOUT_STORAGE_KEY, fhLayout);
   // Remember which tab the active node was left on, so a later switch back
   // to it can restore the same view (Settings -> Behavior "When switching
@@ -13779,7 +13936,7 @@ function applyNavWaypoint(wp) {
   // Same correctness requirement as revealInHighlightView's: a target inside
   // a collapsed gap has no row to scroll to. contextGaps only exist once the
   // Context view has been built for this node, hence after render().
-  if (wp.contextAnchor && applyContextJumpExpansion(wp.contextAnchor.id)) renderHighlightView();
+  if (wp.contextAnchor && applyContextJumpExpansion(wp.contextAnchor.id)) { renderHighlightView(); findRefresh(); }
   const scroller = activeNavScroller();
   if (scroller === tableBody) {
     if (!restoreViewAnchor(wp.filterAnchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical) && wp.rawScrollTop != null) {
@@ -13849,6 +14006,7 @@ tableHeaderEl.addEventListener("click", ev => {
     state.sortDir = "asc";
   }
   renderTable();
+  findRefresh(); // a re-sort reorders the list the find bar's hit indices point into
 });
 
 // Decides which view (Context/Filtered/Table/Plot/Stacked) to land on when
@@ -13943,6 +14101,7 @@ function renderInner() {
     refreshColumnState();
   }
   renderMainView();
+  findRefresh(); // FEATURE_BACKLOG.md #3: re-scan the find bar's hits if the current view's list changed
   renderStatus();
   updateDetailPanel();
   updateTailJumpBtn();
@@ -14156,6 +14315,7 @@ function renderMainView() {
   // stale and built when it is revealed (showFhTab/applyFhView).
   if (contextViewVisible()) renderHighlightView(true); // highlightColorMap was computed fresh above
   else contextViewStale = true;
+  findRefresh(); // see render() — also covers renderMainView's direct callers
 }
 
 // Whether the Context view (#highlightWrap) is on screen: Stacked shows it
@@ -20923,9 +21083,9 @@ function anyEscapeOverlayOpen() {
   const overlayIds = [
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
-    "csvExportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
+    "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
-    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
     const e = document.getElementById(overlayIds[i]);
@@ -22144,6 +22304,7 @@ function selectEntry(entryId, opts) {
   // full re-render here would break native double-click detection.
   updateSelectedRowClass(previousId);
   updateDetailPanel();
+  findRefresh(); // the find bar's "n / m" follows the selection
 }
 
 // Highlight-view counterpart of selectEntry — same shape, scrolls its own
@@ -22161,6 +22322,7 @@ function selectHighlightEntry(entryId, opts) {
   }
   updateSelectedRowClass(previousId);
   updateDetailPanel();
+  findRefresh(); // see selectEntry — also picks up a Context list rebuilt right before this call
 }
 
 // PiP exit-before-jump (see docs/desktop.md "Picture-in-picture"): while the
@@ -25110,6 +25272,99 @@ function readFileWithProgress(file, onProgress) {
   });
 }
 
+/* ===================== gzip-compressed logs (.gz) =====================
+   A rotated log like "app.log.1.gz" opens transparently on every route that
+   ends in loadOneFileIntoTree (drag-drop, picker, the desktop wrapper's
+   native pick/drop, folder watch, ZIP entries) plus loadUrlIntoTree (?url=,
+   the desktop file-association route) and the format dialog's example-line
+   loader. Detection is by CONTENT (the two gzip magic bytes 1f 8b), never
+   by extension alone: a ".gz" that isn't actually compressed (e.g. a server
+   that already undid the Content-Encoding) just reads as plain text, and a
+   gzip stream without the extension still decompresses. Decompression is
+   the browser's native DecompressionStream("gzip") — the same Web API the
+   ZIP inflate path (readZipEntries' extract()) already uses, no library,
+   and identical in the browser and the Tauri desktop build (the Rust side
+   never reads log content itself; it only serves raw bytes over
+   philogg://local, so there is nothing to decompress natively).
+   The compressed bytes are streamed in chunk by chunk (Blob.stream()) and
+   the inflated output collected once — never more resident at once than
+   the ZIP path's own compressed+inflated pair.
+   Where the NAME matters (format rules, folder-watch patterns/log-file
+   detection), a trailing ".gz" is looked through (stripGzipExt,
+   fileNameGlobTest) — the node itself keeps its real on-disk name.
+   A gzipped file is always a static snapshot: tailing its raw compressed
+   bytes would be meaningless, so no tail is attached on load, and tailTick
+   drops a tail reattached later (session restore, folder rescan) the first
+   time it sees the gzip magic. */
+function isGzipBytes(bytes) {
+  return !!bytes && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+async function isGzipBlob(blob) {
+  if (!blob || blob.size < 2) return false;
+  return isGzipBytes(new Uint8Array(await blob.slice(0, 2).arrayBuffer()));
+}
+function stripGzipExt(name) {
+  return String(name || "").replace(/\.gz$/i, "");
+}
+// Glob test against a file name, looking through a trailing ".gz" — and,
+// behind it, a logrotate counter — as further chances: "*.log" still
+// matches "app.log.gz" and "app.log.1.gz" (the same "is this that log?"
+// reading isCompatibleFolderFile applies), while an explicit "*.gz" rule
+// keeps matching the real name first. A name without ".gz" is tested as-is
+// only, exactly as before.
+function fileNameGlobTest(glob, name) {
+  const re = getCompiledGlob(glob);
+  if (re.test(name)) return true;
+  const stripped = stripGzipExt(name);
+  if (stripped === name) return false;
+  if (re.test(stripped)) return true;
+  const unrotated = stripped.replace(/\.\d+$/, "");
+  return unrotated !== stripped && re.test(unrotated);
+}
+// Streams `blob` through DecompressionStream("gzip"); resolves with the
+// inflated bytes. onProgress(loadedCompressed, totalCompressed) fires per
+// consumed chunk. A corrupt/truncated stream rejects (the decompressor
+// errors on the bad chunk or on close), which callers surface like any
+// other read failure.
+async function gunzipBlob(blob, onProgress) {
+  const ds = new DecompressionStream("gzip");
+  const inflated = new Response(ds.readable).arrayBuffer();
+  inflated.catch(() => {}); // the writer side below reports the same error
+  const writer = ds.writable.getWriter();
+  // Blob.stream() everywhere real; the Response fallback only exists for
+  // environments whose Blob lacks it (jsdom in the regression suite).
+  const source = typeof blob.stream === "function" ? blob.stream() : new Response(await blob.arrayBuffer()).body;
+  const reader = source.getReader();
+  let loaded = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writer.write(value);
+      loaded += value.byteLength;
+      if (onProgress) onProgress(loaded, blob.size);
+    }
+    await writer.close();
+  } catch (err) {
+    try { reader.cancel(); } catch { /* already done */ }
+    writer.abort(err).catch(() => {});
+    throw err;
+  }
+  return new Uint8Array(await inflated);
+}
+// File-level wrapper: returns { file, gzip } — the file itself when it isn't
+// gzip, otherwise a new in-memory File carrying the inflated bytes under the
+// ORIGINAL name (callers strip ".gz" only where a name is interpreted).
+async function gunzipFileIfCompressed(file, onProgress) {
+  if (!(await isGzipBlob(file))) return { file, gzip: false };
+  const bytes = await gunzipBlob(file, onProgress);
+  return { file: new File([bytes], file.name, { lastModified: file.lastModified }), gzip: true };
+}
+async function gunzipBytesIfCompressed(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return isGzipBytes(u8) ? await gunzipBlob(new Blob([u8])) : u8;
+}
+
 const READ_WEIGHT = 0.55;  // share of the bar spent reading the file from disk
 const PARSE_WEIGHT = 0.45; // share of the bar spent parsing it into entries
 
@@ -25145,6 +25400,19 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
 
+  // gzip (see "gzip-compressed logs" above): inflated right before the text
+  // read, as the read phase's own progress — the text read of the in-memory
+  // result is then near-instant. A gzip file never tails (see below). The
+  // native route never inflates: Rust rejects gzip bytes up front
+  // (parse_log_file), which lands in its ordinary JS fallback here.
+  let gzip = false;
+  const inflate = async () => {
+    ({ file, gzip } = await gunzipFileIfCompressed(file, (loaded, total) => {
+      node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
+      scheduleLoadRender(node.id);
+    }));
+  };
+
   const fmt0 = state.logFormats.find(f => f.id === node.formatId);
   if (fmt0 && fmt0.mode === "meta") {
     // A meta-format file is fanned out into per-target virtual files and
@@ -25153,7 +25421,9 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     // live tail/localPath is wired for a meta-format file in v1 (see
     // loadMetaFormatText's own comment).
     deleteNode(node.id);
-    const text = await readFileWithProgress(file || await handle.getFile(), () => {});
+    if (!file) file = await handle.getFile();
+    await inflate();
+    const text = await readFileWithProgress(file, () => {});
     return await loadMetaFormatText(name, text, fmt0);
   }
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
@@ -25182,7 +25452,9 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
       }
     }
     if (file) {
+      await inflate();
       const text = await readFileWithProgress(file, (loaded, total) => {
+        if (gzip) return; // the inflate above already drove the read share of the bar
         node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
         scheduleLoadRender(node.id);
       });
@@ -25216,7 +25488,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   // explicit design anyway — see mergeFiles' own comment).
   const historyMatch = await matchFileHistory(node);
   if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
-  if (handle) {
+  if (handle && !gzip) { // a gzip file is a static snapshot — never tailed
     node.tail = {
       handle,
       offset: size,        // bytes consumed so far; the poll reads only file.slice(offset)
@@ -25226,6 +25498,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
       errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
       lastGrowth: Date.now(), // drives the live dot's staleness window (isTailLive)
       wasLive: true,       // tailTick's own bookkeeping to know when to re-render on a stale flip
+      gzipChecked: true,   // just read: known not gzip (see tailTick)
     };
     state.tailFollow = true; // a freshly opened live file starts in follow mode
   }
@@ -25549,7 +25822,7 @@ function nativeDirHandle(path, name) {
       // too, or it filters them out on the Rust side before scanFolderHandle
       // ever gets a chance to widen anything.
       const [listed, subdirs] = await Promise.all([
-        window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS.concat(
+        window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS.concat([GZIP_LOG_EXTENSION],
           INLINE_TEXT_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e))),
         typeof window.philogg.listSubfolders === "function"
           ? window.philogg.listSubfolders(path) : Promise.resolve([]),
@@ -25621,6 +25894,7 @@ async function loadUrlIntoTree(url) {
   // meta-format is split in JS, so it always takes the fetch below.
   let node = null;
   let size = null;
+  let gzip = false; // see "gzip-compressed logs" — never tailed
   const formatId = resolveFormatIdForFilename(name);
   const fmt = state.logFormats.find(f => f.id === formatId);
   if (canParseNatively(urlTailHandle(url)) && !(fmt && fmt.mode === "meta")) {
@@ -25635,7 +25909,8 @@ async function loadUrlIntoTree(url) {
       // Rendered once, at the end of this function (tail included).
       if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
     } catch (err) {
-      // Not natively parseable — the fetch below fills this same node.
+      // Not natively parseable (including a gzip file, which Rust rejects
+      // up front) — the fetch below fills this same node.
     }
   }
   if (size === null) {
@@ -25653,7 +25928,16 @@ async function loadUrlIntoTree(url) {
       return;
     }
     const buf = await res.arrayBuffer();
-    const text = new TextDecoder().decode(buf);
+    gzip = isGzipBytes(new Uint8Array(buf, 0, Math.min(2, buf.byteLength)));
+    let bytes;
+    try {
+      bytes = await gunzipBytesIfCompressed(buf); // see "gzip-compressed logs"
+    } catch (err) {
+      if (node) deleteNode(node.id);
+      showCopyToast(`Could not decompress log from URL (${err.message})`);
+      return;
+    }
+    const text = new TextDecoder().decode(bytes);
     node = await addFile(name, text, undefined, undefined, node || undefined);
     size = buf.byteLength;
   }
@@ -25662,7 +25946,8 @@ async function loadUrlIntoTree(url) {
   // http(s) report link has no OS folder to reveal, but the context menu
   // still offers "Copy URL" for it (see openTreeContextMenu).
   node.sourceUrl = url;
-  if (isDesktopLocalUrl(url)) {
+  // A gzip file never tails (see "gzip-compressed logs").
+  if (isDesktopLocalUrl(url) && !gzip) {
     node.tail = {
       handle: urlTailHandle(url),
       offset: size,
@@ -25672,6 +25957,7 @@ async function loadUrlIntoTree(url) {
       errorCount: 0,
       lastGrowth: Date.now(),
       wasLive: true,
+      gzipChecked: true, // just read: known not gzip (see tailTick)
     };
     state.tailFollow = true;
   }
@@ -25716,8 +26002,10 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
   if (formatDialogOpen() && Array.isArray(files) && files.length) {
     const res = await fetch(files[0].url);
     if (!res.ok) { showCopyToast(`Couldn't open "${files[0].name}" (HTTP ${res.status})`); return; }
-    const bytes = await res.arrayBuffer();
-    fwzSuggestRuleFromFilename(files[0].name);
+    let bytes;
+    try { bytes = await gunzipBytesIfCompressed(await res.arrayBuffer()); }
+    catch (err) { showCopyToast(`Couldn't open "${files[0].name}" (${err.message})`); return; }
+    fwzSuggestRuleFromFilename(stripGzipExt(files[0].name));
     fwzAppendText(new TextDecoder().decode(bytes.slice(0, 512 * 1024)));
     return;
   }
@@ -26000,6 +26288,23 @@ async function tailTick() {
     t.busy = true;
     try {
       const f = await getPartialReadFile(t.handle);
+      // A gzip file is a static snapshot (see "gzip-compressed logs"): no
+      // load path attaches a tail to one (and marks the tail it does attach
+      // gzipChecked — it just read the bytes), but a reattach that only
+      // knows the handle (session restore's tryReattachFileTail, a folder
+      // rescan's mergeScannedFiles) can — checked once per such tail (a
+      // 2-byte read, a Range request on a ranged view), dropped here before
+      // its raw compressed bytes could ever be appended.
+      if (!t.gzipChecked) {
+        t.gzipChecked = true;
+        let gzip = false;
+        try { gzip = await isGzipBlob(f); } catch { /* unreadable head — the normal read below reports it */ }
+        if (gzip) {
+          delete node.tail;
+          changedRootIds.push(id);
+          return;
+        }
+      }
       let rotated = false;
       if (f.size < t.offset) {
         // File shrank — truncated or rotated. Start over with the new content.
@@ -26224,10 +26529,20 @@ const FOLDER_SCAN_MS = 3000;
 // Currently only *.log (CLAUDE.md/PROJECT.md's one supported log format) —
 // an array so a future "pluggable parser" session (FEATURE_BACKLOG.md) has
 // one obvious place to widen this.
+// A gzip-compressed log counts too (see "gzip-compressed logs"): its name
+// minus ".gz" must be a log name, where a rotation counter is allowed —
+// "app.log.gz" and logrotate's "app.log.1.gz" both qualify, a bare
+// "data.gz" or "app.tar.gz" does not. GZIP_LOG_EXTENSION is what the
+// desktop wrapper's native listing is additionally told to let through
+// (nativeDirHandle) — it filters by suffix only, the page refines here.
 const FOLDER_WATCH_EXTENSIONS = [".log"];
+const GZIP_LOG_EXTENSION = ".gz";
 function isCompatibleFolderFile(name) {
   const lower = name.toLowerCase();
-  return FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext));
+  if (FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext))) return true;
+  if (!lower.endsWith(GZIP_LOG_EXTENSION)) return false;
+  const inner = stripGzipExt(lower).replace(/\.\d+$/, "");
+  return FOLDER_WATCH_EXTENSIONS.some(ext => inner.endsWith(ext));
 }
 
 // A pattern's fields double as the per-pattern "auto rules" (see
@@ -26249,7 +26564,7 @@ function defaultFolderSettings() {
 // and the same getCompiledGlob() used there.
 function matchFolderPattern(settings, rec) {
   const patterns = settings && settings.patterns && settings.patterns.length ? settings.patterns : [defaultFolderPattern()];
-  return patterns.find(p => getCompiledGlob(p.pattern || "*").test(rec.name)) || null;
+  return patterns.find(p => fileNameGlobTest(p.pattern || "*", rec.name)) || null;
 }
 
 // A folder file's identity key for merging across rescans: relPath when
@@ -26321,7 +26636,7 @@ async function scanFolderHandle(dirHandle, settings) {
       // per-folder auto-open/auto-close/show-newest rules below still key
       // off it alone — those stay log-only).
       if (entryHandle.kind !== "file" || !(isCompatibleFolderFile(entryHandle.name) || inlineViewableKind(entryHandle.name))) continue;
-      if (!patterns.some(p => getCompiledGlob(p.pattern || "*").test(entryHandle.name))) continue;
+      if (!patterns.some(p => fileNameGlobTest(p.pattern || "*", entryHandle.name))) continue;
       const relPath = relDir ? relDir + "/" + entryHandle.name : entryHandle.name;
       const rec = { name: entryHandle.name, relPath, handle: entryHandle };
       if (needMtime) {
@@ -27019,6 +27334,13 @@ async function probeFolderFileRangeUncached(folder, rec) {
   // existing "probed, no range found" sentinel rather than probe wrong.
   const fmt0 = state.logFormats.find(f => f.id === formatId);
   if (fmt0 && fmt0.mode === "meta") return (rec._range = null);
+  // Same sentinel for a gzip file: its head/tail byte windows are
+  // compressed data, and inflating the whole file just to probe it would
+  // defeat the probe's whole point (cheap, near-constant cost). Also keeps
+  // loadFolderFileWindowed (gated on rec._range) on its full-load fallback.
+  let gzip = false;
+  try { gzip = await isGzipBlob(file); } catch { /* unreadable head — probeFileTimeRange decides below */ }
+  if (gzip) return (rec._range = null);
   return (rec._range = await probeFileTimeRange(file, formatId));
 }
 
@@ -28205,6 +28527,400 @@ filterForm.addEventListener("submit", ev => {
   commitFilter();
 });
 el("#btnCloseFilterPopup").addEventListener("click", closeFilterPopup);
+
+
+/* ===================== Find bar (Ctrl+G / F3 — FEATURE_BACKLOG.md #3) =====================
+   Incremental, NON-destructive search inside whichever log view is current:
+   the Context view (currentHighlightViewEntries — its matches plus whatever
+   context rows are revealed; collapsed gaps are not "in the view" and are
+   not searched) or the Filtered view (currentViewEntries — post filter
+   chain, post level quick-filter, in its displayed sort order). Table/Plot
+   and the Link view have no plain entry list to walk, so the bar reports
+   "Not in this view" there. Before this existed, Ctrl+F was the only search
+   and it always created a filter node — "just look for this once" cost a
+   tree node you then deleted. Now: search first, promote to a filter only
+   when needed ("Add as filter", which calls the exact createFilterNode the
+   Ctrl+F popup's commitFilter calls — no new node field, nothing new to
+   thread through the persistence carriers).
+
+   Shortcut decision: Ctrl+F stays "new filter" (least disruptive — it's the
+   app's core idiom and the empty-state hint), the find bar takes the
+   browser's own "find next" keys instead: Ctrl+G opens it (focuses it if
+   already open, steps to the next hit if already focused), F3/Shift+F3 step
+   next/previous from anywhere, Enter/Shift+Enter inside the input,
+   Ctrl+Enter adds the search as a filter, Esc closes it. The three chords
+   are rebindable in Settings -> Shortcuts.
+
+   The query language is exactly the filter popup's: a literal substring
+   (case-insensitive unless "Aa"), a [*:...]/[*] wildcard pattern, or a real
+   RegExp with ".*" — compiled via textFilterMatchSpec and tested per entry
+   via textFilterMatches, the same two functions a "text" filter node and its
+   match marking use, so "Add as filter" is guaranteed to keep exactly the
+   rows the search found. Hits are ROWS (the "n / m" counter counts
+   matching entries, like the Context view's own match navigator), marked
+   in every displayed column via markFieldHtml's findRanges.
+
+   Scale: the search runs over the view's entry array (the data model),
+   never the DOM — so it covers rows the virtualized renderer hasn't built —
+   in time-sliced chunks (FIND_SCAN_SLICE_MS per slice, setTimeout(0)
+   yields), so a view of hundreds of thousands of rows never blocks typing;
+   a small view completes inside the first, synchronous slice. Typing is
+   debounced (FIND_DEBOUNCE_MS, same 150ms as the filter popup's live
+   match). Hits are stored as ascending indices into that array, so a
+   next/previous step is a binary search, not a rescan. A view list that is
+   rebuilt (new filter, tail append, sort, tab switch) is noticed by array
+   identity (findRefresh, called from render()/renderMainView/selection) and
+   rescanned; a step requested mid-scan is remembered (pendingDelta) and
+   applied the moment the scan finishes. */
+const findBar = el("#findBar");
+const findInput = el("#findInput");
+const findCaseBtn = el("#findCaseBtn");
+const findRegexBtn = el("#findRegexBtn");
+const findCountEl = el("#findCount");
+const findPrevBtn = el("#findPrevBtn");
+const findNextBtn = el("#findNextBtn");
+const findAddFilterBtn = el("#findAddFilterBtn");
+const FIND_DEBOUNCE_MS = 150;
+const FIND_SCAN_SLICE_MS = 12;
+
+const findState = {
+  query: "", caseSensitive: false, isRegex: false,
+  spec: null,      // textFilterMatchSpec output, null = empty or invalid query
+  test: null,      // entry => boolean, same semantics as a "text" filter node
+  invalid: false,
+  kind: null,      // "filter" | "highlight" — the view the hits below belong to
+  entries: null,   // the exact array the hits index into (identity = staleness check)
+  hits: [],        // ascending indices into `entries`
+  done: true,      // false while a time-sliced scan is still running
+  gen: 0,          // bumped per scan, so a superseded scan's slices stop
+  cur: -1,         // index into `hits` of the last hit stepped to
+  pendingDelta: 0, // a next/prev requested before the scan finished
+  autoJump: false, // jump to the first hit once the scan finishes (typing)
+};
+let findDebounceTimer = null;
+let findScanTimer = null;
+
+function findBarOpen() { return !findBar.classList.contains("hidden"); }
+// What markFieldHtml should mark right now — nothing unless the bar is open.
+function activeFindSpec() { return findBarOpen() ? findState.spec : null; }
+
+// The view the find bar walks, or null when the current view has no plain
+// entry list (Table/Plot, the Link view, nothing loaded). Tabs layout: the
+// tab on screen. Stacked layout: whichever pane was last selected in
+// (state.entriesView), the same rule plain arrow-key navigation follows.
+function findTargetView() {
+  if (!state.rootIds.length || state.inlineViewer || state.folderView) return null;
+  if (fhSplit.style.display === "none") return null;
+  const kind = fhLayout === "tabs"
+    ? (fhActiveTab === "highlight" ? "highlight" : "filter")
+    : (state.entriesView === "highlight" ? "highlight" : "filter");
+  if (kind === "filter" && linkWrap.style.display !== "none") return null;
+  return { kind, entries: kind === "highlight" ? currentHighlightViewEntries : currentViewEntries };
+}
+
+function pressedGet(btn) { return btn.classList.contains("active"); }
+function pressedSet(btn, on) {
+  btn.classList.toggle("active", !!on);
+  btn.setAttribute("aria-pressed", on ? "true" : "false");
+}
+
+// Re-renders the visible rows of both log views (and the detail panel) so
+// the find marks follow the query — only the virtualized window, never the
+// whole list. Justified under the render scope rule: every row's own
+// content (its <mark>s) changes.
+function refreshFindMarks() {
+  if (!state.rootIds.length || fhSplit.style.display === "none") return;
+  if (tableWrap.style.display !== "none") renderVisibleRows();
+  renderHighlightVisibleRows();
+  updateDetailPanel();
+}
+
+// Recompiles the query from the input/toggles and restarts the scan.
+// autoJump: incremental "find as you type" — once the scan finishes, select
+// the first hit at or after the current selection (or the top visible row).
+function applyFindQuery(autoJump) {
+  clearTimeout(findDebounceTimer);
+  findDebounceTimer = null;
+  const q = findInput.value;
+  const caseSensitive = pressedGet(findCaseBtn);
+  const isRegex = pressedGet(findRegexBtn);
+  findState.query = q;
+  findState.caseSensitive = caseSensitive;
+  findState.isRegex = isRegex;
+  const spec = q ? textFilterMatchSpec({ value: q, caseSensitive, isRegex, wholeWord: false }) : null;
+  findState.spec = spec;
+  findState.invalid = !!q && !spec;
+  findState.test = spec
+    ? (e => textFilterMatches(e, q, caseSensitive, null, spec.wildcardRegex, spec.wildcardColumns, spec.regex, false))
+    : null;
+  findInput.classList.toggle("input-regex-error", findState.invalid);
+  findState.pendingDelta = 0;
+  findState.autoJump = !!autoJump && !!spec;
+  refreshFindMarks();
+  startFindScan();
+}
+
+function startFindScan() {
+  clearTimeout(findScanTimer);
+  const gen = ++findState.gen;
+  const view = findTargetView();
+  findState.kind = view ? view.kind : null;
+  findState.entries = view ? view.entries : null;
+  findState.hits = [];
+  findState.cur = -1;
+  findState.done = false;
+  if (!view || !findState.test) { findState.done = true; onFindScanDone(); return; }
+  const entries = view.entries, test = findState.test, hits = findState.hits;
+  let i = 0;
+  const slice = () => {
+    if (gen !== findState.gen) return; // superseded by a newer query/view
+    const t0 = performance.now();
+    while (i < entries.length) {
+      const end = Math.min(entries.length, i + 2048);
+      for (; i < end; i++) if (test(entries[i])) hits.push(i);
+      if (performance.now() - t0 >= FIND_SCAN_SLICE_MS) break;
+    }
+    if (i < entries.length) { updateFindCounter(); findScanTimer = setTimeout(slice, 0); return; }
+    findState.done = true;
+    onFindScanDone();
+  };
+  slice();
+}
+
+function onFindScanDone() {
+  const delta = findState.pendingDelta;
+  findState.pendingDelta = 0;
+  // Typing's own jump first, THEN any step pressed while the scan was still
+  // running — typing then F3 lands on the second hit, as it would have with
+  // an instant scan.
+  if (findState.autoJump) {
+    findState.autoJump = false;
+    if (findState.hits.length) findGoFrom(1, true);
+  }
+  if (delta) findGoFrom(delta, false);
+  updateFindCounter();
+}
+
+// Called after anything that may have rebuilt the current view's list (see
+// the section comment) — rescans on a changed list, otherwise just refreshes
+// the counter (its "n" follows the selection).
+function findRefresh() {
+  if (!findBarOpen()) return;
+  if (!findState.test) { updateFindCounter(); return; }
+  const view = findTargetView();
+  if ((view ? view.entries : null) !== findState.entries) { startFindScan(); return; }
+  // Same array, other view: on a file node the Context and Filtered views
+  // share the file's own entries array, so the hits stay valid — only which
+  // view a step selects in changes.
+  if (view) findState.kind = view.kind;
+  updateFindCounter();
+}
+
+// First k with hits[k] >= x (hits.length if none).
+function findLowerBound(hits, x) {
+  let lo = 0, hi = hits.length;
+  while (lo < hi) { const mid = (lo + hi) >> 1; if (hits[mid] < x) lo = mid + 1; else hi = mid; }
+  return lo;
+}
+
+// Where a step starts from: the selected row if it's in the view, otherwise
+// the top visible row (so it also works straight after scrolling by hand —
+// same rule as the Context view's own match navigation).
+function findAnchor(entries) {
+  if (state.selectedId) {
+    const idx = entries.findIndex(e => e.id === state.selectedId);
+    if (idx !== -1) return { idx, fromSelection: true };
+  }
+  const isHl = findState.kind === "highlight";
+  const offsets = isHl ? highlightRowOffsets : (needsRowOffsets() ? tableRowOffsets : null);
+  const scrollTop = isHl ? highlightBody.scrollTop : physicalToLogicalScrollPx(tableBody.scrollTop);
+  const topId = topVisibleEntryId(entries, offsets, scrollTop);
+  const idx = topId ? entries.findIndex(e => e.id === topId) : -1;
+  return { idx: Math.max(0, idx), fromSelection: false };
+}
+
+// Steps to the next (delta 1) / previous (delta -1) hit, wrapping around.
+// inclusive: the anchor row itself counts (incremental typing keeps the
+// current row selected while it still matches).
+function findGoFrom(delta, inclusive) {
+  const hits = findState.hits, entries = findState.entries;
+  if (!hits.length || !entries) { updateFindCounter(); return; }
+  const cur = findState.cur;
+  let k;
+  if (!inclusive && cur >= 0 && cur < hits.length && entries[hits[cur]] && entries[hits[cur]].id === state.selectedId) {
+    k = (cur + delta + hits.length) % hits.length; // repeated F3: no findIndex at all
+  } else {
+    const anchor = findAnchor(entries);
+    // Without a selection the top visible row is only a reading position,
+    // not a hit already "seen" — the next hit may be that very row.
+    const incl = inclusive || !anchor.fromSelection;
+    if (delta > 0) {
+      k = findLowerBound(hits, incl ? anchor.idx : anchor.idx + 1);
+      if (k >= hits.length) k = 0;
+    } else {
+      k = findLowerBound(hits, incl ? anchor.idx + 1 : anchor.idx) - 1;
+      if (k < 0) k = hits.length - 1;
+    }
+  }
+  findGoToHit(k);
+}
+
+function findGoToHit(k) {
+  findState.cur = k;
+  const idx = findState.hits[k];
+  const entry = findState.entries[idx];
+  if (!entry) return;
+  // Centered, like the Context view's match navigator — the hit reads with
+  // its surrounding rows instead of pinned to a viewport edge.
+  if (findState.kind === "highlight") selectHighlightEntry(entry.id, { scroll: true, center: true, index: idx });
+  else selectEntry(entry.id, { scroll: true, center: true, index: idx });
+  updateFindCounter();
+}
+
+// Public step (buttons, F3/Shift+F3, Enter/Shift+Enter). A stale or still-
+// running scan defers the step until it's done instead of walking hits
+// that point into the wrong list.
+function findStep(delta) {
+  if (!findBarOpen()) return;
+  if (findDebounceTimer) applyFindQuery(false); // stepped right after typing: search what's typed first
+  if (!findState.test) return;
+  const view = findTargetView();
+  if (!view) { updateFindCounter(); return; }
+  if (view.entries !== findState.entries) { startFindScan(); findState.pendingDelta = delta; if (findState.done) onFindScanDone(); return; }
+  findState.kind = view.kind; // see findRefresh: same array, possibly the other view
+  if (!findState.done) { findState.pendingDelta = delta; return; }
+  findGoFrom(delta, false);
+}
+
+function updateFindCounter() {
+  if (!findBarOpen()) return;
+  const view = findTargetView();
+  const hits = findState.hits;
+  let text = "", cls = "find-count";
+  if (!findInput.value) text = "";
+  else if (findState.invalid) { text = findState.isRegex ? "Invalid regex" : "Invalid pattern"; cls += " error"; }
+  else if (!view) { text = "Not in this view"; cls += " warn"; }
+  else if (!findState.done) text = hits.length.toLocaleString("de-DE") + "…";
+  else if (!hits.length) { text = "No results"; cls += " warn"; }
+  else {
+    const cur = findState.cur;
+    const onHit = cur >= 0 && cur < hits.length && findState.entries[hits[cur]] &&
+      findState.entries[hits[cur]].id === state.selectedId;
+    text = onHit
+      ? (cur + 1).toLocaleString("de-DE") + " / " + hits.length.toLocaleString("de-DE")
+      : hits.length.toLocaleString("de-DE") + (hits.length === 1 ? " match" : " matches");
+  }
+  findCountEl.textContent = text;
+  findCountEl.className = cls;
+  const canStep = !!(findState.test && view && (!findState.done || hits.length));
+  findPrevBtn.disabled = !canStep;
+  findNextBtn.disabled = !canStep;
+  findAddFilterBtn.disabled = !(findState.spec && state.nodes[state.activeId]);
+}
+
+function openFindBar() {
+  if (!state.rootIds.length) return false; // nothing to search
+  const wasOpen = findBarOpen();
+  // Browser-style prefill: a short single-line text selection (e.g. a word
+  // selected in the Entry Detail panel) becomes the query.
+  const sel = window.getSelection ? String(window.getSelection() || "") : "";
+  const prefill = !!sel && sel.length <= 200 && !/[\r\n]/.test(sel) && sel !== findInput.value;
+  if (prefill) findInput.value = sel;
+  findBar.classList.remove("hidden");
+  findInput.focus();
+  findInput.select();
+  if (!wasOpen || prefill) applyFindQuery(false);
+  return true;
+}
+
+function closeFindBar() {
+  if (!findBarOpen()) return;
+  clearTimeout(findDebounceTimer);
+  findDebounceTimer = null;
+  clearTimeout(findScanTimer);
+  findState.gen++;
+  findBar.classList.add("hidden");
+  // A focused-but-hidden input would keep every later shortcut in the
+  // main keydown handler's "inInput" bail-out.
+  if (document.activeElement === findInput) findInput.blur();
+  findState.entries = null;
+  findState.hits = [];
+  findState.done = true;
+  findState.cur = -1;
+  findState.pendingDelta = 0;
+  findState.autoJump = false;
+  refreshFindMarks(); // drop the marks (activeFindSpec() is null now)
+}
+
+// "Add as filter": the search becomes a real "text" filter node under the
+// active node — the same createFilterNode call (and the same follow-up
+// reveal+render) the Ctrl+F popup's commitFilter makes, with the find bar's
+// case/regex toggles as its caseSensitive/isRegex. The query is used as-is,
+// so the new node keeps exactly the rows the search counted.
+function addFindAsFilter() {
+  if (findDebounceTimer || findInput.value !== findState.query ||
+      pressedGet(findCaseBtn) !== findState.caseSensitive || pressedGet(findRegexBtn) !== findState.isRegex) {
+    applyFindQuery(false);
+  }
+  if (!findState.spec || !state.nodes[state.activeId]) return null;
+  const node = createFilterNode(state.activeId, "text", findState.query, false, null,
+    findState.caseSensitive, null, findState.isRegex, false);
+  closeFindBar();
+  revealFilteredView(); // a new filter's result lives in the Filtered view
+  render();
+  return node;
+}
+
+// Ctrl+G / F3 / Shift+F3, from the main keydown handler. Returns true when
+// it consumed the event.
+function handleFindShortcut(ev) {
+  const isGo = matchesShortcut(ev, "findInView");
+  const isNext = matchesShortcut(ev, "findNext");
+  const isPrev = matchesShortcut(ev, "findPrev");
+  if (!isGo && !isNext && !isPrev) return false;
+  const active = document.activeElement;
+  const inFind = active === findInput;
+  // Any OTHER text field keeps its keys (a regex being typed into the
+  // filter popup, a rename, ...); an open dialog keeps them too.
+  // An input inside a closed (.hidden) popup doesn't count: real browsers
+  // drop focus from an element that stops rendering, jsdom doesn't.
+  if (!inFind && active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT") &&
+      !active.closest(".hidden")) return false;
+  if (!findBarOpen() && anyEscapeOverlayOpen()) return false;
+  if (!state.rootIds.length) return false;
+  ev.preventDefault();
+  if (isGo) {
+    if (!findBarOpen() || !inFind) openFindBar();
+    else findStep(1);
+    return true;
+  }
+  if (!findBarOpen()) openFindBar();
+  if (findInput.value) findStep(isPrev ? -1 : 1);
+  return true;
+}
+
+findInput.addEventListener("input", () => {
+  clearTimeout(findDebounceTimer);
+  findDebounceTimer = setTimeout(() => applyFindQuery(true), FIND_DEBOUNCE_MS);
+});
+findInput.addEventListener("keydown", ev => {
+  if (ev.key !== "Enter") return;
+  ev.preventDefault();
+  if (ev.ctrlKey || ev.metaKey) { addFindAsFilter(); return; }
+  if (findDebounceTimer) { applyFindQuery(true); return; } // typed, not yet searched: this Enter IS the incremental jump
+  findStep(ev.shiftKey ? -1 : 1);
+});
+[findCaseBtn, findRegexBtn].forEach(btn => btn.addEventListener("click", () => {
+  pressedSet(btn, !pressedGet(btn));
+  findInput.focus();
+  applyFindQuery(true);
+}));
+findPrevBtn.innerHTML = ICON_CARET_UP;
+findNextBtn.innerHTML = ICON_CARET_DOWN;
+findPrevBtn.addEventListener("click", () => findStep(-1));
+findNextBtn.addEventListener("click", () => findStep(1));
+findAddFilterBtn.addEventListener("click", () => addFindAsFilter());
+el("#findCloseBtn").addEventListener("click", closeFindBar);
 
 
 /* ===================== Context menu (right-click a row) ===================== */
@@ -30276,6 +30992,449 @@ el("#csvExportConfirm").addEventListener("click", async () => {
   closeCsvExportDialog();
   await saveCsvToFile(csvText);
 });
+
+/* ===================== Export / Share (ticket-oriented) =====================
+   FEATURE_BACKLOG.md #31 + #32, combined — see docs/export.md for the
+   concept. Two outputs for communicating an analysis through a ticket:
+   (a) a bounded "Copy for ticket" snippet in one of three markup flavors
+   (Markdown / Jira wiki / plain), and (b) attachment files carrying the
+   FULL current view (.log / .csv / .tsv / standalone .html report). The
+   "current view" is the active node's result with the level quick-filter
+   applied — the Filtered view's set, in log order, without the display-
+   only sort and without bookmarks pinned in (those get their own section).
+   Everything is built straight from entry arrays (never the DOM), files
+   as chunked string parts for one Blob. Nothing leaves the machine except
+   via the explicit clipboard write / file save. */
+
+const EXPORT_FORMAT_KEY = "philogg-export-format";
+const EXPORT_EXCERPT_KEY = "philogg-export-excerpt-lines";
+const EXPORT_FORMATS = ["markdown", "jira", "plain"];
+const EXPORT_EXCERPT_DEFAULT = 20;
+const EXPORT_EXCERPT_MAX = 500;
+// Jira's description/comment limit is 32,767 characters — stay under it
+// with room to spare; every other tracker allows more.
+const TICKET_SNIPPET_MAX_CHARS = 30000;
+// One excerpt entry (a huge stack trace) can't eat the whole budget.
+const TICKET_ENTRY_MAX_CHARS = 1000;
+const TICKET_FINDINGS_MAX = 25;
+const TICKET_TEXT_MAX_CHARS = 300; // one filter-step / note / message line in the snippet
+const EXPORT_CHUNK_ENTRIES = 5000; // entries per Blob string part
+
+let exportFormat = "markdown";
+let exportExcerptLines = EXPORT_EXCERPT_DEFAULT;
+function loadExportPrefs() {
+  try {
+    const f = localStorage.getItem(EXPORT_FORMAT_KEY);
+    exportFormat = EXPORT_FORMATS.includes(f) ? f : "markdown";
+    const n = parseInt(localStorage.getItem(EXPORT_EXCERPT_KEY), 10);
+    exportExcerptLines = isNaN(n) ? EXPORT_EXCERPT_DEFAULT : Math.max(0, Math.min(EXPORT_EXCERPT_MAX, n));
+  } catch (e) { /* storage unavailable — defaults stand */ }
+}
+function saveExportPrefs() {
+  try {
+    localStorage.setItem(EXPORT_FORMAT_KEY, exportFormat);
+    localStorage.setItem(EXPORT_EXCERPT_KEY, String(exportExcerptLines));
+  } catch (e) { /* storage unavailable — choice lasts for this session only */ }
+}
+loadExportPrefs();
+
+function exportTruncate(text, max) {
+  const s = String(text == null ? "" : text);
+  return s.length > max ? s.slice(0, max) + " …[truncated]" : s;
+}
+// Collapses a multi-line note/message into one list-item-safe line.
+function exportOneLine(text, max) {
+  return exportTruncate(String(text == null ? "" : text).replace(/\s*\r?\n\s*/g, " / "), max);
+}
+
+const EXPORT_STEP_TYPE_WORDS = {
+  after: "Time", before: "Time", timerange: "Time", level: "Level", and: "AND", or: "OR",
+  link: "Link", context: "Time context", countContext: "Count context", bookmarks: "Bookmarks",
+  notes: "Notes", idset: "Entry set", sources: "Sources",
+};
+function exportColumnLabel(key) {
+  const col = activeTextFilterColumns().find(c => c.key === key);
+  return col ? col.label : key;
+}
+// One human-readable line per filter-chain step, plain text (the flavor
+// escapes it). node.name is already the auto-derived, readable condition
+// (“timeout”, /re/, ERROR, WARN, ≥ 2024-…, A ∧ B, …); a user label wins but
+// keeps the condition alongside, since the reader needs the actual rule.
+function describeExportStep(node) {
+  if (node.type === "file") return (node.merged ? "Merged file: " : "File: ") + nodeDisplayName(node);
+  const flags = [];
+  let word;
+  if (node.filterType === "text") {
+    word = nodeHasExtractableWildcards(node) ? "Extraction pattern" : node.isRegex ? "Regex" : "Text contains";
+    if (node.caseSensitive) flags.push("case-sensitive");
+    if (node.wholeWord) flags.push("whole word");
+    if (node.columns && node.columns.length) flags.push("in " + node.columns.map(exportColumnLabel).join(", "));
+  } else {
+    word = EXPORT_STEP_TYPE_WORDS[node.filterType] || "Filter";
+  }
+  let text = word === node.name ? word : word + ": " + node.name;
+  if (node.label && node.label !== node.name) text = node.label + " (" + text + ")";
+  if (node.inverted) text = "NOT " + text;
+  if (flags.length) text += " [" + flags.join(", ") + "]";
+  return text;
+}
+
+// Everything every export output needs about the active view, gathered
+// once: the entries, the chain narrative with per-step counts, sources,
+// time span, and the root file's bookmarked/annotated entries (findings).
+// null when there's nothing to export (no active node).
+function collectExportContext() {
+  const active = state.activeId && state.nodes[state.activeId];
+  if (!active) return null;
+  const rootId = getRootFileId(active.id);
+  const root = rootId && state.nodes[rootId];
+  if (!root || root.type !== "file") return null;
+  const entries = applyLevelFilter(getEntries(active.id));
+  const steps = getChain(active.id).map(n => ({
+    text: describeExportStep(n),
+    count: getEntries(n.id).length,
+  }));
+  if (state.levelFilter.size) {
+    steps.push({ text: "Level quick filter: " + [...state.levelFilter].join(", "), count: entries.length });
+  }
+  let from = Infinity, to = -Infinity;
+  for (let i = 0; i < entries.length; i++) {
+    const t = entries[i].ts;
+    if (t < from) from = t;
+    if (t > to) to = t;
+  }
+  const sources = root.merged && root.sources && root.sources.length
+    ? root.sources.map(s => s.name) : [nodeDisplayName(root)];
+  const findings = [];
+  if (state.bookmarks.size || state.notes.size) {
+    const orderIndexMap = buildOrderIndexMap(rootId);
+    const ids = new Set([...state.bookmarks.keys(), ...state.notes.keys()]);
+    ids.forEach(id => {
+      const idx = orderIndexMap.get(id);
+      if (idx === undefined) return;
+      findings.push({ idx, entry: root.entries[idx], bookmarked: state.bookmarks.has(id), note: state.notes.get(id) || "" });
+    });
+    findings.sort((a, b) => a.idx - b.idx);
+  }
+  return {
+    root, active, entries, total: root.entries.length, steps, sources,
+    from: isFinite(from) ? from : NaN, to: isFinite(to) ? to : NaN,
+    findings, generatedAt: Date.now(),
+  };
+}
+
+function exportLongestRun(text, ch) {
+  let best = 0, cur = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === ch) { cur++; if (cur > best) best = cur; } else cur = 0;
+  }
+  return best;
+}
+// The three snippet markups (see docs/export.md → "Format flavors").
+// esc() is for free text outside code; code() gets RAW text (inline code
+// can't carry escapes in Markdown, so a backtick is swapped for a look-alike).
+const TICKET_FLAVORS = {
+  markdown: {
+    h: t => "### " + t,
+    b: t => "**" + t + "**",
+    em: t => "_" + t + "_",
+    code: t => "`" + String(t).replace(/`/g, "ˋ") + "`",
+    esc: t => String(t).replace(/[\\`*_\[\]<>|~]/g, "\\$&"),
+    ol: items => items.map((t, i) => (i + 1) + ". " + t).join("\n"),
+    ul: items => items.map(t => "- " + t).join("\n"),
+    block: text => {
+      const fence = "`".repeat(Math.max(3, exportLongestRun(text, "`") + 1));
+      return fence + "\n" + text + "\n" + fence;
+    },
+  },
+  jira: {
+    h: t => "h3. " + t,
+    b: t => "*" + t + "*",
+    em: t => "_" + t + "_",
+    code: t => "{{" + TICKET_FLAVORS.jira.esc(t) + "}}",
+    esc: t => String(t).replace(/[\\*_{}\[\]|^~+!]/g, "\\$&"),
+    ol: items => items.map(t => "# " + t).join("\n"),
+    ul: items => items.map(t => "* " + t).join("\n"),
+    // {noformat}: no highlighting, no markup inside — only its own closing
+    // tag could end it early, so that one is defused.
+    block: text => "{noformat}\n" + text.replace(/\{noformat\}/gi, "{ noformat}") + "\n{noformat}",
+  },
+  plain: {
+    h: t => t + "\n" + "=".repeat(Math.min(String(t).length, 72)),
+    b: t => t,
+    em: t => t,
+    code: t => String(t),
+    esc: t => String(t),
+    ol: items => items.map((t, i) => "  " + (i + 1) + ". " + t).join("\n"),
+    ul: items => items.map(t => "  - " + t).join("\n"),
+    block: text => text.split("\n").map(l => "    " + l).join("\n"),
+  },
+};
+
+function exportPercent(x, y) {
+  if (!y) return "0%";
+  const p = x / y * 100;
+  return (p >= 10 || p === 0 ? Math.round(p) : p.toFixed(1)) + "%";
+}
+function exportFindingLine(F, f) {
+  const e = f.entry;
+  let line = (f.bookmarked ? "★ " : "") + F.code(formatTime(e.ts) + " " + (e.level || "")) + " " +
+    F.esc(exportOneLine(e.message, TICKET_TEXT_MAX_CHARS));
+  if (f.note) line += " — " + F.b("Note:") + " " + F.esc(exportOneLine(f.note, TICKET_TEXT_MAX_CHARS));
+  return line;
+}
+
+// The "Copy for ticket" snippet. Bounded: excerptLines matching entries at
+// most, each capped at TICKET_ENTRY_MAX_CHARS, the whole thing at
+// TICKET_SNIPPET_MAX_CHARS — and every cut is announced in the text.
+function buildTicketSnippet(ctx, flavor, excerptLines) {
+  const F = TICKET_FLAVORS[flavor] || TICKET_FLAVORS.markdown;
+  const out = [];
+  out.push(F.h("Log findings: " + F.esc(nodeDisplayName(ctx.active))));
+  out.push("");
+  out.push(F.b("Source:") + " " + ctx.sources.map(s => F.code(s)).join(", ") + " (" + ctx.total + " entries)");
+  if (ctx.entries.length) {
+    out.push(F.b("Time range:") + " " + F.code(formatTime(ctx.from)) + " → " + F.code(formatTime(ctx.to)) +
+      " (" + formatDuration(ctx.to - ctx.from) + ")");
+  }
+  out.push(F.b("Matched:") + " " + ctx.entries.length + " of " + ctx.total + " entries (" + exportPercent(ctx.entries.length, ctx.total) + ")");
+  out.push("");
+  out.push(F.b("Filter chain:"));
+  out.push(F.ol(ctx.steps.map(s => F.esc(exportTruncate(s.text, TICKET_TEXT_MAX_CHARS)) + " — " + s.count)));
+  if (ctx.findings.length) {
+    out.push("");
+    out.push(F.b("Bookmarks & notes (" + ctx.findings.length + "):"));
+    out.push(F.ul(ctx.findings.slice(0, TICKET_FINDINGS_MAX).map(f => exportFindingLine(F, f))));
+    const more = ctx.findings.length - TICKET_FINDINGS_MAX;
+    if (more > 0) out.push(F.em("… " + more + " more in the attached report."));
+  }
+  const footer = F.em("Exported with PhiLogg " + PHILOGG_VERSION + " on " + formatTime(ctx.generatedAt).slice(0, 16) + ".");
+  const wanted = Math.min(Math.max(0, excerptLines | 0), ctx.entries.length);
+  if (wanted > 0) {
+    // Reserve room for the headline, fence/tags, the "more" note and footer.
+    let budget = TICKET_SNIPPET_MAX_CHARS - out.join("\n").length - footer.length - 400;
+    const lines = [];
+    for (let i = 0; i < wanted; i++) {
+      const raw = exportTruncate(ctx.entries[i].raw, TICKET_ENTRY_MAX_CHARS);
+      if (raw.length + 1 > budget) break;
+      lines.push(raw);
+      budget -= raw.length + 1;
+    }
+    if (lines.length) {
+      out.push("");
+      out.push(F.b(lines.length === ctx.entries.length ? "Matching entries:"
+        : "Excerpt (first " + lines.length + " of " + ctx.entries.length + " matching entries):"));
+      out.push(F.block(lines.join("\n")));
+    }
+    const rest = ctx.entries.length - lines.length;
+    if (rest > 0) out.push(F.em("… " + rest + " more matching entries — see the attached export."));
+  } else if (ctx.entries.length) {
+    out.push("");
+    out.push(F.em("Matching entries: see the attached export."));
+  }
+  out.push("");
+  out.push(footer);
+  let text = out.join("\n");
+  // Last-resort guard (a pathological chain/notes list): never exceed the cap.
+  if (text.length > TICKET_SNIPPET_MAX_CHARS) text = text.slice(0, TICKET_SNIPPET_MAX_CHARS - 20) + "\n…[truncated]";
+  return text;
+}
+
+// Columns of the .csv/.tsv exports: exactly the log columns the loaded
+// formats show (Time, Level, middle columns incl. custom ones, Message).
+function exportTableColumns() {
+  return activeTextFilterColumns();
+}
+function exportCellValue(e, key) {
+  const v = entryColumnValue(e, key);
+  return key === "time" && !v ? formatTime(e.ts) : v; // a Link pair entry has no tsRaw
+}
+function csvEscapeExportField(v) { return csvQuoteField(v, ","); }
+function tsvEscapeExportField(v) { return String(v == null ? "" : v).replace(/\t/g, " ").replace(/\r?\n|\r/g, "\\n"); }
+
+// Chunked walk over the entry array: one string part per
+// EXPORT_CHUNK_ENTRIES entries, so a huge view is neither one giant string
+// nor a million tiny Blob parts.
+function exportChunkedParts(entries, rowFn, parts) {
+  for (let i = 0; i < entries.length; i += EXPORT_CHUNK_ENTRIES) {
+    const end = Math.min(entries.length, i + EXPORT_CHUNK_ENTRIES);
+    let chunk = "";
+    for (let j = i; j < end; j++) chunk += rowFn(entries[j]);
+    parts.push(chunk);
+  }
+  return parts;
+}
+
+const EXPORT_REPORT_CSS =
+  "body{font:14px/1.5 system-ui,-apple-system,'Segoe UI',sans-serif;color:#1f2328;background:#fff;margin:24px auto;max-width:1200px;padding:0 16px;}" +
+  "h1{font-size:20px;margin:0 0 12px;}h2{font-size:16px;margin:24px 0 8px;border-bottom:1px solid #d0d7de;padding-bottom:4px;}" +
+  "dl{display:grid;grid-template-columns:max-content 1fr;gap:4px 16px;margin:0;}dt{font-weight:600;}dd{margin:0;}" +
+  "code,.log{font-family:ui-monospace,SFMono-Regular,Consolas,monospace;font-size:12px;}" +
+  "table{border-collapse:collapse;width:100%;}th,td{border:1px solid #d0d7de;padding:4px 8px;text-align:left;vertical-align:top;}" +
+  "td.note{white-space:pre-wrap;}.log{border:1px solid #d0d7de;border-radius:6px;padding:4px 0;}" +
+  ".e{white-space:pre-wrap;word-break:break-all;padding:1px 8px;}.e.l-error{color:#b42318;}.e.l-warn{color:#9a6700;}" +
+  ".e.bm{background:#fff8c5;}.e .n{display:block;color:#57606a;font-style:italic;font-family:system-ui,sans-serif;}" +
+  "footer{margin-top:24px;color:#57606a;font-size:12px;}";
+
+// The standalone findings report: no script, no external resource, every
+// piece of log/user text through escapeHtml (a log line containing markup
+// must stay inert when the report is opened).
+function buildReportHtmlParts(ctx) {
+  const esc = escapeHtml;
+  const title = "Log findings: " + nodeDisplayName(ctx.active);
+  const parts = [];
+  let head = "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\">" +
+    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
+    "<title>" + esc(title) + "</title><style>" + EXPORT_REPORT_CSS + "</style></head><body>\n" +
+    "<h1>" + esc(title) + "</h1>\n<dl>" +
+    "<dt>Source</dt><dd>" + ctx.sources.map(s => "<code>" + esc(s) + "</code>").join(", ") + " (" + ctx.total + " entries)</dd>";
+  if (ctx.entries.length) {
+    head += "<dt>Time range</dt><dd><code>" + esc(formatTime(ctx.from)) + "</code> → <code>" + esc(formatTime(ctx.to)) +
+      "</code> (" + esc(formatDuration(ctx.to - ctx.from)) + ")</dd>";
+  }
+  head += "<dt>Matched</dt><dd>" + ctx.entries.length + " of " + ctx.total + " entries (" + exportPercent(ctx.entries.length, ctx.total) + ")</dd></dl>\n";
+  head += "<h2>Filter chain</h2>\n<ol>" + ctx.steps.map(s => "<li>" + esc(s.text) + " — " + s.count + "</li>").join("") + "</ol>\n";
+  if (ctx.findings.length) {
+    head += "<h2>Bookmarks &amp; notes (" + ctx.findings.length + ")</h2>\n<table><thead><tr><th></th><th>Time</th><th>Level</th><th>Message</th><th>Note</th></tr></thead><tbody>";
+    ctx.findings.forEach(f => {
+      head += "<tr><td>" + (f.bookmarked ? "★" : "") + "</td><td><code>" + esc(formatTime(f.entry.ts)) + "</code></td><td>" +
+        esc(f.entry.level) + "</td><td>" + esc(exportOneLine(f.entry.message, 500)) + "</td><td class=\"note\">" + esc(f.note) + "</td></tr>";
+    });
+    head += "</tbody></table>\n";
+  }
+  head += "<h2>Matching entries (" + ctx.entries.length + ")</h2>\n<div class=\"log\">";
+  parts.push(head);
+  exportChunkedParts(ctx.entries, e => {
+    const bm = state.bookmarks.has(e.id);
+    const note = state.notes.get(e.id);
+    return "<div class=\"e l-" + levelBucket(e.level, e.formatId).toLowerCase() + (bm ? " bm" : "") + "\">" +
+      (bm ? "★ " : "") + esc(e.raw) + (note ? "<span class=\"n\">Note: " + esc(note) + "</span>" : "") + "</div>\n";
+  }, parts);
+  parts.push("</div>\n<footer>Exported with PhiLogg " + esc(PHILOGG_VERSION) + " on " + esc(formatTime(ctx.generatedAt).slice(0, 16)) + ".</footer>\n</body></html>\n");
+  return parts;
+}
+
+const EXPORT_FILE_KINDS = {
+  log:  { ext: ".log",  mime: "text/plain", description: "Log file" },
+  csv:  { ext: ".csv",  mime: "text/csv", description: "CSV file" },
+  tsv:  { ext: ".tsv",  mime: "text/tab-separated-values", description: "TSV file" },
+  html: { ext: ".html", mime: "text/html", description: "HTML report" },
+};
+function buildExportFileParts(kind, ctx) {
+  if (kind === "log") return exportChunkedParts(ctx.entries, e => e.raw + "\n", []);
+  if (kind === "csv" || kind === "tsv") {
+    const cols = exportTableColumns();
+    const escField = kind === "csv" ? csvEscapeExportField : tsvEscapeExportField;
+    const sep = kind === "csv" ? "," : "\t";
+    const eol = kind === "csv" ? "\r\n" : "\n";
+    const header = cols.map(c => escField(c.label)).join(sep) + eol;
+    return exportChunkedParts(ctx.entries, e => cols.map(c => escField(exportCellValue(e, c.key))).join(sep) + eol, [header]);
+  }
+  if (kind === "html") return buildReportHtmlParts(ctx);
+  return [];
+}
+// "<file stem>[-<view name>]" — the root file's name without its extension,
+// plus the active filter's display name when the view is narrower than the
+// whole file. Same sanitizing as saveFilterToFile's suggested name.
+function exportBaseName(ctx) {
+  const clean = s => String(s).replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60);
+  const stem = clean(nodeDisplayName(ctx.root).replace(/\.[^.\/\\]+$/, "")) || "philogg";
+  return ctx.active === ctx.root ? stem : stem + "-" + (clean(nodeDisplayName(ctx.active)) || "view");
+}
+
+function downloadBlobFallback(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+// Same save path as every other file the app writes (saveFilterToFile,
+// saveCsvToFile): the File System Access save picker where the engine has
+// it (Chromium, and the Windows desktop build's WebView2), else a plain
+// <a download>. A cancelled picker saves nothing. Resolves true once saved.
+async function saveExportFile(parts, filename, kind) {
+  const spec = EXPORT_FILE_KINDS[kind];
+  const blob = new Blob(parts, { type: spec.mime + ";charset=utf-8" });
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description: spec.description, accept: { [spec.mime]: [spec.ext] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+      return true;
+    } catch (err) {
+      if (err && err.name === "AbortError") return false; // user cancelled the picker
+      // API present but unusable in this context — fall through to a download
+    }
+  }
+  downloadBlobFallback(blob, filename);
+  return true;
+}
+
+const exportDialog = el("#exportDialog");
+const exportPreview = el("#exportPreview");
+const exportExcerptInput = el("#exportExcerptInput");
+let exportDialogCtx = null;
+
+function renderExportDialog() {
+  const ctx = exportDialogCtx;
+  if (!ctx) return;
+  el("#exportViewLabel").textContent = nodeDisplayName(ctx.active);
+  el("#exportSummary").textContent = ctx.entries.length + " of " + ctx.total + " entries · " +
+    ctx.steps.length + " step" + (ctx.steps.length === 1 ? "" : "s") + " · " +
+    ctx.findings.length + " bookmark" + (ctx.findings.length === 1 ? "" : "s") + "/note" + (ctx.findings.length === 1 ? "" : "s");
+  exportDialog.querySelectorAll("[data-export-format]").forEach(b => b.classList.toggle("active", b.dataset.exportFormat === exportFormat));
+  exportExcerptInput.value = String(exportExcerptLines);
+  exportPreview.value = buildTicketSnippet(ctx, exportFormat, exportExcerptLines);
+}
+function openExportDialog() {
+  const ctx = collectExportContext();
+  if (!ctx) { showCopyToast("Nothing to export"); return false; }
+  exportDialogCtx = ctx;
+  renderExportDialog();
+  exportDialog.classList.remove("hidden");
+  return true;
+}
+function closeExportDialog() {
+  exportDialog.classList.add("hidden");
+  exportDialogCtx = null;
+}
+function copyTicketSnippet() {
+  const ctx = exportDialogCtx || collectExportContext();
+  if (!ctx) { showCopyToast("Nothing to export"); return; }
+  const text = buildTicketSnippet(ctx, exportFormat, exportExcerptLines);
+  copyTextToClipboard(text);
+  showCopyToast("Ticket snippet copied (" + text.length + " chars)");
+}
+async function exportViewFile(kind) {
+  const ctx = exportDialogCtx || collectExportContext();
+  if (!ctx || !EXPORT_FILE_KINDS[kind]) { showCopyToast("Nothing to export"); return false; }
+  const saved = await saveExportFile(buildExportFileParts(kind, ctx), exportBaseName(ctx) + EXPORT_FILE_KINDS[kind].ext, kind);
+  if (saved) showCopyToast(kind === "html" ? "Report saved" : "Saved " + ctx.entries.length + " entries");
+  return saved;
+}
+
+el("#btnExport").addEventListener("click", ev => { ev.stopPropagation(); openExportDialog(); });
+exportDialog.addEventListener("click", ev => { if (ev.target === exportDialog) closeExportDialog(); });
+exportDialog.querySelectorAll("[data-export-format]").forEach(b => b.addEventListener("click", () => {
+  exportFormat = b.dataset.exportFormat;
+  saveExportPrefs();
+  renderExportDialog();
+}));
+exportExcerptInput.addEventListener("change", () => {
+  const n = parseInt(exportExcerptInput.value, 10);
+  exportExcerptLines = isNaN(n) ? EXPORT_EXCERPT_DEFAULT : Math.max(0, Math.min(EXPORT_EXCERPT_MAX, n));
+  saveExportPrefs();
+  renderExportDialog();
+});
+exportDialog.querySelectorAll("[data-export-file]").forEach(b => b.addEventListener("click", () => exportViewFile(b.dataset.exportFile)));
+el("#exportClose").addEventListener("click", closeExportDialog);
+el("#exportCopy").addEventListener("click", copyTicketSnippet);
 el("#contextDialogCancel").addEventListener("click", closeContextDialog);
 el("#contextDialogCreate").addEventListener("click", () => {
   const before = Math.max(0, Math.round(parseFloat(contextBeforeInput.value) || 0));
@@ -31554,6 +32713,13 @@ const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
 
 const SHORTCUT_ACTIONS = [
   { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, key: "f" } },
+  // FEATURE_BACKLOG.md #3: the find bar. Ctrl+F deliberately stays "new
+  // filter" (the app's core idiom, muscle memory, the empty-state hint) —
+  // the non-destructive search gets the browser's own "find next" keys,
+  // Ctrl+G and F3, instead. See docs/ui-and-views.md -> "Find bar".
+  { id: "findInView",    label: "Find in the current view (find bar)", default: { ctrl: true, key: "g" } },
+  { id: "findNext",      label: "Find bar: next match",                default: { key: "f3" } },
+  { id: "findPrev",      label: "Find bar: previous match",            default: { shift: true, key: "f3" } },
   { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
   { id: "editFilter",    label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
   { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" } },
@@ -31573,6 +32739,7 @@ const SHORTCUT_ACTIONS = [
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
   { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
+  { id: "exportView",    label: "Export / Share the current view",     default: { ctrl: true, shift: true, key: "e" } },
 ];
 
 // Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)
@@ -31581,6 +32748,8 @@ const SHORTCUT_ACTIONS = [
 // rebound. Rendered as extra rows appended after SHORTCUT_ACTIONS in
 // renderShortcutBindingsList().
 const FIXED_SHORTCUTS = [
+  { label: "Find bar: next / previous match (in its input)", display: ["Enter", "Shift+Enter"] },
+  { label: "Find bar: add the search as a filter (in its input)", display: ["Ctrl", "Enter"] },
   { label: "Copy a filter",                          display: ["Ctrl", "C"] },
   { label: "Cut a filter",                           display: ["Ctrl", "X"] },
   { label: "Paste under selected node",               display: ["Ctrl", "V"] },
@@ -31625,7 +32794,7 @@ function matchesShortcut(ev, actionId) {
 }
 // Keys whose ev.key value doesn't read well verbatim in the Shortcut Manager.
 const SHORTCUT_KEY_LABELS = {
-  f2: "F2", f11: "F11", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
+  f2: "F2", f3: "F3", f11: "F11", arrowup: "\u2191", arrowdown: "\u2193", arrowleft: "\u2190", arrowright: "\u2192",
 };
 function comboLabelParts(combo) {
   const parts = [];
@@ -33154,16 +34323,21 @@ function fwzAppendText(text) {
 
 function fwzLoadFile(file) {
   if (!file || !fwz) return Promise.resolve();
-  fwzSuggestRuleFromFilename(file.name);
-  // Only the head of a (possibly huge) log file is needed as examples.
-  const head = file.slice ? file.slice(0, 512 * 1024) : file;
-  const read = typeof head.text === "function" ? head.text() : new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-    r.readAsText(head);
-  });
-  return read.then(t => fwzAppendText(t), () => { if (fwz) { fwz.notice = "Couldn't read that file."; renderFwzResult(); } });
+  fwzSuggestRuleFromFilename(stripGzipExt(file.name));
+  // Only the head of a (possibly huge) log file is needed as examples. A
+  // gzip file is inflated first (see "gzip-compressed logs") — its raw
+  // head is compressed data.
+  const readHead = async () => {
+    const plain = file.slice ? (await gunzipFileIfCompressed(file)).file : file;
+    const head = plain.slice ? plain.slice(0, 512 * 1024) : plain;
+    return typeof head.text === "function" ? head.text() : new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsText(head);
+    });
+  };
+  return readHead().then(t => fwzAppendText(t), () => { if (fwz) { fwz.notice = "Couldn't read that file."; renderFwzResult(); } });
 }
 
 // Switches the active column by toggling classes in place — NOT via
@@ -33983,6 +35157,10 @@ document.addEventListener("keydown", ev => {
     if (state.activeId) openFilterPopup();
     return;
   }
+  // FEATURE_BACKLOG.md #3: Ctrl+G / F3 / Shift+F3 — checked ahead of the
+  // inInput bail-out below so they keep working while typing in the find
+  // bar's own input (handleFindShortcut itself ignores every OTHER input).
+  if (handleFindShortcut(ev)) return;
   if (ev.key === "Escape") {
     // Esc is a secondary exit from Focus Mode (FEATURE_BACKLOG.md #66), but
     // only when nothing else is consuming this Esc — captured before the
@@ -33995,10 +35173,12 @@ document.addEventListener("keydown", ev => {
     closePlotFullscreen();
     closeSettingsDialog();
     closeFilterPopup();
+    closeFindBar();
     closeContextMenu();
     closeTreeContextMenu();
     closeExtractContextMenu();
     closeCsvExportDialog();
+    closeExportDialog();
     closeLinkDialog();
     closeContextDialog();
     closeTimeRangeDialog();
@@ -34132,6 +35312,13 @@ document.addEventListener("keydown", ev => {
       return;
     }
     if (startRenameNode(state.activeId)) ev.preventDefault();
+    return;
+  }
+
+  // Export / Share (docs/export.md) — opens the dialog on the active view.
+  if (matchesShortcut(ev, "exportView")) {
+    ev.preventDefault();
+    openExportDialog();
     return;
   }
 
@@ -34947,6 +36134,7 @@ async function reopenLocalPathForRestore(rec, placeholder) {
   activateQueuedFileNode(node);
   await pinFileFormat(node, rec.formatId);
   let size;
+  let gzip = false;
   try {
     try {
       size = (await parseLocalFileNatively(local.url, node, fraction => {
@@ -34954,8 +36142,12 @@ async function reopenLocalPathForRestore(rec, placeholder) {
         scheduleLoadRender(node.id);
       })).size;
     } catch (err) {
-      const file = await handle.getFile();
-      size = file.size;
+      // Includes a gzip file, which the native parser rejects up front —
+      // inflated here (see "gzip-compressed logs").
+      const raw = await handle.getFile();
+      size = raw.size;
+      let file;
+      ({ file, gzip } = await gunzipFileIfCompressed(raw));
       await parseLogTextAsync(await file.text(), node, (done, total) => {
         node.loadFraction = total ? done / total : 1;
         scheduleLoadRender(node.id);
@@ -34965,7 +36157,7 @@ async function reopenLocalPathForRestore(rec, placeholder) {
     delete node.loadFraction;
   }
   if (state.nodes[node.id] === node) flushLoadRender(node.id);
-  return { node, url: local.url, path: local.path || rec.localPath, handle, size };
+  return { node, url: local.url, path: local.path || rec.localPath, handle, size, gzip };
 }
 
 // Boot-time restore. Returns true if at least one file came back. Any error
@@ -35064,7 +36256,10 @@ async function restoreSessionFromCache(metaIn) {
       if (reopened) {
         node.localPath = reopened.path;
         node.sourceUrl = reopened.url;
-        if (!rec.folderId) node.tail = newTailState(reopened.handle, reopened.size);
+        if (!rec.folderId && !reopened.gzip) {
+          node.tail = newTailState(reopened.handle, reopened.size);
+          node.tail.gzipChecked = true; // just read: known not gzip (see tailTick)
+        }
       }
       // Plain (non-folder) file that was being tailed before the reload:
       // try to resume silently — see tryReattachFileTail.

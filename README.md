@@ -82,6 +82,15 @@ deployments possible:
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
+- **Find in the current view without creating a filter** — `Ctrl+G` opens a
+  small find bar over the log view: it searches only the rows the current
+  view (Context or Filtered) shows, marks every hit as you type, jumps to
+  the first one, and counts them ("3 / 41"). `F3`/`Shift+F3` (or
+  `Enter`/`Shift+Enter`) walk the hits with wrap-around; match-case and
+  regex toggles use the same query language as a text filter. When a search
+  turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
+  into a real filter node — `Ctrl+F` still opens the filter popup directly.
+  Stays fast on views with hundreds of thousands of rows.
 - **Highlight rules underline their own matches** — a colored text filter
   doesn't just tint the row's left edge: the matched substring itself is
   underlined in that rule's color, in both views and the entry detail. Each
@@ -160,6 +169,12 @@ deployments possible:
   once opened), and no extra library: uses the browser's native
   `DecompressionStream` Web API, identically in the plain-browser build and
   the desktop build.
+- **Open gzip-compressed logs** — a rotated `app.log.1.gz` opens like any
+  other log, however it arrives: drag-drop, the file picker, a watched
+  folder (where `*.log` patterns also pick up the `.gz` rotations), a ZIP
+  entry, or the desktop build's "Open in PhiLogg". It's decompressed on the
+  fly by the browser's own `DecompressionStream`, with no extra library. A
+  compressed file is a fixed snapshot, never live-tailed.
 - **View common text/image files right in the app** — `.txt`/`.xml`/`.json`
   and `.jpg`/`.jpeg`/`.png`/`.tiff`/`.tif`, however they're opened: a ZIP
   entry, a watched folder, or a direct open/drag-drop, all the same. JSON/XML
@@ -235,6 +250,16 @@ deployments possible:
   your choice) to the Filter-Toolbar for one-click reuse.
 - **Session export/import** — package an analysis (files, filters,
   bookmarks, notes) to share with a colleague.
+- **Export / Share for tickets** (toolbar button or `Ctrl+Shift+E`) —
+  "Copy for ticket" puts a compact findings summary on the clipboard, ready
+  to paste into Jira, GitHub, GitLab or Azure DevOps: source file, time
+  range, the filter chain as a readable step-by-step narrative with counts,
+  "x of y entries matched", your bookmarks and notes, and a bounded excerpt
+  of the matching lines — as Markdown, Jira wiki markup or plain text
+  (remembered). The full current view saves as a ticket attachment:
+  `.log` (raw lines), `.csv`, `.tsv`, or a standalone HTML report anyone can
+  open without PhiLogg. Nothing leaves your machine unless you copy or save
+  it.
 - **Configurable log formats** (Settings → Format Manager) — define
   additional formats **by example**: paste or drop a few log lines and
   PhiLogg suggests a format right away, shown as a live table preview of how

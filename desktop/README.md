@@ -68,8 +68,7 @@ comments in place, which is what you want while developing.
 
 `.log` file associations and CLI-argument opening, a frameless window with
 rounded corners, window controls in the app's own theme, F11 / double-click /
-maximize all toggling the same native maximize, a
-splash screen, a tray icon with Open / Open Config Folder / Clear Cache /
+maximize all toggling the same native maximize, a tray icon with Open / Open Config Folder / Clear Cache /
 Quit, "close to system tray", picture-in-picture (a diagonal `<->` window
 button shrinks the window to a small always-on-top content view; its own
 strip offers return-to-full and a minimize back to the taskbar),
@@ -182,15 +181,13 @@ is fetched and tail-polled, `settings.json` is written, and a second launch
 with another `.log` is routed into the running window instead of starting a
 new instance.
 
-Known **headless-only** artifact, unrelated to any real run: under a bare
-Xvfb the splash never dismisses and the main window never appears, even
-though the page itself runs (it writes `settings.json`). The main window is
-created `visible(false)` and shown only once the page reports a first paint
-via `app_ready` — which is fired from a `requestAnimationFrame` callback,
-and WebKitGTK doesn't tick those for a window that was never mapped. So the
-two wait on each other. It does not occur on a real desktop session, where
-the splash is a visible window. Anything needing the actual UI has to be
-checked on a real machine.
+There is no splash screen (removed 2026-09-25 — startup is fast enough
+without one): the main window is created visible right away, on the dark
+theme's background colour so there is no white flash. That also retires
+the old headless-only artifact where, under a bare Xvfb, the hidden main
+window waited on a `requestAnimationFrame` WebKitGTK never ticked for an
+unmapped window (not re-verified headlessly since). Anything needing the
+actual UI still has to be checked on a real machine.
 
 Real Windows run (2026-09-01, person-tested) surfaced and fixed two bugs:
 the window couldn't be moved at all (clicking empty toolbar space did
