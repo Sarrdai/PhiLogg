@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~38,100 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~38,700 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -367,7 +367,8 @@ Filters chain: a filter's result is always computed from its parent's result (`g
 | `extract` | `value: pattern string` | compiles the pattern (see below) and keeps entries whose `message` matches; **also** drives the extraction table view when this node is active |
 | `idset` | `value: string[]` (entry ids) | `Set` membership match — an explicit, pre-computed entry set rather than a rule (see `docs/filters.md` → "Entry-set filter") |
 | `and` / `or` | `bakedA`, `bakedB` (flat baked condition snapshots — see "Core data model" above) | set intersection / union (by `entry.id`) of `getEntriesFromBaked(bakedA, ...)` and `getEntriesFromBaked(bakedB, ...)`, both evaluated over `getEntries(node.parentId)`; `or` re-sorts by `ts` after merging |
-| `link` | `bakedA` (reference's baked condition), `bakedB` (target's baked condition), `linkDirection: "before"\|"after"`, `linkN: number`, `linkOrderEnforced: boolean`, `linkExclusive: boolean` | nearest-neighbor pairing (see below) over the two baked conditions' matches within `getEntries(node.parentId)`; result is an array of synthetic **pair entries**, not normal log entries |
+| `link` | `bakedA` (reference's baked condition), `bakedB` (target's baked condition), `linkDirection: "before"\|"after"`, `linkN: number`, `linkOrderEnforced: boolean`, `linkExclusive: boolean`, optional `linkDt: {op, ms}` (tuple-span condition), optional `linkKey: {column}\|{pattern}` (correlation key) | nearest-neighbor pairing (see below) over the two baked conditions' matches within `getEntries(node.parentId)`; result is an array of synthetic **pair entries**, not normal log entries |
+| `gap` | `value: { ms, per }` (`per`: column key or `null`) | keeps entries whose distance to the previous entry of the parent's result (or, with `per`, of the same column value) is `>= ms` — see `docs/filters.md` → "Gap filter" |
 | `context` | `contextBefore: number (ms)`, `contextAfter: number (ms)` | windowing around reference entries (see below); result is real entries from the root file, not synthetic ones |
 
 `createFilterNode(parentId, filterType, value, inverted = false, ignoredColumns = null, caseSensitive = false, columns = null, isRegex = false, wholeWord = false)` builds `text`/`after`/`before`/`extract` nodes (the last four args are `text`-only, `ignoredColumns` is `extract`-only). `createAndOrNode` and `createLinkNode` build the two-reference types, `createContextNode` builds `context` nodes.
