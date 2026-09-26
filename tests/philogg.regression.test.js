@@ -970,7 +970,15 @@ await withApp(async (w, d, T) => {
 
   // Δt suppressed under column sort
   fireClick([...d.querySelectorAll(".th-sortable")].find(th => th.dataset.sort === "level"), w);
-  assert([...d.querySelectorAll("#tableRows .col-delta")].every(c => c.textContent === "—"), "Δt dashed out under an active column sort");
+  // Under a column sort each row keeps its own CHRONOLOGICAL Δt (captured
+  // before sorting, buildViewDeltaMap) — updated 2026-09-26: it used to be
+  // dashed out, since the row above is no longer its predecessor.
+  {
+    const cells = [...d.querySelectorAll("#tableRows .col-delta")];
+    const byMsg = m => cells[T.currentViewEntries.findIndex(e => e.message.startsWith(m))].textContent;
+    assert(byMsg("isolated error") === "+6.0s" && byMsg("burst 0") === "—" && byMsg("burst 3") === "+1.0s",
+      "under a level sort each row shows its chronological Δt, got " + cells.map(c => c.textContent).join(","));
+  }
   T.state.sortColumn = null; w.render();
 
   // Timeline minimap: background bars for the whole file, overlay for the current view
@@ -13637,7 +13645,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "(unterminated";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent === "Invalid regex" && d.querySelector("#filterLiveMatch").className === "error",
+  assert(d.querySelector("#filterLiveMatch").textContent === "Invalid regex" && d.querySelector("#filterLiveMatch").classList.contains("error"),
     "an invalid regex shows an inline \"Invalid regex\" error instead of crashing the live-match preview");
 
   // Submitting an invalid regex keeps the popup open instead of creating a broken node
@@ -29630,7 +29638,7 @@ await withApp(async (w, d, T) => {
   input.value = "nothing matches this";
   fireInput(input, w);
   await sleep(200);
-  assert(d.querySelector(".filter-live-count").textContent === "0" && d.querySelector("#filterLiveMatch").className === "warn", "zero matches shows 0 in the warn state");
+  assert(d.querySelector(".filter-live-count").textContent === "0" && d.querySelector("#filterLiveMatch").classList.contains("warn"), "zero matches shows 0 in the warn state");
   assert(d.querySelector("#filterResultsMinimap").classList.contains("hidden") && !d.querySelector(".filter-sample-row"), "no histogram / sample rows without hits");
 });
 
@@ -32550,6 +32558,441 @@ await withApp(async (w, d, T) => {
   T.state.levelFilter.add("INFO"); T.state.levelFilter.add("DEBUG"); w.render();
   assert(cls("A").includes("lvl-info") && cls("C").includes("lvl-debug"), "colours follow the narrowed result");
 });
+/* ============================================================
+   GROUP 289 — Gap filter (FEATURE_BACKLOG.md #24, 2026-09-26): keeps the
+   entries of the parent's result whose distance to the previous entry is
+   >= a threshold, optionally measured per column (Thread here). Covers:
+   computeGapEntries overall vs. per thread, chain-awareness (Heartbeat →
+   Gap), the node name/type tag, the Filtered view's Δt column showing the
+   measured gap (also under a column sort), the Gap dialog (live count,
+   sample badges, Create, Edit pre-fill + Save + undo, invalid threshold),
+   the tree context menu entry, NOT, AND with a gap side,
+   and every persistence carrier (value = { ms, per }).
+   ============================================================ */
+group(289);
+{
+  // A: Heartbeat at 0,2,4,11 s; B: tick at 1,3,10,12 s.
+  function gapLog() {
+    const rows = [[0, "A", "Heartbeat"], [1, "B", "tick"], [2, "A", "Heartbeat"], [3, "B", "tick"],
+      [4, "A", "Heartbeat"], [10, "B", "tick"], [11, "A", "Heartbeat"], [12, "B", "tick"]];
+    return rows.map(([sec, th, msg]) => `2024-01-15 10:00:${String(sec).padStart(2, "0")},000\tINFO\t"Worker-${th}"\tFoo.cs\tline 0\t[DoWork]\t"${msg} ${sec}"`).join("\n") + "\n";
+  }
+  const msgs = (w, id) => w.getEntries(id).map(e => e.message);
+
+  await withApp(async (w, d, T) => {
+    section("289a. Gap filter: evaluation, chain-awareness, name, Δt column");
+    const f = await w.addFile("gap.log", gapLog(), () => {});
+    const overall = w.computeGapEntries({ ms: 5000, per: null }, f.entries);
+    assert(overall.result.map(e => e.message).join("|") === "tick 10" && overall.gaps.get(overall.result[0].id) === 6000,
+      "overall: only 'tick 10' follows a >=5 s gap (6 s after Heartbeat 4)");
+    const perThread = w.computeGapEntries({ ms: 5000, per: "thread" }, f.entries);
+    assert(perThread.result.map(e => e.message).join("|") === "tick 10|Heartbeat 11" &&
+      perThread.result.every(e => perThread.gaps.get(e.id) === 7000),
+      "per Thread: tick 10 and Heartbeat 11 each follow a 7 s gap within their own thread");
+
+    const gapNode = w.createGapNode(f.id, { ms: 5000, per: "thread" });
+    assert(gapNode.filterType === "gap" && gapNode.parentId === f.id && gapNode.name === "Gap ≥ 5 s per Thread",
+      "createGapNode: gap child of the file, named 'Gap ≥ 5 s per Thread', got " + gapNode.name);
+    assert(w.typeTagFor(gapNode) === "GAP", "tree type tag GAP");
+    assert(msgs(w, gapNode.id).join("|") === "tick 10|Heartbeat 11", "the node's result matches computeGapEntries");
+
+    const hb = w.createFilterNode(f.id, "text", "Heartbeat");
+    const hbGap = w.createGapNode(hb.id, { ms: 3000, per: null });
+    assert(msgs(w, hbGap.id).join("|") === "Heartbeat 11", "chain-aware: measured over the parent's result (missed heartbeat after Heartbeat 4)");
+    assert(w.createGapNode(hb.id, { ms: 1500 }).name === "Gap ≥ 1.5 s" && msgs(w, T.state.activeId).length === 3,
+      "1.5 s threshold: the three heartbeats after the first are kept, named without 'per'");
+
+    T.state.activeId = gapNode.id;
+    T.state.sortColumn = null;
+    w.revealFilteredView();
+    w.render();
+    let deltas = [...d.querySelectorAll("#tableRows .col-delta")].map(c => c.textContent);
+    assert(deltas.join("|") === "+7.0s|+7.0s", "Filtered view: the Δt column shows each row's measured per-thread gap, got " + deltas.join("|"));
+    fireClick([...d.querySelectorAll(".th-sortable")].find(th => th.dataset.sort === "level"), w);
+    deltas = [...d.querySelectorAll("#tableRows .col-delta")].map(c => c.textContent);
+    assert(deltas.join("|") === "+7.0s|+7.0s", "the measured gap stays shown under a column sort (it isn't row adjacency)");
+
+    w.toggleInvertWithUndo(gapNode.id);
+    assert(w.getEntries(gapNode.id).length === 6, "NOT: the parent's entries without the two gap rows");
+    w.toggleInvertWithUndo(gapNode.id);
+
+    // Baked as an AND side: evaluated by getEntriesFromBaked.
+    const andNode = w.createAndOrNode(gapNode.id, hb.id, "and");
+    assert(msgs(w, andNode.id).join("|") === "Heartbeat 11", "AND(gap per thread, 'Heartbeat') evaluates the baked gap condition");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("289b. Gap dialog: live summary, Create, Edit + undo, menu entries");
+    const f = await w.addFile("gap.log", gapLog(), () => {});
+    w.render();
+    T.state.multiSelect = new Set([f.id]);
+    T.state.activeId = f.id;
+    w.render();
+    w.openTreeContextMenu({ clientX: 10, clientY: 10 }, f.id);
+    assert(!!d.querySelector('#treeContextMenu [data-action="gap"]'), "tree context menu offers 'Gap filter…'");
+    w.closeTreeContextMenu();
+
+    w.openGapDialog(f.id, false);
+    const dlg = d.querySelector("#gapDialog");
+    assert(isVisible(dlg, w), "Gap dialog opens");
+    d.querySelector("#gapValueInput").value = "5";
+    d.querySelector("#gapUnitSelect").value = "s";
+    d.querySelector("#gapPerSelect").value = "thread";
+    d.querySelector("#gapPerSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+    await sleep(200);
+    assert(d.querySelector("#gapLiveMatch").textContent.includes("2 matches in 8"), "live count, got " + d.querySelector("#gapLiveMatch").textContent);
+    const badges = [...d.querySelectorAll("#gapResultsSamples .filter-sample-badge")].map(b => b.textContent);
+    assert(badges.join("|") === "+7.0s|+7.0s", "sample rows lead with the measured gap, got " + badges.join("|"));
+    assert(!isVisible(d.querySelector("#gapResultsMinimap"), w) || d.querySelectorAll("#gapResultsMinimap rect").length > 0, "histogram rendered for the hits");
+
+    d.querySelector("#gapValueInput").value = "-1";
+    d.querySelector("#gapValueInput").dispatchEvent(new w.Event("input", { bubbles: true }));
+    await sleep(200);
+    assert(d.querySelector("#gapLiveMatch").textContent === "Invalid threshold", "an unreadable threshold shows an error");
+    const before = f.children.length;
+    fireClick(d.querySelector("#gapDialogCreate"), w);
+    assert(f.children.length === before && isVisible(dlg, w), "Create refuses an invalid threshold and keeps the dialog open");
+
+    d.querySelector("#gapValueInput").value = "5";
+    fireClick(d.querySelector("#gapDialogCreate"), w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(!isVisible(dlg, w) && node.filterType === "gap" && node.parentId === f.id &&
+      node.value.ms === 5000 && node.value.per === "thread", "Create adds the gap filter under the chosen node");
+
+    assert(w.editFilterNode(node.id) === true && isVisible(dlg, w), "Edit filter… opens the Gap dialog for a gap node");
+    assert(d.querySelector("#gapValueInput").value === "5" && d.querySelector("#gapUnitSelect").value === "s" &&
+      d.querySelector("#gapPerSelect").value === "thread" && d.querySelector("#gapDialogCreate").textContent === "Save",
+      "edit pre-fills value/unit/per and says Save");
+    d.querySelector("#gapValueInput").value = "6.5";
+    fireClick(d.querySelector("#gapDialogCreate"), w);
+    const edited = T.state.nodes[node.id];
+    assert(edited.value.ms === 6500 && edited.name === "Gap ≥ 6.5 s per Thread" && w.getEntries(node.id).length === 2,
+      "Save edits the node in place (value replaced, name re-derived)");
+    const oldValueObj = edited.value;
+    w.undo();
+    const undone = T.state.nodes[node.id];
+    assert(undone.value.ms === 5000 && undone.name === "Gap ≥ 5 s per Thread", "undo restores the previous threshold");
+    assert(oldValueObj.ms === 6500, "the edit replaced value wholesale — the old object was never mutated");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("289c. Gap filter: persistence carriers");
+    const f = await w.addFile("gap.log", gapLog(), () => {});
+    const g = w.createGapNode(f.id, { ms: 5000, per: "thread" });
+    const ok = n => n && n.filterType === "gap" && n.value && n.value.ms === 5000 && n.value.per === "thread";
+    assert(ok(w.cloneSubtree(g.id, f.id)), "cloneSubtree carries the gap value");
+    const snap = w.snapshotSubtree(g.id);
+    w.deleteNode(g.id);
+    const restored = w.restoreSubtree(snap);
+    assert(ok(restored) && w.getEntries(restored.id).length === 2, "snapshotSubtree/restoreSubtree round-trip");
+    const branch = w.serializeFilterBranch(restored.id, false);
+    const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(f.id)};`;
+    d.body.appendChild(s);
+    const n0 = f.children.length;
+    w.importFilterJson(json);
+    const imported = T.state.nodes[f.children[f.children.length - 1]];
+    assert(f.children.length === n0 + 1 && ok(imported) && w.getEntries(imported.id).length === 2, "serializeFilterBranch/importFilterJson round-trip");
+    const { roots } = w.serializeFilterTreeForCache(f);
+    const fake = { id: "fake-gap-file", children: [] };
+    w.materializeCachedFilters(fake, roots);
+    assert(fake.children.map(id => T.state.nodes[id]).some(ok), "serializeFilterTreeForCache/materializeCachedFilters round-trip");
+  });
+}
+
+/* ============================================================
+   GROUP 290 — Link filter: Δt condition + Δt column (2026-09-26).
+   linkDt = { op, ms } keeps only tuples whose span (pair.dtMs, first to
+   last real entry) is > / < ms; a dropped pair doesn't claim its target
+   under "exclusive matches". Covers: buildPairEntry's span (plain and
+   chained), the condition on a node and baked, exclusivity interplay,
+   the multi-hop dialog putting it on the last hop only (total span), the
+   dialog's live "N of M pairs" preview + sample Δt badges, and the
+   extraction table's synthetic "Δt (ms)" column (DT_COL) on pairs only.
+   ============================================================ */
+function linkKeyLog() {
+  const rows = [["00,000", "T1", "move requested axis 1"], ["00,200", "T2", "move requested axis 2"],
+    ["00,300", "T2", "position reached axis 2"], ["00,500", "T3", "position reached axis 1"],
+    ["01,000", "T1", "position reached axis 1"], ["05,000", "T1", "move requested axis 1"],
+    ["05,100", "T2", "position reached axis 2"], ["05,900", "T1", "position reached axis 1"]];
+  return rows.map(([t, th, msg]) => `2024-01-15 10:00:${t}\tINFO\t"${th}"\tFoo.cs\tline 0\t[DoWork]\t"${msg}"`).join("\n") + "\n";
+}
+const pairSummary = pairs => pairs.map(p => p.second.message.replace("position reached axis ", "p") + "@" + p.dtMs).join("|");
+group(290);
+{
+  await withApp(async (w, d, T) => {
+    section("290a. Link Δt condition: span, node, baked, exclusivity, chained total span");
+    const f = await w.addFile("link.log", linkKeyLog(), () => {});
+    const move = w.createFilterNode(f.id, "text", "move requested");
+    const reached = w.createFilterNode(f.id, "text", "position reached");
+    const plain = w.createLinkNode(move.id, reached.id, "after", 1);
+    assert(pairSummary(w.getEntries(plain.id)) === "p2@300|p2@100|p2@100", "baseline: nearest following 'position reached' — spans 300/100/100 ms, got " + pairSummary(w.getEntries(plain.id)));
+    const gt = w.createLinkNode(move.id, reached.id, "after", 1, { dt: { op: ">", ms: 200 } });
+    assert(pairSummary(w.getEntries(gt.id)) === "p2@300" && gt.name.endsWith("(Δt > 200ms)"), "Δt > 200 ms keeps only the 300 ms pair, name carries the condition: " + gt.name);
+    const lt = w.createLinkNode(move.id, reached.id, "after", 1, { dt: { op: "<", ms: 200 } });
+    assert(w.getEntries(lt.id).length === 2, "Δt < 200 ms keeps the two 100 ms pairs");
+    // Exclusive: the 300 ms pair is dropped by the condition BEFORE it could
+    // claim 'position reached axis 2 @0.300', so the next move still gets it.
+    const exLt = w.createLinkNode(move.id, reached.id, "after", 1, { exclusive: true, dt: { op: "<", ms: 200 } });
+    assert(pairSummary(w.getEntries(exLt.id)) === "p2@100|p2@100", "exclusive + Δt: a dropped pair leaves its target free, got " + pairSummary(w.getEntries(exLt.id)));
+    // Baked (the same condition inside an AND-free chain: a link of the Δt link).
+    const baked = w.bakeNodeCondition(gt);
+    assert(baked.linkDt && baked.linkDt.op === ">" && baked.linkDt.ms === 200, "bakeNodeCondition carries linkDt");
+    assert(w.getEntriesFromBaked(baked, f.entries, f.id).length === 1, "getEntriesFromBaked honors linkDt");
+
+    // Chained: move → reached (after) → next move (after); the pair's span
+    // covers the whole tuple.
+    const hop1 = w.createLinkNode(move.id, reached.id, "after", 1);
+    const hop2 = w.createLinkNode(hop1.id, move.id, "after", 1);
+    const tuples = w.getEntries(hop2.id);
+    const t0 = tuples[0];
+    assert(t0 && t0.dtMs === t0.tsMax - t0.tsMin && t0.dtMs === 5000, "chained tuple: dtMs spans first to last real entry (0.000 → 5.000), got " + (t0 && t0.dtMs));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("290b. Link dialog: Δt row, live preview, multi-hop puts Δt on the last hop");
+    const f = await w.addFile("link.log", linkKeyLog(), () => {});
+    const move = w.createFilterNode(f.id, "text", "move requested");
+    const reached = w.createFilterNode(f.id, "text", "position reached");
+    w.render();
+    w.openLinkDialog([move.id, reached.id]);
+    const hop = d.querySelector("#linkHopsList .link-hop-row .link-hop-dir");
+    hop.value = "after";
+    hop.dispatchEvent(new w.Event("change", { bubbles: true }));
+    await sleep(200);
+    assert(d.querySelector("#linkLiveMatch").textContent.replace(/\s+/g, " ").trim() === "3 pairs", "preview without Δt: plain pair count, got " + d.querySelector("#linkLiveMatch").textContent);
+    assert(d.querySelector("#linkDtValue").disabled, "Δt controls are greyed out while the switch is off");
+    fireClick(d.querySelector("#linkDtInput"), w);
+    assert(!d.querySelector("#linkDtValue").disabled, "switching Δt on enables its controls");
+    d.querySelector("#linkDtValue").value = "200";
+    d.querySelector("#linkDtValue").dispatchEvent(new w.Event("input", { bubbles: true }));
+    await sleep(200);
+    assert(d.querySelector("#linkLiveMatch").textContent.includes("1 of 3 pairs"), "preview: '1 of 3 pairs', got " + d.querySelector("#linkLiveMatch").textContent);
+    const badge = d.querySelector("#linkResultsSamples .filter-sample-badge");
+    assert(badge && badge.textContent === "Δt 300ms", "sample pair shows its Δt, got " + (badge && badge.textContent));
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(node.filterType === "link" && node.linkDt && node.linkDt.op === ">" && node.linkDt.ms === 200 && w.getEntries(node.id).length === 1,
+      "Create stores linkDt on the new link");
+
+    // Multi-hop (move → position → next "axis 1" move, all "after"): the
+    // tuples span 5000 ms (from 0.000) and 4800 ms (from 0.200); Δt > 4.9 s
+    // sits on the last hop only and tests the whole tuple's span.
+    const axis1Move = w.createFilterNode(f.id, "text", "move requested axis 1");
+    w.openLinkDialog([move.id, reached.id, axis1Move.id]);
+    d.querySelector("#linkRefSelect").value = move.id;
+    d.querySelector("#linkRefSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
+    [...d.querySelectorAll("#linkHopsList .link-hop-dir")].forEach(s => { s.value = "after"; s.dispatchEvent(new w.Event("change", { bubbles: true })); });
+    fireClick(d.querySelector("#linkDtInput"), w);
+    d.querySelector("#linkDtValue").value = "4.9";
+    d.querySelector("#linkDtUnit").value = "s";
+    d.querySelector("#linkDtUnit").dispatchEvent(new w.Event("change", { bubbles: true }));
+    await sleep(200);
+    assert(d.querySelector("#linkLiveMatch").textContent.includes("1 of 2 pairs"), "multi-hop preview: '1 of 2 pairs', got " + d.querySelector("#linkLiveMatch").textContent);
+    const before = new Set(f.children);
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    const created = f.children.filter(id => !before.has(id)).map(id => T.state.nodes[id]);
+    const last = T.state.nodes[T.state.activeId];
+    const first = created.find(n => n.id !== last.id);
+    assert(created.length === 2 && first && !first.linkDt && last.linkDt && last.linkDt.ms === 4900,
+      "multi-hop: only the last hop carries the Δt condition (4.9 s = 4900 ms)");
+    const tuples = w.getEntries(last.id);
+    assert(tuples.length === 1 && tuples[0].dtMs === 5000 && w.getTupleEntries(tuples[0]).length === 3,
+      "the condition tests the whole 3-entry tuple's span (move 0.000 → … → move 5.000)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("290c. Extraction on link pairs: synthetic Δt (ms) column");
+    const f = await w.addFile("link.log", linkKeyLog(), () => {});
+    const move = w.createFilterNode(f.id, "text", "move requested");
+    const reached = w.createFilterNode(f.id, "text", "position reached");
+    const link = w.createLinkNode(move.id, reached.id, "after", 1, { key: { column: "thread" } });
+    const ext = w.createFilterNode(link.id, "text", "move requested axis [*:int]");
+    w.renderExtractTable(ext);
+    const dtCol = T.extractColumns.find(c => c.colIndex === -3);
+    assert(dtCol && dtCol.name === "Δt (ms)" && dtCol.type === "int", "a pair extraction gets the Δt (ms) column");
+    assert(T.extractRowsData.map(r => r.values[-3]).join("|") === "1000|100|900", "Δt values are the pairs' spans, got " + T.extractRowsData.map(r => r.values[-3]).join("|"));
+    assert(T.extractColumns.findIndex(c => c.colIndex === -3) === 2, "placed right after Index and t (ms)");
+    const plainExt = w.createFilterNode(f.id, "text", "move requested axis [*:int]");
+    w.renderExtractTable(plainExt);
+    assert(!T.extractColumns.some(c => c.colIndex === -3), "a plain (non-pair) extraction has no Δt column");
+  });
+}
+
+/* ============================================================
+   GROUP 291 — Link filter: correlation key "Match only same …"
+   (2026-09-26). A column (Thread) or a wildcard capture (axis [*:int]) —
+   reference and target pair only on an equal key. Covers: both key kinds
+   vs. the baseline, direction "before", exclusivity, the same-timestamp
+   tie-break within one key, a chained hop keyed off the previous match,
+   the dialog (column / pattern choice, invalid pattern refused), the
+   name suffix, and every persistence carrier for linkKey + linkDt
+   (incl. sanitizing a hand-edited value on import).
+   ============================================================ */
+group(291);
+{
+  await withApp(async (w, d, T) => {
+    section("291a. Correlation key: column and capture, with direction/exclusive/tie-break/chaining");
+    const f = await w.addFile("link.log", linkKeyLog(), () => {});
+    const move = w.createFilterNode(f.id, "text", "move requested");
+    const reached = w.createFilterNode(f.id, "text", "position reached");
+    const byThread = w.createLinkNode(move.id, reached.id, "after", 1, { key: { column: "thread" } });
+    assert(pairSummary(w.getEntries(byThread.id)) === "p1@1000|p2@100|p1@900" && byThread.name.includes("[same Thread]"),
+      "same Thread: each move pairs with its own thread's position (1000/100/900 ms), got " + pairSummary(w.getEntries(byThread.id)));
+    const byAxis = w.createLinkNode(move.id, reached.id, "after", 1, { key: { pattern: "axis [*:int]" } });
+    assert(pairSummary(w.getEntries(byAxis.id)) === "p1@500|p2@100|p1@900" && byAxis.name.includes("[same axis [*:int]]"),
+      "same captured axis: the axis-1 move pairs with the first axis-1 position, even from another thread, got " + pairSummary(w.getEntries(byAxis.id)));
+    const exAxis = w.createLinkNode(move.id, reached.id, "after", 1, { exclusive: true, key: { pattern: "axis [*:int]" } });
+    assert(pairSummary(w.getEntries(exAxis.id)) === "p1@500|p2@100|p1@900", "exclusive within a key: no cross-key interference");
+    const exPlain = w.createLinkNode(move.id, reached.id, "after", 1, { exclusive: true });
+    assert(pairSummary(w.getEntries(exPlain.id)) === "p2@300|p1@300|p2@100", "(baseline: without a key, exclusivity hands the second move a foreign axis)");
+    const back = w.createLinkNode(reached.id, move.id, "before", 1, { key: { column: "thread" } });
+    assert(w.getEntries(back.id).length === 4, "direction 'before' + key: T3's position has no T3 move and is dropped (4 of 5)");
+    const combined = w.createLinkNode(move.id, reached.id, "after", 1, { key: { column: "thread" }, dt: { op: "<", ms: 950 } });
+    assert(pairSummary(w.getEntries(combined.id)) === "p2@100|p1@900", "key and Δt together");
+    // Chained: the second hop reads its key off the previous hop's match.
+    const hop2 = w.createLinkNode(byAxis.id, move.id, "after", 1, { key: { column: "thread" } });
+    const t = w.getEntries(hop2.id);
+    assert(t.length === 0, "chained hop keyed by thread: the axis-1 position came from T3, which never moves — no tuple, got " + t.length);
+    const hop2b = w.createLinkNode(byThread.id, move.id, "after", 1, { key: { column: "thread" } });
+    assert(w.getEntries(hop2b.id).length === 1 && w.getEntries(hop2b.id)[0].dtMs === 5000, "chained, same thread throughout: T1 move → T1 position → next T1 move");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("291b. Correlation key keeps the same-timestamp tie-break within its key");
+    const lines = [
+      `2024-01-15 10:00:00,000\tINFO\t"T1"\tFoo.cs\tline 0\t[DoWork]\t"Target Vir decoy"`,
+      `2024-01-15 10:00:10,000\tINFO\t"T1"\tFoo.cs\tline 0\t[DoWork]\t"Target Vir own"`,
+      `2024-01-15 10:00:10,000\tINFO\t"T2"\tFoo.cs\tline 0\t[DoWork]\t"Target Vir foreign"`,
+      `2024-01-15 10:00:10,000\tINFO\t"T1"\tFoo.cs\tline 0\t[DoWork]\t"Target Real"`,
+    ].join("\n") + "\n";
+    const f = await w.addFile("tie.log", lines, () => {});
+    const real = w.createFilterNode(f.id, "text", "Target Real");
+    const vir = w.createFilterNode(f.id, "text", "Target Vir");
+    const plain = w.createLinkNode(real.id, vir.id, "before", 1);
+    assert(w.getEntries(plain.id)[0].first.message === "Target Vir foreign", "baseline: the log-order nearest tie is T2's");
+    const keyed = w.createLinkNode(real.id, vir.id, "before", 1, { key: { column: "thread" } });
+    assert(w.getEntries(keyed.id)[0].first.message === "Target Vir own", "same Thread: the same-millisecond T1 line wins, not the 10 s older decoy");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("291c. Link dialog: Match only same (column / captured value)");
+    const f = await w.addFile("link.log", linkKeyLog(), () => {});
+    const move = w.createFilterNode(f.id, "text", "move requested");
+    const reached = w.createFilterNode(f.id, "text", "position reached");
+    w.render();
+    w.openLinkDialog([move.id, reached.id]);
+    const hop = d.querySelector("#linkHopsList .link-hop-dir");
+    hop.value = "after";
+    hop.dispatchEvent(new w.Event("change", { bubbles: true }));
+    const sel = d.querySelector("#linkKeySelect");
+    assert([...sel.options].map(o => o.value).includes("thread") && [...sel.options].some(o => o.value === "@pattern"),
+      "key choices: the format's columns plus 'value of pattern…'");
+    assert(sel.disabled && !isVisible(d.querySelector("#linkKeyPatternRow"), w), "off by default: select greyed out, pattern row hidden");
+    fireClick(d.querySelector("#linkKeyInput"), w);
+    sel.value = "@pattern";
+    sel.dispatchEvent(new w.Event("change", { bubbles: true }));
+    assert(isVisible(d.querySelector("#linkKeyPatternRow"), w), "'value of pattern…' shows the pattern input");
+    d.querySelector("#linkKeyPattern").value = "axis";
+    d.querySelector("#linkKeyPattern").dispatchEvent(new w.Event("input", { bubbles: true }));
+    await sleep(200);
+    assert(d.querySelector("#linkLiveMatch").textContent.startsWith("Invalid key pattern"), "a pattern without a capture is flagged");
+    const n0 = f.children.length;
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    assert(f.children.length === n0 && isVisible(d.querySelector("#linkDialog"), w), "Create refuses it and keeps the dialog open");
+    d.querySelector("#linkKeyPattern").value = "axis [*:int]";
+    d.querySelector("#linkKeyPattern").dispatchEvent(new w.Event("input", { bubbles: true }));
+    await sleep(200);
+    assert(d.querySelector("#linkLiveMatch").textContent.replace(/\s+/g, " ").trim() === "3 pairs", "preview with a valid key, got " + d.querySelector("#linkLiveMatch").textContent);
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(node.linkKey && node.linkKey.pattern === "axis [*:int]" && pairSummary(w.getEntries(node.id)) === "p1@500|p2@100|p1@900",
+      "Create stores the captured-value key");
+    w.openLinkDialog([move.id, reached.id]);
+    assert(!pillChecked(d.querySelector("#linkKeyInput")) && !pillChecked(d.querySelector("#linkDtInput")), "reopening starts with both options off");
+    w.closeLinkDialog();
+  });
+
+  await withApp(async (w, d, T) => {
+    section("291d. linkKey/linkDt through every persistence carrier");
+    const f = await w.addFile("link.log", linkKeyLog(), () => {});
+    const move = w.createFilterNode(f.id, "text", "move requested");
+    const reached = w.createFilterNode(f.id, "text", "position reached");
+    const link = w.createLinkNode(move.id, reached.id, "after", 1, { key: { column: "thread" }, dt: { op: "<", ms: 950 } });
+    const ok = n => n && n.linkKey && n.linkKey.column === "thread" && n.linkDt && n.linkDt.op === "<" && n.linkDt.ms === 950;
+    const clone = w.cloneSubtree(link.id, f.id);
+    assert(ok(clone) && clone.linkKey !== link.linkKey, "cloneSubtree copies both (fresh objects)");
+    const snap = w.snapshotSubtree(link.id);
+    w.deleteNode(link.id);
+    const restored = w.restoreSubtree(snap);
+    assert(ok(restored) && w.getEntries(restored.id).length === 2, "snapshotSubtree/restoreSubtree");
+    const branch = w.serializeFilterBranch(restored.id, false);
+    branch.roots.push(Object.assign(JSON.parse(JSON.stringify(branch.roots[0])), { linkDt: { op: "=", ms: 5 }, linkKey: { column: "" } }));
+    const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+    const s = d.createElement("script");
+    s.textContent = `loadFilterTargetId = ${JSON.stringify(f.id)};`;
+    d.body.appendChild(s);
+    const before = new Set(f.children);
+    w.importFilterJson(json);
+    const imported = f.children.filter(id => !before.has(id)).map(id => T.state.nodes[id]);
+    assert(imported.length === 2 && imported.some(ok) && imported.some(n => !n.linkDt && !n.linkKey),
+      "serializeFilterBranch/importFilterJson round-trip; a malformed hand-edited condition is dropped");
+    const { roots } = w.serializeFilterTreeForCache(f);
+    const fake = { id: "fake-link-file", children: [] };
+    w.materializeCachedFilters(fake, roots);
+    assert(fake.children.map(id => T.state.nodes[id]).some(ok), "serializeFilterTreeForCache/materializeCachedFilters");
+    // Nested bake (link of this link) + Unpack.
+    const outer = w.createLinkNode(restored.id, move.id, "after", 1);
+    assert(ok(outer.bakedA), "a chained link's baked reference side keeps the inner link's key and Δt");
+    const unpacked = w.materializeBakedAsNode(outer.bakedA, f.id);
+    assert(ok(unpacked), "Unpack (materializeBakedAsNode) restores them onto the node");
+  });
+}
+
+/* ============================================================
+   GROUP 292 — Sortable Δt column: "where is the most time lost" without
+   a threshold (2026-09-26, follow-up to GROUP 289). The Filtered view's
+   Δt header sorts by each row's CHRONOLOGICAL Δt (captured before the
+   sort, buildViewDeltaMap) — first click largest first, rows without a Δt
+   last in both directions; on a filter node it's the gap within that
+   result, on a gap node the measured per-group gap (Gap ≥ 0 per Thread =
+   a ranking of the longest per-thread pauses).
+   ============================================================ */
+group(292);
+await withApp(async (w, d, T) => {
+  section("292. Sortable Δt column (largest first, chronological Δt, gap nodes)");
+  const rows = [[0, "A", "start"], [1, "B", "tick"], [5, "A", "work"], [6, "B", "tick"], [20, "A", "done"]];
+  const log = rows.map(([sec, th, msg]) => `2024-01-15 10:00:${String(sec).padStart(2, "0")},000\tINFO\t"${th}"\tFoo.cs\tline 0\t[DoWork]\t"${msg} ${sec}"`).join("\n") + "\n";
+  const f = await w.addFile("sort.log", log, () => {});
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.revealFilteredView();
+  w.render();
+  const th = () => d.querySelector('#tableHeader .th-sortable[data-sort="delta"]');
+  assert(!!th(), "the Δt header is sortable");
+  const view = () => T.currentViewEntries.map(e => e.message).join("|");
+  const cells = () => [...d.querySelectorAll("#tableRows .col-delta")].map(c => c.textContent).join("|");
+  fireClick(th(), w);
+  assert(T.state.sortColumn === "delta" && T.state.sortDir === "desc", "first click sorts Δt largest first");
+  assert(view() === "done 20|work 5|tick 1|tick 6|start 0", "largest gap first, the first entry (no Δt) last, got " + view());
+  assert(cells() === "+14.0s|+4.0s|+1.0s|+1.0s|—", "each row keeps its chronological Δt, got " + cells());
+  assert(th().querySelector(".th-sort-arrow").textContent === "▼", "descending arrow");
+  fireClick(th(), w);
+  assert(T.state.sortDir === "asc" && view() === "tick 1|tick 6|work 5|done 20|start 0", "ascending: smallest first, no-Δt row still last, got " + view());
+
+  // On a filter node: Δt within that result.
+  w.createFilterNode(f.id, "text", "A", false, null, true, ["thread"]); // thread "A" only
+  T.state.sortDir = "desc";
+  w.render();
+  assert(view() === "done 20|work 5|start 0" && cells() === "+15.0s|+5.0s|—", "filter node: Δt between its own rows, got " + view() + " / " + cells());
+
+  // On a gap node (threshold 0, per Thread): the per-thread pauses ranked.
+  w.createGapNode(f.id, { ms: 0, per: "thread" });
+  w.render();
+  assert(view() === "done 20|work 5|tick 6" && cells() === "+15.0s|+5.0s|+5.0s", "Gap ≥ 0 per Thread sorted by Δt ranks the per-thread pauses, got " + view() + " / " + cells());
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -36862,4 +37305,20 @@ process.exitCode = failed ? 1 : 0;
       tab. Same session renumbered the Ctrl+N positions in GROUP 72 and
       194d and the tab order in 286b.
       288c (same day): facet value names coloured by their most severe level.
+   Group 289-291 — 2026-09-26 session: timing analysis for multi-process
+      logs. 289 the Gap filter (FEATURE_BACKLOG.md #24: threshold, "measured
+      per" column, Δt column in Filtered, #gapDialog create/edit/undo, menu
+      entries, NOT/AND, persistence), 290 the link Δt condition (tuple span
+      dtMs, exclusivity interplay, multi-hop last-hop placement, dialog live
+      "N of M pairs" preview) + the extraction table's Δt (ms) column on
+      pairs, 291 the link correlation key (column / captured value, with
+      direction/N/exclusive/tie-break/chaining, dialog, persistence). Same
+      session made the live-result summary reusable (classes instead of
+      #filterResults ids): GROUP 122/263's className checks on
+      #filterLiveMatch now use classList.contains.
+   Group 292 — same session, follow-up: the Filtered view's Δt column is
+      sortable (first click largest first; chronological Δt captured before
+      sorting; gap nodes rank their measured per-group gaps). Same session
+      updated GROUP 13: Δt is no longer dashed out under a column sort, each
+      row shows its chronological Δt instead.
    ============================================================ */
