@@ -2640,11 +2640,11 @@
   }
 
   /* ---------- Link dialog ---------- */
-  #linkDialog{
+  #linkDialog, #gapDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center;
   }
-  #linkDialog.hidden{display:none;}
+  #linkDialog.hidden, #gapDialog.hidden{display:none;}
   .link-dialog-card{
     width:min(400px, 88%); background:var(--bg-elevated); border:1px solid var(--border);
     border-radius:12px; padding:20px 22px; box-shadow:0 20px 45px rgba(0,0,0,.5);
@@ -2675,6 +2675,15 @@
   .link-toggle-row:last-child{margin-bottom:0;}
   .link-toggle-label{font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
   #linkOrderEnforceRow.hidden{display:none;}
+  /* Link dialog's "Match only same" / "Only pairs with Δt" rows and the Gap
+     dialog's threshold row: inline controls right of the label, greyed out
+     while their switch is off. */
+  .link-option-controls{display:flex; align-items:center; gap:6px; flex:0 0 auto;}
+  .link-option-controls input[type="number"], #gapValueInput{width:76px;}
+  .link-option-controls select:disabled, .link-option-controls input:disabled, #linkKeyPattern:disabled{opacity:.45;}
+  #linkKeyPatternRow.hidden{display:none;}
+  .link-inline-text{font-size:12px; color:var(--text-secondary);}
+  .link-dialog-card .live-results{margin-bottom:4px;}
   .link-hop-row{
     background:var(--bg-app); border:1px solid var(--border); border-radius:8px;
     padding:8px 10px; margin-bottom:8px; font-size:12px; color:var(--text-secondary); line-height:1.7;
@@ -3695,27 +3704,31 @@
      "captures: …" meta on the left, a match-over-time histogram on the
      right, then up to FILTER_SAMPLE_ROWS matching rows as a small table
      (level bar, HH:mm:ss.SSS, message with the hit marked). */
-  #filterResults{display:flex; flex-direction:column; gap:8px; padding-top:9px; border-top:1px solid var(--border-soft);}
-  #filterResults.hidden{display:none;}
+  .live-results{display:flex; flex-direction:column; gap:8px; padding-top:9px; border-top:1px solid var(--border-soft);}
+  .live-results.hidden{display:none;}
   .filter-results-head{display:flex; align-items:center; gap:14px; min-height:34px;}
-  #filterLiveMatch{
+  .live-match{
     display:flex; align-items:center; gap:10px; flex:0 0 auto;
     font-size:10.8px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;
   }
-  #filterLiveMatch.warn{color:var(--warn);}
-  #filterLiveMatch.error{color:var(--level-error);}
+  .live-match.warn{color:var(--warn);}
+  .live-match.error{color:var(--level-error);}
   .filter-live-count{font-size:26px; font-weight:700; line-height:1; color:var(--text-primary);}
-  #filterLiveMatch.warn .filter-live-count{color:var(--warn);}
+  .live-match.warn .filter-live-count{color:var(--warn);}
   .filter-live-meta{display:flex; flex-direction:column; gap:2px; font-family:var(--font-mono);}
-  #filterResultsMinimap{flex:1 1 auto; min-width:0; height:30px;}
-  #filterResultsMinimap.hidden{display:none;}
-  #filterResultsMinimap rect{opacity:.95;}
-  #filterResultsSamples{display:flex; flex-direction:column; gap:2px;}
-  #filterResultsSamples:empty{display:none;}
+  .live-minimap{flex:1 1 auto; min-width:0; height:30px;}
+  .live-minimap.hidden{display:none;}
+  .live-minimap rect{opacity:.95;}
+  .live-samples{display:flex; flex-direction:column; gap:2px;}
+  .live-samples:empty{display:none;}
   .filter-sample-row{
     display:grid; grid-template-columns:3px auto minmax(0,1fr); column-gap:10px; align-items:center;
     font-family:var(--font-mono); font-size:11.5px; line-height:20px; padding-right:6px;
   }
+  /* A sample row with a leading badge — the Gap dialog's measured gap, the
+     Link dialog's pair Δt (renderLiveResults' opts.badge). */
+  .filter-sample-row.has-badge{grid-template-columns:3px auto auto minmax(0,1fr);}
+  .filter-sample-badge{color:var(--accent-strong); white-space:nowrap; text-align:right;}
   .filter-sample-row .col-bar{margin:2px 0; height:16px;}
   .filter-sample-time{color:var(--text-tertiary); white-space:nowrap;}
   .filter-sample-msg{color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -4232,12 +4245,12 @@
           <!-- Live result summary: big match count + meta lines left, a
                match-over-time histogram right, then up to three matching
                rows as a sample table — see evaluateLiveMatch/renderLiveResults. -->
-          <div id="filterResults" class="hidden">
+          <div id="filterResults" class="live-results hidden">
             <div class="filter-results-head">
-              <div id="filterLiveMatch"></div>
-              <svg id="filterResultsMinimap" class="hidden" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+              <div id="filterLiveMatch" class="live-match"></div>
+              <svg id="filterResultsMinimap" class="live-minimap hidden" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
             </div>
-            <div id="filterResultsSamples"></div>
+            <div id="filterResultsSamples" class="live-samples"></div>
           </div>
           <div class="filter-footer-row">
             <div class="filter-footer-actions">
@@ -4887,9 +4900,68 @@
           <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkOrderEnforceInput"></button>
         </div>
       </div>
+      <!-- Correlation key and Δt condition (docs/filters.md → "Link filter:
+           correlation key" / "Δt condition"), read by readLinkDialogOptions. -->
+      <div class="link-field">
+        <div class="link-toggle-row">
+          <label class="link-toggle-label" for="linkKeyInput">Match only same</label>
+          <span class="link-option-controls">
+            <select id="linkKeySelect"></select>
+            <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkKeyInput"></button>
+          </span>
+        </div>
+        <div class="link-toggle-row hidden" id="linkKeyPatternRow">
+          <input type="text" id="linkKeyPattern" placeholder="captured value, e.g. axis [*:int]" spellcheck="false" autocomplete="off">
+        </div>
+        <div class="link-toggle-row">
+          <label class="link-toggle-label" for="linkDtInput">Only pairs with Δt</label>
+          <span class="link-option-controls">
+            <select id="linkDtOp"><option value="&gt;">&gt;</option><option value="&lt;">&lt;</option></select>
+            <input type="number" id="linkDtValue" min="0" step="any" value="500">
+            <select id="linkDtUnit"><option value="ms">ms</option><option value="s">s</option><option value="min">min</option></select>
+            <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkDtInput"></button>
+          </span>
+        </div>
+      </div>
+      <!-- Live pair count / histogram / sample pairs — renderLiveResults. -->
+      <div id="linkResults" class="live-results hidden">
+        <div class="filter-results-head">
+          <div id="linkLiveMatch" class="live-match"></div>
+          <svg id="linkResultsMinimap" class="live-minimap hidden" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="linkResultsSamples" class="live-samples"></div>
+      </div>
       <div class="link-dialog-actions">
         <button type="button" id="linkDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="linkDialogCreate" class="btn-mini">Create</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Gap filter (FEATURE_BACKLOG.md #24) — openGapDialog. -->
+  <div id="gapDialog" class="hidden">
+    <div class="link-dialog-card link-dialog-card-wide">
+      <div class="link-dialog-title">Gap filter</div>
+      <div class="link-field">
+        <label>Entries of <span id="gapBaseLabel" class="link-target-label"></span> after a gap of at least</label>
+        <div class="link-field-row">
+          <span class="link-inline-text">Gap ≥</span>
+          <input type="number" id="gapValueInput" min="0" step="any" value="1">
+          <select id="gapUnitSelect"><option value="ms">ms</option><option value="s">s</option><option value="min">min</option></select>
+          <span class="link-inline-text">measured per</span>
+          <select id="gapPerSelect"></select>
+        </div>
+      </div>
+      <div id="gapResults" class="live-results hidden">
+        <div class="filter-results-head">
+          <div id="gapLiveMatch" class="live-match"></div>
+          <svg id="gapResultsMinimap" class="live-minimap hidden" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="gapResultsSamples" class="live-samples"></div>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="gapDialogCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="gapDialogCreate" class="btn-mini">Create</button>
       </div>
     </div>
   </div>
@@ -8359,16 +8431,42 @@ function levelSortRank(bucket, formatId) {
 // to a *copy* of the current view's entries (see renderTable) — never to the
 // underlying node/file arrays, which must stay chronological for the link
 // filter's binary search and the OR-filter merge to keep working correctly.
-function entryComparator(column, dir) {
+// "delta" sorts by `deltas` (entry id -> Δt ms, see buildViewDeltaMap);
+// rows without a Δt (the first row, a plain-text line) sort last in both
+// directions, so "largest first" never starts with blanks.
+function entryComparator(column, dir, deltas) {
   const sign = dir === "desc" ? -1 : 1;
   return (a, b) => {
     let cmp = 0;
-    if (column === "time") cmp = a.ts - b.ts;
+    if (column === "delta") {
+      const da = deltas && deltas.get(a.id), db = deltas && deltas.get(b.id);
+      if (da === undefined || db === undefined) return (da === undefined) - (db === undefined);
+      cmp = da - db;
+    } else if (column === "time") cmp = a.ts - b.ts;
     else if (column === "level") cmp = levelSortRank(levelBucket(a.level, a.formatId), a.formatId) - levelSortRank(levelBucket(b.level, b.formatId), b.formatId);
     else if (column === "thread") cmp = String(a.thread).localeCompare(String(b.thread));
     else if (column === "location") cmp = String(a.locationShort).localeCompare(String(b.locationShort));
     return cmp * sign;
   };
+}
+
+// The Filtered view's Δt per row, taken from the view's CHRONOLOGICAL order
+// (the list before any column sort) so a row keeps its own Δt when the
+// table is re-sorted — which is what makes "sort by Δt, largest first"
+// answer "where is the most time lost". On a gap node it's the node's own
+// measured gap per group (node._gapMs, see computeGapEntries); otherwise
+// the distance to the previous row of the view. Built only while a sort is
+// active (renderTable); unsorted rows read their neighbour directly.
+let viewDeltaMs = null;
+function buildViewDeltaMap(entries) {
+  const node = state.nodes[state.activeId];
+  if (node && node.filterType === "gap" && !node.inverted && node._gapMs) return node._gapMs;
+  const out = new Map();
+  for (let i = 1; i < entries.length; i++) {
+    const e = entries[i];
+    if (!isPlainTextFormat(e.formatId)) out.set(e.id, e.ts - entries[i - 1].ts);
+  }
+  return out;
 }
 
 let uidCounter = 0;
@@ -10775,6 +10873,7 @@ function bakeNodeCondition(node) {
     baked.linkN = node.linkN;
     baked.linkOrderEnforced = !!node.linkOrderEnforced;
     baked.linkExclusive = !!node.linkExclusive;
+    copyLinkOptions(node, baked);
   }
   return baked;
 }
@@ -11034,9 +11133,63 @@ function createLinkNode(refId, targetId, direction, n, opts) {
     linkOrderEnforced: !!(opts && opts.orderEnforced),
     linkExclusive: !!(opts && opts.exclusive),
   };
+  copyLinkOptions({ linkDt: opts && opts.dt, linkKey: opts && opts.key }, node);
+  node.name += linkOptionsNameSuffix(node);
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
   return activateNewNode(node);
+}
+
+// Two optional link conditions (docs/filters.md → "Link filter: Δt
+// condition" / "Correlation key"), both null when unset:
+//   linkDt  = { op: ">" | "<", ms } — keep only tuples whose span (first to
+//             last real entry, the pair's dtMs, see buildPairEntry) is
+//             greater / less than ms.
+//   linkKey = { column } | { pattern } — a reference and a target are only
+//             paired when they carry the same value in that column (Thread,
+//             Source, a custom column, ... — entryGroupValue), or the same
+//             capture(s) of that wildcard pattern (e.g. "axis [*:int]").
+// Stored as their own node fields (a link's `value` is always null) and
+// copied as fresh objects by every carrier via copyLinkOptions.
+function sanitizeLinkDt(v) {
+  if (!v || (v.op !== ">" && v.op !== "<")) return null;
+  const ms = +v.ms;
+  return Number.isFinite(ms) && ms >= 0 ? { op: v.op, ms } : null;
+}
+function sanitizeLinkKey(v) {
+  if (!v) return null;
+  if (typeof v.column === "string" && v.column) return { column: v.column };
+  if (typeof v.pattern === "string" && v.pattern.trim()) return { pattern: v.pattern.trim() };
+  return null;
+}
+function copyLinkOptions(src, dst) {
+  const dt = sanitizeLinkDt(src.linkDt);
+  if (dt) dst.linkDt = dt; else delete dst.linkDt;
+  const key = sanitizeLinkKey(src.linkKey);
+  if (key) dst.linkKey = key; else delete dst.linkKey;
+}
+function linkDtPasses(dt, ms) { return dt.op === ">" ? ms > dt.ms : ms < dt.ms; }
+function linkOptionsNameSuffix(node) {
+  let out = "";
+  if (node.linkKey) out += " [same " + (node.linkKey.column ? groupColumnLabel(node.linkKey.column) : node.linkKey.pattern) + "]";
+  if (node.linkDt) out += " (Δt " + node.linkDt.op + " " + formatMs(node.linkDt.ms) + ")";
+  return out;
+}
+// entry -> its correlation key string, or null when it carries none (an
+// empty column, a message the pattern doesn't match) — such an entry is
+// never paired. null (no function) when the link has no key at all. An
+// invalid pattern keys nothing, so the link matches nothing (the dialog
+// refuses to create one).
+function compileLinkKey(linkKey) {
+  const key = sanitizeLinkKey(linkKey);
+  if (!key) return null;
+  if (key.column) return e => entryGroupValue(e, key.column) || null;
+  const spec = isExtractPattern(key.pattern) ? compileExtractPattern(key.pattern) : null;
+  if (!spec) return () => null;
+  return e => {
+    const m = wildcardMatch(spec.regex, spec.columns, e.message);
+    return m ? m.slice(1, spec.columns.length + 1).join("\u0001") : null;
+  };
 }
 
 const PAIR_SEPARATOR = " ⟶ ";
@@ -11261,6 +11414,103 @@ function mergeCountContextRanges(refEntries, orderIndexMap, poolLen, beforeCount
   return merged;
 }
 
+/* ===================== Gap filter: time distance to the previous entry
+   (FEATURE_BACKLOG.md #24) ===================== */
+
+// A "gap" node keeps the entries of its parent's result whose time distance
+// to the PREVIOUS entry of that same result is >= value.ms — or, with
+// value.per set to a column key, to the previous entry carrying the same
+// value in that column ("measured per Thread": one pass, a Map of the last
+// ts per group). In a log several threads write to, the plain gap to the
+// previous line says little; per thread it finds the stalls. The first
+// entry (of each group) has no predecessor, so no gap, and is never kept.
+// value = { ms, per } lives entirely in the generic `value` field (same as
+// "timerange"'s { from, to }), so every persistence carrier already threads
+// it through; like every `value` it is replaced wholesale, never mutated.
+const GAP_UNITS = [{ key: "ms", ms: 1 }, { key: "s", ms: 1000 }, { key: "min", ms: 60000 }];
+function normalizeGapValue(v) {
+  const ms = v && Number.isFinite(+v.ms) ? Math.max(0, +v.ms) : 0;
+  const per = v && typeof v.per === "string" && v.per ? v.per : null;
+  return { ms, per };
+}
+
+// The value an entry is grouped/keyed by for a column key: "source" is a
+// merged file's source file (entry.sourceId, see createMergeShell),
+// anything else a real column (entryColumnValue). Shared by the gap
+// filter's "measured per" and the link filter's "match only same".
+function entryGroupValue(e, key) {
+  return key === "source" ? (e.sourceId || "") : entryColumnValue(e, key);
+}
+
+// { result, gaps }: gaps maps each kept entry's id to its measured gap in
+// ms — stored on the node as _gapMs next to _cache (same "rides along with
+// the cache" pattern as a context node's _contextRanges) and shown in the
+// Filtered view's Δt column instead of the gap to the previous visible row.
+function computeGapEntries(value, parentEntries) {
+  const { ms, per } = normalizeGapValue(value);
+  const result = [];
+  const gaps = new Map();
+  const lastTs = per ? new Map() : null;
+  let prevTs;
+  for (const e of parentEntries) {
+    if (isNaN(e.ts)) continue;
+    let prev;
+    if (lastTs) {
+      const group = entryGroupValue(e, per);
+      prev = lastTs.get(group);
+      lastTs.set(group, e.ts);
+    } else {
+      prev = prevTs;
+      prevTs = e.ts;
+    }
+    if (prev === undefined) continue;
+    const gap = e.ts - prev;
+    if (gap >= ms) { result.push(e); gaps.set(e.id, gap); }
+  }
+  return { result, gaps };
+}
+
+// The threshold in the largest unit that shows it without a long fraction:
+// whole minutes as "min", from 1 s up as "s", below that "ms". Used for the
+// node name and to pre-fill the dialog's value + unit when editing.
+function gapThresholdParts(ms) {
+  if (ms >= 60000 && ms % 60000 === 0) return { amount: ms / 60000, unit: "min" };
+  if (ms >= 1000) return { amount: ms / 1000, unit: "s" };
+  return { amount: ms, unit: "ms" };
+}
+function groupColumnLabel(key) {
+  if (key === "source") return "Source";
+  const def = activeColumnDefs().find(d => d.key === key);
+  return def ? def.label : key;
+}
+function gapFilterName(value) {
+  const { ms, per } = normalizeGapValue(value);
+  const t = gapThresholdParts(ms);
+  return "Gap ≥ " + t.amount + " " + t.unit + (per ? " per " + groupColumnLabel(per) : "");
+}
+function createGapNode(parentId, value) {
+  const parent = state.nodes[parentId];
+  if (!parent) return null;
+  value = normalizeGapValue(value);
+  const node = {
+    id: uid("n"), type: "filter", name: gapFilterName(value),
+    parentId, children: [], filterType: "gap", value, inverted: false,
+  };
+  state.nodes[node.id] = node;
+  parent.children.push(node.id);
+  return activateNewNode(node);
+}
+// Edit through the generic field-edit undo (value + name are both
+// captured by captureNodeFields).
+function updateGapNodeWithUndo(nodeId, value) {
+  value = normalizeGapValue(value);
+  withFieldEditUndo(nodeId, node => {
+    node.value = value;
+    node.name = gapFilterName(value);
+    invalidateAllCaches();
+  });
+}
+
 // Finds the Nth target entry before/after refEntry. targetEntries must be
 // sorted ascending by .ts (true here since every getEntries() result
 // preserves chronological source order). Returns null if there's no such
@@ -11368,6 +11618,12 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
     if (refOrder !== undefined && targetOrder !== undefined) refFirst = refOrder < targetOrder;
   }
   const [first, second] = refFirst ? [refEntry, targetEntry] : [targetEntry, refEntry];
+  // The tuple's time span, carried up through every nesting level (a side
+  // that is itself a pair contributes its own tsMin/tsMax): dtMs is what the
+  // link's optional Δt condition tests and what an extraction table on
+  // pairs shows as its "Δt (ms)" column (DT_COL).
+  const tsMin = Math.min(refEntry.isPair ? refEntry.tsMin : refEntry.ts, targetEntry.isPair ? targetEntry.tsMin : targetEntry.ts);
+  const tsMax = Math.max(refEntry.isPair ? refEntry.tsMax : refEntry.ts, targetEntry.isPair ? targetEntry.tsMax : targetEntry.ts);
   return {
     id: "pair:" + refEntry.id + ":" + targetEntry.id,
     isPair: true,
@@ -11375,6 +11631,7 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
     ts: refEntry.ts,
     matchTs: targetEntry.ts,
     matchEntry: targetEntry,
+    tsMin, tsMax, dtMs: tsMax - tsMin,
     level: refEntry.level,
     thread: refEntry.thread,
     locationShort: refEntry.locationShort,
@@ -11383,6 +11640,77 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
     message: first.message + PAIR_SEPARATOR + second.message,
     raw: first.raw + PAIR_SEPARATOR + second.raw,
   };
+}
+
+// The pairing loop behind every link — a real "link" node
+// (getEntriesUncached) and a baked one (getEntriesFromBaked) alike; `cfg`
+// is either, both carry the same link* fields. For each reference entry:
+// find the Nth target before/after it, then apply the opt-in conditions in
+// order — order enforcement, the Δt condition — and only a pair that
+// survives them all claims its target under "exclusive matches" (a pair
+// dropped by a condition leaves its target free for a later reference).
+//
+// With a correlation key (linkKey), the targets are indexed by key ONCE
+// per recompute (a Map key -> that key's targets, each list still sorted
+// by ts since targetEntries is), and each reference searches only its own
+// key's list — the unchanged findNthOccurrence(Excluding) run over a
+// smaller array, so direction, N, the tie-break and exclusivity all keep
+// their exact meaning, just among same-key candidates.
+function computeLinkPairs(cfg, refEntries, targetEntries, fileId) {
+  const result = [];
+  // usedIds backs the opt-in "exclusive matches" option: once a target
+  // entry has been matched for one reference entry, later reference
+  // entries in this SAME node can't reuse it. Scoped globally across
+  // every tuple this node produces (across the whole loop below), not
+  // per-hop — see docs/filters.md "Link filter" for why that scope was
+  // chosen. Off by default, so behavior is unchanged unless opted in.
+  const usedIds = cfg.linkExclusive ? new Set() : null;
+  // Backs the same-timestamp tie-break in findNthOccurrence — see
+  // buildOrderIndexMap. Built once per recompute, not per reference entry.
+  const orderIndexMap = buildOrderIndexMap(fileId);
+  const dt = sanitizeLinkDt(cfg.linkDt);
+  const keyOf = compileLinkKey(cfg.linkKey);
+  let targetsByKey = null;
+  if (keyOf) {
+    targetsByKey = new Map();
+    for (const t of targetEntries) {
+      const k = keyOf(t);
+      if (k == null) continue;
+      let list = targetsByKey.get(k);
+      if (!list) targetsByKey.set(k, list = []);
+      list.push(t);
+    }
+  }
+  for (const refEntry of refEntries) {
+    // Anchor on the previous hop's matched entry (refEntry.matchTs /
+    // .matchEntry) when refEntry is itself a chained link's pair result,
+    // not its stale outer .ts — see buildPairEntry/getTupleEntries (Bug 1
+    // fix). A plain, non-pair refEntry has neither, so both fall back to
+    // refEntry itself. The correlation key is read off that same anchor.
+    const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
+    const anchorEntry = refEntry.matchEntry || refEntry;
+    let candidates = targetEntries;
+    if (targetsByKey) {
+      const k = keyOf(anchorEntry);
+      candidates = k == null ? null : targetsByKey.get(k);
+      if (!candidates) continue;
+    }
+    const match = usedIds
+      ? findNthOccurrenceExcluding(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, usedIds, orderIndexMap)
+      : findNthOccurrence(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, orderIndexMap);
+    if (!match) continue;
+    // Opt-in "enforce order": reject (drop, same as "no match") a hop
+    // whose match lands strictly before the anchor it was searched from —
+    // i.e. require the chain's timestamps to be non-decreasing hop over
+    // hop, regardless of which individual hop searched "before" vs
+    // "after". See docs/filters.md for why this definition was chosen.
+    if (cfg.linkOrderEnforced && match.ts < anchorTs) continue;
+    const pair = buildPairEntry(refEntry, match, orderIndexMap);
+    if (dt && !linkDtPasses(dt, pair.dtMs)) continue;
+    if (usedIds) usedIds.add(match.id);
+    result.push(pair);
+  }
+  return result;
 }
 
 // Flattens a (possibly nested/chained) pair entry into the ordered list of
@@ -11434,6 +11762,7 @@ function cloneSubtree(nodeId, newParentId) {
     clone.linkN = orig.linkN;
     clone.linkOrderEnforced = !!orig.linkOrderEnforced;
     clone.linkExclusive = !!orig.linkExclusive;
+    copyLinkOptions(orig, clone);
   } else if (orig.filterType === "context") {
     clone.contextBefore = orig.contextBefore;
     clone.contextAfter = orig.contextAfter;
@@ -12377,20 +12706,9 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
   } else if (baked.filterType === "link") {
     const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
     const targetEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
-    result = [];
-    const usedIds = baked.linkExclusive ? new Set() : null;
-    const orderIndexMap = buildOrderIndexMap(fileId);
-    for (const refEntry of refEntries) {
-      const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
-      const anchorEntry = refEntry.matchEntry || refEntry;
-      const match = usedIds
-        ? findNthOccurrenceExcluding(targetEntries, anchorEntry, baked.linkDirection, baked.linkN, usedIds, orderIndexMap)
-        : findNthOccurrence(targetEntries, anchorEntry, baked.linkDirection, baked.linkN, orderIndexMap);
-      if (!match) continue;
-      if (baked.linkOrderEnforced && match.ts < anchorTs) continue;
-      if (usedIds) usedIds.add(match.id);
-      result.push(buildPairEntry(refEntry, match, orderIndexMap));
-    }
+    result = computeLinkPairs(baked, refEntries, targetEntries, fileId);
+  } else if (baked.filterType === "gap") {
+    result = computeGapEntries(baked.value, parentEntries).result;
   } else if (baked.filterType === "context" || baked.filterType === "countContext") {
     const file = fileId && state.nodes[fileId];
     if (!file || parentEntries.length === 0) {
@@ -12564,41 +12882,11 @@ function getEntriesUncached(node, parentOverride) {
     const fileId = getRootFileId(nodeId);
     const refEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
     const targetEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
-    result = [];
-    // usedIds backs the opt-in "exclusive matches" option: once a target
-    // entry has been matched for one reference entry, later reference
-    // entries in this SAME node can't reuse it. Scoped globally across
-    // every tuple this node produces (across the whole loop below), not
-    // per-hop — see PROJECT.md "Link filter" for why that scope was
-    // chosen. Off by default, so behavior is unchanged unless opted in.
-    const usedIds = node.linkExclusive ? new Set() : null;
-    // Backs the same-timestamp tie-break in findNthOccurrence — see
-    // buildOrderIndexMap. Built once per recompute of this node, not per
-    // reference entry.
-    const orderIndexMap = buildOrderIndexMap(fileId);
-    for (const refEntry of refEntries) {
-      // Anchor on the previous hop's matched entry (refEntry.matchTs /
-      // .matchEntry) when refEntry is itself a chained link's pair
-      // result, not its stale outer .ts — see buildPairEntry/
-      // getTupleEntries above (Bug 1 fix). A plain, non-pair refEntry has
-      // neither, so both fall back to refEntry itself exactly as before.
-      const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
-      const anchorEntry = refEntry.matchEntry || refEntry;
-      const match = usedIds
-        ? findNthOccurrenceExcluding(targetEntries, anchorEntry, node.linkDirection, node.linkN, usedIds, orderIndexMap)
-        : findNthOccurrence(targetEntries, anchorEntry, node.linkDirection, node.linkN, orderIndexMap);
-      if (!match) continue;
-      // Opt-in "enforce order": reject (drop, same as "no match") a hop
-      // whose match lands strictly before the anchor it was searched
-      // from — i.e. require the chain's timestamps to be non-decreasing
-      // hop over hop, regardless of which individual hop searched
-      // "before" vs "after". See PROJECT.md for why this definition was
-      // chosen over the other candidate ("each hop internally
-      // consistent") and how it maps onto the REPRO case.
-      if (node.linkOrderEnforced && match.ts < anchorTs) continue;
-      if (usedIds) usedIds.add(match.id);
-      result.push(buildPairEntry(refEntry, match, orderIndexMap));
-    }
+    result = computeLinkPairs(node, refEntries, targetEntries, fileId);
+  } else if (node.filterType === "gap") {
+    const gap = computeGapEntries(node.value, parentEntries);
+    result = gap.result;
+    node._gapMs = gap.gaps; // read by appendLogRow's Δt column, see computeGapEntries
   } else if (node.filterType === "context") {
     const fileId = getRootFileId(node.parentId);
     const file = fileId && state.nodes[fileId];
@@ -13001,6 +13289,7 @@ function snapshotSubtree(nodeId) {
   if (node.filterType === "link") {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
     copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
+    copyLinkOptions(node, copy);
   } else if (node.filterType === "context") { copy.contextBefore = node.contextBefore; copy.contextAfter = node.contextAfter; }
   else if (node.filterType === "countContext") { copy.countBefore = node.countBefore; copy.countAfter = node.countAfter; }
   if (node.assertions) copy.assertions = JSON.parse(JSON.stringify(node.assertions));
@@ -13065,6 +13354,7 @@ function restoreSubtree(snap) {
   if (snap.filterType === "link") {
     node.linkDirection = snap.linkDirection; node.linkN = snap.linkN;
     node.linkOrderEnforced = !!snap.linkOrderEnforced; node.linkExclusive = !!snap.linkExclusive;
+    copyLinkOptions(snap, node);
   } else if (snap.filterType === "context") { node.contextBefore = snap.contextBefore; node.contextAfter = snap.contextAfter; }
   else if (snap.filterType === "countContext") { node.countBefore = snap.countBefore; node.countAfter = snap.countAfter; }
   if (snap.assertions) node.assertions = snap.assertions;
@@ -14765,7 +15055,7 @@ tableHeaderEl.addEventListener("click", ev => {
     state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
   } else {
     state.sortColumn = col;
-    state.sortDir = "asc";
+    state.sortDir = col === "delta" ? "desc" : "asc"; // Δt: largest first — "where is the time lost"
   }
   renderTable();
   findRefresh(); // a re-sort reorders the list the find bar's hit indices point into
@@ -15134,6 +15424,7 @@ function typeTagFor(node) {
     case "link": return "LNK";
     case "context": return "CTX";
     case "countContext": return "CNT";
+    case "gap": return "GAP";
     case "level": return "LVL";
     case "bookmarks": return "BKM";
     case "idset": return "SET";
@@ -15167,6 +15458,7 @@ function nodeIconHTML(node) {
     : node.filterType === "notes" ? ICON_NOTE
     : node.filterType === "sources" ? ICON_FILES_SEPARATE
     : node.filterType === "idset" ? ICON_CHECK
+    : node.filterType === "gap" ? ICON_CLOCK
     : timeFilterIcon(node);
 }
 
@@ -15450,6 +15742,7 @@ function ghostTypeTag(filterType) {
     case "link": return "LNK";
     case "context": return "CTX";
     case "countContext": return "CNT";
+    case "gap": return "GAP";
     case "level": return "LVL";
     case "bookmarks": return "BKM";
     case "idset": return "SET";
@@ -15594,6 +15887,10 @@ function editFilterNode(nodeId) {
   }
   if (node.filterType === "text") {
     openEditFilterPopup(node.id);
+    return true;
+  }
+  if (node.filterType === "gap") {
+    openGapDialog(node.id, true);
     return true;
   }
   return false;
@@ -16332,6 +16629,11 @@ const EXTRACT_BUFFER_ROWS = 15;
 // extractColumns and needs no special-casing.
 const INDEX_COL = -2;
 const ELAPSED_COL = -1;
+// A third synthetic column, only when the tabulated entries are link pairs
+// (an extraction under a link node): the tuple's span, pair.dtMs — so a
+// link's duration can be plotted over time (t (ms) or Index as X) like any
+// captured value. See docs/extraction-and-plotting.md.
+const DT_COL = -3;
 
 // Distinct colors for numbering/coloring extraction columns, cycling if there
 // are more columns than colors. Deliberately separate from the log-level
@@ -18892,12 +19194,14 @@ function renderExtractTable(node) {
   // instead (its ts IS the line number, and "elapsed lines since the first
   // match" would be the least useful of the two).
   const plainText = nodeIsPlainText(node.id);
+  const entries = applyLevelFilter(getEntries(node.id));
+  const pairs = entries.length > 0 && !!entries[0].isPair;
   extractColumns = [
     { name: "Index", type: "int", colIndex: INDEX_COL },
     { name: plainText ? "Line" : "t (ms)", type: "int", colIndex: ELAPSED_COL },
+    ...(pairs ? [{ name: "Δt (ms)", type: "int", colIndex: DT_COL }] : []),
     ...spec.columns.map((c, i) => ({ ...c, colIndex: i })).filter(c => !ignoredSet.has(c.colIndex)),
   ].map(c => ({ ...c, name: getColumnDisplayName(node, c.colIndex, c.name) }));
-  const entries = applyLevelFilter(getEntries(node.id));
   extractRowsData = entries.map((e, r) => {
     const m = spec.regex.exec(e.message);
     const values = spec.columns.map((c, i) => (m ? (m[i + 1] ?? "") : ""));
@@ -18910,6 +19214,7 @@ function renderExtractTable(node) {
     // Cumulative, not a row-to-row delta (see ELAPSED_COL comment above) —
     // 0 on the first row falls out naturally from e.ts - entries[0].ts.
     values[ELAPSED_COL] = String(plainText ? e.ts : e.ts - entries[0].ts);
+    if (pairs) values[DT_COL] = String(e.dtMs);
     return { entry: e, values };
   });
   // Sorting is applied to extractRowsData itself (not just the table display)
@@ -19832,7 +20137,12 @@ function renderVisibleRows(reuseRows) {
   const messageVisible = activeMessageVisible();
 
   const syntax = activePlainTextSyntax();
-  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax };
+  // Δt per row from a map rather than the row's neighbour: a gap filter's
+  // own measured gap (per group, against the parent's result — see
+  // computeGapEntries), or, under a column sort, the chronological Δt
+  // renderTable captured before sorting (buildViewDeltaMap).
+  const gapMs = activeNode && activeNode.filterType === "gap" && !activeNode.inverted ? activeNode._gapMs : null;
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null) };
   let groups;
   if (reuse) {
     for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
@@ -19899,12 +20209,12 @@ function appendLogRow(frag, i, rc) {
       if (rc.ctxNode._anchorIds.has(e.id)) bracketHtml += '<span class="ctx-anchor-dot" title="Reference entry"></span>';
     }
   }
-  // Δt is only meaningful when rows are in chronological order — under a
-  // column sort, adjacent rows aren't temporally adjacent, so it's dashed
-  // out rather than shown misleadingly (same reasoning as the context
-  // bracket being suppressed under column sort, see contextRangeIndex above).
+  // Under a column sort adjacent rows aren't temporally adjacent, so the
+  // Δt comes from rc.deltaMap (captured in chronological order) instead of
+  // the row above.
   const prevE = i > 0 ? currentViewEntries[i - 1] : null;
-  const deltaMs = (!state.sortColumn && prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
+  const deltaMs = rc.deltaMap ? (rc.deltaMap.has(e.id) ? rc.deltaMap.get(e.id) : null)
+    : (prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
 
   // markFieldHtml short-circuits to a plain escapeHtml before any range
   // search when nothing can contribute a mark (feature/row-toggle off and
@@ -21864,7 +22174,7 @@ function toggleFocusMode(on) {
 // itself closes.
 function anyEscapeOverlayOpen() {
   const overlayIds = [
-    "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog",
+    "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
@@ -23899,7 +24209,8 @@ function toggleBookmark(entryId) {
   // full render happened to run.
   if (state.pinBookmarksInFilteredView) {
     currentViewEntries = spliceTempAnchor(getVisibleEntries());
-    if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
+    viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
+    if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
     tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
     {
       const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
@@ -24177,7 +24488,9 @@ function buildRowGridHeaderHtml(sortable) {
   out += sortable
     ? '<span class="th th-sortable" data-sort="time">' + timeLabel + '<span class="th-sort-arrow"></span></span>'
     : '<span class="th">' + timeLabel + '</span>';
-  out += '<span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>';
+  out += sortable
+    ? '<span class="th th-sortable" data-sort="delta" data-col="delta" title="Δt since the previous entry · click to sort (largest first) · middle-click to hide">Δt<span class="th-sort-arrow"></span></span>'
+    : '<span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>';
   out += sortable
     ? '<span class="th th-sortable" data-sort="level">Level<span class="th-sort-arrow"></span></span>'
     : '<span class="th">Level</span>';
@@ -24557,7 +24870,8 @@ function renderTable() {
   // span made the minimap's highlighted range balloon to cover it).
   const minimapViewEntries = getVisibleEntries();
   currentViewEntries = spliceTempAnchor(minimapViewEntries);
-  if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
+  viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
+  if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   {
     const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
@@ -29026,19 +29340,24 @@ function evaluateLiveMatch() {
   }, 150);
 }
 
-function clearLiveResults() {
-  filterLiveMatch.textContent = "";
-  filterLiveMatch.className = "";
-  filterResultsMinimap.innerHTML = "";
-  filterResultsMinimap.classList.add("hidden");
-  filterResultsSamples.innerHTML = "";
-  filterResults.classList.add("hidden");
+// The four elements one live result summary renders into. The filter
+// popup's is the default; the Gap and Link dialogs each carry their own
+// copy of the same markup (.live-results) and pass it explicitly.
+const filterPopupResults = { root: filterResults, match: filterLiveMatch, minimap: filterResultsMinimap, samples: filterResultsSamples };
+
+function clearLiveResults(target = filterPopupResults) {
+  target.match.textContent = "";
+  target.match.className = "live-match";
+  target.minimap.innerHTML = "";
+  target.minimap.classList.add("hidden");
+  target.samples.innerHTML = "";
+  target.root.classList.add("hidden");
 }
-function showLiveMatchError(msg) {
-  clearLiveResults();
-  filterResults.classList.remove("hidden");
-  filterLiveMatch.textContent = msg;
-  filterLiveMatch.className = "error";
+function showLiveMatchError(msg, target = filterPopupResults) {
+  clearLiveResults(target);
+  target.root.classList.remove("hidden");
+  target.match.textContent = msg;
+  target.match.classList.add("error");
 }
 
 // The live result summary under the options: a big match count with
@@ -29046,10 +29365,13 @@ function showLiveMatchError(msg) {
 // columns it will capture; a histogram of the hits over the base rows' time
 // span (renderLiveMatchMinimap); and the first FILTER_SAMPLE_ROWS hits as a
 // small table — level bar, time of day, message with the hit marked.
+// `opts.metaText` replaces the "matches in N" line (the Link dialog's "of N
+// pairs"); `opts.badge(e)` adds a leading per-row badge (the Gap dialog's
+// measured gap, the Link dialog's pair Δt).
 const FILTER_SAMPLE_ROWS = 3;
-function renderLiveResults(hits, baseEntries, hitRe, inverted, captures) {
-  clearLiveResults();
-  filterResults.classList.remove("hidden");
+function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target = filterPopupResults, opts = {}) {
+  clearLiveResults(target);
+  target.root.classList.remove("hidden");
   const fmt = n => n.toLocaleString("de-DE");
   const count = document.createElement("span");
   count.className = "filter-live-count";
@@ -29057,7 +29379,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures) {
   const meta = document.createElement("span");
   meta.className = "filter-live-meta";
   const line = document.createElement("span");
-  line.textContent = (inverted ? "kept (NOT) in " : "matches in ") + fmt(baseEntries.length);
+  line.textContent = opts.metaText || ((inverted ? "kept (NOT) in " : "matches in ") + fmt(baseEntries.length));
   meta.appendChild(line);
   if (captures && captures.length) {
     const cap = document.createElement("span");
@@ -29067,14 +29389,14 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures) {
   }
   // The " " text node keeps textContent reading "61 matches in 471" (a flex
   // container ignores it for layout).
-  filterLiveMatch.append(count, " ", meta);
-  if (hits.length === 0) filterLiveMatch.className = "warn";
+  target.match.append(count, " ", meta);
+  if (hits.length === 0) target.match.classList.add("warn");
 
-  renderLiveMatchMinimap(hits, baseEntries);
+  renderLiveMatchMinimap(hits, baseEntries, target.minimap);
 
   hits.slice(0, FILTER_SAMPLE_ROWS).forEach(e => {
     const row = document.createElement("div");
-    row.className = "filter-sample-row " + levelClass(e.level, e.formatId);
+    row.className = "filter-sample-row " + levelClass(e.level, e.formatId) + (opts.badge ? " has-badge" : "");
     const bar = document.createElement("span");
     bar.className = "col-bar";
     const time = document.createElement("span");
@@ -29084,8 +29406,15 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures) {
     msg.className = "filter-sample-msg";
     msg.title = e.message;
     appendSampleMessage(msg, e.message, hitRe);
-    row.append(bar, time, msg);
-    filterResultsSamples.appendChild(row);
+    if (opts.badge) {
+      const badge = document.createElement("span");
+      badge.className = "filter-sample-badge";
+      badge.textContent = opts.badge(e) || "";
+      row.append(bar, badge, time, msg);
+    } else {
+      row.append(bar, time, msg);
+    }
+    target.samples.appendChild(row);
   });
 }
 
@@ -29111,7 +29440,7 @@ function appendSampleMessage(target, message, hitRe) {
 // (levelSortRank/minimapLevelClass). Hidden when there's nothing to place
 // (no hits, or no parseable timestamps).
 const FILTER_MINIMAP_BUCKETS = 60;
-function renderLiveMatchMinimap(hits, baseEntries) {
+function renderLiveMatchMinimap(hits, baseEntries, svgEl = filterResultsMinimap) {
   let min = Infinity, max = -Infinity;
   for (const e of baseEntries) {
     if (isNaN(e.ts)) continue;
@@ -29133,15 +29462,15 @@ function renderLiveMatchMinimap(hits, baseEntries) {
   const peak = Math.max(...buckets);
   if (!peak) return;
   const H = 30;
-  filterResultsMinimap.setAttribute("viewBox", "0 0 " + FILTER_MINIMAP_BUCKETS + " " + H);
+  svgEl.setAttribute("viewBox", "0 0 " + FILTER_MINIMAP_BUCKETS + " " + H);
   let svg = "";
   buckets.forEach((n, i) => {
     if (!n) return;
     const h = Math.max(1.5, n / peak * H);
     svg += '<rect class="' + minimapLevelClass(ranks[i]) + '" x="' + (i + 0.15) + '" y="' + (H - h) + '" width="0.7" height="' + h + '"><title>' + n + '</title></rect>';
   });
-  filterResultsMinimap.innerHTML = svg;
-  filterResultsMinimap.classList.remove("hidden");
+  svgEl.innerHTML = svg;
+  svgEl.classList.remove("hidden");
 }
 
 // Part A of REQUIREMENTS-extract-preview-and-ignore.md: renders the pattern
@@ -31176,7 +31505,7 @@ function describeSidebarToolbarActions() {
         actions.push({ action: "rename", label: "Rename…", icon: ICON_RENAME, target: node.id });
         // Edit/Invert conditionally present per filterType, same guards
         // openTreeContextMenu's own single-node branch already applies.
-        if (node.filterType === "text" || isTimeFilterType(node.filterType)) {
+        if (node.filterType === "text" || node.filterType === "gap" || isTimeFilterType(node.filterType)) {
           actions.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT, target: node.id });
         }
         if (node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
@@ -31326,6 +31655,9 @@ function openTreeContextMenu(ev, clickedId) {
     if (node.type === "file" && !node.merged && node.entries && node.entries.length) {
       buckets.edit.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK });
     }
+    // "Gap filter…" (FEATURE_BACKLOG.md #24): a new gap filter as a child
+    // of this node, measuring over its result — see openGapDialog.
+    if (!node.locked) buckets.edit.push({ action: "gap", label: "Gap filter…", icon: ICON_CLOCK });
     if (node.type === "filter" && node.locked) {
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
     } else if (node.type === "filter") {
@@ -31340,7 +31672,7 @@ function openTreeContextMenu(ev, clickedId) {
       // "timerange" go through the dedicated time-range dialog instead (see
       // openTimeRangeDialog). and/or/link nodes derive their value from two
       // other nodes, and context filters have their own before/after dialog.
-      if (node.filterType === "text" || isTimeFilterType(node.filterType)) {
+      if (node.filterType === "text" || node.filterType === "gap" || isTimeFilterType(node.filterType)) {
         buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       }
       // "link" results are pair entries with no parent-relative complement
@@ -31501,6 +31833,10 @@ treeContextMenu.addEventListener("click", ev => {
     if (treeCtxId) editFilterNode(treeCtxId);
     return;
   }
+  if (action === "gap") {
+    if (treeCtxId && state.nodes[treeCtxId]) openGapDialog(treeCtxId, false);
+    return;
+  }
   if (action === "clockOffset") {
     if (treeCtxId && state.nodes[treeCtxId]) openClockOffsetDialog(treeCtxId);
     return;
@@ -31628,6 +31964,17 @@ const linkHopsList = el("#linkHopsList");
 const linkOrderEnforceInput = el("#linkOrderEnforceInput");
 const linkOrderEnforceRow = el("#linkOrderEnforceRow");
 const linkExclusiveInput = el("#linkExclusiveInput");
+const linkKeyInput = el("#linkKeyInput");
+const linkKeySelect = el("#linkKeySelect");
+const linkKeyPatternRow = el("#linkKeyPatternRow");
+const linkKeyPattern = el("#linkKeyPattern");
+const linkDtInput = el("#linkDtInput");
+const linkDtOp = el("#linkDtOp");
+const linkDtValue = el("#linkDtValue");
+const linkDtUnit = el("#linkDtUnit");
+const linkResultsTarget = { root: el("#linkResults"), match: el("#linkLiveMatch"), minimap: el("#linkResultsMinimap"), samples: el("#linkResultsSamples") };
+const LINK_KEY_PATTERN_OPTION = "@pattern"; // #linkKeySelect's "value of pattern…" choice
+let linkPreviewTimer = null;
 let linkDialogIds = [];
 let linkHopRows = []; // [{targetId, nInput, dirSelect}], rebuilt by renderLinkHops()
 
@@ -31638,10 +31985,125 @@ function openLinkDialog(ids) {
   linkRefSelect.innerHTML = nodes.map(n => '<option value="' + n.id + '">' + escapeHtml(nodeDisplayName(n)) + "</option>").join("");
   pillSet(linkOrderEnforceInput, false);
   pillSet(linkExclusiveInput, false);
+  pillSet(linkKeyInput, false);
+  pillSet(linkDtInput, false);
+  linkKeySelect.innerHTML = groupColumnOptions(getRootFileId(nodes[0].id))
+    .map(o => '<option value="' + escapeHtml(o.key) + '">' + escapeHtml(o.label) + "</option>").join("") +
+    '<option value="' + LINK_KEY_PATTERN_OPTION + '">value of pattern…</option>';
+  linkKeyPattern.value = "";
+  linkDtOp.value = ">";
+  linkDtValue.value = "500";
+  linkDtUnit.value = "ms";
+  clearLiveResults(linkResultsTarget);
   renderLinkHops();
   linkDialog.classList.remove("hidden");
 }
-function closeLinkDialog() { linkDialog.classList.add("hidden"); }
+function closeLinkDialog() { linkDialog.classList.add("hidden"); clearTimeout(linkPreviewTimer); }
+
+// Column choices for the Gap dialog's "measured per" and the Link dialog's
+// "Match only same": the loaded formats' middle columns (Thread/Location/
+// Method/custom — activeColumnDefs) plus Source for a merged file, whose
+// entries carry the sourceId entryGroupValue reads.
+function groupColumnOptions(rootId) {
+  const opts = activeColumnDefs().map(d => ({ key: d.key, label: d.label }));
+  const root = state.nodes[rootId];
+  if (root && root.sources && root.sources.length) opts.push({ key: "source", label: "Source" });
+  return opts;
+}
+
+// The dialog's key/Δt options as { key, dt, error } — key/dt null when
+// their switch is off; error set (and the dialog refuses to create) for a
+// pattern without a wildcard capture or an unreadable Δt value.
+function readLinkDialogOptions() {
+  let key = null, dt = null;
+  if (pillGet(linkKeyInput)) {
+    if (linkKeySelect.value === LINK_KEY_PATTERN_OPTION) {
+      const pattern = linkKeyPattern.value.trim();
+      if (!isExtractPattern(pattern) || !compileExtractPattern(pattern)) return { error: "Invalid key pattern — needs a capture like [*:int]" };
+      key = { pattern };
+    } else if (linkKeySelect.value) {
+      key = { column: linkKeySelect.value };
+    }
+  }
+  if (pillGet(linkDtInput)) {
+    const amount = parseFloat(linkDtValue.value);
+    const unit = GAP_UNITS.find(u => u.key === linkDtUnit.value) || GAP_UNITS[0];
+    if (!Number.isFinite(amount) || amount < 0) return { error: "Invalid Δt value" };
+    dt = { op: linkDtOp.value === "<" ? "<" : ">", ms: Math.round(amount * unit.ms) }; // log timestamps are whole ms
+  }
+  return { key, dt, error: null };
+}
+
+// Greys out each option's controls while its switch is off, and shows the
+// pattern input only for the "value of pattern…" key choice.
+function updateLinkOptionControls() {
+  const keyOn = pillGet(linkKeyInput);
+  linkKeySelect.disabled = !keyOn;
+  linkKeyPattern.disabled = !keyOn;
+  linkKeyPatternRow.classList.toggle("hidden", linkKeySelect.value !== LINK_KEY_PATTERN_OPTION);
+  const dtOn = pillGet(linkDtInput);
+  linkDtOp.disabled = linkDtValue.disabled = linkDtUnit.disabled = !dtOn;
+}
+
+// The link the dialog would create, as one nested baked condition — the
+// exact shape createLinkNode's hop-by-hop chaining produces (see
+// bakeNodeCondition's "link" branch) — so the preview evaluates it with the
+// same getEntriesFromBaked a real link node's baked side uses. The key
+// applies to every hop, the Δt condition to the last one (the whole
+// tuple's span), mirroring the Create handler below. null when a picked
+// filter can't be baked.
+function buildLinkDialogChain(opts, withDt) {
+  let cur = state.nodes[linkRefSelect.value];
+  if (!cur || !linkHopRows.length) return null;
+  const bakeable = n => n && ((n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n));
+  if (!bakeable(cur)) return null;
+  cur = bakeNodeCondition(cur);
+  for (let i = 0; i < linkHopRows.length; i++) {
+    const hop = linkHopRows[i];
+    const target = state.nodes[hop.targetId];
+    if (!bakeable(target)) return null;
+    const link = {
+      filterType: "link", value: null, inverted: false,
+      bakedA: cur, bakedB: bakeNodeCondition(target),
+      linkDirection: hop.dirSelect.value, linkN: Math.max(1, parseInt(hop.nInput.value, 10) || 1),
+      linkOrderEnforced: pillGet(linkOrderEnforceInput), linkExclusive: pillGet(linkExclusiveInput),
+    };
+    copyLinkOptions({ linkKey: opts.key, linkDt: withDt && i === linkHopRows.length - 1 ? opts.dt : null }, link);
+    cur = link;
+  }
+  return cur;
+}
+
+// Live preview: "N pairs", or with a Δt condition "12 of 3.418 pairs"
+// (the count without the condition as the denominator — evaluated
+// separately rather than by filtering, since under "exclusive matches" a
+// pair the condition drops leaves its target free for a later reference),
+// plus the usual histogram and the first sample pairs with their Δt.
+// Evaluated over the shared root file, where Create places the new node.
+function updateLinkPreview() {
+  clearTimeout(linkPreviewTimer);
+  linkPreviewTimer = setTimeout(() => {
+    if (linkDialog.classList.contains("hidden")) return;
+    const opts = readLinkDialogOptions();
+    if (opts.error) { showLiveMatchError(opts.error, linkResultsTarget); return; }
+    const rootId = getRootFileId(linkRefSelect.value);
+    const chain = rootId && buildLinkDialogChain(opts, false);
+    if (!chain) { clearLiveResults(linkResultsTarget); return; }
+    const pool = getEntries(rootId);
+    const all = getEntriesFromBaked(chain, pool, rootId);
+    const hits = opts.dt ? getEntriesFromBaked(buildLinkDialogChain(opts, true), pool, rootId) : all;
+    const fmt = n => n.toLocaleString("de-DE");
+    renderLiveResults(hits, all, null, false, null, linkResultsTarget, {
+      metaText: opts.dt ? "of " + fmt(all.length) + " pairs" : (all.length === 1 ? "pair" : "pairs"),
+      badge: e => "Δt " + formatMs(e.dtMs),
+    });
+  }, 150);
+}
+// Any option change — a switch (pillSet fires a bubbling "change"), a
+// select, a typed value, a hop's N/direction — refreshes the controls'
+// state and the preview.
+linkDialog.addEventListener("change", () => { updateLinkOptionControls(); updateLinkPreview(); });
+linkDialog.addEventListener("input", updateLinkPreview);
 
 // Rebuilds the hop-row list from linkDialogIds minus whichever one is
 // currently chosen as reference, preserving their relative selection order.
@@ -31673,6 +32135,8 @@ function renderLinkHops() {
   linkHopsList.innerHTML = "";
   linkHopRows.forEach(h => linkHopsList.appendChild(h.row));
   updateLinkOrderEnforceAvailability();
+  updateLinkOptionControls();
+  updateLinkPreview();
 }
 
 // "Enforce chronological order" is only meaningful when the hop chain mixes
@@ -31694,12 +32158,19 @@ el("#linkDialogCancel").addEventListener("click", closeLinkDialog);
 el("#linkDialogCreate").addEventListener("click", () => {
   const orderEnforced = pillGet(linkOrderEnforceInput);
   const exclusive = pillGet(linkExclusiveInput);
+  const opts = readLinkDialogOptions();
+  if (opts.error) { showLiveMatchError(opts.error, linkResultsTarget); return; } // keep the dialog open to fix it
   let curRefId = linkRefSelect.value;
   let lastNode = null;
   let ok = !!curRefId && linkHopRows.length > 0;
-  for (const hop of linkHopRows) {
+  for (let i = 0; i < linkHopRows.length; i++) {
+    const hop = linkHopRows[i];
     const n = Math.max(1, parseInt(hop.nInput.value, 10) || 1);
-    const node = createLinkNode(curRefId, hop.targetId, hop.dirSelect.value, n, { orderEnforced, exclusive });
+    // The correlation key holds on every hop (same axis/thread/... through
+    // the whole tuple); the Δt condition only on the last, where the pair
+    // spans the whole tuple — see buildLinkDialogChain.
+    const dt = i === linkHopRows.length - 1 ? opts.dt : null;
+    const node = createLinkNode(curRefId, hop.targetId, hop.dirSelect.value, n, { orderEnforced, exclusive, key: opts.key, dt });
     if (!node) { ok = false; break; }
     lastNode = node;
     curRefId = node.id; // next hop anchors on THIS hop's match, not the original reference (Bug 1 fix)
@@ -31709,6 +32180,86 @@ el("#linkDialogCreate").addEventListener("click", () => {
   render();
 });
 
+
+/* ===================== Gap dialog (FEATURE_BACKLOG.md #24) =====================
+   Creates a "gap" filter as a child of the chosen node (the tree context
+   menu's "Gap filter…"), or edits one ("Edit filter…"). The live
+   summary is the filter popup's own (renderLiveResults), each sample row
+   led by the gap that got it kept. */
+
+const gapDialog = el("#gapDialog");
+const gapValueInput = el("#gapValueInput");
+const gapUnitSelect = el("#gapUnitSelect");
+const gapPerSelect = el("#gapPerSelect");
+const gapBaseLabel = el("#gapBaseLabel");
+const gapDialogCreateBtn = el("#gapDialogCreate");
+const gapResultsTarget = { root: el("#gapResults"), match: el("#gapLiveMatch"), minimap: el("#gapResultsMinimap"), samples: el("#gapResultsSamples") };
+let gapDialogBaseId = null; // the node whose result the gap is measured over
+let gapDialogEditId = null; // the gap node being edited, null when creating
+let gapPreviewTimer = null;
+
+function openGapDialog(nodeId, edit) {
+  const node = state.nodes[nodeId];
+  if (!node) return;
+  gapDialogEditId = edit ? nodeId : null;
+  gapDialogBaseId = edit ? node.parentId : nodeId;
+  const value = normalizeGapValue(edit ? node.value : { ms: 1000, per: null });
+  const opts = groupColumnOptions(getRootFileId(gapDialogBaseId));
+  if (value.per && !opts.some(o => o.key === value.per)) opts.push({ key: value.per, label: groupColumnLabel(value.per) });
+  gapPerSelect.innerHTML = '<option value="">none</option>' +
+    opts.map(o => '<option value="' + escapeHtml(o.key) + '">' + escapeHtml(o.label) + "</option>").join("");
+  gapPerSelect.value = value.per || "";
+  const t = gapThresholdParts(value.ms);
+  gapValueInput.value = String(t.amount);
+  gapUnitSelect.value = t.unit;
+  const base = state.nodes[gapDialogBaseId];
+  gapBaseLabel.textContent = base ? nodeDisplayName(base) : "";
+  gapDialogCreateBtn.textContent = edit ? "Save" : "Create";
+  clearLiveResults(gapResultsTarget);
+  gapDialog.classList.remove("hidden");
+  updateGapPreview();
+  gapValueInput.focus();
+}
+function closeGapDialog() {
+  gapDialog.classList.add("hidden");
+  clearTimeout(gapPreviewTimer);
+  gapDialogBaseId = gapDialogEditId = null;
+}
+// null for an unreadable threshold.
+function readGapDialogValue() {
+  const amount = parseFloat(gapValueInput.value);
+  if (!Number.isFinite(amount) || amount < 0) return null;
+  const unit = GAP_UNITS.find(u => u.key === gapUnitSelect.value) || GAP_UNITS[0];
+  return { ms: Math.round(amount * unit.ms), per: gapPerSelect.value || null }; // log timestamps are whole ms
+}
+// Debounced like the filter popup's live match (150ms). Measured over the
+// base node's full result, exactly what the node itself will compute.
+function updateGapPreview() {
+  clearTimeout(gapPreviewTimer);
+  gapPreviewTimer = setTimeout(() => {
+    if (gapDialog.classList.contains("hidden") || !state.nodes[gapDialogBaseId]) return;
+    const value = readGapDialogValue();
+    if (!value) { showLiveMatchError("Invalid threshold", gapResultsTarget); return; }
+    const base = getEntries(gapDialogBaseId);
+    const { result, gaps } = computeGapEntries(value, base);
+    renderLiveResults(result, base, null, false, null, gapResultsTarget, { badge: e => formatDelta(gaps.get(e.id)) });
+  }, 150);
+}
+function commitGapDialog() {
+  const value = readGapDialogValue();
+  if (!value || !state.nodes[gapDialogBaseId]) return;
+  if (gapDialogEditId) updateGapNodeWithUndo(gapDialogEditId, value);
+  else createGapNode(gapDialogBaseId, value);
+  closeGapDialog();
+  revealFilteredView();
+  render();
+}
+gapDialog.addEventListener("input", updateGapPreview);
+gapDialog.addEventListener("change", updateGapPreview);
+gapDialog.addEventListener("click", ev => { if (ev.target === gapDialog) closeGapDialog(); });
+gapValueInput.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); commitGapDialog(); } });
+el("#gapDialogCancel").addEventListener("click", closeGapDialog);
+gapDialogCreateBtn.addEventListener("click", commitGapDialog);
 
 /* ===================== Time context dialog (before / after duration) ===================== */
 
@@ -32591,7 +33142,7 @@ noteDialogInput.addEventListener("keydown", ev => {
 
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
-const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "sources", "idset"]);
+const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "sources", "idset", "gap"]);
 const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId, includeAncestors) {
@@ -32633,6 +33184,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
+      copyLinkOptions(node, out);
     }
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
     if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
@@ -32707,6 +33259,7 @@ function materializeBakedAsNode(baked, parentId) {
     node.linkN = baked.linkN;
     node.linkOrderEnforced = !!baked.linkOrderEnforced;
     node.linkExclusive = !!baked.linkExclusive;
+    copyLinkOptions(baked, node);
   }
   state.nodes[node.id] = node;
   return node;
@@ -32720,6 +33273,7 @@ function bakedConditionName(baked) {
   if (baked.filterType === "level") return (baked.value || []).join(", ");
   if (baked.filterType === "idset") return idSetFilterName(baked.value);
   if (baked.filterType === "timerange") return timeRangeFilterName(baked.value);
+  if (baked.filterType === "gap") return gapFilterName(baked.value);
   if (baked.filterType === "and" || baked.filterType === "or") {
     return bakedConditionName(baked.bakedA) + (baked.filterType === "and" ? " ∧ " : " ∨ ") + bakedConditionName(baked.bakedB);
   }
@@ -32884,6 +33438,7 @@ function materializeSerializedRoots(roots, resolveParentId) {
       // materializes both as false, matching its actual old behavior.
       node.linkOrderEnforced = !!sn.linkOrderEnforced;
       node.linkExclusive = !!sn.linkExclusive;
+      copyLinkOptions(sn, node);
     } else if (sn.filterType === "context") {
       node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
       node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
@@ -35965,6 +36520,7 @@ document.addEventListener("keydown", ev => {
     closeCsvExportDialog();
     closeExportDialog();
     closeLinkDialog();
+    closeGapDialog();
     closeContextDialog();
     closeTimeRangeDialog();
     closeAssertDialog();
@@ -36676,6 +37232,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
+      copyLinkOptions(node, out);
     }
     if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
     if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
@@ -36836,6 +37393,7 @@ function materializeCachedFilters(fileNode, roots) {
       node.linkN = Math.max(1, parseInt(sn.linkN, 10) || 1);
       node.linkOrderEnforced = !!sn.linkOrderEnforced;
       node.linkExclusive = !!sn.linkExclusive;
+      copyLinkOptions(sn, node);
     } else if (sn.filterType === "context") {
       node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
       node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
@@ -37097,7 +37655,7 @@ async function restoreSessionFromCache(metaIn) {
       state.levelFilter.clear();
       s.levelFilter.forEach(l => state.levelFilter.add(l));
     }
-    state.sortColumn = ["time", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
+    state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
     state.multilineMessages = !!s.multilineMessages;
@@ -37635,7 +38193,7 @@ async function runSessionImport(data) {
       state.levelFilter.clear();
       s.levelFilter.forEach(l => state.levelFilter.add(l));
     }
-    state.sortColumn = ["time", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
+    state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
     if (s.active && resolved.has(s.active.exportId)) {
