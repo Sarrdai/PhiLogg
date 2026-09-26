@@ -76,6 +76,15 @@ deployments possible:
   → Behavior can switch this to "Manual" to keep the original
   tree-independent quick-filter, with an "Add to tree" button to push the
   current selection in on demand.
+- **Timing analysis for multi-threaded logs** — a **Gap filter** keeps
+  entries that follow a pause of at least X ms/s/min, optionally measured
+  per thread, source file, or any column (a stall in one thread no longer
+  hides behind the others' chatter); the Filtered view shows each row's
+  measured gap. The **Link filter** can pair only entries that belong
+  together ("match only same Thread", or the same captured value such as
+  `axis [*:int]`) and keep only pairs with Δt above/below a limit, with a
+  live "12 of 3.418 pairs" preview; an extraction on link pairs gets a
+  Δt column to plot durations over time. See `docs/filters.md`.
 - **Text-filter match highlighting** — see exactly which substring an active
   text filter matched, marked inline in the Filter view's rows and/or the
   entry-detail panel. Toggle it on/off from the view bar (next to the
