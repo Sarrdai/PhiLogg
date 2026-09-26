@@ -245,6 +245,7 @@ async function withApp(run, opts = {}) {
       get CONTEXT_STRIP_HEIGHT() { return CONTEXT_STRIP_HEIGHT; },
       get CONTEXT_TOOLBAR_HEIGHT() { return CONTEXT_TOOLBAR_HEIGHT; },
       get extractRowsData() { return extractRowsData; },
+      get patternsAnalysis() { return patternsAnalysis; },
       get extractColumns() { return extractColumns; },
       get renamingNodeId() { return renamingNodeId; },
       get plotConfig() { return plotConfig; },
@@ -8694,7 +8695,8 @@ await withApp(async (w, d, T) => {
 
   // Switch to Stacked layout (a Settings choice, not a Ctrl shortcut) — from
   // here the View Selector collapses Context+Filtered into one "Stacked"
-  // slot, so there are only 3 positions: Stacked, Table, Plot.
+  // slot, so there are only 4 positions: Stacked, Table, Plot, Patterns
+  // (Patterns added 2026-09-26, GROUP 286).
   const layoutSelect = d.querySelector("#settingsFhLayout");
   layoutSelect.value = "stacked";
   layoutSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -8704,9 +8706,11 @@ await withApp(async (w, d, T) => {
   assert(T.fhActiveTab === "table", "Ctrl+2 in Stacked layout jumps to position 2 (Table)");
   fireKeydown(d, w, "3", { ctrlKey: true });
   assert(T.fhActiveTab === "plot", "Ctrl+3 in Stacked layout jumps to position 3 (Plot)");
-  const before4 = T.fhActiveTab;
   fireKeydown(d, w, "4", { ctrlKey: true });
-  assert(T.fhActiveTab === before4, "Ctrl+4 in Stacked layout is a no-op — only 3 positions exist");
+  assert(T.fhActiveTab === "patterns", "Ctrl+4 in Stacked layout jumps to position 4 (Patterns)");
+  const before5 = T.fhActiveTab;
+  fireKeydown(d, w, "5", { ctrlKey: true });
+  assert(T.fhActiveTab === before5, "Ctrl+5 in Stacked layout is a no-op — only 4 positions exist");
   fireKeydown(d, w, "1", { ctrlKey: true });
   assert(T.fhLayout === "stacked" && T.fhActiveTab !== "table" && T.fhActiveTab !== "plot", "Ctrl+1 in Stacked layout jumps to position 1 (Stacked itself)");
 });
@@ -21572,7 +21576,8 @@ await withApp(async (w, d, T) => {
   // No management group any more — #libraryManageBar was removed from
   // #viewBar entirely this session (see GROUP 194b/220/221) — #viewbarNew
   // is simply the last group now.
-  assert(iNew === kids.length - 1, "New (#viewbarNew) is the last child of #viewBar now that the management group is gone");
+  // #btnFacets (the Facet panel toggle, 2026-09-26) floats right after it.
+  assert(iNew === kids.length - 2 && kids[kids.length - 1] === "btnFacets", "New (#viewbarNew) is the last group of #viewBar, followed only by the right-floated #btnFacets, got " + kids.slice(-2));
   // All group separators are DIRECT children of #viewBar (not inside a flex group).
   const seps = [...d.querySelectorAll("#viewBar > .row-action-separator")];
   assert(seps.length === 3,
@@ -24821,8 +24826,8 @@ await withApp(async (w, d, T) => {
   w.render();
 
   const toggles = [...d.querySelectorAll(".icon-toggle")];
-  assert(toggles.length === 17,
-    "exactly 17 .icon-toggle instances (7 log-display toggles x2 toolbars + toggle-pin + itvWrapBtn + itvPrettyPrintBtn), got " + toggles.length);
+  assert(toggles.length === 18,
+    "exactly 18 .icon-toggle instances (7 log-display toggles x2 toolbars + toggle-pin + itvWrapBtn + itvPrettyPrintBtn + #btnFacets), got " + toggles.length);
   toggles.forEach(t => assert(t.classList.contains("toolbar-icon-btn"), t.className + " still carries the base .toolbar-icon-btn class (28x28 footprint, flex-centering)"));
 
   // A plain (non-toggle) .toolbar-icon-btn in the same toolbar area must NOT get the class.
@@ -32207,6 +32212,271 @@ group(285);
   }, { indexedDB: deskFactory, philogg: nativeBridge() });
 }
 
+/* ============================================================
+   GROUP 286 — Patterns tab: message-pattern clustering
+   Origin: 2026-09-26 (FEATURE_BACKLOG.md #23). normalizeMessagePattern's
+   placeholders, the filter values built from a group ([*] / typed
+   [*:int]/[*:float]), the tab itself (counts, sort, level quick-filter),
+   the row actions (click = filter, Alt+click/⊘ = NOT filter that stays on
+   Patterns, Extract → Table, jump → first entry in Filtered), the "create"
+   undo step, the per-result cache and the time-sliced scan.
+   ============================================================ */
+group(286);
+{
+  const line = (i, level, thread, msg, method = "DoWork") => {
+    const ss = String(i % 60).padStart(2, "0"), mm = String(Math.floor(i / 60) % 60).padStart(2, "0");
+    return `2024-01-15 10:${mm}:${ss},000\t${level}\t"${thread}"\tC:\\src\\Foo.cs\tline ${i}\t[${method}]\t"${msg}"`;
+  };
+  const PATTERN_LOG = [];
+  for (let i = 0; i < 12; i++) PATTERN_LOG.push(line(i, i === 5 ? "WARN" : "DEBUG", "Worker-" + (i % 3), `Axis ${i % 4} position ${(i * 1.5 + 0.25).toFixed(2)} reached in ${10 + i} ms`));
+  for (let i = 12; i < 17; i++) PATTERN_LOG.push(line(i, "INFO", "Heart", `Heartbeat from 10.0.0.${i}:8080`));
+  PATTERN_LOG.push(line(17, "ERROR", "Motion", "Emergency stop triggered by C:\\plc\\estop.cfg"));
+  PATTERN_LOG.push(line(18, "ERROR", "Motion", `Retry 1/5 for job 3f2a1b4c-1234-5678-9abc-def012345678`));
+  PATTERN_LOG.push(line(19, "ERROR", "Motion", `Retry 2/5 for job 00000000-aaaa-bbbb-cccc-111111111111`));
+  const TEXT = PATTERN_LOG.join("\n") + "\n";
+
+  await withApp(async (w, d, T) => {
+    section("286a. normalizeMessagePattern / patternFilterValue");
+    const shape = m => w.patternDisplayText(w.normalizeMessagePattern(m));
+    assert(shape("Axis 2 position 1532.44 reached in 12 ms") === "Axis <#> position <#> reached in <#> ms", "numbers → <#>, got " + shape("Axis 2 position 1532.44 reached in 12 ms"));
+    assert(shape("Heartbeat from 10.0.0.12:8080") === "Heartbeat from <ip>", "IPv4 with port → <ip>");
+    assert(shape("Retry 3/5 for job 3f2a1b4c-1234-5678-9abc-def012345678") === "Retry <#>/<#> for job <guid>", "a ratio stays two numbers, a GUID is one placeholder");
+    assert(shape('Loaded C:\\data\\run7\\x.cfg as "name 7" at 0x1F') === 'Loaded <path> as "<str>" at <hex>', "Windows path, quoted string, hex literal, got " + shape('Loaded C:\\data\\run7\\x.cfg as "name 7" at 0x1F'));
+    assert(shape("read /var/log/app2/x.log ok") === "read <path> ok", "Unix path");
+    assert(shape("Worker-3 done, x=-5") === "Worker-<#> done, x=<#>", "a sign glued to a word is literal, a free one belongs to the number");
+    assert(shape("hash deadbeef12 vs cafebabe") === "hash <hex> vs cafebabe", "a hex run needs digits AND letters to count as a hash");
+    assert(shape("first line 1\nsecond line 2") === "first line <#>", "only the first line of a multi-line message is normalized");
+    const key = w.normalizeMessagePattern("Axis 2 position 1532.44 reached in 12 ms");
+    assert(w.patternFilterValue(key, 2, false) === "Axis [*] position [*] reached in [*] ms", "untyped: every placeholder → [*]");
+    assert(w.patternFilterValue(key, 2, true) === "Axis [*:int] position [*:float] reached in [*:int] ms", "typed: float mask picks [*:float]/[*:int]");
+    const qkey = w.normalizeMessagePattern('user "bob" from 1.2.3.4');
+    assert(w.patternFilterValue(qkey, 0, true) === 'user "[*]" from [*]', "non-numeric placeholders stay [*] even when typed, quotes kept");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("286b. the Patterns tab: counts, dominant level, sort, level quick-filter");
+    const f = await w.addFile("patterns.log", TEXT, () => {});
+    T.state.activeId = f.id; w.render();
+    const tab = d.querySelector('#fhTabs .view-tab[data-fh-tab="patterns"]');
+    assert(!!tab && !tab.disabled, "Patterns is a tab, enabled for a plain file node");
+    const tabs = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
+    assert(tabs.join(",") === "highlight,filter,table,plot,patterns", "Patterns comes last, keeping Ctrl+1-4 positions, got " + tabs);
+    fireClick(tab, w);
+    assert(T.fhActiveTab === "patterns", "clicking the tab switches to it");
+    assert(isVisible(d.querySelector("#patternsWrap"), w) && !isVisible(d.querySelector("#fhSplit"), w) && !isVisible(d.querySelector("#extractWrap"), w),
+      "#patternsWrap replaces #fhSplit/#extractWrap");
+    assert(d.querySelector("#patternsInfo").textContent === "20 entries → 4 patterns", "info line, got " + d.querySelector("#patternsInfo").textContent);
+    let rows = [...d.querySelectorAll("#patternsRows .pattern-row")];
+    assert(rows.length === 4, "one row per pattern, got " + rows.length);
+    assert(rows[0].querySelector(".pattern-text").textContent === "Axis <#> position <#> reached in <#> ms", "default sort: count desc, got " + rows[0].querySelector(".pattern-text").textContent);
+    assert(rows[0].children[0].textContent === "12" && rows[0].children[1].textContent === "60%", "count and share, got " + rows[0].children[0].textContent + " " + rows[0].children[1].textContent);
+    assert(rows[0].querySelector(".level-badge").textContent === "WARN", "level column = most severe level in the group (one WARN among DEBUGs)");
+    assert(rows[0].classList.contains("lvl-warn"), "row carries the level class for the badge colour");
+    // ascending count surfaces the rare messages
+    fireClick(d.querySelector('#patternsHead [data-sort="count"]'), w);
+    rows = [...d.querySelectorAll("#patternsRows .pattern-row")];
+    assert(rows[0].children[0].textContent === "1" && rows[0].querySelector(".pattern-text").textContent === "Emergency stop triggered by <path>",
+      "count asc: the singleton first, got " + rows[0].querySelector(".pattern-text").textContent);
+    fireClick(d.querySelector('#patternsHead [data-sort="level"]'), w);
+    rows = [...d.querySelectorAll("#patternsRows .pattern-row")];
+    assert(rows[0].querySelector(".level-badge").textContent === "ERROR" && rows[2].querySelector(".level-badge").textContent === "WARN" && rows[3].querySelector(".level-badge").textContent === "INFO",
+      "level asc: most severe first");
+    fireClick(d.querySelector('#patternsHead [data-sort="first"]'), w);
+    rows = [...d.querySelectorAll("#patternsRows .pattern-row")];
+    assert(rows[0].querySelector(".pattern-text").textContent.startsWith("Axis") && rows[3].querySelector(".pattern-text").textContent.startsWith("Retry"),
+      "first-seen asc");
+    // Level quick-filter narrows the analysed result, same as the Filtered view
+    T.state.levelFilter.add("ERROR");
+    w.render();
+    assert(d.querySelector("#patternsInfo").textContent === "3 entries → 2 patterns", "level quick-filter applies, got " + d.querySelector("#patternsInfo").textContent);
+    T.state.levelFilter.clear();
+    w.render();
+    // cache: same node result → same object; tail-style append in place → recomputed
+    const c1 = T.patternsAnalysis(f.id);
+    assert(T.patternsAnalysis(f.id) === c1, "cached per node result");
+    const firstResult = c1.result;
+    f.entries.push(Object.assign({}, f.entries[0], { id: "e-extra" })); // a tail append grows the same array in place
+    const c2 = T.patternsAnalysis(f.id);
+    assert(c2 === c1 && c2.total === 21 && c2.result !== firstResult, "an in-place append folds in only the new entries");
+    assert(c2.result.groups.find(g => g.key.startsWith("Axis")).count === 13, "…counted into the existing group");
+    f.entries = f.entries.slice(0, 20); // a replaced array (rotation) recomputes from scratch
+    const c3 = T.patternsAnalysis(f.id);
+    assert(c3 !== c1 && c3.total === 20, "a different array recomputes");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("286c. row actions: filter, hide (NOT, stays on Patterns), extract (→ Table), jump; undo/redo of the creation");
+    const f = await w.addFile("patterns.log", TEXT, () => {});
+    T.state.activeId = f.id; w.render();
+    w.applyFhView("patterns");
+    const rowFor = prefix => [...d.querySelectorAll("#patternsRows .pattern-row")].find(r => r.querySelector(".pattern-text").textContent.startsWith(prefix));
+    fireClick(rowFor("Axis").querySelector(".pattern-text"), w);
+    let node = T.state.nodes[T.state.activeId];
+    assert(node.type === "filter" && node.parentId === f.id && node.filterType === "text", "click adds a text filter child of the active node");
+    assert(node.value === "Axis [*] position [*] reached in [*] ms" && !node.inverted && JSON.stringify(node.columns) === '["message"]', "value/columns, got " + node.value);
+    assert(w.getEntries(node.id).length === 12, "the filter matches exactly the group's entries, got " + w.getEntries(node.id).length);
+    assert(T.fhActiveTab === "filter", "a new filter lands on Filtered");
+    const createdId = node.id;
+    w.undo();
+    assert(!T.state.nodes[createdId] && T.state.activeId === f.id, "undo removes the created node and returns to its parent");
+    w.redo();
+    assert(!!T.state.nodes[createdId] && T.state.activeId === createdId && T.state.nodes[f.id].children.includes(createdId), "redo restores it under the same parent");
+
+    T.state.activeId = f.id; w.render(); w.applyFhView("patterns");
+    const hb = rowFor("Heartbeat");
+    hb.querySelector(".pattern-text").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, altKey: true }));
+    node = T.state.nodes[T.state.activeId];
+    assert(node.inverted && node.value === "Heartbeat from [*]", "Alt+click adds the same filter as NOT");
+    assert(w.getEntries(node.id).length === 15, "NOT keeps everything else, got " + w.getEntries(node.id).length);
+    assert(T.fhActiveTab === "patterns" && d.querySelector("#patternsInfo").textContent === "15 entries → 3 patterns", "hiding stays on Patterns with the noise gone");
+    fireClick(rowFor("Retry").querySelector('[data-act="hide"]'), w);
+    node = T.state.nodes[T.state.activeId];
+    assert(node.inverted && node.value === "Retry [*]/[*] for job [*]" && T.fhActiveTab === "patterns", "the ⊘ button is the same Hide action");
+
+    fireClick(rowFor("Axis").querySelector('[data-act="extract"]'), w);
+    node = T.state.nodes[T.state.activeId];
+    assert(node.value === "Axis [*:int] position [*:float] reached in [*:int] ms", "Extract types the numeric placeholders, got " + node.value);
+    assert(T.fhActiveTab === "table" && T.extractRowsData.length === 12, "Extract opens the Table with one row per entry");
+    assert(T.extractRowsData[1].values[1] === "1.75", "captured float value, got " + T.extractRowsData[1].values[1]);
+
+    T.state.activeId = f.id; w.render(); w.applyFhView("patterns");
+    const errRow = rowFor("Emergency");
+    fireClick(errRow.querySelector('[data-act="jump"]'), w);
+    assert(T.state.activeId === f.id && T.fhActiveTab === "filter", "jump stays on the node and reveals Filtered");
+    assert(T.state.selectedId === f.entries[17].id, "…with the group's first entry selected");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("286d. startEntryScan: small results synchronous, large ones time-sliced; a cancelled scan stops; the tab repaints when an async pass finishes");
+    let seen = 0, doneAsync = null;
+    w.startEntryScan([1, 2, 3], () => seen++, async => { doneAsync = async; }, () => {});
+    assert(seen === 3 && doneAsync === false, "≤ ANALYSIS_SYNC_LIMIT runs to completion before returning");
+    const big = new Array(60001).fill(0);
+    let steps = 0, progressCalls = 0, finished = false;
+    const job = w.startEntryScan(big, () => steps++, async => { finished = async; }, () => progressCalls++);
+    assert(!finished, "a large scan returns before finishing");
+    await waitFor(() => finished);
+    assert(steps === 60001 && job.pos === 60001, "every entry stepped exactly once");
+    let cancelledSteps = 0, cancelledDone = false;
+    const j2 = w.startEntryScan(big, () => cancelledSteps++, () => { cancelledDone = true; }, () => {});
+    j2.cancelled = true;
+    await sleep(30);
+    assert(!cancelledDone && cancelledSteps === 0, "a cancelled scan never runs");
+
+    // The tab over a large result: "Grouping…" first, the table once the
+    // time-sliced pass is done — the UI thread is never held for all of it.
+    const f = await w.addFile("big.log", makeLog(0, 4), () => {});
+    const tmpl = f.entries[0];
+    const bigEntries = [];
+    for (let i = 0; i < 60000; i++) bigEntries.push(Object.assign({}, tmpl, { id: "big" + i, message: "tick " + i + (i % 3 ? " ok" : " slow") }));
+    f.entries = bigEntries;
+    T.state.activeId = f.id; w.render();
+    w.applyFhView("patterns");
+    assert(d.querySelector("#patternsInfo").textContent.startsWith("Grouping 60.000 entries"), "large result starts as 'Grouping…', got " + d.querySelector("#patternsInfo").textContent);
+    await waitFor(() => d.querySelector("#patternsInfo").textContent.includes("→"));
+    assert(d.querySelector("#patternsInfo").textContent === "60.000 entries → 2 patterns", "…and repaints itself when done, got " + d.querySelector("#patternsInfo").textContent);
+  });
+}
+
+/* ============================================================
+   GROUP 287 — Facet panel: value distribution per column
+   Origin: 2026-09-26 (FEATURE_BACKLOG.md #84). The toggle (button,
+   Ctrl+Shift+F, remembered), one section per middle column + Level +
+   Source for a merge, counts over the active node's result (level
+   quick-filter included), "+k more", collapse, and the filter nodes a
+   click creates (exact-value regex restricted to the column / level node /
+   source entry-set; Alt+click and right-click = NOT), undoable.
+   ============================================================ */
+group(287);
+{
+  const line = (i, level, thread, method) => {
+    const ss = String(i % 60).padStart(2, "0"), mm = String(Math.floor(i / 60) % 60).padStart(2, "0");
+    return `2024-01-15 10:${mm}:${ss},000\t${level}\t"${thread}"\tC:\\src\\Foo.cs\tline ${i % 2}\t[${method}]\t"message ${i}"`;
+  };
+  const rows = [];
+  for (let i = 0; i < 20; i++) rows.push(line(i, i < 4 ? "ERROR" : "INFO", i < 12 ? "Worker-3" : i < 18 ? "Worker-1" : "Motion", "M" + (i % 11)));
+  const TEXT = rows.join("\n") + "\n";
+
+  await withApp(async (w, d, T) => {
+    section("287a. toggle + sections + counts");
+    const f = await w.addFile("facets.log", TEXT, () => {});
+    T.state.activeId = f.id; w.render();
+    const panel = d.querySelector("#facetPanel");
+    assert(!isVisible(panel, w), "closed by default");
+    fireClick(d.querySelector("#btnFacets"), w);
+    assert(isVisible(panel, w) && d.querySelector("#btnFacets").classList.contains("active"), "#btnFacets opens it");
+    assert(w.localStorage.getItem("philogg-facets-open") === "1", "open state remembered");
+    const labels = [...d.querySelectorAll(".facet-section-head")].map(h => h.childNodes[1].textContent.trim());
+    assert(labels.join(",") === "Thread,Location,Method,Level", "one section per middle column + Level, got " + labels);
+    assert(d.querySelector("#facetPanelCount").textContent === "20 entries", "entry count in the header");
+    const thread = d.querySelector('.facet-section[data-col="thread"]');
+    const vals = [...thread.querySelectorAll(".facet-value")].map(v => v.querySelector(".facet-value-name").textContent + "=" + v.querySelector(".facet-count").textContent + "/" + v.querySelector(".facet-pct").textContent);
+    assert(vals.join(" ") === "Worker-3=12/60% Worker-1=6/30% Motion=2/10%", "top values by count, got " + vals.join(" "));
+    const method = d.querySelector('.facet-section[data-col="method"]');
+    assert(method.querySelectorAll(".facet-value").length === 8 && method.querySelector(".facet-more").textContent.startsWith("(+3 more"), "top 8 plus a '+k more' line");
+    fireClick(method.querySelector(".facet-more"), w);
+    assert(d.querySelectorAll('.facet-section[data-col="method"] .facet-value').length === 11, "'+k more' reveals the rest");
+    fireClick(d.querySelector('.facet-section[data-col="location"] .facet-section-head'), w);
+    assert(d.querySelectorAll('.facet-section[data-col="location"] .facet-value').length === 0, "a section collapses");
+    assert(JSON.parse(w.localStorage.getItem("philogg-facets-collapsed")).includes("location"), "collapsed sections remembered");
+    // the level quick-filter narrows the facets like the Filtered view
+    T.state.levelFilter.add("ERROR"); w.render();
+    assert(d.querySelector("#facetPanelCount").textContent === "4 entries", "level quick-filter applies");
+    T.state.levelFilter.clear(); w.render();
+    // Ctrl+Shift+F closes it again
+    fireKeydown(d, w, "F", { ctrlKey: true, shiftKey: true });
+    assert(!isVisible(panel, w), "Ctrl+Shift+F toggles the panel");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("287b. clicking values creates filter nodes (exact value, column-restricted; level; NOT); undoable");
+    const f = await w.addFile("facets.log", TEXT, () => {});
+    T.state.activeId = f.id; w.render();
+    w.setFacetsOpen(true);
+    const valueRow = (col, name) => [...d.querySelectorAll('.facet-section[data-col="' + col + '"] .facet-value')].find(v => v.querySelector(".facet-value-name").textContent === name);
+    fireClick(valueRow("thread", "Worker-1"), w);
+    let node = T.state.nodes[T.state.activeId];
+    assert(node.parentId === f.id && node.filterType === "text" && node.isRegex && node.caseSensitive && node.value === "^Worker-1$" && JSON.stringify(node.columns) === '["thread"]',
+      "exact-value regex restricted to the column, got " + JSON.stringify(node));
+    assert(node.name === "Thread = Worker-1" && w.getEntries(node.id).length === 6, "readable name, exact count");
+    assert(d.querySelector("#facetPanelCount").textContent === "6 entries", "the panel follows the new active node");
+    const tId = node.id;
+    w.undo();
+    assert(!T.state.nodes[tId] && T.state.activeId === f.id, "undo removes it");
+    valueRow("thread", "Worker-3").dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, altKey: true }));
+    node = T.state.nodes[T.state.activeId];
+    assert(node.inverted && node.value === "^Worker-3$" && w.getEntries(node.id).length === 8, "Alt+click = NOT filter");
+    T.state.activeId = f.id; w.render();
+    fireContextMenu(valueRow("method", "M0"), w);
+    node = T.state.nodes[T.state.activeId];
+    assert(node.inverted && node.value === "^M0$" && JSON.stringify(node.columns) === '["method"]', "right-click = NOT filter too");
+    T.state.activeId = f.id; w.render();
+    fireClick(valueRow("level", "ERROR"), w);
+    node = T.state.nodes[T.state.activeId];
+    assert(node.filterType === "level" && JSON.stringify(node.value) === '["ERROR"]' && w.getEntries(node.id).length === 4, "Level facet → a level node");
+    // regex specials in a value stay literal
+    T.state.activeId = f.id; w.render();
+    fireClick(valueRow("location", d.querySelector('.facet-section[data-col="location"] .facet-value-name').textContent), w);
+    node = T.state.nodes[T.state.activeId];
+    assert(w.getEntries(node.id).length > 0, "a value with regex specials (path, dots, colon) still matches itself, got " + node.value);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("287c. a merged file gets a Source facet; a click selects that source's entries");
+    const fa = await w.addFile("src-a.log", makeLog(0, 5), () => {});
+    const fb = await w.addFile("src-b.log", makeLog(10, 3, { msgPrefix: "other" }), () => {});
+    const merged = await w.mergeFiles([fa.id, fb.id]);
+    T.state.activeId = merged.id; w.render();
+    w.setFacetsOpen(true);
+    const src = d.querySelector('.facet-section[data-col="__source"]');
+    assert(!!src, "Source section present for a merge");
+    const names = [...src.querySelectorAll(".facet-value-name")].map(n => n.textContent);
+    assert(names.join(",") === "src-a.log,src-b.log", "source names by count, got " + names);
+    fireClick(src.querySelectorAll(".facet-value")[1], w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(node.filterType === "idset" && node.name === "Source = src-b.log" && w.getEntries(node.id).length === 3, "source → entry-set filter of its 3 entries");
+  });
+}
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -36503,4 +36773,15 @@ process.exitCode = failed ? 1 : 0;
       parse_log_file) for drop/launch and the "path" session restore. Same
       session updated GROUP 272's first-tail-poll request count (+ the
       one-time gzip check on a hand-attached tail).
+   Group 286 — 2026-09-26 (FEATURE_BACKLOG.md #23): the Patterns tab —
+      message normalization, filter values from a group, counts/level/sort,
+      level quick-filter, row actions (filter, NOT, Extract → Table, jump),
+      the "create" undo kind, per-result cache, time-sliced scan.
+   Group 287 — same session (FEATURE_BACKLOG.md #84): the Facet panel —
+      toggle/shortcut/remembered state, sections + counts, "+k more",
+      collapse, value clicks → column-restricted exact regex / level /
+      source entry-set nodes, Alt+click and right-click as NOT, undo.
+      Same session updated GROUP 72 (Stacked layout now has 4 Ctrl+N
+      positions, Patterns 4th), GROUP 194 (#btnFacets floats after New in
+      #viewBar) and GROUP 215 (18 .icon-toggle instances incl. #btnFacets).
    ============================================================ */
