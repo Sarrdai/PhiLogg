@@ -2372,6 +2372,87 @@
 
   /* ---------- Extraction table view ---------- */
   #extractWrap{flex:1 1 auto; display:none; flex-direction:column; min-height:0;}
+
+  /* ---------- #viewArea: content component + optional Facet panel ----------
+     A row now (Patterns/Facets session): exactly one content component is
+     displayed at a time and takes the width the facet panel leaves. */
+  #viewArea{flex:1 1 auto; display:flex; min-height:0; min-width:0;}
+  #viewArea > #fhSplit, #viewArea > #extractWrap, #viewArea > #patternsWrap,
+  #viewArea > #emptyState, #viewArea > #inlineViewerWrap, #viewArea > #folderMinimapWrap{flex:1 1 auto; min-width:0;}
+
+  /* ---------- Patterns tab (message-pattern clustering) ---------- */
+  #patternsWrap{display:none; flex-direction:column; min-height:0;}
+  #patternsToolbar{
+    flex:0 0 auto; box-sizing:border-box; height:36px;
+    display:flex; align-items:center; gap:10px;
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+  }
+  .patterns-grid{display:grid; grid-template-columns:78px 48px 70px minmax(0,1fr) 96px 96px 64px; align-items:center;}
+  #patternsHead{
+    flex:0 0 auto; padding:0 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
+    color:var(--text-secondary); font-size:11px; font-weight:650; letter-spacing:.2px; user-select:none;
+  }
+  #patternsHead > span{padding:7px 8px; white-space:nowrap;}
+  #patternsHead > span[data-sort]{cursor:pointer;}
+  #patternsHead > span[data-sort]:hover{color:var(--accent-strong);}
+  #patternsHead > span.sorted{color:var(--accent-strong);}
+  .patterns-num{text-align:right; font-variant-numeric:tabular-nums;}
+  #patternsScroll{flex:1 1 auto; overflow:auto; padding:0 16px 16px; min-height:0;}
+  #patternsSpacer{position:relative;}
+  #patternsRows{position:absolute; left:0; right:0; top:0;}
+  .pattern-row{
+    box-sizing:border-box; border-bottom:1px solid var(--border-soft); cursor:pointer;
+    font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); color:var(--text-primary);
+  }
+  .pattern-row:hover{background:var(--bg-elevated);}
+  .pattern-row > span{padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .pattern-row .patterns-time{color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
+  .pattern-ph{color:var(--accent-strong); font-weight:650;}
+  .pattern-actions{display:flex; gap:2px; justify-content:flex-end; visibility:hidden;}
+  .pattern-row:hover .pattern-actions{visibility:visible;}
+  .pattern-act{
+    display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px;
+    border-radius:5px; color:var(--text-secondary);
+  }
+  .pattern-act:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  .pattern-act.pattern-act-hide:hover{color:var(--level-error);}
+  #patternsEmpty{padding:24px 16px; color:var(--text-tertiary); font-size:12px;}
+
+  /* ---------- Facet panel (value distribution per column) ---------- */
+  #facetPanel{
+    flex:0 0 280px; display:flex; flex-direction:column; min-height:0; min-width:0;
+    background:var(--bg-panel); border-left:1px solid var(--border);
+  }
+  #facetPanel.hidden{display:none;}
+  #facetPanelHeader{
+    flex:0 0 auto; display:flex; align-items:center; gap:8px; height:34px; box-sizing:border-box;
+    padding:0 8px 0 12px; border-bottom:1px solid var(--border);
+  }
+  #facetPanelHeaderLabel{font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-secondary);}
+  #facetPanelCount{flex:1 1 auto; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  #facetPanelBody{flex:1 1 auto; overflow:auto; padding:4px 0 12px; user-select:none;}
+  .facet-section-head{
+    display:flex; align-items:center; gap:6px; padding:6px 12px; cursor:pointer;
+    font-size:11.5px; font-weight:650; color:var(--text-primary);
+  }
+  .facet-section-head:hover{color:var(--accent-strong);}
+  .facet-caret{display:inline-block; width:10px; color:var(--text-tertiary);}
+  .facet-section-note{font-weight:400; font-size:10.5px; color:var(--text-tertiary);}
+  .facet-value{
+    display:grid; grid-template-columns:minmax(0,1fr) 64px 42px 30px; align-items:center; gap:6px;
+    padding:2px 12px 2px 28px; cursor:pointer; font-size:11.5px; color:var(--text-secondary);
+  }
+  .facet-value:hover{background:var(--bg-elevated); color:var(--text-primary);}
+  .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .facet-value-name.facet-empty{font-style:italic; color:var(--text-tertiary);}
+  .facet-bar{height:6px; border-radius:3px; background:var(--bg-elevated-2); overflow:hidden;}
+  .facet-bar > i{display:block; height:100%; background:var(--accent);}
+  .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
+  .facet-pct{color:var(--text-tertiary);}
+  .facet-more{padding:2px 12px 4px 28px; font-size:11px; color:var(--accent-strong); cursor:pointer;}
+  .facet-more:hover{text-decoration:underline;}
+  .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
+  #btnFacets{float:right;}
   #extractToolbar{
     flex:0 0 auto; display:flex; flex-direction:column; gap:8px;
     padding:9px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
@@ -3927,6 +4008,7 @@
   html.pip-mode #contextToolbar,
   html.pip-mode #filteredToolbar,
   html.pip-mode #linkToolbar,
+  html.pip-mode #facetPanel,
   html.pip-mode #detailPanel,
   html.pip-mode #detailResizer,
   html.pip-mode #timelineMinimap,
@@ -4222,6 +4304,11 @@
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
         <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
+        <!-- Facet panel toggle (Patterns/Facets session) — floats right, a
+             display toggle rather than a filter-creating action. -->
+        <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+Shift+F)">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 3.5h11M2.5 8h7M2.5 12.5h4"/></svg>
+        </button>
         <!-- The library management group (#libraryManageBar: "Add to
              Library"/"Library", pinned far-right) that used to live here is
              removed (this session, project-owner review) — its two actions
@@ -4231,6 +4318,13 @@
              selected tree node rather than always the active filter. -->
       </div>
 
+      <!-- #viewArea (Patterns/Facets session): a row holding whichever
+           content component is on screen (#fhSplit / #extractWrap /
+           #patternsWrap / the empty state / the inline viewer / the folder
+           minimap — exactly one is ever displayed) plus the optional
+           #facetPanel on its right, so the facets sit beside every view
+           without an overlay. -->
+      <div id="viewArea">
       <div id="fhSplit">
         <!-- Find bar (FEATURE_BACKLOG.md #3): incremental, non-destructive
              search inside whichever log view is current (Context or
@@ -4587,6 +4681,37 @@
             </div>
           </div>
         </div>
+      </div>
+
+      <!-- Patterns tab: message-pattern clustering of the active node's
+           result (see "Patterns tab" in the script). Same toolbar-row
+           recipe as #tableToolbar; the list is virtualized like the
+           extraction table. -->
+      <div id="patternsWrap">
+        <div id="patternsToolbar">
+          <span id="patternsInfo" class="toolbar-filter-info"></span>
+        </div>
+        <div id="patternsHead" class="patterns-grid"></div>
+        <div id="patternsScroll">
+          <div id="patternsSpacer">
+            <div id="patternsRows"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Facet panel: value distribution per column of the active node's
+           result; clicking a value adds a filter node (see "Facet panel"
+           in the script). Toggled by #btnFacets / Ctrl+Shift+F. -->
+      <div id="facetPanel" class="hidden">
+        <div id="facetPanelHeader">
+          <div id="facetPanelHeaderLabel">Facets</div>
+          <span id="facetPanelCount"></span>
+          <button type="button" id="facetPanelClose" class="panel-toggle-btn" title="Close facets">
+            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </div>
+        <div id="facetPanelBody"></div>
+      </div>
       </div>
 
       <div id="plotFullscreenOverlay" class="hidden">
@@ -7569,9 +7694,9 @@ document.getElementById("settingsFhLayout").addEventListener("change", ev => {
   if (fhLayout === "stacked") {
     filterSlot.classList.remove("fh-active");
     highlightWrap.classList.remove("fh-active");
-    if (fhActiveTab !== "table" && fhActiveTab !== "plot") fhActiveTab = "highlight";
+    if (!isOffLogTab(fhActiveTab)) fhActiveTab = "highlight";
   } else {
-    if (fhActiveTab !== "table" && fhActiveTab !== "plot") {
+    if (!isOffLogTab(fhActiveTab)) {
       state.entriesView = fhActiveTab === "highlight" ? "highlight" : "filter";
     }
     filterSlot.classList.toggle("fh-active", fhActiveTab === "filter");
@@ -13086,7 +13211,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
-  clockOffset: "clock adjust",
+  clockOffset: "clock adjust", create: "filter creation",
 };
 
 function undo() {
@@ -13129,6 +13254,18 @@ function undo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.before); state.activeId = action.nodeId; }
+  } else if (action.kind === "create") {
+    // A filter node added by one click (Patterns tab / Facet panel — see
+    // pushCreateUndo): undo removes it again, snapshotting it first so redo
+    // can put back the exact node (and anything added under it since).
+    const node = state.nodes[action.nodeId];
+    if (node) {
+      const parent = state.nodes[node.parentId];
+      action.index = parent ? parent.children.indexOf(node.id) : -1;
+      action.snapshot = snapshotSubtree(node.id);
+      deleteNode(node.id);
+      state.activeId = action.parentId;
+    }
   } else if (action.kind === "clockOffset") {
     // Re-apply the INVERSE shift — snapshotSubtree keeps entries by reference,
     // so the "before" ts can't be captured; we undo the mutation instead.
@@ -13165,6 +13302,12 @@ function redo() {
   } else if (action.kind === "edit") {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.after); state.activeId = action.nodeId; }
+  } else if (action.kind === "create") {
+    if (action.snapshot && !state.nodes[action.nodeId] && state.nodes[action.parentId]) {
+      const restored = restoreSubtree(action.snapshot);
+      insertAt(state.nodes[action.parentId], restored.id, action.index);
+      state.activeId = restored.id;
+    }
   } else if (action.kind === "clockOffset") {
     const node = state.nodes[action.nodeId];
     if (node) {
@@ -13253,6 +13396,544 @@ const statsPanel = el("#statsPanel");
 const statsPanelBody = el("#statsPanelBody");
 const statsToggleBtn = el("#statsToggle");
 const extractStatsContent = el("#extractStatsContent");
+
+/* ===================== Patterns tab + Facet panel =====================
+   Two read-only analysis surfaces over the ACTIVE node's result exactly as
+   the Filtered view shows it (getEntries + the level quick-filter; pinned
+   bookmarks are not part of the result). Neither filters anything itself:
+   every action creates an ordinary filter node under the active node
+   (createFilterNode, undoable via pushCreateUndo), so the tree stays the one
+   place where filtering happens. See docs/ui-and-views.md → "Patterns tab"
+   and "Facet panel".
+
+   Both results are computed in one pass over the entries (startEntryScan:
+   synchronous for small results, time-sliced for large ones so a 100 MB
+   log never blocks the UI) and cached per node result
+   (makeEntryAnalysis) — keyed on the result ARRAY itself (getEntries'
+   memoized node._cache / a file's entries), its length (tail appends grow
+   a file's array in place) and the level quick-filter, so flipping between
+   nodes is a cache hit and any structural change (new array) recomputes. */
+const patternsWrap = el("#patternsWrap");
+const patternsInfo = el("#patternsInfo");
+const patternsHead = el("#patternsHead");
+const patternsScroll = el("#patternsScroll");
+const patternsSpacer = el("#patternsSpacer");
+const patternsRows = el("#patternsRows");
+const facetPanel = el("#facetPanel");
+const facetPanelBody = el("#facetPanelBody");
+const facetPanelCount = el("#facetPanelCount");
+const btnFacets = el("#btnFacets");
+
+// Tabs that replace #fhSplit with a content component of their own —
+// "not a log view" for every check that used to read `table || plot`.
+function isOffLogTab(tab) { return tab === "table" || tab === "plot" || tab === "patterns"; }
+
+// Results up to this size are scanned synchronously (a few ms); larger ones
+// in ~ANALYSIS_SLICE_MS slices yielded through queueTask.
+const ANALYSIS_SYNC_LIMIT = 50000;
+const ANALYSIS_SLICE_MS = 12;
+function startEntryScan(entries, step, onDone, onProgress) {
+  const n = entries.length; // a tail append mid-scan changes the cache key, not this pass
+  const job = { pos: 0, cancelled: false };
+  const runSlice = budgetMs => {
+    const t0 = performance.now();
+    while (job.pos < n) {
+      const end = Math.min(n, job.pos + 4000);
+      for (let i = job.pos; i < end; i++) step(entries[i]);
+      job.pos = end;
+      if (budgetMs && performance.now() - t0 >= budgetMs) return;
+    }
+  };
+  if (n <= ANALYSIS_SYNC_LIMIT) { runSlice(0); onDone(false); return job; }
+  const tick = () => {
+    if (job.cancelled) return;
+    runSlice(ANALYSIS_SLICE_MS);
+    if (job.pos >= n) onDone(true);
+    else { onProgress(job.pos / n); queueTask(tick); }
+  };
+  queueTask(tick);
+  return job;
+}
+
+// createAcc(nodeId) -> { step(entry), finish() -> result }; variantKey()
+// adds anything besides the entry array the result depends on. onAsync(c)
+// runs when a time-sliced computation progresses or finishes, so the owner
+// can repaint. Returns get(nodeId) -> { total, done, progress, result }.
+// Only one computation runs at a time — starting another cancels it.
+function makeEntryAnalysis(createAcc, variantKey, onAsync) {
+  const store = new WeakMap();
+  let running = null;
+  return nodeId => {
+    const base = getEntries(nodeId);
+    const key = [...state.levelFilter].sort().join(",") + "|" + variantKey(nodeId);
+    const hit = store.get(base);
+    if (hit && hit.n === base.length && hit.key === key) return hit;
+    // A pure append to the same array (a tailed file growing in place):
+    // fold in only the new entries instead of rescanning everything on
+    // every tail tick — as long as the append itself is small.
+    if (hit && hit.done && hit.key === key && base.length > hit.n && base.length - hit.n <= ANALYSIS_SYNC_LIMIT) {
+      const added = base.slice(hit.n);
+      const addedEntries = state.levelFilter.size ? applyLevelFilter(added) : added;
+      for (const e of addedEntries) hit.acc.step(e);
+      hit.n = base.length;
+      hit.total += addedEntries.length;
+      hit.result = hit.acc.finish();
+      return hit;
+    }
+    if (running) {
+      running.job.cancelled = true;
+      if (store.get(running.base) === running.cache) store.delete(running.base);
+      running = null;
+    }
+    const entries = state.levelFilter.size ? applyLevelFilter(base) : base;
+    const acc = createAcc(nodeId);
+    const c = { n: base.length, key, nodeId, total: entries.length, done: false, progress: 0, result: null, acc };
+    store.set(base, c);
+    const run = { base, cache: c, job: null };
+    running = run;
+    run.job = startEntryScan(entries, acc.step, async => {
+      c.result = acc.finish();
+      c.done = true;
+      if (running === run) running = null;
+      if (async) onAsync(c);
+    }, p => { c.progress = p; onAsync(c); });
+    return c;
+  };
+}
+
+// Adds the "create" undo action for a node a one-click analysis action just
+// created (filter creation is otherwise not an undo step — see undo()).
+function pushCreateUndo(node) {
+  pushUndo({ kind: "create", nodeId: node.id, parentId: node.parentId });
+}
+
+// Commits a node created by the Patterns tab / Facet panel: undo step,
+// render, then (optionally) the tab to land on — applyActivationView would
+// otherwise pick Filtered for the brand-new node.
+function finishAnalysisFilter(node, tab) {
+  if (!node) return;
+  pushCreateUndo(node);
+  render();
+  if (tab && fhActiveTab !== tab && (tab !== "table" || nodeIsExtractionView(node))) applyFhView(tab);
+}
+
+/* ---------- Patterns tab: message-pattern clustering ----------
+   The first line of every message (capped at PATTERN_MAX_CHARS) is
+   normalized into its "shape": variable parts become placeholders, and
+   identical shapes form one group. Placeholders are private-use characters
+   inside the group key (never present in real log text), so the key can be
+   split back into literal text and placeholders without ambiguity when a
+   filter pattern is built from it. One regex pass per message, alternatives
+   in priority order: GUID, IPv4[:port], a "quoted string" (its content), a
+   Windows/UNC or multi-segment Unix path, a hex literal/hash (0x…, or 8+
+   hex digits mixing letters and digits), then any number — a sign only
+   when it isn't glued to a word ("Worker-3" keeps its dash). */
+const PATTERN_MAX_CHARS = 400;
+const PATTERN_PH_NUM = "";
+const PATTERN_PH_LABELS = { "": "<#>", "": "<guid>", "": "<ip>", "": "<str>", "": "<path>", "": "<hex>" };
+const PATTERN_PH_SPLIT_RE = /([-])/;
+const PATTERN_TOKEN_RE = new RegExp(
+  "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})" +
+  "|((?<![\\w.])\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d{1,5})?(?![\\w.]))" +
+  '|("[^"\\n]*")' +
+  "|((?:\\b[A-Za-z]:\\\\|\\\\\\\\)[^\\s\"'<>|,;]+|(?<![\\w.:/])\\/[\\w.-]+(?:\\/[\\w.-]*)+)" +
+  "|(\\b0[xX][0-9a-fA-F]+\\b|\\b(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{8,}\\b)" +
+  "|((?:(?<![\\w.])[-+])?\\d+(?:\\.\\d+)?)",
+  "g"
+);
+// Set by normalizeMessagePattern for the message just normalized: bit i is
+// set when its i-th number placeholder held a decimal point (drives
+// [*:float] vs [*:int] for "Extract"). Module-level instead of a returned
+// object so the hot loop allocates nothing but the key.
+let patternFloatMask = 0;
+let patternNumIdx = 0;
+function patternTokenReplacer(m, guid, ip, quoted, path, hex, num) {
+  if (num !== undefined) {
+    if (patternNumIdx < 31 && num.indexOf(".") !== -1) patternFloatMask |= 1 << patternNumIdx;
+    patternNumIdx++;
+    return PATTERN_PH_NUM;
+  }
+  if (guid !== undefined) return "";
+  if (ip !== undefined) return "";
+  if (quoted !== undefined) return '""';
+  if (path !== undefined) return "";
+  return "";
+}
+function normalizeMessagePattern(message) {
+  let line = message || "";
+  const nl = line.indexOf("\n");
+  if (nl !== -1) line = line.slice(0, nl);
+  if (line.length > PATTERN_MAX_CHARS) line = line.slice(0, PATTERN_MAX_CHARS);
+  patternFloatMask = 0;
+  patternNumIdx = 0;
+  return line.replace(PATTERN_TOKEN_RE, patternTokenReplacer);
+}
+// Human-readable form of a group key ("Axis <#> position <#> ...").
+function patternDisplayText(key) {
+  return key.replace(/[-]/g, ch => PATTERN_PH_LABELS[ch]);
+}
+// Filter value for a group key, in the wildcard filter language: every
+// placeholder becomes [*] — or, with `typed`, a number placeholder becomes
+// [*:float]/[*:int] per the group's float mask, so the node goes straight to
+// Table/Plot with numeric columns.
+function patternFilterValue(key, floatMask, typed) {
+  let out = "", numIdx = 0;
+  for (const part of key.split(PATTERN_PH_SPLIT_RE)) {
+    if (!part) continue;
+    if (part.length === 1 && PATTERN_PH_LABELS[part]) {
+      if (part === PATTERN_PH_NUM && typed) out += numIdx < 31 && (floatMask & (1 << numIdx)) ? "[*:float]" : "[*:int]";
+      else out += "[*]";
+      if (part === PATTERN_PH_NUM) numIdx++;
+    } else out += part;
+  }
+  return out;
+}
+
+function createPatternAcc() {
+  const groups = new Map();
+  const bucketOf = makeLevelBucketer();
+  return {
+    step(e) {
+      const key = normalizeMessagePattern(e.message);
+      let g = groups.get(key);
+      if (!g) {
+        g = { key, count: 0, floatMask: 0, rank: Infinity, level: "", levelFormatId: null, first: e, firstTs: e.ts, lastTs: e.ts };
+        groups.set(key, g);
+      }
+      g.count++;
+      g.floatMask |= patternFloatMask;
+      const b = bucketOf(e.level, e.formatId);
+      const r = levelSortRank(b, e.formatId);
+      if (r < g.rank) { g.rank = r; g.level = b; g.levelFormatId = e.formatId; }
+      if (e.ts < g.firstTs) g.firstTs = e.ts;
+      if (e.ts > g.lastTs) g.lastTs = e.ts;
+    },
+    finish() { return { groups: [...groups.values()] }; },
+  };
+}
+const patternsAnalysis = makeEntryAnalysis(createPatternAcc, () => "", c => {
+  if (fhActiveTab === "patterns" && c.nodeId === state.activeId) renderPatternsView();
+});
+
+let patternsSortKey = "count";
+let patternsSortDir = "desc";
+let patternsSorted = null; // { result, key, dir, list }
+let patternsTotal = 0;
+
+const PATTERNS_COLUMNS = [
+  { key: "count", label: "Count", cls: "patterns-num" },
+  { key: null, label: "%", cls: "patterns-num" },
+  { key: "level", label: "Level" },
+  { key: "pattern", label: "Pattern" },
+  { key: "first", label: "First" },
+  { key: "last", label: "Last" },
+  { key: null, label: "" },
+];
+function renderPatternsHead() {
+  patternsHead.innerHTML = PATTERNS_COLUMNS.map(col => {
+    const sorted = col.key && col.key === patternsSortKey;
+    const arrow = sorted ? (patternsSortDir === "asc" ? " ▲" : " ▼") : "";
+    return '<span class="' + (col.cls || "") + (sorted ? " sorted" : "") + '"' +
+      (col.key ? ' data-sort="' + col.key + '" title="Sort by ' + col.label.toLowerCase() + '"' : "") + ">" +
+      escapeHtml(col.label) + arrow + "</span>";
+  }).join("");
+}
+patternsHead.addEventListener("click", ev => {
+  const cell = ev.target.closest("[data-sort]");
+  if (!cell) return;
+  const key = cell.dataset.sort;
+  if (key === patternsSortKey) patternsSortDir = patternsSortDir === "asc" ? "desc" : "asc";
+  else { patternsSortKey = key; patternsSortDir = key === "count" ? "desc" : "asc"; }
+  renderPatternsView();
+});
+
+function patternsComparator(key, dir) {
+  const sign = dir === "asc" ? 1 : -1;
+  const byCount = (a, b) => b.count - a.count;
+  const num = v => (Number.isNaN(v) ? Infinity : v);
+  switch (key) {
+    case "level": return (a, b) => sign * (a.rank - b.rank) || byCount(a, b);
+    case "first": return (a, b) => sign * (num(a.firstTs) - num(b.firstTs)) || byCount(a, b);
+    case "last": return (a, b) => sign * (num(a.lastTs) - num(b.lastTs)) || byCount(a, b);
+    case "pattern": return (a, b) => sign * (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+    default: return (a, b) => sign * (a.count - b.count) || (a.firstTs - b.firstTs);
+  }
+}
+
+function renderPatternsView() {
+  renderPatternsHead();
+  const c = patternsAnalysis(state.activeId);
+  patternsTotal = c.total;
+  if (!c.done) {
+    patternsInfo.textContent = "Grouping " + c.total.toLocaleString("de-DE") + " entries… " + Math.round(c.progress * 100) + "%";
+    patternsSorted = null;
+    patternsSpacer.style.height = "0px";
+    patternsRows.innerHTML = "";
+    return;
+  }
+  if (!patternsSorted || patternsSorted.result !== c.result || patternsSorted.key !== patternsSortKey || patternsSorted.dir !== patternsSortDir) {
+    const list = c.result.groups.slice().sort(patternsComparator(patternsSortKey, patternsSortDir));
+    patternsSorted = { result: c.result, key: patternsSortKey, dir: patternsSortDir, list };
+  }
+  const n = patternsSorted.list.length;
+  patternsInfo.textContent = c.total.toLocaleString("de-DE") + " entries → " + n.toLocaleString("de-DE") + " pattern" + (n === 1 ? "" : "s");
+  patternsSpacer.style.height = (n * EXTRACT_ROW_HEIGHT) + "px";
+  if (!n) { patternsRows.innerHTML = '<div id="patternsEmpty">No entries in this view.</div>'; return; }
+  renderPatternsVisibleRows();
+}
+
+const PATTERN_ACTION_ICONS = {
+  hide: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><circle cx="8" cy="8" r="5.5"/><path d="M4.2 11.8l7.6-7.6"/></svg>',
+  extract: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>',
+  jump: '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8h9M8.5 4.5 12 8l-3.5 3.5"/></svg>',
+};
+function patternTimeText(ts) {
+  if (nodeIsPlainText(state.activeId)) return formatTsFor(state.activeId, ts);
+  const full = formatTime(ts);
+  return full.length > 11 ? full.slice(11) : full;
+}
+function renderPatternsVisibleRows() {
+  const list = patternsSorted ? patternsSorted.list : [];
+  if (!list.length) return;
+  const rowH = EXTRACT_ROW_HEIGHT;
+  const viewportH = patternsScroll.clientHeight || 400;
+  const start = Math.max(0, Math.floor(patternsScroll.scrollTop / rowH) - EXTRACT_BUFFER_ROWS);
+  const end = Math.min(list.length, start + Math.ceil(viewportH / rowH) + EXTRACT_BUFFER_ROWS * 2);
+  const total = patternsTotal || 1;
+  let html = "";
+  for (let i = start; i < end; i++) {
+    const g = list[i];
+    const pct = g.count / total * 100;
+    const pctText = pct > 0 && pct < 1 ? "<1%" : Math.round(pct) + "%";
+    const text = g.key.split(PATTERN_PH_SPLIT_RE).map(part =>
+      part.length === 1 && PATTERN_PH_LABELS[part] ? '<span class="pattern-ph">' + escapeHtml(PATTERN_PH_LABELS[part]) + "</span>" : escapeHtml(part)
+    ).join("");
+    const lvlCls = g.level ? levelClass(g.level, g.levelFormatId) : "";
+    html +=
+      '<div class="pattern-row patterns-grid ' + lvlCls + '" data-idx="' + i + '" style="height:' + rowH + 'px">' +
+      '<span class="patterns-num">' + g.count.toLocaleString("de-DE") + "</span>" +
+      '<span class="patterns-num">' + pctText + "</span>" +
+      "<span>" + (g.level && g.level !== "OTHER" ? '<span class="level-badge">' + escapeHtml(g.level) + "</span>" : "") + "</span>" +
+      '<span class="pattern-text" title="' + escapeHtml(patternDisplayText(g.key)) + '">' + text + "</span>" +
+      '<span class="patterns-time">' + escapeHtml(patternTimeText(g.firstTs)) + "</span>" +
+      '<span class="patterns-time">' + escapeHtml(patternTimeText(g.lastTs)) + "</span>" +
+      '<span class="pattern-actions">' +
+        '<span class="pattern-act pattern-act-hide" data-act="hide" title="Hide this pattern (NOT filter) — Alt+click">' + PATTERN_ACTION_ICONS.hide + "</span>" +
+        '<span class="pattern-act" data-act="extract" title="Extract its values (Table/Plot)">' + PATTERN_ACTION_ICONS.extract + "</span>" +
+        '<span class="pattern-act" data-act="jump" title="Jump to its first entry">' + PATTERN_ACTION_ICONS.jump + "</span>" +
+      "</span></div>";
+  }
+  patternsRows.style.top = (start * rowH) + "px";
+  patternsRows.innerHTML = html;
+}
+patternsScroll.addEventListener("scroll", makeScrollRenderer(renderPatternsVisibleRows));
+
+// The pattern-row actions. "filter" (plain click) and "hide" (Alt+click or
+// the ⊘ button) add a message text filter with every placeholder as [*];
+// "extract" types the number placeholders so the node opens on Table;
+// "jump" reveals the group's first entry in the Filtered view.
+function applyPatternAction(group, action) {
+  if (!group || !state.activeId) return;
+  if (action === "jump") { revealInFilteredView(group.first); return; }
+  const typed = action === "extract";
+  const value = patternFilterValue(group.key, group.floatMask, typed);
+  const node = createFilterNode(state.activeId, "text", value, action === "hide", [], false, ["message"], false, false);
+  finishAnalysisFilter(node, action === "hide" ? "patterns" : action === "extract" ? "table" : null);
+}
+patternsRows.addEventListener("mousedown", ev => ev.preventDefault()); // clicks never take keyboard focus from the log view
+patternsRows.addEventListener("click", ev => {
+  const row = ev.target.closest(".pattern-row");
+  if (!row || !patternsSorted) return;
+  ev.stopPropagation();
+  const group = patternsSorted.list[+row.dataset.idx];
+  const act = ev.target.closest("[data-act]");
+  applyPatternAction(group, act ? act.dataset.act : (ev.altKey ? "hide" : "filter"));
+});
+
+/* ---------- Facet panel: value distribution per column ----------
+   One section per middle column of the loaded formats (Thread/Location/
+   Method/custom columns, activeColumnDefs), plus Level and — for a merged
+   file — Source; Time and Message are left out (near-unique per entry).
+   Each section lists its top values with count, share and a bar; a click
+   adds a filter node under the active node restricted to that exact value
+   (Alt+click or right-click: the same as a NOT filter). Collapsed sections and the
+   panel's open state are remembered per browser (localStorage). */
+const FACETS_OPEN_KEY = "philogg-facets-open";
+const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
+const FACET_TOP_N = 8;
+const FACET_MORE_STEP = 25;
+let facetsOpen = false;
+try { facetsOpen = localStorage.getItem(FACETS_OPEN_KEY) === "1"; } catch { facetsOpen = false; }
+let facetsCollapsed = new Set();
+try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
+const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
+
+function facetColumnsFor(nodeId) {
+  const cols = activeColumnDefs().map(d => ({ key: d.key, label: d.label, value: e => entryColumnValue(e, d.key) }));
+  if (!allRootsPlainText()) {
+    const bucketOf = makeLevelBucketer();
+    cols.push({ key: "level", label: "Level", value: e => bucketOf(e.level, e.formatId) });
+  }
+  const root = state.nodes[getRootFileId(nodeId)];
+  if (root && root.sources && root.sources.length) {
+    const names = new Map(root.sources.map(src => [src.id, src.name]));
+    cols.push({ key: "__source", label: "Source", value: e => names.get(e.sourceId) || "" });
+  }
+  return cols;
+}
+function facetColumnsKey(nodeId) { return facetColumnsFor(nodeId).map(c => c.key).join(","); }
+
+function createFacetAcc(nodeId) {
+  const cols = facetColumnsFor(nodeId);
+  const maps = cols.map(() => new Map());
+  const k = cols.length;
+  return {
+    step(e) {
+      for (let i = 0; i < k; i++) {
+        const v = cols[i].value(e);
+        const m = maps[i];
+        m.set(v, (m.get(v) || 0) + 1);
+      }
+    },
+    finish() {
+      return {
+        columns: cols.map((col, i) => ({
+          key: col.key, label: col.label,
+          values: [...maps[i]].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)),
+        })),
+      };
+    },
+  };
+}
+const facetsAnalysis = makeEntryAnalysis(createFacetAcc, facetColumnsKey, c => {
+  if (facetsOpen && c.nodeId === state.activeId) renderFacetPanel();
+});
+
+function facetsAvailable() {
+  const node = state.nodes[state.activeId];
+  return !!node && !(node.type === "filter" && node.filterType === "link");
+}
+
+// Shown/hidden and (re)filled from renderMainView — the panel sits beside
+// every content component except the inline viewer / folder minimap / empty
+// state, which hide it explicitly.
+function renderFacetPanel() {
+  btnFacets.classList.toggle("active", facetsOpen);
+  facetPanel.classList.toggle("hidden", !facetsOpen);
+  if (!facetsOpen) return;
+  if (!facetsAvailable()) {
+    facetPanelCount.textContent = "";
+    facetPanelBody.innerHTML = '<div class="facet-pending">Not available for a link filter.</div>';
+    return;
+  }
+  const c = facetsAnalysis(state.activeId);
+  facetPanelCount.textContent = c.total.toLocaleString("de-DE") + " entries";
+  if (!c.done) {
+    facetPanelBody.innerHTML = '<div class="facet-pending">Counting… ' + Math.round(c.progress * 100) + "%</div>";
+    return;
+  }
+  const total = c.total || 1;
+  let html = "";
+  if (!c.result.columns.length) html = '<div class="facet-pending">This format has no columns to break down.</div>';
+  c.result.columns.forEach(col => {
+    const collapsed = facetsCollapsed.has(col.key);
+    html += '<div class="facet-section" data-col="' + escapeHtml(col.key) + '">' +
+      '<div class="facet-section-head" data-toggle="1"><span class="facet-caret">' + (collapsed ? "▸" : "▾") + "</span>" +
+      escapeHtml(col.label) + ' <span class="facet-section-note">' + col.values.length.toLocaleString("de-DE") + " value" + (col.values.length === 1 ? "" : "s") + "</span></div>";
+    if (!collapsed) {
+      const shown = Math.min(col.values.length, FACET_TOP_N + (facetsShown.get(col.key) || 0));
+      const max = col.values.length ? col.values[0][1] : 1;
+      for (let i = 0; i < shown; i++) {
+        const [value, count] = col.values[i];
+        const pct = count / total * 100;
+        html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
+          '<span class="facet-value-name' + (value ? "" : " facet-empty") + '">' + escapeHtml(value || "(empty)") + "</span>" +
+          '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
+          '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
+          '<span class="facet-pct">' + (pct > 0 && pct < 1 ? "<1" : Math.round(pct)) + "%</span></div>";
+      }
+      if (shown < col.values.length) {
+        let rest = 0;
+        for (let i = shown; i < col.values.length; i++) rest += col.values[i][1];
+        html += '<div class="facet-more" data-more="1">(+' + (col.values.length - shown).toLocaleString("de-DE") + " more · " + rest.toLocaleString("de-DE") + " entries)</div>";
+      }
+    }
+    html += "</div>";
+  });
+  facetPanelBody.innerHTML = html;
+  facetPanelBody._facetResult = c.result;
+}
+
+// Filter node for one facet value, under the active node: Level → a level
+// filter (the bucket shown is exactly what a level node matches); Source →
+// an entry-set of that source's entries; any other column → a
+// case-sensitive regex text filter restricted to that column, anchored so
+// only the exact whole value matches.
+function createFacetFilter(column, value, inverted) {
+  const parentId = state.activeId;
+  if (!parentId || !state.nodes[parentId]) return;
+  let node;
+  if (column.key === "level") {
+    node = createFilterNode(parentId, "level", [value], inverted);
+  } else if (column.key === "__source") {
+    const root = state.nodes[getRootFileId(parentId)];
+    const src = root && root.sources && root.sources.find(s => s.name === value);
+    if (!src) return;
+    const ids = getEntries(parentId).filter(e => e.sourceId === src.id).map(e => e.id);
+    node = createFilterNode(parentId, "idset", ids, inverted);
+    if (node) node.name = "Source = " + value;
+  } else {
+    node = createFilterNode(parentId, "text", "^" + escapeRegExp(value) + "$", inverted, [], true, [column.key], true, false);
+    if (node) node.name = column.label + " = " + (value || "(empty)");
+  }
+  finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
+}
+
+function setFacetsOpen(open) {
+  facetsOpen = !!open;
+  try { localStorage.setItem(FACETS_OPEN_KEY, facetsOpen ? "1" : "0"); } catch {}
+  renderFacetPanel();
+  // The log/table views re-measure their width on the next render; a full
+  // renderMainView is the simplest correct refresh after the layout change.
+  if (state.rootIds.length) renderMainView();
+}
+btnFacets.addEventListener("click", ev => { ev.stopPropagation(); setFacetsOpen(!facetsOpen); });
+el("#facetPanelClose").addEventListener("click", ev => { ev.stopPropagation(); setFacetsOpen(false); });
+facetPanel.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
+facetPanelBody.addEventListener("click", ev => {
+  const section = ev.target.closest(".facet-section");
+  const result = facetPanelBody._facetResult;
+  if (!section || !result) return;
+  ev.stopPropagation();
+  const col = result.columns.find(c => c.key === section.dataset.col);
+  if (!col) return;
+  if (ev.target.closest("[data-toggle]")) {
+    if (facetsCollapsed.has(col.key)) facetsCollapsed.delete(col.key); else facetsCollapsed.add(col.key);
+    try { localStorage.setItem(FACETS_COLLAPSED_KEY, JSON.stringify([...facetsCollapsed])); } catch {}
+    renderFacetPanel();
+    return;
+  }
+  if (ev.target.closest("[data-more]")) {
+    facetsShown.set(col.key, (facetsShown.get(col.key) || 0) + FACET_MORE_STEP);
+    renderFacetPanel();
+    return;
+  }
+  const row = ev.target.closest(".facet-value");
+  if (!row) return;
+  const entry = col.values[+row.dataset.idx];
+  if (entry) createFacetFilter(col, entry[0], ev.altKey);
+});
+facetPanelBody.addEventListener("contextmenu", ev => {
+  const row = ev.target.closest(".facet-value");
+  const section = ev.target.closest(".facet-section");
+  const result = facetPanelBody._facetResult;
+  if (!row || !section || !result) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  const col = result.columns.find(c => c.key === section.dataset.col);
+  const entry = col && col.values[+row.dataset.idx];
+  if (entry) createFacetFilter(col, entry[0], true);
+});
 // These six log-display toggles now exist TWICE in the DOM (once in
 // #contextToolbar, once in #filteredToolbar — see "Unified toolbar" HTML
 // comments), sharing one class instead of an id, so every reference is an
@@ -13417,11 +14098,14 @@ function currentViewTabsList(extractCapable) {
     { tab: "table", label: "Table", title: extractCapable ? "Extraction table for this node's pattern" : "No extractable [*] pattern on this filter — nothing to tabulate", disabled: !extractCapable },
     { tab: "plot", label: "Plot", title: extractCapable ? "Plot extracted values from this node's pattern" : "No extractable [*] pattern on this filter — nothing to plot", disabled: !extractCapable },
   );
+  // Patterns (message-pattern clustering) applies to every node, so it is
+  // last — the Ctrl+1-4 positions of the tabs before it stay unchanged.
+  tabs.push({ tab: "patterns", label: "Patterns", title: "Group this node's messages by shape — numbers, GUIDs, IPs, paths become placeholders" });
   return tabs;
 }
 function renderViewTabs(extractCapable) {
   const tabs = currentViewTabsList(extractCapable);
-  const activeVal = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
+  const activeVal = fhLayout === "stacked" && !isOffLogTab(fhActiveTab) ? "stacked" : fhActiveTab;
   fhTabs.innerHTML = tabs.map(t =>
     `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${t.disabled ? " disabled" : ""}>${t.label}</button>`
   ).join("");
@@ -13544,7 +14228,7 @@ function applyFhView(view) {
     // more than this branch needs (e.g. the timeline minimap SVG, which
     // would silently invalidate any DOM reference a caller is still holding
     // — same DOM-identity class of gotcha CLAUDE.md documents elsewhere).
-    const wasOnTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
+    const wasOnTableOrPlot = isOffLogTab(fhActiveTab);
     fhLayout = "stacked";
     fhSplit.classList.remove("fh-layout-tabs");
     fhSplit.classList.add("fh-layout-stacked");
@@ -13567,8 +14251,8 @@ function applyFhView(view) {
     updateMinimapRenderedRange();
     updateMinimapSelectionMarkers(); // see showFhTab's own call for why
     updateContextToolbar();               // ditto — this branch doesn't go through showFhTab
-  } else if (view === "table" || view === "plot") {
-    // Switching to Table/Plot never touches fhLayout — a person who set
+  } else if (isOffLogTab(view)) {
+    // Switching to Table/Plot (or Patterns) never touches fhLayout — a person who set
     // "Gestapelt" in Settings stays there when they come back to the log
     // views (docs/ui-implementation-plan.md's third open question:
     // fhActiveTab is simply allowed to sit on "table"/"plot" independently
@@ -13587,7 +14271,7 @@ function applyFhView(view) {
     // unhandled, the tab pill switches correctly but the extraction
     // table/plot stays visible underneath (person-reported: stuck on
     // Table/Plot, Context/Filtered clicks did nothing visible).
-    const wasOnTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
+    const wasOnTableOrPlot = isOffLogTab(fhActiveTab);
     fhLayout = "tabs";
     fhSplit.classList.add("fh-layout-tabs");
     fhSplit.classList.remove("fh-layout-stacked");
@@ -13610,7 +14294,7 @@ function applyFhView(view) {
   if (state.activeId) {
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") {
-      const recorded = fhLayout === "stacked" && fhActiveTab !== "table" && fhActiveTab !== "plot" ? "stacked" : fhActiveTab;
+      const recorded = fhLayout === "stacked" && !isOffLogTab(fhActiveTab) ? "stacked" : fhActiveTab;
       nodeLastView.set(activeNode.id, recorded);
     }
   }
@@ -13757,6 +14441,7 @@ function activeNavScroller(nodeId) {
   // rework).
   if (nodeIsExtractionView(node) &&
       (fhActiveTab === "table" || fhActiveTab === "plot")) return extractScroll;
+  if (fhActiveTab === "patterns") return patternsScroll;
   if (node && node.type === "filter" && node.filterType === "link") return linkScroll;
   return tableBody;
 }
@@ -13916,7 +14601,7 @@ function applyNavWaypoint(wp) {
   // "table"/"plot" is a tab in its own right regardless of fhLayout (see the
   // big comment above applyFhView) — only fall back to "stacked" for the two
   // log tabs, which fhLayout genuinely governs.
-  const wantView = (wp.fhActiveTab === "table" || wp.fhActiveTab === "plot")
+  const wantView = isOffLogTab(wp.fhActiveTab)
     ? wp.fhActiveTab
     : (wp.fhLayout === "stacked" ? "stacked" : wp.fhActiveTab);
   if (wp.fhLayout !== fhLayout || wp.fhActiveTab !== fhActiveTab) applyFhView(wantView);
@@ -14037,14 +14722,14 @@ function applyActivationView(activeNode) {
   } else {
     targetTab = remembered; // "highlight" | "filter" | "table" | "plot" | "stacked"
   }
-  if (targetTab === "table" || targetTab === "plot") {
+  if (isOffLogTab(targetTab)) {
     if (fhActiveTab !== targetTab) applyFhView(targetTab);
   } else if (fhLayout === "stacked") {
     // "highlight"/"filter"/"stacked" all mean the same thing here: the
     // combined pane both Context and Filtered already share. Only need to
     // act if Table/Plot was showing; otherwise the right thing is already
     // on screen.
-    if (fhActiveTab === "table" || fhActiveTab === "plot") applyFhView("stacked");
+    if (isOffLogTab(fhActiveTab)) applyFhView("stacked");
   } else if (targetTab === "highlight") {
     if (fhActiveTab !== "highlight") applyFhView("highlight");
   } else {
@@ -14149,6 +14834,8 @@ function renderMainView() {
     viewBarEl.style.display = "none";
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
+    patternsWrap.style.display = "none";
+    facetPanel.classList.add("hidden");
     linkWrap.style.display = "none";
     fhTabs.style.display = "none";
     fhSplit.style.display = "none";
@@ -14186,6 +14873,8 @@ function renderMainView() {
     viewBarEl.style.display = "none";
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
+    patternsWrap.style.display = "none";
+    facetPanel.classList.add("hidden");
     linkWrap.style.display = "none";
     fhTabs.style.display = "none";
     fhSplit.style.display = "none";
@@ -14207,6 +14896,8 @@ function renderMainView() {
   if (!hasFiles) {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
+    patternsWrap.style.display = "none";
+    facetPanel.classList.add("hidden");
     linkWrap.style.display = "none";
     fhTabs.innerHTML = "";
     fhTabs.style.display = "none";
@@ -14247,6 +14938,21 @@ function renderMainView() {
   fhTabs.style.display = "flex";
   renderViewTabs(extractCapable);
   updateViewBarRowActions();
+  renderFacetPanel();
+
+  if (fhActiveTab === "patterns") {
+    fhSplit.style.display = "none";
+    extractWrap.style.display = "none";
+    tableWrap.style.display = "none";
+    linkWrap.style.display = "none";
+    detailResizer.style.display = "none";
+    detailPanel.style.display = "none";
+    timelineMinimapEl.classList.remove("hidden");
+    patternsWrap.style.display = "flex";
+    renderPatternsView();
+    return;
+  }
+  patternsWrap.style.display = "none";
 
   if (fhActiveTab === "table" || fhActiveTab === "plot") {
     fhSplit.style.display = "none";
@@ -14322,7 +15028,7 @@ function renderMainView() {
 // next to Filtered, tabs layout only on its own tab.
 let contextViewStale = false;
 function contextViewVisible() {
-  return fhActiveTab !== "table" && fhActiveTab !== "plot" && (fhLayout === "stacked" || fhActiveTab === "highlight");
+  return !isOffLogTab(fhActiveTab) && (fhLayout === "stacked" || fhActiveTab === "highlight");
 }
 
 function renderStatus() {
@@ -16595,7 +17301,7 @@ function zoomPlotAt(dataX, dataY, factor) {
 // below), same condition #plot2dToolsGroup's own zoom controls gate on.
 let plot2dToolsAvailable = false;
 function updateViewBarRowActions() {
-  const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
+  const onTableOrPlot = isOffLogTab(fhActiveTab);
   elAll('[data-row-action="filterForMessage"], [data-row-action="extractMessage"]')
     .forEach(b => b.classList.toggle("hidden", onTableOrPlot));
   updateRowActionButtons();
@@ -20969,7 +21675,7 @@ function updateDetailToggleIcon() {
 // handle would be dead UI if left visible whenever it's collapsed, on top
 // of the existing no-files/extract-mode hide conditions.
 function updateDetailResizerVisibility() {
-  const onTableOrPlot = fhActiveTab === "table" || fhActiveTab === "plot";
+  const onTableOrPlot = isOffLogTab(fhActiveTab);
   detailResizer.style.display = (state.rootIds.length > 0 && !onTableOrPlot && !isDetailCollapsed()) ? "block" : "none";
 }
 
@@ -32736,6 +33442,8 @@ const SHORTCUT_ACTIONS = [
   { id: "viewTab2",      label: "Switch to View Selector tab 2",       default: { ctrl: true, key: "2" } },
   { id: "viewTab3",      label: "Switch to View Selector tab 3",       default: { ctrl: true, key: "3" } },
   { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
+  { id: "viewTab5",      label: "Switch to View Selector tab 5",       default: { ctrl: true, key: "5" } },
+  { id: "toggleFacets",  label: "Show/hide the Facet panel",           default: { ctrl: true, shift: true, key: "f" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
   { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
@@ -35354,6 +36062,7 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "viewTab2")) { ev.preventDefault(); jumpToViewTab(2); return; }
   if (matchesShortcut(ev, "viewTab3")) { ev.preventDefault(); jumpToViewTab(3); return; }
   if (matchesShortcut(ev, "viewTab4")) { ev.preventDefault(); jumpToViewTab(4); return; }
+  if (matchesShortcut(ev, "viewTab5")) { ev.preventDefault(); jumpToViewTab(5); return; }
   if (ev.key === "Enter" && state.focusRegion === "tree") {
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") {
@@ -35454,6 +36163,11 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "toggleDetail")) {
     ev.preventDefault();
     toggleDetailCollapsed();
+    return;
+  }
+  if (matchesShortcut(ev, "toggleFacets")) {
+    ev.preventDefault();
+    setFacetsOpen(!facetsOpen);
     return;
   }
 
