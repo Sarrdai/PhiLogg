@@ -92,7 +92,7 @@ deployments possible:
   into a real filter node — `Ctrl+F` still opens the filter popup directly.
   Stays fast on views with hundreds of thousands of rows.
 - **Patterns: a log's message shapes at a glance** — the **Patterns** tab
-  groups the current filter result by message *shape*: numbers, GUIDs, IP
+  (first in the view selector, `Ctrl+1`) groups the current filter result by message *shape*: numbers, GUIDs, IP
   addresses, paths, hex values and quoted strings become placeholders, so
   `Axis 2 position 1532.44 reached in 12 ms` and `Axis 1 position 88.10
   reached in 9 ms` are one row, `Axis <#> position <#> reached in <#> ms`,
@@ -103,8 +103,8 @@ deployments possible:
   typed columns, or jump to its first entry. Stays responsive on 100 MB
   logs (one pass, computed in the background, cached per filter result).
 - **Facet panel: who/what produces these entries?** — a toggleable side
-  panel (`Ctrl+Shift+F`, or the button at the right end of the view bar)
-  shows the value distribution of every column (Thread, Location, Method,
+  panel (`Ctrl+Shift+F`, or the button at the right end of the view bar;
+  drag its left edge to resize) shows the value distribution of every column (Thread, Location, Method,
   custom columns, Level, and Source for a merged file) over the current
   filter result: the top values with count, share and a bar, "+k more" to
   see the rest. Click a value to add a filter for exactly that value;
