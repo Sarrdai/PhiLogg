@@ -8622,7 +8622,7 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(72);
 await withApp(async (w, d, T) => {
-  section("72. Ctrl+0/1/2/3 tree/Log-view shortcuts + Enter");
+  section("72. Ctrl+0/1/2/3/4 tree/Log-view shortcuts + Enter");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const filterA = w.createFilterNode(f.id, "text", "message");
@@ -8639,26 +8639,31 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "0", { ctrlKey: true });
   assert(T.state.activeId === f.id, "Ctrl+0 with no active node falls back to the first root file");
 
-  // Ctrl+1: opens Full (Highlight) and focuses it for arrow-key navigation.
+  // Ctrl+1: Patterns is the leftmost View Selector tab (2026-09-26, GROUP 288).
   w.applyFhView("filter");
   fireKeydown(d, w, "1", { ctrlKey: true });
-  assert(T.fhActiveTab === "highlight", "Ctrl+1 opens the Full view");
+  assert(T.fhActiveTab === "patterns", "Ctrl+1 opens the Patterns tab (leftmost)");
+
+  // Ctrl+2: opens Full (Highlight) and focuses it for arrow-key navigation.
+  w.applyFhView("filter");
+  fireKeydown(d, w, "2", { ctrlKey: true });
+  assert(T.fhActiveTab === "highlight", "Ctrl+2 opens the Full view");
   assert(T.state.focusRegion === "entries" && T.state.entriesView === "highlight", "...and focuses it (entriesView) for arrow-key navigation");
 
   const beforeHighlightSelect = T.state.selectedId;
   fireKeydown(d, w, "ArrowDown");
   assert(T.state.selectedId !== beforeHighlightSelect, "with entriesView \"highlight\", ArrowDown moves the Full view's own selection, not the Filtered view's");
 
-  // Ctrl+2: opens Filtered and focuses it — arrow keys move that view instead.
-  fireKeydown(d, w, "2", { ctrlKey: true });
-  assert(T.fhActiveTab === "filter", "Ctrl+2 opens the Filtered view");
+  // Ctrl+3: opens Filtered and focuses it — arrow keys move that view instead.
+  fireKeydown(d, w, "3", { ctrlKey: true });
+  assert(T.fhActiveTab === "filter", "Ctrl+3 opens the Filtered view");
   assert(T.state.focusRegion === "entries" && T.state.entriesView === "filter", "...and focuses it (entriesView) for arrow-key navigation");
 
-  // Ctrl+3: this node isn't extraction-capable, so the View Selector only
-  // has 2 tabs (Context, Filtered) — position 3 doesn't exist, a silent no-op.
-  const beforeCtrl3 = { tab: T.fhActiveTab, layout: T.fhLayout };
-  fireKeydown(d, w, "3", { ctrlKey: true });
-  assert(T.fhActiveTab === beforeCtrl3.tab && T.fhLayout === beforeCtrl3.layout, "Ctrl+3 with only 2 available tabs is a no-op");
+  // Ctrl+4: this node isn't extraction-capable, so position 4 (Table) is
+  // disabled — a silent no-op.
+  const beforeCtrl4 = { tab: T.fhActiveTab, layout: T.fhLayout };
+  fireKeydown(d, w, "4", { ctrlKey: true });
+  assert(T.fhActiveTab === beforeCtrl4.tab && T.fhLayout === beforeCtrl4.layout, "Ctrl+4 on a disabled Table slot is a no-op");
 
   // Enter on an active FILTER node while the tree has focus reveals the Filtered view.
   w.applyFhView("highlight");
@@ -8678,7 +8683,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("72b. Ctrl+1-4 on an extraction-capable node jump positionally (Context/Filtered/Table/Plot); once Stacked layout is active, only 1-3 exist (Stacked/Table/Plot)");
+  section("72b. Ctrl+1-5 on an extraction-capable node jump positionally (Patterns/Context/Filtered/Table/Plot); in Stacked layout only 1-4 exist (Patterns/Stacked/Table/Plot)");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const node = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -8686,33 +8691,33 @@ await withApp(async (w, d, T) => {
   w.render();
   w.applyFhView("filter");
 
-  fireKeydown(d, w, "3", { ctrlKey: true });
-  assert(T.fhActiveTab === "table", "Ctrl+3 jumps to position 3 (Table), now that a 3rd tab exists");
   fireKeydown(d, w, "4", { ctrlKey: true });
-  assert(T.fhActiveTab === "plot", "Ctrl+4 jumps to position 4 (Plot)");
-  fireKeydown(d, w, "1", { ctrlKey: true });
-  assert(T.fhActiveTab === "highlight", "Ctrl+1 jumps back to position 1 (Context)");
+  assert(T.fhActiveTab === "table", "Ctrl+4 jumps to position 4 (Table), now that it is enabled");
+  fireKeydown(d, w, "5", { ctrlKey: true });
+  assert(T.fhActiveTab === "plot", "Ctrl+5 jumps to position 5 (Plot)");
+  fireKeydown(d, w, "2", { ctrlKey: true });
+  assert(T.fhActiveTab === "highlight", "Ctrl+2 jumps back to position 2 (Context)");
 
   // Switch to Stacked layout (a Settings choice, not a Ctrl shortcut) — from
   // here the View Selector collapses Context+Filtered into one "Stacked"
-  // slot, so there are only 4 positions: Stacked, Table, Plot, Patterns
-  // (Patterns added 2026-09-26, GROUP 286).
+  // slot, so there are only 4 positions: Patterns, Stacked, Table, Plot
+  // (Patterns moved first 2026-09-26, GROUP 288).
   const layoutSelect = d.querySelector("#settingsFhLayout");
   layoutSelect.value = "stacked";
   layoutSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(T.fhLayout === "stacked", "sanity: now in Stacked layout");
 
-  fireKeydown(d, w, "2", { ctrlKey: true });
-  assert(T.fhActiveTab === "table", "Ctrl+2 in Stacked layout jumps to position 2 (Table)");
   fireKeydown(d, w, "3", { ctrlKey: true });
-  assert(T.fhActiveTab === "plot", "Ctrl+3 in Stacked layout jumps to position 3 (Plot)");
+  assert(T.fhActiveTab === "table", "Ctrl+3 in Stacked layout jumps to position 3 (Table)");
   fireKeydown(d, w, "4", { ctrlKey: true });
-  assert(T.fhActiveTab === "patterns", "Ctrl+4 in Stacked layout jumps to position 4 (Patterns)");
+  assert(T.fhActiveTab === "plot", "Ctrl+4 in Stacked layout jumps to position 4 (Plot)");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.fhActiveTab === "patterns", "Ctrl+1 in Stacked layout jumps to position 1 (Patterns)");
   const before5 = T.fhActiveTab;
   fireKeydown(d, w, "5", { ctrlKey: true });
   assert(T.fhActiveTab === before5, "Ctrl+5 in Stacked layout is a no-op — only 4 positions exist");
-  fireKeydown(d, w, "1", { ctrlKey: true });
-  assert(T.fhLayout === "stacked" && T.fhActiveTab !== "table" && T.fhActiveTab !== "plot", "Ctrl+1 in Stacked layout jumps to position 1 (Stacked itself)");
+  fireKeydown(d, w, "2", { ctrlKey: true });
+  assert(T.fhLayout === "stacked" && !["table", "plot", "patterns"].includes(T.fhActiveTab), "Ctrl+2 in Stacked layout jumps to position 2 (Stacked itself)");
 });
 
 /* ============================================================
@@ -21539,23 +21544,23 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("194d. Ctrl+1-4 skips a disabled Table/Plot slot (no-op), reaches it once enabled");
+  section("194d. Ctrl+1-5 skips a disabled Table/Plot slot (no-op), reaches it once enabled");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const plain = w.createFilterNode(f.id, "text", "message");
   T.state.activeId = plain.id;
   w.render();
-  // Table is slot 3 but disabled here — Ctrl+3 must be a no-op.
+  // Table is slot 4 (after Patterns/Context/Filtered) but disabled here — Ctrl+4 must be a no-op.
   w.applyFhView("filter");
   const before = T.fhActiveTab;
-  w.jumpToViewTab(3);
-  assert(T.fhActiveTab === before, "Ctrl+3 does nothing while Table is disabled (no wildcards)");
+  w.jumpToViewTab(4);
+  assert(T.fhActiveTab === before, "Ctrl+4 does nothing while Table is disabled (no wildcards)");
 
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
   T.state.activeId = extractNode.id;
   w.render();
-  w.jumpToViewTab(3);
-  assert(T.fhActiveTab === "table", "Ctrl+3 reaches Table once the node has wildcards");
+  w.jumpToViewTab(4);
+  assert(T.fhActiveTab === "table", "Ctrl+4 reaches Table once the node has wildcards");
 });
 
 await withApp(async (w, d, T) => {
@@ -32260,7 +32265,7 @@ group(286);
     const tab = d.querySelector('#fhTabs .view-tab[data-fh-tab="patterns"]');
     assert(!!tab && !tab.disabled, "Patterns is a tab, enabled for a plain file node");
     const tabs = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
-    assert(tabs.join(",") === "highlight,filter,table,plot,patterns", "Patterns comes last, keeping Ctrl+1-4 positions, got " + tabs);
+    assert(tabs.join(",") === "patterns,highlight,filter,table,plot", "Patterns comes first (Ctrl+1), got " + tabs);
     fireClick(tab, w);
     assert(T.fhActiveTab === "patterns", "clicking the tab switches to it");
     assert(isVisible(d.querySelector("#patternsWrap"), w) && !isVisible(d.querySelector("#fhSplit"), w) && !isVisible(d.querySelector("#extractWrap"), w),
@@ -32477,6 +32482,74 @@ group(287);
     assert(node.filterType === "idset" && node.name === "Source = src-b.log" && w.getEntries(node.id).length === 3, "source → entry-set filter of its 3 entries");
   });
 }
+
+/* ============================================================
+   GROUP 288 — Facet panel width handle + Patterns as the first view tab
+   Origin: 2026-09-26 (person-requested). #facetResizer on the panel's left
+   edge resizes it (drag left grows, clamped to 180px..viewArea-240px) and
+   hides with the panel; the View Selector starts with Patterns so Ctrl+1..5
+   run left to right.
+   ============================================================ */
+group(288);
+await withApp(async (w, d, T) => {
+  section("288a. dragging #facetResizer sets the facet panel width, clamped");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id; w.render();
+  w.setFacetsOpen(true);
+  const panel = d.querySelector("#facetPanel"), handle = d.querySelector("#facetResizer");
+  assert(!!handle && handle.parentElement === panel, "the handle lives inside #facetPanel (hidden with it)");
+  // jsdom has no layout: give the panel and #viewArea real widths.
+  panel.getBoundingClientRect = () => ({ width: 280, height: 500, left: 720, right: 1000, top: 0, bottom: 500 });
+  d.querySelector("#viewArea").getBoundingClientRect = () => ({ width: 1000, height: 500, left: 0, right: 1000, top: 0, bottom: 500 });
+  const mouse = (target, type, x) => target.dispatchEvent(new w.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 10 }));
+  mouse(handle, "mousedown", 720);
+  assert(handle.classList.contains("dragging"), "mousedown starts a drag");
+  mouse(w, "mousemove", 620);
+  assert(panel.style.flexBasis === "380px", "dragging 100px left grows the panel to 380px, got " + panel.style.flexBasis);
+  mouse(w, "mousemove", 1000);
+  assert(panel.style.flexBasis === "180px", "min width 180px, got " + panel.style.flexBasis);
+  mouse(w, "mousemove", -500);
+  assert(panel.style.flexBasis === "760px", "max width = viewArea - 240px, got " + panel.style.flexBasis);
+  mouse(w, "mouseup", -500);
+  assert(!handle.classList.contains("dragging"), "mouseup ends the drag");
+  mouse(w, "mousemove", 720);
+  assert(panel.style.flexBasis === "760px", "moves after mouseup don't resize");
+  w.setFacetsOpen(false);
+  assert(panel.classList.contains("hidden"), "closing hides panel + handle together");
+  w.setFacetsOpen(true);
+  assert(panel.style.flexBasis === "760px", "width survives close/reopen within the session");
+});
+
+await withApp(async (w, d, T) => {
+  section("288b. Patterns is the leftmost view tab; Ctrl+1 opens it");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id; w.render();
+  assert(d.querySelector("#fhTabs .view-tab").dataset.fhTab === "patterns", "first tab is Patterns");
+  w.applyFhView("filter");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.fhActiveTab === "patterns", "Ctrl+1 → Patterns");
+  fireKeydown(d, w, "3", { ctrlKey: true });
+  assert(T.fhActiveTab === "filter", "Ctrl+3 → Filtered");
+});
+
+await withApp(async (w, d, T) => {
+  section("288c. a facet value's name takes the colour of the most severe level among its entries");
+  const line = (i, level, thread) => `2024-01-15 10:00:${String(i).padStart(2, "0")},000\t${level}\t"${thread}"\tC:\\src\\Foo.cs\tline 1\t[Run]\t"message ${i}"`;
+  const TEXT = [line(0, "INFO", "A"), line(1, "WARN", "A"), line(2, "INFO", "B"), line(3, "ERROR", "C"), line(4, "DEBUG", "C"), line(5, "DEBUG", "D")].join("\n") + "\n";
+  const f = await w.addFile("lvl.log", TEXT, () => {});
+  T.state.activeId = f.id; w.render();
+  w.setFacetsOpen(true);
+  const cls = name => [...d.querySelectorAll('.facet-section[data-col="thread"] .facet-value-name')].find(n => n.textContent === name).className;
+  assert(cls("A").includes("lvl-warn") && !cls("A").includes("lvl-info"), "A (INFO+WARN) → warn, got " + cls("A"));
+  assert(cls("B").includes("lvl-info"), "B (INFO) → info, got " + cls("B"));
+  assert(cls("C").includes("lvl-error"), "C (ERROR+DEBUG) → error, got " + cls("C"));
+  assert(cls("D").includes("lvl-debug"), "D (DEBUG) → debug, got " + cls("D"));
+  const lvl = [...d.querySelectorAll('.facet-section[data-col="level"] .facet-value-name')];
+  assert(lvl.every(n => n.classList.contains("lvl-" + n.textContent.toLowerCase())), "the Level section colours each level by itself");
+  // level quick-filter narrows the result → colours follow it
+  T.state.levelFilter.add("INFO"); T.state.levelFilter.add("DEBUG"); w.render();
+  assert(cls("A").includes("lvl-info") && cls("C").includes("lvl-debug"), "colours follow the narrowed result");
+});
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -36784,4 +36857,9 @@ process.exitCode = failed ? 1 : 0;
       Same session updated GROUP 72 (Stacked layout now has 4 Ctrl+N
       positions, Patterns 4th), GROUP 194 (#btnFacets floats after New in
       #viewBar) and GROUP 215 (18 .icon-toggle instances incl. #btnFacets).
+   Group 288 — 2026-09-26 (person-requested): #facetResizer drag-to-resize
+      (clamps, hidden with the panel) and Patterns moved to the first view
+      tab. Same session renumbered the Ctrl+N positions in GROUP 72 and
+      194d and the tab order in 286b.
+      288c (same day): facet value names coloured by their most severe level.
    ============================================================ */

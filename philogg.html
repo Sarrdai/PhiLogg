@@ -2421,9 +2421,22 @@
   /* ---------- Facet panel (value distribution per column) ---------- */
   #facetPanel{
     flex:0 0 280px; display:flex; flex-direction:column; min-height:0; min-width:0;
-    background:var(--bg-panel); border-left:1px solid var(--border);
+    background:var(--bg-panel); border-left:1px solid var(--border); position:relative;
   }
   #facetPanel.hidden{display:none;}
+  /* Drag handle on the panel's left edge (same grip look as #sidebarResizer).
+     It lives INSIDE #facetPanel, overlaying the border, so every place that
+     hides the panel hides the handle too without extra bookkeeping. */
+  #facetResizer{
+    position:absolute; left:-4px; top:0; bottom:0; width:7px; z-index:2;
+    cursor:col-resize; touch-action:none;
+  }
+  #facetResizer::after{
+    content:""; position:absolute; left:2px; width:3px; top:50%; height:30px;
+    transform:translateY(-50%); border-radius:2px;
+    background:var(--border-hover); transition:background .12s;
+  }
+  #facetResizer:hover::after, #facetResizer.dragging::after{ background:var(--accent); }
   #facetPanelHeader{
     flex:0 0 auto; display:flex; align-items:center; gap:8px; height:34px; box-sizing:border-box;
     padding:0 8px 0 12px; border-bottom:1px solid var(--border);
@@ -2445,6 +2458,18 @@
   .facet-value:hover{background:var(--bg-elevated); color:var(--text-primary);}
   .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .facet-value-name.facet-empty{font-style:italic; color:var(--text-tertiary);}
+  /* Value name in the colour of the most severe level among its entries. */
+  .facet-value-name.lvl-error{color:var(--level-error);}
+  .facet-value-name.lvl-warn{color:var(--level-warn);}
+  .facet-value-name.lvl-info{color:var(--level-info);}
+  .facet-value-name.lvl-debug{color:var(--level-debug);}
+  .facet-value-name.lvl-trace{color:var(--level-trace);}
+  .facet-value-name.lvl-custom-1{color:var(--level-custom-1);}
+  .facet-value-name.lvl-custom-2{color:var(--level-custom-2);}
+  .facet-value-name.lvl-custom-3{color:var(--level-custom-3);}
+  .facet-value-name.lvl-custom-4{color:var(--level-custom-4);}
+  .facet-value-name.lvl-custom-5{color:var(--level-custom-5);}
+  .facet-value-name.lvl-custom-6{color:var(--level-custom-6);}
   .facet-bar{height:6px; border-radius:3px; background:var(--bg-elevated-2); overflow:hidden;}
   .facet-bar > i{display:block; height:100%; background:var(--accent);}
   .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
@@ -4703,6 +4728,7 @@
            result; clicking a value adds a filter node (see "Facet panel"
            in the script). Toggled by #btnFacets / Ctrl+Shift+F. -->
       <div id="facetPanel" class="hidden">
+        <div id="facetResizer" title="Drag to resize"></div>
         <div id="facetPanelHeader">
           <div id="facetPanelHeaderLabel">Facets</div>
           <span id="facetPanelCount"></span>
@@ -13785,21 +13811,32 @@ function facetColumnsKey(nodeId) { return facetColumnsFor(nodeId).map(c => c.key
 
 function createFacetAcc(nodeId) {
   const cols = facetColumnsFor(nodeId);
+  // value -> { count, rank, level, formatId }: rank/level track the most
+  // severe level among the value's entries (same ranking as the Patterns
+  // tab's Level column), which colours the value's name.
   const maps = cols.map(() => new Map());
   const k = cols.length;
+  const bucketOf = makeLevelBucketer();
   return {
     step(e) {
+      const b = bucketOf(e.level, e.formatId);
+      const r = levelSortRank(b, e.formatId);
       for (let i = 0; i < k; i++) {
         const v = cols[i].value(e);
         const m = maps[i];
-        m.set(v, (m.get(v) || 0) + 1);
+        let a = m.get(v);
+        if (!a) { a = { count: 0, rank: Infinity, level: "", formatId: null }; m.set(v, a); }
+        a.count++;
+        if (r < a.rank) { a.rank = r; a.level = b; a.formatId = e.formatId; }
       }
     },
     finish() {
       return {
+        // values: [value, count, lvl-* class of its most severe level]
         columns: cols.map((col, i) => ({
           key: col.key, label: col.label,
-          values: [...maps[i]].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)),
+          values: [...maps[i]].map(([v, a]) => [v, a.count, a.level ? levelClass(a.level, a.formatId) : ""])
+            .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)),
         })),
       };
     },
@@ -13844,10 +13881,10 @@ function renderFacetPanel() {
       const shown = Math.min(col.values.length, FACET_TOP_N + (facetsShown.get(col.key) || 0));
       const max = col.values.length ? col.values[0][1] : 1;
       for (let i = 0; i < shown; i++) {
-        const [value, count] = col.values[i];
+        const [value, count, lvlCls] = col.values[i];
         const pct = count / total * 100;
         html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
-          '<span class="facet-value-name' + (value ? "" : " facet-empty") + '">' + escapeHtml(value || "(empty)") + "</span>" +
+          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
           '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
           '<span class="facet-pct">' + (pct > 0 && pct < 1 ? "<1" : Math.round(pct)) + "%</span></div>";
@@ -13900,6 +13937,47 @@ function setFacetsOpen(open) {
 btnFacets.addEventListener("click", ev => { ev.stopPropagation(); setFacetsOpen(!facetsOpen); });
 el("#facetPanelClose").addEventListener("click", ev => { ev.stopPropagation(); setFacetsOpen(false); });
 facetPanel.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
+
+// Facet panel width: drag #facetResizer (left edge) — dragging left grows the
+// panel. Session-only like the sidebar/detail resizers. Rows re-render per
+// animation frame while dragging; the full renderMainView (plot/table widths)
+// runs once on release, same refresh setFacetsOpen does.
+const facetResizer = el("#facetResizer");
+let facetResizing = false;
+let facetResizeStartX = 0;
+let facetResizeStartWidth = 0;
+let facetResizeTicking = false;
+function setFacetPanelWidth(px) {
+  const maxWidth = Math.max(200, el("#viewArea").getBoundingClientRect().width - 240); // leave room for the view
+  const width = Math.round(Math.max(180, Math.min(maxWidth, px)));
+  facetPanel.style.flexBasis = width + "px";
+  return width;
+}
+facetResizer.addEventListener("mousedown", ev => {
+  facetResizing = true;
+  facetResizeStartX = ev.clientX;
+  facetResizeStartWidth = facetPanel.getBoundingClientRect().width;
+  facetResizer.classList.add("dragging");
+  document.body.style.cursor = "col-resize";
+  document.body.style.userSelect = "none";
+  ev.preventDefault();
+  ev.stopPropagation();
+});
+window.addEventListener("mousemove", ev => {
+  if (!facetResizing) return;
+  setFacetPanelWidth(facetResizeStartWidth - (ev.clientX - facetResizeStartX));
+  if (facetResizeTicking) return;
+  facetResizeTicking = true;
+  requestAnimationFrame(() => { renderVisibleRows(); renderHighlightVisibleRows(); facetResizeTicking = false; });
+});
+window.addEventListener("mouseup", () => {
+  if (!facetResizing) return;
+  facetResizing = false;
+  facetResizer.classList.remove("dragging");
+  document.body.style.cursor = "";
+  document.body.style.userSelect = "";
+  if (state.rootIds.length) renderMainView();
+});
 facetPanelBody.addEventListener("click", ev => {
   const section = ev.target.closest(".facet-section");
   const result = facetPanelBody._facetResult;
@@ -14078,7 +14156,7 @@ const nodeLastView = new Map(); // nodeId -> "highlight" | "filter" | "table" | 
 // extractCapable now. The click handler stays a single delegated listener
 // on #fhTabs itself (wired once, below), so rebuilding the buttons'
 // innerHTML doesn't need to re-wire anything.
-// Shared with the Ctrl+1-4 view-cycling shortcuts (jumpToViewTab below) so
+// Shared with the Ctrl+1-5 view-cycling shortcuts (jumpToViewTab below) so
 // both read the exact same tab list/order — person-requested: the shortcuts
 // jump through "the currently available views, same order as the View
 // Selector", so there must be exactly one place that decides that order.
@@ -14089,7 +14167,10 @@ function currentViewTabsList(extractCapable) {
         { tab: "highlight", label: "Context", title: "Your filter result with the log around it — expand the gaps between matches to reveal the hidden lines" },
         { tab: "filter", label: "Filtered", title: "Narrowed by the active filter tree node" },
       ];
-  const tabs = [...logTabs];
+  // Patterns (message-pattern clustering) applies to every node and sits
+  // first (person-requested), so it is always Ctrl+1; the log tabs and
+  // Table/Plot follow left to right.
+  const tabs = [{ tab: "patterns", label: "Patterns", title: "Group this node's messages by shape — numbers, GUIDs, IPs, paths become placeholders" }, ...logTabs];
   // Table/Plot are ALWAYS listed now (person-requested) — but flagged
   // `disabled` when the active node has no extractable wildcards, so they stay
   // visibly in place instead of being omitted (which shifted the filter
@@ -14098,9 +14179,6 @@ function currentViewTabsList(extractCapable) {
     { tab: "table", label: "Table", title: extractCapable ? "Extraction table for this node's pattern" : "No extractable [*] pattern on this filter — nothing to tabulate", disabled: !extractCapable },
     { tab: "plot", label: "Plot", title: extractCapable ? "Plot extracted values from this node's pattern" : "No extractable [*] pattern on this filter — nothing to plot", disabled: !extractCapable },
   );
-  // Patterns (message-pattern clustering) applies to every node, so it is
-  // last — the Ctrl+1-4 positions of the tabs before it stay unchanged.
-  tabs.push({ tab: "patterns", label: "Patterns", title: "Group this node's messages by shape — numbers, GUIDs, IPs, paths become placeholders" });
   return tabs;
 }
 function renderViewTabs(extractCapable) {
@@ -14110,12 +14188,11 @@ function renderViewTabs(extractCapable) {
     `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${t.disabled ? " disabled" : ""}>${t.label}</button>`
   ).join("");
 }
-// Ctrl+1-4: jump to the Nth tab currently shown in the View Selector (1-based)
-// — person-requested. In tabs layout that's up to 4 slots (Context, Filtered,
-// plus Table/Plot when the active node is extraction-capable); in stacked
-// layout the first two collapse into one "Stacked" slot, so there are only
-// up to 3 slots and Ctrl+4 does nothing. Out-of-range n (e.g. Ctrl+4 with no
-// Table/Plot) is a silent no-op, same as clicking a tab that isn't there.
+// Ctrl+1-5: jump to the Nth tab currently shown in the View Selector (1-based,
+// left to right) — person-requested. In tabs layout that's Patterns, Context,
+// Filtered, Table, Plot; in stacked layout Context/Filtered collapse into one
+// "Stacked" slot, so there are only 4 slots and Ctrl+5 does nothing. An
+// out-of-range n or a disabled Table/Plot slot is a silent no-op.
 function jumpToViewTab(n) {
   const extractCapable = nodeIsExtractionView(state.nodes[state.activeId]);
   const tabs = currentViewTabsList(extractCapable);
@@ -36040,7 +36117,7 @@ document.addEventListener("keydown", ev => {
   // node is ALREADY active — a filter included, not just its root file —
   // so arrow keys continue navigating from wherever the person currently
   // is, rather than jumping back up to the file; falls back to the first
-  // root file only if nothing's active yet. Ctrl+1-4 jump positionally
+  // root file only if nothing's active yet. Ctrl+1-5 jump positionally
   // through whichever tabs the View Selector (#fhTabs) currently shows, same
   // order (jumpToViewTab/currentViewTabsList) — person-requested. Enter on
   // an active filter node while the tree has focus reveals the Filtered view

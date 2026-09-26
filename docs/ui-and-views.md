@@ -92,12 +92,13 @@ Group 208 (page side; the desktop/Rust half isn't jsdom-testable).
 `renderViewTabs()` (not static markup) since which buttons exist depends on
 a Settings option:
 
-- **"Separate"** (Settings → Behavior → "Context/Filtered display", default): `Context | Filtered | Table | Plot | Patterns`.
-- **"Stacked"**: `Stacked | Table | Plot | Patterns` — Context and Filtered collapse into the one "Stacked" button, same as before.
+- **"Separate"** (Settings → Behavior → "Context/Filtered display", default): `Patterns | Context | Filtered | Table | Plot`.
+- **"Stacked"**: `Patterns | Stacked | Table | Plot` — Context and Filtered collapse into the one "Stacked" button, same as before.
 
-**Patterns** is always last and always enabled (see "Patterns tab" below), so
-the Ctrl+1-4 positions of the tabs before it never move; `Ctrl+5` reaches it
-in the Separate layout. Everything that used to test `fhActiveTab === "table"
+**Patterns** is always first and always enabled (see "Patterns tab" below;
+moved from last to first 2026-09-26, person-requested), so `Ctrl+1` always
+reaches it and `Ctrl+2`…`Ctrl+5` run through the remaining tabs left to
+right (`jumpToViewTab`, 1-based over `currentViewTabsList`). Everything that used to test `fhActiveTab === "table"
 || "plot"` for "a tab that replaces `#fhSplit`" now asks `isOffLogTab(tab)`
 (Table, Plot or Patterns); checks that are really about extraction (the
 `!extractCapable` fallback, `activeNavScroller`'s `extractScroll`) stay
@@ -124,7 +125,7 @@ compiles to at least one extractable column). `renderViewTabs` emits the
 native `disabled` attribute plus a "why" `title` for the disabled ones;
 `.view-tab:disabled` greys them (`opacity:.35; cursor:not-allowed`). The
 `#fhTabs` click delegate already guards `!btn.disabled`, and
-`jumpToViewTab` (Ctrl+1-4) skips a disabled slot (`if (!t || t.disabled)
+`jumpToViewTab` (Ctrl+1-5) skips a disabled slot (`if (!t || t.disabled)
 return;`) so the shortcut indices behave exactly as when the tabs were
 omitted. `renderMainView` still flips `fhActiveTab` off Table/Plot when the
 newly active node isn't extraction-capable, so a disabled tab is never left
@@ -656,7 +657,7 @@ Filtered view lists, without pinned bookmarks — by message shape.
 
 ## Facet panel (value distribution per column)
 
-`#facetPanel`, a 280px column on the right of `#viewArea` — the row that
+`#facetPanel`, a column on the right of `#viewArea` (280px by default) — the row that
 now holds whichever content component is displayed (`#fhSplit`,
 `#extractWrap`, `#patternsWrap`, the empty state, the inline viewer, the
 folder minimap). Toggled by `#btnFacets` (floated right in `#viewBar`), its
@@ -665,6 +666,19 @@ folder minimap). Toggled by `#btnFacets` (floated right in `#viewBar`), its
 Plot/Patterns), is hidden with the inline viewer, folder minimap, empty
 state and PiP, and reads "Not available for a link filter" on a `link` node
 (pair entries have no single column values).
+
+- **Level colour**: each value's name is drawn in the colour of the most
+  severe level among its entries in the current result (`createFacetAcc`
+  tracks a `levelSortRank` minimum per value, same ranking as the Patterns
+  tab's Level column; `levelClass` → `.facet-value-name.lvl-*`). A value
+  with only unrecognized levels keeps the default text colour.
+- **Width**: `#facetResizer`, a grip on the panel's left edge (same look as
+  `#sidebarResizer`), drags the width via `flex-basis` — dragging left
+  grows it, clamped to 180px … `#viewArea` width − 240px
+  (`setFacetPanelWidth`). The handle is a child of `#facetPanel`, so every
+  path that hides the panel hides it too. Rows re-render per animation
+  frame while dragging; one `renderMainView()` runs on release (plot/table
+  widths). Session-only, like the sidebar/detail resizers.
 
 - **Sections** (`facetColumnsFor`): every middle column of the loaded
   formats (`activeColumnDefs`: Thread/Location/Method/custom columns), then
@@ -1122,7 +1136,7 @@ Person-reported/requested reworks (this session, screenshot-driven) to `renderNo
 - **Copy/Cut/Paste** (Ctrl+C/Ctrl+X/Ctrl+V, operating on `state.activeId`) work for every filter type, including `and`/`or`/`link` (see the Core data model section for why those were briefly excluded and how that was fixed). Copy duplicates and stays pasteable multiple times; Cut is a one-time move, clipboard cleared only once the move actually lands (see below). Del deletes the active filter; both predate the multi-select work and are unaffected by it.
 - **Arrow-key navigation** targets one of two panes, tracked by `state.focusRegion` ("entries" | "tree", default "entries"): a tree-row click or dropping a drag onto a new parent sets it to `"tree"`; any entry-table selection (`applySelection`, the single choke point `selectEntry`/`selectHighlightEntry`/`revealInHighlightView` all share) sets it back to `"entries"`. With `"entries"` focus (the default, and the log-table row-selection behavior that predates this feature) ↑/↓ move `state.selectedId` through `currentViewEntries` as before. With `"tree"` focus, ↑/↓/←/→ move `state.activeId` instead (`moveTreeSelection`): ↑/↓ step through `flattenTreeIds()` — the same depth-first, root-then-children order `renderNode` renders in, so it matches the tree's visual top-to-bottom order — while ← jumps to the current node's parent and → to its first child. There's no collapse state to toggle (every node is always expanded), so → is simply "descend one level," not "expand." Deliberately reuses the plain arrow keys rather than a modifier combo, matching how a click already disambiguates which pane you're interacting with. **A tree row click switching a filter does NOT set `focusRegion` to `"tree"`** (changed this session, 2026-08-26 — see the Alt+Arrow follow-up entry directly below): a click still updates `state.activeId` and calls `applyTempAnchorOnActiveNodeSwitch`/`revealFilteredView` exactly as before, but leaves whichever region already had focus untouched, so plain arrow keys keep navigating the Log view right after a mouse click on a filter — the same behavior Alt+Arrow already had, now shared by both ways of switching the active filter. (`startRenameNode`, drag-and-drop reparenting, and the level-bar's own tree-writing path still set `focusRegion = "tree"` explicitly where that's actually needed — e.g. an inline rename genuinely wants tree focus.)
 - **Which Log view the arrow keys move through** is a second, independent axis from `state.focusRegion` above: `state.entriesView` ("filter" | "highlight", default `"filter"`) picks between `moveSelection` (Filtered pane, `currentViewEntries`) and `moveHighlightSelection` (Context pane, `currentHighlightViewEntries`). A row click in either pane sets it (`selectEntry`/`selectHighlightEntry`), as do `revealInHighlightView` and Ctrl+1/2/3. **In tabs layout it is pinned to whichever pane is actually on screen**, inside `showFhTab` — the single funnel `applyFhView`'s tabs branch, the `#fhTabs` buttons, `revealFilteredView()` and `revealInHighlightView` all go through. That is an invariant of the layout, not a preference: only one pane exists on screen there, so only that one can sensibly be navigated. **Stacked layout is deliberately exempt** — both panes are visible, so "the one last clicked in" stays the right answer. `applyNavWaypoint` restores `wp.entriesView` *after* its `render()`/`applyFhView` calls for the same reason (both can route through `showFhTab`; assigning it up front would be overwritten in the stacked case, where nothing calls `showFhTab` afterwards to put it back). **Bugfix, 2026-09-02, person-reported** ("navigating the selection upwards with the arrow keys, row by row past the top edge — sometimes the table doesn't scroll along, not reliably reproducible"): the pinning is new. Before it, the `#fhTabs` buttons and `revealFilteredView()` (tree click on a filter node, every filter-creation path, …) switched the visible pane without touching `state.entriesView`, so ↑/↓ ran against the **hidden** pane. Because `updateSelectedRowClass` syncs the `.selected` class into *both* views' rows, the selection visibly walked row by row through the pane on screen while `scrollToIndex`/`scrollToHighlightIndex` moved the other pane's scroll container — and a `display:none` container cannot be scrolled at all, so that scroll was simply lost. Intermittent because clicking any row in the visible pane re-synced it. Covered by Group 150.
-- **Alt+Arrow forwards to tree navigation without taking focus away from the Log view, and Ctrl+0 peeks a collapsed panel open** (this session, 2026-08-25, `FEATURE_BACKLOG.md` #18, person-requested — a same-day revert-and-redesign of an earlier attempt in this session that built a centered, keyboard-navigable popup over the breadcrumb's own child-nav flyout; abandoned after trying it live, in favor of this simpler approach that reuses the tree/sidebar exactly as it already existed. A further same-day follow-up then removed the pre-existing breadcrumb hover flyout entirely — see "Header / toolbar layout" above — once it became redundant with this). Alt rather than Ctrl for the arrow forwarding — a further same-day follow-up — since Ctrl+Arrow is standard OS/app behavior for jumps within a document and needed to stay free for that. Two additions to the pre-existing Ctrl+0/1/2/3 shortcuts (see "Arrow-key navigation" above and `moveTreeSelection`; Ctrl+1-4 were later revised, 2026-09-05, person-requested, to jump POSITIONALLY through whichever tabs the View Selector currently shows (`jumpToViewTab`/`currentViewTabsList`) instead of each being hardwired to a fixed Full/Filtered/Stacked target — with a plain node that's [Context, Filtered] (Ctrl+3/4 no-op), with an extraction-capable one it's [Context, Filtered, Table, Plot], and once Stacked layout is active it collapses to [Stacked, Table, Plot] (Ctrl+4 no-op); the focus-the-entries-pane behavior described below is unchanged for whichever of Context/Filtered a jump lands on):
+- **Alt+Arrow forwards to tree navigation without taking focus away from the Log view, and Ctrl+0 peeks a collapsed panel open** (this session, 2026-08-25, `FEATURE_BACKLOG.md` #18, person-requested — a same-day revert-and-redesign of an earlier attempt in this session that built a centered, keyboard-navigable popup over the breadcrumb's own child-nav flyout; abandoned after trying it live, in favor of this simpler approach that reuses the tree/sidebar exactly as it already existed. A further same-day follow-up then removed the pre-existing breadcrumb hover flyout entirely — see "Header / toolbar layout" above — once it became redundant with this). Alt rather than Ctrl for the arrow forwarding — a further same-day follow-up — since Ctrl+Arrow is standard OS/app behavior for jumps within a document and needed to stay free for that. Two additions to the pre-existing Ctrl+0/1/2/3 shortcuts (see "Arrow-key navigation" above and `moveTreeSelection`; Ctrl+1-4 were later revised, 2026-09-05, person-requested, to jump POSITIONALLY through whichever tabs the View Selector currently shows (`jumpToViewTab`/`currentViewTabsList`) instead of each being hardwired to a fixed Full/Filtered/Stacked target — with a plain node that's [Context, Filtered] (Ctrl+3/4 no-op), with an extraction-capable one it's [Context, Filtered, Table, Plot], and once Stacked layout is active it collapses to [Stacked, Table, Plot] (Ctrl+4 no-op) — since 2026-09-26 Patterns is prepended to every list, see "View Selector" above; the focus-the-entries-pane behavior described below is unchanged for whichever of Context/Filtered a jump lands on):
   - **Alt+Arrow** (any of the four directions) calls `moveTreeSelection(key)` directly — the exact same function `state.focusRegion === "tree"`'s own plain-arrow handling already calls — but *without* setting `state.focusRegion`, so the Log view stays "focused" for plain (non-Alt) arrow keys immediately afterward, unlike a real tree click/Ctrl+0 which does switch focus. Checked in the keydown handler ahead of every other arrow-key branch so Alt always wins regardless of current focus.
   - **Ctrl+0** keeps its existing "focus the tree, landing on whichever node is already active" behavior unchanged, and additionally calls `setSidebarForcedPeek()` if the sidebar happens to be collapsed — otherwise the focus move would be invisible.
   - **Two independent peek mechanisms** (a same-day person-refined split — an earlier single-flag version tied the peek's lifetime to whichever modifier key opened it, which read wrong for Ctrl+0: releasing Ctrl immediately after typing "Ctrl+0" closed the panel right back up before anyone could look at it):
