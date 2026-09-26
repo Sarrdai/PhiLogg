@@ -80,7 +80,8 @@ deployments possible:
   entries that follow a pause of at least X ms/s/min, optionally measured
   per thread, source file, or any column (a stall in one thread no longer
   hides behind the others' chatter); the Filtered view shows each row's
-  measured gap. The **Link filter** can pair only entries that belong
+  measured gap, and sorting the Δt column (largest first) ranks where the
+  most time is lost — no threshold needed. The **Link filter** can pair only entries that belong
   together ("match only same Thread", or the same captured value such as
   `axis [*:int]`) and keep only pairs with Δt above/below a limit, with a
   live "12 of 3.418 pairs" preview; an extraction on link pairs gets a
