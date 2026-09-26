@@ -28,6 +28,25 @@ const vm = require("vm");
 // path the feature has for private-mode browsers. Group 20 injects a shared
 // IDBFactory instance into two successive windows to simulate a reload.
 const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
+// fake-indexeddb clones every stored value with Node's own structuredClone,
+// which can't see inside a jsdom Blob/File (its bytes live behind jsdom's
+// impl symbol) and would store an empty object. A browser's IndexedDB stores
+// Blobs natively — the session cache keeps a loaded File as one (see
+// persistFileNode's fileCacheSource) — so top-level jsdom Blob fields of a
+// stored record are turned into Node Blobs first, which clone fine and offer
+// the same text() the page reads them back with.
+{
+  const { implForWrapper } = require("jsdom/lib/generated/idl/utils.js");
+  const nodeStructuredClone = global.structuredClone;
+  const isJsdomBlob = v => v && typeof v === "object" && implForWrapper(v) && implForWrapper(v)._bytes instanceof Uint8Array;
+  global.structuredClone = (value, options) => {
+    if (value && typeof value === "object" && !Array.isArray(value) && Object.values(value).some(isJsdomBlob)) {
+      value = Object.fromEntries(Object.entries(value).map(([k, v]) =>
+        [k, isJsdomBlob(v) ? new Blob([implForWrapper(v)._bytes], { type: v.type }) : v]));
+    }
+    return nodeStructuredClone(value, options);
+  };
+}
 
 // Default assumes this file lives in a `tests/` (or similarly named) folder
 // directly at the project root, sibling to philogg.html — e.g.:
@@ -163,6 +182,9 @@ async function withApp(run, opts = {}) {
       if (opts.philogg) {
         Object.defineProperty(window, "philogg", { value: opts.philogg, configurable: true });
       }
+      // opts.beforeParse(window): anything else a group needs in place before
+      // the page's script runs (a global jsdom lacks, say).
+      if (opts.beforeParse) opts.beforeParse(window);
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });
       window.Element.prototype.getBoundingClientRect = function () {
@@ -197,6 +219,7 @@ async function withApp(run, opts = {}) {
       set minimapBinningMode(v) { minimapBinningMode = v; },
       get minimapWidth() { return minimapWidth; },
       get minimapBucketCount() { return minimapBucketCount; },
+      get minimapBars() { return { bg: minimapBgCounts, ov: minimapOvCounts, rank: minimapOvRank, name: minimapOvName }; },
       get highlightColorMap() { return highlightColorMap; },
       get currentViewEntries() { return currentViewEntries; },
       get currentHighlightViewEntries() { return currentHighlightViewEntries; },
@@ -208,6 +231,8 @@ async function withApp(run, opts = {}) {
       get contextExpansions() { return contextExpansions; },
       get contextAutoRanges() { return contextAutoRanges; },
       get contextMatchRows() { return contextMatchRows; },
+      get contextMatchPos() { return contextMatchPos; },
+      get contextViewStale() { return contextViewStale; },
       get highlightRowOffsets() { return highlightRowOffsets; },
       get contextInitialExpansion() { return contextInitialExpansion; },
       set contextInitialExpansion(v) { contextInitialExpansion = v; },
@@ -424,7 +449,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "message 1";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200)); // evaluateLiveMatch is debounced 150ms
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("11 of 20"), "live match count reflects the typed filter before submit");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("11 matches in 20"), "live match count reflects the typed filter before submit");
 
   const chip = d.querySelector('.token-chip[data-token="int"]');
   filterInput.value = "n=";
@@ -1423,8 +1448,7 @@ await withApp(async (w, d, T) => {
   const licenseText = licenseSection.textContent;
   assert(licenseText.includes("Philipp Klein"), "License section names the rights holder");
   assert(licenseText.includes("philogg@kleinphilipp.de"), "License section shows the contact address");
-  assert(licenseText.includes("Keine Weitergabe"), "License section prohibits redistribution");
-  assert(licenseText.includes("Keine Veränderung"), "License section prohibits modification");
+  assert(licenseText.includes("PolyForm Noncommercial License 1.0.0"), "License section names the license (terms and third-party notices: GROUP 271)");
 });
 
 /* ============================================================
@@ -2878,17 +2902,9 @@ await withApp(async (w, d, T) => {
   assert(viewBarChildren.indexOf("breadcrumb") === -1, "breadcrumb is NOT inside #viewBar any more");
   assert(d.querySelector("#levelBar").parentElement === viewBar, "level bar is nested INSIDE #viewBar");
   assert(viewBar.querySelector('[data-row-actions="viewbar"]') !== null, "the row-actions group is nested INSIDE #viewBar too, right of the level filter");
-  const breadcrumbBar = d.querySelector("#breadcrumbBar");
-  assert(breadcrumbBar !== null, "#breadcrumbBar exists as its own row");
-  assert(d.querySelector("#breadcrumb").parentElement === breadcrumbBar, "breadcrumb is nested inside #breadcrumbBar instead");
-  // --- Placement: minimap, then breadcrumb, then the Filter-Toolbar (person-requested) ---
-  const minimapEl = d.querySelector("#timelineMinimap");
-  const contentChildren = [...minimapEl.parentElement.children];
-  const idxMinimap = contentChildren.indexOf(minimapEl);
-  const idxBreadcrumbBar = contentChildren.indexOf(breadcrumbBar);
-  const idxViewBar = contentChildren.indexOf(viewBar);
-  assert(idxMinimap < idxBreadcrumbBar && idxBreadcrumbBar < idxViewBar,
-    "DOM order is timeline minimap, then #breadcrumbBar, then #viewBar (the Filter-Toolbar)");
+  // Breadcrumb bar removed (2026-09-23, person-requested) — the active path
+  // is drawn as highlighted connector lines in the tree instead (GROUP 262).
+  assert(d.querySelector("#breadcrumbBar") === null && d.querySelector("#breadcrumb") === null, "the breadcrumb bar is gone");
 
   const cs = w.getComputedStyle;
 
@@ -2920,7 +2936,6 @@ await withApp(async (w, d, T) => {
   assert(cs(viewBar).display === "flow-root", "#viewBar is a flow-root (contains the floats regardless of breadcrumb height)");
   assert(cs(d.querySelector("#fhTabs")).float === "left", "#fhTabs floats left so it stays pinned to the top line");
   assert(cs(d.querySelector("#levelBar")).float === "left", "#levelBar floats left so it stays pinned to the top line");
-  assert(cs(d.querySelector("#breadcrumb")).display === "block", "#breadcrumb is a plain block (not flex) so its chips text-wrap onto their own line(s) instead of the whole element behaving like a flex item");
   // Regression guard for a real bug hit once already: #viewBar's flow-root
   // is a SEPARATE concern from its own flex-item sizing as a child of
   // #content (a flex column). Losing flex-shrink:0 here lets #content
@@ -2931,7 +2946,6 @@ await withApp(async (w, d, T) => {
   // reported and fixed in this session.
   assert(cs(viewBar).flexShrink === "0", "#viewBar must not flex-shrink as a child of #content, or its floated children get clipped when vertical space is tight");
   assert(d.querySelectorAll("#levelBar .level-btn").length > 0, "level filter buttons render inside #viewBar");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb chips render inside #breadcrumbBar");
 
   // Extract mode (UPDATED by this session's toolbar reorganization):
   // #viewBar (tabs + level filter) is now IDENTICAL regardless of tab,
@@ -2950,7 +2964,6 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#levelBar").style.display === "", "level bar STAYS visible while the Table tab is showing — #viewBar is now identical across every tab");
   assert(isVisible(d.querySelector('[data-row-actions="viewbar"]'), w) === true, "the row-actions group (in #viewBar) stays visible on the Table tab too — it's part of the universal Filter-Toolbar, not a log-view toolbar");
   assert(d.querySelector("#fhSplit").style.display === "none", "sanity: the log-view split (and with it #contextToolbar/#filteredToolbar's DISPLAY toggles) isn't on screen on the Table tab");
-  assert(d.querySelectorAll("#breadcrumb .crumb").length > 0, "breadcrumb still renders in extract mode");
   w.applyFhView("filter");
   assert(d.querySelector("#levelBar").style.display === "", "level bar stays visible switching to the Filtered tab too");
   assert(isVisible(d.querySelector(".toggle-notes"), w) === true, "the log-display toggles (now inside #contextToolbar/#filteredToolbar) are back on screen on the Filtered tab");
@@ -2959,67 +2972,16 @@ await withApp(async (w, d, T) => {
   T.state.activeId = textNode.id;
   w.render();
 
-  // --- Breadcrumb follow-up (person-requested, this session): same overall
-  // height as the level filter row (level buttons became solid-color 28x28
-  // circles with no visible text of their own in a later session — see
-  // Group 214 — so text-size/padding parity no longer applies, only the
-  // shared 28px height does), and clickable chips select that ancestor node
-  // in the filter tree. ---
-  const crumbEl = d.querySelector("#breadcrumb .crumb");
+  // --- Shared 28px row height (the breadcrumb chips that used to be
+  // checked here too are gone with the breadcrumb bar). ---
   const levelBtnEl = d.querySelector("#levelBar .level-btn");
-  // Regression guard, superseded/simplified this session ("Main window
-  // visual consistency fix"): the row used to chase height parity via
-  // per-element line-height/padding arithmetic (three rounds of it, see git
-  // blame) because #fhTabs (.view-tabs) has TWO nested boxes (its own
-  // padding+border, then .view-tab's padding inside that) while .crumb/
-  // .level-btn are single-box pills — no line-height value made those two
-  // shapes provably equal without hand-computing the sum each time. Fixed
-  // by giving every one of them the SAME explicit height (28px) plus
-  // flex-centering instead: #fhTabs itself is 28px tall (box-sizing:
-  // border-box includes its own padding+border in that), .view-tab fills
-  // it via height:100%, and .crumb/.level-btn are directly 28px tall —
-  // one shared number, no arithmetic to keep in sync.
   const fhTabsEl = d.querySelector("#fhTabs");
   const viewTabEl = d.querySelector("#fhTabs .view-tab");
   assert(cs(fhTabsEl).height === "28px",
     "#fhTabs (.view-tabs) has the shared row height (28px) directly — the height REFERENCE for the rest of the row is now a plain number, not a line-height sum");
   assert(cs(viewTabEl).height === "100%",
     "#fhTabs' own button (.view-tab) fills its container via height:100% + flex-centering, not a pinned line-height");
-  assert(cs(crumbEl).height === "28px" && cs(levelBtnEl).height === "28px",
-    "breadcrumb chips and level pills share the exact same 28px height as #fhTabs, no line-height arithmetic needed");
-  // Regression guard, UPDATED this session (2026-09-08, person-reported via
-  // an annotated mockup: "unten sichtbar größer als oben"): the vertical-align
-  // :top + margin-top:0 rationale below the fold used to hold because #breadcrumb
-  // lived directly inside floated #viewBar alongside #fhTabs/#levelBar (a
-  // #fhTabs/#levelBar-alignment concern that no longer applies — breadcrumb
-  // has its own dedicated #breadcrumbBar row now, see the "Toolbar
-  // reorganization follow-up" changelog entry). Once #breadcrumbBar started
-  // flex-centering #breadcrumb's WHOLE box (align-items:center), the old
-  // asymmetric margin (0 top / 6 bottom, needed only to add a gap between
-  // wrapped lines) shifted the visible pill toward the top of that centered
-  // box, leaving a visibly bigger gap below the pill than above it. Fix:
-  // #breadcrumb .crumb now carries a SYMMETRIC vertical margin (2px/2px) —
-  // small enough that #breadcrumbBar still shrinks (not grows) relative to
-  // its old 44px height, but equal on both sides so the outer centering
-  // produces an equal gap top and bottom.
-  assert(cs(crumbEl).verticalAlign === "top", "breadcrumb chips still use vertical-align:top (harmless/inert once the row is centered by its own flex parent, not load-bearing any more, but left as-is)");
-  assert(cs(crumbEl).marginTop === "2px" && cs(crumbEl).marginBottom === "2px",
-    "breadcrumb chips carry a SYMMETRIC 2px top/bottom margin (was 0px/6px) so #breadcrumbBar's centering doesn't visibly shift the pill toward the top");
-  const breadcrumbBarEl = d.querySelector("#breadcrumbBar");
-  assert(cs(breadcrumbBarEl).paddingTop === cs(breadcrumbBarEl).paddingBottom,
-    "sanity: #breadcrumbBar's own top/bottom padding is symmetric too, so nothing upstream reintroduces the asymmetry");
-
-  const crumbs = [...d.querySelectorAll("#breadcrumb .crumb")];
-  assert(crumbs.length === 2, "sanity: breadcrumb has file + filter = 2 chips, got " + crumbs.length);
-  assert(!crumbs[0].classList.contains("current") && crumbs[1].classList.contains("current"),
-    "sanity: only the active node's own chip is marked current — the other chip is a clickable ancestor");
-  fireClick(crumbs[0], w); // click the file chip — an ancestor, not the currently active node
-  assert(T.state.activeId === f.id, "clicking a breadcrumb chip selects that node (state.activeId updates to it)");
-  assert(T.state.multiSelect.has(f.id) && T.state.multiSelect.size === 1,
-    "clicking a breadcrumb chip sets a single-node multiSelect, same as a plain (non-Ctrl) tree-row click");
-  assert(d.querySelector(".tree-row.active") !== null, "the file's tree row is now marked active after the breadcrumb click");
-  T.state.activeId = textNode.id; // reset for the popup checks below
-  w.render();
+  assert(cs(levelBtnEl).height === "28px", "level pills share the exact same 28px height as #fhTabs");
 
   // --- Sidebar no longer has a permanent shortcuts strip (superseded, see
   // GROUP 114 for the current Shortcut Manager; #btnShortcuts itself is gone
@@ -4078,13 +4040,13 @@ await withApp(async (w, d, T) => {
   filterInput.value = "TOKEN";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("2 of 5"), "live match with no column restriction counts both TOKEN occurrences");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("2 matches in 5"), "live match with no column restriction counts both TOKEN occurrences");
 
   const messageChip = d.querySelector('.column-chip[data-col="message"]');
   fireClick(messageChip, w);
   assert(messageChip.classList.contains("active"), "clicking a column chip marks it active");
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 of 5"), "live match updates live once a column chip restricts the search");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 matches in 5"), "live match updates live once a column chip restricts the search");
 
   fireSubmit(d.querySelector("#filterForm"), w);
   const uiCreated = T.state.nodes[T.state.activeId];
@@ -4663,29 +4625,25 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(39);
 await withApp(async (w, d, T) => {
-  section("39. Filter popup: target chain + wildcard-as-filter matching semantics");
+  section("39. Filter popup: scope hint + wildcard-as-filter matching semantics");
 
   assert(d.querySelector("#filterHint") === null, "the old 'Werte extrahieren:' hint row is gone — the token chips already insert wildcards directly");
   assert(d.querySelector(".filter-input-section #filterInput") !== null, "the filter input lives in its own input section (see Group 40 for the fuller section-reorg coverage)");
 
-  // --- Target-chain pill visualization (replaces the old plain-text "Filter on “X”:" label) ---
+  // --- Scope hint (replaced the "Filter on:" header + target-chain pills,
+  // 2026-09-23 — see Group 263 for the full popup-redesign coverage) ---
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const parentFilter = w.createFilterNode(f.id, "text", "message"); // matches all 5 rows
   w.render();
   w.openFilterPopup();
-  assert(d.querySelector("#filterPopupLabel").textContent === "Filter on:", "the label is now a short static prefix; the actual target is shown by the pill chain");
-  let chainChips = [...d.querySelectorAll("#filterTargetChain .crumb")];
-  assert(chainChips.length === 2 && chainChips[0].textContent === f.name && chainChips[1].textContent === parentFilter.name,
-    "create mode's target chain shows the full chain down to (and including) the active node this filter will be added under");
-  assert(chainChips[1].classList.contains("current") && !chainChips[0].classList.contains("current"),
-    "the chain's last pill (the actual attach point) is marked current, same convention as #breadcrumb");
-  assert(d.querySelectorAll("#filterTargetChain .crumb-sep").length === 1, "pills are separated the same way #breadcrumb separates its chain");
+  assert(d.querySelector("#filterPopupLabel") === null && d.querySelector("#filterTargetChain") === null,
+    "the 'Filter on:' label and its pill chain are gone");
+  assert(d.querySelector("#filterScopeHint").textContent === "in " + parentFilter.name.slice(0, 15) + (parentFilter.name.length > 15 ? "\u2026" : ""),
+    "create mode's scope hint names the active node this filter will be added under, got " + d.querySelector("#filterScopeHint").textContent);
 
   w.openEditFilterPopup(parentFilter.id);
-  assert(d.querySelector("#filterPopupLabel").textContent === "Edit filter on:", "edit mode uses its own short static prefix");
-  chainChips = [...d.querySelectorAll("#filterTargetChain .crumb")];
-  assert(chainChips.length === 1 && chainChips[0].textContent === f.name,
-    "edit mode's target chain shows the chain down to the edited filter's PARENT (whose entries the value change re-filters), not the filter being edited itself");
+  assert(d.querySelector("#filterScopeHint").textContent === "in " + f.name,
+    "edit mode's scope hint names the edited filter's PARENT (whose entries the value change re-filters), not the filter being edited itself");
   w.closeFilterPopup();
 
   // --- Wildcard-as-filter "text" matching: direct-API sanity for the two
@@ -4763,18 +4721,17 @@ await withApp(async (w, d, T) => {
   const inputSection = d.querySelector(".filter-input-section");
   assert(inputSection.contains(d.querySelector("#filterInput")) && inputSection.contains(d.querySelector("#filterTokenChips")),
     "the input and the [float]/[int]/... wildcard chips are grouped together in one input section");
-  assert(d.querySelector("#filterTokenChips .filter-section-label").textContent === "Insert:", "the wildcard-insert chips carry an 'Insert:' caption");
+  assert(d.querySelector("#filterTokenChips .filter-section-label").textContent === "Insert", "the wildcard-insert chips carry an 'Insert' caption");
 
   const settingsRow = d.querySelector(".filter-settings-row");
   assert(settingsRow.contains(d.querySelector("#filterCaseCheckbox")) && settingsRow.contains(d.querySelector("#filterInvertCheckbox")),
     "case-sensitive and NOT live together in the settings row");
 
-  assert(d.querySelector("#filterColumnChips .filter-section-label").textContent === "Applies to:", "the column-restriction chips carry an 'Applies to:' caption now that they're their own section");
+  assert(d.querySelector("#filterColumnChips .filter-section-label").textContent === "Search in", "the column-restriction chips carry a 'Search in' caption");
 
   const footerRow = d.querySelector(".filter-footer-row");
   const footerActions = d.querySelector(".filter-footer-actions");
-  assert(footerRow.firstElementChild.id === "filterLiveMatch", "the match count is the footer row's first (left-aligned) child");
-  assert(footerRow.lastElementChild === footerActions, "the action buttons are the footer row's last (right-aligned) child");
+  assert(footerRow.children.length === 1 && footerRow.lastElementChild === footerActions, "the footer holds only the action buttons (the match count moved up into #filterResults)");
   const actionChildren = [...footerActions.children];
   // The separate "Extract" button is gone (this session's filterType merge,
   // docs/ui-implementation-plan.md's follow-up note) — "Add filter" is the
@@ -4784,10 +4741,11 @@ await withApp(async (w, d, T) => {
 
   const formChildren = [...d.querySelector("#filterForm").children];
   const idx = el => formChildren.indexOf(el);
-  assert(idx(inputSection) < idx(settingsRow) && idx(settingsRow) < idx(d.querySelector("#filterPatternPreview")) &&
-    idx(d.querySelector("#filterPatternPreview")) < idx(d.querySelector("#filterColumnChips")) &&
-    idx(d.querySelector("#filterColumnChips")) < idx(footerRow),
-    "sections appear top-to-bottom in the requested order: input, settings, preview, applies-to, footer");
+  assert(idx(inputSection) < idx(settingsRow) && idx(settingsRow) < idx(d.querySelector("#filterColumnChips")) &&
+    idx(d.querySelector("#filterColumnChips")) < idx(d.querySelector("#filterPatternPreview")) &&
+    idx(d.querySelector("#filterPatternPreview")) < idx(d.querySelector("#filterResults")) &&
+    idx(d.querySelector("#filterResults")) < idx(footerRow),
+    "sections appear top-to-bottom: input, syntax, search in, preview, results, footer");
 
   // --- Bugfix (historical, kept as a plain sanity check now that Extract's
   // own disabled-state is gone): a direct .value write (token chip click)
@@ -6561,6 +6519,7 @@ await withApp(async (w, d, T) => {
 group(55);
 await withApp(async (w, d, T) => {
   section("55a. Multiline toggle: default view, row heights, spacer, both Log views");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   // Entry 2 gets 2 continuation lines appended during parsing (same
   // technique as Group 1/20) -> a 3-line message; every other entry stays
@@ -6690,6 +6649,7 @@ await withApp(async (w, d, T) => {
 group(55);
 await withApp(async (w, d, T) => {
   section("55d. Multiline toggle: the top-visible entry stays anchored (no scroll jump/reset) when row heights change above it");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   // 60 entries; three of them (10, 25, 40) each get 3 continuation lines
   // (4-line messages) so real height changes happen well ABOVE the
@@ -7409,6 +7369,7 @@ await withApp(async (w, d, T) => {
 group(61);
 await withApp(async (w, d, T) => {
   section("61a. Level-filter toggle: the selected/active row stays on screen at the SAME pixel position — the log collapses/expands around it, not a jump");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   // 60 entries, ERROR at every 5th index (makeLog's own default level rule:
   // i%5===0 ? ERROR : INFO) — 12 ERROR / 48 INFO. Selecting an ERROR entry
@@ -9630,7 +9591,6 @@ await withApp(async (w, d, T) => {
     { selector: ".brand-mark", bad: "#2f8f8c" },
     { selector: ".brand-mark", bad: "#0b1016" },
     { selector: ".toolbar-badge", bad: "#08201f" },
-    { selector: ".crumb.current", bad: "rgba(79,199,195,.35)" },
     { selector: ".level-btn.lvl-error", bad: "rgba(241,101,101,.35)" },
     { selector: ".lvl-error .level-badge", bad: "rgba(241,101,101,.28)" },
     { selector: ".log-row.lvl-error:hover", bad: "rgba(241,101,101,.20)" },
@@ -9961,7 +9921,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "score=[*:int>=15]";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 of 20"),
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 matches in 20"),
     "live-match count only counts rows satisfying the condition (15..19), got " + d.querySelector("#filterLiveMatch").textContent);
 
   /* ---------- pattern preview: the sample match is one where the condition actually holds, and shows a visible condition badge ---------- */
@@ -10786,6 +10746,7 @@ await withApp(async (w, d, T) => {
 group(97);
 await withApp(async (w, d, T) => {
   section("97a. Tail growth auto-follows the Highlight/Full view too, not just Filtered");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   function fakeHandle(initialText) {
     let text = initialText;
@@ -11235,7 +11196,7 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(100);
 await withApp(async (w, d, T) => {
-  section("100. Middle-click a filter node (tree row / breadcrumb chip) deletes it");
+  section("100. Middle-click a filter node (tree row) deletes it");
 
   const f = await w.addFile("app.log", makeLog(0, 5), () => {});
   const filt = w.createFilterNode(f.id, "text", "message");
@@ -11259,13 +11220,6 @@ await withApp(async (w, d, T) => {
   rowAgain.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 2 }));
   assert(!!T.state.nodes[filt.id], "auxclick with a non-middle button does not delete the node");
 
-  // Breadcrumb chip: same behavior, reachable from the chain display too.
-  T.state.activeId = filt.id;
-  w.render();
-  const crumb = [...d.querySelectorAll("#breadcrumb .crumb")].find(c => c.classList.contains("current"));
-  crumb.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, cancelable: true, button: 1 }));
-  assert(!T.state.nodes[filt.id], "middle-clicking the active breadcrumb chip deletes that filter node too");
-  assert(f.children.length === 0, "...removed from its parent's children");
 });
 
 /* ============================================================
@@ -12423,7 +12377,10 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
   assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
   const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
-  assert(rebindableRows.length === 20, "the rebindable-actions rows render one per registered action");
+  // Compared against the live SHORTCUT_ACTIONS length (a top-level const,
+  // reachable via global eval) rather than a hardcoded number, so adding a
+  // rebindable action (e.g. exportView, GROUP 283) doesn't need this edited.
+  assert(rebindableRows.length === w.eval("SHORTCUT_ACTIONS.length") && rebindableRows.length >= 20, "the rebindable-actions rows render one per registered action");
   const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
   assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
   fixedRows.forEach(row => {
@@ -13594,8 +13551,9 @@ await withApp(async (w, d, T) => {
    Origin: this session (FEATURE_BACKLOG.md #16). A real JS RegExp,
    alongside (not replacing) the wildcard-token "text" filter language —
    toggled per-node via node.isRegex on the SAME "text" filterType (no new
-   filter type), gated at the top of the filter popup by
-   #filterRegexCheckbox. Case-sensitivity/column-restriction stay available
+   filter type), gated in the filter popup by
+   #filterRegexCheckbox (since 2026-09-23 the Text/Regex segmented switch,
+   #filterSyntaxText/#filterSyntaxRegex). Case-sensitivity/column-restriction stay available
    in both modes; only the wildcard-token-specific UI (token chips, the
    pattern preview) hides while regex mode is on. An invalid regex degrades
    to an empty match set (getEntries) / an inline error state (the popup),
@@ -13650,10 +13608,11 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   w.openFilterPopup();
-  assert(pillChecked(d.querySelector("#filterRegexCheckbox")) === false, "regex toggle defaults to OFF, same as case/NOT");
+  assert(!d.querySelector("#filterSyntaxRegex").classList.contains("active") && d.querySelector("#filterSyntaxText").classList.contains("active"),
+    "the Text/Regex syntax switch defaults to Text");
   assert(isVisible(d.querySelector("#filterTokenChips"), w), "sanity: token chips visible before regex mode is toggled on");
 
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
+  fireClick(d.querySelector("#filterSyntaxRegex"), w);
   assert(!isVisible(d.querySelector("#filterTokenChips"), w), "turning regex mode on hides the wildcard-token insert chips");
   assert(!d.querySelector("#filterCaseCheckbox").disabled && !d.querySelector("#filterColumnChips").classList.contains("hidden"),
     "case-sensitivity and column-restriction stay visible/enabled in regex mode — only wildcard-specific UI is hidden");
@@ -13663,7 +13622,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "^connection";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 of 4"), "live match count works in regex mode too (case-insensitive '^connection' also matches entry 3's 'CONNECTION')");
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 matches in 4"), "live match count works in regex mode too (case-insensitive '^connection' also matches entry 3's 'CONNECTION')");
 
   // Invalid regex while typing -> inline error state, not a crash
   filterInput.value = "(unterminated";
@@ -14982,6 +14941,7 @@ await withApp(async (w, d, T) => {
 group(137);
 await withApp(async (w, d, T) => {
   section("137. Highlight-rule match text + regex match-spec fix");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   const btn = d.querySelector(".toggle-highlightmatch");
   const textMatchBtn = d.querySelector(".toggle-textmatch");
@@ -15240,6 +15200,7 @@ await withApp(async (w, d, T) => {
   // DOM lookup aimed at the START of the list has to re-window there first.
   const showTop = () => { w.setHighlightScroll(0); w.renderHighlightVisibleRows(); };
   const resetContext = () => {
+    T.state.selectedId = null; // a selection would open its window on the switch (GROUP 276)
     T.state.activeId = otherFilter.id; showContext();
     T.state.activeId = hitFilter.id; showContext();
     showTop();
@@ -15402,6 +15363,9 @@ await withApp(async (w, d, T) => {
   assert(T.currentHighlightViewEntries.length === 2 && T.contextMatchIds.size === 2,
     "the level quick-filter narrows the Filtered view's display only — those rows never leave the result set, so the Context view is untouched");
   fireClick(errBtn, w); // reset
+  // No selection: switching onto the Context tab would otherwise open the
+  // window around it (GROUP 276), and (k) needs its stretch still hidden.
+  T.state.selectedId = null;
   w.applyFhView("highlight");
 
   // --- (k) jumping to a non-match reveals it ------------------------------
@@ -15478,6 +15442,7 @@ await withApp(async (w, d, T) => {
   assert(T.contextGaps.length === 2 && T.contextGaps.every(g => revealed(g.start) === g.start + "-" + g.end),
     "Stacked seeds every gap fully revealed the first time a node becomes active there, regardless of contextInitialExpansion");
   w.setGapOpen(T.contextGaps[0].start, false); // manually re-hide one
+  T.state.selectedId = null; // landing on the Context tab opens the selection's window (GROUP 276)
   w.applyFhView("highlight"); // flip to tabs...
   w.applyFhView("stacked");   // ...and back
   assert(revealed(T.contextGaps[0].start) === "",
@@ -15686,6 +15651,7 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#ctxPrevMatch").disabled && d.querySelector("#ctxNextMatch").disabled,
     "with a single match there is nowhere to walk, so both arrows are disabled");
   T.state.activeId = hitFilter.id;
+  T.state.selectedId = null; // the switch would open the selection's window (GROUP 276)
   showContext();
 
   // --- (d) the fold half -------------------------------------------------
@@ -15727,80 +15693,6 @@ await withApp(async (w, d, T) => {
   stepInput.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(T.contextExpandStep === 1 && stepInput.value === "1",
     "…and clamped, with the clamp reflected back into the field, got " + T.contextExpandStep);
-});
-
-
-/* ============================================================
-   GROUP 152 — Filter path pills (.crumb, shared by #breadcrumb and
-   #filterTargetChain) stay one line long and a bounded width instead of
-   overflowing (person-reported, screenshot: a long auto-generated filter
-   name wrapped its own text onto a second line inside the pill's fixed
-   28px height, spilling above/below it, with the arrow-only line that
-   followed pushed onto its own row). .crumb now caps at max-width:220px;
-   the untruncated name is still reachable as a tooltip (chip.title).
-   Follow-up 1, same session (person-reported): the chip's
-   justify-content:center meant an overflowing chip clipped BOTH ends
-   equally, leaving an unmarked cut mid-text on the left with the
-   ellipsis only visible on the right — so the truncated pill showed a
-   slice from the MIDDLE of the name instead of its start. Switched to
-   justify-content:flex-start so the start of the name is what stays
-   visible.
-   Follow-up 2, same session (person-reported, after a real-browser
-   screenshot showed NO clipping/ellipsis at all despite follow-up 1):
-   overflow/text-overflow/white-space had been set directly on .crumb,
-   but its text became an anonymous flex item once the chip turned into
-   inline-flex — a flex container's text-overflow only elides its own
-   principal box's overflow, not a child flex item's, so nothing ever
-   clipped. Moved the text into a real child element, .crumb-label
-   (flex:1 1 auto; min-width:0 plus the ellipsis trio), which is where
-   the assertions below now check.
-   ============================================================ */
-group(152);
-await withApp(async (w, d, T) => {
-  section("152. Filter path pills cap width and expose the full name as a tooltip");
-
-  const cs = w.getComputedStyle;
-  const longPattern = "message ".repeat(20) + "[*:float] this is a very long auto-generated filter name indeed";
-  const longName = "“" + longPattern + "”"; // createFilterNode's own "text" display name, wrapped in curly quotes
-
-  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
-  const longFilter = w.createFilterNode(f.id, "text", longPattern);
-  T.state.activeId = longFilter.id;
-  w.render();
-
-  const crumbs = [...d.querySelectorAll("#breadcrumb .crumb")];
-  const longCrumb = crumbs.find(c => c.textContent === longName);
-  assert(longCrumb, "the long-named filter still renders its full text as the chip's own content (truncation is CSS-only, not JS-shortened text)");
-  const longLabel = longCrumb.querySelector(".crumb-label");
-  assert(longLabel && longLabel.textContent === longName,
-    "the actual text lives in a child .crumb-label span, not directly in .crumb — a flex container's own text-overflow doesn't clip a child flex item's box, only its own principal box's content, so the truncation properties have to live on that child instead");
-
-  assert(cs(longLabel).whiteSpace === "nowrap", "a pill never wraps its own text onto a second line");
-  assert(cs(longLabel).overflow === "hidden" && cs(longLabel).textOverflow === "ellipsis",
-    "overflowing text is clipped with an ellipsis, same mechanism as .tree-label");
-  assert(cs(longLabel).minWidth === "0px", "the label can actually shrink below its own text's natural width (default flex-item min-width:auto is exactly what let it overflow un-clipped before this fix)");
-  assert(cs(longCrumb).maxWidth === "220px", "the pill itself is capped to a bounded width, got " + cs(longCrumb).maxWidth);
-  assert(longCrumb.title.includes(longName), "the full untruncated name is still reachable via the chip's tooltip, got " + longCrumb.title);
-  assert(cs(longCrumb).justifyContent === "flex-start",
-    "the chip left-aligns its text (not centered) so the START of a truncated name stays visible instead of a clipped mid-text slice, got " + cs(longCrumb).justifyContent);
-
-  // Sanity: a short chip is unaffected — still shows its plain text, no
-  // clipping actually kicks in below the cap.
-  const shortCrumb = crumbs.find(c => c.textContent === "a.log");
-  assert(shortCrumb && cs(shortCrumb).maxWidth === "220px", "the same rule applies uniformly (the cap is a ceiling, not a fixed size) — short names just never hit it");
-
-  // --- Same pill, same rule, in the filter-target chain the "add filter"
-  // popup shows (#filterTargetChain reuses .crumb) — it didn't set a
-  // tooltip at all before this session.
-  T.state.activeId = f.id;
-  w.render();
-  w.openFilterPopup();
-  const chainChip = [...d.querySelectorAll("#filterTargetChain .crumb")].find(c => c.textContent === "a.log");
-  assert(chainChip, "the filter-target chain renders its chip(s)");
-  const chainLabel = chainChip.querySelector(".crumb-label");
-  assert(chainLabel && cs(chainChip).maxWidth === "220px" && cs(chainLabel).textOverflow === "ellipsis",
-    "the filter-target chain's pills are capped/truncated the same way #breadcrumb's are (shared .crumb/.crumb-label rule)");
-  assert(chainChip.title === "a.log", "the filter-target chain's chip now also carries the full name as a tooltip, got " + JSON.stringify(chainChip.title));
 });
 
 
@@ -16986,16 +16878,16 @@ await withApp(async (w, d, T) => {
   w.render();
   w.openFilterPopup();
   const wholeWordCheckbox = d.querySelector("#filterWholeWordCheckbox");
-  const wholeWordRow = d.querySelector("#filterWholeWordRow");
   assert(wholeWordCheckbox && pillChecked(wholeWordCheckbox) === false, "the \"Match whole word\" toggle defaults to OFF (person-specified default)");
-  assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"),
+  assert(!wholeWordCheckbox.disabled,
     "it starts out enabled for the empty (literal) input");
 
-  // Every boolean in the popup is a .pill-toggle (docs/ui-standard.md #69) now.
-  ["filterRegexCheckbox", "filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
+  // Every boolean in the popup is a role=switch button on the pill-toggle
+  // state protocol, drawn as a standalone label-only toggle (Group 263).
+  ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
     const box = d.querySelector("#" + id);
-    assert(box.tagName === "BUTTON" && box.classList.contains("pill-toggle") && box.getAttribute("role") === "switch",
-      "#" + id + " is a role=switch .pill-toggle button (unified boolean control)");
+    assert(box.tagName === "BUTTON" && box.classList.contains("label-toggle") && box.getAttribute("role") === "switch",
+      "#" + id + " is a role=switch .label-toggle button (unified boolean control)");
     assert(box.hasAttribute("aria-checked"), "#" + id + " carries aria-checked state");
   });
 
@@ -17005,27 +16897,27 @@ await withApp(async (w, d, T) => {
   filterInput.value = "Test";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 of 6"),
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("5 matches in 6"),
     "live match count without whole-word: 5 of 6 rows, got " + d.querySelector("#filterLiveMatch").textContent);
   fireClick(wholeWordCheckbox, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 of 6"),
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("3 matches in 6"),
     "turning \"Match whole word\" on drops \"Testing\"/\"retest\" from the live count, got " + d.querySelector("#filterLiveMatch").textContent);
 
   // A wildcard pattern greys it out — that language has its own boundaries.
   filterInput.value = "Test [*:word]";
   fireInput(filterInput, w);
-  assert(wholeWordCheckbox.disabled && wholeWordRow.classList.contains("disabled"),
+  assert(wholeWordCheckbox.disabled,
     "typing a wildcard-token pattern disables the whole-word toggle instead of letting it sit there as a no-op");
   filterInput.value = "Test";
   fireInput(filterInput, w);
-  assert(!wholeWordCheckbox.disabled && !wholeWordRow.classList.contains("disabled"), "...and removing the token re-enables it");
+  assert(!wholeWordCheckbox.disabled, "...and removing the token re-enables it");
 
   // So does regex mode.
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
-  assert(wholeWordCheckbox.disabled && wholeWordRow.classList.contains("disabled"),
+  fireClick(d.querySelector("#filterSyntaxRegex"), w);
+  assert(wholeWordCheckbox.disabled,
     "regex mode disables the whole-word toggle too (\\b/lookarounds do the job there)");
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
+  fireClick(d.querySelector("#filterSyntaxText"), w);
   assert(!wholeWordCheckbox.disabled, "leaving regex mode re-enables it");
 
   // Submitting stores the flag.
@@ -17038,7 +16930,7 @@ await withApp(async (w, d, T) => {
   // A regex filter never stores the flag, even with the box left checked.
   w.openFilterPopup();
   setPill(d.querySelector("#filterWholeWordCheckbox"), true);
-  fireClick(d.querySelector("#filterRegexCheckbox"), w);
+  fireClick(d.querySelector("#filterSyntaxRegex"), w);
   d.querySelector("#filterInput").value = "Test";
   fireInput(d.querySelector("#filterInput"), w);
   fireSubmit(d.querySelector("#filterForm"), w);
@@ -18227,7 +18119,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="highlight"]'), w);
 
   assert(T.fhActiveTab === "highlight", "fhActiveTab switches to Context");
-  assert(d.querySelector('.view-tab.active').dataset.fhTab === "highlight", "the Context tab pill is the one marked active");
+  assert(d.querySelector('#fhTabs .view-tab.active').dataset.fhTab === "highlight", "the Context tab pill is the one marked active");
   assert(d.querySelector("#extractWrap").style.display === "none", "the extraction table is no longer the visible content component");
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
 });
@@ -18249,7 +18141,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('#fhTabs .view-tab[data-fh-tab="filter"]'), w);
 
   assert(T.fhActiveTab === "filter", "fhActiveTab switches to Filtered");
-  assert(d.querySelector('.view-tab.active').dataset.fhTab === "filter", "the Filtered tab pill is the one marked active");
+  assert(d.querySelector('#fhTabs .view-tab.active').dataset.fhTab === "filter", "the Filtered tab pill is the one marked active");
   assert(d.querySelector("#extractWrap").style.display === "none", "the plot is no longer the visible content component");
   assert(d.querySelector("#fhSplit").style.display === "flex", "the Context/Filtered pane (#fhSplit) is now the visible content component");
 });
@@ -18927,7 +18819,8 @@ await withApp(async (w, d, T) => {
   // takes the exact same branch.
   const defaultFmt = { id: "fmt-default", builtin: true, edited: false };
   sandboxSelf.onmessage({ data: { text, fmt: defaultFmt } });
-  const workerEntries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
+  // Entries come back as binary batches (see GROUP 268), decoded by the page.
+  const workerEntries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
   assert(posted.some(m => m.type === "done" && m.total === workerEntries.length + 1),
     // +1: makeLog's trailing "\n" produces one empty trailing line, matching
     // the main-thread loop's own lines.length semantics (blank lines after
@@ -18963,13 +18856,13 @@ await withApp(async (w, d, T) => {
   const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
   vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
   sandboxSelf.onmessage({ data: { text, fmt: customFmt } });
-  const entries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
+  // formatId is stamped on the main thread when a batch is adopted (GROUP 268).
+  const entries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
 
   assert(entries.length === 2, "the regex-mode format's header/continuation split works inside the sandboxed worker source, got " + entries.length);
   assert(entries[0].level === "INFO" && entries[1].level === "WARN", "level group matched correctly for a custom regex format");
   assert(entries[1].message.includes("second custom line") && entries[1].message.includes("continues the previous entry"),
     "a continuation line (no match against the custom regex) still gets appended to the open entry's message");
-  assert(entries.every(e => e.formatId === "fmt-165c"), "each entry carries the custom format's id, same as the main-thread compileOneFormat path sets it");
 });
 
 /* ============================================================
@@ -19575,7 +19468,7 @@ await withApp(async (w, d, T) => {
   filterInput.value = "boom[*]Foo.Baz()";
   fireInput(filterInput, w);
   await new Promise(r => setTimeout(r, 200));
-  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 of 2"), "live match count also finds the multi-line entry, got " + d.querySelector("#filterLiveMatch").textContent);
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("1 matches in 2"), "live match count also finds the multi-line entry, got " + d.querySelector("#filterLiveMatch").textContent);
 });
 
 /* ============================================================
@@ -20482,7 +20375,7 @@ await withApp(async (w, d, T) => {
   // session (FEATURE_BACKLOG.md #77, retired outright in favor of
   // #sidebarToolbar) — no replacement entry needed, #sidebarToolbar is a
   // descendant of #sidebar, already covered by that entry.
-  for (const id of ["#toolbar", "#sidebar", "#breadcrumbBar", "#extractToolbar", "#tableToolbar",
+  for (const id of ["#toolbar", "#sidebar", "#extractToolbar", "#tableToolbar",
     "#plotToolbar", "#plotControls", "#contextToolbar", "#filteredToolbar", "#linkToolbar",
     "#detailPanel", "#detailResizer", "#timelineMinimap", "#emptyState"]) {
     assert(css.includes("html.pip-mode " + id), "html.pip-mode hides " + id);
@@ -22376,7 +22269,6 @@ group(199);
     // is a CSS ::before counter (generated content, not a DOM text node),
     // so it never shows up here (see GROUP 199k below for the gutter itself).
     assert(d.querySelector("#inlineTextViewer .itv-line").textContent === "hello world", "the text viewer renders the extracted content");
-    assert(d.querySelector("#breadcrumbBar").style.display === "none", "the tab bar (#breadcrumbBar) is hidden while a non-log inline viewer is active");
 
     w.closeInlineViewer();
     assert(T.state.inlineViewer === null, "closing the inline viewer clears state.inlineViewer");
@@ -23289,6 +23181,7 @@ await withApp(async (w, d, T) => {
 
 await withApp(async (w, d, T) => {
   section("202b. the toggle actually gates rendering in BOTH the Table and the Full/Context view");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   const f = await w.addFile("a.log", makeLog(0, 3, { msgPrefix: "wrote to /var/log/app.log ok" }), () => {});
   T.state.activeId = f.id;
@@ -23311,6 +23204,7 @@ await withApp(async (w, d, T) => {
 
 await withApp(async (w, d, T) => {
   section("202c. desktop build: verification/caching is shared across both views — a path seen in both costs one pathExists() call");
+  w.applyFhView("stacked"); // both Log views on screen: the Context view is only built while visible (GROUP 270)
 
   let pathExistsCalls = 0;
   w.philogg.pathExists = () => { pathExistsCalls++; return Promise.resolve(true); };
@@ -24656,9 +24550,9 @@ group(212);
 await withApp(async (w, d, T) => {
   section("212a. .pill-toggle component: click + label-click flip aria-checked/.on, read back via aria-checked");
 
-  T.state.activeId = null;
-  w.openFilterPopup();
-  const pill = d.querySelector("#filterRegexCheckbox");
+  // The filter popup's switches are label-only view-tab toggles since
+  // 2026-09-23 (Group 263) — the link dialog's pill is the reference here.
+  const pill = d.querySelector("#linkExclusiveInput");
   assert(pill.tagName === "BUTTON" && pill.getAttribute("role") === "switch" && pill.classList.contains("pill-toggle"),
     "a converted boolean is a <button role=switch class=pill-toggle>, not a native checkbox");
   assert(pill.getAttribute("aria-checked") === "false" && !pill.classList.contains("on"),
@@ -24675,7 +24569,7 @@ await withApp(async (w, d, T) => {
 
   // Clicking the associated <label for=…> toggles it too (browser forwards
   // the click to the labelled button, which the delegated handler catches).
-  const label = d.querySelector('label[for="filterRegexCheckbox"]');
+  const label = d.querySelector('label[for="linkExclusiveInput"]');
   assert(label, "the pill has an adjacent <label for> wiring the text to it");
   fireClick(label, w);
   assert(pillChecked(pill), "clicking the label toggles the pill on");
@@ -24683,12 +24577,20 @@ await withApp(async (w, d, T) => {
   assert(!pillChecked(pill), "clicking the label again toggles it back off");
 
   // A toggle dispatches a real `change` event, so change-driven app logic
-  // keeps working: turning regex mode on hides the pattern-token chips.
-  assert(!d.querySelector("#filterTokenChips").classList.contains("hidden"), "token chips visible while regex mode is off");
-  fireClick(pill, w);
-  assert(d.querySelector("#filterTokenChips").classList.contains("hidden"),
-    "toggling the regex pill fired change -> updateRegexModeUI hid the token chips");
-  fireClick(pill, w);
+  // keeps working — the same protocol drives the filter popup's label-only
+  // switches: turning NOT on re-runs the live match as "kept (NOT)".
+  const pf = await w.addFile("pill.log", makeLog(0, 4), () => {});
+  T.state.activeId = pf.id;
+  w.openFilterPopup();
+  const notToggle = d.querySelector("#filterInvertCheckbox");
+  d.querySelector("#filterInput").value = "message";
+  fireInput(d.querySelector("#filterInput"), w);
+  fireClick(notToggle, w);
+  await new Promise(r => setTimeout(r, 200));
+  assert(pillChecked(notToggle) && d.querySelector("#filterLiveMatch").textContent.includes("kept (NOT) in"),
+    "toggling the NOT switch fired change -> evaluateLiveMatch re-ran in NOT mode, got " + d.querySelector("#filterLiveMatch").textContent);
+  fireClick(notToggle, w);
+  w.closeFilterPopup();
 
   // pillGet/pillSet round-trip (the app's own helpers, exposed as functions):
   // pillSet(el,true) with no fireChange flag mirrors the old `.checked =` and
@@ -24718,7 +24620,9 @@ await withApp(async (w, d, T) => {
 
   // Every listed single-boolean id is now a role=switch pill (and none of the
   // deliberately-untouched multi-select checkbox lists were converted).
-  const pillIds = ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox",
+  // (The filter popup's three switches moved to the label-only view-tab
+  // look on 2026-09-23 — Groups 149/263.)
+  const pillIds = ["linkExclusiveInput", "linkOrderEnforceInput",
     "settingsCloseToTray", "settingsHoverExpandSidebar", "settingsHoverExpandDetail",
     "settingsHideMinimapFullRangeInFullView", "settingsTempAnchorAcrossFiles",
     "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail"];
@@ -25867,83 +25771,6 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#noteDialogSave"), w);
   assert(T.state.notes.get(f.entries[2].id) === "via dialog", "sanity: note saved via the Alt+N dialog");
   assert(T.state.showNotes === true, "saving a new note through the note dialog also auto-enables Show Notes");
-});
-
-/* ============================================================
-   GROUP 225 — .crumb-sep (the separator between filter path pills, shared
-   by #breadcrumb and #filterTargetChain) redesigned as a distinct
-   connector element, in two rounds this session (person-reported both
-   times, screenshots). Numbered 225, not 224, to avoid colliding with the
-   unrelated Show-Notes-auto-enable Group 224 merged into main the same day.
-   Round 1: the bare "›" glyph read as small/lost/unaligned, especially
-   against --text-tertiary's low contrast against --bg-panel. Fixed with a
-   themed 18x18 bordered circle (--accent-strong) instead of plain inline
-   text sized/colored off the ambient font.
-   Round 2: with the circle in place, the "›" GLYPH ITSELF still looked
-   off-center inside it. Measured directly (Range.getBoundingClientRect()
-   on the text node): the glyph's own advance-width box WAS centered by
-   the container's flexbox, but "›"'s visible ink sits left-of-center
-   within that box (ordinary font right-side-bearing) — a font-metrics
-   quirk no container-level margin/padding can fix, since it's baked into
-   the glyph and varies by font/OS. Fixed by swapping the text glyph for
-   ICON_CARET_RIGHT (renderBreadcrumb/renderFilterTargetChain now set
-   .innerHTML, not .textContent) — the same hand-drawn SVG chevron already
-   used for the Context view's match nav, authored symmetric inside its
-   own viewBox and therefore centered by construction, independent of any
-   font.
-   jsdom's getComputedStyle can't resolve var() inside the
-   `background`/`border` SHORTHANDS used here (see tests/README.md "Known
-   gaps" — confirmed empirically: it falls back to initial values instead
-   of the declared var()), so the background/border assertions below check
-   the raw stylesheet source instead of computed style; the shape/layout
-   properties (declared as plain px/keyword values, no var()) resolve fine
-   via getComputedStyle.
-   ============================================================ */
-group(225);
-await withApp(async (w, d, T) => {
-  section("225. Breadcrumb/filter-target-chain separator is a bordered circle around a real (font-independent) SVG chevron, not a bare small glyph");
-
-  const cs = w.getComputedStyle;
-  const css = d.querySelector("style").textContent;
-
-  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
-  const node = w.createFilterNode(f.id, "text", "msg");
-  T.state.activeId = node.id;
-  w.render();
-
-  const sep = d.querySelector("#breadcrumb .crumb-sep");
-  assert(sep, "sanity: the separator chip still renders between the file and filter pills");
-  assert(!sep.textContent.trim(), "the separator no longer relies on a text glyph at all (its font-metrics ink wasn't reliably centered in the circle — see the group banner), got textContent " + JSON.stringify(sep.textContent));
-  const svg = sep.querySelector("svg");
-  assert(svg, "the separator now hosts a real SVG icon instead of a text character");
-  assert(svg.querySelector('path[d="M6 4l4 4-4 4"]'), "it's specifically ICON_CARET_RIGHT — a plain caret authored symmetric inside its own viewBox, so it's centered by construction regardless of font/OS, got " + svg.outerHTML);
-  assert(svg.getAttribute("stroke") === "currentColor", "the icon inherits .crumb-sep's own color (currentColor) rather than hardcoding one");
-
-  assert(cs(sep).width === "18px" && cs(sep).height === "18px", "the separator is a fixed 18x18 box, got " + cs(sep).width + "/" + cs(sep).height);
-  assert(cs(sep).borderRadius === "50%", "the separator is a circle (border-radius:50%), giving it its own visible boundary instead of floating as bare text/an unbounded icon");
-  assert(cs(sep).display === "inline-flex" && cs(sep).alignItems === "center" && cs(sep).justifyContent === "center",
-    "the icon is centered inside that circle via flex");
-
-  // Two rules share the .crumb-sep selector (the base rule plus a
-  // #breadcrumb-scoped margin override for its different pill-center math
-  // — see the comments on both in the stylesheet), so this greps the base
-  // rule's specific declarations rather than regex-matching "the" rule.
-  assert(css.includes("color:var(--accent-strong)"), "the icon uses the stronger --accent-strong color, not the low-contrast --text-tertiary it used before");
-  assert(!/\.crumb-sep\{[^}]*--text-tertiary/.test(css), "the old low-contrast --text-tertiary color is gone from .crumb-sep's own rule");
-  assert(css.includes("background:var(--bg-elevated-2); border:1px solid var(--border-soft)"), "the circle has its own themed background/border");
-
-  // Same shared rule + markup powers the filter-target-chain popup's pill
-  // separator (GROUP 152's "pills are separated the same way #breadcrumb
-  // separates its chain") — spot-check it renders the same icon there too.
-  // Create mode's target chain runs down to state.activeId, so it needs
-  // the FILTER node active (not the file) to actually produce a 2-pill
-  // chain with a separator between them (see Group 39's own coverage of
-  // this popup's create-vs-edit chain shape).
-  T.state.activeId = node.id;
-  w.render();
-  w.openFilterPopup();
-  const chainSep = d.querySelector("#filterTargetChain .crumb-sep");
-  assert(chainSep && chainSep.querySelector("svg"), "the filter-target chain's separator is the same SVG-based chip, not a leftover text glyph");
 });
 
 /* ============================================================
@@ -28192,10 +28019,14 @@ await withApp(async (w, d, T) => {
    scheduling for main-thread time (person-reported, 2026-09-21, confirmed
    via real Firefox telemetry: holding "End" on an 822,697-entry merge
    repeatedly stalled the native scrollTop >150,000 physical px short of
-   the true max, non-deterministically between attempts). Now throttled to
-   at most one render per SCROLL_RENDER_THROTTLE_MS (100ms) during a rapid
-   burst via makeThrottledScrollRenderer, while a single, isolated scroll
-   event still renders on its very next frame — same as before.
+   the true max, non-deterministically between attempts). That fix
+   throttled bursts to one render per 100ms; 2026-09-24 replaced the
+   throttle with makeScrollRenderer (one render per animation frame, reading
+   the final scroll position, plus a cost-based backoff for expensive
+   renders — see GROUP 266), because the 100ms gaps let the viewport scroll
+   past the rendered rows. This group now pins the parts both share: a
+   scroll render is deferred onto a frame, and a burst collapses onto one
+   render that already shows the final position.
    ============================================================ */
 group(258);
 await withApp(async (w, d, T) => {
@@ -28236,9 +28067,9 @@ await withApp(async (w, d, T) => {
   w.__rvrCalls = 0;
 
   const tableBody = d.querySelector("#tableBody");
-  // Ten rapid scroll events, all before the 100ms throttle window (or even
-  // one animation frame) has a chance to elapse — simulates the dense
-  // event stream a native keyboard-scroll animation produces.
+  // Ten rapid scroll events, all before one animation frame has a chance
+  // to elapse — simulates the dense event stream a native keyboard-scroll
+  // animation produces.
   const targets = [];
   for (let i = 1; i <= 10; i++) {
     const top = T.ROW_HEIGHT * i * 10;
@@ -28248,19 +28079,19 @@ await withApp(async (w, d, T) => {
   }
   const lastTop = targets[targets.length - 1];
 
-  await sleep(50); // long enough for the leading-edge rAF render, short of the 100ms throttle window
-  assert(w.__rvrCalls === 1, "ten rapid-fire events still collapse onto exactly one leading-edge render, got " + w.__rvrCalls);
-
-  await sleep(150); // now past SCROLL_RENDER_THROTTLE_MS — the trailing catch-up render should have fired
-  assert(w.__rvrCalls === 2, "exactly one trailing catch-up render fires once the burst settles, got " + w.__rvrCalls + " total (nine events collapsed away, not re-rendered individually)");
-  assert(tableBody.scrollTop === lastTop, "sanity: scrollTop itself already reflects the last dispatched event (scrollTop is a plain DOM property, unaffected by the render throttle)");
+  await sleep(50); // long enough for the next frame's render
+  assert(w.__rvrCalls === 1, "ten rapid-fire events collapse onto exactly one render, got " + w.__rvrCalls);
+  assert(tableBody.scrollTop === lastTop, "sanity: scrollTop itself already reflects the last dispatched event (scrollTop is a plain DOM property)");
   const expectedIdx = Math.floor(lastTop / T.ROW_HEIGHT);
   const expectedEntry = f.entries[expectedIdx];
-  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'), "the trailing catch-up render reflects the TRUE final scrollTop (the last of the ten events), not a stale intermediate one");
+  assert(d.querySelector('#tableRows [data-entry-id="' + expectedEntry.id + '"]'), "that one render reflects the TRUE final scrollTop (the last of the ten events), not a stale intermediate one");
+
+  await sleep(150);
+  assert(w.__rvrCalls === 1, "no redundant trailing render once the burst settles, got " + w.__rvrCalls + " total");
 });
 
 await withApp(async (w, d, T) => {
-  section("258c. Same throttling for the twin #highlightBody/renderHighlightVisibleRows listener");
+  section("258c. Same collapsing for the twin #highlightBody/renderHighlightVisibleRows listener");
   const f = await w.addFile("a.log", makeLog(0, 200), () => {});
   T.state.activeId = f.id;
   w.render();
@@ -28280,9 +28111,9 @@ await withApp(async (w, d, T) => {
     highlightBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
   }
   await sleep(50);
-  assert(w.__rhvrCalls === 1, "a rapid burst on #highlightBody also collapses onto one leading-edge render, got " + w.__rhvrCalls);
+  assert(w.__rhvrCalls === 1, "a rapid burst on #highlightBody also collapses onto one render, got " + w.__rhvrCalls);
   await sleep(150);
-  assert(w.__rhvrCalls === 2, "and one trailing catch-up render once it settles, got " + w.__rhvrCalls);
+  assert(w.__rhvrCalls === 1, "and no redundant trailing render once it settles, got " + w.__rhvrCalls);
 });
 
 /* ============================================================
@@ -28347,6 +28178,289 @@ await withApp(async (w, d, T) => {
   assert(merged.id === mergedId, "sanity: the returned node is the same merge shell observed throughout");
   assert(T.state.activeId === mergedId, "the merge remains the active node once everything has finished");
   assert(merged.entries.length === N * 2, "the merge's own entries are complete once loading is done — got " + merged.entries.length);
+});
+
+/* ============================================================
+   GROUP 281 — Export / Share: context + "Copy for ticket" snippet
+   Origin: 2026-09-25 session (FEATURE_BACKLOG.md #31 + #32, ticket-
+   oriented export — see docs/export.md). collectExportContext gathers the
+   active view (active node's result + level quick-filter), the filter
+   chain as human-readable steps with per-step counts, sources, time span
+   and the root file's bookmarks/notes; buildTicketSnippet renders it in
+   three flavors (Markdown / Jira wiki / plain), bounded by excerpt-line
+   count, per-entry and total character caps, each cut announced.
+   ============================================================ */
+group(281);
+await withApp(async (w, d, T) => {
+  section("281a. collectExportContext: view entries, chain steps with counts, sources, time span, findings");
+  assert(w.collectExportContext() === null, "no active node -> nothing to export (null)");
+  const f = await w.addFile("app.log", makeLog(0, 50), () => {});
+  const other = await w.addFile("other.log", makeLog(200, 5), () => {});
+  const txt = w.createFilterNode(f.id, "text", "message 1", false, null, true, ["message"], false, false);
+  T.state.activeId = txt.id;
+  let ctx = w.collectExportContext();
+  const expected = f.entries.filter(e => e.message.includes("message 1"));
+  assert(ctx.entries.length === expected.length && expected.length === 11, "the view is the active filter's result (11 of 50), got " + ctx.entries.length);
+  assert(ctx.total === 50 && ctx.root === f && ctx.active === txt, "total = the root file's entry count, root/active resolved");
+  assert(ctx.steps.length === 2 && ctx.steps[0].text === "File: app.log" && ctx.steps[0].count === 50,
+    "step 1 is the file with its full count, got " + JSON.stringify(ctx.steps[0]));
+  assert(ctx.steps[1].text === "Text contains: “message 1” [case-sensitive, in Message]" && ctx.steps[1].count === 11,
+    "step 2 describes the text filter incl. case/column flags and its count, got " + JSON.stringify(ctx.steps[1]));
+  assert(JSON.stringify(ctx.sources) === JSON.stringify(["app.log"]), "sources = the root file's name");
+  assert(ctx.from === expected[0].ts && ctx.to === expected[expected.length - 1].ts, "time span = first/last matching entry");
+
+  // Level quick filter narrows the view and becomes its own last step.
+  T.state.levelFilter.add("ERROR");
+  ctx = w.collectExportContext();
+  const errs = expected.filter(e => e.level === "ERROR");
+  assert(ctx.entries.length === errs.length && ctx.steps.length === 3 && ctx.steps[2].text === "Level quick filter: ERROR" && ctx.steps[2].count === errs.length,
+    "the level quick filter applies to the view and shows as a final chain step, got " + JSON.stringify(ctx.steps[2]));
+  T.state.levelFilter.clear();
+
+  // NOT + label: the label leads, the actual condition stays visible.
+  const inv = w.createFilterNode(txt.id, "text", "message 10", true);
+  inv.label = "Not the tenth";
+  assert(w.describeExportStep(inv) === "NOT Not the tenth (Text contains: “message 10”)", "NOT prefix + label keep the condition, got " + w.describeExportStep(inv));
+  const lvl = w.createFilterNode(f.id, "level", ["ERROR", "WARN"]);
+  assert(w.describeExportStep(lvl) === "Level: ERROR, WARN", "a level node reads 'Level: ERROR, WARN', got " + w.describeExportStep(lvl));
+  const rx = w.createFilterNode(f.id, "text", "mess.ge 4\\d", false, null, false, null, true);
+  assert(w.describeExportStep(rx) === "Regex: /mess.ge 4\\d/", "a regex node reads 'Regex: /…/', got " + w.describeExportStep(rx));
+
+  // Findings: the ROOT file's bookmarked/annotated entries, in log order —
+  // not another file's, and regardless of the active filter.
+  w.toggleBookmark(f.entries[30].id);
+  w.setNoteAndRepaint(f.entries[12].id, "first failure\nsee ticket");
+  w.toggleBookmark(other.entries[1].id);
+  T.state.activeId = txt.id;
+  ctx = w.collectExportContext();
+  assert(ctx.findings.length === 2 && ctx.findings[0].entry === f.entries[12] && ctx.findings[1].entry === f.entries[30],
+    "findings = this root's bookmarks + notes in log order, other file's bookmark excluded");
+  assert(ctx.findings[0].note === "first failure\nsee ticket" && !ctx.findings[0].bookmarked && ctx.findings[1].bookmarked,
+    "a finding carries its note and bookmark flag");
+
+  section("281b. buildTicketSnippet: Markdown / Jira wiki / plain flavors");
+  const md = w.buildTicketSnippet(ctx, "markdown", 3);
+  assert(md.startsWith("### Log findings: “message 1”"), "Markdown: ### heading with the view name, got " + md.split("\n")[0]);
+  assert(md.includes("**Source:** `app.log` (50 entries)"), "Markdown: source line with file name and total");
+  assert(md.includes("**Matched:** 11 of 50 entries (22%)"), "Markdown: x of y matched with percentage");
+  assert(md.includes("1. File: app.log — 50") && md.includes("2. Text contains: “message 1” \\[case-sensitive, in Message\\] — 11"),
+    "Markdown: numbered filter chain with counts, brackets escaped");
+  assert(md.includes("**Bookmarks & notes (2):**") && md.includes("— **Note:** first failure / see ticket") && md.includes("- ★ `"),
+    "Markdown: findings list with ★ for bookmarks and the note collapsed onto one line");
+  assert(md.includes("**Excerpt (first 3 of 11 matching entries):**\n```\n" + expected.slice(0, 3).map(e => e.raw).join("\n") + "\n```"),
+    "Markdown: excerpt = the first N raw lines in a fenced block");
+  assert(md.includes("_… 8 more matching entries — see the attached export._"), "Markdown: the cut is announced");
+  assert(/_Exported with PhiLogg .+ on \d{4}-\d\d-\d\d \d\d:\d\d\._$/.test(md), "Markdown: footer with version and date");
+
+  const jira = w.buildTicketSnippet(ctx, "jira", 3);
+  assert(jira.startsWith("h3. Log findings:") && jira.includes("*Matched:* 11 of 50 entries") && jira.includes("{{app.log}}"),
+    "Jira wiki: h3., *bold*, {{mono}}");
+  assert(jira.includes("# File: app.log — 50") && jira.includes("* ★ {{"), "Jira wiki: # numbered list, * bullets");
+  assert(jira.includes("{noformat}\n" + expected[0].raw) && !jira.includes("```") && !jira.includes("**"), "Jira wiki: {noformat} block, no Markdown");
+  assert(jira.includes("\\[case-sensitive, in Message\\]"), "Jira wiki: brackets escaped (they'd become links)");
+
+  const plain = w.buildTicketSnippet(ctx, "plain", 3);
+  assert(plain.startsWith("Log findings: “message 1”\n====") && !plain.includes("**") && !plain.includes("{noformat}") && !plain.includes("`"),
+    "plain: underlined title, no markup at all");
+  assert(plain.includes("\n    " + expected[0].raw), "plain: excerpt lines indented by four spaces");
+  assert(plain.includes("[case-sensitive, in Message]"), "plain: no escaping");
+
+  const none = w.buildTicketSnippet(ctx, "markdown", 0);
+  assert(!none.includes("```") && none.includes("_Matching entries: see the attached export._"), "0 excerpt lines -> no code block, points to the attachment");
+  const all = w.buildTicketSnippet(ctx, "markdown", 500);
+  assert(all.includes("**Matching entries:**") && !all.includes("more matching entries"), "an excerpt covering every entry says so and announces no cut");
+
+  section("281c. Bounds and escaping");
+  // Code fence grows past the longest backtick run in the quoted lines; a
+  // markup-looking filter value is escaped outside the code block.
+  const g = await w.addFile("ticks.log", makeLog(0, 3, { msgPrefix: "has ```` ticks *bold* _it_" }), () => {});
+  const tf = w.createFilterNode(g.id, "text", "*bold*");
+  T.state.activeId = tf.id;
+  const tctx = w.collectExportContext();
+  const tmd = w.buildTicketSnippet(tctx, "markdown", 5);
+  assert(tmd.includes("\n`````\n") && !tmd.includes("\n```\n"), "Markdown fence is longer than the longest backtick run inside");
+  assert(tmd.includes("Text contains: “\\*bold\\*”"), "filter value markup is escaped in the chain");
+  const tj = w.buildTicketSnippet(tctx, "jira", 5);
+  assert(tj.includes("Text contains: “\\*bold\\*”"), "Jira: filter value markup escaped");
+
+  // Per-entry cap + total cap: huge lines never blow the ticket limit.
+  const huge = "x".repeat(5000);
+  const h = await w.addFile("huge.log", makeLog(0, 200, { suffix: () => huge }), () => {});
+  T.state.activeId = h.id;
+  const hctx = w.collectExportContext();
+  const hmd = w.buildTicketSnippet(hctx, "markdown", 500);
+  assert(hmd.length <= w.eval("TICKET_SNIPPET_MAX_CHARS"), "the snippet stays within TICKET_SNIPPET_MAX_CHARS, got " + hmd.length);
+  assert(hmd.includes(" …[truncated]") && !hmd.includes(huge), "an over-long entry is cut at TICKET_ENTRY_MAX_CHARS and marked");
+  const m = hmd.match(/Excerpt \(first (\d+) of 200 matching entries\)/);
+  assert(m && Number(m[1]) > 5 && Number(m[1]) < 200, "the total budget stops the excerpt early and says how many were shown, got " + (m && m[1]));
+  assert(hmd.includes("more matching entries — see the attached export."), "...and announces the rest");
+});
+
+/* ============================================================
+   GROUP 282 — Export / Share: attachment files (.log/.csv/.tsv/.html)
+   Origin: 2026-09-25 session (see GROUP 281). buildExportFileParts builds
+   the full current view as chunked string parts (EXPORT_CHUNK_ENTRIES per
+   part) for one Blob; saveExportFile goes through showSaveFilePicker where
+   present (cancel = nothing saved, no fallback) else downloadBlobFallback.
+   The HTML report is standalone and inert: everything escaped, no script.
+   ============================================================ */
+group(282);
+await withApp(async (w, d, T) => {
+  section("282a. .log / .csv / .tsv content");
+  const text = makeLog(0, 12) +
+    '2024-01-15 10:00:12,000\tERROR\t"main"\tC:\\src\\Foo.cs\tline 12\t[DoWork]\t"quote \\" comma, tab\there <script>alert(1)</script>\nsecond line"\n';
+  const f = await w.addFile("svc.log", text, () => {});
+  T.state.activeId = f.id;
+  const ctx = w.collectExportContext();
+  assert(ctx.entries.length === 13, "sanity: 13 entries incl. the multi-line one, got " + ctx.entries.length);
+  const log = w.buildExportFileParts("log", ctx).join("");
+  assert(log === ctx.entries.map(e => e.raw).join("\n") + "\n", ".log = the raw lines exactly, one entry after another (continuation lines kept)");
+
+  const csv = w.buildExportFileParts("csv", ctx).join("");
+  const csvRows = csv.split("\r\n");
+  assert(csvRows[0] === "Time,Level,Thread,Location,Method,Message", ".csv header = the visible log columns, got " + csvRows[0]);
+  assert(csvRows[1].startsWith('"2024-01-15 10:00:00,000",ERROR,main,'),
+    ".csv quotes a field containing the delimiter (the ',000' timestamp), got " + csvRows[1]);
+  const last = ctx.entries[12];
+  assert(csv.includes('"' + last.message.replace(/"/g, '""') + '"') && last.message.includes("\n"),
+    ".csv keeps a multi-line message intact inside RFC 4180 quotes");
+  assert(csv.endsWith("\r\n"), ".csv rows end with CRLF");
+
+  const tsv = w.buildExportFileParts("tsv", ctx).join("");
+  const tsvRows = tsv.split("\n").filter(Boolean);
+  assert(tsvRows.length === 14 && tsvRows[0] === "Time\tLevel\tThread\tLocation\tMethod\tMessage", ".tsv: header + one line per entry");
+  assert(tsvRows.every(r => r.split("\t").length === 6), ".tsv: every row has exactly 6 fields (tabs inside values replaced)");
+  assert(tsvRows[13].includes("\\nsecond line"), ".tsv: a line break inside a value becomes the two characters \\n");
+
+  // Chunking: parts, not one string per line and not one giant string.
+  const big = await w.addFile("big.log", makeLog(0, 12001), () => {});
+  T.state.activeId = big.id;
+  const bigParts = w.buildExportFileParts("log", w.collectExportContext());
+  assert(bigParts.length === 3, ".log of 12001 entries is built as ceil(12001/5000) = 3 string parts, got " + bigParts.length);
+  assert(w.buildExportFileParts("csv", w.collectExportContext()).length === 4, ".csv adds the header as its own first part");
+
+  section("282b. HTML report: standalone, complete, inert");
+  T.state.activeId = f.id;
+  w.toggleBookmark(ctx.entries[3].id);
+  w.setNoteAndRepaint(ctx.entries[3].id, "root cause <b>here</b>");
+  const rctx = w.collectExportContext();
+  const html = w.buildExportFileParts("html", rctx).join("");
+  assert(html.startsWith("<!DOCTYPE html>") && html.includes("<title>Log findings: svc.log</title>"), "report is a full HTML document titled after the view");
+  assert(!/<script/i.test(html) && html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"), "log text is escaped — no <script> element anywhere in the report");
+  assert(!/<link|src=|href=/i.test(html), "no external resource references");
+  assert(html.includes("<li>File: svc.log — 13</li>"), "report lists the filter chain with counts");
+  assert(html.includes("<h2>Bookmarks &amp; notes (1)</h2>") && html.includes("root cause &lt;b&gt;here&lt;/b&gt;"), "report lists findings with the (escaped) note");
+  assert((html.match(/<div class="e /g) || []).length === 13, "report contains every matching entry");
+  assert(html.includes('class="e l-error"') && html.includes('class="e l-info bm">★ '), "entries carry level classes; the bookmarked one is marked ★");
+  assert(html.includes('<span class="n">Note: root cause'), "the note also appears inline under its entry");
+
+  section("282c. saveExportFile / exportViewFile: picker, cancel, download fallback");
+  const downloads = [];
+  w.downloadBlobFallback = (blob, name) => downloads.push({ blob, name });
+  const txt = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = txt.id;
+  assert(await w.exportViewFile("log") === true, "exportViewFile resolves true once saved");
+  assert(downloads.length === 1 && downloads[0].name === "svc-message_1.log", "no picker -> download fallback, named <file stem>-<view>, got " + (downloads[0] && downloads[0].name));
+  const expLog = w.buildExportFileParts("log", w.collectExportContext()).join("");
+  assert(downloads[0].blob.size === Buffer.byteLength(expLog, "utf8"), "the downloaded blob is the whole .log content");
+  assert(d.querySelector("#copyToast").textContent === "Saved 3 entries", "a toast confirms the save, got " + d.querySelector("#copyToast").textContent);
+  T.state.activeId = f.id;
+  await w.exportViewFile("html");
+  assert(downloads[1].name === "svc.html", "active = the file itself -> just the file stem, got " + downloads[1].name);
+
+  const written = [];
+  let pickerOpts = null;
+  w.showSaveFilePicker = async opts => {
+    pickerOpts = opts;
+    return { createWritable: async () => ({ write: async b => written.push(b), close: async () => {} }) };
+  };
+  await w.exportViewFile("tsv");
+  assert(written.length === 1 && downloads.length === 2, "with a picker, the file is written through it (no download)");
+  assert(pickerOpts.suggestedName === "svc.tsv" && pickerOpts.types[0].accept["text/tab-separated-values"][0] === ".tsv", "picker gets the suggested name and type");
+  w.showSaveFilePicker = async () => { const e = new Error("cancel"); e.name = "AbortError"; throw e; };
+  assert(await w.exportViewFile("csv") === false && downloads.length === 2, "cancelling the picker saves nothing and does not fall back");
+  w.showSaveFilePicker = async () => { throw new Error("SecurityError"); };
+  await w.exportViewFile("csv");
+  assert(downloads.length === 3 && downloads[2].name === "svc.csv", "an unusable picker falls back to the download");
+});
+
+/* ============================================================
+   GROUP 283 — Export / Share: dialog, remembered format, shortcut
+   Origin: 2026-09-25 session (see GROUP 281). One entry point: #btnExport
+   in the top toolbar + rebindable Ctrl+Shift+E (exportView) opening
+   #exportDialog — flavor switch (remembered in philogg-export-format),
+   excerpt lines (philogg-export-excerpt-lines), live preview, Copy for
+   ticket (primary), four attachment buttons. Esc closes it.
+   ============================================================ */
+group(283);
+await withApp(async (w, d, T) => {
+  section("283a. Entry points and the empty case");
+  const dlg = d.querySelector("#exportDialog");
+  assert(!isVisible(dlg, w), "the dialog starts hidden");
+  fireClick(d.querySelector("#btnExport"), w);
+  assert(!isVisible(dlg, w) && d.querySelector("#copyToast").textContent === "Nothing to export", "nothing loaded -> toast, no dialog");
+
+  const f = await w.addFile("app.log", makeLog(0, 30), () => {});
+  const txt = w.createFilterNode(f.id, "text", "message 2");
+  T.state.activeId = txt.id;
+  w.render();
+  fireClick(d.querySelector("#btnExport"), w);
+  assert(isVisible(dlg, w), "#btnExport opens the dialog");
+  assert(d.querySelector("#exportViewLabel").textContent === "“message 2”", "title names the view");
+  assert(d.querySelector("#exportSummary").textContent === "11 of 30 entries · 2 steps · 0 bookmarks/notes",
+    "summary line, got " + d.querySelector("#exportSummary").textContent);
+  const ctx = w.collectExportContext();
+  assert(d.querySelector("#exportPreview").value === w.buildTicketSnippet(ctx, "markdown", 20), "preview = the Markdown snippet with the default 20 excerpt lines");
+  assert(d.querySelector('[data-export-format="markdown"]').classList.contains("active"), "Markdown is the default flavor");
+  fireKeydown(d, w, "Escape");
+  assert(!isVisible(dlg, w), "Esc closes the dialog");
+  fireKeydown(d, w, "E", { ctrlKey: true, shiftKey: true });
+  assert(isVisible(dlg, w), "Ctrl+Shift+E opens it");
+  assert(w.eval('SHORTCUT_ACTIONS.some(a => a.id === "exportView")'), "the shortcut is a rebindable Shortcut Manager action");
+
+  section("283b. Flavor + excerpt lines: live preview, remembered");
+  fireClick(d.querySelector('[data-export-format="jira"]'), w);
+  assert(d.querySelector("#exportPreview").value.startsWith("h3. ") && d.querySelector('[data-export-format="jira"]').classList.contains("active"),
+    "switching flavor re-renders the preview");
+  assert(w.localStorage.getItem("philogg-export-format") === "jira", "the flavor is remembered in localStorage");
+  const inp = d.querySelector("#exportExcerptInput");
+  inp.value = "2";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#exportPreview").value.includes("Excerpt (first 2 of 11"), "excerpt lines apply to the preview");
+  assert(w.localStorage.getItem("philogg-export-excerpt-lines") === "2", "excerpt lines are remembered");
+  inp.value = "99999";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(inp.value === "500", "excerpt lines are clamped to 500");
+  inp.value = "2";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  w.localStorage.setItem("philogg-export-format", "bogus");
+  w.loadExportPrefs();
+  assert(w.eval("exportFormat") === "markdown" && w.eval("exportExcerptLines") === 2, "an unknown stored flavor falls back to Markdown on load");
+  w.localStorage.setItem("philogg-export-format", "plain");
+  w.loadExportPrefs();
+  assert(w.eval("exportFormat") === "plain", "a stored flavor is picked up on load");
+  w.closeExportDialog();
+  w.openExportDialog();
+  assert(d.querySelector('[data-export-format="plain"]').classList.contains("active") && d.querySelector("#exportExcerptInput").value === "2",
+    "reopening shows the remembered flavor and excerpt lines");
+
+  section("283c. Copy for ticket + attachment buttons");
+  let copied = null;
+  w.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
+  fireClick(d.querySelector("#exportCopy"), w);
+  assert(copied === w.buildTicketSnippet(w.collectExportContext(), "plain", 2), "Copy for ticket writes the snippet (current flavor + excerpt) to the clipboard");
+  assert(/^Ticket snippet copied \(\d+ chars\)$/.test(d.querySelector("#copyToast").textContent), "a toast confirms the copy with its length");
+  assert(isVisible(dlg, w), "the dialog stays open after copying (attachments can follow)");
+  const downloads = [];
+  w.downloadBlobFallback = (blob, name) => downloads.push(name);
+  for (const kind of ["log", "csv", "tsv", "html"]) {
+    fireClick(d.querySelector('[data-export-file="' + kind + '"]'), w);
+    await waitFor(() => downloads.length && downloads[downloads.length - 1].endsWith("." + kind));
+  }
+  assert(JSON.stringify(downloads) === JSON.stringify(["app-message_2.log", "app-message_2.csv", "app-message_2.tsv", "app-message_2.html"]),
+    "each attachment button saves its file kind, got " + JSON.stringify(downloads));
+  fireClick(d.querySelector("#exportClose"), w);
+  assert(!isVisible(dlg, w), "Close closes the dialog");
 });
 
 /* ============================================================
@@ -29258,10 +29372,2548 @@ await withApp(async (w, d, T) => {
   const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
   vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
   sandboxSelf.onmessage({ data: { text: L.join("\n") + "\n", fmt: T.state.logFormats.find(f => f.id === "fmt-261h") } });
-  const wEntries = posted.filter(m => m.type === "chunk").flatMap(m => m.entries);
+  const wEntries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
   assert(wEntries.length === 3 && wEntries[1].message.endsWith("DirectInspect") && wEntries[0].message === "Refreshing test procedures list.",
     "the worker parser does the same, got " + JSON.stringify(wEntries.map(e => e.message)));
 });
+
+/* ============================================================
+   GROUP 262 — Tree connector lines with a highlighted active path
+   (person-requested, 2026-09-23, screenshot): the breadcrumb bar was
+   removed outright and the active filter chain is drawn in the tree
+   itself instead — decorateTreeGuides() adds .tree-guide segments (rails
+   at each parent's chevron x, an elbow into every child row, a stem below
+   an expanded parent) and marks the ones on the root -> active path .on.
+   ============================================================ */
+group(262);
+await withApp(async (w, d, T) => {
+  section("262. Tree connector lines highlight the path to the active node");
+
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const A = w.createFilterNode(f.id, "text", "message");
+  const A1 = w.createFilterNode(A.id, "text", "1");
+  const A2 = w.createFilterNode(A.id, "text", "2");
+  const B = w.createFilterNode(f.id, "text", "3");
+  const rowOf = n => d.querySelector('#tree .tree-row[data-node-id="' + n.id + '"]');
+  const guides = n => [...rowOf(n).querySelectorAll(":scope > .tree-guide")];
+  const on = n => guides(n).filter(g => g.classList.contains("on"));
+  // Elbows start 1px left of their rail (square corner), so match both.
+  const at = (n, x) => guides(n).filter(g => g.style.left === x + "px" || g.style.left === (x - 1) + "px");
+
+  assert(d.querySelector("#breadcrumbBar") === null && d.querySelector("#breadcrumb") === null, "the breadcrumb bar is removed");
+
+  T.state.activeId = A1.id;
+  w.render();
+  assert(guides(f).length === 1 && on(f).length === 1, "the root row gets one stem, highlighted since the active node is below it");
+  assert(on(A).length === 3 && on(A).some(g => g.classList.contains("h")), "A (on the path) highlights its upper link half, its elbow and its own stem, got " + on(A).length);
+  assert(at(A, 16).some(g => g.style.top === "50%" && !g.classList.contains("on")), "A's lower link half toward sibling B stays unhighlighted (the path turns into A)");
+  assert(on(A1).length === 2 && at(A1, 34).filter(g => g.classList.contains("on")).length === 2, "the active row itself highlights its upper link half and its elbow at its parent's x (34px)");
+  assert(at(A1, 16).length === 1 && !at(A1, 16)[0].classList.contains("on"), "A1 carries the root's pass-through rail (A has a later sibling), not highlighted");
+  assert(on(A2).length === 0 && on(B).length === 0, "rows off the path get no highlighted segment");
+  assert(at(A2, 34).length === 2, "the last child gets only an upper half + elbow (no line continues below it)");
+  assert(w.getComputedStyle(guides(f)[0]).pointerEvents === "none", "guides never intercept clicks on the row");
+  // Follow-up (person-reported): 1.5px filled boxes rendered at uneven
+  // thickness (pixel snapping of a fractional width) — lines are integer
+  // 2px borders now; and the multi-select outline no longer frames the
+  // active row, where it cut across the lines.
+  const vCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("v")));
+  const hCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h")));
+  assert(vCs.borderLeftWidth === "2px", "vertical guides are a 2px left border, got " + vCs.borderLeftWidth);
+  assert(hCs.borderTopWidth === "2px", "elbows are a 2px top border, got " + hCs.borderTopWidth);
+  // Follow-up 2 (person-reported): a base height:0 on .tree-guide beat the
+  // top:0/bottom:0 stretch, collapsing every rail, stem and lower half.
+  const rail = at(A1, 16)[0];
+  assert(rail.style.bottom === "0px" && w.getComputedStyle(rail).height !== "0px",
+    "a full-span rail has no fixed height, so top:0/bottom:0 can stretch it, got " + w.getComputedStyle(rail).height);
+  assert(w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h"))).height === "0px", "elbows are still zero-height (just their border)");
+  T.state.multiSelect = new Set([A1.id, A2.id]);
+  w.render();
+  assert(rowOf(A1).classList.contains("multi-selected") && w.getComputedStyle(rowOf(A1)).boxShadow === "none",
+    "the active row carries no multi-select outline, got " + w.getComputedStyle(rowOf(A1)).boxShadow);
+  assert(w.getComputedStyle(rowOf(A2)).boxShadow !== "none", "other multi-selected rows keep their outline");
+  T.state.multiSelect = new Set([A1.id]);
+
+  // Follow-up 3 (person-requested): the ancestors' names (file + parent
+  // filters) take the path accent too; the active row and off-path rows don't.
+  assert(rowOf(f).classList.contains("on-path") && rowOf(A).classList.contains("on-path"), "the file and parent filter rows are marked on-path");
+  assert(!rowOf(A1).classList.contains("on-path") && !rowOf(A2).classList.contains("on-path") && !rowOf(B).classList.contains("on-path"),
+    "neither the active row itself nor off-path rows are marked");
+  const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
+  assert(/\.tree-row\.on-path \.tree-label \*\{color:var\(--accent\) !important;\}/.test(css) && css.includes(".tree-row.on-path .tree-label,"),
+    "on-path labels (and a level node's inline-colored words inside them) use the accent color");
+
+  // Path through a later sibling: the root rail passes A's subtree highlighted.
+  T.state.activeId = B.id;
+  w.render();
+  assert(at(A1, 16).every(g => g.classList.contains("on")) && at(A2, 16).every(g => g.classList.contains("on")),
+    "with B active, the root rail running past A's children is highlighted");
+  assert(on(A).length === 2 && !on(A).some(g => g.classList.contains("h")), "A's vertical passes through highlighted but its elbow and stem are not");
+  assert(on(B).length === 2, "B highlights its upper half and elbow");
+
+  // A collapsed parent draws no stem and its children no guides at all.
+  A.collapsed = true;
+  w.render();
+  assert(rowOf(A1) === null && guides(A).length === 3, "collapsed A: no children rendered, A has no stem (top, bottom, elbow only)");
+
+  // The whole tree is redrawn per render, so no guide ever doubles up.
+  A.collapsed = false;
+  w.render(); w.render();
+  assert(guides(A1).length === 4, "re-rendering doesn't accumulate guides (rail + upper/lower half + elbow), got " + guides(A1).length);
+});
+
+/* ============================================================
+   GROUP 263 — Filter popup redesign (person-requested, 2026-09-23, from a
+   mockup screenshot; the app's own styling kept): no "Filter on:" header
+   with target-chain pills any more — an inline "in <parent>" hint inside
+   the input box instead (first 15 characters of the direct parent's name);
+   a Text/Regex segmented switch replaces the "Interpret input as regex"
+   pill; rows captioned and ordered Insert / Syntax (Text|Regex, Match
+   case, Whole word, Exclude (NOT)) / Search in; and a live result summary
+   (big count + "matches in N" + "captures: …", a match-over-time
+   histogram, up to three sample rows as a table with the hit marked).
+   The histogram uses the timeline minimap's level colors: per bin, the
+   highest-severity hit's level wins (follow-up, same day).
+   Follow-ups, same day (person-requested): only the exclusive Text/Regex
+   choice takes #fhTabs' segmented view-tab look; the independent on/off
+   options (Match case/Whole word/Exclude (NOT), each Search in column) are
+   standalone label-only .label-toggle items with the .icon-toggle status
+   bar (so a single-label toggle doesn't read as a button) — not boxed into
+   a shared control; the Insert chips, being actions, got the app's framed
+   button look.
+   ============================================================ */
+group(263);
+await withApp(async (w, d, T) => {
+  section("263. Filter popup: scope hint, Text/Regex switch, captioned rows, live result summary");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const longParent = w.createFilterNode(f.id, "text", "message 1"); // name “message 1” (11 chars)
+  const veryLong = w.createFilterNode(f.id, "text", "message"); // matches all 20
+  veryLong.name = "AVeryLongParentNodeName";
+  w.render();
+
+  // --- Scope hint: max 15 characters of the DIRECT parent's name ---
+  T.state.activeId = veryLong.id;
+  w.openFilterPopup();
+  const hint = d.querySelector("#filterScopeHint");
+  assert(hint.closest(".filter-input-wrap") && hint.closest(".filter-input-wrap").contains(d.querySelector("#filterInput")),
+    "the scope hint sits inside the input's box, next to the input");
+  assert(hint.textContent === "in AVeryLongParent…", "a long parent name is cut to its first 15 characters (+ ellipsis), got " + JSON.stringify(hint.textContent));
+  assert(hint.querySelector("b").textContent.replace("…", "").length === 15, "exactly 15 characters of the name are shown");
+  assert(hint.title.includes("AVeryLongParentNodeName"), "the full name is the tooltip");
+  w.closeFilterPopup();
+  T.state.activeId = longParent.id;
+  w.openFilterPopup();
+  assert(hint.textContent === "in " + longParent.name, "a short name is shown whole, only the direct parent (no chain), got " + hint.textContent);
+  assert(d.querySelector("#filterPopupLabel") === null && d.querySelector("#filterTargetChain") === null && d.querySelector(".crumb") === null,
+    "no 'Filter on' header / breadcrumb pills any more");
+  w.closeFilterPopup();
+
+  // --- Captioned rows, order and naming ---
+  const labels = [...d.querySelectorAll("#filterForm .filter-section-label")].map(l => l.textContent);
+  assert(JSON.stringify(labels) === JSON.stringify(["Insert", "Syntax", "Search in"]), "rows are captioned Insert / Syntax / Search in, in that order, got " + JSON.stringify(labels));
+  const syntaxRow = d.querySelector(".filter-settings-row");
+  const syntaxOrder = [...syntaxRow.querySelectorAll(".view-tab, .label-toggle")].map(x => x.textContent);
+  assert(JSON.stringify(syntaxOrder) === JSON.stringify(["Text", "Regex", "Match case", "Whole word", "Exclude (NOT)"]),
+    "the Syntax row reads Text | Regex, Match case, Whole word, Exclude (NOT), got " + JSON.stringify(syntaxOrder));
+  assert(d.querySelector("#filterRegexCheckbox") === null, "the old 'Interpret input as regex' pill is gone");
+
+  // --- Exclusive choice vs. independent on/off (follow-ups, same day) ---
+  const groups = [...d.querySelectorAll("#filterForm .view-tabs")];
+  assert(groups.length === 1 && groups[0].contains(d.querySelector("#filterSyntaxText")) && groups[0].contains(d.querySelector("#filterSyntaxRegex")) && groups[0].children.length === 2,
+    "only the exclusive Text/Regex choice is a segmented view-tabs group");
+  ["filterCaseCheckbox", "filterWholeWordCheckbox", "filterInvertCheckbox"].forEach(id => {
+    const t = d.getElementById(id);
+    assert(t.classList.contains("label-toggle") && !t.classList.contains("view-tab") && !t.classList.contains("pill-toggle") && !t.closest(".view-tabs"),
+      "#" + id + " is a standalone label-only toggle, not part of a shared segmented control");
+  });
+  assert(d.querySelector("#filterInvertCheckbox").classList.contains("label-toggle-danger"), "NOT keeps its red accent");
+  assert(!d.querySelector("#filterPopup label"), "no separate captions — each toggle is its own single label");
+  const css = d.querySelector("style").textContent;
+  assert(/\.label-toggle::after\{[^}]*height:2px/.test(css) && css.includes('.label-toggle.active::after, .label-toggle[aria-checked="true"]::after{background:var(--accent-strong);}'),
+    "single-label toggles carry the status bar (the .icon-toggle rule) so they don't read as buttons");
+  assert(/\.label-toggle\{[^}]*background:none; border:none/.test(css), "a label toggle has no button chrome at rest");
+  const tokenChip = d.querySelector(".token-chip");
+  assert(!tokenChip.classList.contains("view-tab") && !tokenChip.classList.contains("label-toggle"), "Insert chips are actions and keep a button look, not the toggle look");
+
+  // --- Text/Regex switch drives regex mode and round-trips through edit ---
+  T.state.activeId = f.id;
+  w.openFilterPopup();
+  const colChips = [...d.querySelectorAll("#filterColumnChipGroup .column-chip")];
+  assert(colChips.length > 0 && colChips.every(c => c.classList.contains("label-toggle") && !c.closest(".view-tabs") && c.getAttribute("aria-pressed") === "false"),
+    "Search in columns are standalone label-only toggles, same look as the option switches");
+  fireClick(colChips[0], w);
+  assert(colChips[0].classList.contains("active") && colChips[0].getAttribute("aria-pressed") === "true", "clicking a column toggles it on (.active + aria-pressed)");
+  fireClick(colChips[0], w);
+  const caseT = d.querySelector("#filterCaseCheckbox");
+  fireClick(caseT, w);
+  assert(pillChecked(caseT) && caseT.classList.contains("on"), "clicking the Match case label itself switches it on (pill-toggle state protocol)");
+  fireClick(caseT, w);
+  const input = d.querySelector("#filterInput");
+  const textBtn = d.querySelector("#filterSyntaxText"), regexBtn = d.querySelector("#filterSyntaxRegex");
+  assert(textBtn.classList.contains("active") && textBtn.getAttribute("aria-pressed") === "true" && !regexBtn.classList.contains("active"), "Text is active by default");
+  fireClick(regexBtn, w);
+  assert(regexBtn.classList.contains("active") && !textBtn.classList.contains("active") && regexBtn.getAttribute("aria-pressed") === "true", "clicking Regex switches the segmented control");
+  input.value = "message 1\\d";
+  fireInput(input, w);
+  fireSubmit(d.querySelector("#filterForm"), w);
+  const reNode = T.state.nodes[T.state.activeId];
+  assert(reNode.isRegex === true && w.getEntries(reNode.id).length === 10, "submitting in Regex mode creates a regex filter (message 10..19), got " + w.getEntries(reNode.id).length);
+  w.openEditFilterPopup(reNode.id);
+  assert(regexBtn.classList.contains("active"), "edit mode pre-selects Regex for a regex node");
+  w.closeFilterPopup();
+  T.state.activeId = f.id;
+  w.openFilterPopup();
+  assert(textBtn.classList.contains("active"), "a fresh popup resets to Text");
+
+  // --- Live result summary ---
+  assert(d.querySelector("#filterResults").classList.contains("hidden"), "no summary while the input is empty");
+  input.value = "message 1";
+  fireInput(input, w);
+  await sleep(200);
+  assert(!d.querySelector("#filterResults").classList.contains("hidden"), "the summary shows once something is typed");
+  assert(d.querySelector(".filter-live-count").textContent === "11", "big count = matches (message 1, 10..19), got " + d.querySelector(".filter-live-count").textContent);
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("11 matches in 20"), "meta line reads 'matches in <base rows>', got " + d.querySelector("#filterLiveMatch").textContent);
+  assert(!d.querySelector(".filter-live-captures"), "a plain text search has no captures line");
+  const rows = [...d.querySelectorAll("#filterResultsSamples .filter-sample-row")];
+  assert(rows.length === 3, "at most three sample rows, got " + rows.length);
+  assert(rows[0].querySelector(".filter-sample-time").textContent === "10:00:01.000", "sample time is HH:mm:ss.SSS, got " + rows[0].querySelector(".filter-sample-time").textContent);
+  assert(rows[0].querySelector(".filter-sample-hit").textContent === "message 1", "the hit is marked in the sample message");
+  assert(rows[0].querySelector(".col-bar") && rows[0].classList.contains("lvl-info"), "each sample row carries its level bar (lvl-* class + .col-bar)");
+  const bars = [...d.querySelectorAll("#filterResultsMinimap rect")];
+  assert(!d.querySelector("#filterResultsMinimap").classList.contains("hidden") && bars.length > 0, "the match histogram renders bars");
+  assert(bars.reduce((n, r) => n + Number(r.querySelector("title").textContent), 0) === 11, "histogram buckets add up to the match count");
+  // Level colors, like the timeline minimap: hits 1 and 11..19 are INFO,
+  // 10 and 15 ERROR (makeLog), each alone in its bucket here.
+  assert(bars.filter(r => r.classList.contains("minimap-lvl-error")).length === 2 && bars.filter(r => r.classList.contains("minimap-lvl-info")).length === 9,
+    "each histogram bar carries its level's minimap-lvl-* class, got " + bars.map(r => r.getAttribute("class")).join(","));
+
+  // NOT: kept rows, no hit to mark
+  fireClick(d.querySelector("#filterInvertCheckbox"), w);
+  await sleep(200);
+  assert(d.querySelector("#filterLiveMatch").textContent.includes("9 kept (NOT) in 20"), "NOT counts the kept rows, got " + d.querySelector("#filterLiveMatch").textContent);
+  assert(!d.querySelector(".filter-sample-hit"), "NOT samples have nothing to mark");
+  fireClick(d.querySelector("#filterInvertCheckbox"), w);
+
+  // Wildcard pattern: captures line
+  input.value = "message [*:int]";
+  fireInput(input, w);
+  await sleep(200);
+  assert(d.querySelector(".filter-live-captures").textContent === "captures: value (int)", "a wildcard pattern lists its captures, got " + (d.querySelector(".filter-live-captures") || {}).textContent);
+
+  // Highest level wins per bin: INFO, WARN and DEBUG hits sharing one
+  // timestamp land in one bucket, which is drawn WARN.
+  const binLines = [["INFO", "0"], ["WARN", "0"], ["DEBUG", "0"], ["DEBUG", "9"]].map(([lvl, sec], i) =>
+    `2024-01-15 10:00:0${sec},000\t${lvl}\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"hit ${i}"`);
+  const bf = await w.addFile("bins.log", binLines.join("\n") + "\n", () => {});
+  w.closeFilterPopup();
+  T.state.activeId = bf.id;
+  w.openFilterPopup();
+  input.value = "hit";
+  fireInput(input, w);
+  await sleep(200);
+  const binBars = [...d.querySelectorAll("#filterResultsMinimap rect")];
+  assert(binBars.length === 2 && binBars[0].getAttribute("class") === "minimap-lvl-warn" && binBars[0].querySelector("title").textContent === "3",
+    "a bin holding INFO+WARN+DEBUG hits is colored WARN (highest level wins), got " + binBars.map(r => r.getAttribute("class") + "/" + r.textContent).join(","));
+  assert(binBars[1].getAttribute("class") === "minimap-lvl-debug", "a DEBUG-only bin stays DEBUG");
+
+  // No hits: warn state, no histogram, no samples
+  input.value = "nothing matches this";
+  fireInput(input, w);
+  await sleep(200);
+  assert(d.querySelector(".filter-live-count").textContent === "0" && d.querySelector("#filterLiveMatch").className === "warn", "zero matches shows 0 in the warn state");
+  assert(d.querySelector("#filterResultsMinimap").classList.contains("hidden") && !d.querySelector(".filter-sample-row"), "no histogram / sample rows without hits");
+});
+
+/* ============================================================
+   GROUP 264 — Native (Rust) parsing under the desktop wrapper
+   (2026-09-24). window.philogg.parseLogFile parses a philogg://local/…
+   file in the Rust backend (desktop/src-tauri/logparse) from the spec
+   nativeFormatSpec builds here. tests/fixtures/native-parse-golden.json is
+   shared with that crate's own `cargo test`: this group pins the JS parser
+   to it, the crate pins the Rust parser to it — so the two can't drift
+   apart silently. Regenerate after a deliberate JS parsing change with
+   `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test`, then make the crate
+   pass again.
+   ============================================================ */
+group(264);
+{
+  const GOLDEN_PATH = path.join(__dirname, "fixtures", "native-parse-golden.json");
+  const golden = JSON.parse(fs.readFileSync(GOLDEN_PATH, "utf8"));
+  const UPDATE_GOLDEN = process.env.UPDATE_NATIVE_GOLDEN === "1";
+
+  // The wire shape Rust sends (logparse::Entry's Serialize), from a JS entry.
+  // ts: naive under TZ=UTC; null for NaN and for free-form dates (Date.parse
+  // stays on the JS side).
+  const toWire = (e, freeDate) => {
+    const o = { id: "", tsRaw: e.tsRaw, ts: freeDate || isNaN(e.ts) ? null : e.ts, level: e.level, thread: e.thread,
+      locationShort: e.locationShort, locationFull: e.locationFull, method: e.method, message: e.message, raw: e.raw,
+      fields: Object.assign({}, e.fields) };
+    if (e.msgOpenQuote) o.msgOpenQuote = e.msgOpenQuote;
+    return o;
+  };
+  const sansTs = o => JSON.stringify(Object.assign({}, o, { ts: 0 }));
+
+  async function registerFormat(w, T, fmt) {
+    if (fmt.builtin) return;
+    T.state.logFormats = T.state.logFormats.filter(f => f.id !== fmt.id).concat([JSON.parse(JSON.stringify(fmt))]);
+    w.invalidateFormatCompileCache();
+  }
+  async function caseText(w, c) {
+    if (!c.base64) return c.text;
+    const bytes = Buffer.from(c.base64, "base64");
+    return w.readFileWithProgress(new w.File([w.Uint8Array.from(bytes)], "x.log"), () => {});
+  }
+  async function jsParse(w, T, c) {
+    await registerFormat(w, T, c.format);
+    const node = w.createFileNode(c.name + ".log");
+    node.formatId = c.format.id;
+    await w.parseLogTextAsync(await caseText(w, c), node, () => {});
+    const entries = node.entries.slice();
+    w.deleteNode(node.id);
+    return entries;
+  }
+  // Each golden case encoded by the RUST side (logparse::batch, via its
+  // `cargo test`) — decoding these with the page's decodeNativeBatch is the
+  // cross-language check of the binary layout.
+  const batches = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-batch-golden.json"), "utf8"));
+  // A stand-in for inject.js's parseLogFile: a progress note, then the
+  // case's binary batch (fraction 0.5), the way commands.rs streams them;
+  // resolves { size }.
+  function nativeStub(bridge, caseName, size, opts = {}) {
+    bridge.calls = [];
+    bridge.parseLogFile = async (url, spec, onMessage) => {
+      bridge.calls.push({ url, spec });
+      await Promise.resolve();
+      if (opts.rejectBefore) throw new Error(opts.rejectBefore);
+      onMessage({ type: "progress", fraction: 0.2 });
+      const win = bridge.window;
+      onMessage(win.Uint8Array.from(Buffer.from(batches[caseName], "base64")).buffer);
+      if (opts.rejectAfter) throw new Error(opts.rejectAfter);
+      return { size };
+    };
+  }
+  function installFetch(w, text) {
+    w.fetchCalls = [];
+    w.fetch = async url => {
+      w.fetchCalls.push(String(url));
+      const buf = new w.TextEncoder().encode(text).buffer;
+      return { ok: true, status: 200, arrayBuffer: async () => buf, blob: async () => new w.Blob([text]) };
+    };
+  }
+
+  const bridge = { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) };
+
+  await withApp(async (w, d, T) => {
+    section("264a. nativeFormatSpec mirrors compileOneFormat; golden cases parse identically in JS");
+    if (UPDATE_GOLDEN) {
+      assert(new Date(2024, 0, 1).getTimezoneOffset() === 0 && new Date(2024, 6, 1).getTimezoneOffset() === 0,
+        "the golden file is regenerated under TZ=UTC (naive == local)");
+      for (const c of golden.cases) {
+        await registerFormat(w, T, c.format);
+        c.spec = w.nativeFormatSpec(c.format);
+        const freeDate = !c.spec.builtin && !c.spec.dateRegex;
+        c.entries = (await jsParse(w, T, c)).map(e => toWire(e, freeDate));
+      }
+      fs.writeFileSync(GOLDEN_PATH, JSON.stringify(golden, null, 1) + "\n");
+      console.log("  (rewrote " + GOLDEN_PATH + ")");
+    }
+
+    const def = w.nativeFormatSpec(T.state.logFormats.find(f => f.id === "fmt-default") || { builtin: true, edited: false });
+    assert(def.builtin === true && def.regex === null, "the unedited builtin default is the native HEADER_RE/parseHeaderLine port");
+    assert(w.nativeFormatSpec({ id: "m", mode: "meta", targetFormatIds: ["a", "b"] }) === null, "a meta-format is never parsed natively");
+    const pat = w.nativeFormatSpec({ id: "p", mode: "pattern", pattern: "%d %p %m", tsFormat: "HH:mm" });
+    assert(pat.regex === w.compileFormatPattern("%d %p %m", "HH:mm").regex.source && pat.dateRegex === "^(\\d{2}):(\\d{2})$" &&
+      JSON.stringify(pat.dateOrder) === '["HH","mm"]', "a pattern format hands over the regex source this page compiles, got " + JSON.stringify(pat));
+    const bad = w.nativeFormatSpec({ id: "r", mode: "regex", regex: "(" });
+    assert(bad.builtin === false && bad.regex === null, "a format that fails to compile is described as such (every line its own entry)");
+
+    const localize = w.makeNaiveTsLocalizer();
+    for (const c of golden.cases) {
+      await registerFormat(w, T, c.format);
+      const spec = w.nativeFormatSpec(c.format);
+      assert(JSON.stringify(spec) === JSON.stringify(c.spec), c.name + ": nativeFormatSpec matches the golden spec, got " + JSON.stringify(spec));
+      const freeDate = !spec.builtin && !spec.dateRegex;
+      const got = await jsParse(w, T, c);
+      assert(got.length === c.entries.length, c.name + ": JS parses " + c.entries.length + " entries, got " + got.length);
+      got.forEach((e, i) => {
+        const g = c.entries[i] || {};
+        assert(sansTs(toWire(e, freeDate)) === sansTs(g), c.name + " #" + i + ": JS entry matches golden, got " + sansTs(toWire(e, freeDate)));
+        const want = g.ts == null ? (freeDate && g.tsRaw ? w.parseTimestampGeneric(g.tsRaw, null) : NaN) : localize(g.ts);
+        assert(Object.is(e.ts, want), c.name + " #" + i + ": ts " + e.ts + " === localized golden " + want);
+      });
+    }
+  });
+
+  await withApp(async (w, d, T) => {
+    section("264b. Entries streamed by the native parser are adopted exactly like JS-parsed ones");
+    bridge.window = w;
+    assert(Object.keys(batches).length === golden.cases.filter(c => c.nativeSupported !== false).length,
+      "the Rust-encoded batch fixture covers every natively supported golden case");
+    for (const c of golden.cases.filter(c => c.nativeSupported !== false)) {
+      const jsEntries = await jsParse(w, T, c);
+      nativeStub(bridge, c.name, 99);
+      const node = w.createFileNode(c.name + "-native.log");
+      node.formatId = c.format.id;
+      const fractions = [];
+      const res = await w.parseLocalFileNatively("philogg://local/1/x.log", node, f => fractions.push(f));
+      assert(res.size === 99 && bridge.calls[0].url === "philogg://local/1/x.log" && JSON.stringify(bridge.calls[0].spec) === JSON.stringify(c.spec),
+        c.name + ": the bridge gets the url and the golden spec; resolves with the size");
+      assert(fractions.join(",") === "0.2,0.5", c.name + ": progress fractions pass through, got " + fractions.join(","));
+      assert(node.entries.length === jsEntries.length, c.name + ": same entry count as JS");
+      node.entries.forEach((e, i) => {
+        const j = jsEntries[i];
+        const keys = Object.keys(e).join(","), jkeys = Object.keys(j).join(",");
+        assert(keys === jkeys, c.name + " #" + i + ": same keys in the same order (one V8 shape), got " + keys + " vs " + jkeys);
+        const strip = x => JSON.stringify(Object.assign({}, x, { id: 0, ts: 0 }));
+        assert(strip(e) === strip(j) && Object.is(e.ts, j.ts), c.name + " #" + i + ": adopted entry equals the JS entry, got " + strip(e) + " ts " + e.ts + " vs " + j.ts);
+        assert(Object.keys(e.fields).length > 0 || e.fields === j.fields, c.name + " #" + i + ": no custom columns -> the shared EMPTY_ENTRY_FIELDS object");
+          });
+      assert(node.entries.every(e => /^e\d+$/.test(e.id) && e.formatId === c.format.id), c.name + ": page ids and formatId stamped");
+      w.deleteNode(node.id);
+    }
+
+    // A rejection after a batch already arrived rolls it back.
+    nativeStub(bridge, golden.cases[0].name, 5, { rejectAfter: "boom" });
+    const node = w.createFileNode("rollback.log");
+    let err = null;
+    try { await w.parseLocalFileNatively("philogg://local/2/r.log", node, () => {}); } catch (e) { err = e; }
+    assert(err && err.message === "boom" && node.entries.length === 0, "a failure mid-stream rejects and leaves node.entries empty again");
+  }, { philogg: bridge });
+
+  await withApp(async (w, d, T) => {
+    section("264c. Desktop load routes parse natively without fetching the file; fall back when refused");
+    const c = golden.cases.find(x => x.name === "builtin-crlf-trailing-newline");
+    installFetch(w, c.text);
+    bridge.window = w;
+
+    nativeStub(bridge, c.name, 4321);
+    await w.loadDesktopLocalFiles({ files: [{ name: "n.log", url: "philogg://local/7/n.log", path: "/tmp/n.log" }] });
+    let node = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "n.log");
+    assert(node && node.entries.length === c.entries.length, "a dropped/picked file lands with the native entries");
+    assert(bridge.calls.length === 1 && bridge.calls[0].spec.builtin === true, "...parsed natively under the builtin spec");
+    assert(!w.fetchCalls.some(u => u.endsWith("/n.log")), "...and its content was never fetched through philogg://local, got " + w.fetchCalls.join(","));
+    assert(node.tail && node.tail.offset === 4321 && node.localPath === "/tmp/n.log", "tailing resumes at the byte size Rust read; the path is kept");
+    assert(node.loadFraction === undefined, "the progress fill is cleared once loaded");
+
+    nativeStub(bridge, c.name, 1, { rejectBefore: "lookaround" });
+    await w.loadDesktopLocalFiles({ files: [{ name: "f.log", url: "philogg://local/8/f.log", path: "/tmp/f.log" }] });
+    node = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "f.log");
+    assert(node && node.entries.length === c.entries.length && w.fetchCalls.filter(u => u.endsWith("/f.log")).length === 1,
+      "a refused native parse falls back to fetch + the JS parser, got " + (node && node.entries.length) + " / " + w.fetchCalls.join(","));
+    assert(node.tail.offset === new w.TextEncoder().encode(c.text).byteLength, "...with the fetched byte length as the tail offset");
+
+    nativeStub(bridge, c.name, 777);
+    await w.loadUrlIntoTree("philogg://local/9/u.log");
+    node = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "u.log");
+    assert(node && node.entries.length === c.entries.length && !w.fetchCalls.some(u => u.endsWith("/u.log")) && node.tail.offset === 777,
+      "the file-association route (loadUrlIntoTree) parses natively too");
+
+    nativeStub(bridge, c.name, 1, { rejectBefore: "no" });
+    await w.loadUrlIntoTree("philogg://local/10/v.log");
+    const vs = T.state.rootIds.map(id => T.state.nodes[id]).filter(n => n.name === "v.log");
+    assert(vs.length === 1 && vs[0].entries.length === c.entries.length && w.fetchCalls.filter(u => u.endsWith("/v.log")).length === 1,
+      "...and falls back into the same node (no leftover empty row)");
+
+    // A meta-format is split in JS — never handed to the native parser.
+    T.state.logFormats.push({ id: "t1", name: "t1", mode: "regex", regex: "^(?<ts>\\d+) (?<message>.*)$", tsFormat: "" },
+      { id: "t2", name: "t2", mode: "regex", regex: "^<(?<message>.*)>$", tsFormat: "" },
+      { id: "meta1", name: "meta", mode: "meta", targetFormatIds: ["t1", "t2"] });
+    T.state.formatRules.push({ glob: "*.meta.log", formatId: "meta1", order: -1 });
+    w.invalidateFormatCompileCache(); w.invalidateGlobCompileCache();
+    installFetch(w, "1 a\n<b>\n2 c\n");
+    nativeStub(bridge, c.name, 1);
+    await w.loadUrlIntoTree("philogg://local/11/m.meta.log");
+    // (the other files opened above are tailing, and their polls fetch too)
+    const metaFetches = w.fetchCalls.filter(u => u.endsWith("/m.meta.log")).length;
+    assert(bridge.calls.length === 0 && metaFetches === 1, "a meta-format file goes through fetch + the JS split, got " + bridge.calls.length + "/" + metaFetches);
+  }, { philogg: bridge });
+
+  const crlfCase = golden.cases.find(x => x.name === "builtin-crlf-trailing-newline");
+  const dirsN = { "/logs": { "a.log": crlfCase.text } };
+  const folderBridge = nativeFolderBridge(dirsN);
+  folderBridge.picked = { path: "/logs", name: "logs" };
+  await withApp(async (w, d, T) => {
+    section("264d. A natively listed folder file is parsed natively too");
+    folderBridge.installFetch(w);
+    folderBridge.window = w;
+    let fetched = 0;
+    const realFetch = w.fetch;
+    w.fetch = async url => { fetched++; return realFetch(url); };
+    nativeStub(folderBridge, crlfCase.name, 555);
+    await w.openFolderPickerFlow();
+    const folder = T.state.folders[0];
+    const rec = folder.files.find(f => f.name === "a.log");
+    await w.loadFolderFile(folder, rec);
+    const node = T.state.nodes[rec.nodeId];
+    assert(node && node.entries.length === crlfCase.entries.length && fetched === 0 && node.tail.offset === 555 && node.localPath === "/logs/a.log",
+      "loadFolderFile hands the listed file to the native parser, no fetch, got " + (node && node.entries.length) + "/" + fetched);
+
+    nativeStub(folderBridge, crlfCase.name, 1, { rejectBefore: "gone" });
+    const rec2 = { name: "missing.log", handle: w.urlTailHandle("philogg://local/404/missing.log", "/logs/missing.log") };
+    await w.loadFolderFile(folder, rec2);
+    assert(!rec2.nodeId && d.querySelector("#copyToast").textContent.includes("moved or deleted"),
+      "a file that can't be read either way gets the usual \"moved or deleted\" notice");
+    const localize = w.makeNaiveTsLocalizer();
+    assert(node.entries[0].ts === localize(crlfCase.entries[0].ts), "sanity: timestamps localized");
+  }, { philogg: folderBridge });
+
+  if (groupSelected()) {
+    section("264e. makeNaiveTsLocalizer === new Date(y, mo, d, h, mi, s, ms) across DST gaps and overlaps");
+    const saved = process.env.TZ;
+    for (const tz of ["Europe/Berlin", "America/New_York", "Australia/Lord_Howe", "Asia/Kolkata", "UTC"]) {
+      process.env.TZ = tz;
+      const localize = (new Function("return " + PAGE_SCRIPT_MATCH[1].match(/function makeNaiveTsLocalizer\(\) \{[\s\S]*?\n\}/)[0]))()();
+      let mismatches = 0, n = 0;
+      for (const [y, mo] of [[2024, 2], [2024, 9], [2024, 3], [1999, 0], [2023, 9]]) {
+        for (let d = 1; d <= 31; d += 3) for (let h = 0; h < 24; h++) for (const mi of [0, 15, 30, 59]) {
+          const ms = (h * 7 + mi) % 1000;
+          const want = new Date(y, mo, d, h, mi, 13, ms).getTime();
+          const got = localize(Date.UTC(y, mo, d, h, mi, 13, ms));
+          n++;
+          if (want !== got) mismatches++;
+        }
+      }
+      assert(mismatches === 0, tz + ": " + n + " wall times convert like the Date constructor, " + mismatches + " mismatches");
+    }
+    process.env.TZ = saved === undefined ? "" : saved;
+    if (saved === undefined) delete process.env.TZ;
+  }
+}
+
+/* ============================================================
+   GROUP 265 — One render per loaded file; per-pass level memo
+   (2026-09-24). loadOneFileIntoTree no longer renders itself (it used to
+   flushLoadRender() and then its caller rendered again — two full renders
+   per file, each hundreds of ms on a large one): the caller renders once,
+   after the tail/history setup. The O(n) level loops (minimap overlay,
+   level counts, level filters) resolve each (format, level) pair once per
+   pass via makeLevelBucketer instead of per entry.
+   ============================================================ */
+group(265);
+{
+  // Counts render() calls that happen once the file named `name` holds all
+  // `count` of its entries — i.e. renders of the finished load.
+  function countFinishedRenders(w, T, name, count) {
+    const orig = w.render;
+    const counter = { n: 0, restore() { w.render = orig; } };
+    w.render = function () {
+      const done = T.state.rootIds.map(id => T.state.nodes[id]).some(n => n && n.name === name && n.entries.length === count);
+      if (done) counter.n++;
+      return orig.apply(this, arguments);
+    };
+    return counter;
+  }
+
+  await withApp(async (w, d, T) => {
+    section("265a. A dropped/picked file renders exactly once after it's loaded");
+    const c1 = countFinishedRenders(w, T, "one.log", 30);
+    await w.loadFiles([new w.File([makeLog(0, 30)], "one.log")]);
+    c1.restore();
+    const one = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "one.log");
+    assert(one && one.entries.length === 30 && T.state.activeId === one.id, "sanity: the file loaded and is active");
+    assert(c1.n === 1, "one render once the file is loaded, got " + c1.n);
+    assert(d.querySelector('.tree-row[data-node-id="' + one.id + '"] .tree-load-fill') === null ||
+      !d.querySelector('.tree-row[data-node-id="' + one.id + '"]').classList.contains("loading"),
+      "...and that render shows it as loaded");
+    assert(Number(d.querySelector('.tree-row[data-node-id="' + one.id + '"] .tree-count').textContent.replace(/\D/g, "")) === 30,
+      "...with its entry count");
+
+    // A two-file batch (merge declined): each file still shows up as soon
+    // as it's done; a failing third one still gets its placeholder removed.
+    const p = w.loadFileDescriptors([
+      { file: new w.File([makeLog(0, 5)], "a.log"), handle: null },
+      { file: new w.File([makeLog(100, 7)], "b.log"), handle: null },
+      { name: "broken.log", openFile: async () => { throw new Error("gone"); }, handle: null },
+    ]);
+    await waitFor(() => !d.querySelector("#mergeLoadDialog").classList.contains("hidden"));
+    fireClick(d.querySelector("#mergeLoadDialogNo"), w);
+    await p;
+    const names = T.state.rootIds.map(id => T.state.nodes[id]).map(n => n.name);
+    assert(names.includes("a.log") && names.includes("b.log") && !names.includes("broken.log"), "batch: both good files loaded, the broken one's placeholder is gone, got " + names.join(","));
+    assert(!d.querySelector(".tree-row.queued") && [...d.querySelectorAll(".tree-row")].every(r => !/broken\.log/.test(r.textContent)),
+      "...and the rendered tree agrees (no stale placeholder row)");
+  });
+
+  const bridge = { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]) };
+  const golden = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-parse-golden.json"), "utf8"));
+  const batches = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-batch-golden.json"), "utf8"));
+  const crlf = golden.cases.find(c => c.name === "builtin-crlf-trailing-newline");
+  await withApp(async (w, d, T) => {
+    section("265b. The desktop routes (drop, file association) render once too");
+    bridge.parseLogFile = async (url, spec, onMessage) => {
+      onMessage(w.Uint8Array.from(Buffer.from(batches[crlf.name], "base64")).buffer);
+      return { size: 10 };
+    };
+    w.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0) });
+    let c = countFinishedRenders(w, T, "d.log", crlf.entries.length);
+    await w.loadDesktopLocalFiles({ files: [{ name: "d.log", url: "philogg://local/1/d.log", path: "/x/d.log" }] });
+    c.restore();
+    assert(c.n === 1, "drop/dialog route: one render once loaded, got " + c.n);
+    c = countFinishedRenders(w, T, "u.log", crlf.entries.length);
+    await w.loadUrlIntoTree("philogg://local/2/u.log");
+    c.restore();
+    assert(c.n === 1, "file-association route: one render once loaded, got " + c.n);
+    const u = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "u.log");
+    assert(u && u.tail && u.loadFraction === undefined, "...with the tail already in place when it renders");
+  }, { philogg: bridge });
+
+  await withApp(async (w, d, T) => {
+    section("265c. makeLevelBucketer === levelBucket; memoized minimap overlay unchanged");
+    T.state.logFormats.push({ id: "sev", name: "sev", mode: "regex", regex: "^(?<level>\\d) (?<message>.*)$", tsFormat: "",
+      levelValueType: "int", levels: [{ value: "3", name: "ERROR", color: null }, { value: "6", name: "NOTICE", color: "#123456" }] },
+      { id: "cust", name: "cust", mode: "regex", regex: "^(?<level>\\S+) (?<message>.*)$", tsFormat: "", levels: ["FATAL", "ERROR", "NOTICE", "INFO"] });
+    w.invalidateFormatCompileCache();
+    const bucketOf = w.makeLevelBucketer();
+    const cases = [];
+    for (const fid of ["fmt-default", "sev", "cust", undefined]) {
+      for (const lvl of ["ERROR", "error", " Warn ", "WARNING", "INFO", "debug", "TRACE", "FATAL", "NOTICE", "3", "6", "7", "", null, undefined, "weird"]) {
+        cases.push([lvl, fid]);
+      }
+    }
+    // twice, so the second round is served from the memo
+    const mismatches = cases.concat(cases).filter(([l, f]) => bucketOf(l, f) !== w.levelBucket(l, f));
+    assert(mismatches.length === 0, "memoized buckets equal levelBucket for every (level, format), mismatches: " + JSON.stringify(mismatches));
+
+    const f = await w.addFile("lv.log", makeLog(0, 200, { levels: ["INFO", "ERROR", "DEBUG", "WARN", "TRACE"] }));
+    T.state.activeId = f.id;
+    w.render();
+    const ov = [...d.querySelectorAll("#timelineMinimap .minimap-ov-bar")].map(r => r.getAttribute("class"));
+    // The same overlay, computed the old way (levelBucket per entry).
+    const counts = w.getLevelCounts(f.id);
+    assert(counts.ERROR === 40 && counts.INFO === 40 && counts.TRACE === 40, "level counts through the memo, got " + JSON.stringify(counts));
+    assert(ov.length > 0 && ov.every(c => /minimap-lvl-(error|warn|info|debug|trace)/.test(c)), "overlay bars carry level classes");
+    // Every entry's level still reaches levelBucket — but only once per
+    // distinct (format, level) pair per pass, not once per entry.
+    const orig = w.levelBucket;
+    let calls = 0;
+    w.levelBucket = function () { calls++; return orig.apply(this, arguments); };
+    f._levelCounts = null;
+    w.invalidateCachesForRoots([f.id]);
+    w.render();
+    w.levelBucket = orig;
+    // The visible rows still call it once each (levelClass, O(rows on
+    // screen)); per-entry passes over all 200 (minimap + counts) would be
+    // 400 more.
+    assert(calls > 0 && calls < 150, "a full render of 200 entries resolves levels per distinct pair, not per entry: " + calls + " levelBucket calls");
+    const ov2 = [...d.querySelectorAll("#timelineMinimap .minimap-ov-bar")].map(r => r.getAttribute("class"));
+    assert(JSON.stringify(ov2) === JSON.stringify(ov), "the overlay is identical across renders");
+  });
+}
+
+/* ============================================================
+   GROUP 266 — Log view scrolling (2026-09-24, measured in headless
+   Chromium on a 650k-entry file): (a) detectMaxTableScrollPx read
+   Chromium's exponent serialization of a computed height ("2e+07px") with
+   parseInt, so the cap came out 950,000px and every view above ~34k rows
+   was scroll-compressed (650k rows ~19x: one wheel notch moved ~68 rows,
+   every render snapped the content); (b) the 100ms scroll-render throttle
+   became one render per frame with a cost-based backoff; (c) a scroll
+   render keeps the rows still in its window and builds only the new ones,
+   with a one-screen overscan.
+   ============================================================ */
+group(266);
+{
+  // Stand-ins for how an engine reports a probe element's computed height:
+  // Chromium clamps at 33,554,428px and prints 6 significant digits in
+  // exponent form from 1e6px up; Firefox drops an oversized declaration
+  // (height:auto -> 0px for the empty probe).
+  const chromiumHeight = h => {
+    const used = Math.min(h, 33554428);
+    if (used < 1e6) return used + "px";
+    return used.toPrecision(6).replace(/\.?0+e/, "e").replace(/e\+(\d)$/, "e+0$1") + "px";
+  };
+  const firefoxHeight = h => (h > 17895697 ? 0 : h) + "px";
+  async function probeWith(w, T, fmt) {
+    const real = w.getComputedStyle;
+    w.getComputedStyle = function (elm) {
+      const h = parseFloat(elm.style && elm.style.height);
+      if (!(h >= 1e6)) return real.apply(this, arguments);
+      return { height: fmt(h) };
+    };
+    try {
+      T.resetTableScrollCap();
+      return T.detectMaxTableScrollPx();
+    } finally {
+      w.getComputedStyle = real;
+    }
+  }
+
+  await withApp(async (w, d, T) => {
+    section("266a. detectMaxTableScrollPx reads Chromium's exponent-form computed heights (was: 950,000px cap, compressing every view above ~34k rows)");
+    assert(chromiumHeight(20000000) === "2e+07px" && chromiumHeight(40000000) === "3.35544e+07px", "sanity: the stand-in prints what Chromium prints");
+    const cap = await probeWith(w, T, chromiumHeight);
+    assert(cap > 0.94 * 33554428 && cap <= 33554428, "Chromium: cap is ~95% of its real 33,554,428px ceiling, got " + cap);
+    assert(650000 * T.ROW_HEIGHT < cap, "a 650k-row file fits uncompressed under that cap");
+
+    const ffCap = await probeWith(w, T, firefoxHeight);
+    assert(ffCap > 0.94 * 17895697 && ffCap <= 17895697, "Firefox (declaration dropped above its ceiling): cap is ~95% of it, got " + ffCap);
+
+    // End to end: 40k rows (1.12M px) is past the old 950,000px cap.
+    await probeWith(w, T, chromiumHeight);
+    const f = await w.addFile("a.log", makeLog(0, 40000), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    assert(T.tableScrollHeightScale === 1, "a 40k-row view is not compressed any more, scale " + T.tableScrollHeightScale);
+    assert(parseInt(d.querySelector("#tableSpacer").style.height, 10) === 40000 * T.ROW_HEIGHT + T.TABLE_SPACER_PAD, "the spacer has the true content height");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("266b. Scroll renders run every frame, not every 100ms; an expensive render backs off");
+    const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    const tableBody = d.querySelector("#tableBody");
+    const orig = w.renderVisibleRows;
+    let calls = 0, lastArg;
+    w.renderVisibleRows = function (reuse) { calls++; lastArg = reuse; return orig.apply(this, arguments); };
+
+    // Three scroll events 50ms apart: each renders before the next arrives.
+    // The old throttle held the 2nd and 3rd until ~100ms after the 1st.
+    for (let i = 1; i <= 3; i++) {
+      tableBody.scrollTop = T.ROW_HEIGHT * 20 * i;
+      tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+      await sleep(50);
+      assert(calls === i, "scroll event " + i + " rendered within 50ms (" + calls + " renders)");
+    }
+    assert(lastArg === true, "the scroll listener asks renderVisibleRows to reuse rows");
+
+    // A render costing 30ms (> SCROLL_RENDER_BUDGET_MS) holds the next one
+    // off for 3x its cost; per-frame rendering would manage ~8 in 300ms.
+    w.renderVisibleRows = function () {
+      calls++;
+      const until = Date.now() + 30;
+      while (Date.now() < until) { /* an expensive render */ }
+      return orig.apply(this, arguments);
+    };
+    calls = 0;
+    const t0 = Date.now();
+    let top = T.ROW_HEIGHT * 100;
+    while (Date.now() - t0 < 300) {
+      top += T.ROW_HEIGHT;
+      tableBody.scrollTop = top;
+      tableBody.dispatchEvent(new w.Event("scroll", { bubbles: true }));
+      await sleep(8);
+    }
+    const inBurst = calls;
+    assert(inBurst >= 1 && inBurst <= 4, "expensive renders back off during the burst: " + inBurst + " renders in 300ms");
+    await waitFor(() => d.querySelector('#tableRows [data-entry-id="' + f.entries[Math.floor(top / T.ROW_HEIGHT)].id + '"]'), { timeout: 1000 });
+    assert(d.querySelector('#tableRows [data-entry-id="' + f.entries[Math.floor(top / T.ROW_HEIGHT)].id + '"]'), "the pending render still lands and shows the final position");
+    w.renderVisibleRows = orig;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("266c. A scroll render keeps the rows still in its window, builds only the new ones, and matches a full rebuild");
+    const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    const tableBody = d.querySelector("#tableBody");
+    const rows = () => [...d.querySelectorAll("#tableRows > *")];
+    const ids = () => rows().map(r => r.dataset.entryId);
+    const rowOf = i => d.querySelector('#tableRows [data-entry-id="' + f.entries[i].id + '"]');
+    const expectIds = (from, to) => f.entries.slice(from, to).map(e => e.id);
+    const screenRows = Math.ceil(400 / T.ROW_HEIGHT); // clientHeight is stubbed to 400
+
+    // A jump past the previous window: nothing to reuse -> small full rebuild.
+    tableBody.scrollTop = T.ROW_HEIGHT * 500;
+    w.renderVisibleRows(true);
+    assert(JSON.stringify(ids()) === JSON.stringify(expectIds(500 - T.BUFFER_ROWS, 500 + screenRows + T.BUFFER_ROWS)), "a jump renders the BUFFER_ROWS window");
+    const kept = rowOf(505);
+
+    // Five rows further: reuse, with a one-screen overscan on each side.
+    tableBody.scrollTop = T.ROW_HEIGHT * 505;
+    w.renderVisibleRows(true);
+    const lo = 505 - screenRows, hi = lo + screenRows * 3;
+    assert(JSON.stringify(ids()) === JSON.stringify(expectIds(lo, hi)), "the window widens to a screen of overscan per side, rows in order");
+    assert(rowOf(505) === kept, "a row still in the window is the SAME element, not rebuilt");
+    assert(parseFloat(d.querySelector("#tableRows").style.top) === lo * T.ROW_HEIGHT, "#tableRows moved to the new window's top");
+
+    // Back up past the old top: rows are prepended, the bottom trimmed.
+    tableBody.scrollTop = T.ROW_HEIGHT * 480;
+    w.renderVisibleRows(true);
+    assert(JSON.stringify(ids()) === JSON.stringify(expectIds(480 - screenRows, 480 + screenRows * 2)), "scrolling up prepends and trims, rows in order");
+    assert(rowOf(505) === kept, "...and keeps the rows that are still in range");
+    const reusedHtml = new Map(rows().map(r => [r.dataset.entryId, r.outerHTML]));
+
+    // Any other caller rebuilds everything, and its rows look the same.
+    w.renderVisibleRows();
+    assert(rowOf(485) && rowOf(485) !== kept, "a plain renderVisibleRows() rebuilds every row");
+    const mismatch = rows().filter(r => reusedHtml.get(r.dataset.entryId) !== r.outerHTML).map(r => r.dataset.entryId);
+    assert(mismatch.length === 0, "reused/incrementally built rows are identical to a full rebuild's: mismatches " + mismatch.join(","));
+
+    // A new list (any render()) is never reused from.
+    tableBody.scrollTop = T.ROW_HEIGHT * 482;
+    w.renderVisibleRows(true);
+    const before = rowOf(485);
+    T.state.levelFilter = new Set(["INFO"]);
+    w.render();
+    tableBody.scrollTop = T.ROW_HEIGHT * 10;
+    w.renderVisibleRows(true);
+    assert(rows().every(r => T.currentViewEntries.some(e => e.id === r.dataset.entryId)), "after the list changed, only rows of the new list are shown");
+    assert(rowOf(485) !== before, "no row element survives from the old list");
+    T.state.levelFilter = new Set();
+    w.render();
+
+    // Rows cleared behind its back (the no-files path empties #tableRows):
+    // not reused either.
+    tableBody.scrollTop = T.ROW_HEIGHT * 300;
+    w.renderVisibleRows();
+    d.querySelector("#tableRows").innerHTML = "";
+    tableBody.scrollTop = T.ROW_HEIGHT * 302;
+    w.renderVisibleRows(true);
+    assert(rowOf(302) && ids().length > screenRows, "rows removed by someone else are rebuilt, not assumed present");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("266d. Row reuse keeps a note row with its entry, and drops both together");
+    const f = await w.addFile("a.log", makeLog(0, 2000), () => {});
+    T.state.activeId = f.id;
+    T.state.notes.set(f.entries[500].id, "note on 500");
+    T.state.notes.set(f.entries[515].id, "note on 515");
+    T.state.showNotes = true;
+    w.render();
+    const tableBody = d.querySelector("#tableBody");
+    const noteRows = () => [...d.querySelectorAll("#tableRows > .note-row")];
+    const pairedWithEntry = () => noteRows().every(n => n.previousElementSibling && n.previousElementSibling.classList.contains("log-row") &&
+      n.previousElementSibling.dataset.entryId === n.dataset.entryId);
+
+    w.scrollToIndex(505);
+    w.renderVisibleRows();
+    tableBody.scrollTop = tableBody.scrollTop + T.ROW_HEIGHT * 3;
+    w.renderVisibleRows(true);
+    assert(noteRows().length === 2 && pairedWithEntry(), "both notes rendered, each right after its entry's row");
+    for (let k = 0; k < 6; k++) {
+      tableBody.scrollTop = tableBody.scrollTop + T.ROW_HEIGHT * 8;
+      w.renderVisibleRows(true);
+      assert(pairedWithEntry(), "step " + k + ": no orphaned or misplaced note row");
+    }
+    assert(!d.querySelector('#tableRows [data-entry-id="' + f.entries[500].id + '"]'), "500 scrolled out of the window...");
+    assert(noteRows().every(n => n.dataset.entryId !== f.entries[500].id), "...and took its note row with it");
+  });
+}
+
+/* ============================================================
+   GROUP 267 — Session cache off the load path
+   Origin: 2026-09-24, load/filter performance session. A file loaded from
+   a File is cached as that File (a Blob — IndexedDB copies it off the JS
+   thread) instead of rebuildFileText's ~100 MB string; a desktop file with
+   a known path is cached as the path alone and re-read from disk on
+   restore (person-decided: a file gone since is not restored); every
+   remaining text record is written when idle, never before the load's
+   render.
+   ============================================================ */
+group(267);
+{
+  const logText = makeLog(0, 20);
+  const factory = new IDBFactory();
+  let savedRaws = null;
+  await withApp(async (w, d, T) => {
+    section("267a. A File load caches the File itself (no rebuilt text), restore parses it back identically");
+    await T.bootRestore;
+    let rebuilds = 0;
+    const origRebuild = w.rebuildFileText;
+    w.rebuildFileText = function () { rebuilds++; return origRebuild.apply(this, arguments); };
+    await w.loadFiles([new w.File([logText], "blob.log", { type: "text/plain" })]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.entries.length === 20, "file loaded");
+    assert(!!f._cacheBlob, "the node keeps the File it was loaded from as its cache source");
+    const rec = await waitFor(() => w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey)));
+    assert(rec && rec.blob && rec.text === null, "the cache record carries the blob and no text");
+    assert(rec && rec.blob && typeof rec.blob.text === "function" && (await rec.blob.text()) === logText, "the stored blob is the original file content");
+    assert(rebuilds === 0, "no rebuildFileText on the load path (" + rebuilds + ")");
+    savedRaws = f.entries.map(e => e.raw);
+    await w.persistMetaNow();
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    await T.bootRestore;
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.name === "blob.log", "restore: the blob record came back");
+    assert(f && JSON.stringify(f.entries.map(e => e.raw)) === JSON.stringify(savedRaws), "restore: entries parsed from the blob are identical");
+    assert(f && !!f._cacheBlob, "restore: the restored node keeps the blob, so its next write stays cheap");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("267b. A text record (merge, meta-format, ZIP, tail) is written when idle, not synchronously");
+    await T.bootRestore;
+    const f = await w.addFile("text.log", logText, () => {});
+    let rebuilds = 0;
+    const origRebuild = w.rebuildFileText;
+    w.rebuildFileText = function () { rebuilds++; return origRebuild.apply(this, arguments); };
+    const p = w.persistFileNode(f);
+    for (let i = 0; i < 10; i++) await Promise.resolve();
+    assert(rebuilds === 0, "the text is not built within the current task (" + rebuilds + ")");
+    await p;
+    assert(rebuilds === 1, "awaiting persistFileNode still means written (" + rebuilds + ")");
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey));
+    assert(rec && rec.text === logText.trimEnd() && !rec.blob, "the deferred write stored the rebuilt text");
+    // Two requests before idle coalesce into one write.
+    const p1 = w.persistFileNode(f), p2 = w.persistFileNode(f);
+    await Promise.all([p1, p2]);
+    assert(rebuilds === 2, "one write for both (" + rebuilds + ")");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("267c. A tail append or rotation drops the File as cache source — the next write is text again");
+    await T.bootRestore;
+    await w.loadFiles([new w.File([logText], "tail.log", { type: "text/plain" })]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && !!f._cacheBlob, "loaded from a File: blob source");
+    f.tail = { handle: w.urlTailHandle("philogg://local/1/tail.log"), offset: logText.length, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
+    w.appendTailText(f, makeLog(100, 1));
+    w.onTailChange([f.id]);
+    assert(!f._cacheBlob, "grown: the File no longer matches the entries");
+    await w.persistFileNode(f);
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey));
+    assert(rec && !rec.blob && typeof rec.text === "string" && rec.text.split("\n").length === 21, "the record is the rebuilt text incl. the appended entry");
+  }, { indexedDB: new IDBFactory() });
+
+  // Desktop: a stub bridge whose openLocalPath knows which paths still exist.
+  const onDisk = { "/logs/app.log": logText, "/logs/gone.log": makeLog(0, 3) };
+  let nextId = 1;
+  const bridge = () => ({
+    openLocalPath: async p => {
+      if (!(p in onDisk)) throw new Error('"' + p + '" no longer exists');
+      const name = p.split("/").pop();
+      return { url: "philogg://local/" + (nextId++) + "/" + name, path: p, name };
+    },
+  });
+  const deskFactory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("267d. Desktop (person's choice: path only): a file with a known path is cached as its path and re-read from disk on restore");
+    await T.bootRestore;
+    let rebuilds = 0;
+    const origRebuild = w.rebuildFileText;
+    w.rebuildFileText = function () { rebuilds++; return origRebuild.apply(this, arguments); };
+    const a = await w.addFile("app.log", onDisk["/logs/app.log"], () => {});
+    a.localPath = "/logs/app.log"; a.sourceUrl = "philogg://local/99/app.log";
+    const g = await w.addFile("gone.log", onDisk["/logs/gone.log"], () => {});
+    g.localPath = "/logs/gone.log";
+    await w.persistFileNode(a);
+    await w.persistFileNode(g);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(a.cacheKey));
+    assert(rec && rec.text === null && rec.blob === null && rec.localPath === "/logs/app.log", "the record holds the path, no content");
+    assert(rebuilds === 0, "no text built for it (" + rebuilds + ")");
+  }, { indexedDB: deskFactory, philogg: bridge() });
+
+  // Meanwhile on disk: app.log grew by 2 entries, gone.log was deleted.
+  onDisk["/logs/app.log"] = logText + makeLog(100, 2);
+  delete onDisk["/logs/gone.log"];
+  await withApp(async (w, d, T) => {
+    const fetched = [];
+    w.fetch = async u => {
+      fetched.push(u);
+      const text = onDisk["/logs/" + String(u).split("/").pop()];
+      return { ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(text).buffer };
+    };
+    await T.bootRestore;
+    const roots = T.state.rootIds.map(id => T.state.nodes[id]);
+    assert(roots.length === 1 && roots[0].name === "app.log", "restore: the file that still exists came back, the deleted one is dropped (" + roots.map(n => n.name) + ")");
+    const f = roots[0];
+    assert(f && f.entries.length === 22, "restore: re-read from disk — the 2 entries written since are there (" + (f && f.entries.length) + ")");
+    assert(f && /^philogg:\/\/local\/\d+\/app\.log$/.test(f.sourceUrl) && f.sourceUrl !== "philogg://local/99/app.log", "restore: this run's own URL replaces the stored one");
+    assert(f && f.localPath === "/logs/app.log", "restore: localPath kept");
+    assert(f && f.tail && f.tail.offset === new w.TextEncoder().encode(onDisk["/logs/app.log"]).length && w.isUrlTailHandle(f.tail.handle),
+      "restore: tailing resumes from the bytes just read");
+    assert(!d.querySelector(".tree-row.queued"), "restore: no queued placeholder left behind");
+  }, { indexedDB: deskFactory, philogg: bridge() });
+}
+
+/* ============================================================
+   GROUP 268 — Parallel JS parsing with a binary worker transport
+   Origin: 2026-09-24, load/filter performance session. parseLogTextAsync's
+   worker path cuts the text at header lines (splitTextAtHeaderLines) into
+   one piece per core, and each worker sends its entries back as binary
+   batches (encodeEntryBatch: the native parser's batch.rs layout, string
+   section kept a JS string) that the page's decodeNativeBatch reads —
+   instead of structured-cloned entry objects. Ids are assigned on the main
+   thread in file order; worker ts are already local. The output must stay
+   byte-identical to the main-thread parse (and so to the golden fixture).
+   jsdom has no Worker: a fake one runs the real worker source in a vm.
+   ============================================================ */
+group(268);
+{
+  const golden = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-parse-golden.json"), "utf8"));
+  const noId = entries => JSON.stringify(entries.map(e => { const { id, ...rest } = e; return rest; }));
+  async function mainThreadParse(w, T, text, formatId) {
+    const node = w.createFileNode("ref.log");
+    node.formatId = formatId;
+    await w.parseLogTextAsync(text, node, () => {}); // jsdom: no Worker, the main-thread loop
+    const entries = node.entries.slice();
+    w.deleteNode(node.id);
+    return entries;
+  }
+  function useFormat(w, T, fmt) {
+    if (fmt.builtin) return;
+    T.state.logFormats = T.state.logFormats.filter(f => f.id !== fmt.id).concat([JSON.parse(JSON.stringify(fmt))]);
+    w.invalidateFormatCompileCache();
+  }
+  // Runs the real worker source in a vm; each worker's messages are
+  // delivered in order, after a per-worker delay (worker 0 slowest), so
+  // later pieces finish first and have to wait for earlier ones.
+  function installFakeWorker(w, opts = {}) {
+    const src = w.buildLogParseWorkerSrc();
+    const made = [];
+    w.URL.createObjectURL = () => "blob:fake-worker";
+    w.Worker = class {
+      constructor() {
+        const index = made.length;
+        made.push(this);
+        this.terminated = false;
+        const out = [];
+        const self = {};
+        vm.runInContext(src, vm.createContext({ self, postMessage: msg => out.push(msg) }));
+        this.run = data => {
+          self.onmessage({ data });
+          const deliver = async () => {
+            await sleep(opts.delay ? opts.delay(index) : (made.length - index) * 5);
+            for (const msg of out) {
+              if (this.terminated) return;
+              if (opts.failAt && opts.failAt(index, msg)) { this.onerror(new Error("worker crashed")); return; }
+              this.onmessage({ data: msg });
+              await Promise.resolve();
+            }
+          };
+          deliver();
+        };
+      }
+      postMessage(data) { setTimeout(() => this.run(data), 0); }
+      terminate() { this.terminated = true; }
+    };
+    return made;
+  }
+  // ~6 MB with stack traces, blank lines, CRLF and non-ASCII: 4+ pieces.
+  function bigText() {
+    const out = ["preamble dropped before the first header"];
+    for (let i = 0; i < 48000; i++) {
+      const sec = i % 86400;
+      const ts = "2024-01-15 " + String(Math.floor(sec / 3600)).padStart(2, "0") + ":" + String(Math.floor(sec / 60) % 60).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0") + "," + String(i % 1000).padStart(3, "0");
+      out.push(ts + "\t" + ["INFO", "WARN", "ERROR", "DEBUG"][i % 4] + "\t\"w" + (i % 7) + "\"\tC:\\src\\M" + (i % 9) + ".cs\tline " + i + "\t[Do" + (i % 5) + "]\t\"r\u00e9quest " + i + " \u{1F600} padding padding padding padding\"" + (i % 3 === 0 ? "\r" : ""));
+      for (let k = 0; k < i % 3; k++) out.push("   at Frame" + k + "() in C:\\x.cs:line " + k);
+      if (i % 11 === 0) out.push("");
+    }
+    return out.join("\n") + "\n";
+  }
+
+  await withApp(async (w, d, T) => {
+    section("268a. encodeEntryBatch -> decodeNativeBatch round-trips every golden case exactly (fields, open quotes, NaN ts, non-ASCII, lone surrogates)");
+    await T.bootRestore;
+    for (const c of golden.cases) {
+      if (c.base64 || c.format.mode === "meta") continue;
+      useFormat(w, T, c.format);
+      const entries = await mainThreadParse(w, T, c.text, c.format.id);
+      const batch = w.encodeEntryBatch(entries, 0.25);
+      const back = w.decodeNativeBatch(batch.buf, batch.strings);
+      assert(back.fraction === 0.25, c.name + ": fraction carried");
+      const expected = entries.map(e => { const { formatId, ...rest } = e; return rest; });
+      assert(noId(back.entries) === noId(expected), c.name + ": decoded entries identical to the parsed ones, key order included");
+      assert(back.entries.every((e, i) => Object.keys(expected[i].fields).length || e.fields === expected[i].fields), c.name + ": a field-less entry shares the page's EMPTY_ENTRY_FIELDS");
+    }
+    const odd = await mainThreadParse(w, T, "2024-01-15 10:00:00,000\tINFO\t\"a\"\tb\tline 1\t[m]\t\"lone \uD800 high, lone \uDC00 low\"\n", "fmt-default");
+    const oddBatch = w.encodeEntryBatch(odd, 1);
+    assert(w.decodeNativeBatch(oddBatch.buf, oddBatch.strings).entries[0].message === odd[0].message, "lone surrogates survive unchanged (no UTF-8 round trip)");
+    const nan = [Object.assign({}, odd[0], { ts: NaN })];
+    const nanBatch = w.encodeEntryBatch(nan, 1);
+    assert(Number.isNaN(w.decodeNativeBatch(nanBatch.buf, nanBatch.strings).entries[0].ts), "NaN ts carried as NaN");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("268b. splitTextAtHeaderLines cuts only before header lines; the pieces parse to exactly the whole text's entries");
+    const text = bigText();
+    const isHeader = w.getCompiledFormat("fmt-default").isHeaderLine;
+    const whole = await mainThreadParse(w, T, text, "fmt-default");
+    for (const n of [1, 2, 4, 7]) {
+      const pieces = w.splitTextAtHeaderLines(text, isHeader, n);
+      assert(pieces.length === n, n + " pieces requested, got " + pieces.length);
+      assert(pieces[0][0] === 0 && pieces[pieces.length - 1][1] === text.length, n + ": the pieces cover the text");
+      assert(pieces.slice(1).every(([a]) => isHeader(text.slice(a, text.indexOf("\n", a)).replace(/\r$/, ""))), n + ": every later piece starts with a header line");
+      let parts = [];
+      for (const [a, b] of pieces) parts = parts.concat(await mainThreadParse(w, T, text.slice(a, b), "fmt-default"));
+      assert(noId(parts) === noId(whole), n + ": pieces parsed one by one == the whole text parsed (" + parts.length + " vs " + whole.length + ")");
+    }
+    const noHeaders = "x\n".repeat(1000);
+    assert(w.splitTextAtHeaderLines(noHeaders, isHeader, 4).length === 1, "no header line to cut before: one piece");
+    const crlfEdge = "2024-01-15 10:00:00,000\tINFO\t\"a\"\tb\tline 1\t[m]\t\"one\"\r\n  cont\r\r\n2024-01-15 10:00:01,000\tINFO\t\"a\"\tb\tline 2\t[m]\t\"two\"\r\n";
+    const cp = w.splitTextAtHeaderLines(crlfEdge, isHeader, 2);
+    assert(cp.length === 2 && crlfEdge.slice(cp[0][0], cp[0][1]).endsWith("cont\r"), "a cut drops only the previous line's \\r\\n, not a \\r that belongs to the line");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("268c. The parallel worker parse: one worker per piece, file order kept although later pieces finish first, ids assigned in order, output identical");
+    Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 4, configurable: true });
+    const text = bigText();
+    const reference = await mainThreadParse(w, T, text, "fmt-default");
+    const made = installFakeWorker(w);
+    const node = w.createFileNode("par.log");
+    node.formatId = "fmt-default";
+    const progress = [];
+    await w.parseLogTextAsync(text, node, (done, total) => progress.push(done / total));
+    assert(made.length === 4, "4 workers for a ~" + Math.round(text.length / 1e6) + " MB text on 4 cores, got " + made.length);
+    assert(made.every(wk => wk.terminated), "every worker terminated once done");
+    assert(node.entries.length === reference.length && noId(node.entries) === noId(reference), "entries identical to the main-thread parse, in file order (" + node.entries.length + ")");
+    const nums = node.entries.map(e => +e.id.replace(/\D/g, ""));
+    assert(nums.every((v, i) => i === 0 || v > nums[i - 1]), "ids ascend in file order");
+    assert(node.entries.every(e => T.entryIndex[e.id] === e && e.formatId === "fmt-default"), "every entry registered and stamped with its formatId");
+    assert(progress.length > 4 && progress.every((v, i) => i === 0 || v >= progress[i - 1]) && progress[progress.length - 1] === 1, "progress reported, monotonic, ending at 1");
+
+    section("268d. A worker failing mid-parse rolls back what was appended; the main-thread fallback then parses the file once");
+    installFakeWorker(w, { delay: i => i * 5, failAt: (i, msg) => i === 2 && msg.type === "batch" });
+    const node2 = w.createFileNode("fail.log");
+    node2.formatId = "fmt-default";
+    const before = Object.keys(T.entryIndex).length;
+    await w.parseLogTextAsync(text, node2, () => {});
+    assert(node2.entries.length === reference.length && noId(node2.entries) === noId(reference), "no duplicated or missing entries after the fallback (" + node2.entries.length + ")");
+    assert(Object.keys(T.entryIndex).length === before + reference.length, "entryIndex holds each entry once");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("268f. The drain adopts queued batches a few at a time, yielding through queueTask (a message), never setTimeout — hidden windows throttle timers");
+    Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 4, configurable: true });
+    const text = bigText();
+    const reference = await mainThreadParse(w, T, text, "fmt-default");
+    // Worker 0 is by far the slowest: every later piece's batches queue up
+    // behind it and are adopted in one go once it is done.
+    installFakeWorker(w, { delay: i => (i === 0 ? 60 : 0) });
+    let pageTimeouts = 0;
+    const origSetTimeout = w.setTimeout;
+    // Only the parse's own timers — a render (createFileNode's) schedules its debounced persists too.
+    w.setTimeout = function () { if (/parseLogTextInWorker|drain/.test(new Error().stack)) pageTimeouts++; return origSetTimeout.apply(this, arguments); };
+    const node = w.createFileNode("drain.log");
+    node.formatId = "fmt-default";
+    await w.parseLogTextAsync(text, node, () => {});
+    w.setTimeout = origSetTimeout;
+    assert(noId(node.entries) === noId(reference), "entries identical (" + node.entries.length + ")");
+    assert(pageTimeouts === 0, "no setTimeout during the parallel parse (" + pageTimeouts + ")");
+  }, { beforeParse: window => {
+    // jsdom has no MessageChannel: a stand-in delivering each message as a
+    // task of its own (setImmediate — not the page's timers).
+    window.MessageChannel = class {
+      constructor() {
+        this.port1 = { onmessage: null };
+        this.port2 = { postMessage: data => setImmediate(() => this.port1.onmessage && this.port1.onmessage({ data })) };
+      }
+    };
+  } });
+
+  await withApp(async (w, d, T) => {
+    section("268e. A custom regex format with custom columns and a quoted multi-line message parses identically through the workers");
+    // The boot-time format-config load (loadFormatConfig) would replace
+    // state.logFormats under the test otherwise.
+    await waitFor(() => T.state.logFormats.some(f => f.id === "fmt-default"));
+    const c = golden.cases.find(x => !x.base64 && x.format.mode === "regex" && x.entries.some(e => e.msgOpenQuote || Object.keys(e.fields).length));
+    assert(!!c, "the golden fixture has such a case");
+    if (c) {
+      useFormat(w, T, c.format);
+      const text = Array.from({ length: 3000 }, () => c.text).join("\n");
+      const reference = await mainThreadParse(w, T, text, c.format.id);
+      Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 3, configurable: true });
+      installFakeWorker(w);
+      const node = w.createFileNode("custom.log");
+      node.formatId = c.format.id;
+      await w.parseLogTextAsync(text, node, () => {});
+      assert(noId(node.entries) === noId(reference), c.name + " x3000: identical through the workers (" + node.entries.length + ")");
+    }
+  });
+}
+
+/* ============================================================
+   GROUP 269 — Per-file aggregates (level counts, minimap bars, widest
+   message, ts range) computed while entries are adopted
+   Origin: 2026-09-24, load/filter performance session. updateFileAggregate
+   catches a file's aggregate up as each parsed batch is adopted, so the
+   first render reads it instead of making full passes: getLevelCounts
+   (per raw level + format, bucketed when read), the minimap (bucket
+   boundaries by binary search when ts are sorted, the whole-file overlay
+   from per-level index lists), updateMinimapFullRange and
+   computeMaxMessageWidth. It must give exactly what the per-entry passes
+   give, catch up incrementally on tail appends and survive rotation, clock
+   offsets, merges and format level edits.
+   ============================================================ */
+group(269);
+{
+  // What the render produced, and the same render with every aggregate
+  // shortcut switched off (the per-entry passes) — must be identical.
+  function viewSnapshot(w, T, d) {
+    const measured = [];
+    const origMeasure = w.measureMsgWidth;
+    w.measureMsgWidth = text => { measured.push(text); return origMeasure(text); };
+    T.minimapBgCache = null;
+    w.render();
+    w.measureMsgWidth = origMeasure;
+    const rect = d.querySelector("#minimapFullRangeRect");
+    return JSON.stringify({ bars: T.minimapBars, measured, rect: rect && rect.getAttribute("x") + "/" + rect.getAttribute("width"),
+      counts: w.getLevelCounts(T.state.rootIds[0]) });
+  }
+  function slowSnapshot(w, T, d) {
+    const saved = { b: w.minimapBucketBounds, a: w.aggregateForEntries, f: w.fileAggregate };
+    w.minimapBucketBounds = () => null;
+    w.aggregateForEntries = () => null;
+    T.state.rootIds.forEach(id => { T.state.nodes[id]._levelCounts = null; });
+    // getLevelCounts' file branch reads the aggregate — count per entry instead.
+    const origCounts = w.getLevelCounts;
+    w.getLevelCounts = id => {
+      const counts = {};
+      for (const e of w.getEntries(id)) { const b = w.levelBucket(e.level, e.formatId); counts[b] = (counts[b] || 0) + 1; }
+      return counts;
+    };
+    try { return viewSnapshot(w, T, d); }
+    finally {
+      w.minimapBucketBounds = saved.b; w.aggregateForEntries = saved.a; w.getLevelCounts = origCounts;
+      T.state.rootIds.forEach(id => { T.state.nodes[id]._levelCounts = null; });
+    }
+  }
+  function fastSnapshot(w, T, d) {
+    T.state.rootIds.forEach(id => { T.state.nodes[id]._levelCounts = null; });
+    return viewSnapshot(w, T, d);
+  }
+  // Sorted log with multi-line messages (the longest message is not the one
+  // with the longest line), several levels per bucket and a custom level.
+  function sortedLog(n) {
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const sec = Math.floor(i / 3);
+      const ts = "2024-01-15 1" + Math.floor(sec / 3600) + ":" + String(Math.floor(sec / 60) % 60).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0") + "," + String((i % 3) * 100).padStart(3, "0");
+      const lvl = ["INFO", "DEBUG", "WARN", "INFO", "ERROR", "NOTICE"][i % 6 === 5 && i % 7 ? 0 : i % 6];
+      out.push(ts + "\t" + lvl + "\t\"t\"\tC:\\a.cs\tline " + i + "\t[M]\t\"msg " + i + (i === 700 ? " " + "x".repeat(90) : "") + "\"");
+      if (i === 300) out.push("  " + "y".repeat(120));
+    }
+    return out.join("\n") + "\n";
+  }
+  let boundsCalls = 0;
+  function countBounds(w) {
+    const orig = w.minimapBucketBounds;
+    if (typeof orig !== "function") return;
+    w.minimapBucketBounds = function () { const r = orig.apply(this, arguments); if (r) boundsCalls++; return r; };
+  }
+
+  await withApp(async (w, d, T) => {
+    section("269a. The aggregate is complete when a load finishes (built during adoption), and every reader matches the per-entry passes");
+    const f = await w.addFile("sorted.log", sortedLog(3000), () => {});
+    assert(f._agg && f._agg.count === f.entries.length && f._agg.entries === f.entries, "aggregate caught up to all " + f.entries.length + " entries by the end of the parse");
+    assert(f._agg && f._agg.sorted === true, "sorted ts recognized");
+    T.state.activeId = f.id;
+    countBounds(w);
+    for (const multi of [false, true]) {
+      T.state.multilineMessages = multi;
+      for (const mode of ["time", "entries"]) {
+        T.minimapBinningMode = mode;
+        boundsCalls = 0;
+        const fast = fastSnapshot(w, T, d);
+        assert(boundsCalls > 0, mode + (multi ? "/multi-line" : "") + ": the minimap took the bucket-boundary path");
+        const slow = slowSnapshot(w, T, d);
+        assert(fast === slow, mode + (multi ? "/multi-line" : "") + ": minimap bars, full-range box, measured message and level counts identical to the per-entry passes");
+      }
+    }
+    T.state.multilineMessages = false;
+    T.minimapBinningMode = "time";
+    const measured = JSON.parse(fastSnapshot(w, T, d)).measured;
+    assert(measured.length && measured.every(m => m.startsWith("msg 300\n  y")), "single-line mode measures the longest whole message");
+    T.state.multilineMessages = true;
+    const measuredMulti = JSON.parse(fastSnapshot(w, T, d)).measured;
+    assert(measuredMulti.every(m => m === "  " + "y".repeat(120)), "multi-line mode measures the longest line");
+    T.state.multilineMessages = false;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("269b. Unsorted and NaN timestamps: time-mode minimap falls back to the per-entry pass, results still identical");
+    const lines = makeLog(0, 400).trimEnd().split("\n");
+    lines.splice(100, 0, lines.splice(300, 1)[0]); // one entry out of order
+    lines[50] = lines[50].replace(/^2024-01-15 10:00:50,000/, "not-a-time");
+    const f = await w.addFile("unsorted.log", lines.join("\n") + "\n", () => {});
+    assert(f._agg && f._agg.sorted === false, "out-of-order / NaN ts: not sorted");
+    T.state.activeId = f.id;
+    for (const mode of ["time", "entries"]) {
+      T.minimapBinningMode = mode;
+      assert(fastSnapshot(w, T, d) === slowSnapshot(w, T, d), mode + ": identical to the per-entry passes");
+    }
+    T.minimapBinningMode = "time";
+  });
+
+  await withApp(async (w, d, T) => {
+    section("269c. Tail appends are folded in incrementally — including a continuation line that grows the last entry into the longest");
+    const f = await w.addFile("tail.log", sortedLog(500), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    const agg = f._agg;
+    f.tail = { handle: w.urlTailHandle("philogg://local/1/tail.log"), offset: 0, pending: "", failed: false, busy: false, errorCount: 0, lastGrowth: Date.now(), wasLive: true };
+    w.appendTailText(f, "2024-01-15 11:00:00,000\tERROR\t\"t\"\tC:\\a.cs\tline 1\t[M]\t\"late\"\n" + "  " + "z".repeat(400) + "\n");
+    w.onTailChange([f.id]);
+    const fast = fastSnapshot(w, T, d);
+    assert(f._agg === agg && agg.count === f.entries.length, "the same aggregate object caught up (" + (agg && agg.count) + "/" + f.entries.length + ")");
+    assert(fast === slowSnapshot(w, T, d), "after the append: identical to the per-entry passes");
+    assert(JSON.parse(fast).measured.every(m => m.includes("z".repeat(400))), "the grown last entry is now the widest");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("269d. Rotation, clock offset, merge and a format's level edit leave no stale aggregate behind");
+    const f = await w.addFile("a.log", sortedLog(600), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    // Clock offset: every ts moved.
+    w.applyClockOffset(f.id, 3600000);
+    assert(fastSnapshot(w, T, d) === slowSnapshot(w, T, d), "clock offset: identical to the per-entry passes");
+    assert(f._agg.minTs === f.entries[0].ts, "clock offset: the aggregate's ts range moved with the entries");
+    // Rotation: a new, shorter array.
+    const oldAgg = f._agg;
+    f.entries = [];
+    w.appendTailText(Object.assign(f, { tail: { pending: "" } }), sortedLog(40));
+    w.invalidateCachesForRoots([f.id]);
+    const fast = fastSnapshot(w, T, d);
+    assert(f._agg !== oldAgg && f._agg.count === 40, "rotation: a fresh aggregate over the new entries");
+    assert(fast === slowSnapshot(w, T, d), "rotation: identical to the per-entry passes");
+    delete f.tail;
+    // Merge: mergeFiles sorts its copy in place.
+    const g = await w.addFile("b.log", makeLog(30, 300, { levels: ["WARN", "INFO"] }), () => {});
+    const m = await w.mergeFiles([f.id, g.id]);
+    const merged = m && m.id ? m : T.state.nodes[T.state.rootIds[T.state.rootIds.length - 1]];
+    T.state.activeId = merged.id;
+    const fm = fastSnapshot(w, T, d);
+    assert(merged._agg && merged._agg.count === merged.entries.length, "merge: aggregate covers the merged entries");
+    assert(fm === slowSnapshot(w, T, d), "merge: identical to the per-entry passes");
+    // A format's level list edited after load: counts re-bucket when read.
+    T.state.activeId = f.id;
+    const fmt = { id: "fmt-269", name: "269", mode: "regex", builtin: false, edited: false, pattern: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS",
+      regex: "^(?<ts>\\d{4}-\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d,\\d{3})\\t(?<level>\\w+)\\t(?<message>.*)$",
+      levels: [{ value: "NOTICE", name: "NOTICE", color: null }, { value: "INFO", name: "INFO", color: null }] };
+    T.state.logFormats.push(fmt);
+    w.invalidateFormatCompileCache();
+    const h = await w.addFile("c.log", "2024-01-15 10:00:00,000\tNOTICE\tx\n2024-01-15 10:00:01,000\tINFO\ty\n2024-01-15 10:00:02,000\tNOTICE\tz\n", () => {}, "fmt-269");
+    const before = w.getLevelCounts(h.id);
+    assert(before.NOTICE === 2, "custom level counted in its own bucket, got " + JSON.stringify(before));
+    fmt.levels = [{ value: "INFO", name: "INFO", color: null }];
+    w.invalidateFormatCompileCache();
+    w.invalidateAllCaches();
+    const after = w.getLevelCounts(h.id);
+    const expected = {};
+    for (const e of h.entries) { const b = w.levelBucket(e.level, e.formatId); expected[b] = (expected[b] || 0) + 1; }
+    assert(JSON.stringify(after) === JSON.stringify(expected) && !after.NOTICE, "after the edit: re-bucketed, " + JSON.stringify(after));
+  });
+}
+
+/* ============================================================
+   GROUP 270 — Context view: built only while visible, match/gap part
+   memoized
+   Origin: 2026-09-24, load/filter performance session. renderMainView used
+   to rebuild the Context view on every render, even with only the
+   Filtered tab on screen — a match set, order lookups, a sort and a gap
+   list over the whole file (~300ms for a 162k-match level filter on 650k
+   entries). Now a hidden Context view is marked stale and built when it is
+   revealed (its tab, Stacked, a jump into it), and the match/gap part
+   (contextMatchesAndGaps) is memoized per active node + result + root
+   entries, so only the expansion-dependent rows/strips/runs are rebuilt.
+   ============================================================ */
+group(270);
+{
+  const tab = (d, name) => d.querySelector('#fhTabs .view-tab[data-fh-tab="' + name + '"]');
+  // The Context view as a from-scratch reference: rows (entry ids + strips)
+  // for the current active node, computed with a cold memo.
+  function contextShape(T) {
+    return JSON.stringify({ rows: T.currentHighlightViewEntries.map(e => e.id), strips: [...T.contextStrips].map(([k, v]) => [k, v.map(x => x.kind + x.from + "-" + x.to)]),
+      matchRows: T.contextMatchRows, pos: [...T.contextMatchPos], gaps: T.contextGaps, ids: [...T.contextMatchIds].sort() });
+  }
+
+  await withApp(async (w, d, T) => {
+    section("270a. With the Filtered tab on screen, a render doesn't build the Context view; revealing it builds it for the current node");
+    const f = await w.addFile("a.log", makeLog(0, 200), () => {});
+    T.state.activeId = f.id;
+    w.render();
+    let builds = 0;
+    const origBuild = w.buildContextView;
+    w.buildContextView = function () { builds++; return origBuild.apply(this, arguments); };
+    const err = w.createFilterNode(f.id, "level", ["ERROR"]);
+    w.revealFilteredView();
+    w.render();
+    assert(T.fhActiveTab === "filter", "sanity: the Filtered tab is showing");
+    assert(builds === 0, "no Context build while it is hidden (" + builds + ")");
+    assert(T.contextViewStale === true, "the hidden Context view is marked stale");
+    fireClick(tab(d, "highlight"), w);
+    assert(builds === 1, "revealing the Context tab builds it once (" + builds + ")");
+    assert(T.contextViewStale === false, "...and it is no longer stale");
+    assert(T.contextMatchRows.length === 40 && T.contextActive, "it shows the ERROR filter's 40 matches");
+    assert(d.querySelector("#highlightRows .log-row"), "...with rows rendered");
+    const counter = d.querySelector("#contextToolbar");
+    assert(counter && /40/.test(counter.textContent), "the toolbar's match counter reflects them, got " + (counter && counter.textContent.trim().slice(0, 80)));
+    w.buildContextView = origBuild;
+    // Stacked: both views on screen, so every render builds it.
+    w.applyFhView("stacked");
+    builds = 0;
+    w.buildContextView = function () { builds++; return origBuild.apply(this, arguments); };
+    w.render();
+    assert(builds === 1 && T.contextViewStale === false, "Stacked: a render builds the Context view (" + builds + ")");
+    w.buildContextView = origBuild;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("270b. The match/gap part is memoized: a re-render or a gap expansion reuses it, a changed result or root rebuilds it");
+    const f = await w.addFile("a.log", makeLog(0, 300), () => {});
+    const err = w.createFilterNode(f.id, "level", ["ERROR"]);
+    T.state.activeId = err.id;
+    w.applyFhView("highlight");
+    w.render();
+    const ids1 = T.contextMatchIds;
+    let orderMaps = 0;
+    const origMap = w.buildOrderIndexMap;
+    w.buildOrderIndexMap = function () { orderMaps++; return origMap.apply(this, arguments); };
+    w.render();
+    assert(T.contextMatchIds === ids1, "re-render: the same match set object (memo hit)");
+    const before = contextShape(T);
+    // Open one gap the way the gap row's click does: only the expansion part changes.
+    const g = T.contextGaps[3];
+    T.contextExpansions.set(g.start, [{ from: g.start, to: g.end }]);
+    w.render();
+    assert(T.contextMatchIds === ids1, "a gap expansion reuses the match set too");
+    assert(T.currentHighlightViewEntries.length === 60 + (g.end - g.start), "...while its rows are rebuilt with the gap revealed (" + T.currentHighlightViewEntries.length + ")");
+    assert(orderMaps === 0, "no id -> index map needed for a filter whose result is a subsequence of the file (" + orderMaps + ")");
+    T.contextExpansions.delete(g.start);
+    w.render();
+    assert(contextShape(T) === before, "closing it again restores the exact previous view");
+    // A tail append changes the root and the result: rebuilt.
+    f.tail = { pending: "" };
+    w.appendTailText(f, makeLog(400, 10));
+    delete f.tail;
+    w.invalidateCachesForRoots([f.id]);
+    w.render();
+    assert(T.contextMatchIds !== ids1 && T.contextMatchRows.length === 62, "after an append the matches are recomputed (" + T.contextMatchRows.length + ")");
+    // Cold reference for the same state.
+    const warm = contextShape(T);
+    w.invalidateAllCaches(); // new getEntries() results: the memo misses, built from scratch
+    w.render();
+    assert(contextShape(T) === warm, "memoized view identical to one built from scratch");
+    w.buildOrderIndexMap = origMap;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("270c. OR and link nodes: gaps and ordinals match a hand-computed reference; a link node's pairs take the id -> index route");
+    const lines = makeLog(0, 120).trimEnd().split("\n");
+    const f = await w.addFile("a.log", lines.join("\n") + "\n", () => {});
+    const a = w.createFilterNode(f.id, "text", "message 1");
+    const b = w.createFilterNode(f.id, "level", ["ERROR"]);
+    const or = w.createAndOrNode(a.id, b.id, "or");
+    T.state.activeId = or.id;
+    w.applyFhView("highlight");
+    w.render();
+    const expectIdx = f.entries.map((e, i) => (/message 1/.test(e.raw) || e.level === "ERROR") ? i : -1).filter(i => i >= 0);
+    const gaps = [];
+    let prev = -1;
+    for (const i of expectIdx) { if (i > prev + 1) gaps.push({ start: prev + 1, end: i }); prev = i; }
+    if (prev + 1 < f.entries.length) gaps.push({ start: prev + 1, end: f.entries.length });
+    assert(JSON.stringify(T.contextGaps) === JSON.stringify(gaps), "OR node: gaps match the reference");
+    assert(expectIdx.every((i, k) => T.contextMatchPos.get(f.entries[i].id) === k + 1), "OR node: every match's ordinal is its position among the matches");
+    const link = w.createLinkNode ? w.createLinkNode(b.id, a.id, "after", 1) : null;
+    if (link) {
+      T.state.activeId = link.id;
+      w.applyFhView("highlight");
+      let orderMaps = 0;
+      const origMap = w.buildOrderIndexMap;
+      w.buildOrderIndexMap = function () { orderMaps++; return origMap.apply(this, arguments); };
+      w.render();
+      w.buildOrderIndexMap = origMap;
+      assert(orderMaps > 0, "link node: its (possibly out-of-order) underlying entries go through the id -> index map");
+      const under = new Set();
+      w.getEntries(link.id).forEach(p => w.getTupleEntries(p).forEach(e => under.add(e.id)));
+      assert(T.contextMatchIds.size === under.size && [...under].every(id => T.contextMatchIds.has(id)), "link node: the underlying entries are the matches");
+      const rowsOrder = T.contextMatchRows.map(r => T.currentHighlightViewEntries[r].id);
+      const idxs = rowsOrder.map(id => f.entries.findIndex(e => e.id === id));
+      assert(idxs.every((v, i) => i === 0 || v > idxs[i - 1]), "link node: matches shown in file order");
+    }
+  });
+
+  await withApp(async (w, d, T) => {
+    section("270d. A jump into the Context view from the Filtered tab (double-click) builds it and expands around the entry");
+    const f = await w.addFile("a.log", makeLog(0, 300), () => {});
+    const err = w.createFilterNode(f.id, "level", ["ERROR"]);
+    T.state.activeId = err.id;
+    w.revealFilteredView();
+    w.render();
+    assert(T.contextViewStale === true, "sanity: Context hidden and stale");
+    const target = f.entries[150];
+    w.revealInHighlightView(target);
+    assert(T.fhActiveTab === "highlight" && T.contextViewStale === false, "the jump shows a freshly built Context view");
+    assert(T.currentHighlightViewEntries.some(e => e.id === target.id), "the jumped-to entry is in it");
+    assert(T.state.selectedId === target.id, "and selected");
+  });
+}
+
+/* ============================================================
+   GROUP 271 — License terms + third-party notices, in the app and in
+   every distribution
+   Origin: 2026-09-25, person-requested: the German proprietary test-phase
+   license is replaced by the PolyForm Noncommercial License 1.0.0 plus a
+   30-day commercial-evaluation permission (LICENSE.md), in English, without
+   the street address; third-party notices (Catppuccin in the page, the
+   Rust crates of the desktop build in desktop/THIRD_PARTY_NOTICES.md) are
+   added; LICENSE.md ships with every build.
+   ============================================================ */
+group(271);
+{
+  const root = path.join(__dirname, "..");
+  const read = rel => fs.readFileSync(path.join(root, rel), "utf8");
+  const licenseMd = read("LICENSE.md");
+
+  await withApp(async (w, d) => {
+    section("271a. Settings -> License shows the LICENSE.md terms verbatim, in English, contact by mail only");
+    w.openSettingsDialog();
+    const content = d.querySelector("#licenseContent");
+    const text = content.textContent;
+    assert(d.querySelector("#licenseFullText pre").textContent === licenseMd.replace(/\n+$/, ""),
+      "the collapsible full text equals LICENSE.md (the single-file HTML build carries its own terms)");
+    assert(text.includes("PolyForm Noncommercial License 1.0.0") && text.includes("30 days") && text.includes("commercial license"),
+      "the summary names the license, the evaluation period and the commercial license");
+    assert(!/Alle Rechte|Nutzungsrecht/.test(text), "no street address and no German text left");
+    assert(text.includes("philogg@kleinphilipp.de"), "contact by mail");
+
+    section("271b. Third-party components are credited below the license");
+    const tp = d.querySelector("#licenseThirdParty").textContent;
+    assert(/Catppuccin/.test(tp) && /MIT License/.test(tp), "Catppuccin palettes credited with their license");
+    assert(/Tauri/.test(tp) && tp.includes("THIRD_PARTY_NOTICES.md"), "the desktop build's crates point to THIRD_PARTY_NOTICES.md");
+    const cat = d.querySelector("#licenseCatppuccinText pre").textContent;
+    assert(cat.includes("Copyright (c) 2021 Catppuccin") && cat.includes("Permission is hereby granted"),
+      "the Catppuccin MIT text is included in full (MIT requires it in every copy)");
+    assert(content.lastElementChild.id === "licenseBuild", "version/build lines stay at the bottom");
+  });
+
+  if (groupSelected()) {
+    section("271c. LICENSE.md: required notice, evaluation permission, full PolyForm text");
+    assert(/^Required Notice: Copyright © Philipp Klein \(philogg@kleinphilipp\.de\)$/m.test(licenseMd), "PolyForm Required Notice line");
+    assert(/## Additional Permission: Commercial Evaluation[\s\S]*30 consecutive\s+calendar days/.test(licenseMd), "30-day evaluation permission");
+    assert(licenseMd.includes("# PolyForm Noncommercial License 1.0.0") && licenseMd.includes("## Noncommercial Organizations") && licenseMd.includes("**Use** means anything you do"),
+      "the complete PolyForm Noncommercial 1.0.0 text");
+
+    section("271d. The stripped release build keeps both license texts intact");
+    const strip = require("../scripts/strip-comments.js");
+    const stripped = strip.stripDocument(html);
+    const pre = /<details class="license-details" id="licenseFullText">[\s\S]*?<pre class="license-text">([\s\S]*?)<\/pre>/.exec(stripped);
+    const unescape = t => t.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&amp;/g, "&");
+    assert(pre && unescape(pre[1]) === licenseMd.replace(/\n+$/, ""), "license text survives comment stripping unchanged");
+
+    section("271e. Every distribution carries LICENSE.md (and the desktop ones THIRD_PARTY_NOTICES.md)");
+    const conf = JSON.parse(read("desktop/src-tauri/tauri.conf.json")).bundle;
+    assert(conf.licenseFile === "../../LICENSE.md", "installer license page (bundle.licenseFile)");
+    assert(conf.resources["../../LICENSE.md"] === "LICENSE.md" && conf.resources["../THIRD_PARTY_NOTICES.md"] === "THIRD_PARTY_NOTICES.md",
+      "both files bundled next to philogg.html");
+    for (const wf of [".github/workflows/build-tester-files.yml", ".github/workflows/release-please.yml"]) {
+      const y = read(wf);
+      assert(/cp LICENSE\.md desktop\/THIRD_PARTY_NOTICES\.md "\$STAGE\/"/.test(y), wf + ": portable zip gets both files");
+      assert(/cargo about generate -m src-tauri\/Cargo\.toml about\.hbs -o THIRD_PARTY_NOTICES\.md/.test(y), wf + ": notices regenerated before bundling");
+    }
+    assert(/\n\s+LICENSE\.md\n/.test(read(".github/workflows/build-tester-files.yml")), "tester HTML artifact includes LICENSE.md");
+    assert(/gh release upload [^\n]*"\$\{ASSET_NAME\}" LICENSE\.md/.test(read(".github/workflows/release-please.yml")), "release HTML upload includes LICENSE.md");
+
+    section("271f. THIRD_PARTY_NOTICES.md matches Cargo.lock (regenerate it when dependencies change)");
+    const lock = read("desktop/src-tauri/Cargo.lock");
+    const locked = new Set([...lock.matchAll(/name = "([^"]+)"\nversion = "([^"]+)"/g)].map(m => m[1] + " " + m[2]));
+    const listed = [...read("desktop/THIRD_PARTY_NOTICES.md").matchAll(/^- ([A-Za-z0-9_.-]+ [0-9]\S*)$/gm)].map(m => m[1]);
+    const stale = listed.filter(c => !locked.has(c));
+    assert(listed.length > 100, "notices list the bundled crates (" + listed.length + ")");
+    assert(stale.length === 0, "every listed crate version is in Cargo.lock — stale: " + stale.slice(0, 5).join(", "));
+    assert(listed.includes("tauri " + [...locked].find(c => c.startsWith("tauri ")).split(" ")[1]), "tauri itself is listed");
+  }
+}
+
+/* ============================================================
+   GROUP 272 — Tracking / folder watch / ZIP / viewer performance review
+   Origin: 2026-09-25, person-requested performance review of live tracking
+   (tailing), folder watch (+ settings), ZIP, text and image viewers, and
+   partial/combined loading from a watched folder. Covers: per-entry filters
+   extended from their old result on a tail append (only the new entries
+   tested) with results identical to a cold recompute, concurrent tail polls,
+   the tailed file's session-cache record as a Blob snapshot (exact restore
+   offset), ranged reads of philogg://local/… files, the minimap probe
+   dedupe, reused unopened sidebar rows, the text/image viewers not
+   rebuilding on unrelated renders (and per-image natural size), and
+   concurrent merge-source loads.
+   ============================================================ */
+group(272);
+{
+  // ASCII-only Blob-shaped view of a string with real slice(start, end).
+  function textFile(w, text, blobSlices) {
+    const view = (a, b) => ({
+      size: b - a,
+      slice(x, y) {
+        const len = b - a;
+        const lo = Math.max(0, Math.min(len, x == null ? 0 : x));
+        const hi = Math.max(lo, Math.min(len, y == null ? len : y));
+        if (blobSlices) { const sub = text.slice(a + lo, a + hi); const bl = new w.Blob([sub]); bl.text = async () => sub; return bl; }
+        return view(a + lo, a + hi);
+      },
+      text: async () => text.slice(a, b),
+    });
+    return view(0, text.length);
+  }
+  const line = (sec, level, msg) => "2024-01-15 10:" + String(Math.floor(sec / 60)).padStart(2, "0") + ":" + String(sec % 60).padStart(2, "0") + ",000\t" + level + "\t\"main\"\tFoo.cs\tline 1\t[DoWork]\t\"" + msg + "\"\n";
+  const idsOf = (w, id) => w.getEntries(id).map(e => e.id).join(",");
+
+  await withApp(async (w, d, T) => {
+    section("272a. A tail append extends per-entry filters from their old result; every node matches a cold recompute");
+    let text = makeLog(0, 2000) + line(2000, "INFO", "pivot entry");
+    const f = await w.addFile("live.log", text, () => {});
+    const handle = { async getFile() { return textFile(w, text); } };
+    f.tail = { handle, offset: text.length, pending: "", failed: false, busy: false };
+    const txt = w.createFilterNode(f.id, "text", "needle");
+    const inv = w.createFilterNode(f.id, "text", "needle"); inv.inverted = true;
+    const lvl = w.createFilterNode(f.id, "level", ["ERROR", "INFO"]);
+    const nested = w.createFilterNode(lvl.id, "text", "message 1");
+    const tr = w.createFilterNode(f.id, "timerange", { from: null, to: null });
+    const ctx = w.createFilterNode(f.id, "context", null);
+    const underCtx = ctx ? w.createFilterNode(ctx.id, "text", "needle") : null;
+    const nodes = [txt, inv, lvl, nested, tr, ctx, underCtx].filter(Boolean);
+    w.invalidateAllCaches();
+    nodes.forEach(n => w.getEntries(n.id));
+    // Continuation line on the previous last entry (it now contains the
+    // needle) plus fresh entries, one of them matching.
+    text += "   at needle.Continuation()\n" + line(2001, "ERROR", "needle new") + line(2002, "INFO", "message 1 new");
+    let calls = 0, extended = 0;
+    const orig = w.textFilterMatches, origExt = w.extendCachedEntries;
+    w.textFilterMatches = function () { calls++; return orig.apply(this, arguments); };
+    w.extendCachedEntries = function () { extended++; return origExt.apply(this, arguments); };
+    await w.tailTick(); // the active view is under f, so this also renders (reading every node)
+    assert(f.entries.length === 2003, "sanity: two new entries appended (" + f.entries.length + ")");
+    const warm = nodes.map(n => idsOf(w, n.id));
+    assert(extended === 5, "the five per-entry filters were extended, the context filter and its child were not (" + extended + ")");
+    // The text filter under the context node recomputes over the context
+    // result (its chain isn't per-entry); everything else only tests the delta.
+    const ctxLen = ctx ? w.getEntries(ctx.id).length : 0;
+    assert(calls <= ctxLen + 20, "text filters tested only the new entries plus the pivot (" + calls + " calls, " + ctxLen + " from the context child)");
+    w.textFilterMatches = orig;
+    w.extendCachedEntries = origExt;
+    assert(w.getEntries(txt.id).some(e => e === f.entries[2000]), "the pivot entry now matches through its continuation line");
+    assert(!w.getEntries(inv.id).some(e => e === f.entries[2000]), "...and dropped out of the inverted filter");
+    w.invalidateAllCaches();
+    const cold = nodes.map(n => idsOf(w, n.id));
+    assert(warm.every((v, i) => v === cold[i]), "every node's extended result equals a cold recompute");
+
+    section("272b. Two ticks without a read in between, then a rotation, stay exact");
+    text += line(2003, "INFO", "needle a");
+    await w.tailTick();
+    text += line(2004, "INFO", "needle b");
+    await w.tailTick();
+    const warm2 = nodes.map(n => idsOf(w, n.id));
+    w.invalidateAllCaches();
+    assert(warm2.every((v, i) => v === nodes.map(n => idsOf(w, n.id))[i]), "accumulated tail bases still give the cold result");
+    text = line(3000, "INFO", "needle rotated") + line(3001, "WARN", "other");
+    await w.tailTick();
+    assert(f.entries.length === 2 && !txt._tailBase, "rotation: entries replaced, no tail base kept");
+    assert(w.getEntries(txt.id).length === 1, "rotation: recomputed from the new content");
+    section("272b2. Without a render in between, the old result waits as a tail base");
+    T.state.activeId = null;
+    text += line(3002, "INFO", "needle c");
+    await w.tailTick();
+    assert(txt._cache === null && txt._tailBase && txt._tailBase.stable === 1, "tail base kept (stable prefix = the one earlier match)");
+    assert(w.getEntries(txt.id).length === 2, "...and extended on the next read");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("272c. tailTick polls every tailed file at the same time");
+    const started = [];
+    let release;
+    const gate = new Promise(r => { release = r; });
+    const mk = name => ({ async getFile() { started.push(name); await gate; return textFile(w, makeLog(0, 3)); } });
+    const a = await w.addFile("a.log", makeLog(0, 3), () => {});
+    const b = await w.addFile("b.log", makeLog(0, 3), () => {});
+    a.tail = { handle: mk("a"), offset: makeLog(0, 3).length, pending: "", failed: false, busy: false };
+    b.tail = { handle: mk("b"), offset: makeLog(0, 3).length, pending: "", failed: false, busy: false };
+    const tick = w.tailTick();
+    await new Promise(r => setTimeout(r, 0));
+    assert(started.length === 2, "both getFile() calls are in flight before either resolves (" + started.join(",") + ")");
+    release();
+    await tick;
+  });
+
+  const factory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("272d. A tailed file's cache record is a Blob snapshot up to the committed offset, not rebuilt text");
+    await T.bootRestore;
+    let text = makeLog(0, 5).replace(/\n/g, "\r\n");
+    const f = await w.addFile("live.log", text, () => {});
+    // Non-enumerable, so the record's handle field structured-clones like a
+    // real FileSystemFileHandle does.
+    const handle = {};
+    Object.defineProperty(handle, "getFile", { value: async () => textFile(w, text, true), writable: true });
+    f.tail = { handle, offset: text.length, pending: "", failed: false, busy: false };
+    text += "2024-01-15 10:00:09,000\tINFO\t\"main\"\tFoo.cs\tline 1\t[DoWork]\t\"half";
+    await w.tailTick();
+    assert(f.tail.pending.length > 0, "sanity: an unterminated line is pending");
+    await w.persistFileNode(f);
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec && rec.text === null && rec.blob, "the record carries a blob, no text");
+    const stored = rec && rec.blob ? await rec.blob.text() : "";
+    assert(stored === makeLog(0, 5).replace(/\n/g, "\r\n"), "blob = the file's bytes up to the last complete line (CRLF kept)");
+    f._cacheBlob = rec.blob;
+    assert(w.restoredTailOffset(f) === stored.length, "restore offset = blob size (exact, unlike rebuilt LF-only text)");
+    delete f._cacheBlob;
+    // A snapshot that can't be taken falls back to text.
+    Object.defineProperty(handle, "getFile", { value: async () => { throw new Error("locked"); } });
+    await w.persistFileNode(f);
+    const rec2 = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec2 && typeof rec2.text === "string" && !rec2.blob, "unreadable handle: falls back to a text record");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("272e. philogg://local/… files are read by byte range: size probe, tail poll, minimap probe");
+    let body = makeLog(0, 50);
+    const requests = [];
+    w.fetch = async (url, init) => {
+      const range = init && init.headers && init.headers.Range;
+      requests.push(range || "FULL");
+      if (!range) return new Response(body, { status: 200 });
+      const m = /bytes=(\d+)-(\d+)/.exec(range);
+      const start = +m[1], end = Math.min(+m[2], body.length - 1);
+      if (start >= body.length) return new Response("", { status: 416, headers: { "content-range": "bytes */" + body.length } });
+      return new Response(body.slice(start, end + 1), { status: 206, headers: { "content-range": "bytes " + start + "-" + end + "/" + body.length } });
+    };
+    const h = w.urlTailHandle("philogg://local/1/a.log", "/x/a.log");
+    const rf = await h.getRangedFile();
+    assert(rf.size === body.length, "size learned from Content-Range");
+    assert(await rf.slice(10, 20).text() === body.slice(10, 20), "slice reads exactly that range");
+    assert(await rf.slice(5).slice(2, 4).text() === body.slice(7, 9), "nested slices compose");
+    const f = await w.addFile("a.log", body, () => {});
+    f.tail = { handle: h, offset: body.length, pending: "", failed: false, busy: false };
+    requests.length = 0;
+    body += line(100, "ERROR", "appended");
+    await w.tailTick();
+    assert(f.entries.length === 51, "the append was picked up");
+    // A hand-attached tail (like a restore/rescan reattach) gets tailTick's
+    // one-time gzip check on its first poll: a 2-byte ranged read, never a
+    // full fetch (GROUP 285, "gzip-compressed logs"). Load paths mark their
+    // own fresh tails as already checked.
+    assert(!requests.includes("FULL") && requests.length === 3 && requests[1] === "bytes=0-1",
+      "first tail poll = one size probe + the one-time 2-byte gzip check + one ranged read, no full fetch (" + requests.join(" | ") + ")");
+    requests.length = 0;
+    const rec = { name: "a.log", handle: h };
+    const range = await w.probeFolderFileRange({ id: "x" }, rec);
+    assert(range && range.first < range.last, "minimap probe found the time range");
+    assert(!requests.includes("FULL"), "...by ranged reads only (" + requests.length + " requests)");
+    // A wrapper without Range support: the full body, still usable.
+    w.fetch = async () => new Response(body, { status: 200 });
+    const full = await w.urlTailHandle("philogg://local/1/a.log").getRangedFile();
+    assert(full.size === body.length, "no Range support: falls back to the whole file");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("272f. A minimap probe in flight is shared, not repeated per render");
+    let reads = 0, release;
+    const gate = new Promise(r => { release = r; });
+    const rec = { name: "a.log", handle: { async getFile() { reads++; await gate; return textFile(w, makeLog(0, 5)); } } };
+    const p1 = w.probeFolderFileRange({ id: "x" }, rec);
+    const p2 = w.probeFolderFileRange({ id: "x" }, rec);
+    release();
+    const [r1, r2] = await Promise.all([p1, p2]);
+    assert(reads === 1 && r1 && r1 === r2, "one read for two concurrent probes (" + reads + ")");
+    assert(await w.probeFolderFileRange({ id: "x" }, rec) === r1 && reads === 1, "a resolved probe is cached");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("272g. Unopened folder and ZIP rows are reused across renders (and still open on double-click)");
+    const files = { "a.log": makeLog(0, 5), "b.log": makeLog(10, 5) };
+    const dir = { kind: "directory", name: "logs", async *values() {
+      for (const n of Object.keys(files)) yield { kind: "file", name: n, async getFile() { const b = new w.Blob([files[n]]); b.text = async () => files[n]; Object.defineProperty(b, "name", { value: n }); return b; } };
+    } };
+    await w.addWatchedFolder(dir);
+    const rowOf = name => [...d.querySelectorAll("#folderWatchList .folder-watch-file")].find(r => r.textContent.includes(name));
+    const before = rowOf("b.log");
+    w.render();
+    assert(before && rowOf("b.log") === before, "same element after a render");
+    T.state.zips.push({ id: "z1", name: "a.zip", entries: [{ name: "notes.txt", size: 1, extract: async () => new Uint8Array([104]) }], inlineViewers: new Map() });
+    w.render();
+    const zrow = [...d.querySelectorAll("#zipList .folder-watch-file")][0];
+    w.render();
+    assert(zrow && [...d.querySelectorAll("#zipList .folder-watch-file")][0] === zrow, "ZIP entry row reused too");
+    before.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.folders[0].files.find(r => r.name === "b.log").nodeId);
+    assert(T.state.folders[0].files.find(r => r.name === "b.log").nodeId, "double-click on the reused row still opens the file");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("272h. Text viewer: no rebuild on an unrelated render; image viewer: pan/zoom keeps the <image>, size is per image");
+    await w.openInlineViewer("a.json", new TextEncoder().encode('{\n  "a": 1\n}'), "text", null);
+    const tv = d.querySelector("#inlineTextViewer");
+    const first = tv.firstChild;
+    w.render();
+    assert(first && tv.firstChild === first, "unrelated render leaves the text viewer's markup alone");
+    T.state.inlineViewer.prettyPrint = true;
+    w.render();
+    assert(tv.firstChild !== first, "a Pretty Print change rebuilds it");
+    const png = new Uint8Array([137, 80, 78, 71]);
+    await w.openInlineViewer("wide.png", png, "image", null);
+    const wide = T.state.inlineViewer;
+    wide.naturalSize = { w: 400, h: 100 };
+    w.render();
+    const svg = d.querySelector("#imgViewerSvg");
+    const img = svg.querySelector("image");
+    assert(img && img.getAttribute("width") === "400", "wide image drawn at its own width");
+    d.querySelector("#imgZoomInBtn").click();
+    assert(svg.querySelector("image") === img, "zooming reuses the <image> element");
+    await w.openInlineViewer("tall.png", png, "image", null);
+    T.state.inlineViewer.naturalSize = { w: 50, h: 300 };
+    w.render();
+    const img2 = svg.querySelector("image");
+    assert(img2 !== img && img2.getAttribute("width") === "50" && img2.getAttribute("height") === "300", "a second image gets its own dimensions, not the first one's");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("272k. Tail growth under an unchanged filter tree doesn't re-fingerprint the file for its filter-history record");
+    await T.bootRestore;
+    let text = makeLog(0, 50);
+    const f = await w.addFile("live.log", text, () => {});
+    f.tail = { handle: { async getFile() { return textFile(w, text); } }, offset: text.length, pending: "", failed: false, busy: false };
+    const flt = w.createFilterNode(f.id, "text", "message 1");
+    await w.persistFileHistoryNow();
+    const key1 = f._historyKey;
+    const rec1 = await w.cacheStoreOp("fileHistory", "readonly", st => st.get(key1));
+    assert(rec1 && rec1.filters.length === 1, "first save writes the record");
+    let hashes = 0;
+    const orig = w.getFileFullHash;
+    w.getFileFullHash = function () { hashes++; return orig.apply(this, arguments); };
+    for (let i = 0; i < 3; i++) { text += line(200 + i, "INFO", "grow " + i); await w.tailTick(); await w.persistFileHistoryNow(); }
+    assert(hashes === 0 && f._historyKey === key1, "three growth ticks: no re-fingerprint, record left under its key (" + hashes + ")");
+    w.createFilterNode(f.id, "level", ["ERROR"]);
+    await w.persistFileHistoryNow();
+    w.getFileFullHash = orig;
+    assert(hashes === 1 && f._historyKey !== key1, "a filter change writes a new record under the grown content's key");
+    const rec2 = await w.cacheStoreOp("fileHistory", "readonly", st => st.get(f._historyKey));
+    assert(rec2 && rec2.filters.length === 2 && rec2.entryCount === 53, "...with both filters and the grown entry count");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("272j. A folder-minimap merge loads its sources at the same time, result in target order");
+    const f1 = await w.addFile("x.log", makeLog(0, 3), () => {});
+    const f2 = await w.addFile("y.log", makeLog(0, 3), () => {});
+    const targets = [{ name: "x.log" }, { name: "y.log" }];
+    const started = [];
+    const releases = [];
+    const load = rec => { started.push(rec.name); return new Promise(r => releases.push(() => { rec.nodeId = rec.name === "x.log" ? f1.id : f2.id; r(); })); };
+    const shell = w.createMergeShell("x + y", undefined);
+    const p = w.loadFolderMergeSources(targets, shell, load);
+    await new Promise(r => setTimeout(r, 0));
+    assert(started.length === 2, "both loads started before either finished");
+    releases[1](); releases[0]();
+    const ids = await p;
+    assert(ids[0] === f1.id && ids[1] === f2.id, "ids in target order despite reverse completion");
+    assert(f1.mergeSourceHidden && f2.mergeOwnerId === shell.id && shell.loadSources.length === 2, "each tagged as a hidden source of the shell");
+  });
+}
+
+/* ============================================================
+   GROUP 273 — Plain-text files: line-wise filters, Table and Plot
+   Origin: 2026-09-25, person-requested — the filter concept carried over to
+   text files (search lines by value, wildcards, tables, plots), with the
+   filters acting on the Pretty-Printed JSON when Pretty Print is on. Covers:
+   the "Plain text" format (every line one entry, blank lines kept, no
+   trailing empty entry, ts = line number, no level), the same in the worker
+   source and on tail appends, text/wildcard filters + the extraction table's
+   "Line" column + the plot's default X, the row grid (Line column, no Δt/
+   Level, empty level bar) and its return once a real log is loaded, line-
+   range names for time filters, no merge, and the text viewer's "Filter
+   lines" button (pretty-printed vs. raw JSON).
+   ============================================================ */
+group(273);
+{
+  const PT = "fmt-plaintext";
+  const TEXT = "alpha\n\nTemp=21.5 ok\nTemp=-3 low\n";
+  const QUOTED = '  "indented, quoted"';
+
+  await withApp(async (w, d, T) => {
+    section("273a. Plain text parses one entry per line, blank lines kept, ts = line number, no level");
+    const f = await w.addFile("notes.txt", TEXT, () => {}, PT);
+    assert(f.entries.length === 4, "4 lines -> 4 entries, the final newline adds none (" + f.entries.length + ")");
+    assert(f.entries.map(e => e.message).join("|") === "alpha||Temp=21.5 ok|Temp=-3 low", "each entry's message is its line, blank line included");
+    assert(f.entries.map(e => e.ts).join(",") === "1,2,3,4" && f.entries[2].tsRaw === "3", "ts/tsRaw are the 1-based line numbers");
+    assert(f.entries.every(e => e.level === "" && w.levelBucket(e.level, e.formatId) === "OTHER"), "no level (OTHER bucket)");
+    const verbatim = await w.addFile("q.txt", QUOTED + "\n", () => {}, PT);
+    assert(verbatim.entries[0].message === QUOTED, "a line's indentation and outer quotes are kept verbatim");
+    const crlf = await w.addFile("crlf.txt", "a\r\nb\r\n", () => {}, PT);
+    assert(crlf.entries.map(e => e.message).join("|") === "a|b", "CRLF text: same split, no trailing entry");
+    const empty = await w.addFile("empty.txt", "", () => {}, PT);
+    assert(empty.entries.length === 0, "an empty file has no entries");
+    assert(w.rebuildFileText(f) + "\n" === TEXT, "cache text round-trips (rebuildFileText)");
+
+    section("273b. Text and wildcard filters, extraction table with a Line column, plot X defaults to Line");
+    const txt = w.createFilterNode(f.id, "text", "Temp");
+    assert(w.getEntries(txt.id).length === 2, "plain text filter finds both Temp lines");
+    const neg = w.createFilterNode(f.id, "text", "Temp=[*:float<0]");
+    assert(w.getEntries(neg.id).map(e => e.ts).join(",") === "4", "wildcard with a value condition finds line 4 only");
+    const ext = w.createFilterNode(f.id, "text", "Temp=[*:float] [*:word]");
+    T.state.activeId = ext.id;
+    w.render();
+    w.applyFhView("table");
+    assert(T.extractRowsData.length === 2, "extraction table: one row per matching line");
+    const lineCol = T.extractColumns.find(c => c.colIndex === -1);
+    assert(lineCol && lineCol.name === "Line", "the ELAPSED slot is titled Line (" + (lineCol && lineCol.name) + ")");
+    assert(T.extractRowsData.map(r => r.values[-1]).join(",") === "3,4", "...and holds the absolute line numbers");
+    assert(T.extractRowsData.map(r => r.values[0]).join(",") === "21.5,-3", "captured values");
+    w.applyFhView("plot");
+    assert(T.plotConfig.xCol === -1, "the plot's X axis defaults to Line (" + T.plotConfig.xCol + ")");
+
+    section("273c. Only plain text loaded: Line column, no Δt/Level, empty level bar");
+    T.state.activeId = f.id;
+    w.applyFhView("filter");
+    w.render();
+    assert(w.allRootsPlainText(), "sanity: every root is plain text");
+    const header = d.querySelector("#tableHeader .row-grid").textContent;
+    assert(header.includes("Line") && !header.includes("Time") && !header.includes("Thread"), "header: Line, no Time/Thread (" + header + ")");
+    const grid = d.documentElement.style.getPropertyValue("--row-grid").trim().split(/\s+/);
+    assert(grid[1] === "64px" && grid[2] === "0px" && grid[3] === "0px", "Line track 64px, Δt/Level collapsed (" + grid.join(" ") + ")");
+    assert(w.activeLevelOrder().length === 0 && d.querySelectorAll("#levelBar .level-btn").length === 0, "no level buttons");
+    assert(w.activeTextFilterColumns().map(c => c.label).join(",") === "Line,Message", "filter-column chips: Line, Message");
+    w.renderColumnsPanel();
+    const colKeys = [...d.querySelectorAll("#columnsList input[data-col]")].map(cb => cb.dataset.col).join(",");
+    assert(colKeys === "message", "Columns panel offers no Δt toggle for plain text (" + colKeys + ")");
+    const row = [...d.querySelectorAll("#tableRows .log-row")].find(r => r.dataset.entryId === f.entries[2].id);
+    assert(row && row.querySelector(".col-time").textContent === "3" && row.querySelector(".col-delta").textContent === "—", "row: line number, no Δt");
+
+    section("273d. Line ranges: time filters are named in lines, merge is refused");
+    const range = w.createFilterNode(f.id, "timerange", { from: 2, to: 3 });
+    assert(range.name === "line 2 → line 3", "range name in lines (" + range.name + ")");
+    assert(w.getEntries(range.id).length === 2, "range keeps lines 2-3");
+    const other = await w.addFile("other.txt", "x\n", () => {}, PT);
+    const bulk = w.describeBulkActions([f, other]);
+    assert(bulk.actions.length === 0 && /can't be merged/.test(bulk.note), "no merge for plain-text files");
+
+    section("273e. Loading a real log brings Time/Δt/Level back");
+    await w.addFile("app.log", makeLog(0, 3), () => {});
+    w.render();
+    const header2 = d.querySelector("#tableHeader .row-grid").textContent;
+    assert(header2.includes("Time") && header2.includes("Level"), "header back to Time/Level");
+    w.renderColumnsPanel();
+    assert(d.querySelector('#columnsList input[data-col="delta"]'), "...and the Columns panel offers Δt again");
+    assert(w.activeLevelOrder().length > 0, "level buttons back");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("273f. Worker source and tail appends number lines the same way");
+    const posted = [];
+    const sandboxSelf = {};
+    const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
+    vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
+    sandboxSelf.onmessage({ data: { text: "one\n\nthree", fmt: { id: PT, mode: "plaintext" } } });
+    const wEntries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
+    assert(wEntries.map(e => e.message).join("|") === "one||three", "worker: every line, blank included");
+    const f = await w.addFile("live.txt", "one\n", () => {}, PT);
+    f.tail = { pending: "" };
+    w.appendTailText(f, "two\n\nfour\nfi");
+    assert(f.entries.map(e => e.ts + ":" + e.message).join("|") === "1:one|2:two|3:|4:four", "tail: numbered on append, partial line pending");
+    assert(!w.nativeFormatSpec({ id: PT, mode: "plaintext" }), "no native parse spec: plain text stays on the JS path");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("273g. \"Filter lines\" opens what the text viewer shows — pretty-printed JSON line by line");
+    const json = '{"a":1,"list":[1,2],"b":"x"}';
+    await w.openInlineViewer("data.json", new TextEncoder().encode(json), "text", null);
+    const btn = d.querySelector("#itvFilterLinesBtn");
+    assert(btn && !btn.classList.contains("hidden"), "button shown for a text viewer");
+    fireClick(d.querySelector("#itvPrettyPrintBtn"), w);
+    assert(T.state.inlineViewer.prettyPrint, "sanity: Pretty Print on");
+    fireClick(btn, w);
+    await waitFor(() => T.state.rootIds.length === 1 && !("loadFraction" in T.state.nodes[T.state.rootIds[0]]));
+    const f = T.state.nodes[T.state.rootIds[0]];
+    const pretty = JSON.stringify(JSON.parse(json), null, 2).split("\n");
+    assert(f.name === "data.json (pretty)" && f.formatId === PT, "new plain-text root named after the viewer (" + f.name + ")");
+    assert(f.entries.length === pretty.length && f.entries.every((e, i) => e.message === pretty[i]), "one entry per pretty-printed line: " + JSON.stringify(f.entries.map(e => e.message)));
+    assert(T.state.inlineViewer === null && T.state.activeId === f.id, "its log view replaces the viewer");
+    const flt = w.createFilterNode(f.id, "text", '"a": [*:int]');
+    assert(w.getEntries(flt.id).length === 1, "a wildcard filter matches the pretty-printed line");
+
+    await w.openInlineViewer("raw.json", new TextEncoder().encode(json), "text", null);
+    const raw = await w.openInlineViewerAsTextLog(T.state.inlineViewer);
+    assert(raw.name === "raw.json" && raw.entries.length === 1, "without Pretty Print: the file's own (single) line");
+  });
+}
+
+/* ============================================================
+   GROUP 274 — Plain-text rows: indentation, syntax highlighting, nesting
+   Origin: 2026-09-25, person-requested follow-up to Group 273 — keep a
+   plain-text line's leading spaces/tabs and the viewer's JSON/XML syntax
+   highlighting in the filter views, and hang a "Filter lines" text version
+   under its source file in the tree (file -> text version -> filters).
+   Covers: the .col-msg.plaintext class, token ranges (JSON, XML incl. an
+   attribute value with "&"), tokens combined with filter-match marks in
+   markCombinedHtml, highlighted rows in the Filtered view (none for an
+   ordinary log), the nested tree row + nav order, reuse on a second
+   "Filter lines", closing the viewer entry closes its text versions
+   (undoable, then top-level), and the token-range refactor keeping the
+   viewer's own highlighting.
+   ============================================================ */
+group(274);
+{
+  const JSON_TEXT = '{"name":"pump","temp":21.5,"on":true}';
+
+  await withApp(async (w, d, T) => {
+    section("274a. Token ranges and their merge with filter-match marks");
+    const j = w.jsonTokenRanges('"a": 1');
+    assert(j.length === 2 && j[0].cls === "tok-key" && j[1].cls === "tok-number", "JSON: key + number");
+    const x = w.xmlTokenRanges('<a b="c&d"/>');
+    assert(x.map(r => r.cls).join(",") === "tok-tag,tok-attr,tok-string,tok-tag", "XML: tag, attr, value (with &), close (" + x.map(r => r.cls).join(",") + ")");
+    const cmt = w.xmlTokenRanges("<!" + "-- note --" + ">");
+    assert(cmt.length === 1 && cmt[0].cls === "tok-comment", "XML comments still tokenized (regex avoids a literal comment opener)");
+    assert(w.highlightXmlText('<a b="c&d"/>').includes('<span class="tok-string">&quot;c&amp;d&quot;</span>'), "viewer output escapes inside the token");
+    assert(w.highlightJsonText('{"a":1}') === '{<span class="tok-key">&quot;a&quot;:</span><span class="tok-number">1</span>}', "viewer JSON output unchanged");
+    const html = w.markCombinedHtml('"a": 12', [[5, 6]], [], w.jsonTokenRanges('"a": 12'));
+    assert(html.includes('<mark class="text-match-mark mark-seg"><span class="tok-number">1</span></mark><span class="tok-number">2</span>'), "a match inside a token: the token span sits inside the mark, split at the mark's edge (" + html + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274b. Filtered view: indentation kept, JSON highlighted, marks still shown; an ordinary log gets no tokens");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k1" });
+    T.state.inlineViewer.prettyPrint = true;
+    const f = await w.openInlineViewerAsTextLog(T.state.inlineViewer);
+    assert(f.viewerSource && f.viewerSource.mapKey === "k1" && f.textSyntax === "json", "text version remembers its viewer and syntax");
+    const flt = w.createFilterNode(f.id, "text", "temp");
+    T.state.activeId = flt.id;
+    w.render();
+    const msg = d.querySelector("#tableRows .log-row .col-msg");
+    assert(msg && msg.classList.contains("plaintext"), "message cell carries .plaintext (white-space:pre)");
+    assert(msg.textContent === '  "temp": 21.5,', "leading spaces kept in the cell text (" + JSON.stringify(msg.textContent) + ")");
+    assert(msg.querySelector(".tok-key") && msg.querySelector(".tok-number"), "key and number highlighted");
+    assert(msg.querySelector("mark.text-match-mark"), "the filter match is still marked");
+    // Person-reported: an empty level badge painted a small grey block right
+    // before every message (its padding/background spilling out of the
+    // collapsed Level track).
+    assert(!d.querySelector("#tableRows .log-row .level-badge"), "plain-text rows render no level badge");
+    T.state.activeId = f.id;
+    w.render();
+    assert(T.minimapBucketCount >= 1 && T.minimapBucketCount <= f.entries.length,
+      "minimap: no more buckets than lines (else every other bucket is empty — a striped minimap), got " + T.minimapBucketCount + " for " + f.entries.length + " lines");
+    const log = await w.addFile("app.log", makeLog(0, 3), () => {});
+    T.state.activeId = log.id;
+    w.render();
+    const logMsg = d.querySelector("#tableRows .log-row .col-msg");
+    assert(logMsg && !logMsg.classList.contains("plaintext") && !logMsg.querySelector("[class^='tok-']"), "ordinary log rows: no plaintext class, no tokens");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274c. Tree: file -> text version -> filter, nav order, reuse, close cascade");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("notes.txt", new TextEncoder().encode("a\n\tb\n"), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k2" });
+    const viewer = T.state.inlineViewer;
+    const f = await w.openInlineViewerAsTextLog(viewer);
+    const flt = w.createFilterNode(f.id, "text", "b");
+    w.render();
+    const tree = d.querySelector("#tree");
+    const rows = [...tree.querySelectorAll(".zip-source-file, .tree-row")];
+    const vIdx = rows.findIndex(r => r.classList.contains("zip-source-file"));
+    const fIdx = rows.findIndex(r => r.dataset.nodeId === f.id);
+    const cIdx = rows.findIndex(r => r.dataset.nodeId === flt.id);
+    assert(vIdx >= 0 && vIdx < fIdx && fIdx < cIdx, "viewer row, then its text version, then the filter (" + [vIdx, fIdx, cIdx] + ")");
+    assert(tree.querySelectorAll('.tree-row[data-node-id="' + f.id + '"]').length === 1, "text version rendered once (not also top-level)");
+    // Person-reported: the nested subtree had no connector lines (renderNode
+    // only decorates depth-0 subtrees).
+    const fltRow = tree.querySelector('.tree-row[data-node-id="' + flt.id + '"]');
+    assert(fltRow.querySelector(".tree-guide.h") && tree.querySelector('.tree-row[data-node-id="' + f.id + '"] .tree-guide.v'),
+      "text version -> filter drawn with connector lines (stem + elbow)");
+    const nav = w.flattenTreeIds();
+    const nv = nav.indexOf(w.viewerNavId("loose", "loose", "k2"));
+    assert(nv >= 0 && nav[nv + 1] === f.id && nav[nv + 2] === flt.id, "arrow-key order follows the nesting");
+    const again = await w.openInlineViewerAsTextLog(viewer);
+    assert(again === f && T.state.rootIds.length === 1 && T.state.activeId === f.id, "a second \"Filter lines\" re-activates the same text version");
+    w.render();
+    fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
+    assert(!T.state.nodes[f.id] && !map.has("k2"), "closing the viewer entry closes its text version");
+    w.undo();
+    assert(T.state.nodes[f.id] && T.state.nodes[f.id].viewerSource, "undo restores it (viewerSource kept)");
+    w.render();
+    assert(d.querySelector('#tree .tree-row[data-node-id="' + f.id + '"]') && !w.isNestedUnderViewer(T.state.nodes[f.id]), "...as a top-level row, its viewer being closed");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("274d. Ctrl+F on an open text viewer opens its text version and the filter popup at once");
+    const map = T.state.looseInlineViewers;
+    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k3" });
+    T.state.inlineViewer.prettyPrint = true;
+    fireKeydown(d, w, "f", { ctrlKey: true });
+    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
+    const f = T.state.nodes[T.state.activeId];
+    assert(f && f.formatId === "fmt-plaintext" && f.name === "cfg.json (pretty)" && f.viewerSource.mapKey === "k3", "the displayed (pretty) text became the active text version");
+    assert(T.state.inlineViewer === null, "the viewer gave way to its log view");
+    w.closeFilterPopup();
+    w.activateInlineViewer(map.get("k3"));
+    fireKeydown(d, w, "f", { ctrlKey: true });
+    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
+    assert(T.state.rootIds.length === 1 && T.state.activeId === f.id, "again on the same viewer: the same text version, no copy");
+  });
+}
+
+/* ============================================================
+   GROUP 275 — Text/image viewers survive a reload like log files
+   Origin: 2026-09-25, person-requested: after a page reload / app restart,
+   restore opened text and image files too — on the desktop from their
+   stored path (if still there), like log files — so a "Filter lines" text
+   version nests under its file again. Covers: a loose viewer's record
+   (Blob in the browser, path only on the desktop), the meta's viewer list
+   (owner, map key, Pretty Print, active viewer), restore after the files
+   (text version nested again, filters kept), an image viewer, a path whose
+   file is gone (skipped), closing a viewer drops its record, and stale
+   viewer records are swept on restore.
+   ============================================================ */
+group(275);
+{
+  const JSON_TEXT = '{"a":1,"b":[1,2]}';
+  const factory = new IDBFactory();
+  let viewerKey = null;
+  await withApp(async (w, d, T) => {
+    section("275a. A directly opened text viewer + its text version are persisted");
+    await T.bootRestore;
+    await w.loadFiles([new w.File([JSON_TEXT], "cfg.json", { type: "application/json" })]);
+    const v = T.state.inlineViewer;
+    assert(v && v.cacheKey && v.cacheKey.startsWith("viewer-"), "the viewer got a cache key");
+    viewerKey = v.cacheKey;
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey))));
+    const rec = await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey));
+    assert(rec && rec.viewer && rec.blob && !rec.localPath, "browser: the record holds the file as a Blob");
+    v.prettyPrint = true;
+    const f = await w.openInlineViewerAsTextLog(v);
+    w.createFilterNode(f.id, "text", '"a"');
+    // Written by openInlineViewerAsTextLog itself (idle-deferred text record)
+    // — not by the test: addFile alone persists nothing.
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey))));
+    // The viewer is shown at save time: it comes back as the shown one.
+    w.activateInlineViewer(v);
+    await w.persistMetaNow();
+    const meta = await w.cacheStoreOp("meta", "readonly", st => st.get("session"));
+    assert(meta.viewers.length === 1 && meta.viewers[0].prettyPrint && meta.viewers[0].ownerKind === "loose" && meta.activeViewer === viewerKey, "meta lists the viewer (loose, pretty, active)");
+    // A stale viewer record (closed in a session that never got to clean up).
+    await w.cacheStoreOp("files", "readwrite", st => st.put({ key: "viewer-stale", name: "old.txt", viewer: true, blob: new w.Blob(["x"]) }));
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("275b. Reload: viewer back (pretty, shown), text version nested under it with its filter");
+    await T.bootRestore;
+    const map = T.state.looseInlineViewers;
+    const v = [...map.values()][0];
+    assert(map.size === 1 && v.name === "cfg.json" && v.text === JSON_TEXT && v.prettyPrint && v.cacheKey === viewerKey, "viewer restored with its content and Pretty Print");
+    assert(T.state.inlineViewer === v, "...and shown, as it was");
+    const f = T.state.rootIds.map(id => T.state.nodes[id])[0];
+    assert(f && f.name === "cfg.json (pretty)" && f.textSyntax === "json" && w.isNestedUnderViewer(f), "text version restored and nested under its viewer");
+    assert(f.children.length === 1 && T.state.nodes[f.children[0]].value === '"a"', "its filter came back");
+    const rows = [...d.querySelectorAll("#tree .zip-source-file, #tree .tree-row")];
+    assert(rows[0].classList.contains("zip-source-file") && rows[1].dataset.nodeId === f.id, "tree: viewer row, then the text version");
+    assert(!(await w.cacheStoreOp("files", "readonly", st => st.get("viewer-stale"))), "a viewer record the meta doesn't list is swept");
+
+    section("275c. Closing the viewer drops its record");
+    fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
+    await waitFor(async () => !(await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey))));
+    assert(map.size === 0, "viewer closed, record gone");
+  }, { indexedDB: factory });
+
+  // Desktop: stored as a path, re-read from disk; a file gone since is skipped.
+  const onDisk = { "/data/pic.png": "PNGDATA", "/data/notes.txt": "hello\nworld" };
+  const bridge = () => ({
+    openLocalPath: async p => {
+      if (!(p in onDisk)) throw new Error("gone");
+      return { url: "philogg://local/1/" + p.split("/").pop(), path: p, name: p.split("/").pop() };
+    },
+  });
+  const deskFactory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("275d. Desktop: an image and a text viewer are stored by path only");
+    await T.bootRestore;
+    const mk = (p, type) => ({ name: p.split("/").pop(), localPath: p, file: new w.File([onDisk[p]], p.split("/").pop(), { type }) });
+    await w.loadFileDescriptors([mk("/data/pic.png", "image/png"), mk("/data/notes.txt", "text/plain")]);
+    const keys = [...T.state.looseInlineViewers.values()].map(v => v.cacheKey);
+    await waitFor(async () => (await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))))).every(Boolean));
+    const recs = await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))));
+    assert(recs.every(r => r.localPath && !r.blob), "records hold the path, no content");
+    await w.persistMetaNow();
+  }, { indexedDB: deskFactory, philogg: bridge() });
+
+  onDisk["/data/notes.txt"] = "hello\nworld\nagain"; // changed on disk
+  delete onDisk["/data/pic.png"];                    // deleted
+  await withApp(async (w, d, T) => {
+    section("275e. Desktop reload: re-read from the path, a deleted file is skipped");
+    w.fetch = async u => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(onDisk["/data/" + String(u).split("/").pop()]).buffer });
+    await T.bootRestore;
+    const views = [...T.state.looseInlineViewers.values()];
+    assert(views.length === 1 && views[0].name === "notes.txt" && views[0].text === "hello\nworld\nagain", "the text file came back from disk (current content), the deleted image didn't (" + views.map(v => v.name) + ")");
+  }, { indexedDB: deskFactory, philogg: bridge() });
+}
+
+/* ============================================================
+   GROUP 276 — Context view: tab switch opens the selection's surroundings,
+   and the "Expand around matches" toolbar button
+   Origin: 2026-09-25, person-reported + person-requested. (1) Switching
+   Filtered -> Context with a selected match left its surroundings shut
+   under the "aroundJump" setting — they only opened on the next click or
+   nav-arrow jump, since showFhTab never ran applyContextJumpExpansion.
+   (2) A new toolbar button next to Expand all / Collapse all that reveals
+   exactly one expansion step around EVERY match.
+     a) the switch opens the window around the selection, both when the
+        Context view is stale (built by the switch itself) and when it is
+        current (a selection change only), via the real #fhTabs button.
+     b) under "collapsed" a switch opens nothing.
+     c) the button: one step above and below every match (entries mode),
+        an absolute state (replaces Expand all's), hand-owned afterwards
+        (the next jump takes none of it back); time mode uses the timespan.
+   ============================================================ */
+group(276);
+await withApp(async (w, d, T) => {
+  section("276a. Filtered -> Context opens the window around the selected match");
+  // "hit" every 10th line -> matches 0,10,...,50, gaps 1,11,...,51 (9 lines each).
+  const f = await w.addFile("ctxtab.log", makeLog(0, 60, { suffix: i => (i % 10 === 0 ? "hit" : "other") }), () => {});
+  const hitFilter = w.createFilterNode(f.id, "text", "hit");
+  const openRanges = () => [...T.contextExpansions.keys()].sort((a, b) => a - b)
+    .map(k => T.contextExpansions.get(k).map(r => r.from + "-" + r.to).join(",")).join("|");
+  const contextTab = () => d.querySelector('#fhTabs [data-fh-tab="highlight"]');
+  T.state.activeId = hitFilter.id;
+  w.render(); // lands on Filtered, the hidden Context view is marked stale
+  assert(T.fhActiveTab === "filter", "sanity: a new filter lands on Filtered");
+  T.state.selectedId = f.entries[20].id;
+  fireClick(contextTab(), w);
+  assert(T.fhActiveTab === "highlight", "sanity: the tab button switched to Context");
+  assert(openRanges() === "11-20|21-30",
+    "the switch itself opens a step above and below the selected match, got " + openRanges());
+  const row = d.querySelector('#highlightRows [data-entry-id="' + f.entries[25].id + '"]');
+  assert(row, "…and the revealed context rows are rendered right away");
+
+  fireClick(d.querySelector('#fhTabs [data-fh-tab="filter"]'), w);
+  T.state.selectedId = f.entries[40].id; // selection change only — the Context view stays current
+  fireClick(contextTab(), w);
+  assert(openRanges() === "31-40|41-50",
+    "a non-stale view too: the window moves to the new selection, the old one is taken back, got " + openRanges());
+  assert(d.querySelector('#highlightRows [data-entry-id="' + f.entries[40].id + '"].selected'),
+    "the selected match is in the rendered window");
+
+  section("276b. Under \"collapsed\" the switch leaves the view shut");
+  T.contextInitialExpansion = "collapsed";
+  fireClick(d.querySelector("#ctxCollapseAll"), w);
+  fireClick(d.querySelector('#fhTabs [data-fh-tab="filter"]'), w);
+  T.state.selectedId = f.entries[20].id;
+  fireClick(contextTab(), w);
+  assert(T.fhActiveTab === "highlight" && T.contextExpansions.size === 0,
+    "nothing opened, got " + openRanges());
+
+  section("276c. Expand around matches: one step around every match");
+  const btn = d.querySelector("#ctxExpandAround");
+  assert(btn && !btn.disabled, "the button exists and is enabled with gaps to open");
+  T.contextExpandStep = 3;
+  fireClick(d.querySelector("#ctxExpandAll"), w);
+  fireClick(btn, w);
+  assert(openRanges() === "1-4,7-10|11-14,17-20|21-24,27-30|31-34,37-40|41-44,47-50|51-54",
+    "three lines below and above each match, replacing Expand all's state, got " + openRanges());
+  T.contextInitialExpansion = "aroundJump";
+  w.moveContextMatchSelection(1); // -> 30: its own window adds nothing new (already open)
+  w.moveContextMatchSelection(1); // -> 40
+  assert(openRanges() === "1-4,7-10|11-14,17-20|21-24,27-30|31-34,37-40|41-44,47-50|51-54",
+    "hand-owned: later jumps take none of it back, got " + openRanges());
+  T.contextExpandStepUnit = "time";
+  T.contextExpandStepMs = 2500; // one entry per second -> two entries each way
+  fireClick(btn, w);
+  assert(openRanges() === "1-3,8-10|11-13,18-20|21-23,28-30|31-33,38-40|41-43,48-50|51-53",
+    "time mode reveals the configured timespan around each match, got " + openRanges());
+  T.contextExpandStepUnit = "entries";
+  T.contextExpandStep = 10;
+});
+
+/* ============================================================
+   GROUP 277 — "Select" (Add to selection) actions use the selection
+   filter's tree-node checkmark
+   Origin: 2026-09-25, person-requested. The toolbar "Select" buttons and
+   the context menu's "Add to selection" item drew the generic filter
+   funnel; they now draw the same checkmark path as a selection filter
+   (idset) node in the tree, so action and result read as one thing.
+   ============================================================ */
+group(277);
+await withApp(async (w, d, T) => {
+  section("277. Select buttons + context-menu item share the idset node's checkmark");
+  const f = await w.addFile("sel.log", makeLog(0, 5), () => {});
+  const idsetNode = w.createFilterNode(f.id, "idset", [f.entries[1].id]);
+  const treePath = (w.nodeIconHTML(idsetNode).match(/<path d="([^"]+)"/) || [])[1];
+  assert(treePath, "sanity: the idset node icon has a path");
+  const pathOf = el => el && el.querySelector("svg path") && el.querySelector("svg path").getAttribute("d");
+  const btns = [...d.querySelectorAll('[data-row-action="addToSelection"]')];
+  assert(btns.length > 0, "sanity: Select buttons are rendered");
+  btns.forEach((b, i) => assert(pathOf(b) === treePath, "Select button #" + i + " draws the tree's checkmark, got " + pathOf(b)));
+  assert(pathOf(d.querySelector("#ctxAddToSelection")) === treePath,
+    "the context menu's Add to selection item draws the same checkmark");
+});
+/* ============================================================
+   GROUP 279 — Find bar: incremental find inside the current view
+   Origin: FEATURE_BACKLOG.md #3 (2026-09-25). Ctrl+F always created a
+   filter node, so "just look for this string once" cost a tree node you
+   then deleted. The find bar (#findBar) is a non-destructive search over
+   the CURRENT view's entry array (the data model, not the DOM): Ctrl+G
+   opens it, typing searches (150ms debounce) and jumps to the first hit,
+   F3/Shift+F3 and Enter/Shift+Enter step with wrap-around, "n / m" counts
+   matching rows, hits are marked (mark.find-match-mark) in rendered rows,
+   Esc closes it. Ctrl+F keeps opening the filter popup. The scan is
+   time-sliced for huge views (279b drives that path by making
+   performance.now() jump, so each 2048-entry batch ends a slice).
+   ============================================================ */
+group(279);
+await withApp(async (w, d, T) => {
+  section("279a. Find bar: Ctrl+G, find-as-you-type, F3/Enter navigation with wrap, marks, toggles, Esc — no filter node created");
+  const fb = d.createElement("script");
+  fb.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fb);
+  const F = () => w.__find.state;
+
+  const f = await w.addFile("a.log", makeLog(0, 60, { suffix: i => (i % 7 === 0 ? "Needle" : "hay") }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const bar = d.getElementById("findBar");
+  const input = d.getElementById("findInput");
+  const count = d.getElementById("findCount");
+  const nodeCount0 = Object.keys(T.state.nodes).length;
+  const hitIds = f.entries.filter((e, i) => i % 7 === 0).map(e => e.id); // entries 0,7,...,56
+  assert(!isVisible(bar, w), "the find bar starts hidden");
+
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  assert(isVisible(bar, w), "Ctrl+G opens the find bar");
+  assert(d.activeElement === input, "...and focuses its input");
+  assert(d.getElementById("filterPopup").classList.contains("hidden"), "...without opening the filter popup");
+
+  input.value = "needle";
+  fireInput(input, w);
+  assert(F().hits.length === 0, "typing is debounced — nothing searched synchronously");
+  await sleep(200);
+  assert(F().done && F().hits.length === 9, "the debounced search finds all 9 matching rows (case-insensitive), got " + F().hits.length);
+  assert(F().entries === T.currentViewEntries && F().kind === "filter", "it searched the Filtered view's own entry list (the data model)");
+  assert(T.state.selectedId === hitIds[0], "find-as-you-type selects the first hit");
+  assert(count.textContent === "1 / 9", "the counter reads n / m, got " + JSON.stringify(count.textContent));
+  const marks = [...d.querySelectorAll("#tableRows mark.find-match-mark")];
+  assert(marks.length > 0 && marks.every(m => m.textContent.toLowerCase() === "needle"),
+    "hits are marked in the rendered rows, got " + JSON.stringify(marks.map(m => m.textContent)));
+  assert(Object.keys(T.state.nodes).length === nodeCount0, "searching created no filter node");
+
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === hitIds[1] && count.textContent === "2 / 9", "F3 steps to the next hit (2 / 9), got " + count.textContent);
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  assert(T.state.selectedId === hitIds[2] && count.textContent === "3 / 9", "Enter in the input steps to the next hit too");
+  fireKeydown(d, w, "F3", { shiftKey: true });
+  assert(T.state.selectedId === hitIds[1], "Shift+F3 steps back");
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true, cancelable: true }));
+  assert(T.state.selectedId === hitIds[0], "Shift+Enter steps back too");
+  fireKeydown(d, w, "F3", { shiftKey: true });
+  assert(T.state.selectedId === hitIds[8] && count.textContent === "9 / 9", "previous from the first hit wraps to the last (9 / 9)");
+  assert(d.querySelector('#tableRows [data-entry-id="' + hitIds[8] + '"]'),
+    "the last hit (row 56, outside the initial render window) was scrolled into the rendered window");
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === hitIds[0], "next from the last hit wraps to the first");
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  assert(T.state.selectedId === hitIds[1], "Ctrl+G with the find input already focused steps to the next hit (browser find-next)");
+
+  // A step starts from the current selection, wherever it came from.
+  w.selectEntry(f.entries[30].id);
+  assert(count.textContent === "9 matches", "a selected non-hit shows the total only, got " + JSON.stringify(count.textContent));
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === f.entries[35].id && count.textContent === "6 / 9", "F3 from a selected row goes to the next hit after it");
+  w.selectEntry(f.entries[30].id);
+  fireKeydown(d, w, "F3", { shiftKey: true });
+  assert(T.state.selectedId === f.entries[28].id, "Shift+F3 from a selected row goes to the hit before it");
+
+  // Toggles and the shared query language.
+  const caseBtn = d.getElementById("findCaseBtn");
+  const regexBtn = d.getElementById("findRegexBtn");
+  fireClick(caseBtn, w);
+  assert(caseBtn.getAttribute("aria-pressed") === "true" && F().hits.length === 0 && count.textContent === "No results",
+    "Aa makes the search case-sensitive: 'needle' no longer matches 'Needle'");
+  fireClick(caseBtn, w);
+  assert(F().hits.length === 9, "toggling Aa off again restores the 9 hits");
+  fireClick(regexBtn, w);
+  input.value = "Need+le";
+  fireInput(input, w);
+  await sleep(200);
+  assert(F().hits.length === 9, "regex mode: /Need+le/ finds the same 9 rows, got " + F().hits.length);
+  input.value = "(";
+  fireInput(input, w);
+  await sleep(200);
+  assert(count.textContent === "Invalid regex" && input.classList.contains("input-regex-error") && F().hits.length === 0,
+    "an invalid regex is flagged instead of throwing");
+  assert(d.getElementById("findAddFilterBtn").disabled, "...and can't be added as a filter");
+  fireClick(regexBtn, w);
+  input.value = "message [*:int] Needle";
+  fireInput(input, w);
+  await sleep(200);
+  assert(F().hits.length === 9, "a wildcard-token pattern searches exactly like a filter would (same query language), got " + F().hits.length);
+
+  // The list a view shows changes -> the hits follow it.
+  input.value = "needle";
+  fireInput(input, w);
+  await sleep(200);
+  const sub = w.createFilterNode(f.id, "text", "message 1");
+  w.render();
+  assert(F().entries === T.currentViewEntries && T.currentViewEntries.length === 11,
+    "switching to a new filter re-scans the new Filtered list");
+  assert(F().hits.length === 1 && T.currentViewEntries[F().hits[0]].message.includes("message 14"),
+    "...and only its rows count (message 14 is the one 'Needle' among 1,10-19), got " + F().hits.length);
+  T.state.activeId = f.id;
+  w.render();
+  assert(F().hits.length === 9, "back on the file node: 9 hits again");
+
+  // The Context view is searched when it's the view on screen.
+  w.applyFhView("highlight");
+  assert(F().kind === "highlight" && F().entries === T.currentHighlightViewEntries, "on the Context tab the find bar searches the Context view's list (for a file node the very same array — only the view a step selects in changes)");
+  w.selectHighlightEntry(f.entries[20].id);
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === f.entries[21].id && T.state.entriesView === "highlight",
+    "F3 there selects the next hit in the Context view");
+  // On a filter node the Context view is its own list (matches + revealed
+  // context rows, collapsed gaps excluded) — that's what gets searched.
+  T.state.activeId = sub.id;
+  w.render();
+  w.applyFhView("highlight");
+  const ctxList = T.currentHighlightViewEntries;
+  const ctxExpected = ctxList.filter(e => /needle/i.test(e.raw)).length;
+  assert(F().kind === "highlight" && F().entries === ctxList && ctxList !== T.currentViewEntries && F().hits.length === ctxExpected,
+    "on a filter node's Context view the hits come from that view's own list (" + ctxExpected + " expected), got " + F().hits.length);
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("filter");
+
+  // Esc closes: marks gone, focus released, still no node created.
+  input.focus();
+  fireKeydown(d, w, "Escape");
+  assert(!isVisible(bar, w), "Esc closes the find bar");
+  assert(d.activeElement !== input, "...and releases the input's focus (so app shortcuts work again)");
+  assert(!d.querySelector("mark.find-match-mark"), "...and removes every find mark");
+  assert(Object.keys(T.state.nodes).length === nodeCount0 + 1, "the whole search session created no node (the one extra is the explicit 'message 1' filter)");
+  void sub;
+
+  // Ctrl+F is unchanged: still the filter popup.
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  assert(!d.getElementById("filterPopup").classList.contains("hidden") && !isVisible(bar, w),
+    "Ctrl+F still opens the filter popup, not the find bar");
+  fireKeydown(d, w, "F3");
+  assert(!isVisible(bar, w), "F3 typed into another input (the filter popup's) is left alone");
+  fireKeydown(d, w, "Escape");
+
+  // F3 with the bar closed reopens it on the remembered query and steps.
+  d.activeElement && d.activeElement.blur && d.activeElement.blur();
+  w.selectEntry(f.entries[0].id);
+  fireKeydown(d, w, "F3");
+  assert(isVisible(bar, w) && input.value === "needle" && T.state.selectedId === hitIds[1],
+    "F3 with the bar closed reopens it with the last query and steps to the next hit");
+  fireClick(d.getElementById("findCloseBtn"), w);
+  assert(!isVisible(bar, w), "the close button closes it");
+});
+
+await withApp(async (w, d, T) => {
+  section("279b. Find bar on a large view: the scan is time-sliced, a step pressed mid-scan is applied when it finishes");
+  const fb = d.createElement("script");
+  fb.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fb);
+  const F = () => w.__find.state;
+  const N = 6000;
+  const f = await w.addFile("big.log", makeLog(0, N, { suffix: i => (i % 1000 === 999 ? "Needle" : "hay") }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  // Every performance.now() call advances 50ms, so every 2048-entry batch
+  // exceeds the slice budget and the scan yields — deterministic slicing
+  // without needing a genuinely huge file.
+  let fakeNow = 0;
+  Object.defineProperty(w.performance, "now", { value: () => (fakeNow += 50), configurable: true });
+
+  const input = d.getElementById("findInput");
+  input.value = "needle";
+  fireKeydown(d, w, "g", { ctrlKey: true }); // opens with the typed query, no auto-jump
+  assert(!F().done && F().hits.length === 2, "the first slice ran synchronously and stopped after one batch (hits 999, 1999), got " + F().hits.length);
+  assert(d.getElementById("findCount").textContent.endsWith("…"), "the counter shows a running partial count while scanning");
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId == null || T.state.selectedId !== f.entries[999].id, "a step pressed mid-scan waits for the scan");
+  assert(await waitFor(() => F().done), "the scan finishes over later slices");
+  assert(F().hits.length === 6, "all 6 hits were found across the slices, got " + F().hits.length);
+  assert(T.state.selectedId === f.entries[999].id, "the step pressed mid-scan was applied once it finished (first hit)");
+  assert(d.getElementById("findCount").textContent === "1 / 6", "counter 1 / 6");
+  input.value = "hay";
+  fireInput(input, w);
+  input.value = "needle x";
+  fireInput(input, w);
+  await sleep(200);
+  assert(await waitFor(() => F().done) && F().hits.length === 0 && F().query === "needle x",
+    "a newer query supersedes the older one (debounce + scan generation), got query " + JSON.stringify(F().query));
+});
+
+/* ============================================================
+   GROUP 280 — Find bar: "Add as filter" promotes the search
+   Origin: FEATURE_BACKLOG.md #3 (2026-09-25). "Add as filter" (and
+   Ctrl+Enter in the find input) turns the current search into a "text"
+   filter node under the active node via the SAME createFilterNode call the
+   Ctrl+F popup's commitFilter makes — so the node has exactly the shape a
+   popup-created one has (no new field to thread through the persistence
+   carriers), keeps exactly the rows the search counted, closes the bar and
+   reveals the Filtered view. Also: the three find shortcuts are listed and
+   rebindable in the Shortcut Manager.
+   ============================================================ */
+group(280);
+await withApp(async (w, d, T) => {
+  section("280. Find bar: Add as filter / Ctrl+Enter create the same node Ctrl+F would; Shortcut Manager lists + rebinds the find keys");
+  const fb = d.createElement("script");
+  fb.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fb);
+  const F = () => w.__find.state;
+  const f = await w.addFile("a.log", makeLog(0, 60, { suffix: i => (i % 7 === 0 ? "Needle" : "hay") }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("highlight"); // start on Context: adding must reveal Filtered
+  const bar = d.getElementById("findBar");
+  const input = d.getElementById("findInput");
+  const addBtn = d.getElementById("findAddFilterBtn");
+
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  input.value = "needle";
+  fireInput(input, w);
+  await sleep(200);
+  assert(F().hits.length === 9, "sanity: 9 hits");
+  const childCount0 = f.children.length;
+  fireClick(addBtn, w);
+  assert(f.children.length === childCount0 + 1, "Add as filter created exactly one child of the active node");
+  const node = T.state.nodes[f.children[f.children.length - 1]];
+  assert(node.type === "filter" && node.filterType === "text" && node.value === "needle" && !node.caseSensitive && !node.isRegex && !node.inverted,
+    "...a plain text filter carrying the query");
+  assert(node.name === "“needle”", "...named like a Ctrl+F filter, got " + node.name);
+  assert(w.getEntries(node.id).length === 9, "...keeping exactly the 9 rows the search counted");
+  assert(T.state.activeId === node.id, "...and it became the active node");
+  assert(!isVisible(bar, w) && d.activeElement !== input, "the find bar closed after promoting the search");
+  assert(T.fhActiveTab === "filter", "the Filtered view was revealed (the new filter's result lives there)");
+
+  // Same shape as a node the Ctrl+F popup creates for the same query.
+  T.state.activeId = f.id;
+  w.render();
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  d.getElementById("filterInput").value = "needle";
+  fireSubmit(d.getElementById("filterForm"), w);
+  const popupNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(popupNode !== node && popupNode.value === "needle", "sanity: the popup created its own node");
+  const shape = n => Object.keys(n).filter(k => !k.startsWith("_")).sort().join(",");
+  assert(shape(node) === shape(popupNode), "the find-bar node has exactly the popup node's fields: " + shape(node) + " vs " + shape(popupNode));
+
+  // Case + regex carry over; Ctrl+Enter is the keyboard path.
+  T.state.activeId = f.id;
+  w.render();
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireClick(d.getElementById("findCaseBtn"), w);
+  fireClick(d.getElementById("findRegexBtn"), w);
+  input.value = "(";
+  fireInput(input, w);
+  const before = f.children.length;
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+  assert(f.children.length === before && isVisible(bar, w), "Ctrl+Enter with an invalid regex creates nothing and keeps the bar open");
+  input.value = "Need+le";
+  fireInput(input, w);
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+  const rxNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(f.children.length === before + 1 && rxNode.isRegex === true && rxNode.caseSensitive === true && rxNode.value === "Need+le",
+    "Ctrl+Enter (even before the debounce fired) adds a case-sensitive regex filter from the toggles");
+  assert(rxNode.name === "/Need+le/" && w.getEntries(rxNode.id).length === 9, "...named /Need+le/, 9 rows");
+
+  // Shortcut Manager: listed, and a rebind takes effect.
+  w.renderShortcutBindingsList();
+  const row = id => d.querySelector('#shortcutBindingsList [data-action-id="' + id + '"]');
+  const keys = id => [...row(id).querySelectorAll("kbd")].map(k => k.textContent).join("+");
+  assert(row("findInView") && keys("findInView") === "Ctrl+G", "Shortcut Manager lists 'Find in the current view' as Ctrl+G, got " + (row("findInView") && keys("findInView")));
+  assert(row("findNext") && keys("findNext") === "F3", "...'next match' as F3");
+  assert(row("findPrev") && keys("findPrev") === "Shift+F3", "...'previous match' as Shift+F3");
+  assert(keys("newFilter") === "Ctrl+F", "...and Ctrl+F is still 'New filter'");
+  fireClick(row("findInView").querySelector(".shortcut-rebind-btn"), w);
+  fireKeydown(d, w, "k", { ctrlKey: true, altKey: true });
+  assert(keys("findInView") === "Ctrl+Alt+K", "rebinding the find shortcut works, got " + keys("findInView"));
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  assert(!isVisible(bar, w), "the old Ctrl+G no longer opens the bar");
+  fireKeydown(d, w, "k", { ctrlKey: true, altKey: true });
+  assert(isVisible(bar, w), "the new chord does");
+  fireClick(d.getElementById("btnResetShortcuts"), w);
+  fireKeydown(d, w, "Escape");
+});
+
 
 /* ============================================================
    GROUP 284 — gzip-compressed logs (.gz): detection, name handling, and
@@ -29460,9 +32112,23 @@ group(285);
     assert(node.localPath === "/var/log/app/app.log.1.gz" && !node.tail, "location attached, no tail");
   }, { philogg: nativeFolderBridge({}) });
 
+  // A philogg://local/… fetch that honours Range like protocol.rs's
+  // read_local (206 + Content-Range), so urlTailHandle.getRangedFile — the
+  // tail poll's and minimap probe's partial reader — really reads ranges.
+  function rangedFetch(buf, log) {
+    return async (url, init) => {
+      if (log) log.push({ url: String(url), range: init && init.headers && init.headers.Range || null });
+      const range = init && init.headers && init.headers.Range;
+      const m = range && /bytes=(\d+)-(\d+)/.exec(range);
+      if (!m) return new Response(buf);
+      const lo = Number(m[1]), hi = Math.min(Number(m[2]), buf.length - 1);
+      return new Response(buf.subarray(lo, hi + 1), { status: 206, headers: { "content-range": "bytes " + lo + "-" + hi + "/" + buf.length } });
+    };
+  }
+
   const factory = new IDBFactory();
   await withApp(async (w, d, T) => {
-    section("285c. session cache: a gzip file persists its decompressed text...");
+    section("285c. session cache: a gzip file persists its decompressed content...");
     withGzipApis(w);
     await w.loadFileDescriptors([{ file: new w.File([gzBuf], "app.log.1.gz"), handle: null }]);
     const f = T.state.nodes[T.state.rootIds[0]];
@@ -29470,24 +32136,75 @@ group(285);
     await w.persistFileNode(f);
     await w.persistMetaNow();
     const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
-    assert(rec && rec.text.includes("old 4") && !rec.handle, "the cached text is the decompressed log, with no handle");
+    const cached = rec && (typeof rec.text === "string" ? rec.text : rec.blob ? await rec.blob.text() : "");
+    assert(cached.includes("old 4") && !rec.handle, "the cached content (text or File blob) is the decompressed log, with no handle, got " + JSON.stringify(cached.slice(0, 40)));
   }, { indexedDB: factory });
   await withApp(async (w, d, T) => {
-    section("285c. ...restores it identically, and the desktop-URL tail rebuilt on restore is dropped on the first tick");
+    section("285c. ...restores it identically, and the desktop-URL tail rebuilt on restore is dropped by a 2-byte Range read on the first tick");
     withGzipApis(w);
     // Every tail poll of the restored node goes through this fetch — a
     // fetch of the gzip URL proves restore DID rebuild a tail (the app's
     // own poll timer may already have run that first tick under load, so
     // the tail's presence right after restore isn't asserted directly).
-    let tailFetches = 0;
-    w.fetch = async url => { if (String(url).endsWith("app.log.1.gz")) tailFetches++; return new Response(gzBuf); };
+    const log = [];
+    w.fetch = rangedFetch(gzBuf, log);
     await T.bootRestore;
     const f = T.state.nodes[T.state.rootIds[0]];
     assert(f && f.name === "app.log.1.gz" && f.entries.length === 5, "restored with its name and all entries, got " + (f && f.entries.length));
     await w.tailTick();
-    assert(tailFetches >= 1, "restore rebuilt a urlTailHandle tail from the desktop sourceUrl (it was polled)");
+    assert(log.some(r => r.url.endsWith("app.log.1.gz")), "restore rebuilt a urlTailHandle tail from the desktop sourceUrl (it was polled)");
+    assert(log.every(r => r.range), "the poll only ever made Range reads, never a whole-file fetch: " + JSON.stringify(log.map(r => r.range)));
     assert(!f.tail && f.entries.length === 5, "tailTick drops it — no compressed bytes appended, got " + f.entries.length + " entries");
   }, { indexedDB: factory });
+
+  // Desktop native parsing: parse_log_file (commands.rs) rejects a gzip file
+  // before streaming anything (philogg_logparse::is_gzip) — this stub
+  // mimics exactly that and records the call, so every native route is
+  // shown to fall back to the JS read + inflate.
+  function nativeBridge() {
+    const b = nativeFolderBridge({});
+    b.nativeCalls = [];
+    b.parseLogFile = async (url, spec, onMessage) => {
+      b.nativeCalls.push(String(url));
+      await Promise.resolve();
+      throw new Error("gzip-compressed file: parsed by the page");
+    };
+    b.openLocalPath = async p => ({ url: "philogg://local/42/" + p.split("/").pop(), path: p, name: p.split("/").pop() });
+    return b;
+  }
+  const deskFactory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("285d. desktop native route: drop/picker (loadDesktopLocalFiles) and launch (loadUrlIntoTree) try native, fall back, inflate, no tail");
+    withGzipApis(w);
+    w.fetch = rangedFetch(gzBuf);
+    await w.loadDesktopLocalFiles({ files: [{ url: "philogg://local/11/app.log.1.gz", path: "/var/log/app.log.1.gz", name: "app.log.1.gz" }] });
+    const a = T.state.nodes[T.state.rootIds[0]];
+    assert(w.philogg.nativeCalls.length === 1 && w.philogg.nativeCalls[0] === "philogg://local/11/app.log.1.gz", "the native parser was asked first, got " + JSON.stringify(w.philogg.nativeCalls));
+    assert(a && a.entries.length === 5 && a.entries[4].message === "old 4", "its rejection falls back to the JS route, which inflates, got " + (a && a.entries.length));
+    assert(!a.tail && a.localPath === "/var/log/app.log.1.gz", "no tail; location kept");
+
+    await w.loadUrlIntoTree("philogg://local/12/app.log.2.gz");
+    const b = T.state.nodes[T.state.rootIds[1]];
+    assert(w.philogg.nativeCalls.length === 2, "the launch route asks the native parser too");
+    assert(b && b.entries.length === 5 && !b.tail && b.name === "app.log.2.gz", "and falls back into the same node, inflated, untailed, got " + (b && b.entries.length));
+    assert(T.state.rootIds.length === 2, "no stray node from the native attempt");
+
+    // Session cache "path" record (desktop): re-read from disk on restore.
+    await w.persistFileNode(a);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(a.cacheKey));
+    assert(rec && rec.localPath === "/var/log/app.log.1.gz" && rec.text == null && rec.blob == null, "a desktop gzip file is cached as its path, like any desktop file");
+  }, { indexedDB: deskFactory, philogg: nativeBridge() });
+  await withApp(async (w, d, T) => {
+    section("285e. desktop session restore re-reads a gzip path: native rejects, the fallback inflates, and no tail is attached");
+    withGzipApis(w);
+    w.fetch = rangedFetch(gzBuf);
+    await T.bootRestore;
+    const f = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "app.log.1.gz");
+    assert(!!f && w.philogg.nativeCalls.length >= 1, "restore tried the native parser for the path record");
+    assert(f && f.entries.length === 5 && f.entries[0].message === "old 0", "restored inflated, got " + (f && f.entries.length));
+    assert(f && !f.tail && /^philogg:\/\/local\/42\//.test(f.sourceUrl), "this run's URL, and no tail for a gzip file");
+  }, { indexedDB: deskFactory, philogg: nativeBridge() });
 }
 
 console.log("\n" + "=".repeat(60));
@@ -31027,8 +33744,9 @@ process.exitCode = failed ? 1 : 0;
    Group 107 — this session (2026-08-25), FEATURE_BACKLOG.md #51 ("Improve
               desktop startup time perception"): the localStorage half of
               the new "Close to system tray" setting (default on). The
-              splash-screen and tray/close-interception halves
-              live entirely in the wrapper, outside jsdom's reach —
+              tray/close-interception half (and the splash screen, since
+              removed 2026-09-25) lives entirely in the wrapper, outside
+              jsdom's reach —
               not covered here, same standing limitation as the rest of
               desktop/ (see its README's own "Status" section).
    Group 108 — this session (2026-08-25), person-reported bugfix: arrow-key
@@ -33537,6 +36255,12 @@ process.exitCode = failed ? 1 : 0;
       complete is, once again, left to the person's own retest; this round
       at least replaced two rounds of blind guessing with a fix grounded
       in a concrete, measured magnitude from real telemetry.
+      Updated 2026-09-24 (GROUP 266's session): the 100ms throttle was
+      replaced by one render per frame plus a cost-based backoff; 258b/c's
+      "exactly one trailing catch-up render" assertions were dropped (a
+      burst now collapses onto the next frame's single render, which
+      already reads the final position) and replaced by "no redundant
+      trailing render".
    Group 259 — new session, person-reported: a meta-format merge's Filtered/
       Full/minimap view flickered through each per-grammar stream's own
       (already complete) content before settling on the merge, because
@@ -33647,11 +36371,136 @@ process.exitCode = failed ? 1 : 0;
       makeLog's tab-separated lines — it had been crashing its shard, and
       silently shortening the reported total, since the Custom Columns
       session).
+   Group 262 — new session (2026-09-23): tree connector lines with the
+              active path highlighted, replacing the removed breadcrumb bar
+              (Groups 26/100/152/199i/225/PiP list trimmed of it).
+              Follow-up: 2px border lines (even thickness), no multi-select
+              outline on the active row; stretched verticals not
+              collapsed by a base height:0; ancestor names (.on-path)
+              in the path accent.
+   Group 263 — new session (2026-09-23): filter popup redesign — inline
+              "in <parent>" scope hint (15 chars) instead of the "Filter
+              on" pill chain, Text/Regex switch, Insert/Syntax/Search in
+              rows, live result summary (count, histogram, sample table);
+              follow-ups: segmented view-tab look for Text/Regex only,
+              standalone label-only toggles with a status bar for the
+              on/off options and columns, button look for Insert chips.
+              Groups 152/225 (.crumb pill + separator styling) removed with
+              the last .crumb consumer; 39/40/122/149/212 updated.
+   Group 264 — new session (2026-09-24): native (Rust) parsing under the
+              desktop wrapper — nativeFormatSpec, the golden fixture shared
+              with desktop/src-tauri/logparse's `cargo test`
+              (tests/fixtures/native-parse-golden.json), adoption of
+              streamed entries (same shape/ids/EMPTY_ENTRY_FIELDS/local ts),
+              rollback, the three desktop load routes (drop/pick, file
+              association, folder watch) with their JS fallbacks, and the
+              naive-timestamp localizer across DST zones.
+   Group 265 — same session (2026-09-24): one render per loaded file
+              (loadOneFileIntoTree no longer renders itself; drop/dialog,
+              batch incl. a failing file, desktop drop and file
+              association), and makeLevelBucketer's per-pass memo equal to
+              levelBucket (text + int formats) incl. minimap overlay and
+              level counts.
+   Group 266 — new session (2026-09-24): log view scrolling —
+              detectMaxTableScrollPx reads Chromium's exponent-form computed
+              height (was a 950,000px cap, compressing every view above
+              ~34k rows), per-frame scroll renders with a cost-based backoff
+              instead of the 100ms throttle (GROUP 258 updated), and row
+              reuse on scroll renders (identity kept, one-screen overscan,
+              same markup as a full rebuild, note rows paired).
+   Group 267 — new session (2026-09-24, load/filter performance): the
+              session cache off the load path — a File load cached as the
+              File itself (blob, restored identically), text records
+              written when idle, a tail change dropping the blob, and the
+              desktop "path" record (person-decided: re-read from disk on
+              restore, a deleted file dropped). The suite's structuredClone
+              shim lets fake-indexeddb store jsdom Blobs.
+   Group 268 — same session: parallel JS parsing — encodeEntryBatch ->
+              decodeNativeBatch round trip over the golden cases, cuts only
+              before header lines (CRLF edge), one fake worker per piece
+              with out-of-order completion, file-order ids, rollback +
+              fallback on a worker failure, a custom regex format, and the
+              drain yielding through queueTask, never setTimeout. Groups
+              165b/c and 261 now decode the worker's binary batches.
+   Group 269 — same session: per-file aggregates — complete when the load
+              finishes, minimap bars/full-range box/measured message/level
+              counts identical to the per-entry passes (time + entries
+              mode, single- and multi-line), unsorted/NaN ts fallback, tail
+              appends folded in incrementally, rotation, clock offset,
+              merge and a format level edit.
+   Group 270 — same session: the Context view is built only while visible
+              (Filtered tab: not built, stale; revealed: built once;
+              Stacked: every render), its match/gap part memoized (re-render
+              and gap toggle reuse it, an append rebuilds it, identical to a
+              cold build), OR/link reference checks, a jump from the
+              Filtered tab. Groups 55a/55d/61a/97a/137/202b/202c assert on
+              both Log views at once and now run in Stacked layout, where
+              both are on screen.
+   Group 271 — new session (2026-09-25): PolyForm Noncommercial license +
+              30-day commercial evaluation (LICENSE.md, shown verbatim in
+              Settings -> License, English, mail-only contact), third-party
+              notices (Catppuccin in-app, desktop/THIRD_PARTY_NOTICES.md vs
+              Cargo.lock), LICENSE.md in every build (tauri.conf.json,
+              portable zip, HTML artifacts). Group 65's German-text checks
+              replaced.
+   Group 272 — same day, new session: tracking/folder-watch/ZIP/viewer
+              performance review — tail appends extend per-entry filters
+              (cold-recompute equality, rotation, context chain excluded),
+              concurrent tail polls, Blob-snapshot cache record for a tailed
+              file (exact CRLF restore offset, text fallback), Range reads of
+              philogg://local/… (tail poll, minimap probe, no-Range fallback),
+              shared in-flight minimap probe, reused unopened folder/ZIP
+              rows, text/image viewers not rebuilt on unrelated renders +
+              per-image natural size, concurrent folder-minimap
+              merge-source loads, filter-history record not re-fingerprinted
+              on tail growth under an unchanged filter tree.
+   Group 273 — same day, new session: plain-text files — "Plain text"
+              format (line = entry, ts = line number, no level; worker +
+              tail), text/wildcard filters, Line column in Table/Plot, row
+              grid without Δt/Level, line-range filter names, no merge, and
+              the text viewer's "Filter lines" button (pretty-printed JSON).
+   Group 274 — same day, follow-up: plain-text rows keep indentation
+              (.col-msg.plaintext) and JSON/XML syntax highlighting
+              (token ranges merged with match marks), and a "Filter lines"
+              text version nests under its viewer entry in the tree
+              (nav order, reuse, close cascade + undo); Ctrl+F on a text
+              viewer opens its text version + the filter popup.
+   Group 275 — same day: opened text/image viewers are persisted (desktop:
+              path; browser: Blob) and restored after a reload, the text
+              version nested under its viewer again, gone files skipped,
+              closed/stale viewer records dropped.
+   Group 276 — same day: switching onto the Context tab opens the
+              "aroundJump" window around the selection; new "Expand around
+              matches" toolbar button.
+   Group 277 — same day: "Select"/"Add to selection" actions draw the
+              selection filter's tree-node checkmark instead of the funnel.
+   Group 279 — new session (2026-09-25): FEATURE_BACKLOG.md #3, the find bar
+      (Ctrl+G/F3) — 279a open/type/debounce/auto-jump, F3/Enter/Shift nav
+      with wrap and selection anchor, n / m counter, find marks, Aa/.*
+      toggles + invalid regex + wildcard parity, rescan on a changed view
+      list, Context-view target, Esc, Ctrl+F unchanged; 279b time-sliced
+      scan on a large view with a step pressed mid-scan.
+   Group 280 — same session: the find bar's "Add as filter"/Ctrl+Enter
+      (same node shape as a Ctrl+F popup node, case/regex carried over,
+      bar closes, Filtered revealed) + the three find shortcuts in the
+      Shortcut Manager, incl. a rebind.
+   Group 281-283 — 2026-09-25 session: Export / Share (FEATURE_BACKLOG.md
+      #31 + #32 as one ticket-oriented concept, docs/export.md) — 281 the
+      export context + bounded "Copy for ticket" snippet in Markdown / Jira
+      wiki / plain, 282 the .log/.csv/.tsv/.html attachment builders +
+      save path (picker/cancel/fallback), 283 the #exportDialog, remembered
+      flavor/excerpt lines, Ctrl+Shift+E. Same session made GROUP 114's
+      rebindable-row count read SHORTCUT_ACTIONS.length instead of a
+      hardcoded 20.
    Group 284 — 2026-09-25 (FEATURE_BACKLOG.md #83, gzip-compressed logs):
       magic-byte detection, .gz/rotation-counter name look-through (format
       rules, isCompatibleFolderFile), and inflate on the drop/picker, ZIP
       entry and ?url=/desktop-launch routes; corrupt gzip, no tail.
    Group 285 — same session: .gz in folder watch (patterns, no minimap
       probe, native listFolder asked for .gz), session-cache round trip,
-      and tailTick dropping a tail reattached to a gzip source.
+      and tailTick dropping a tail reattached to a gzip source (2-byte Range
+      read); 285d/e the desktop native route (stub rejecting gzip like
+      parse_log_file) for drop/launch and the "path" session restore. Same
+      session updated GROUP 272's first-tail-poll request count (+ the
+      one-time gzip check on a hand-attached tail).
    ============================================================ */

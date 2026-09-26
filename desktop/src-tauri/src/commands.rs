@@ -11,6 +11,7 @@
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use tauri::ipc::{Channel, InvokeResponseBody};
 use tauri::{AppHandle, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
@@ -253,6 +254,82 @@ pub fn path_for_local_url(app: AppHandle, url: String) -> Option<String> {
         .map(|p| p.to_string_lossy().to_string())
 }
 
+/// Native parsing (`window.philogg.parseLogFile`): reads the registered file
+/// behind a `philogg://local/…` URL — the same id -> path lookup the
+/// protocol handler does, so the page can't name an arbitrary path — and
+/// parses it under `format` (the page's own `nativeFormatSpec`) on every core
+/// via `philogg-logparse`, streaming the entries back over `on_event`:
+/// `{type:"progress", fraction}` JSON while parsing, then the entries as
+/// binary batches in file order (`logparse::batch` has the layout — JSON
+/// batches were the first version and cost several times the parse itself).
+///
+/// Errors come back before anything is streamed (the format is compiled
+/// first), which is what lets the page fall back to its own parser cleanly
+/// — that is the designed outcome for a regex construct the native engine
+/// can't run with JS semantics (lookaround, backreferences).
+#[tauri::command]
+pub async fn parse_log_file(
+    app: AppHandle,
+    url: String,
+    format: philogg_logparse::FormatSpec,
+    on_event: Channel,
+) -> Result<ParseSummary, String> {
+    let path = app
+        .state::<AppState>()
+        .local_file_for_url(&url)
+        .ok_or_else(|| format!("not a local file: {url}"))?;
+    tauri::async_runtime::spawn_blocking(move || parse_and_stream(&path, &format, &on_event))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize)]
+pub struct ParseSummary {
+    /// Bytes read — the page's tail offset for the file.
+    size: u64,
+}
+
+/// Share of the row's progress bar spent parsing; delivering the batches
+/// fills the rest.
+const PARSE_SHARE: f64 = 0.4;
+const BATCH_ENTRIES: usize = 25_000;
+
+fn parse_and_stream(
+    path: &std::path::Path,
+    format: &philogg_logparse::FormatSpec,
+    channel: &Channel,
+) -> Result<ParseSummary, String> {
+    use philogg_logparse as lp;
+    let parser = lp::Parser::new(format)?;
+    let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    // A gzip-compressed log (`app.log.1.gz`) is inflated page-side: reject it
+    // before anything is streamed, which sends the page down its ordinary
+    // read + parse fallback (docs/desktop.md -> "Native parsing").
+    if lp::is_gzip(&bytes) {
+        return Err("gzip-compressed file: parsed by the page".into());
+    }
+    let size = bytes.len() as u64;
+    let text = lp::decode(&bytes);
+    drop(bytes);
+
+    let send = |json: String| channel.send(InvokeResponseBody::Json(json)).map_err(|e| e.to_string());
+    // Parsing reports from worker threads; only every ~5% reaches the page.
+    let reported = AtomicU64::new(0);
+    let entries = lp::parse_text(&text, &parser, lp::DEFAULT_CHUNK_BYTES, &|done, total| {
+        let pct = (done * 100 / total.max(1)) as u64;
+        let prev = reported.load(Ordering::Relaxed);
+        if pct >= prev + 5 && reported.compare_exchange(prev, pct, Ordering::Relaxed, Ordering::Relaxed).is_ok() {
+            let fraction = PARSE_SHARE * pct as f64 / 100.0;
+            let _ = send(format!(r#"{{"type":"progress","fraction":{fraction}}}"#));
+        }
+    });
+    drop(text);
+    lp::batch::for_each_batch(&entries, BATCH_ENTRIES, PARSE_SHARE, &mut |bytes| {
+        channel.send(InvokeResponseBody::Raw(bytes)).map_err(|e| e.to_string())
+    })?;
+    Ok(ParseSummary { size })
+}
+
 /// #52's other half: a `philogg://local/<id>/…` file is known to the page
 /// only by that URL, so the id -> path lookup has to happen here.
 #[tauri::command]
@@ -397,11 +474,11 @@ pub fn window_close(window: Window) {
 }
 
 /// Called by the injected script once `philogg.html` has actually painted,
-/// which is the point the splash can be dismissed. Tauri has no
+/// which is the point a cold-launch `.zip`/folder open that had to wait for
+/// the page can be handed over (see `windows::open_local`). Tauri has no
 /// "first paint" event of its own, so the page reports it (see `inject.js`).
 #[tauri::command]
 pub fn app_ready(app: AppHandle) {
-    windows::dismiss_splash(&app);
     windows::flush_pending_local(&app);
 }
 
