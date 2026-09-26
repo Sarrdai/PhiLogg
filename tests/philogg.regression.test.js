@@ -12377,7 +12377,10 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
   assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
   const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
-  assert(rebindableRows.length === 20, "the rebindable-actions rows render one per registered action");
+  // Compared against the live SHORTCUT_ACTIONS length (a top-level const,
+  // reachable via global eval) rather than a hardcoded number, so adding a
+  // rebindable action (e.g. exportView, GROUP 283) doesn't need this edited.
+  assert(rebindableRows.length === w.eval("SHORTCUT_ACTIONS.length") && rebindableRows.length >= 20, "the rebindable-actions rows render one per registered action");
   const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
   assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
   fixedRows.forEach(row => {
@@ -28178,6 +28181,289 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
+   GROUP 281 — Export / Share: context + "Copy for ticket" snippet
+   Origin: 2026-09-25 session (FEATURE_BACKLOG.md #31 + #32, ticket-
+   oriented export — see docs/export.md). collectExportContext gathers the
+   active view (active node's result + level quick-filter), the filter
+   chain as human-readable steps with per-step counts, sources, time span
+   and the root file's bookmarks/notes; buildTicketSnippet renders it in
+   three flavors (Markdown / Jira wiki / plain), bounded by excerpt-line
+   count, per-entry and total character caps, each cut announced.
+   ============================================================ */
+group(281);
+await withApp(async (w, d, T) => {
+  section("281a. collectExportContext: view entries, chain steps with counts, sources, time span, findings");
+  assert(w.collectExportContext() === null, "no active node -> nothing to export (null)");
+  const f = await w.addFile("app.log", makeLog(0, 50), () => {});
+  const other = await w.addFile("other.log", makeLog(200, 5), () => {});
+  const txt = w.createFilterNode(f.id, "text", "message 1", false, null, true, ["message"], false, false);
+  T.state.activeId = txt.id;
+  let ctx = w.collectExportContext();
+  const expected = f.entries.filter(e => e.message.includes("message 1"));
+  assert(ctx.entries.length === expected.length && expected.length === 11, "the view is the active filter's result (11 of 50), got " + ctx.entries.length);
+  assert(ctx.total === 50 && ctx.root === f && ctx.active === txt, "total = the root file's entry count, root/active resolved");
+  assert(ctx.steps.length === 2 && ctx.steps[0].text === "File: app.log" && ctx.steps[0].count === 50,
+    "step 1 is the file with its full count, got " + JSON.stringify(ctx.steps[0]));
+  assert(ctx.steps[1].text === "Text contains: “message 1” [case-sensitive, in Message]" && ctx.steps[1].count === 11,
+    "step 2 describes the text filter incl. case/column flags and its count, got " + JSON.stringify(ctx.steps[1]));
+  assert(JSON.stringify(ctx.sources) === JSON.stringify(["app.log"]), "sources = the root file's name");
+  assert(ctx.from === expected[0].ts && ctx.to === expected[expected.length - 1].ts, "time span = first/last matching entry");
+
+  // Level quick filter narrows the view and becomes its own last step.
+  T.state.levelFilter.add("ERROR");
+  ctx = w.collectExportContext();
+  const errs = expected.filter(e => e.level === "ERROR");
+  assert(ctx.entries.length === errs.length && ctx.steps.length === 3 && ctx.steps[2].text === "Level quick filter: ERROR" && ctx.steps[2].count === errs.length,
+    "the level quick filter applies to the view and shows as a final chain step, got " + JSON.stringify(ctx.steps[2]));
+  T.state.levelFilter.clear();
+
+  // NOT + label: the label leads, the actual condition stays visible.
+  const inv = w.createFilterNode(txt.id, "text", "message 10", true);
+  inv.label = "Not the tenth";
+  assert(w.describeExportStep(inv) === "NOT Not the tenth (Text contains: “message 10”)", "NOT prefix + label keep the condition, got " + w.describeExportStep(inv));
+  const lvl = w.createFilterNode(f.id, "level", ["ERROR", "WARN"]);
+  assert(w.describeExportStep(lvl) === "Level: ERROR, WARN", "a level node reads 'Level: ERROR, WARN', got " + w.describeExportStep(lvl));
+  const rx = w.createFilterNode(f.id, "text", "mess.ge 4\\d", false, null, false, null, true);
+  assert(w.describeExportStep(rx) === "Regex: /mess.ge 4\\d/", "a regex node reads 'Regex: /…/', got " + w.describeExportStep(rx));
+
+  // Findings: the ROOT file's bookmarked/annotated entries, in log order —
+  // not another file's, and regardless of the active filter.
+  w.toggleBookmark(f.entries[30].id);
+  w.setNoteAndRepaint(f.entries[12].id, "first failure\nsee ticket");
+  w.toggleBookmark(other.entries[1].id);
+  T.state.activeId = txt.id;
+  ctx = w.collectExportContext();
+  assert(ctx.findings.length === 2 && ctx.findings[0].entry === f.entries[12] && ctx.findings[1].entry === f.entries[30],
+    "findings = this root's bookmarks + notes in log order, other file's bookmark excluded");
+  assert(ctx.findings[0].note === "first failure\nsee ticket" && !ctx.findings[0].bookmarked && ctx.findings[1].bookmarked,
+    "a finding carries its note and bookmark flag");
+
+  section("281b. buildTicketSnippet: Markdown / Jira wiki / plain flavors");
+  const md = w.buildTicketSnippet(ctx, "markdown", 3);
+  assert(md.startsWith("### Log findings: “message 1”"), "Markdown: ### heading with the view name, got " + md.split("\n")[0]);
+  assert(md.includes("**Source:** `app.log` (50 entries)"), "Markdown: source line with file name and total");
+  assert(md.includes("**Matched:** 11 of 50 entries (22%)"), "Markdown: x of y matched with percentage");
+  assert(md.includes("1. File: app.log — 50") && md.includes("2. Text contains: “message 1” \\[case-sensitive, in Message\\] — 11"),
+    "Markdown: numbered filter chain with counts, brackets escaped");
+  assert(md.includes("**Bookmarks & notes (2):**") && md.includes("— **Note:** first failure / see ticket") && md.includes("- ★ `"),
+    "Markdown: findings list with ★ for bookmarks and the note collapsed onto one line");
+  assert(md.includes("**Excerpt (first 3 of 11 matching entries):**\n```\n" + expected.slice(0, 3).map(e => e.raw).join("\n") + "\n```"),
+    "Markdown: excerpt = the first N raw lines in a fenced block");
+  assert(md.includes("_… 8 more matching entries — see the attached export._"), "Markdown: the cut is announced");
+  assert(/_Exported with PhiLogg .+ on \d{4}-\d\d-\d\d \d\d:\d\d\._$/.test(md), "Markdown: footer with version and date");
+
+  const jira = w.buildTicketSnippet(ctx, "jira", 3);
+  assert(jira.startsWith("h3. Log findings:") && jira.includes("*Matched:* 11 of 50 entries") && jira.includes("{{app.log}}"),
+    "Jira wiki: h3., *bold*, {{mono}}");
+  assert(jira.includes("# File: app.log — 50") && jira.includes("* ★ {{"), "Jira wiki: # numbered list, * bullets");
+  assert(jira.includes("{noformat}\n" + expected[0].raw) && !jira.includes("```") && !jira.includes("**"), "Jira wiki: {noformat} block, no Markdown");
+  assert(jira.includes("\\[case-sensitive, in Message\\]"), "Jira wiki: brackets escaped (they'd become links)");
+
+  const plain = w.buildTicketSnippet(ctx, "plain", 3);
+  assert(plain.startsWith("Log findings: “message 1”\n====") && !plain.includes("**") && !plain.includes("{noformat}") && !plain.includes("`"),
+    "plain: underlined title, no markup at all");
+  assert(plain.includes("\n    " + expected[0].raw), "plain: excerpt lines indented by four spaces");
+  assert(plain.includes("[case-sensitive, in Message]"), "plain: no escaping");
+
+  const none = w.buildTicketSnippet(ctx, "markdown", 0);
+  assert(!none.includes("```") && none.includes("_Matching entries: see the attached export._"), "0 excerpt lines -> no code block, points to the attachment");
+  const all = w.buildTicketSnippet(ctx, "markdown", 500);
+  assert(all.includes("**Matching entries:**") && !all.includes("more matching entries"), "an excerpt covering every entry says so and announces no cut");
+
+  section("281c. Bounds and escaping");
+  // Code fence grows past the longest backtick run in the quoted lines; a
+  // markup-looking filter value is escaped outside the code block.
+  const g = await w.addFile("ticks.log", makeLog(0, 3, { msgPrefix: "has ```` ticks *bold* _it_" }), () => {});
+  const tf = w.createFilterNode(g.id, "text", "*bold*");
+  T.state.activeId = tf.id;
+  const tctx = w.collectExportContext();
+  const tmd = w.buildTicketSnippet(tctx, "markdown", 5);
+  assert(tmd.includes("\n`````\n") && !tmd.includes("\n```\n"), "Markdown fence is longer than the longest backtick run inside");
+  assert(tmd.includes("Text contains: “\\*bold\\*”"), "filter value markup is escaped in the chain");
+  const tj = w.buildTicketSnippet(tctx, "jira", 5);
+  assert(tj.includes("Text contains: “\\*bold\\*”"), "Jira: filter value markup escaped");
+
+  // Per-entry cap + total cap: huge lines never blow the ticket limit.
+  const huge = "x".repeat(5000);
+  const h = await w.addFile("huge.log", makeLog(0, 200, { suffix: () => huge }), () => {});
+  T.state.activeId = h.id;
+  const hctx = w.collectExportContext();
+  const hmd = w.buildTicketSnippet(hctx, "markdown", 500);
+  assert(hmd.length <= w.eval("TICKET_SNIPPET_MAX_CHARS"), "the snippet stays within TICKET_SNIPPET_MAX_CHARS, got " + hmd.length);
+  assert(hmd.includes(" …[truncated]") && !hmd.includes(huge), "an over-long entry is cut at TICKET_ENTRY_MAX_CHARS and marked");
+  const m = hmd.match(/Excerpt \(first (\d+) of 200 matching entries\)/);
+  assert(m && Number(m[1]) > 5 && Number(m[1]) < 200, "the total budget stops the excerpt early and says how many were shown, got " + (m && m[1]));
+  assert(hmd.includes("more matching entries — see the attached export."), "...and announces the rest");
+});
+
+/* ============================================================
+   GROUP 282 — Export / Share: attachment files (.log/.csv/.tsv/.html)
+   Origin: 2026-09-25 session (see GROUP 281). buildExportFileParts builds
+   the full current view as chunked string parts (EXPORT_CHUNK_ENTRIES per
+   part) for one Blob; saveExportFile goes through showSaveFilePicker where
+   present (cancel = nothing saved, no fallback) else downloadBlobFallback.
+   The HTML report is standalone and inert: everything escaped, no script.
+   ============================================================ */
+group(282);
+await withApp(async (w, d, T) => {
+  section("282a. .log / .csv / .tsv content");
+  const text = makeLog(0, 12) +
+    '2024-01-15 10:00:12,000\tERROR\t"main"\tC:\\src\\Foo.cs\tline 12\t[DoWork]\t"quote \\" comma, tab\there <script>alert(1)</script>\nsecond line"\n';
+  const f = await w.addFile("svc.log", text, () => {});
+  T.state.activeId = f.id;
+  const ctx = w.collectExportContext();
+  assert(ctx.entries.length === 13, "sanity: 13 entries incl. the multi-line one, got " + ctx.entries.length);
+  const log = w.buildExportFileParts("log", ctx).join("");
+  assert(log === ctx.entries.map(e => e.raw).join("\n") + "\n", ".log = the raw lines exactly, one entry after another (continuation lines kept)");
+
+  const csv = w.buildExportFileParts("csv", ctx).join("");
+  const csvRows = csv.split("\r\n");
+  assert(csvRows[0] === "Time,Level,Thread,Location,Method,Message", ".csv header = the visible log columns, got " + csvRows[0]);
+  assert(csvRows[1].startsWith('"2024-01-15 10:00:00,000",ERROR,main,'),
+    ".csv quotes a field containing the delimiter (the ',000' timestamp), got " + csvRows[1]);
+  const last = ctx.entries[12];
+  assert(csv.includes('"' + last.message.replace(/"/g, '""') + '"') && last.message.includes("\n"),
+    ".csv keeps a multi-line message intact inside RFC 4180 quotes");
+  assert(csv.endsWith("\r\n"), ".csv rows end with CRLF");
+
+  const tsv = w.buildExportFileParts("tsv", ctx).join("");
+  const tsvRows = tsv.split("\n").filter(Boolean);
+  assert(tsvRows.length === 14 && tsvRows[0] === "Time\tLevel\tThread\tLocation\tMethod\tMessage", ".tsv: header + one line per entry");
+  assert(tsvRows.every(r => r.split("\t").length === 6), ".tsv: every row has exactly 6 fields (tabs inside values replaced)");
+  assert(tsvRows[13].includes("\\nsecond line"), ".tsv: a line break inside a value becomes the two characters \\n");
+
+  // Chunking: parts, not one string per line and not one giant string.
+  const big = await w.addFile("big.log", makeLog(0, 12001), () => {});
+  T.state.activeId = big.id;
+  const bigParts = w.buildExportFileParts("log", w.collectExportContext());
+  assert(bigParts.length === 3, ".log of 12001 entries is built as ceil(12001/5000) = 3 string parts, got " + bigParts.length);
+  assert(w.buildExportFileParts("csv", w.collectExportContext()).length === 4, ".csv adds the header as its own first part");
+
+  section("282b. HTML report: standalone, complete, inert");
+  T.state.activeId = f.id;
+  w.toggleBookmark(ctx.entries[3].id);
+  w.setNoteAndRepaint(ctx.entries[3].id, "root cause <b>here</b>");
+  const rctx = w.collectExportContext();
+  const html = w.buildExportFileParts("html", rctx).join("");
+  assert(html.startsWith("<!DOCTYPE html>") && html.includes("<title>Log findings: svc.log</title>"), "report is a full HTML document titled after the view");
+  assert(!/<script/i.test(html) && html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"), "log text is escaped — no <script> element anywhere in the report");
+  assert(!/<link|src=|href=/i.test(html), "no external resource references");
+  assert(html.includes("<li>File: svc.log — 13</li>"), "report lists the filter chain with counts");
+  assert(html.includes("<h2>Bookmarks &amp; notes (1)</h2>") && html.includes("root cause &lt;b&gt;here&lt;/b&gt;"), "report lists findings with the (escaped) note");
+  assert((html.match(/<div class="e /g) || []).length === 13, "report contains every matching entry");
+  assert(html.includes('class="e l-error"') && html.includes('class="e l-info bm">★ '), "entries carry level classes; the bookmarked one is marked ★");
+  assert(html.includes('<span class="n">Note: root cause'), "the note also appears inline under its entry");
+
+  section("282c. saveExportFile / exportViewFile: picker, cancel, download fallback");
+  const downloads = [];
+  w.downloadBlobFallback = (blob, name) => downloads.push({ blob, name });
+  const txt = w.createFilterNode(f.id, "text", "message 1");
+  T.state.activeId = txt.id;
+  assert(await w.exportViewFile("log") === true, "exportViewFile resolves true once saved");
+  assert(downloads.length === 1 && downloads[0].name === "svc-message_1.log", "no picker -> download fallback, named <file stem>-<view>, got " + (downloads[0] && downloads[0].name));
+  const expLog = w.buildExportFileParts("log", w.collectExportContext()).join("");
+  assert(downloads[0].blob.size === Buffer.byteLength(expLog, "utf8"), "the downloaded blob is the whole .log content");
+  assert(d.querySelector("#copyToast").textContent === "Saved 3 entries", "a toast confirms the save, got " + d.querySelector("#copyToast").textContent);
+  T.state.activeId = f.id;
+  await w.exportViewFile("html");
+  assert(downloads[1].name === "svc.html", "active = the file itself -> just the file stem, got " + downloads[1].name);
+
+  const written = [];
+  let pickerOpts = null;
+  w.showSaveFilePicker = async opts => {
+    pickerOpts = opts;
+    return { createWritable: async () => ({ write: async b => written.push(b), close: async () => {} }) };
+  };
+  await w.exportViewFile("tsv");
+  assert(written.length === 1 && downloads.length === 2, "with a picker, the file is written through it (no download)");
+  assert(pickerOpts.suggestedName === "svc.tsv" && pickerOpts.types[0].accept["text/tab-separated-values"][0] === ".tsv", "picker gets the suggested name and type");
+  w.showSaveFilePicker = async () => { const e = new Error("cancel"); e.name = "AbortError"; throw e; };
+  assert(await w.exportViewFile("csv") === false && downloads.length === 2, "cancelling the picker saves nothing and does not fall back");
+  w.showSaveFilePicker = async () => { throw new Error("SecurityError"); };
+  await w.exportViewFile("csv");
+  assert(downloads.length === 3 && downloads[2].name === "svc.csv", "an unusable picker falls back to the download");
+});
+
+/* ============================================================
+   GROUP 283 — Export / Share: dialog, remembered format, shortcut
+   Origin: 2026-09-25 session (see GROUP 281). One entry point: #btnExport
+   in the top toolbar + rebindable Ctrl+Shift+E (exportView) opening
+   #exportDialog — flavor switch (remembered in philogg-export-format),
+   excerpt lines (philogg-export-excerpt-lines), live preview, Copy for
+   ticket (primary), four attachment buttons. Esc closes it.
+   ============================================================ */
+group(283);
+await withApp(async (w, d, T) => {
+  section("283a. Entry points and the empty case");
+  const dlg = d.querySelector("#exportDialog");
+  assert(!isVisible(dlg, w), "the dialog starts hidden");
+  fireClick(d.querySelector("#btnExport"), w);
+  assert(!isVisible(dlg, w) && d.querySelector("#copyToast").textContent === "Nothing to export", "nothing loaded -> toast, no dialog");
+
+  const f = await w.addFile("app.log", makeLog(0, 30), () => {});
+  const txt = w.createFilterNode(f.id, "text", "message 2");
+  T.state.activeId = txt.id;
+  w.render();
+  fireClick(d.querySelector("#btnExport"), w);
+  assert(isVisible(dlg, w), "#btnExport opens the dialog");
+  assert(d.querySelector("#exportViewLabel").textContent === "“message 2”", "title names the view");
+  assert(d.querySelector("#exportSummary").textContent === "11 of 30 entries · 2 steps · 0 bookmarks/notes",
+    "summary line, got " + d.querySelector("#exportSummary").textContent);
+  const ctx = w.collectExportContext();
+  assert(d.querySelector("#exportPreview").value === w.buildTicketSnippet(ctx, "markdown", 20), "preview = the Markdown snippet with the default 20 excerpt lines");
+  assert(d.querySelector('[data-export-format="markdown"]').classList.contains("active"), "Markdown is the default flavor");
+  fireKeydown(d, w, "Escape");
+  assert(!isVisible(dlg, w), "Esc closes the dialog");
+  fireKeydown(d, w, "E", { ctrlKey: true, shiftKey: true });
+  assert(isVisible(dlg, w), "Ctrl+Shift+E opens it");
+  assert(w.eval('SHORTCUT_ACTIONS.some(a => a.id === "exportView")'), "the shortcut is a rebindable Shortcut Manager action");
+
+  section("283b. Flavor + excerpt lines: live preview, remembered");
+  fireClick(d.querySelector('[data-export-format="jira"]'), w);
+  assert(d.querySelector("#exportPreview").value.startsWith("h3. ") && d.querySelector('[data-export-format="jira"]').classList.contains("active"),
+    "switching flavor re-renders the preview");
+  assert(w.localStorage.getItem("philogg-export-format") === "jira", "the flavor is remembered in localStorage");
+  const inp = d.querySelector("#exportExcerptInput");
+  inp.value = "2";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#exportPreview").value.includes("Excerpt (first 2 of 11"), "excerpt lines apply to the preview");
+  assert(w.localStorage.getItem("philogg-export-excerpt-lines") === "2", "excerpt lines are remembered");
+  inp.value = "99999";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(inp.value === "500", "excerpt lines are clamped to 500");
+  inp.value = "2";
+  inp.dispatchEvent(new w.Event("change", { bubbles: true }));
+  w.localStorage.setItem("philogg-export-format", "bogus");
+  w.loadExportPrefs();
+  assert(w.eval("exportFormat") === "markdown" && w.eval("exportExcerptLines") === 2, "an unknown stored flavor falls back to Markdown on load");
+  w.localStorage.setItem("philogg-export-format", "plain");
+  w.loadExportPrefs();
+  assert(w.eval("exportFormat") === "plain", "a stored flavor is picked up on load");
+  w.closeExportDialog();
+  w.openExportDialog();
+  assert(d.querySelector('[data-export-format="plain"]').classList.contains("active") && d.querySelector("#exportExcerptInput").value === "2",
+    "reopening shows the remembered flavor and excerpt lines");
+
+  section("283c. Copy for ticket + attachment buttons");
+  let copied = null;
+  w.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
+  fireClick(d.querySelector("#exportCopy"), w);
+  assert(copied === w.buildTicketSnippet(w.collectExportContext(), "plain", 2), "Copy for ticket writes the snippet (current flavor + excerpt) to the clipboard");
+  assert(/^Ticket snippet copied \(\d+ chars\)$/.test(d.querySelector("#copyToast").textContent), "a toast confirms the copy with its length");
+  assert(isVisible(dlg, w), "the dialog stays open after copying (attachments can follow)");
+  const downloads = [];
+  w.downloadBlobFallback = (blob, name) => downloads.push(name);
+  for (const kind of ["log", "csv", "tsv", "html"]) {
+    fireClick(d.querySelector('[data-export-file="' + kind + '"]'), w);
+    await waitFor(() => downloads.length && downloads[downloads.length - 1].endsWith("." + kind));
+  }
+  assert(JSON.stringify(downloads) === JSON.stringify(["app-message_2.log", "app-message_2.csv", "app-message_2.tsv", "app-message_2.html"]),
+    "each attachment button saves its file kind, got " + JSON.stringify(downloads));
+  fireClick(d.querySelector("#exportClose"), w);
+  assert(!isVisible(dlg, w), "Close closes the dialog");
+});
+
+/* ============================================================
    GROUP 260 — Custom Columns (per-format custom columns)
    Origin: this session. Every format's entry schema was fixed at six
    fields (ts/level/thread/location/method/message); this generalizes it:
@@ -30786,7 +31072,12 @@ group(272);
     body += line(100, "ERROR", "appended");
     await w.tailTick();
     assert(f.entries.length === 51, "the append was picked up");
-    assert(!requests.includes("FULL") && requests.length === 2, "tail poll = one size probe + one ranged read, no full fetch (" + requests.join(" | ") + ")");
+    // A hand-attached tail (like a restore/rescan reattach) gets tailTick's
+    // one-time gzip check on its first poll: a 2-byte ranged read, never a
+    // full fetch (GROUP 285, "gzip-compressed logs"). Load paths mark their
+    // own fresh tails as already checked.
+    assert(!requests.includes("FULL") && requests.length === 3 && requests[1] === "bytes=0-1",
+      "first tail poll = one size probe + the one-time 2-byte gzip check + one ranged read, no full fetch (" + requests.join(" | ") + ")");
     requests.length = 0;
     const rec = { name: "a.log", handle: h };
     const range = await w.probeFolderFileRange({ id: "x" }, rec);
@@ -31334,6 +31625,587 @@ await withApp(async (w, d, T) => {
   assert(pathOf(d.querySelector("#ctxAddToSelection")) === treePath,
     "the context menu's Add to selection item draws the same checkmark");
 });
+/* ============================================================
+   GROUP 279 — Find bar: incremental find inside the current view
+   Origin: FEATURE_BACKLOG.md #3 (2026-09-25). Ctrl+F always created a
+   filter node, so "just look for this string once" cost a tree node you
+   then deleted. The find bar (#findBar) is a non-destructive search over
+   the CURRENT view's entry array (the data model, not the DOM): Ctrl+G
+   opens it, typing searches (150ms debounce) and jumps to the first hit,
+   F3/Shift+F3 and Enter/Shift+Enter step with wrap-around, "n / m" counts
+   matching rows, hits are marked (mark.find-match-mark) in rendered rows,
+   Esc closes it. Ctrl+F keeps opening the filter popup. The scan is
+   time-sliced for huge views (279b drives that path by making
+   performance.now() jump, so each 2048-entry batch ends a slice).
+   ============================================================ */
+group(279);
+await withApp(async (w, d, T) => {
+  section("279a. Find bar: Ctrl+G, find-as-you-type, F3/Enter navigation with wrap, marks, toggles, Esc — no filter node created");
+  const fb = d.createElement("script");
+  fb.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fb);
+  const F = () => w.__find.state;
+
+  const f = await w.addFile("a.log", makeLog(0, 60, { suffix: i => (i % 7 === 0 ? "Needle" : "hay") }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const bar = d.getElementById("findBar");
+  const input = d.getElementById("findInput");
+  const count = d.getElementById("findCount");
+  const nodeCount0 = Object.keys(T.state.nodes).length;
+  const hitIds = f.entries.filter((e, i) => i % 7 === 0).map(e => e.id); // entries 0,7,...,56
+  assert(!isVisible(bar, w), "the find bar starts hidden");
+
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  assert(isVisible(bar, w), "Ctrl+G opens the find bar");
+  assert(d.activeElement === input, "...and focuses its input");
+  assert(d.getElementById("filterPopup").classList.contains("hidden"), "...without opening the filter popup");
+
+  input.value = "needle";
+  fireInput(input, w);
+  assert(F().hits.length === 0, "typing is debounced — nothing searched synchronously");
+  await sleep(200);
+  assert(F().done && F().hits.length === 9, "the debounced search finds all 9 matching rows (case-insensitive), got " + F().hits.length);
+  assert(F().entries === T.currentViewEntries && F().kind === "filter", "it searched the Filtered view's own entry list (the data model)");
+  assert(T.state.selectedId === hitIds[0], "find-as-you-type selects the first hit");
+  assert(count.textContent === "1 / 9", "the counter reads n / m, got " + JSON.stringify(count.textContent));
+  const marks = [...d.querySelectorAll("#tableRows mark.find-match-mark")];
+  assert(marks.length > 0 && marks.every(m => m.textContent.toLowerCase() === "needle"),
+    "hits are marked in the rendered rows, got " + JSON.stringify(marks.map(m => m.textContent)));
+  assert(Object.keys(T.state.nodes).length === nodeCount0, "searching created no filter node");
+
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === hitIds[1] && count.textContent === "2 / 9", "F3 steps to the next hit (2 / 9), got " + count.textContent);
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  assert(T.state.selectedId === hitIds[2] && count.textContent === "3 / 9", "Enter in the input steps to the next hit too");
+  fireKeydown(d, w, "F3", { shiftKey: true });
+  assert(T.state.selectedId === hitIds[1], "Shift+F3 steps back");
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", shiftKey: true, bubbles: true, cancelable: true }));
+  assert(T.state.selectedId === hitIds[0], "Shift+Enter steps back too");
+  fireKeydown(d, w, "F3", { shiftKey: true });
+  assert(T.state.selectedId === hitIds[8] && count.textContent === "9 / 9", "previous from the first hit wraps to the last (9 / 9)");
+  assert(d.querySelector('#tableRows [data-entry-id="' + hitIds[8] + '"]'),
+    "the last hit (row 56, outside the initial render window) was scrolled into the rendered window");
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === hitIds[0], "next from the last hit wraps to the first");
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  assert(T.state.selectedId === hitIds[1], "Ctrl+G with the find input already focused steps to the next hit (browser find-next)");
+
+  // A step starts from the current selection, wherever it came from.
+  w.selectEntry(f.entries[30].id);
+  assert(count.textContent === "9 matches", "a selected non-hit shows the total only, got " + JSON.stringify(count.textContent));
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === f.entries[35].id && count.textContent === "6 / 9", "F3 from a selected row goes to the next hit after it");
+  w.selectEntry(f.entries[30].id);
+  fireKeydown(d, w, "F3", { shiftKey: true });
+  assert(T.state.selectedId === f.entries[28].id, "Shift+F3 from a selected row goes to the hit before it");
+
+  // Toggles and the shared query language.
+  const caseBtn = d.getElementById("findCaseBtn");
+  const regexBtn = d.getElementById("findRegexBtn");
+  fireClick(caseBtn, w);
+  assert(caseBtn.getAttribute("aria-pressed") === "true" && F().hits.length === 0 && count.textContent === "No results",
+    "Aa makes the search case-sensitive: 'needle' no longer matches 'Needle'");
+  fireClick(caseBtn, w);
+  assert(F().hits.length === 9, "toggling Aa off again restores the 9 hits");
+  fireClick(regexBtn, w);
+  input.value = "Need+le";
+  fireInput(input, w);
+  await sleep(200);
+  assert(F().hits.length === 9, "regex mode: /Need+le/ finds the same 9 rows, got " + F().hits.length);
+  input.value = "(";
+  fireInput(input, w);
+  await sleep(200);
+  assert(count.textContent === "Invalid regex" && input.classList.contains("input-regex-error") && F().hits.length === 0,
+    "an invalid regex is flagged instead of throwing");
+  assert(d.getElementById("findAddFilterBtn").disabled, "...and can't be added as a filter");
+  fireClick(regexBtn, w);
+  input.value = "message [*:int] Needle";
+  fireInput(input, w);
+  await sleep(200);
+  assert(F().hits.length === 9, "a wildcard-token pattern searches exactly like a filter would (same query language), got " + F().hits.length);
+
+  // The list a view shows changes -> the hits follow it.
+  input.value = "needle";
+  fireInput(input, w);
+  await sleep(200);
+  const sub = w.createFilterNode(f.id, "text", "message 1");
+  w.render();
+  assert(F().entries === T.currentViewEntries && T.currentViewEntries.length === 11,
+    "switching to a new filter re-scans the new Filtered list");
+  assert(F().hits.length === 1 && T.currentViewEntries[F().hits[0]].message.includes("message 14"),
+    "...and only its rows count (message 14 is the one 'Needle' among 1,10-19), got " + F().hits.length);
+  T.state.activeId = f.id;
+  w.render();
+  assert(F().hits.length === 9, "back on the file node: 9 hits again");
+
+  // The Context view is searched when it's the view on screen.
+  w.applyFhView("highlight");
+  assert(F().kind === "highlight" && F().entries === T.currentHighlightViewEntries, "on the Context tab the find bar searches the Context view's list (for a file node the very same array — only the view a step selects in changes)");
+  w.selectHighlightEntry(f.entries[20].id);
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId === f.entries[21].id && T.state.entriesView === "highlight",
+    "F3 there selects the next hit in the Context view");
+  // On a filter node the Context view is its own list (matches + revealed
+  // context rows, collapsed gaps excluded) — that's what gets searched.
+  T.state.activeId = sub.id;
+  w.render();
+  w.applyFhView("highlight");
+  const ctxList = T.currentHighlightViewEntries;
+  const ctxExpected = ctxList.filter(e => /needle/i.test(e.raw)).length;
+  assert(F().kind === "highlight" && F().entries === ctxList && ctxList !== T.currentViewEntries && F().hits.length === ctxExpected,
+    "on a filter node's Context view the hits come from that view's own list (" + ctxExpected + " expected), got " + F().hits.length);
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("filter");
+
+  // Esc closes: marks gone, focus released, still no node created.
+  input.focus();
+  fireKeydown(d, w, "Escape");
+  assert(!isVisible(bar, w), "Esc closes the find bar");
+  assert(d.activeElement !== input, "...and releases the input's focus (so app shortcuts work again)");
+  assert(!d.querySelector("mark.find-match-mark"), "...and removes every find mark");
+  assert(Object.keys(T.state.nodes).length === nodeCount0 + 1, "the whole search session created no node (the one extra is the explicit 'message 1' filter)");
+  void sub;
+
+  // Ctrl+F is unchanged: still the filter popup.
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  assert(!d.getElementById("filterPopup").classList.contains("hidden") && !isVisible(bar, w),
+    "Ctrl+F still opens the filter popup, not the find bar");
+  fireKeydown(d, w, "F3");
+  assert(!isVisible(bar, w), "F3 typed into another input (the filter popup's) is left alone");
+  fireKeydown(d, w, "Escape");
+
+  // F3 with the bar closed reopens it on the remembered query and steps.
+  d.activeElement && d.activeElement.blur && d.activeElement.blur();
+  w.selectEntry(f.entries[0].id);
+  fireKeydown(d, w, "F3");
+  assert(isVisible(bar, w) && input.value === "needle" && T.state.selectedId === hitIds[1],
+    "F3 with the bar closed reopens it with the last query and steps to the next hit");
+  fireClick(d.getElementById("findCloseBtn"), w);
+  assert(!isVisible(bar, w), "the close button closes it");
+});
+
+await withApp(async (w, d, T) => {
+  section("279b. Find bar on a large view: the scan is time-sliced, a step pressed mid-scan is applied when it finishes");
+  const fb = d.createElement("script");
+  fb.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fb);
+  const F = () => w.__find.state;
+  const N = 6000;
+  const f = await w.addFile("big.log", makeLog(0, N, { suffix: i => (i % 1000 === 999 ? "Needle" : "hay") }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  // Every performance.now() call advances 50ms, so every 2048-entry batch
+  // exceeds the slice budget and the scan yields — deterministic slicing
+  // without needing a genuinely huge file.
+  let fakeNow = 0;
+  Object.defineProperty(w.performance, "now", { value: () => (fakeNow += 50), configurable: true });
+
+  const input = d.getElementById("findInput");
+  input.value = "needle";
+  fireKeydown(d, w, "g", { ctrlKey: true }); // opens with the typed query, no auto-jump
+  assert(!F().done && F().hits.length === 2, "the first slice ran synchronously and stopped after one batch (hits 999, 1999), got " + F().hits.length);
+  assert(d.getElementById("findCount").textContent.endsWith("…"), "the counter shows a running partial count while scanning");
+  fireKeydown(d, w, "F3");
+  assert(T.state.selectedId == null || T.state.selectedId !== f.entries[999].id, "a step pressed mid-scan waits for the scan");
+  assert(await waitFor(() => F().done), "the scan finishes over later slices");
+  assert(F().hits.length === 6, "all 6 hits were found across the slices, got " + F().hits.length);
+  assert(T.state.selectedId === f.entries[999].id, "the step pressed mid-scan was applied once it finished (first hit)");
+  assert(d.getElementById("findCount").textContent === "1 / 6", "counter 1 / 6");
+  input.value = "hay";
+  fireInput(input, w);
+  input.value = "needle x";
+  fireInput(input, w);
+  await sleep(200);
+  assert(await waitFor(() => F().done) && F().hits.length === 0 && F().query === "needle x",
+    "a newer query supersedes the older one (debounce + scan generation), got query " + JSON.stringify(F().query));
+});
+
+/* ============================================================
+   GROUP 280 — Find bar: "Add as filter" promotes the search
+   Origin: FEATURE_BACKLOG.md #3 (2026-09-25). "Add as filter" (and
+   Ctrl+Enter in the find input) turns the current search into a "text"
+   filter node under the active node via the SAME createFilterNode call the
+   Ctrl+F popup's commitFilter makes — so the node has exactly the shape a
+   popup-created one has (no new field to thread through the persistence
+   carriers), keeps exactly the rows the search counted, closes the bar and
+   reveals the Filtered view. Also: the three find shortcuts are listed and
+   rebindable in the Shortcut Manager.
+   ============================================================ */
+group(280);
+await withApp(async (w, d, T) => {
+  section("280. Find bar: Add as filter / Ctrl+Enter create the same node Ctrl+F would; Shortcut Manager lists + rebinds the find keys");
+  const fb = d.createElement("script");
+  fb.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fb);
+  const F = () => w.__find.state;
+  const f = await w.addFile("a.log", makeLog(0, 60, { suffix: i => (i % 7 === 0 ? "Needle" : "hay") }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("highlight"); // start on Context: adding must reveal Filtered
+  const bar = d.getElementById("findBar");
+  const input = d.getElementById("findInput");
+  const addBtn = d.getElementById("findAddFilterBtn");
+
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  input.value = "needle";
+  fireInput(input, w);
+  await sleep(200);
+  assert(F().hits.length === 9, "sanity: 9 hits");
+  const childCount0 = f.children.length;
+  fireClick(addBtn, w);
+  assert(f.children.length === childCount0 + 1, "Add as filter created exactly one child of the active node");
+  const node = T.state.nodes[f.children[f.children.length - 1]];
+  assert(node.type === "filter" && node.filterType === "text" && node.value === "needle" && !node.caseSensitive && !node.isRegex && !node.inverted,
+    "...a plain text filter carrying the query");
+  assert(node.name === "“needle”", "...named like a Ctrl+F filter, got " + node.name);
+  assert(w.getEntries(node.id).length === 9, "...keeping exactly the 9 rows the search counted");
+  assert(T.state.activeId === node.id, "...and it became the active node");
+  assert(!isVisible(bar, w) && d.activeElement !== input, "the find bar closed after promoting the search");
+  assert(T.fhActiveTab === "filter", "the Filtered view was revealed (the new filter's result lives there)");
+
+  // Same shape as a node the Ctrl+F popup creates for the same query.
+  T.state.activeId = f.id;
+  w.render();
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  d.getElementById("filterInput").value = "needle";
+  fireSubmit(d.getElementById("filterForm"), w);
+  const popupNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(popupNode !== node && popupNode.value === "needle", "sanity: the popup created its own node");
+  const shape = n => Object.keys(n).filter(k => !k.startsWith("_")).sort().join(",");
+  assert(shape(node) === shape(popupNode), "the find-bar node has exactly the popup node's fields: " + shape(node) + " vs " + shape(popupNode));
+
+  // Case + regex carry over; Ctrl+Enter is the keyboard path.
+  T.state.activeId = f.id;
+  w.render();
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireClick(d.getElementById("findCaseBtn"), w);
+  fireClick(d.getElementById("findRegexBtn"), w);
+  input.value = "(";
+  fireInput(input, w);
+  const before = f.children.length;
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+  assert(f.children.length === before && isVisible(bar, w), "Ctrl+Enter with an invalid regex creates nothing and keeps the bar open");
+  input.value = "Need+le";
+  fireInput(input, w);
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", ctrlKey: true, bubbles: true, cancelable: true }));
+  const rxNode = T.state.nodes[f.children[f.children.length - 1]];
+  assert(f.children.length === before + 1 && rxNode.isRegex === true && rxNode.caseSensitive === true && rxNode.value === "Need+le",
+    "Ctrl+Enter (even before the debounce fired) adds a case-sensitive regex filter from the toggles");
+  assert(rxNode.name === "/Need+le/" && w.getEntries(rxNode.id).length === 9, "...named /Need+le/, 9 rows");
+
+  // Shortcut Manager: listed, and a rebind takes effect.
+  w.renderShortcutBindingsList();
+  const row = id => d.querySelector('#shortcutBindingsList [data-action-id="' + id + '"]');
+  const keys = id => [...row(id).querySelectorAll("kbd")].map(k => k.textContent).join("+");
+  assert(row("findInView") && keys("findInView") === "Ctrl+G", "Shortcut Manager lists 'Find in the current view' as Ctrl+G, got " + (row("findInView") && keys("findInView")));
+  assert(row("findNext") && keys("findNext") === "F3", "...'next match' as F3");
+  assert(row("findPrev") && keys("findPrev") === "Shift+F3", "...'previous match' as Shift+F3");
+  assert(keys("newFilter") === "Ctrl+F", "...and Ctrl+F is still 'New filter'");
+  fireClick(row("findInView").querySelector(".shortcut-rebind-btn"), w);
+  fireKeydown(d, w, "k", { ctrlKey: true, altKey: true });
+  assert(keys("findInView") === "Ctrl+Alt+K", "rebinding the find shortcut works, got " + keys("findInView"));
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  assert(!isVisible(bar, w), "the old Ctrl+G no longer opens the bar");
+  fireKeydown(d, w, "k", { ctrlKey: true, altKey: true });
+  assert(isVisible(bar, w), "the new chord does");
+  fireClick(d.getElementById("btnResetShortcuts"), w);
+  fireKeydown(d, w, "Escape");
+});
+
+
+/* ============================================================
+   GROUP 284 — gzip-compressed logs (.gz): detection, name handling, and
+   the load routes (drop/picker via loadFileDescriptors, ZIP entries,
+   ?url=/desktop file-association via loadUrlIntoTree)
+   Origin: 2026-09-25 (FEATURE_BACKLOG.md #83). A gzip stream is detected
+   by its magic bytes (1f 8b), never by extension alone, and inflated via
+   the native DecompressionStream("gzip") (Node's own, handed into the
+   jsdom window the same way GROUP 199's ZIP tests do). The node keeps its
+   real name; ".gz" is only looked through where a name is interpreted
+   (format rules, folder-watch log detection). A gzip file never tails.
+   ============================================================ */
+group(284);
+{
+  const zlib = require("zlib");
+  const GZ_TEXT = makeLog(0, 6, { msgPrefix: "rotated" });
+  const gz = text => zlib.gzipSync(Buffer.from(text, "utf8"));
+  const withGzipApis = w => { w.Response = Response; w.DecompressionStream = DecompressionStream; };
+
+  await withApp(async (w, d, T) => {
+    section("284a. isGzipBytes/stripGzipExt/isCompatibleFolderFile/fileNameGlobTest + format rules look through .gz");
+    assert(w.isGzipBytes(new Uint8Array([0x1f, 0x8b, 8])) === true, "1f 8b is gzip");
+    assert(w.isGzipBytes(new Uint8Array([0x1f])) === false && w.isGzipBytes(new Uint8Array([0x32, 0x30])) === false, "too short / plain text is not gzip");
+    assert(w.stripGzipExt("app.log.1.GZ") === "app.log.1" && w.stripGzipExt("app.log") === "app.log", "stripGzipExt drops only a trailing .gz, case-insensitively");
+    assert(w.isCompatibleFolderFile("app.log.gz") && w.isCompatibleFolderFile("app.log.1.gz") && w.isCompatibleFolderFile("APP.LOG.12.GZ"),
+      "a gzipped log (with or without a logrotate counter) counts as a log file");
+    assert(!w.isCompatibleFolderFile("data.gz") && !w.isCompatibleFolderFile("site.tar.gz") && !w.isCompatibleFolderFile("app.log.1"),
+      "a non-log .gz is not a log file; an uncompressed rotated .log.1 is unchanged (still not listed)");
+    assert(w.fileNameGlobTest("*.log", "app.log.gz") && w.fileNameGlobTest("*.gz", "app.log.gz") && w.fileNameGlobTest("*.log", "app.log.1.gz"),
+      "fileNameGlobTest tries the real name, then minus .gz, then minus a rotation counter too");
+    assert(!w.fileNameGlobTest("*.log", "app.log.1") && !w.fileNameGlobTest("*.log", "site.tar.gz"),
+      "...but only behind a .gz: an uncompressed app.log.1 is tested as-is (unchanged), and a non-log .gz stays unmatched");
+    await waitForFormatConfig(T);
+    T.state.logFormats.push({ id: "fmt-gz-rule", name: "GzRule", mode: "pattern", pattern: '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n',
+      regex: "", tsFormat: "yyyy-MM-dd HH:mm:ss,SSS", builtin: false, edited: false, createdAt: Date.now() });
+    T.state.formatRules.push({ id: "rule-gz", glob: "app*.log", formatId: "fmt-gz-rule", order: 0 });
+    w.invalidateGlobCompileCache();
+    assert(w.resolveFormatIdForFilename("app-server.log.gz") === "fmt-gz-rule" && w.resolveFormatIdForFilename("app-server.log.3.gz") === "fmt-gz-rule",
+      "a format rule for *.log also resolves the (rotated) .gz of that log");
+    assert(w.resolveFormatIdForFilename("other.log.gz") === "fmt-default", "...and a non-matching name still falls back to the default");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284b. loadFileDescriptors (drop/picker route) inflates a gzip file, keeps its name, and never tails it");
+    withGzipApis(w);
+    let decompressCount = 0;
+    class CountingDS extends DecompressionStream { constructor(...a) { super(...a); decompressCount++; } }
+    w.DecompressionStream = CountingDS;
+    const handle = { kind: "file", name: "app.log.1.gz", async getFile() { return new w.File([gz(GZ_TEXT)], "app.log.1.gz"); } };
+    await w.loadFileDescriptors([{ file: await handle.getFile(), handle }]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(!!f && f.entries.length === 6, "all 6 entries parsed from the inflated text, got " + (f && f.entries.length));
+    assert(f.entries[2].message === "rotated 2", "entry content is the decompressed text, got " + (f && f.entries[2].message));
+    assert(f.name === "app.log.1.gz", "the node keeps its real on-disk name, got " + f.name);
+    assert(!f.tail, "a gzip file is a static snapshot — no tail attached even though a handle was given");
+    assert(decompressCount === 1, "exactly one DecompressionStream was used, got " + decompressCount);
+
+    // Detection is by content: a ".gz" that is really plain text loads as-is...
+    await w.loadFileDescriptors([{ file: new w.File([makeLog(0, 3)], "plain.log.gz"), handle: null }]);
+    const plain = T.state.nodes[T.state.rootIds[1]];
+    assert(plain && plain.entries.length === 3 && decompressCount === 1, "a .gz name without the gzip magic reads as plain text, no inflate attempted");
+    // ...and a gzip stream without the extension is still inflated.
+    await w.loadFileDescriptors([{ file: new w.File([gz(makeLog(0, 4))], "noext.log"), handle: null }]);
+    const noExt = T.state.nodes[T.state.rootIds[2]];
+    assert(noExt && noExt.entries.length === 4 && decompressCount === 2, "gzip magic without a .gz extension is still detected and inflated");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284c. a corrupt/truncated gzip fails like any read error: toast, no stranded node");
+    withGzipApis(w);
+    const full = gz(GZ_TEXT);
+    const truncated = full.subarray(0, Math.floor(full.length / 2));
+    await w.loadFileDescriptors([{ file: new w.File([truncated], "broken.log.gz"), handle: null }]);
+    assert(T.state.rootIds.length === 0, "the queued placeholder is removed again, got " + T.state.rootIds.length + " root(s)");
+    assert(d.querySelector("#copyToast").textContent.includes("broken.log.gz"), "the failure is surfaced by name, got " + d.querySelector("#copyToast").textContent);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284d. a .gz log inside a ZIP is listed as a log entry and opens inflated (deflate-raw, then gzip)");
+    withGzipApis(w);
+    // Minimal stored-method ZIP holding one gzip entry (the entry's own
+    // bytes ARE the gzip stream; the ZIP layer here adds no compression).
+    const name = "rotated/app.log.2.gz";
+    const data = gz(GZ_TEXT);
+    const nameBuf = Buffer.from(name);
+    const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4); lh.writeUInt16LE(0, 8);
+    lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+    const local = Buffer.concat([lh, nameBuf, data]);
+    const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6); ch.writeUInt16LE(0, 10);
+    ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(0, 42);
+    const central = Buffer.concat([ch, nameBuf]);
+    const eocd = Buffer.alloc(22); eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(1, 8); eocd.writeUInt16LE(1, 10);
+    eocd.writeUInt32LE(central.length, 12); eocd.writeUInt32LE(local.length, 16);
+    const zip = await w.openZipSource(new w.File([Buffer.concat([local, central, eocd])], "logs.zip"), "logs.zip");
+    assert(zip && zip.entries.length === 1 && w.isLogZipEntry(zip.entries[0]), "the .gz entry counts as a log entry (not an external/viewer file)");
+    const row = d.querySelector("#zipList .folder-watch-file");
+    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries.length === 6);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.entries.length === 6 && f.entries[5].message === "rotated 5", "the entry loads with its inflated entries, got " + (f && f.entries.length));
+    assert(f.zipId === zip.id && !f.tail, "it nests under its ZIP and is static");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("284e. loadUrlIntoTree (?url= / desktop file association) inflates a gzip response and does not tail a philogg://local gzip");
+    withGzipApis(w);
+    const bytes = gz(GZ_TEXT);
+    w.fetch = async () => new Response(bytes);
+    await w.loadUrlIntoTree("philogg://local/7/app.log.3.gz");
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.entries.length === 6 && f.name === "app.log.3.gz", "the gzip response is inflated and parsed, got " + (f && f.entries.length));
+    assert(f.sourceUrl === "philogg://local/7/app.log.3.gz", "sourceUrl kept (Open File Location / Copy Path)");
+    assert(!f.tail, "a desktop-local gzip file gets no tail, unlike a plain .log from the same route");
+    // Same route, plain text still tails (unchanged behavior).
+    w.fetch = async () => new Response(makeLog(0, 2));
+    await w.loadUrlIntoTree("philogg://local/8/plain.log");
+    const p = T.state.nodes[T.state.rootIds[1]];
+    assert(p && p.entries.length === 2 && !!p.tail, "a plain desktop-local log still tails");
+  });
+}
+
+/* ============================================================
+   GROUP 285 — gzip-compressed logs (.gz): folder watch, native listing,
+   session-cache restore and the tail guard
+   Origin: 2026-09-25 (FEATURE_BACKLOG.md #83). Folder watch lists a
+   gzipped log (a "*.log" pattern still matches "app.log.1.gz"), opens it
+   inflated, never minimap-probes it (compressed byte windows), and the
+   desktop wrapper's native listing is told to let ".gz" through. The
+   session cache stores the decompressed text like any file; a tail that
+   a restore/rescan reattaches to the gzip source is dropped by tailTick
+   the first time it sees the gzip magic.
+   ============================================================ */
+group(285);
+{
+  const zlib = require("zlib");
+  const GZ_TEXT = makeLog(0, 5, { msgPrefix: "old" });
+  const gzBuf = zlib.gzipSync(Buffer.from(GZ_TEXT, "utf8"));
+  const withGzipApis = w => { w.Response = Response; w.DecompressionStream = DecompressionStream; };
+  const bytesHandle = (w, name, buf) => ({
+    kind: "file", name,
+    async getFile() { return new w.File([buf], name); },
+    async queryPermission() { return "granted"; },
+  });
+
+  await withApp(async (w, d, T) => {
+    section("285a. folder watch lists app.log.1.gz (also under a *.log pattern), opens it inflated, static, and never probes it");
+    withGzipApis(w);
+    const files = {
+      "app.log": Buffer.from(makeLog(100, 3)),
+      "app.log.1.gz": gzBuf,
+      "site.tar.gz": Buffer.from([0x1f, 0x8b, 0, 0]),
+      "notes.pdf": Buffer.from("x"),
+    };
+    const dir = {
+      kind: "directory", name: "logs",
+      async *values() { for (const n of Object.keys(files)) yield bytesHandle(w, n, files[n]); },
+    };
+    await w.addWatchedFolder(dir);
+    const folder = T.state.folders[0];
+    assert(folder.files.map(f => f.name).join(",") === "app.log,app.log.1.gz",
+      "the gzipped log is listed, the .tar.gz and .pdf are not, got " + folder.files.map(f => f.name).join(","));
+    folder.settings = { includeSubfolders: false, showRelativePath: false, patterns: [Object.assign(w.defaultFolderPattern(), { pattern: "*.log" })] };
+    await w.mergeScannedFiles(folder, await w.scanFolderHandle(dir, folder.settings));
+    assert(folder.files.map(f => f.name).join(",") === "app.log,app.log.1.gz", "a *.log pattern still matches the .gz of that log");
+
+    const rec = folder.files.find(f => f.name === "app.log.1.gz");
+    assert(await w.probeFolderFileRange(folder, rec) === null, "minimap probe returns the 'no range' sentinel for a gzip file (no inflate just to probe)");
+    await w.loadFolderFile(folder, rec);
+    const node = T.state.nodes[rec.nodeId];
+    assert(node && node.entries.length === 5 && node.entries[0].message === "old 0", "the folder file opens with its inflated entries");
+    assert(node.folderId === folder.id && !node.tail, "it belongs to the folder and is not tailed");
+    // A rescan's reattach (mergeScannedFiles attaches a tail to any open
+    // node without one) is dropped by tailTick on its first look.
+    await w.mergeScannedFiles(folder, await w.scanFolderHandle(dir, folder.settings));
+    assert(!!node.tail, "precondition: the rescan reattached a tail to the open gzip node");
+    await w.tailTick();
+    assert(!node.tail && node.entries.length === 5, "tailTick drops the gzip tail without appending compressed bytes, got " + node.entries.length + " entries");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("285b. the desktop wrapper's native listing is asked for .gz too, and a listed .gz opens through philogg://local");
+    withGzipApis(w);
+    let askedExts = null;
+    w.philogg.listFolder = async (p, exts) => {
+      askedExts = exts;
+      return [{ url: "philogg://local/5/app.log.1.gz", path: p + "/app.log.1.gz", name: "app.log.1.gz" }];
+    };
+    w.fetch = async () => new Response(gzBuf);
+    await w.addWatchedFolder(w.nativeDirHandle("/var/log/app", "app"));
+    assert(Array.isArray(askedExts) && askedExts.includes(".gz") && askedExts.includes(".log"), "listFolder is passed .gz alongside .log, got " + JSON.stringify(askedExts));
+    const folder = T.state.folders[0];
+    assert(folder.files.length === 1, "the gzip log is listed");
+    await w.loadFolderFile(folder, folder.files[0]);
+    const node = T.state.nodes[folder.files[0].nodeId];
+    assert(node && node.entries.length === 5, "it opens inflated via the wrapper's URL, got " + (node && node.entries.length));
+    assert(node.localPath === "/var/log/app/app.log.1.gz" && !node.tail, "location attached, no tail");
+  }, { philogg: nativeFolderBridge({}) });
+
+  // A philogg://local/… fetch that honours Range like protocol.rs's
+  // read_local (206 + Content-Range), so urlTailHandle.getRangedFile — the
+  // tail poll's and minimap probe's partial reader — really reads ranges.
+  function rangedFetch(buf, log) {
+    return async (url, init) => {
+      if (log) log.push({ url: String(url), range: init && init.headers && init.headers.Range || null });
+      const range = init && init.headers && init.headers.Range;
+      const m = range && /bytes=(\d+)-(\d+)/.exec(range);
+      if (!m) return new Response(buf);
+      const lo = Number(m[1]), hi = Math.min(Number(m[2]), buf.length - 1);
+      return new Response(buf.subarray(lo, hi + 1), { status: 206, headers: { "content-range": "bytes " + lo + "-" + hi + "/" + buf.length } });
+    };
+  }
+
+  const factory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("285c. session cache: a gzip file persists its decompressed content...");
+    withGzipApis(w);
+    await w.loadFileDescriptors([{ file: new w.File([gzBuf], "app.log.1.gz"), handle: null }]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    f.sourceUrl = "philogg://local/3/app.log.1.gz"; // as if opened through the desktop wrapper
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    const cached = rec && (typeof rec.text === "string" ? rec.text : rec.blob ? await rec.blob.text() : "");
+    assert(cached.includes("old 4") && !rec.handle, "the cached content (text or File blob) is the decompressed log, with no handle, got " + JSON.stringify(cached.slice(0, 40)));
+  }, { indexedDB: factory });
+  await withApp(async (w, d, T) => {
+    section("285c. ...restores it identically, and the desktop-URL tail rebuilt on restore is dropped by a 2-byte Range read on the first tick");
+    withGzipApis(w);
+    // Every tail poll of the restored node goes through this fetch — a
+    // fetch of the gzip URL proves restore DID rebuild a tail (the app's
+    // own poll timer may already have run that first tick under load, so
+    // the tail's presence right after restore isn't asserted directly).
+    const log = [];
+    w.fetch = rangedFetch(gzBuf, log);
+    await T.bootRestore;
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f && f.name === "app.log.1.gz" && f.entries.length === 5, "restored with its name and all entries, got " + (f && f.entries.length));
+    await w.tailTick();
+    assert(log.some(r => r.url.endsWith("app.log.1.gz")), "restore rebuilt a urlTailHandle tail from the desktop sourceUrl (it was polled)");
+    assert(log.every(r => r.range), "the poll only ever made Range reads, never a whole-file fetch: " + JSON.stringify(log.map(r => r.range)));
+    assert(!f.tail && f.entries.length === 5, "tailTick drops it — no compressed bytes appended, got " + f.entries.length + " entries");
+  }, { indexedDB: factory });
+
+  // Desktop native parsing: parse_log_file (commands.rs) rejects a gzip file
+  // before streaming anything (philogg_logparse::is_gzip) — this stub
+  // mimics exactly that and records the call, so every native route is
+  // shown to fall back to the JS read + inflate.
+  function nativeBridge() {
+    const b = nativeFolderBridge({});
+    b.nativeCalls = [];
+    b.parseLogFile = async (url, spec, onMessage) => {
+      b.nativeCalls.push(String(url));
+      await Promise.resolve();
+      throw new Error("gzip-compressed file: parsed by the page");
+    };
+    b.openLocalPath = async p => ({ url: "philogg://local/42/" + p.split("/").pop(), path: p, name: p.split("/").pop() });
+    return b;
+  }
+  const deskFactory = new IDBFactory();
+  await withApp(async (w, d, T) => {
+    section("285d. desktop native route: drop/picker (loadDesktopLocalFiles) and launch (loadUrlIntoTree) try native, fall back, inflate, no tail");
+    withGzipApis(w);
+    w.fetch = rangedFetch(gzBuf);
+    await w.loadDesktopLocalFiles({ files: [{ url: "philogg://local/11/app.log.1.gz", path: "/var/log/app.log.1.gz", name: "app.log.1.gz" }] });
+    const a = T.state.nodes[T.state.rootIds[0]];
+    assert(w.philogg.nativeCalls.length === 1 && w.philogg.nativeCalls[0] === "philogg://local/11/app.log.1.gz", "the native parser was asked first, got " + JSON.stringify(w.philogg.nativeCalls));
+    assert(a && a.entries.length === 5 && a.entries[4].message === "old 4", "its rejection falls back to the JS route, which inflates, got " + (a && a.entries.length));
+    assert(!a.tail && a.localPath === "/var/log/app.log.1.gz", "no tail; location kept");
+
+    await w.loadUrlIntoTree("philogg://local/12/app.log.2.gz");
+    const b = T.state.nodes[T.state.rootIds[1]];
+    assert(w.philogg.nativeCalls.length === 2, "the launch route asks the native parser too");
+    assert(b && b.entries.length === 5 && !b.tail && b.name === "app.log.2.gz", "and falls back into the same node, inflated, untailed, got " + (b && b.entries.length));
+    assert(T.state.rootIds.length === 2, "no stray node from the native attempt");
+
+    // Session cache "path" record (desktop): re-read from disk on restore.
+    await w.persistFileNode(a);
+    await w.persistMetaNow();
+    const rec = await w.cacheStoreOp("files", "readonly", s => s.get(a.cacheKey));
+    assert(rec && rec.localPath === "/var/log/app.log.1.gz" && rec.text == null && rec.blob == null, "a desktop gzip file is cached as its path, like any desktop file");
+  }, { indexedDB: deskFactory, philogg: nativeBridge() });
+  await withApp(async (w, d, T) => {
+    section("285e. desktop session restore re-reads a gzip path: native rejects, the fallback inflates, and no tail is attached");
+    withGzipApis(w);
+    w.fetch = rangedFetch(gzBuf);
+    await T.bootRestore;
+    const f = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "app.log.1.gz");
+    assert(!!f && w.philogg.nativeCalls.length >= 1, "restore tried the native parser for the path record");
+    assert(f && f.entries.length === 5 && f.entries[0].message === "old 0", "restored inflated, got " + (f && f.entries.length));
+    assert(f && !f.tail && /^philogg:\/\/local\/42\//.test(f.sourceUrl), "this run's URL, and no tail for a gzip file");
+  }, { indexedDB: deskFactory, philogg: nativeBridge() });
+}
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -32872,8 +33744,9 @@ process.exitCode = failed ? 1 : 0;
    Group 107 — this session (2026-08-25), FEATURE_BACKLOG.md #51 ("Improve
               desktop startup time perception"): the localStorage half of
               the new "Close to system tray" setting (default on). The
-              splash-screen and tray/close-interception halves
-              live entirely in the wrapper, outside jsdom's reach —
+              tray/close-interception half (and the splash screen, since
+              removed 2026-09-25) lives entirely in the wrapper, outside
+              jsdom's reach —
               not covered here, same standing limitation as the rest of
               desktop/ (see its README's own "Status" section).
    Group 108 — this session (2026-08-25), person-reported bugfix: arrow-key
@@ -35601,4 +36474,33 @@ process.exitCode = failed ? 1 : 0;
               matches" toolbar button.
    Group 277 — same day: "Select"/"Add to selection" actions draw the
               selection filter's tree-node checkmark instead of the funnel.
+   Group 279 — new session (2026-09-25): FEATURE_BACKLOG.md #3, the find bar
+      (Ctrl+G/F3) — 279a open/type/debounce/auto-jump, F3/Enter/Shift nav
+      with wrap and selection anchor, n / m counter, find marks, Aa/.*
+      toggles + invalid regex + wildcard parity, rescan on a changed view
+      list, Context-view target, Esc, Ctrl+F unchanged; 279b time-sliced
+      scan on a large view with a step pressed mid-scan.
+   Group 280 — same session: the find bar's "Add as filter"/Ctrl+Enter
+      (same node shape as a Ctrl+F popup node, case/regex carried over,
+      bar closes, Filtered revealed) + the three find shortcuts in the
+      Shortcut Manager, incl. a rebind.
+   Group 281-283 — 2026-09-25 session: Export / Share (FEATURE_BACKLOG.md
+      #31 + #32 as one ticket-oriented concept, docs/export.md) — 281 the
+      export context + bounded "Copy for ticket" snippet in Markdown / Jira
+      wiki / plain, 282 the .log/.csv/.tsv/.html attachment builders +
+      save path (picker/cancel/fallback), 283 the #exportDialog, remembered
+      flavor/excerpt lines, Ctrl+Shift+E. Same session made GROUP 114's
+      rebindable-row count read SHORTCUT_ACTIONS.length instead of a
+      hardcoded 20.
+   Group 284 — 2026-09-25 (FEATURE_BACKLOG.md #83, gzip-compressed logs):
+      magic-byte detection, .gz/rotation-counter name look-through (format
+      rules, isCompatibleFolderFile), and inflate on the drop/picker, ZIP
+      entry and ?url=/desktop-launch routes; corrupt gzip, no tail.
+   Group 285 — same session: .gz in folder watch (patterns, no minimap
+      probe, native listFolder asked for .gz), session-cache round trip,
+      and tailTick dropping a tail reattached to a gzip source (2-byte Range
+      read); 285d/e the desktop native route (stub rejecting gzip like
+      parse_log_file) for drop/launch and the "path" session restore. Same
+      session updated GROUP 272's first-tail-poll request count (+ the
+      one-time gzip check on a hand-attached tail).
    ============================================================ */
