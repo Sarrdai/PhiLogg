@@ -92,8 +92,16 @@ Group 208 (page side; the desktop/Rust half isn't jsdom-testable).
 `renderViewTabs()` (not static markup) since which buttons exist depends on
 a Settings option:
 
-- **"Separate"** (Settings → Behavior → "Context/Filtered display", default): `Context | Filtered | Table | Plot`.
-- **"Stacked"**: `Stacked | Table | Plot` — Context and Filtered collapse into the one "Stacked" button, same as before.
+- **"Separate"** (Settings → Behavior → "Context/Filtered display", default): `Context | Filtered | Table | Plot | Patterns`.
+- **"Stacked"**: `Stacked | Table | Plot | Patterns` — Context and Filtered collapse into the one "Stacked" button, same as before.
+
+**Patterns** is always last and always enabled (see "Patterns tab" below), so
+the Ctrl+1-4 positions of the tabs before it never move; `Ctrl+5` reaches it
+in the Separate layout. Everything that used to test `fhActiveTab === "table"
+|| "plot"` for "a tab that replaces `#fhSplit`" now asks `isOffLogTab(tab)`
+(Table, Plot or Patterns); checks that are really about extraction (the
+`!extractCapable` fallback, `activeNavScroller`'s `extractScroll`) stay
+Table/Plot-only.
 
 That setting is now the **only** way `fhLayout` changes — clicking a
 "Stacked" tab button used to set it directly; that tab is gone from the
@@ -588,6 +596,97 @@ shape:
 ## Folder-watch minimap (a fourth "special content area", alongside the inline viewer)
 
 Clicking a watched folder's own title (`.folder-watch-name`, `selectFolderContainer`) shows a per-file time-range timeline for that folder in the main content area **instead of** any of the three node views above — `state.folderView` set instead of picking a node's `filterType`, dispatched by its own early branch in `renderMainView` (hides the log/extraction/link views, the detail panel, and the log minimap; shows `#folderMinimapWrap`) the same way `state.inlineViewer`'s branch already does for a non-log ZIP/folder entry — the two are mutually exclusive special views, each clearing the other. One horizontal bar per file in `folder.files` on a shared time axis (stacking where spans overlap); multi-select individual bars or drag a time window, then **Load**. See `docs/persistence-and-sync.md` → "Folder-watch minimap for picking which files to load/merge" for the full mechanism (probing, caching, the Load button's two modes) — folder-only, not available for a ZIP source (see that doc's own note on why).
+
+## Patterns tab (message-pattern clustering)
+
+`#patternsWrap`, shown by `renderMainView()` when `fhActiveTab ===
+"patterns"` (it replaces `#fhSplit`/`#extractWrap`, hides the entry-detail
+panel like Table/Plot, keeps the minimap). It groups the active node's result
+— `getEntries(activeId)` plus the level quick-filter, i.e. exactly what the
+Filtered view lists, without pinned bookmarks — by message shape.
+
+- **Normalization** (`normalizeMessagePattern`): the first line of the
+  message (capped at `PATTERN_MAX_CHARS` = 400) goes through one regex pass
+  (`PATTERN_TOKEN_RE`), alternatives in priority order: GUID → `<guid>`,
+  IPv4 with optional port → `<ip>`, a `"quoted string"` → `"<str>"`,
+  a Windows/UNC or multi-segment Unix path → `<path>`, a hex literal/hash
+  (`0x…`, or 8+ hex digits mixing letters and digits) → `<hex>`, any other
+  number → `<#>` (a sign only when not glued to a word: `Worker-3` →
+  `Worker-<#>`). URLs keep their `//host/path` literal apart from numbers.
+  Placeholders are private-use characters inside the group key, so a key
+  splits back into literal text and placeholders unambiguously
+  (`PATTERN_PH_SPLIT_RE`); `patternDisplayText` renders them as `<#>` etc.
+  A per-group float mask records which number placeholders ever held a
+  decimal point.
+- **Columns**: Count, %, Level (the group's most severe level —
+  lowest `levelSortRank`), Pattern, First/Last (time of day; line numbers
+  for a plain-text file). Header click sorts (`patternsComparator`): Count
+  starts descending, the rest ascending, a second click flips; Count
+  ascending surfaces rare messages.
+- **Actions** (`applyPatternAction`), delegated on `#patternsRows`: a plain
+  click adds a text filter under the active node, `columns: ["message"]`,
+  value built by `patternFilterValue` with every placeholder as `[*]`
+  (`Axis [*] position [*] reached in [*] ms`) and lands on Filtered;
+  Alt+click or the row's ⊘ adds the same as NOT and **stays on Patterns**,
+  so noise can be peeled off step by step; the table icon ("Extract") types
+  the number placeholders (`[*:int]`/`[*:float]` per the float mask) and
+  opens the new node's Table; the arrow jumps to the group's first entry
+  (`revealInFilteredView`). A plain click creates a node, so there is no
+  double-click (the node switch would rebuild the row between the clicks).
+  Each created node is one undo step (`"create"`, see
+  `docs/persistence-and-sync.md` → "Undo/redo").
+- **Rendering**: virtualized like the extraction table (one absolutely
+  positioned block of rows inside `#patternsSpacer`, `EXTRACT_ROW_HEIGHT`
+  per row, `makeScrollRenderer` on scroll). Row clicks never take keyboard
+  focus (`mousedown` → `preventDefault`). Same unmitigated
+  `count × rowHeight` spacer as the extraction table — a result with more
+  than ~600k *distinct* shapes would hit the browsers' element-height
+  ceiling (see PROJECT.md → "Known gotchas").
+- **Computation** (shared with the Facet panel): `makeEntryAnalysis` caches
+  one result per node result in a `WeakMap` keyed by the entry array
+  (`node._cache`, or a file's `entries`), validated against its length and
+  the level quick-filter. A pure in-place append (a tailed file) folds in
+  only the new entries; any other change (a new array) rescans.
+  `startEntryScan` runs results up to `ANALYSIS_SYNC_LIMIT` (50,000)
+  synchronously and larger ones in 12ms slices through `queueTask`, showing
+  "Grouping N entries… x%" meanwhile; starting another scan cancels a
+  running one. A component benchmark (Node/V8, 1M synthetic messages) put the
+  normalization at ~1.5s of total CPU — hence the slicing; not yet measured
+  in the real app.
+
+## Facet panel (value distribution per column)
+
+`#facetPanel`, a 280px column on the right of `#viewArea` — the row that
+now holds whichever content component is displayed (`#fhSplit`,
+`#extractWrap`, `#patternsWrap`, the empty state, the inline viewer, the
+folder minimap). Toggled by `#btnFacets` (floated right in `#viewBar`), its
+✕, or `Ctrl+Shift+F` (`toggleFacets`, rebindable); the open state is kept in
+`philogg-facets-open`. It stays beside every tab (Context/Filtered/Table/
+Plot/Patterns), is hidden with the inline viewer, folder minimap, empty
+state and PiP, and reads "Not available for a link filter" on a `link` node
+(pair entries have no single column values).
+
+- **Sections** (`facetColumnsFor`): every middle column of the loaded
+  formats (`activeColumnDefs`: Thread/Location/Method/custom columns), then
+  Level (the bucket name, omitted when every file is plain text), then
+  Source for a merged file (`root.sources`, by `entry.sourceId`). Time and
+  Message are left out (near-unique). Each section lists the top
+  `FACET_TOP_N` (8) values with count, share and a bar relative to the top
+  value; "(+k more · n entries)" reveals 25 more per click. Section headers
+  collapse; collapsed keys are kept in `philogg-facets-collapsed`.
+- **Counts** come from one pass over the same result the Patterns tab uses
+  (active node + level quick-filter), cached and time-sliced by the same
+  `makeEntryAnalysis`; the column set is part of the cache key.
+  `renderFacetPanel()` runs from every `renderMainView()`.
+- **Clicks** (`createFacetFilter`) add a child of the active node: Level →
+  a `level` node for that bucket; Source → an `idset` node of that source's
+  entries in the active node's result, named "Source = …"; any other column
+  → a case-sensitive regex text filter `^<escaped value>$` restricted to
+  that column (`columns: [key]`), named "Thread = Worker-3" — an exact
+  whole-value match. Alt+click or right-click creates the same node
+  inverted (NOT). One undo step each (`"create"`); the tab stays Patterns if
+  that was on screen, otherwise the new node opens as usual. Panel clicks
+  never take keyboard focus from the log view.
 
 ## Context view (Context/Filtered split)
 

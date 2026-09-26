@@ -91,6 +91,26 @@ deployments possible:
   turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
   into a real filter node — `Ctrl+F` still opens the filter popup directly.
   Stays fast on views with hundreds of thousands of rows.
+- **Patterns: a log's message shapes at a glance** — the **Patterns** tab
+  groups the current filter result by message *shape*: numbers, GUIDs, IP
+  addresses, paths, hex values and quoted strings become placeholders, so
+  `Axis 2 position 1532.44 reached in 12 ms` and `Axis 1 position 88.10
+  reached in 9 ms` are one row, `Axis <#> position <#> reached in <#> ms`,
+  with its count, share, most severe level and first/last time. Sort by
+  count ascending to surface rare messages. Click a pattern to filter for
+  it, Alt+click (or ⊘) to hide it as a NOT filter and keep narrowing the
+  noise, **Extract** to open it straight in Table/Plot with the numbers as
+  typed columns, or jump to its first entry. Stays responsive on 100 MB
+  logs (one pass, computed in the background, cached per filter result).
+- **Facet panel: who/what produces these entries?** — a toggleable side
+  panel (`Ctrl+Shift+F`, or the button at the right end of the view bar)
+  shows the value distribution of every column (Thread, Location, Method,
+  custom columns, Level, and Source for a merged file) over the current
+  filter result: the top values with count, share and a bar, "+k more" to
+  see the rest. Click a value to add a filter for exactly that value;
+  Alt+click or right-click adds it as NOT to hide a dominant source of
+  noise. Both features only ever add ordinary, undoable nodes to the filter
+  tree.
 - **Highlight rules underline their own matches** — a colored text filter
   doesn't just tint the row's left edge: the matched substring itself is
   underlined in that rule's color, in both views and the entry detail. Each
