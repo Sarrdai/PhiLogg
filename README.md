@@ -314,6 +314,10 @@ deployments possible:
   point it at an ordered list of target formats and a file matching it gets
   split by grammar and auto-merged (see "A merged file shows its 'Sources'"
   above) instead of being parsed as one grammar.
+  **Share formats as JSON**: each format has an **Export** button (the file
+  includes its filename patterns); import it via **Import…** in the same
+  section or simply by dropping the file onto the app — you pick the name
+  (the original is suggested) and which filename patterns to take over.
 - **Configurable themes** (Settings → Appearance) — Dark, Light, four
   Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or import your own as
   JSON (download a template, fill in your colors, import it back).

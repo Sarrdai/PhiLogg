@@ -32993,6 +32993,97 @@ await withApp(async (w, d, T) => {
   assert(view() === "done 20|work 5|tick 6" && cells() === "+15.0s|+5.0s|+5.0s", "Gap ≥ 0 per Thread sorted by Δt ranks the per-thread pauses, got " + view() + " / " + cells());
 });
 
+/* GROUP 293 — Log format JSON export/import: an Export button per
+   (non-meta) format writes its definition + mapped filename globs; Import…
+   and a dropped/opened .json file anywhere open the import dialog, which
+   suggests the exported name and lets the person pick which globs become
+   rules. Any other .json keeps loading as before. */
+group(293);
+await withApp(async (w, d, T) => {
+  section("293. Log format JSON export/import (button, drop, name + pattern choice)");
+  await waitForFormatConfig(T);
+  const captured = [];
+  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  const src = T.state.logFormats.find(f => f.id === "fmt-demo-app");
+  T.state.formatRules.push({ id: "rule-a", order: 0, createdAt: 0, glob: "app-*.log", formatId: src.id },
+                           { id: "rule-b", order: 1, createdAt: 0, glob: "shared-*.log", formatId: "fmt-default" },
+                           { id: "rule-c", order: 2, createdAt: 0, glob: "shared-*.log", formatId: src.id });
+  w.renderFormatList();
+
+  // Export: one button per ordinary format, none on the meta-format.
+  const rowFor = name => [...d.querySelectorAll("#formatList .filter-library-row")].find(r => r.querySelector(".filter-library-row-name").textContent.startsWith(name));
+  const exportBtn = row => [...row.querySelectorAll("button")].find(b => b.textContent === "Export");
+  assert(!exportBtn(rowFor("App + Syslog (meta)")), "a meta-format has no Export button");
+  fireClick(exportBtn(rowFor(src.name)), w);
+  await waitFor(() => captured.length === 1);
+  const file = JSON.parse(captured[0].json);
+  assert(file.format === "philogg-log-format" && file.version === 1, "export carries the log-format file marker, got " + file.format);
+  assert(captured[0].name.endsWith(".logformat.json"), "suggested file name, got " + captured[0].name);
+  assert(file.logFormat.name === src.name && file.logFormat.regex === src.regex && file.logFormat.tsFormat === src.tsFormat, "export carries the definition");
+  assert(!("id" in file.logFormat) && !("builtin" in file.logFormat) && !("createdAt" in file.logFormat), "...without the store-local id/builtin/createdAt");
+  assert(file.fileNamePatterns.join(",") === "app-*.log,shared-*.log", "export carries the mapped globs in rule order, got " + file.fileNamePatterns);
+
+  // Parsing: not-a-format → null (loads normally), broken → error.
+  assert(w.parseLogFormatExport('{"format":"philogg-filters"}') === null, "another PhiLogg JSON is not a log-format file");
+  assert(w.parseLogFormatExport("[1,2]") === null && w.parseLogFormatExport("nope") === null, "arbitrary JSON / text is not a log-format file");
+  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 99, logFormat: {} })).error, "a newer version is rejected");
+  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 1, logFormat: { name: "x", mode: "regex", regex: "(" } })).error, "an invalid regex is rejected");
+  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 1, logFormat: { name: "x", mode: "meta" } })).error, "a meta-format is rejected");
+
+  // Drop the exported file anywhere (as on another machine — none of its
+  // globs mapped yet): routed to the import dialog, not loaded.
+  T.state.formatRules.length = 0;
+  const before = T.state.logFormats.length;
+  const rootsBefore = Object.keys(T.state.nodes).length;
+  const dlg = d.querySelector("#logFormatImportDialog");
+  await w.loadFileDescriptors([{ file: new w.File([captured[0].json], captured[0].name), handle: null }]);
+  await waitFor(() => isVisible(dlg, w));
+  assert(isVisible(dlg, w), "a dropped log-format file opens the import dialog");
+  assert(Object.keys(T.state.nodes).length === rootsBefore, "...and loads no file node");
+  const nameInput = d.querySelector("#logFormatImportName");
+  assert(nameInput.value === src.name, "the exported name is suggested, got " + nameInput.value);
+  assert(isVisible(d.querySelector("#logFormatImportNameNote"), w), "a note says a format with that name exists");
+  const boxes = [...d.querySelectorAll("#logFormatImportRules input[type=checkbox]")];
+  assert(boxes.length === 2, "one checkbox per exported glob, got " + boxes.length);
+  assert(boxes.every(b => b.checked), "unmapped globs start checked, got " + boxes.map(b => b.checked));
+  boxes[1].checked = false;
+  nameInput.value = "Imported app log";
+  nameInput.dispatchEvent(new w.Event("input"));
+  assert(!isVisible(d.querySelector("#logFormatImportNameNote"), w), "a fresh name hides the note");
+  const rulesBefore = T.state.formatRules.length;
+  fireClick(d.querySelector("#logFormatImportConfirm"), w);
+  await waitFor(() => T.state.logFormats.length === before + 1);
+  const imp = T.state.logFormats.find(f => f.name === "Imported app log");
+  assert(imp && imp.id !== src.id && !imp.builtin && imp.regex === src.regex, "import creates a new format under the chosen name");
+  assert(!isVisible(dlg, w), "confirming closes the dialog");
+  const newRules = T.state.formatRules.slice(rulesBefore);
+  assert(newRules.length === 1 && newRules[0].glob === "app-*.log" && newRules[0].formatId === imp.id, "only the picked glob becomes a rule, for the new format");
+  assert(newRules[0].order === 0, "the imported rule gets the next order slot");
+  assert(!!rowFor("Imported app log"), "the Format Manager lists the imported format");
+
+  // A glob another format already owns is offered unchecked.
+  T.state.formatRules.length = 0;
+  T.state.formatRules.push({ id: "rule-x", order: 0, createdAt: 0, glob: "app-*.log", formatId: "fmt-default" });
+  assert(w.importLogFormatText(captured[0].json) === true, "importLogFormatText accepts the export");
+  const boxes2 = [...d.querySelectorAll("#logFormatImportRules input[type=checkbox]")];
+  assert(!boxes2[0].checked && boxes2[1].checked, "an already-mapped glob starts unchecked, got " + boxes2.map(b => b.checked));
+  assert(d.querySelector("#logFormatImportRules").textContent.includes("already mapped to Default"), "...with a note naming its current format");
+  fireClick(d.querySelector("#logFormatImportCancel"), w);
+  assert(!isVisible(dlg, w), "Cancel closes without importing");
+  assert(T.state.logFormats.length === before + 1, "...and creates nothing");
+
+  // Import… button goes through the hidden file input.
+  let clicked = false;
+  d.querySelector("#logFormatFileInput").click = () => { clicked = true; };
+  fireClick(d.querySelector("#btnImportFormat"), w);
+  assert(clicked, "Settings → Log Formats → Import… opens the file picker");
+
+  // Any other .json still loads as a normal file (inline viewer).
+  await w.loadFileDescriptors([{ file: new w.File(['{"hello":1}'], "data.json"), handle: null }]);
+  assert(!isVisible(dlg, w), "a plain JSON file does not open the import dialog");
+  assert(T.state.looseInlineViewers.size === 1, "...it opens as before (inline viewer)");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -37321,4 +37412,8 @@ process.exitCode = failed ? 1 : 0;
       sorting; gap nodes rank their measured per-group gaps). Same session
       updated GROUP 13: Δt is no longer dashed out under a column sort, each
       row shows its chronological Δt instead.
+   Group 293 — 2026-09-26 (person-requested): log format JSON export (per-
+      format Export button, with mapped filename globs) and import (Settings
+      Import… button + drop/open anywhere), with name suggestion and a per-
+      glob pick list.
    ============================================================ */

@@ -2836,6 +2836,17 @@
     display:flex; align-items:center; justify-content:center;
   }
   #filterLibrarySaveDialog.hidden, #filterLibraryDialog.hidden{display:none;}
+  /* Log format import — stacks above #settingsDialog (z-index 75) like #formatDialog. */
+  #logFormatImportDialog{
+    position:fixed; inset:0; z-index:80; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #logFormatImportDialog.hidden{display:none;}
+  #logFormatImportDialog .link-dialog-card{width:min(440px, 92%);}
+  #logFormatImportRules{max-height:min(240px, 40vh); overflow-y:auto;}
+  #logFormatImportRules .column-toggle-row span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .lf-import-note{font-size:10.5px; color:var(--text-tertiary); margin-top:4px; line-height:1.4;}
+  .lf-import-note.hidden{display:none;}
   #filterLibraryDialog .link-dialog-card{width:min(420px, 92%);}
   #filterLibraryList{max-height:min(360px, 50vh); overflow-y:auto; margin:-2px 0 14px;}
   .filter-library-empty{padding:14px 2px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
@@ -4142,6 +4153,7 @@
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,.gz,text/plain,application/gzip">
       <input type="file" id="zipInput" hidden accept=".zip,application/zip">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
+      <input type="file" id="logFormatFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="themeFileInput" hidden accept=".json,application/json">
       <input type="file" id="syntaxSchemeFileInput" hidden accept=".json,application/json">
@@ -5303,6 +5315,29 @@
     </div>
   </div>
 
+  <!-- Log format import (Settings → Log Formats → "Import…", or a dropped
+       log-format JSON file anywhere — see importLogFormatFile): pick the
+       name (the exported one is suggested) and which of the exported
+       filename patterns become rules. -->
+  <div id="logFormatImportDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Import log format</div>
+      <div class="link-field">
+        <label for="logFormatImportName">Name</label>
+        <input type="text" id="logFormatImportName" maxlength="80" autocomplete="off">
+        <div class="lf-import-note hidden" id="logFormatImportNameNote">A format with this name already exists — the import is added as a separate format.</div>
+      </div>
+      <div class="link-field">
+        <label>Filename patterns to add as rules</label>
+        <div id="logFormatImportRules"></div>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="logFormatImportCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="logFormatImportConfirm" class="btn-mini">Import</button>
+      </div>
+    </div>
+  </div>
+
   <!-- "Apply from library…" on any node's context menu opens this — one
        click per row applies that preset directly onto the clicked node,
        reproducing the original filter's LOGIC re-evaluated against
@@ -5834,7 +5869,7 @@
 
           <div class="settings-card" id="formatListCard">
           <div id="formatList"></div>
-          <div class="settings-card-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button></div>
+          <div class="settings-card-footer theme-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button><button type="button" id="btnImportFormat" class="btn-mini-outline" title="Import a log format exported as JSON (you can also drop the file anywhere onto the app)">Import…</button></div>
           </div>
 
           <div class="settings-subsection-title">Filename rules — first matching pattern wins; files matching none use the default format</div>
@@ -22177,7 +22212,7 @@ function anyEscapeOverlayOpen() {
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
-    "filterLibraryDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "filterLibraryDialog", "logFormatImportDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
@@ -26648,6 +26683,22 @@ el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(fa
 // (not completion order), so a merge afterward stays deterministic.
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
+
+  // An exported log format (see "Log format export/import") dropped or
+  // opened anywhere goes to the import dialog instead of loading as a file.
+  const formatFileDescs = [];
+  for (const d of descs) {
+    const name = d.file ? d.file.name : d.name;
+    if (!mightBeLogFormatExport(name, d.file ? d.file.size : undefined)) continue;
+    try {
+      const file = d.file || await d.openFile();
+      if (file.size <= LOG_FORMAT_FILE_MAX_BYTES && importLogFormatText(await file.text())) formatFileDescs.push(d);
+    } catch { /* unreadable here — the normal load path below reports it */ }
+  }
+  if (formatFileDescs.length) {
+    descs = descs.filter(d => !formatFileDescs.includes(d));
+    if (descs.length === 0) return;
+  }
 
   // Non-log, inline-viewable descriptors (generalized this session — see
   // openInlineViewer's own comment on ownerKind/ownerId/mapKey) never
@@ -34271,6 +34322,16 @@ function renderFormatList() {
     editBtn.textContent = "Edit";
     editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
     row.appendChild(editBtn);
+    // A meta-format only names other formats by id — nothing standalone to export.
+    if (fmt.mode !== "meta") {
+      const exportBtn = document.createElement("button");
+      exportBtn.type = "button";
+      exportBtn.className = "btn-mini-outline";
+      exportBtn.title = "Export this format and its filename patterns as JSON";
+      exportBtn.textContent = "Export";
+      exportBtn.addEventListener("click", ev => { ev.stopPropagation(); exportLogFormatToFile(fmt.id); });
+      row.appendChild(exportBtn);
+    }
     if (fmt.builtin) {
       const resetBtn = document.createElement("button");
       resetBtn.type = "button";
@@ -34334,6 +34395,208 @@ async function removeLogFormat(id) {
   state.logFormats = state.logFormats.filter(f => f.id !== id);
   renderFormatList();
 }
+
+/* ---- Log format export/import (JSON) ----
+   An exported file carries one ordinary (pattern/regex) format's definition
+   — without its id/builtin/edited/createdAt, which belong to the local
+   store — plus the globs of every filename rule mapped to it. Importing
+   always creates a NEW, non-builtin format (fresh id, so it never
+   overwrites an existing one, the builtin default included) and appends the
+   picked globs as rules after the existing ones (first match wins, so an
+   import never overrides an existing rule's precedence). Reached from
+   Settings → Log Formats → "Import…" and from a dropped/opened .json file
+   anywhere (loadFileDescriptors routes it here via readLogFormatExportFile). */
+const LOG_FORMAT_FILE_FORMAT = "philogg-log-format";
+const LOG_FORMAT_FILE_VERSION = 1;
+const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup"];
+
+function serializeLogFormatExport(formatId) {
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  if (!fmt || fmt.mode === "meta") return null;
+  const logFormat = {};
+  LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (fmt[k] !== undefined) logFormat[k] = fmt[k]; });
+  const fileNamePatterns = [...state.formatRules].sort((a, b) => a.order - b.order)
+    .filter(r => r.formatId === formatId).map(r => r.glob);
+  return { format: LOG_FORMAT_FILE_FORMAT, version: LOG_FORMAT_FILE_VERSION, savedAt: new Date().toISOString(), logFormat, fileNamePatterns };
+}
+
+async function exportLogFormatToFile(formatId) {
+  const data = serializeLogFormatExport(formatId);
+  if (!data) return;
+  const json = JSON.stringify(data, null, 2);
+  const suggested = (data.logFormat.name.replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "log-format") + ".logformat.json";
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: suggested,
+        types: [{ description: "PhiLogg log format", accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+    } catch (err) {
+      if (err && err.name === "AbortError") return;
+      downloadJsonFallback(json, suggested);
+    }
+  } else {
+    downloadJsonFallback(json, suggested);
+  }
+  showCopyToast("Log format exported");
+}
+
+// Parses + validates an exported file's text. Returns { logFormat,
+// fileNamePatterns } (logFormat reduced to the known fields) or { error }.
+// Returns null when the text isn't a log-format export at all — the drop
+// path uses that to let any other .json file load as it always did.
+function parseLogFormatExport(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return null; }
+  if (!data || typeof data !== "object" || data.format !== LOG_FORMAT_FILE_FORMAT) return null;
+  if (!(data.version <= LOG_FORMAT_FILE_VERSION)) return { error: "Log format file was saved by a newer version" };
+  const src = data.logFormat;
+  if (!src || typeof src !== "object" || typeof src.name !== "string") return { error: "Log format file is incomplete" };
+  if (src.mode !== "regex" && src.mode !== "pattern") return { error: "Log format file uses an unsupported format mode" };
+  const compiled = src.mode === "regex" ? validateFormatRegex(String(src.regex || "")) : compileFormatPattern(String(src.pattern || ""), String(src.tsFormat || ""));
+  if (compiled.error) return { error: "Log format file has an invalid pattern: " + compiled.error };
+  const logFormat = {};
+  LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (src[k] !== undefined) logFormat[k] = src[k]; });
+  logFormat.pattern = String(src.pattern || "");
+  logFormat.regex = String(src.regex || "");
+  logFormat.tsFormat = String(src.tsFormat || "");
+  if (!Array.isArray(logFormat.levels)) delete logFormat.levels;
+  else logFormat.levels = logFormat.levels.filter(l => typeof l === "string" || (l && typeof l === "object" && typeof l.name === "string"));
+  if (logFormat.levelValueType !== "int") delete logFormat.levelValueType;
+  if (!Array.isArray(logFormat.columnDefs)) delete logFormat.columnDefs;
+  else logFormat.columnDefs = logFormat.columnDefs.filter(c => c && typeof c.key === "string");
+  if (logFormat.messageVisible !== undefined) logFormat.messageVisible = !!logFormat.messageVisible;
+  if (!(logFormat.sampleSetup && Array.isArray(logFormat.sampleSetup.lines))) delete logFormat.sampleSetup;
+  const fileNamePatterns = [...new Set((Array.isArray(data.fileNamePatterns) ? data.fileNamePatterns : [])
+    .filter(g => typeof g === "string" && g.trim()).map(g => g.trim()))];
+  return { logFormat, fileNamePatterns };
+}
+
+// Only small .json files are even read to check for the marker — a large
+// JSON log keeps loading as it always did without being read twice.
+const LOG_FORMAT_FILE_MAX_BYTES = 1024 * 1024;
+function mightBeLogFormatExport(name, size) {
+  return /\.json$/i.test(name || "") && !(size > LOG_FORMAT_FILE_MAX_BYTES);
+}
+
+// Imports queue up: several dropped format files open one dialog after another.
+const logFormatImportQueue = [];
+let logFormatImportCurrent = null;
+const logFormatImportDialog = el("#logFormatImportDialog");
+const logFormatImportName = el("#logFormatImportName");
+const logFormatImportRulesEl = el("#logFormatImportRules");
+function logFormatImportOpen() { return !logFormatImportDialog.classList.contains("hidden"); }
+
+// Entry point for a file's text: returns false when it isn't a log-format
+// export (caller loads it normally), true once it's been handled (queued
+// for the dialog, or rejected with a toast).
+function importLogFormatText(text) {
+  const parsed = parseLogFormatExport(text);
+  if (!parsed) return false;
+  if (parsed.error) { showCopyToast(parsed.error); return true; }
+  logFormatImportQueue.push(parsed);
+  if (!logFormatImportOpen()) openNextLogFormatImport();
+  return true;
+}
+
+function openNextLogFormatImport() {
+  logFormatImportCurrent = logFormatImportQueue.shift() || null;
+  if (!logFormatImportCurrent) return;
+  const { logFormat, fileNamePatterns } = logFormatImportCurrent;
+  logFormatImportName.value = logFormat.name;
+  updateLogFormatImportNameNote();
+  if (!fileNamePatterns.length) {
+    logFormatImportRulesEl.innerHTML = '<div class="filter-library-empty">The file carries no filename patterns.</div>';
+  } else {
+    // A glob an existing rule already has would never match first — offered,
+    // but unchecked by default.
+    logFormatImportRulesEl.innerHTML = fileNamePatterns.map((g, i) => {
+      const existing = state.formatRules.find(r => r.glob === g);
+      const owner = existing ? state.logFormats.find(f => f.id === existing.formatId) : null;
+      return '<label class="column-toggle-row"><input type="checkbox" data-idx="' + i + '"' + (existing ? "" : " checked") + '> <span>' + escapeHtml(g) +
+        (existing ? ' <span class="link-target-label">(already mapped to ' + escapeHtml(owner ? owner.name : "another format") + ')</span>' : "") + '</span></label>';
+    }).join("");
+  }
+  logFormatImportDialog.classList.remove("hidden");
+  logFormatImportName.focus();
+  logFormatImportName.select();
+}
+
+function updateLogFormatImportNameNote() {
+  const name = logFormatImportName.value.trim();
+  el("#logFormatImportNameNote").classList.toggle("hidden", !state.logFormats.some(f => f.name === name));
+}
+
+function closeLogFormatImportDialog() {
+  logFormatImportDialog.classList.add("hidden");
+  logFormatImportCurrent = null;
+  logFormatImportQueue.length = 0;
+}
+
+// Creates the format + the picked rules. Exposed separately from the
+// dialog so the name/pattern choice is testable without DOM clicks.
+async function commitLogFormatImport(parsed, name, pickedGlobs) {
+  const fmt = Object.assign({}, parsed.logFormat, {
+    id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+    name: String(name).trim().slice(0, 80),
+    builtin: false, edited: false, createdAt: Date.now(),
+  });
+  await saveLogFormat(fmt);
+  state.logFormats.push(fmt);
+  for (const glob of pickedGlobs) {
+    if (state.formatRules.some(r => r.formatId === fmt.id && r.glob === glob)) continue;
+    const rule = {
+      id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+      order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
+      createdAt: Date.now(),
+      glob,
+      formatId: fmt.id,
+    };
+    await saveFormatRule(rule);
+    state.formatRules.push(rule);
+  }
+  renderFormatList();
+  renderFormatRuleList();
+  renderFormatRuleFormatOptions();
+  return fmt;
+}
+
+logFormatImportName.addEventListener("input", updateLogFormatImportNameNote);
+logFormatImportName.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); el("#logFormatImportConfirm").click(); } });
+logFormatImportDialog.addEventListener("click", ev => { if (ev.target === logFormatImportDialog) closeLogFormatImportDialog(); });
+el("#logFormatImportCancel").addEventListener("click", () => {
+  // Cancel skips just this file; any further queued import still opens.
+  logFormatImportDialog.classList.add("hidden");
+  openNextLogFormatImport();
+});
+el("#logFormatImportConfirm").addEventListener("click", async () => {
+  const parsed = logFormatImportCurrent;
+  const name = logFormatImportName.value.trim();
+  if (!parsed) return;
+  if (!name) { logFormatImportName.focus(); return; }
+  const picked = Array.from(logFormatImportRulesEl.querySelectorAll("input[data-idx]"))
+    .filter(cb => cb.checked).map(cb => parsed.fileNamePatterns[+cb.dataset.idx]);
+  logFormatImportDialog.classList.add("hidden");
+  const fmt = await commitLogFormatImport(parsed, name, picked);
+  showCopyToast('Log format "' + fmt.name + '" imported' + (picked.length ? " with " + picked.length + " filename rule" + (picked.length === 1 ? "" : "s") : ""));
+  openNextLogFormatImport();
+});
+
+const logFormatFileInput = el("#logFormatFileInput");
+el("#btnImportFormat").addEventListener("click", ev => {
+  ev.stopPropagation();
+  logFormatFileInput.click();
+});
+logFormatFileInput.addEventListener("change", ev => {
+  const file = ev.target.files[0];
+  logFormatFileInput.value = "";
+  if (!file) return;
+  file.text().then(text => { if (!importLogFormatText(text)) showCopyToast("Not a PhiLogg log format file"); })
+    .catch(() => showCopyToast("Could not read log format file"));
+});
 
 function renderFormatRuleList() {
   const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
@@ -36509,6 +36772,8 @@ document.addEventListener("keydown", ev => {
     // The format setup wizard sits on top of Settings: Esc closes just the
     // wizard, leaving Settings (and its unsaved format editor) open.
     if (formatDialogOpen()) { closeFormatEditDialog(); return; }
+    // Same for the log format import dialog — it also stacks above Settings.
+    if (logFormatImportOpen()) { closeLogFormatImportDialog(); return; }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
     closePlotFullscreen();
     closeSettingsDialog();
