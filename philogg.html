@@ -2836,7 +2836,7 @@
     display:flex; align-items:center; justify-content:center;
   }
   #filterLibrarySaveDialog.hidden, #filterLibraryDialog.hidden{display:none;}
-  #filterLibraryDialog .link-dialog-card{width:min(420px, 92%);}
+  #filterLibraryDialog .link-dialog-card{width:min(500px, 92%);}
   #filterLibraryList{max-height:min(360px, 50vh); overflow-y:auto; margin:-2px 0 14px;}
   .filter-library-empty{padding:14px 2px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
   .filter-library-row{display:flex; align-items:center; gap:8px; padding:8px 2px; border-bottom:1px solid var(--border-soft);}
@@ -3298,7 +3298,12 @@
   .fwz-import-field{flex:1 1 300px; min-width:0;}
   .fwz-import-field.hidden{display:none;}
   #formatEditImportRules{max-height:84px; overflow-y:auto;}
-  #formatEditImportRules .column-toggle-row span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* The rows are <label>s inside a .link-field, whose own "label" rule
+     (block, tertiary caption) must not apply to them. */
+  #formatEditImportRules label{display:flex; align-items:center; gap:6px; margin:0 0 3px; font-size:11.5px; color:var(--text-primary); font-family:var(--font-mono); min-width:0;}
+  #formatEditImportRules label input{margin:0; flex:0 0 auto;}
+  #formatEditImportRules label > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+  #formatEditImportRules .link-target-label{font-family:var(--font-ui); font-size:10.5px; color:var(--text-tertiary);}
   #formatDialog.hidden, #fwzFileInput.hidden, #fwzNormalBody.hidden, #formatEditMetaField.hidden{display:none;}
   .fwz-card{width:min(1320px, 97vw); height:min(940px, 95vh);}
   .fwz-top{display:flex; gap:16px; align-items:flex-start; padding:12px 22px 0; border-bottom:1px solid var(--border); flex:0 0 auto;}
@@ -33807,7 +33812,7 @@ function importFilterBranchJson(text) {
   while (target && target.locked) target = state.nodes[target.parentId];
   if (!target) { showCopyToast("Open a log file first — an imported filter is added under the active node"); return; }
   loadFilterTargetId = target.id;
-  importFilterJson(text, 'Filter imported under "' + nodeDisplayName(target) + '"');
+  importFilterJson(text, "Filter imported under " + nodeDisplayName(target));
 }
 
 // Shared rebuild step behind serializeFilterBranch()'s roots — used by
@@ -36049,7 +36054,7 @@ function renderFormatImportRules() {
   el("#formatEditImportRules").innerHTML = globs.map((g, i) => {
     const existing = state.formatRules.find(r => r.glob === g);
     const owner = existing ? state.logFormats.find(f => f.id === existing.formatId) : null;
-    return '<label class="column-toggle-row"><input type="checkbox" data-idx="' + i + '"' + (existing ? "" : " checked") + '> <span>' + escapeHtml(g) +
+    return '<label><input type="checkbox" data-idx="' + i + '"' + (existing ? "" : " checked") + '><span>' + escapeHtml(g) +
       (existing ? ' <span class="link-target-label">(already mapped to ' + escapeHtml(owner ? owner.name : "another format") + ')</span>' : "") + '</span></label>';
   }).join("");
 }
