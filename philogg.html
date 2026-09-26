@@ -8431,16 +8431,42 @@ function levelSortRank(bucket, formatId) {
 // to a *copy* of the current view's entries (see renderTable) — never to the
 // underlying node/file arrays, which must stay chronological for the link
 // filter's binary search and the OR-filter merge to keep working correctly.
-function entryComparator(column, dir) {
+// "delta" sorts by `deltas` (entry id -> Δt ms, see buildViewDeltaMap);
+// rows without a Δt (the first row, a plain-text line) sort last in both
+// directions, so "largest first" never starts with blanks.
+function entryComparator(column, dir, deltas) {
   const sign = dir === "desc" ? -1 : 1;
   return (a, b) => {
     let cmp = 0;
-    if (column === "time") cmp = a.ts - b.ts;
+    if (column === "delta") {
+      const da = deltas && deltas.get(a.id), db = deltas && deltas.get(b.id);
+      if (da === undefined || db === undefined) return (da === undefined) - (db === undefined);
+      cmp = da - db;
+    } else if (column === "time") cmp = a.ts - b.ts;
     else if (column === "level") cmp = levelSortRank(levelBucket(a.level, a.formatId), a.formatId) - levelSortRank(levelBucket(b.level, b.formatId), b.formatId);
     else if (column === "thread") cmp = String(a.thread).localeCompare(String(b.thread));
     else if (column === "location") cmp = String(a.locationShort).localeCompare(String(b.locationShort));
     return cmp * sign;
   };
+}
+
+// The Filtered view's Δt per row, taken from the view's CHRONOLOGICAL order
+// (the list before any column sort) so a row keeps its own Δt when the
+// table is re-sorted — which is what makes "sort by Δt, largest first"
+// answer "where is the most time lost". On a gap node it's the node's own
+// measured gap per group (node._gapMs, see computeGapEntries); otherwise
+// the distance to the previous row of the view. Built only while a sort is
+// active (renderTable); unsorted rows read their neighbour directly.
+let viewDeltaMs = null;
+function buildViewDeltaMap(entries) {
+  const node = state.nodes[state.activeId];
+  if (node && node.filterType === "gap" && !node.inverted && node._gapMs) return node._gapMs;
+  const out = new Map();
+  for (let i = 1; i < entries.length; i++) {
+    const e = entries[i];
+    if (!isPlainTextFormat(e.formatId)) out.set(e.id, e.ts - entries[i - 1].ts);
+  }
+  return out;
 }
 
 let uidCounter = 0;
@@ -15029,7 +15055,7 @@ tableHeaderEl.addEventListener("click", ev => {
     state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
   } else {
     state.sortColumn = col;
-    state.sortDir = "asc";
+    state.sortDir = col === "delta" ? "desc" : "asc"; // Δt: largest first — "where is the time lost"
   }
   renderTable();
   findRefresh(); // a re-sort reorders the list the find bar's hit indices point into
@@ -20111,11 +20137,12 @@ function renderVisibleRows(reuseRows) {
   const messageVisible = activeMessageVisible();
 
   const syntax = activePlainTextSyntax();
-  // A gap filter's rows show the gap that got them kept in the Δt column
-  // (measured per group, against the parent's result) rather than the
-  // distance to the previous visible row — see computeGapEntries.
+  // Δt per row from a map rather than the row's neighbour: a gap filter's
+  // own measured gap (per group, against the parent's result — see
+  // computeGapEntries), or, under a column sort, the chronological Δt
+  // renderTable captured before sorting (buildViewDeltaMap).
   const gapMs = activeNode && activeNode.filterType === "gap" && !activeNode.inverted ? activeNode._gapMs : null;
-  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, gapMs };
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null) };
   let groups;
   if (reuse) {
     for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
@@ -20182,13 +20209,12 @@ function appendLogRow(frag, i, rc) {
       if (rc.ctxNode._anchorIds.has(e.id)) bracketHtml += '<span class="ctx-anchor-dot" title="Reference entry"></span>';
     }
   }
-  // Δt is only meaningful when rows are in chronological order — under a
-  // column sort, adjacent rows aren't temporally adjacent, so it's dashed
-  // out rather than shown misleadingly (same reasoning as the context
-  // bracket being suppressed under column sort, see contextRangeIndex above).
+  // Under a column sort adjacent rows aren't temporally adjacent, so the
+  // Δt comes from rc.deltaMap (captured in chronological order) instead of
+  // the row above.
   const prevE = i > 0 ? currentViewEntries[i - 1] : null;
-  const deltaMs = rc.gapMs ? (rc.gapMs.has(e.id) ? rc.gapMs.get(e.id) : null)
-    : (!state.sortColumn && prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
+  const deltaMs = rc.deltaMap ? (rc.deltaMap.has(e.id) ? rc.deltaMap.get(e.id) : null)
+    : (prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
 
   // markFieldHtml short-circuits to a plain escapeHtml before any range
   // search when nothing can contribute a mark (feature/row-toggle off and
@@ -24183,7 +24209,8 @@ function toggleBookmark(entryId) {
   // full render happened to run.
   if (state.pinBookmarksInFilteredView) {
     currentViewEntries = spliceTempAnchor(getVisibleEntries());
-    if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
+    viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
+    if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
     tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
     {
       const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
@@ -24461,7 +24488,9 @@ function buildRowGridHeaderHtml(sortable) {
   out += sortable
     ? '<span class="th th-sortable" data-sort="time">' + timeLabel + '<span class="th-sort-arrow"></span></span>'
     : '<span class="th">' + timeLabel + '</span>';
-  out += '<span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>';
+  out += sortable
+    ? '<span class="th th-sortable" data-sort="delta" data-col="delta" title="Δt since the previous entry · click to sort (largest first) · middle-click to hide">Δt<span class="th-sort-arrow"></span></span>'
+    : '<span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>';
   out += sortable
     ? '<span class="th th-sortable" data-sort="level">Level<span class="th-sort-arrow"></span></span>'
     : '<span class="th">Level</span>';
@@ -24841,7 +24870,8 @@ function renderTable() {
   // span made the minimap's highlighted range balloon to cover it).
   const minimapViewEntries = getVisibleEntries();
   currentViewEntries = spliceTempAnchor(minimapViewEntries);
-  if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir));
+  viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
+  if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   {
     const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
@@ -37625,7 +37655,7 @@ async function restoreSessionFromCache(metaIn) {
       state.levelFilter.clear();
       s.levelFilter.forEach(l => state.levelFilter.add(l));
     }
-    state.sortColumn = ["time", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
+    state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
     state.multilineMessages = !!s.multilineMessages;
@@ -38163,7 +38193,7 @@ async function runSessionImport(data) {
       state.levelFilter.clear();
       s.levelFilter.forEach(l => state.levelFilter.add(l));
     }
-    state.sortColumn = ["time", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
+    state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
     if (s.active && resolved.has(s.active.exportId)) {

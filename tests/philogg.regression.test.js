@@ -970,7 +970,15 @@ await withApp(async (w, d, T) => {
 
   // Δt suppressed under column sort
   fireClick([...d.querySelectorAll(".th-sortable")].find(th => th.dataset.sort === "level"), w);
-  assert([...d.querySelectorAll("#tableRows .col-delta")].every(c => c.textContent === "—"), "Δt dashed out under an active column sort");
+  // Under a column sort each row keeps its own CHRONOLOGICAL Δt (captured
+  // before sorting, buildViewDeltaMap) — updated 2026-09-26: it used to be
+  // dashed out, since the row above is no longer its predecessor.
+  {
+    const cells = [...d.querySelectorAll("#tableRows .col-delta")];
+    const byMsg = m => cells[T.currentViewEntries.findIndex(e => e.message.startsWith(m))].textContent;
+    assert(byMsg("isolated error") === "+6.0s" && byMsg("burst 0") === "—" && byMsg("burst 3") === "+1.0s",
+      "under a level sort each row shows its chronological Δt, got " + cells.map(c => c.textContent).join(","));
+  }
   T.state.sortColumn = null; w.render();
 
   // Timeline minimap: background bars for the whole file, overlay for the current view
@@ -32942,6 +32950,49 @@ group(291);
   });
 }
 
+/* ============================================================
+   GROUP 292 — Sortable Δt column: "where is the most time lost" without
+   a threshold (2026-09-26, follow-up to GROUP 289). The Filtered view's
+   Δt header sorts by each row's CHRONOLOGICAL Δt (captured before the
+   sort, buildViewDeltaMap) — first click largest first, rows without a Δt
+   last in both directions; on a filter node it's the gap within that
+   result, on a gap node the measured per-group gap (Gap ≥ 0 per Thread =
+   a ranking of the longest per-thread pauses).
+   ============================================================ */
+group(292);
+await withApp(async (w, d, T) => {
+  section("292. Sortable Δt column (largest first, chronological Δt, gap nodes)");
+  const rows = [[0, "A", "start"], [1, "B", "tick"], [5, "A", "work"], [6, "B", "tick"], [20, "A", "done"]];
+  const log = rows.map(([sec, th, msg]) => `2024-01-15 10:00:${String(sec).padStart(2, "0")},000\tINFO\t"${th}"\tFoo.cs\tline 0\t[DoWork]\t"${msg} ${sec}"`).join("\n") + "\n";
+  const f = await w.addFile("sort.log", log, () => {});
+  T.state.activeId = f.id;
+  T.state.sortColumn = null;
+  w.revealFilteredView();
+  w.render();
+  const th = () => d.querySelector('#tableHeader .th-sortable[data-sort="delta"]');
+  assert(!!th(), "the Δt header is sortable");
+  const view = () => T.currentViewEntries.map(e => e.message).join("|");
+  const cells = () => [...d.querySelectorAll("#tableRows .col-delta")].map(c => c.textContent).join("|");
+  fireClick(th(), w);
+  assert(T.state.sortColumn === "delta" && T.state.sortDir === "desc", "first click sorts Δt largest first");
+  assert(view() === "done 20|work 5|tick 1|tick 6|start 0", "largest gap first, the first entry (no Δt) last, got " + view());
+  assert(cells() === "+14.0s|+4.0s|+1.0s|+1.0s|—", "each row keeps its chronological Δt, got " + cells());
+  assert(th().querySelector(".th-sort-arrow").textContent === "▼", "descending arrow");
+  fireClick(th(), w);
+  assert(T.state.sortDir === "asc" && view() === "tick 1|tick 6|work 5|done 20|start 0", "ascending: smallest first, no-Δt row still last, got " + view());
+
+  // On a filter node: Δt within that result.
+  w.createFilterNode(f.id, "text", "A", false, null, true, ["thread"]); // thread "A" only
+  T.state.sortDir = "desc";
+  w.render();
+  assert(view() === "done 20|work 5|start 0" && cells() === "+15.0s|+5.0s|—", "filter node: Δt between its own rows, got " + view() + " / " + cells());
+
+  // On a gap node (threshold 0, per Thread): the per-thread pauses ranked.
+  w.createGapNode(f.id, { ms: 0, per: "thread" });
+  w.render();
+  assert(view() === "done 20|work 5|tick 6" && cells() === "+15.0s|+5.0s|+5.0s", "Gap ≥ 0 per Thread sorted by Δt ranks the per-thread pauses, got " + view() + " / " + cells());
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -37265,4 +37316,9 @@ process.exitCode = failed ? 1 : 0;
       session made the live-result summary reusable (classes instead of
       #filterResults ids): GROUP 122/263's className checks on
       #filterLiveMatch now use classList.contains.
+   Group 292 — same session, follow-up: the Filtered view's Δt column is
+      sortable (first click largest first; chronological Δt captured before
+      sorting; gap nodes rank their measured per-group gaps). Same session
+      updated GROUP 13: Δt is no longer dashed out under a column sort, each
+      row shows its chronological Δt instead.
    ============================================================ */
