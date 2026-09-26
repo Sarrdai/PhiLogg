@@ -2836,17 +2836,6 @@
     display:flex; align-items:center; justify-content:center;
   }
   #filterLibrarySaveDialog.hidden, #filterLibraryDialog.hidden{display:none;}
-  /* Log format import — stacks above #settingsDialog (z-index 75) like #formatDialog. */
-  #logFormatImportDialog{
-    position:fixed; inset:0; z-index:80; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
-    display:flex; align-items:center; justify-content:center;
-  }
-  #logFormatImportDialog.hidden{display:none;}
-  #logFormatImportDialog .link-dialog-card{width:min(440px, 92%);}
-  #logFormatImportRules{max-height:min(240px, 40vh); overflow-y:auto;}
-  #logFormatImportRules .column-toggle-row span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .lf-import-note{font-size:10.5px; color:var(--text-tertiary); margin-top:4px; line-height:1.4;}
-  .lf-import-note.hidden{display:none;}
   #filterLibraryDialog .link-dialog-card{width:min(420px, 92%);}
   #filterLibraryList{max-height:min(360px, 50vh); overflow-y:auto; margin:-2px 0 14px;}
   .filter-library-empty{padding:14px 2px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
@@ -3013,7 +3002,6 @@
     margin-top:12px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:10px;
   }
   .settings-card-footer{padding:12px 18px;}
-  .settings-card-footer.theme-footer{display:flex; gap:8px;}
   .settings-row-control select{
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
@@ -3241,6 +3229,76 @@
     position:fixed; inset:0; z-index:80; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center;
   }
+  /* ---------- Theme / syntax scheme editor (#themeEditorDialog) — stacks
+     above #settingsDialog like #formatDialog. #themeEditorPreview gets the
+     edited colors as inline CSS vars, so everything inside it renders with
+     them. ---------- */
+  #themeEditorDialog{
+    position:fixed; inset:0; z-index:80; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:center; justify-content:center;
+  }
+  #themeEditorDialog.hidden, #themeEditorTextLightRow.hidden{display:none;}
+  .te-card{width:min(1080px, 96vw); height:min(760px, 94vh);}
+  .te-top{display:flex; gap:16px; align-items:center; padding:12px 22px 0; border-bottom:1px solid var(--border); flex:0 0 auto;}
+  .te-top .link-field{margin-bottom:10px;}
+  .te-name-field{flex:0 1 360px; min-width:0;}
+  .te-top input[type="text"]{
+    width:100%; box-sizing:border-box; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 8px; font-size:12px;
+  }
+  .te-main{flex:1 1 auto; display:flex; min-height:0;}
+  .te-side{flex:0 0 380px; border-right:1px solid var(--border); padding:10px 14px 14px; overflow-y:auto;}
+  .te-body{flex:1 1 auto; min-width:0; padding:14px 18px; overflow:auto; display:flex; flex-direction:column; gap:8px;}
+  .te-group-title{font-size:11px; font-weight:650; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; margin:12px 0 4px;}
+  .te-row{display:flex; align-items:center; gap:8px; padding:3px 0;}
+  .te-row-label{flex:1 1 auto; min-width:0; font-size:11.5px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .te-swatch{flex:0 0 auto; width:22px; height:22px; border-radius:50%; border:1px solid var(--border); cursor:pointer; padding:0;
+    background-image:linear-gradient(45deg,#8883 25%,transparent 25% 75%,#8883 75%), linear-gradient(45deg,#8883 25%,transparent 25% 75%,#8883 75%);
+    background-size:8px 8px; background-position:0 0, 4px 4px; position:relative; overflow:hidden;}
+  .te-swatch span{position:absolute; inset:0;}
+  .te-swatch:disabled{cursor:default; opacity:.8;}
+  .te-value{flex:0 0 150px; box-sizing:border-box; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:4px 6px; font-size:11px; font-family:var(--font-mono);}
+  .te-value:disabled{color:var(--text-tertiary);}
+  .te-value.te-invalid{border-color:var(--level-error);}
+  .te-group-title{display:flex; align-items:center; justify-content:space-between;}
+  .te-include-syntax{text-transform:none; letter-spacing:0; font-weight:500;}
+  .te-auto{flex:0 0 auto; font-size:10.5px; color:var(--text-secondary); display:flex; align-items:center; gap:3px; cursor:pointer;}
+  #themeEditorPreview{
+    border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg-app); color:var(--text-primary);
+    font-size:12px;
+  }
+  .te-prev-bar{display:flex; gap:6px; align-items:center; padding:10px 12px; background:var(--bg-panel); border-bottom:1px solid var(--border);}
+  .te-prev-lvl{font-size:10.5px; font-weight:650; padding:3px 9px; border-radius:999px; border:1.5px solid var(--te-lvl); color:var(--te-lvl);}
+  .te-prev-lvl.active{background:var(--te-lvl); color:var(--te-lvl-on);}
+  .te-prev-lvl[data-lvl="error"], .te-prev-badge[data-lvl="error"]{--te-lvl:var(--level-error); --te-lvl-soft:var(--level-error-soft); --te-lvl-on:var(--level-error-on);}
+  .te-prev-lvl[data-lvl="warn"], .te-prev-badge[data-lvl="warn"]{--te-lvl:var(--level-warn); --te-lvl-soft:var(--level-warn-soft); --te-lvl-on:var(--level-warn-on);}
+  .te-prev-lvl[data-lvl="info"], .te-prev-badge[data-lvl="info"]{--te-lvl:var(--level-info); --te-lvl-soft:var(--level-info-soft); --te-lvl-on:var(--level-info-on);}
+  .te-prev-lvl[data-lvl="debug"], .te-prev-badge[data-lvl="debug"]{--te-lvl:var(--level-debug); --te-lvl-soft:var(--level-debug-soft); --te-lvl-on:var(--level-debug-on);}
+  .te-prev-lvl[data-lvl="trace"], .te-prev-badge[data-lvl="trace"]{--te-lvl:var(--level-trace); --te-lvl-soft:var(--level-trace-soft); --te-lvl-on:var(--level-debug-on);}
+  .te-prev-btn{margin-left:auto; background:var(--accent); color:var(--accent-on); font-weight:650; font-size:11px; padding:4px 12px; border-radius:6px;}
+  .te-prev-split{display:flex; min-height:0;}
+  .te-prev-tree{flex:0 0 170px; background:var(--bg-panel); border-right:1px solid var(--border-soft); padding:6px 0;}
+  .te-prev-tree-row{padding:4px 10px; font-size:11.5px; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .te-prev-sub{padding-left:24px; color:var(--text-secondary);}
+  .te-prev-selected{background:var(--accent-soft); color:var(--accent-strong); box-shadow:inset 2px 0 0 var(--accent);}
+  .te-prev-log{flex:1 1 auto; min-width:0; font-family:var(--font-log); font-size:11.5px;}
+  .te-prev-row{display:flex; gap:10px; align-items:center; padding:4px 10px; border-bottom:1px solid var(--border-soft); white-space:nowrap;}
+  .te-prev-row-sel{background:var(--bg-elevated-2);}
+  .te-prev-ts{color:var(--text-secondary);}
+  .te-prev-dim{color:var(--text-tertiary);}
+  .te-prev-badge{flex:0 0 46px; text-align:center; font-size:10px; font-weight:650; border-radius:4px; padding:1px 0; color:var(--te-lvl); background:var(--te-lvl-soft);}
+  .te-prev-code{margin:0; padding:10px 12px; background:var(--bg-elevated); border-top:1px solid var(--border); font-family:var(--font-log); font-size:11.5px; white-space:pre; overflow:auto;}
+  /* The highlight-colour picker opened from the theme editor ("plain"
+     mode, see openColorPicker): no Free/Theme toggle, no Clear, and above
+     the editor's own z-index. */
+  #colorPickerPopup.cp-plain{z-index:90;}
+  #colorPickerPopup.cp-plain .cp-mode-row, #colorPickerPopup.cp-plain .cp-clear{display:none;}
+  #colorPickerPopup.cp-plain #cpWheelWrap.hidden{display:flex;}
+  .fwz-import-field{flex:1 1 300px; min-width:0;}
+  .fwz-import-field.hidden{display:none;}
+  #formatEditImportRules{max-height:84px; overflow-y:auto;}
+  #formatEditImportRules .column-toggle-row span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   #formatDialog.hidden, #fwzFileInput.hidden, #fwzNormalBody.hidden, #formatEditMetaField.hidden{display:none;}
   .fwz-card{width:min(1320px, 97vw); height:min(940px, 95vh);}
   .fwz-top{display:flex; gap:16px; align-items:flex-start; padding:12px 22px 0; border-bottom:1px solid var(--border); flex:0 0 auto;}
@@ -4152,11 +4210,7 @@
       </button>
       <input type="file" id="fileInput" multiple hidden accept=".log,.txt,.gz,text/plain,application/gzip">
       <input type="file" id="zipInput" hidden accept=".zip,application/zip">
-      <input type="file" id="filterFileInput" hidden accept=".json,application/json">
-      <input type="file" id="logFormatFileInput" hidden accept=".json,application/json">
-      <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
-      <input type="file" id="themeFileInput" hidden accept=".json,application/json">
-      <input type="file" id="syntaxSchemeFileInput" hidden accept=".json,application/json">
+      <input type="file" id="importFileInput" multiple hidden accept=".json,application/json">
       <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,.gz,text/plain,application/gzip">
     </div>
   </header>
@@ -4183,9 +4237,9 @@
               <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M7 6v1M7 8v1M7 10v1"/></svg>
               ZIP…
             </div>
-            <div class="ctx-item" data-action="importSession">
+            <div class="ctx-item" data-action="import" title="Import a PhiLogg export — session, filter, filter library preset, log format, theme or syntax scheme (you can also drop the file anywhere onto the app)">
               <svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 2v8M8 10 5.4 7.4M8 10l2.6-2.6"/></svg>
-              Import session…
+              Import…
             </div>
           </div>
           <button type="button" id="btnSave" class="panel-toggle-btn" title="Save session…">
@@ -5298,9 +5352,10 @@
     </div>
   </div>
 
-  <!-- Reusable filter library (FEATURE_BACKLOG.md): the "+ Add to Library"
-       button in the Filter-Toolbar opens this to name the active filter's
-       branch being saved. -->
+  <!-- Reusable filter library (FEATURE_BACKLOG.md): the sidebar toolbar's
+       "Add to library…" opens this to name the selected filter's branch
+       being saved and pick its icon; an imported library preset file opens
+       it prefilled (see openFilterLibraryImportDialog). -->
   <div id="filterLibrarySaveDialog" class="hidden">
     <div class="link-dialog-card">
       <div class="link-dialog-title">Save to filter library</div>
@@ -5308,32 +5363,14 @@
         <label for="filterLibraryNameInput">Name</label>
         <input type="text" id="filterLibraryNameInput" placeholder="e.g. Startup errors" maxlength="80" autocomplete="off">
       </div>
+      <div class="link-field">
+        <label>Icon</label>
+        <button type="button" id="filterLibrarySaveIconBtn" class="filter-library-row-icon" title="Choose icon"></button>
+        <div id="filterLibrarySaveIconGrid"></div>
+      </div>
       <div class="link-dialog-actions">
         <button type="button" id="filterLibrarySaveCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="filterLibrarySaveConfirm" class="btn-mini">Save</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Log format import (Settings → Log Formats → "Import…", or a dropped
-       log-format JSON file anywhere — see importLogFormatFile): pick the
-       name (the exported one is suggested) and which of the exported
-       filename patterns become rules. -->
-  <div id="logFormatImportDialog" class="hidden">
-    <div class="link-dialog-card">
-      <div class="link-dialog-title">Import log format</div>
-      <div class="link-field">
-        <label for="logFormatImportName">Name</label>
-        <input type="text" id="logFormatImportName" maxlength="80" autocomplete="off">
-        <div class="lf-import-note hidden" id="logFormatImportNameNote">A format with this name already exists — the import is added as a separate format.</div>
-      </div>
-      <div class="link-field">
-        <label>Filename patterns to add as rules</label>
-        <div id="logFormatImportRules"></div>
-      </div>
-      <div class="link-dialog-actions">
-        <button type="button" id="logFormatImportCancel" class="btn-mini-secondary">Cancel</button>
-        <button type="button" id="logFormatImportConfirm" class="btn-mini">Import</button>
       </div>
     </div>
   </div>
@@ -5474,21 +5511,19 @@
             </div>
           </div>
 
-          <div class="settings-subsection-title">Custom themes — import your own color palette as JSON</div>
+          <div class="settings-subsection-title">Custom themes — your own color palettes</div>
           <div class="settings-card" id="customThemeListCard">
             <div id="customThemeList"></div>
-            <div class="settings-card-footer theme-footer">
-              <button type="button" class="btn-mini-outline" id="btnThemeTemplate">Download template…</button>
-              <button type="button" class="btn-mini-dashed" id="btnThemeImport">+ Import theme…</button>
+            <div class="settings-card-footer">
+              <button type="button" class="btn-mini-dashed" id="btnThemeNew">+ New theme…</button>
             </div>
           </div>
 
-          <div class="settings-subsection-title">Custom syntax schemes — import your own highlight colors as JSON</div>
+          <div class="settings-subsection-title">Custom syntax schemes — your own highlight colors</div>
           <div class="settings-card" id="customSyntaxSchemeListCard">
             <div id="customSyntaxSchemeList"></div>
-            <div class="settings-card-footer theme-footer">
-              <button type="button" class="btn-mini-outline" id="btnSyntaxTemplate">Download template…</button>
-              <button type="button" class="btn-mini-dashed" id="btnSyntaxImport">+ Import scheme…</button>
+            <div class="settings-card-footer">
+              <button type="button" class="btn-mini-dashed" id="btnSyntaxNew">+ New scheme…</button>
             </div>
           </div>
         </section>
@@ -5869,7 +5904,7 @@
 
           <div class="settings-card" id="formatListCard">
           <div id="formatList"></div>
-          <div class="settings-card-footer theme-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button><button type="button" id="btnImportFormat" class="btn-mini-outline" title="Import a log format exported as JSON (you can also drop the file anywhere onto the app)">Import…</button></div>
+          <div class="settings-card-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button></div>
           </div>
 
           <div class="settings-subsection-title">Filename rules — first matching pattern wins; files matching none use the default format</div>
@@ -6102,6 +6137,12 @@ SOFTWARE.</pre>
           <input type="text" id="formatEditRuleGlob" placeholder="e.g. app-*.log" autocomplete="off" spellcheck="false">
           <div id="formatEditRuleInfo" class="fwz-hint"></div>
         </div>
+        <!-- Only while importing an exported format (see importLogFormatText):
+             the file's own filename patterns, each becoming a rule if checked. -->
+        <div class="link-field fwz-import-field hidden" id="formatEditImportField">
+          <label>Filename patterns from the imported file <span class="link-target-label">(checked ones become rules)</span></label>
+          <div id="formatEditImportRules"></div>
+        </div>
       </div>
       <div class="fwz-main" id="fwzNormalBody">
         <div class="fwz-side">
@@ -6180,6 +6221,66 @@ SOFTWARE.</pre>
       </div>
     </div>
   </div>
+  <!-- Theme / syntax scheme editor ("+ New theme…"/"+ New scheme…", a
+       custom entry's "Edit", or an imported theme/scheme file — see
+       openThemeEditor). Stacks above #settingsDialog like #formatDialog:
+       color groups on the left, a live preview on the right whose CSS vars
+       are set inline, so it renders with the colors being edited. -->
+  <div id="themeEditorDialog" class="hidden">
+    <div class="settings-page-card te-card">
+      <div class="settings-page-header">
+        <div class="settings-page-title" id="themeEditorTitle">New theme</div>
+        <button type="button" id="themeEditorClose" class="btn-icon" title="Close">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 3l10 10M13 3 3 13"/></svg>
+        </button>
+      </div>
+      <div class="te-top">
+        <div class="link-field te-name-field">
+          <label for="themeEditorName">Name</label>
+          <input type="text" id="themeEditorName" maxlength="80" autocomplete="off">
+        </div>
+        <label class="column-toggle-row" id="themeEditorTextLightRow"><input type="checkbox" id="themeEditorTextLight"> Light text on filled buttons</label>
+      </div>
+      <div class="te-main">
+        <div class="te-side" id="themeEditorGroups"></div>
+        <div class="te-body">
+          <div class="fwz-section-title">Preview</div>
+          <div id="themeEditorPreview">
+            <div class="te-prev-bar">
+              <span class="te-prev-lvl active" data-lvl="error">ERROR</span><span class="te-prev-lvl active" data-lvl="warn">WARN</span><span class="te-prev-lvl active" data-lvl="info">INFO</span><span class="te-prev-lvl active" data-lvl="debug">DEBUG</span><span class="te-prev-lvl" data-lvl="trace">TRACE</span>
+              <span class="te-prev-btn">Save</span>
+            </div>
+            <div class="te-prev-split">
+              <div class="te-prev-tree">
+                <div class="te-prev-tree-row">app-2026-09-26.log</div>
+                <div class="te-prev-tree-row te-prev-sub te-prev-selected">"timeout"</div>
+                <div class="te-prev-tree-row te-prev-sub">level ≥ WARN</div>
+              </div>
+              <div class="te-prev-log">
+                <div class="te-prev-row"><span class="te-prev-ts">10:14:02.118</span><span class="te-prev-badge" data-lvl="info">INFO</span><span>Connection pool started (8 workers)</span></div>
+                <div class="te-prev-row te-prev-row-sel"><span class="te-prev-ts">10:14:03.402</span><span class="te-prev-badge" data-lvl="warn">WARN</span><span>Slow response from upstream: 1.8s</span></div>
+                <div class="te-prev-row"><span class="te-prev-ts">10:14:05.990</span><span class="te-prev-badge" data-lvl="error">ERROR</span><span>Request timeout after 5000 ms</span></div>
+                <div class="te-prev-row"><span class="te-prev-ts">10:14:06.001</span><span class="te-prev-badge" data-lvl="debug">DEBUG</span><span>Retrying request #2</span></div>
+                <div class="te-prev-row"><span class="te-prev-ts">10:14:06.004</span><span class="te-prev-badge" data-lvl="trace">TRACE</span><span class="te-prev-dim">socket.write 512 bytes</span></div>
+              </div>
+            </div>
+<pre class="te-prev-code"><span class="syn-punct">{</span>
+  <span class="syn-key">"status"</span><span class="syn-punct">:</span> <span class="syn-string">"timeout"</span><span class="syn-punct">,</span>
+  <span class="syn-key">"retries"</span><span class="syn-punct">:</span> <span class="syn-number">2</span><span class="syn-punct">,</span>
+  <span class="syn-key">"cached"</span><span class="syn-punct">:</span> <span class="syn-bool-null">null</span>
+<span class="syn-punct">}</span>
+<span class="syn-punct">&lt;</span><span class="syn-tag">request</span> <span class="syn-attr-name">id</span><span class="syn-punct">=</span><span class="syn-attr-value">"42"</span><span class="syn-punct">/&gt;</span></pre>
+          </div>
+        </div>
+      </div>
+      <div class="fwz-actions">
+        <div class="time-range-error hidden" id="themeEditorError"></div>
+        <button type="button" id="themeEditorCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="themeEditorSave" class="btn-mini">Save</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Per-folder Folder-watch settings (gear icon on a .folder-watch-header —
        see openFolderWatchSettingsDialog). Reuses the same settings-page-card/
        settings-row/settings-switch classes as #settingsDialog above so it
@@ -6879,12 +6980,24 @@ function themeSwatchStyle(colors) {
     colors["level-error"] + " 50% 75%," + colors["level-info"] + " 75% 100%)";
 }
 
+// A small outline button on a custom theme/scheme/library row — its click
+// never reaches the row's own "switch to this entry" click.
+function customEntryRowButton(label, title, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "btn-mini-outline";
+  b.title = title;
+  b.textContent = label;
+  b.addEventListener("click", ev => { ev.stopPropagation(); onClick(); });
+  return b;
+}
+
 function renderCustomThemeList() {
   const container = document.getElementById("customThemeList");
   if (!container) return;
   container.innerHTML = "";
   if (!customThemes.length) {
-    container.innerHTML = '<div class="filter-library-empty">No custom themes yet — download a template below, fill in your colors, and import it.</div>';
+    container.innerHTML = '<div class="filter-library-empty">No custom themes yet — create one with “+ New theme…”, or import a theme file via Open → Import… (or by dropping it onto the app).</div>';
     return;
   }
   const frag = document.createDocumentFragment();
@@ -6901,6 +7014,8 @@ function renderCustomThemeList() {
       '<span class="theme-swatch" style="' + themeSwatchStyle(theme.colors) + '"></span>' +
       '<span class="filter-library-row-name">' + escapeHtml(theme.name) + '</span>';
     row.appendChild(main);
+    row.appendChild(customEntryRowButton("Edit", "Edit this theme's name and colors", () => openThemeEditor("theme", { editId: theme.id })));
+    row.appendChild(customEntryRowButton("Export", "Export this theme as JSON", () => exportCustomThemeToFile(theme.id)));
 
     const delBtn = document.createElement("button");
     delBtn.type = "button";
@@ -6924,113 +7039,62 @@ function removeCustomTheme(id) {
   if (currentThemeId() === id) setTheme("dark"); // the deleted theme was active — fall back
 }
 
-// Seeds the template from the CURRENTLY ACTIVE theme's actual computed
-// colors (whichever built-in or custom theme that is), so "download a
-// template" always hands back a valid, ready-to-tweak starting point
-// instead of a fixed baseline that ignores what's on screen.
-function buildThemeTemplateJson() {
-  const cs = getComputedStyle(document.documentElement);
-  const colors = {};
-  THEME_COLOR_KEYS.forEach(k => { colors[k] = cs.getPropertyValue("--" + k).trim(); });
-  const syntaxHighlightColors = {};
-  SYNTAX_COLOR_KEYS.forEach(k => { syntaxHighlightColors[k] = cs.getPropertyValue("--" + k).trim(); });
-  return JSON.stringify({
-    format: THEME_FILE_FORMAT,
-    version: THEME_FILE_VERSION,
-    name: "My Theme",
-    activeTextLight: false,
-    colors,
-    syntaxHighlightColors,
-    _syntaxHighlightColors_comment: "optional — omit this block (or delete individual keys) to fall back to the app's default syntax highlighting colors",
-  }, null, 2);
+// ---- Theme export/import (JSON, format "philogg-theme") ----
+// Export writes one custom theme; importing never adds it directly — it
+// opens the theme editor prefilled (see importThemeJson), and saving there
+// creates a new custom theme.
+function serializeThemeExport(id) {
+  const t = customThemes.find(x => x.id === id);
+  if (!t) return null;
+  const out = { format: THEME_FILE_FORMAT, version: THEME_FILE_VERSION, savedAt: new Date().toISOString(), name: t.name, activeTextLight: !!t.activeTextLight, colors: Object.assign({}, t.colors) };
+  if (t.syntaxColors) out.syntaxHighlightColors = Object.assign({}, t.syntaxColors);
+  if (Array.isArray(t.highlightPalette) && t.highlightPalette.length) out.highlightPalette = t.highlightPalette.slice();
+  return out;
 }
 
-async function downloadThemeTemplate() {
-  const json = buildThemeTemplateJson();
-  const suggested = "philogg-theme-template.json";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "PhiLogg theme", accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-      return;
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the picker
-      downloadJsonFallback(json, suggested); // API present but unusable in this context
-      return;
-    }
-  }
-  downloadJsonFallback(json, suggested); // Firefox / legacy: plain download
+async function exportCustomThemeToFile(id) {
+  const data = serializeThemeExport(id);
+  if (!data) return;
+  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "theme") + ".theme.json", "PhiLogg theme")) showCopyToast("Theme exported");
 }
 
-function importThemeJson(text) {
+// Only the string-valued, non-empty entries of `src` among `keys`.
+function pickColorEntries(src, keys) {
+  const out = {};
+  if (src && typeof src === "object") keys.forEach(k => { if (typeof src[k] === "string" && src[k].trim()) out[k] = src[k].trim(); });
+  return out;
+}
+
+// null when the text isn't a theme file at all, { error } when it is but
+// can't be used, else the prefill for the theme editor. Missing color keys
+// are fine — the editor fills them from the currently active colors (and
+// derives a missing "-soft" key from its base color).
+function parseThemeExport(text) {
   let data;
-  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
-  if (!data || data.format !== THEME_FILE_FORMAT || !data.colors || typeof data.colors !== "object") {
-    showCopyToast("Not a PhiLogg theme file");
-    return;
-  }
-  if (data.version > THEME_FILE_VERSION) { showCopyToast("Theme file was saved by a newer version"); return; }
-  const missing = THEME_COLOR_KEYS.filter(k => typeof data.colors[k] !== "string" || !data.colors[k].trim());
-  if (missing.length) { showCopyToast("Theme file is missing: " + missing.join(", ")); return; }
-
-  const colors = {};
-  THEME_COLOR_KEYS.forEach(k => { colors[k] = data.colors[k].trim(); });
-  // syntaxHighlightColors is optional (unlike colors above): missing
-  // entirely, or missing individual keys, both just mean "use the app's
-  // default for that var" — see SYNTAX_COLOR_KEYS's comment. The sibling
-  // "_syntaxHighlightColors_comment" hint field (added by
-  // buildThemeTemplateJson) is ignored, never stored on the custom theme.
-  let syntaxColors = null;
-  if (data.syntaxHighlightColors && typeof data.syntaxHighlightColors === "object") {
-    syntaxColors = {};
-    SYNTAX_COLOR_KEYS.forEach(k => {
-      if (typeof data.syntaxHighlightColors[k] === "string" && data.syntaxHighlightColors[k].trim()) {
-        syntaxColors[k] = data.syntaxHighlightColors[k].trim();
-      }
-    });
-  }
-  const name = (typeof data.name === "string" && data.name.trim()) ? data.name.trim().slice(0, 80) : "Custom theme";
-  const id = "custom:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  const theme = { id, name, colors, activeTextLight: !!data.activeTextLight };
-  if (syntaxColors) theme.syntaxColors = syntaxColors;
-  customThemes.push(theme);
-  saveCustomThemes();
-  populateThemeSelect();
-  renderCustomThemeList();
-  setTheme(id);
-  showCopyToast("Theme imported: " + name);
+  try { data = JSON.parse(text); } catch { return null; }
+  if (!data || typeof data !== "object" || data.format !== THEME_FILE_FORMAT) return null;
+  if (data.version > THEME_FILE_VERSION) return { error: "Theme file was saved by a newer version" };
+  if (!data.colors || typeof data.colors !== "object") return { error: "Theme file has no colors" };
+  return {
+    name: typeof data.name === "string" ? data.name.trim().slice(0, 80) : "",
+    colors: pickColorEntries(data.colors, THEME_COLOR_KEYS),
+    syntaxColors: pickColorEntries(data.syntaxHighlightColors, SYNTAX_COLOR_KEYS),
+    activeTextLight: !!data.activeTextLight,
+    highlightPalette: Array.isArray(data.highlightPalette) ? data.highlightPalette.filter(c => typeof c === "string" && c.trim()) : null,
+  };
 }
 
-const themeFileInput = document.getElementById("themeFileInput");
-
-async function loadThemeFromFile() {
-  if (!window.showOpenFilePicker) { themeFileInput.click(); return; }
-  let handles;
-  try {
-    handles = await window.showOpenFilePicker({
-      multiple: false,
-      types: [{ description: "PhiLogg theme", accept: { "application/json": [".json"] } }],
-    });
-  } catch (err) {
-    if (err && err.name === "AbortError") return;
-    themeFileInput.click();
-    return;
-  }
-  importThemeJson(await (await handles[0].getFile()).text());
+// Import entry point (see importPhiloggJsonText): false when the text isn't
+// a theme file, true once handled (editor opened/queued, or rejected with a toast).
+function importThemeJson(text) {
+  const parsed = parseThemeExport(text);
+  if (!parsed) return false;
+  if (parsed.error) { showCopyToast(parsed.error); return true; }
+  queueImportEditor(() => openThemeEditor("theme", { prefill: parsed }));
+  return true;
 }
 
-themeFileInput.addEventListener("change", ev => {
-  const file = ev.target.files[0];
-  if (file) file.text().then(importThemeJson).catch(() => showCopyToast("Could not read theme file"));
-  themeFileInput.value = "";
-});
-document.getElementById("btnThemeImport").addEventListener("click", () => loadThemeFromFile());
-document.getElementById("btnThemeTemplate").addEventListener("click", () => downloadThemeTemplate());
+document.getElementById("btnThemeNew").addEventListener("click", ev => { ev.stopPropagation(); openThemeEditor("theme"); });
 
 /* ===================== Syntax highlight scheme (FEATURE_BACKLOG.md #67) =====================
    Mirrors the custom-theme machinery just above, but for the eight
@@ -7140,7 +7204,7 @@ function renderCustomSyntaxSchemeList() {
   if (!container) return;
   container.innerHTML = "";
   if (!customSyntaxSchemes.length) {
-    container.innerHTML = '<div class="filter-library-empty">No custom syntax schemes yet — download a template below, fill in your colors, and import it.</div>';
+    container.innerHTML = '<div class="filter-library-empty">No custom syntax schemes yet — create one with “+ New scheme…”, or import a scheme file via Open → Import… (or by dropping it onto the app).</div>';
     return;
   }
   const frag = document.createDocumentFragment();
@@ -7157,6 +7221,8 @@ function renderCustomSyntaxSchemeList() {
       '<span class="theme-swatch" style="' + syntaxSwatchStyle(scheme.colors) + '"></span>' +
       '<span class="filter-library-row-name">' + escapeHtml(scheme.name) + '</span>';
     row.appendChild(main);
+    row.appendChild(customEntryRowButton("Edit", "Edit this scheme's name and colors", () => openThemeEditor("syntax", { editId: scheme.id })));
+    row.appendChild(customEntryRowButton("Export", "Export this syntax scheme as JSON", () => exportCustomSyntaxSchemeToFile(scheme.id)));
 
     const delBtn = document.createElement("button");
     delBtn.type = "button";
@@ -7179,93 +7245,373 @@ function removeCustomSyntaxScheme(id) {
   if (syntaxSchemeChoice === id) setSyntaxScheme(FOLLOW_THEME_SYNTAX_ID); // the deleted scheme was active — fall back
 }
 
-// Seeds the template from the CURRENTLY ACTIVE --syntax-* computed values
-// (whatever theme/scheme is in effect), so "download a template" always
-// hands back a valid, ready-to-tweak starting point — same idea as
-// buildThemeTemplateJson().
-function buildSyntaxSchemeTemplateJson() {
-  const cs = getComputedStyle(document.documentElement);
-  const colors = {};
-  SYNTAX_COLOR_KEYS.forEach(k => { colors[k] = cs.getPropertyValue("--" + k).trim(); });
-  return JSON.stringify({
-    format: SYNTAX_SCHEME_FILE_FORMAT,
-    version: SYNTAX_SCHEME_FILE_VERSION,
-    name: "My Syntax Scheme",
-    colors,
-  }, null, 2);
+// ---- Syntax scheme export/import (JSON, format "philogg-syntax-scheme") ----
+// Same model as the theme export/import above.
+function serializeSyntaxSchemeExport(id) {
+  const scheme = customSyntaxSchemes.find(x => x.id === id);
+  if (!scheme) return null;
+  return { format: SYNTAX_SCHEME_FILE_FORMAT, version: SYNTAX_SCHEME_FILE_VERSION, savedAt: new Date().toISOString(), name: scheme.name, colors: Object.assign({}, scheme.colors) };
 }
 
-async function downloadSyntaxSchemeTemplate() {
-  const json = buildSyntaxSchemeTemplateJson();
-  const suggested = "philogg-syntax-scheme-template.json";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "PhiLogg syntax scheme", accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-      return;
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the picker
-      downloadJsonFallback(json, suggested); // API present but unusable in this context
-      return;
-    }
-  }
-  downloadJsonFallback(json, suggested); // Firefox / legacy: plain download
+async function exportCustomSyntaxSchemeToFile(id) {
+  const data = serializeSyntaxSchemeExport(id);
+  if (!data) return;
+  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "syntax-scheme") + ".syntax.json", "PhiLogg syntax scheme")) showCopyToast("Syntax scheme exported");
+}
+
+function parseSyntaxSchemeExport(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return null; }
+  if (!data || typeof data !== "object" || data.format !== SYNTAX_SCHEME_FILE_FORMAT) return null;
+  if (data.version > SYNTAX_SCHEME_FILE_VERSION) return { error: "Syntax scheme file was saved by a newer version" };
+  if (!data.colors || typeof data.colors !== "object") return { error: "Syntax scheme file has no colors" };
+  return { name: typeof data.name === "string" ? data.name.trim().slice(0, 80) : "", syntaxColors: pickColorEntries(data.colors, SYNTAX_COLOR_KEYS) };
 }
 
 function importSyntaxSchemeJson(text) {
-  let data;
-  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
-  if (!data || data.format !== SYNTAX_SCHEME_FILE_FORMAT || !data.colors || typeof data.colors !== "object") {
-    showCopyToast("Not a PhiLogg syntax scheme file");
-    return;
-  }
-  if (data.version > SYNTAX_SCHEME_FILE_VERSION) { showCopyToast("Syntax scheme file was saved by a newer version"); return; }
-  const missing = SYNTAX_COLOR_KEYS.filter(k => typeof data.colors[k] !== "string" || !data.colors[k].trim());
-  if (missing.length) { showCopyToast("Syntax scheme file is missing: " + missing.join(", ")); return; }
-
-  const colors = {};
-  SYNTAX_COLOR_KEYS.forEach(k => { colors[k] = data.colors[k].trim(); });
-  const name = (typeof data.name === "string" && data.name.trim()) ? data.name.trim().slice(0, 80) : "Custom syntax scheme";
-  const id = "syntax:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
-  customSyntaxSchemes.push({ id, name, colors });
-  saveCustomSyntaxSchemes();
-  populateSyntaxSchemeSelect();
-  renderCustomSyntaxSchemeList();
-  setSyntaxScheme(id); // switch to it immediately, like importThemeJson does
-  showCopyToast("Syntax scheme imported: " + name);
+  const parsed = parseSyntaxSchemeExport(text);
+  if (!parsed) return false;
+  if (parsed.error) { showCopyToast(parsed.error); return true; }
+  queueImportEditor(() => openThemeEditor("syntax", { prefill: parsed }));
+  return true;
 }
 
-const syntaxSchemeFileInput = document.getElementById("syntaxSchemeFileInput");
-
-async function loadSyntaxSchemeFromFile() {
-  if (!window.showOpenFilePicker) { syntaxSchemeFileInput.click(); return; }
-  let handles;
-  try {
-    handles = await window.showOpenFilePicker({
-      multiple: false,
-      types: [{ description: "PhiLogg syntax scheme", accept: { "application/json": [".json"] } }],
-    });
-  } catch (err) {
-    if (err && err.name === "AbortError") return;
-    syntaxSchemeFileInput.click();
-    return;
-  }
-  importSyntaxSchemeJson(await (await handles[0].getFile()).text());
-}
-
-syntaxSchemeFileInput.addEventListener("change", ev => {
-  const file = ev.target.files[0];
-  if (file) file.text().then(importSyntaxSchemeJson).catch(() => showCopyToast("Could not read syntax scheme file"));
-  syntaxSchemeFileInput.value = "";
-});
-document.getElementById("btnSyntaxImport").addEventListener("click", () => loadSyntaxSchemeFromFile());
-document.getElementById("btnSyntaxTemplate").addEventListener("click", () => downloadSyntaxSchemeTemplate());
+document.getElementById("btnSyntaxNew").addEventListener("click", ev => { ev.stopPropagation(); openThemeEditor("syntax"); });
 document.getElementById("settingsSyntaxSchemeSelect").addEventListener("change", ev => setSyntaxScheme(ev.target.value));
+/* ===================== Import editor queue =====================
+   An imported element opens the same editor that creates it (format
+   wizard, theme editor, "Save to filter library" dialog — see
+   importPhiloggJsonText). Several files dropped at once open one editor
+   after another: an import that arrives while one of them is open waits
+   here, and each of those editors calls openNextImportEditor() when it
+   closes. */
+const pendingImportEditors = [];
+function importEditorOpen() { return formatDialogOpen() || themeEditorOpen() || filterLibrarySaveOpen(); }
+function queueImportEditor(open) {
+  pendingImportEditors.push(open);
+  openNextImportEditor();
+}
+function openNextImportEditor() {
+  if (importEditorOpen()) return;
+  const next = pendingImportEditors.shift();
+  if (next) next();
+}
+
+/* ===================== Theme / syntax scheme editor =====================
+   One dialog (#themeEditorDialog) for both custom themes (kind "theme":
+   every THEME_COLOR_KEYS entry plus the optional syntax colors and the
+   activeTextLight flag) and custom syntax schemes (kind "syntax": only
+   SYNTAX_COLOR_KEYS). Opened for a new entry (starts from the currently
+   active colors), for editing a custom entry (renaming included), or
+   prefilled from an imported file — saving a new/imported one adds a new
+   entry, saving an edited one replaces it under its own id.
+   Every "-soft" key (THEME_SOFT_KEYS) is derived from its base color by
+   default ("Auto"); unchecking Auto keeps an explicit value instead.
+   Colors are picked with the highlight-colour picker's plain mode
+   (openColorPicker(..., { plain: true })) or typed as any CSS color. */
+const THEME_SOFT_KEYS = {
+  // alpha: [on a dark background, on a light one] — the built-in themes' own values
+  "accent-soft": { base: "accent", alpha: [0.14, 0.12] },
+  "level-error-soft": { base: "level-error", alpha: [0.14, 0.12] },
+  "level-warn-soft": { base: "level-warn", alpha: [0.14, 0.12] },
+  "level-info-soft": { base: "level-info", alpha: [0.10, 0.10] },
+  "level-debug-soft": { base: "level-debug", alpha: [0.10, 0.10] },
+  "level-trace-soft": { base: "level-trace", alpha: [0.08, 0.08] },
+  "border-soft": { base: "border", mix: 0.35 }, // solid: the border color moved toward the app background
+};
+const THEME_EDITOR_GROUPS = [
+  { title: "Backgrounds", keys: [["bg-app", "App background"], ["bg-panel", "Panels"], ["bg-elevated", "Popups & cards"], ["bg-elevated-2", "Raised / hovered"]] },
+  { title: "Borders", keys: [["border", "Border"], ["border-soft", "Soft border"]] },
+  { title: "Text", keys: [["text-primary", "Primary"], ["text-secondary", "Secondary"], ["text-tertiary", "Tertiary"]] },
+  { title: "Accent", keys: [["accent", "Accent"], ["accent-soft", "Accent background"], ["accent-strong", "Accent (strong)"], ["warn", "Warning"]] },
+  { title: "Levels", keys: [
+    ["level-error", "ERROR"], ["level-error-soft", "ERROR background"], ["level-warn", "WARN"], ["level-warn-soft", "WARN background"],
+    ["level-info", "INFO"], ["level-info-soft", "INFO background"], ["level-debug", "DEBUG"], ["level-debug-soft", "DEBUG background"],
+    ["level-trace", "TRACE"], ["level-trace-soft", "TRACE background"]] },
+];
+const SYNTAX_EDITOR_GROUP = { title: "Syntax highlighting", keys: [
+  ["syntax-tag", "XML tag"], ["syntax-attr-name", "Attribute name"], ["syntax-attr-value", "Attribute value"], ["syntax-string", "String"],
+  ["syntax-number", "Number"], ["syntax-key", "JSON key"], ["syntax-boolean-null", "true / false / null"], ["syntax-punct", "Punctuation"]] };
+
+const themeEditorDialog = document.getElementById("themeEditorDialog");
+const themeEditorGroupsEl = document.getElementById("themeEditorGroups");
+const themeEditorPreview = document.getElementById("themeEditorPreview");
+const themeEditorName = document.getElementById("themeEditorName");
+const themeEditorTextLight = document.getElementById("themeEditorTextLight");
+const themeEditorError = document.getElementById("themeEditorError");
+// Working state while the editor is open (null otherwise):
+//   kind "theme"|"syntax", editId (the edited entry's id, else null),
+//   colors {key: value} (a soft key's value only counts while it isn't
+//   Auto), auto (Set of soft keys currently derived), includeSyntax (kind
+//   "theme": whether the theme carries its own, optional, syntax colors —
+//   without them it falls back to the CSS-cascade defaults, see
+//   SYNTAX_COLOR_KEYS), highlightPalette (carried over unchanged from the
+//   edited/imported theme).
+let te = null;
+
+function themeEditorOpen() { return !themeEditorDialog.classList.contains("hidden"); }
+function themeEditorKeys(kind) { return kind === "syntax" ? SYNTAX_COLOR_KEYS : THEME_COLOR_KEYS.concat(SYNTAX_COLOR_KEYS); }
+
+function hslToHex(h, s, l) {
+  s /= 100; l /= 100;
+  const k = n => (n + h / 30) % 12;
+  const a = s * Math.min(l, 1 - l);
+  const f = n => Math.round(255 * (l - a * Math.max(-1, Math.min(k(n) - 3, Math.min(9 - k(n), 1))))).toString(16).padStart(2, "0");
+  return "#" + f(0) + f(8) + f(4);
+}
+// "#rgb"/"#rrggbb"/"rgb(...)"/"hsl(...)" -> "#rrggbb"; null for anything else
+// (a named color, color-mix(), an alpha color the derivation can't use).
+function colorToHex(value) {
+  const v = String(value || "").trim().toLowerCase();
+  let m = /^#([0-9a-f])([0-9a-f])([0-9a-f])$/.exec(v);
+  if (m) return "#" + m[1] + m[1] + m[2] + m[2] + m[3] + m[3];
+  if (/^#[0-9a-f]{6}$/.test(v)) return v;
+  m = /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*(?:,\s*1(?:\.0*)?\s*)?\)$/.exec(v);
+  if (m) return "#" + [m[1], m[2], m[3]].map(n => Math.min(255, +n).toString(16).padStart(2, "0")).join("");
+  m = /^hsla?\(\s*([\d.]+)(?:deg)?\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%\s*\)$/.exec(v);
+  if (m) return hslToHex(+m[1], +m[2], +m[3]);
+  return null;
+}
+// Formatting-insensitive color comparison ("rgba(1,2,3,.10)" equals "rgba(1, 2, 3, 0.1)").
+function sameColor(a, b) {
+  const norm = v => {
+    const s = String(v || "").trim().toLowerCase().replace(/\s+/g, "");
+    return s.startsWith("#") ? (colorToHex(s) || s) : s.replace(/\d*\.?\d+/g, n => String(parseFloat(n)));
+  };
+  return norm(a) === norm(b);
+}
+function isCssColor(value) {
+  const v = String(value || "").trim();
+  if (!v) return false;
+  if (window.CSS && typeof CSS.supports === "function") return CSS.supports("color", v);
+  return !!colorToHex(v);
+}
+
+// The derived value of one soft key from the current base colors.
+function deriveSoftColor(key, colors) {
+  const spec = THEME_SOFT_KEYS[key];
+  const base = colors[spec.base];
+  const hex = colorToHex(base);
+  const bgHex = colorToHex(colors["bg-app"]);
+  if (spec.mix != null) {
+    return hex && bgHex ? mixHex(hex, bgHex, spec.mix) : "color-mix(in srgb, " + base + " " + Math.round((1 - spec.mix) * 100) + "%, " + colors["bg-app"] + ")";
+  }
+  const alpha = spec.alpha[bgHex && relativeLuminance(bgHex) > 140 ? 1 : 0];
+  if (!hex) return "color-mix(in srgb, " + base + " " + Math.round(alpha * 100) + "%, transparent)";
+  const [r, g, b] = hexToRgb(hex);
+  return "rgba(" + r + "," + g + "," + b + "," + alpha.toFixed(2).replace(/^0/, "") + ")";
+}
+
+// The colors as they'd be saved: soft keys in Auto derived from their base.
+function themeEditorEffectiveColors() {
+  const out = Object.assign({}, te.colors);
+  te.auto.forEach(k => { out[k] = deriveSoftColor(k, out); });
+  return out;
+}
+
+function currentComputedColors(keys) {
+  const cs = getComputedStyle(document.documentElement);
+  const out = {};
+  keys.forEach(k => { out[k] = cs.getPropertyValue("--" + k).trim(); });
+  return out;
+}
+
+// kind "theme"|"syntax"; opts: { editId } to edit a custom entry,
+// { prefill } for an imported file (parseThemeExport/parseSyntaxSchemeExport
+// output), neither for a new entry.
+function openThemeEditor(kind, opts) {
+  opts = opts || {};
+  const isSyntax = kind === "syntax";
+  const edited = opts.editId ? (isSyntax ? customSyntaxSchemes : customThemes).find(x => x.id === opts.editId) : null;
+  let source = null; // { name, colors, syntaxColors, activeTextLight, highlightPalette }
+  if (edited) source = isSyntax ? { name: edited.name, syntaxColors: edited.colors } : edited;
+  else if (opts.prefill) source = opts.prefill;
+  const activeCustom = customThemes.find(t => t.id === currentThemeId());
+  const colors = Object.assign(currentComputedColors(themeEditorKeys(kind)),
+    source && !isSyntax ? source.colors : null, source ? source.syntaxColors : null);
+  const auto = new Set();
+  if (!isSyntax) {
+    Object.keys(THEME_SOFT_KEYS).forEach(k => {
+      const given = source ? (source.colors || {})[k] : colors[k];
+      if (!given || sameColor(given, deriveSoftColor(k, colors))) auto.add(k);
+    });
+  }
+  te = {
+    kind,
+    editId: edited ? edited.id : null,
+    colors,
+    auto,
+    includeSyntax: isSyntax || (source ? !!(source.syntaxColors && Object.keys(source.syntaxColors).length) : !!(activeCustom && activeCustom.syntaxColors)),
+    highlightPalette: source && Array.isArray(source.highlightPalette) && source.highlightPalette.length ? source.highlightPalette.slice() : null,
+  };
+  const noun = isSyntax ? "syntax scheme" : "theme";
+  document.getElementById("themeEditorTitle").textContent = (edited ? "Edit " : opts.prefill ? "Import " : "New ") + noun;
+  themeEditorName.value = source ? (source.name || "") : "";
+  themeEditorName.placeholder = isSyntax ? "e.g. My syntax colors" : "e.g. My dark theme";
+  document.getElementById("themeEditorTextLightRow").classList.toggle("hidden", isSyntax);
+  themeEditorTextLight.checked = source ? !!source.activeTextLight : !!(activeCustom && activeCustom.activeTextLight);
+  themeEditorError.classList.add("hidden");
+  renderThemeEditorGroups();
+  themeEditorDialog.classList.remove("hidden");
+  refreshThemeEditor();
+  themeEditorName.focus();
+}
+
+function closeThemeEditor() {
+  if (colorPickerPopup.classList.contains("cp-plain")) closeColorPicker();
+  themeEditorDialog.classList.add("hidden");
+  te = null;
+  openNextImportEditor();
+}
+
+function renderThemeEditorGroups() {
+  const groups = te.kind === "syntax" ? [SYNTAX_EDITOR_GROUP] : THEME_EDITOR_GROUPS.concat([SYNTAX_EDITOR_GROUP]);
+  themeEditorGroupsEl.innerHTML = "";
+  const frag = document.createDocumentFragment();
+  groups.forEach(g => {
+    const title = document.createElement("div");
+    title.className = "te-group-title";
+    title.textContent = g.title;
+    if (g === SYNTAX_EDITOR_GROUP && te.kind === "theme") {
+      const lab = document.createElement("label");
+      lab.className = "te-auto te-include-syntax";
+      lab.title = "Without its own syntax colors the theme uses the default highlight colors";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.id = "themeEditorIncludeSyntax";
+      cb.checked = te.includeSyntax;
+      cb.addEventListener("change", () => { te.includeSyntax = cb.checked; refreshThemeEditor(); });
+      lab.appendChild(cb);
+      lab.appendChild(document.createTextNode("Part of this theme"));
+      title.appendChild(lab);
+    }
+    frag.appendChild(title);
+    g.keys.forEach(([key, label]) => {
+      const row = document.createElement("div");
+      row.className = "te-row";
+      row.dataset.key = key;
+      const lab = document.createElement("span");
+      lab.className = "te-row-label";
+      lab.textContent = label;
+      lab.title = "--" + key;
+      row.appendChild(lab);
+      if (THEME_SOFT_KEYS[key]) {
+        const autoLab = document.createElement("label");
+        autoLab.className = "te-auto";
+        autoLab.title = "Derive this color from " + THEME_SOFT_KEYS[key].base.replace(/-/g, " ") + " automatically";
+        const cb = document.createElement("input");
+        cb.type = "checkbox";
+        cb.className = "te-auto-cb";
+        cb.checked = te.auto.has(key);
+        cb.addEventListener("change", () => {
+          // Turning Auto off starts the override from the derived value.
+          if (cb.checked) te.auto.add(key);
+          else { te.colors[key] = deriveSoftColor(key, te.colors); te.auto.delete(key); }
+          refreshThemeEditor();
+        });
+        autoLab.appendChild(cb);
+        autoLab.appendChild(document.createTextNode("Auto"));
+        row.appendChild(autoLab);
+      }
+      const swatch = document.createElement("button");
+      swatch.type = "button";
+      swatch.className = "te-swatch";
+      swatch.title = "Pick a color";
+      swatch.appendChild(document.createElement("span"));
+      swatch.addEventListener("click", ev => {
+        ev.stopPropagation();
+        if (!te || swatch.disabled) return;
+        openColorPicker(null, swatch, color => { if (te && color) { te.colors[key] = colorToHex(color) || color; refreshThemeEditor(); } }, { plain: true });
+      });
+      row.appendChild(swatch);
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "te-value";
+      input.spellcheck = false;
+      input.autocomplete = "off";
+      input.addEventListener("input", () => {
+        const v = input.value.trim();
+        const ok = isCssColor(v);
+        input.classList.toggle("te-invalid", !ok);
+        if (ok) { te.colors[key] = v; refreshThemeEditor(); }
+      });
+      row.appendChild(input);
+      frag.appendChild(row);
+    });
+  });
+  themeEditorGroupsEl.appendChild(frag);
+}
+
+// Syncs every row (swatch, value field unless it's being typed in, Auto
+// state) and the preview with te — cheap enough to run on every change.
+function refreshThemeEditor() {
+  const colors = themeEditorEffectiveColors();
+  themeEditorGroupsEl.querySelectorAll(".te-row").forEach(row => {
+    const key = row.dataset.key;
+    const off = te.auto.has(key) || (!te.includeSyntax && SYNTAX_COLOR_KEYS.includes(key));
+    row.querySelector(".te-swatch span").style.background = colors[key];
+    row.querySelector(".te-swatch").disabled = off;
+    const input = row.querySelector(".te-value");
+    input.disabled = off;
+    if (document.activeElement !== input) { input.value = colors[key]; input.classList.remove("te-invalid"); }
+  });
+  const style = themeEditorPreview.style;
+  themeEditorKeys(te.kind).forEach(k => {
+    if (te.includeSyntax || !SYNTAX_COLOR_KEYS.includes(k)) style.setProperty("--" + k, colors[k]); else style.removeProperty("--" + k);
+  });
+  if (te.kind === "theme") {
+    THEME_ON_KEYS.forEach(k => { if (themeEditorTextLight.checked) style.setProperty("--" + k, "#fff"); else style.removeProperty("--" + k); });
+  }
+}
+
+function showThemeEditorError(msg) {
+  themeEditorError.textContent = msg;
+  themeEditorError.classList.toggle("hidden", !msg);
+}
+
+function saveThemeEditor() {
+  if (!te) return false;
+  const name = themeEditorName.value.trim().slice(0, 80);
+  if (!name) { showThemeEditorError("Name is required."); themeEditorName.focus(); return false; }
+  const colors = themeEditorEffectiveColors();
+  const bad = themeEditorKeys(te.kind).filter(k => (te.includeSyntax || !SYNTAX_COLOR_KEYS.includes(k)) && !isCssColor(colors[k]));
+  if (bad.length) { showThemeEditorError("Not a valid color: " + bad.map(k => "--" + k).join(", ")); return false; }
+  const { kind, editId } = te;
+  if (kind === "syntax") {
+    const scheme = { id: editId || "syntax:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name, colors: pickColorEntries(colors, SYNTAX_COLOR_KEYS) };
+    const idx = customSyntaxSchemes.findIndex(x => x.id === scheme.id);
+    if (idx === -1) customSyntaxSchemes.push(scheme); else customSyntaxSchemes[idx] = scheme;
+    saveCustomSyntaxSchemes();
+    populateSyntaxSchemeSelect();
+    renderCustomSyntaxSchemeList();
+    closeThemeEditor();
+    if (!editId || syntaxSchemeChoice === scheme.id) setSyntaxScheme(scheme.id); // a new one is switched to right away
+  } else {
+    const theme = {
+      id: editId || "custom:" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      name,
+      colors: pickColorEntries(colors, THEME_COLOR_KEYS),
+      activeTextLight: themeEditorTextLight.checked,
+    };
+    if (te.includeSyntax) theme.syntaxColors = pickColorEntries(colors, SYNTAX_COLOR_KEYS);
+    if (te.highlightPalette) theme.highlightPalette = te.highlightPalette;
+    const idx = customThemes.findIndex(x => x.id === theme.id);
+    if (idx === -1) customThemes.push(theme); else customThemes[idx] = theme;
+    saveCustomThemes();
+    populateThemeSelect();
+    renderCustomThemeList();
+    closeThemeEditor();
+    if (!editId || currentThemeId() === theme.id) setTheme(theme.id);
+  }
+  showCopyToast((kind === "syntax" ? "Syntax scheme" : "Theme") + ' "' + name + '" saved');
+  return true;
+}
+
+themeEditorTextLight.addEventListener("change", () => { if (te) refreshThemeEditor(); });
+themeEditorName.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); saveThemeEditor(); } });
+document.getElementById("themeEditorSave").addEventListener("click", () => saveThemeEditor());
+document.getElementById("themeEditorCancel").addEventListener("click", () => closeThemeEditor());
+document.getElementById("themeEditorClose").addEventListener("click", () => closeThemeEditor());
 
 /* ===================== Font size (FEATURE_BACKLOG.md "Configurable font
    size", later split into independent "UI scale" / "Log text size" —
@@ -8340,7 +8686,11 @@ const DEFAULT_MIDDLE_COLUMNS = [
 // reserved field name other than thread/location/method (ts/level/message),
 // or a duplicate key.
 function formatColumnDefs(formatId) {
-  const fmt = findLogFormat(formatId);
+  return formatColumnDefsOf(findLogFormat(formatId));
+}
+// Same for a format record that isn't (yet) in state.logFormats — the
+// format wizard prefilled from an imported file.
+function formatColumnDefsOf(fmt) {
   if (!fmt || !Array.isArray(fmt.columnDefs)) return DEFAULT_MIDDLE_COLUMNS.slice();
   const out = [];
   const seen = new Set();
@@ -22212,7 +22562,7 @@ function anyEscapeOverlayOpen() {
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
-    "filterLibraryDialog", "logFormatImportDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "filterLibraryDialog", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
@@ -25069,7 +25419,7 @@ async function openFolderPickerFlow() {
 }
 
 // "Open…" is a single button with a small dropdown menu (File(s)…/Folder…/
-// Import session…) instead of separate buttons — same fixed-position/toggle
+// ZIP…/Import…) instead of separate buttons — same fixed-position/toggle
 // pattern as the columns popup (openColumnsPanel). Lives in #sidebarHeader,
 // next to the back/forward navigation buttons (FEATURE_BACKLOG.md #56) —
 // import session used to sit under a separate "Session…" toolbar button
@@ -25094,7 +25444,7 @@ openMenu.addEventListener("click", ev => {
   if (item.dataset.action === "files") openFilesPicker();
   else if (item.dataset.action === "folder") openFolderPickerFlow();
   else if (item.dataset.action === "zip") openZipPickerFlow();
-  else if (item.dataset.action === "importSession") importSessionFromFile();
+  else if (item.dataset.action === "import") importFromFilePicker();
 });
 
 /* ===================== ZIP sources (open a .zip as a log source) =====================
@@ -26684,19 +27034,21 @@ el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(fa
 async function loadFileDescriptors(descs) {
   if (descs.length === 0) return;
 
-  // An exported log format (see "Log format export/import") dropped or
-  // opened anywhere goes to the import dialog instead of loading as a file.
-  const formatFileDescs = [];
+  // A PhiLogg export (session, filter, preset, log format, theme, syntax
+  // scheme) dropped or opened anywhere goes to the central import
+  // (importPhiloggJsonText) instead of loading as a file; any other .json
+  // keeps loading/opening as before.
+  const exportDescs = [];
   for (const d of descs) {
     const name = d.file ? d.file.name : d.name;
-    if (!mightBeLogFormatExport(name, d.file ? d.file.size : undefined)) continue;
+    if (!mightBePhiloggExport(name, d.file ? d.file.size : undefined)) continue;
     try {
       const file = d.file || await d.openFile();
-      if (file.size <= LOG_FORMAT_FILE_MAX_BYTES && importLogFormatText(await file.text())) formatFileDescs.push(d);
+      if (file.size <= PHILOGG_EXPORT_MAX_BYTES && importPhiloggJsonText(await file.text())) exportDescs.push(d);
     } catch { /* unreadable here — the normal load path below reports it */ }
   }
-  if (formatFileDescs.length) {
-    descs = descs.filter(d => !formatFileDescs.includes(d));
+  if (exportDescs.length) {
+    descs = descs.filter(d => !exportDescs.includes(d));
     if (descs.length === 0) return;
   }
 
@@ -31116,7 +31468,7 @@ function getActiveHighlightPalette() {
 function renderColorPresets() {
   cpPresets.innerHTML = "";
   const frag = document.createDocumentFragment();
-  const colors = colorPickerMode === "theme" ? getActiveHighlightPalette() : HIGHLIGHT_PRESETS;
+  const colors = colorPickerMode === "theme" && !colorPickerPopup.classList.contains("cp-plain") ? getActiveHighlightPalette() : HIGHLIGHT_PRESETS;
   colors.forEach(c => {
     const b = document.createElement("button");
     b.type = "button";
@@ -31142,16 +31494,20 @@ setColorPickerMode(colorPickerMode); // reflect the persisted/default mode in th
 cpModeFreeBtn.addEventListener("click", () => setColorPickerMode("free"));
 cpModeThemeBtn.addEventListener("click", () => setColorPickerMode("theme"));
 
-function openColorPicker(nodeId, anchorEl, onPick) {
+// opts.plain (the theme editor, see openThemeEditor): just the wheel and
+// the generic presets — no Free/Theme toggle, no theme palette, no "Clear
+// colour" (a theme color can't be empty) — stacked above the editor.
+function openColorPicker(nodeId, anchorEl, onPick, opts) {
   colorPickerTargetId = nodeId;
   colorPickerOnPick = onPick || null;
+  colorPickerPopup.classList.toggle("cp-plain", !!(opts && opts.plain));
   renderColorPresets(); // picks up a theme switch that happened since the popup was last opened
   const rect = anchorEl.getBoundingClientRect();
   colorPickerPopup.style.left = Math.min(rect.left, window.innerWidth - 196) + "px";
   colorPickerPopup.style.top = Math.min(rect.bottom + 6, window.innerHeight - 300) + "px";
   colorPickerPopup.classList.remove("hidden");
 }
-function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerTargetId = null; colorPickerOnPick = null; }
+function closeColorPicker() { colorPickerPopup.classList.add("hidden"); colorPickerPopup.classList.remove("cp-plain"); colorPickerTargetId = null; colorPickerOnPick = null; }
 
 // Commits a picked color to wherever this popup's current target wants it
 // — colorPickerOnPick when the opener asked for one, otherwise the default
@@ -31771,15 +32127,15 @@ function openTreeContextMenu(ev, clickedId) {
         buckets.edit.push({ action: "unpack", label: "Unpack…", icon: ICON_COMBINE });
       }
     }
-    // Loading is offered on file nodes too: the saved branch is then applied
-    // to the whole file, reproducing the original overall result. Same for
-    // the library (FEATURE_BACKLOG.md "Reusable filter library") — its
-    // presets are file-agnostic on purpose, so applying one makes sense
-    // from any node, not just filters. Skipped for the restricted "Bookmarks"
-    // node — loading/applying something onto it would just be discarded the
-    // next time syncBookmarksFilterNode runs.
+    // Applying from the library (FEATURE_BACKLOG.md "Reusable filter
+    // library") is offered on file nodes too — its presets are file-agnostic
+    // on purpose, so applying one makes sense from any node, not just
+    // filters. Skipped for the restricted "Bookmarks" node — applying
+    // something onto it would just be discarded the next time
+    // syncBookmarksFilterNode runs. (Loading a saved filter FILE goes
+    // through the central Open → "Import…"/drop instead, which attaches it
+    // under the active node — see importFilterBranchJson.)
     if (!node.locked) {
-      buckets.library.push({ action: "loadFilter", label: "Load filter…", icon: ICON_LOAD });
       buckets.library.push({ action: "applyFromLibrary", label: "Apply from library…", icon: ICON_LOAD });
     }
     // Session export/import used to live here too (session-global, so they
@@ -31939,10 +32295,6 @@ treeContextMenu.addEventListener("click", ev => {
       const newId = unpackAndOrLinkNode(treeCtxId);
       if (newId) { state.activeId = newId; render(); showCopyToast("Unpacked into its two inputs"); }
     }
-    return;
-  }
-  if (action === "loadFilter") {
-    if (treeCtxId && state.nodes[treeCtxId]) loadFilterFromFile(treeCtxId);
     return;
   }
   if (action === "applyFromLibrary") {
@@ -33194,7 +33546,6 @@ noteDialogInput.addEventListener("keydown", ev => {
 const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
 const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "sources", "idset", "gap"]);
-const filterFileInput = el("#filterFileInput");
 
 function serializeFilterBranch(nodeId, includeAncestors) {
   const clicked = state.nodes[nodeId];
@@ -33387,6 +33738,33 @@ function openExportScopePrompt(nodeId) {
   });
 }
 
+// A file-name stem from an element's display name ("My theme!" -> "My_theme").
+function exportFileBaseName(name, fallback) {
+  return String(name || "").replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || fallback;
+}
+
+// Writes one JSON export through the save picker where there is one (the
+// plain download otherwise). Resolves false only when the person cancelled.
+async function saveJsonExportFile(json, suggestedName, description) {
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName,
+        types: [{ description, accept: { "application/json": [".json"] } }],
+      });
+      const writable = await handle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      return true;
+    } catch (err) {
+      if (err && err.name === "AbortError") return false; // user cancelled the picker
+      // API present but unusable in this context — fall through to the download
+    }
+  }
+  downloadJsonFallback(json, suggestedName);
+  return true;
+}
+
 function downloadJsonFallback(json, filename) {
   const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
   const a = document.createElement("a");
@@ -33411,52 +33789,26 @@ async function saveFilterToFile(nodeId) {
     roots: branch.roots,
   }, null, 2);
 
-  const suggested = (nodeDisplayName(node).replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "filter") + ".json";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "PhiLogg filter", accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the picker
-      downloadJsonFallback(json, suggested); // API present but unusable in this context
-    }
-  } else {
-    downloadJsonFallback(json, suggested); // Firefox / legacy: plain download
-  }
-  showCopyToast("Filter saved");
+  if (await saveJsonExportFile(json, exportFileBaseName(nodeDisplayName(node), "filter") + ".json", "PhiLogg filter")) showCopyToast("Filter saved");
 }
 
-// The node "Load filter…" was invoked on — the loaded branch is inserted as
-// its child. Kept across the async picker / hidden-input round trip.
+// The node a filter file / library preset is materialized under — set by
+// importFilterBranchJson (the active node) and applyFilterFromLibrary
+// right before they call importFilterJson.
 let loadFilterTargetId = null;
 
-async function loadFilterFromFile(targetId) {
-  loadFilterTargetId = targetId;
-  if (!window.showOpenFilePicker) { filterFileInput.click(); return; }
-  let handles;
-  try {
-    handles = await window.showOpenFilePicker({
-      multiple: false,
-      types: [{ description: "PhiLogg filter", accept: { "application/json": [".json"] } }],
-    });
-  } catch (err) {
-    if (err && err.name === "AbortError") return;
-    filterFileInput.click();
-    return;
-  }
-  importFilterJson(await (await handles[0].getFile()).text());
+// A saved filter file arriving through the central import (Open →
+// "Import…" or a drop — see importPhiloggJsonText). There's no editor for
+// a filter branch, so it attaches straight under the ACTIVE node (walking
+// up past a locked auto-managed node like Bookmarks, which would discard
+// it) and says where it went.
+function importFilterBranchJson(text) {
+  let target = state.nodes[state.activeId];
+  while (target && target.locked) target = state.nodes[target.parentId];
+  if (!target) { showCopyToast("Open a log file first — an imported filter is added under the active node"); return; }
+  loadFilterTargetId = target.id;
+  importFilterJson(text, 'Filter imported under "' + nodeDisplayName(target) + '"');
 }
-
-filterFileInput.addEventListener("change", ev => {
-  const file = ev.target.files[0];
-  if (file) file.text().then(importFilterJson).catch(() => showCopyToast("Could not read filter file"));
-  filterFileInput.value = "";
-});
 
 // Shared rebuild step behind serializeFilterBranch()'s roots — used by
 // importFilterJson (Save/Load filter JSON) and the reusable filter
@@ -33538,20 +33890,11 @@ function materializeSerializedRoots(roots, resolveParentId) {
   return { created, refMap };
 }
 
-function importFilterJson(text) {
-  const target = state.nodes[loadFilterTargetId];
-  if (!target) return;
-
-  let data;
-  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
-  if (!data || data.format !== FILTER_FILE_FORMAT || !Array.isArray(data.roots)) {
-    showCopyToast("Not a PhiLogg filter file");
-    return;
-  }
-  if (data.version > FILTER_FILE_VERSION) { showCopyToast("Filter file was saved by a newer version"); return; }
-
-  // Validate the whole tree before creating anything, so a corrupt file
-  // never leaves half-built nodes behind.
+// Validates a whole serialized branch (serializeFilterBranch's roots)
+// before anything is created, so a corrupt file never leaves half-built
+// nodes behind. Shared by importFilterJson and the filter-library preset
+// import (parseFilterLibraryExport).
+function serializedFilterRootsValid(roots) {
   function validate(sn) {
     // filterType "bookmarks" is deliberately rejected here: it's the
     // auto-managed per-file node (see syncBookmarksFilterNode) and is never
@@ -33566,7 +33909,21 @@ function importFilterJson(text) {
     if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !(sn.bakedA && sn.bakedB)) return false;
     return (sn.children || []).every(validate);
   }
-  if (!data.roots.every(validate)) { showCopyToast("Filter file contains filters this version can't load"); return; }
+  return Array.isArray(roots) && roots.every(validate);
+}
+
+function importFilterJson(text, successToast) {
+  const target = state.nodes[loadFilterTargetId];
+  if (!target) return;
+
+  let data;
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  if (!data || data.format !== FILTER_FILE_FORMAT || !Array.isArray(data.roots)) {
+    showCopyToast("Not a PhiLogg filter file");
+    return;
+  }
+  if (data.version > FILTER_FILE_VERSION) { showCopyToast("Filter file was saved by a newer version"); return; }
+  if (!serializedFilterRootsValid(data.roots)) { showCopyToast("Filter file contains filters this version can't load"); return; }
 
   // Every root is tagged attach:"target" (see serializeFilterBranch) —
   // always attaches under wherever the import was invoked, never FILE.
@@ -33577,7 +33934,7 @@ function importFilterJson(text) {
   else if (created[0] && state.nodes[created[0].id]) state.activeId = created[0].id;
   revealFilteredView(); // loaded filters are new filters — same visibility rule
   render();
-  showCopyToast("Filter loaded");
+  showCopyToast(successToast || "Filter loaded");
 }
 
 /* ===================== Reusable filter library (FEATURE_BACKLOG.md
@@ -33649,7 +34006,7 @@ function libraryIconEmojiChar(icon) {
   return icon.slice(6);
 }
 
-async function saveFilterToLibrary(nodeId, name) {
+async function saveFilterToLibrary(nodeId, name, icon) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter") return;
   const includeAncestors = await openExportScopePrompt(nodeId);
@@ -33666,7 +34023,7 @@ async function saveFilterToLibrary(nodeId, name) {
     // (CLAUDE.md's carrier rule is about node.* fields). Default off/unset; the
     // manage dialog toggles them per entry.
     showInToolbar: false,
-    icon: null,
+    icon: icon || null,
   }));
   await refreshFilterLibraryCache();
   showCopyToast("Saved to filter library");
@@ -33722,6 +34079,64 @@ function applyFilterFromLibrary(targetId, record) {
     activeRef: record.activeRef,
     roots: record.roots,
   }));
+}
+
+/* ---- Filter library preset export/import (JSON, format "philogg-filter-library") ----
+   One preset: its name, icon and the exact roots/activeRef the record
+   holds (serializeFilterBranch's shape, like a saved filter file). An
+   imported preset opens the "Save to filter library" dialog prefilled
+   (name + icon); saving there adds it as a new preset. */
+const FILTER_LIBRARY_FILE_FORMAT = "philogg-filter-library";
+const FILTER_LIBRARY_FILE_VERSION = 1;
+
+function serializeFilterLibraryExport(rec) {
+  return { format: FILTER_LIBRARY_FILE_FORMAT, version: FILTER_LIBRARY_FILE_VERSION, savedAt: new Date().toISOString(), name: rec.name, icon: rec.icon || null, activeRef: rec.activeRef, roots: rec.roots };
+}
+
+async function exportFilterLibraryEntry(rec) {
+  if (await saveJsonExportFile(JSON.stringify(serializeFilterLibraryExport(rec), null, 2), exportFileBaseName(rec.name, "filter-preset") + ".filterpreset.json", "PhiLogg filter library preset")) showCopyToast("Filter preset exported");
+}
+
+// null when the text isn't a preset file, { error } when it is but can't be
+// used, else { name, icon, roots, activeRef }.
+function parseFilterLibraryExport(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return null; }
+  if (!data || typeof data !== "object" || data.format !== FILTER_LIBRARY_FILE_FORMAT) return null;
+  if (data.version > FILTER_LIBRARY_FILE_VERSION) return { error: "Filter preset file was saved by a newer version" };
+  if (!Array.isArray(data.roots) || !data.roots.length) return { error: "Filter preset file contains no filter" };
+  if (!serializedFilterRootsValid(data.roots)) return { error: "Filter preset file contains filters this version can't load" };
+  return {
+    name: typeof data.name === "string" ? data.name.trim().slice(0, 80) : "",
+    icon: typeof data.icon === "string" && data.icon ? data.icon : null,
+    roots: data.roots,
+    activeRef: data.activeRef != null ? data.activeRef : null,
+  };
+}
+
+function importFilterLibraryJson(text) {
+  const parsed = parseFilterLibraryExport(text);
+  if (!parsed) return false;
+  if (parsed.error) { showCopyToast(parsed.error); return true; }
+  queueImportEditor(() => openFilterLibraryImportDialog(parsed));
+  return true;
+}
+
+// Stores an imported preset as a new library record (fresh key, not
+// pinned to the toolbar).
+async function addImportedFilterLibraryEntry(parsed, name, icon) {
+  await cacheStoreOp("filterLibrary", "readwrite", store => store.put({
+    key: newFilterLibraryKey(),
+    name: name.slice(0, 80),
+    savedAt: Date.now(),
+    roots: parsed.roots,
+    activeRef: parsed.activeRef,
+    showInToolbar: false,
+    icon: icon || null,
+  }));
+  await refreshFilterLibraryCache();
+  showCopyToast('Filter preset "' + name + '" added to the library');
+  await renderLibraryToolbarPresets();
 }
 
 /* ===================== Log format / filename-rule storage =====================
@@ -33810,29 +34225,117 @@ const filterLibraryNameInput = el("#filterLibraryNameInput");
 const filterLibraryDialog = el("#filterLibraryDialog");
 const filterLibraryList = el("#filterLibraryList");
 let filterLibrarySaveTargetId = null;
+// The preset being imported (parseFilterLibraryExport output) while the
+// save dialog is open for an import instead of a node, else null.
+let filterLibrarySaveImport = null;
+let filterLibrarySaveIcon = null;
 let filterLibraryApplyTargetId = null;
 
-function closeFilterLibrarySaveDialog() { filterLibrarySaveDialog.classList.add("hidden"); filterLibrarySaveTargetId = null; }
-function openFilterLibrarySaveDialog(nodeId) {
-  filterLibrarySaveTargetId = nodeId;
-  const node = state.nodes[nodeId];
-  filterLibraryNameInput.value = node ? nodeDisplayName(node) : "";
+function filterLibrarySaveOpen() { return !filterLibrarySaveDialog.classList.contains("hidden"); }
+function closeFilterLibrarySaveDialog() {
+  const wasOpen = filterLibrarySaveOpen();
+  filterLibrarySaveDialog.classList.add("hidden");
+  filterLibrarySaveTargetId = null;
+  filterLibrarySaveImport = null;
+  if (wasOpen) openNextImportEditor();
+}
+function showFilterLibrarySaveDialog(name, icon) {
+  filterLibraryNameInput.value = name;
+  filterLibrarySaveIcon = icon || null;
+  renderFilterLibrarySaveIcon(false);
   filterLibrarySaveDialog.classList.remove("hidden");
   filterLibraryNameInput.focus();
   filterLibraryNameInput.select();
 }
+function openFilterLibrarySaveDialog(nodeId) {
+  filterLibrarySaveTargetId = nodeId;
+  filterLibrarySaveImport = null;
+  const node = state.nodes[nodeId];
+  showFilterLibrarySaveDialog(node ? nodeDisplayName(node) : "", null);
+}
+function openFilterLibraryImportDialog(parsed) {
+  filterLibrarySaveTargetId = null;
+  filterLibrarySaveImport = parsed;
+  showFilterLibrarySaveDialog(parsed.name, parsed.icon);
+}
+// The dialog's icon button, plus (gridOpen) the same icon grid the library
+// dialog's rows use.
+function renderFilterLibrarySaveIcon(gridOpen) {
+  const btn = el("#filterLibrarySaveIconBtn");
+  setLibraryIconButton(btn, filterLibrarySaveIcon);
+  const gridHost = el("#filterLibrarySaveIconGrid");
+  gridHost.innerHTML = "";
+  if (gridOpen) gridHost.appendChild(buildLibraryIconGrid(filterLibrarySaveIcon, next => { filterLibrarySaveIcon = next; renderFilterLibrarySaveIcon(false); }));
+}
+el("#filterLibrarySaveIconBtn").addEventListener("click", ev => {
+  ev.stopPropagation();
+  renderFilterLibrarySaveIcon(!el("#filterLibrarySaveIconGrid").firstChild);
+});
 filterLibrarySaveDialog.addEventListener("click", ev => { if (ev.target === filterLibrarySaveDialog) closeFilterLibrarySaveDialog(); });
 el("#filterLibrarySaveCancel").addEventListener("click", closeFilterLibrarySaveDialog);
 el("#filterLibrarySaveConfirm").addEventListener("click", () => {
   const name = filterLibraryNameInput.value.trim();
   const targetId = filterLibrarySaveTargetId;
-  if (!name || !targetId) return;
+  const imported = filterLibrarySaveImport;
+  const icon = filterLibrarySaveIcon;
+  if (!name || (!targetId && !imported)) return;
   closeFilterLibrarySaveDialog();
-  saveFilterToLibrary(targetId, name);
+  if (imported) addImportedFilterLibraryEntry(imported, name, icon);
+  else saveFilterToLibrary(targetId, name, icon);
 });
 filterLibraryNameInput.addEventListener("keydown", ev => {
   if (ev.key === "Enter") { ev.preventDefault(); el("#filterLibrarySaveConfirm").click(); }
 });
+
+// Shows a preset icon (svg name, "emoji:<char>", or none → ICON_FILTER) on
+// an icon button.
+function setLibraryIconButton(btn, icon) {
+  btn.className = "filter-library-row-icon" + (icon ? " active" : "") + (isEmojiIcon(icon) ? " filter-library-icon-emoji" : "");
+  if (isEmojiIcon(icon)) btn.textContent = libraryIconEmojiChar(icon);
+  else btn.innerHTML = libraryIconSvg(icon);
+}
+
+// The icon grid (svg set, emoji set, free emoji input). onPick(next) gets
+// the new icon value — null when the current one is clicked again.
+function buildLibraryIconGrid(current, onPick) {
+  const grid = document.createElement("div");
+  grid.className = "filter-library-icon-grid";
+  LIBRARY_ICON_SET.forEach(ic => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = current === ic.name ? "active" : "";
+    b.title = ic.name;
+    b.innerHTML = ic.svg;
+    b.addEventListener("click", ev => { ev.stopPropagation(); onPick(current === ic.name ? null : ic.name); });
+    grid.appendChild(b);
+  });
+  const sep = document.createElement("div");
+  sep.className = "filter-library-icon-sep";
+  grid.appendChild(sep);
+  LIBRARY_EMOJI_SET.forEach(ch => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "filter-library-icon-emoji" + (current === "emoji:" + ch ? " active" : "");
+    b.textContent = ch;
+    b.addEventListener("click", ev => { ev.stopPropagation(); onPick(current === "emoji:" + ch ? null : "emoji:" + ch); });
+    grid.appendChild(b);
+  });
+  // Free-text fallback for an emoji not in the curated set above.
+  const freeInput = document.createElement("input");
+  freeInput.type = "text";
+  freeInput.maxLength = 8;
+  freeInput.className = "filter-library-icon-freeinput";
+  freeInput.placeholder = "or type an emoji…";
+  const applyFreeInput = () => {
+    const value = freeInput.value.trim();
+    if ([...value].length !== 1) return;
+    onPick("emoji:" + value);
+  };
+  freeInput.addEventListener("change", applyFreeInput);
+  freeInput.addEventListener("keydown", ev => { if (ev.key === "Enter") applyFreeInput(); });
+  grid.appendChild(freeInput);
+  return grid;
+}
 
 function closeFilterLibraryDialog() { filterLibraryDialog.classList.add("hidden"); filterLibraryApplyTargetId = null; filterLibraryIconOpenKey = null; }
 // Which row's inline icon grid is currently expanded (by record key), or null.
@@ -33852,14 +34355,8 @@ async function renderFilterLibraryDialog() {
     // fallback) and toggles an inline icon grid below the row.
     const iconBtn = document.createElement("button");
     iconBtn.type = "button";
-    iconBtn.className = "filter-library-row-icon" + (rec.icon ? " active" : "");
     iconBtn.title = "Choose icon";
-    if (isEmojiIcon(rec.icon)) {
-      iconBtn.classList.add("filter-library-icon-emoji");
-      iconBtn.textContent = libraryIconEmojiChar(rec.icon);
-    } else {
-      iconBtn.innerHTML = libraryIconSvg(rec.icon);
-    }
+    setLibraryIconButton(iconBtn, rec.icon);
     iconBtn.addEventListener("click", ev => {
       ev.stopPropagation();
       filterLibraryIconOpenKey = filterLibraryIconOpenKey === rec.key ? null : rec.key;
@@ -33908,6 +34405,7 @@ async function renderFilterLibraryDialog() {
       if (targetId && state.nodes[targetId]) applyFilterFromLibrary(targetId, rec);
     });
     row.appendChild(applyBtn);
+    row.appendChild(customEntryRowButton("Export", "Export this preset as JSON", () => exportFilterLibraryEntry(rec)));
     const delBtn = document.createElement("button");
     delBtn.type = "button";
     delBtn.className = "filter-library-row-del";
@@ -33918,52 +34416,10 @@ async function renderFilterLibraryDialog() {
     frag.appendChild(row);
     // Inline icon grid, shown as a sibling block under the row while open.
     if (filterLibraryIconOpenKey === rec.key) {
-      const grid = document.createElement("div");
-      grid.className = "filter-library-icon-grid";
-      LIBRARY_ICON_SET.forEach(ic => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "" + (rec.icon === ic.name ? "active" : "");
-        b.title = ic.name;
-        b.innerHTML = ic.svg;
-        b.addEventListener("click", () => {
-          const next = rec.icon === ic.name ? null : ic.name;
-          filterLibraryIconOpenKey = null;
-          updateFilterLibraryEntry(rec.key, { icon: next }).then(renderFilterLibraryDialog);
-        });
-        grid.appendChild(b);
-      });
-      const sep = document.createElement("div");
-      sep.className = "filter-library-icon-sep";
-      grid.appendChild(sep);
-      LIBRARY_EMOJI_SET.forEach(ch => {
-        const b = document.createElement("button");
-        b.type = "button";
-        b.className = "filter-library-icon-emoji" + (rec.icon === "emoji:" + ch ? " active" : "");
-        b.textContent = ch;
-        b.addEventListener("click", () => {
-          const next = rec.icon === "emoji:" + ch ? null : "emoji:" + ch;
-          filterLibraryIconOpenKey = null;
-          updateFilterLibraryEntry(rec.key, { icon: next }).then(renderFilterLibraryDialog);
-        });
-        grid.appendChild(b);
-      });
-      // Free-text fallback for an emoji not in the curated set above.
-      const freeInput = document.createElement("input");
-      freeInput.type = "text";
-      freeInput.maxLength = 8;
-      freeInput.className = "filter-library-icon-freeinput";
-      freeInput.placeholder = "or type an emoji…";
-      const applyFreeInput = () => {
-        const value = freeInput.value.trim();
-        if ([...value].length !== 1) return;
+      frag.appendChild(buildLibraryIconGrid(rec.icon, next => {
         filterLibraryIconOpenKey = null;
-        updateFilterLibraryEntry(rec.key, { icon: "emoji:" + value }).then(renderFilterLibraryDialog);
-      };
-      freeInput.addEventListener("change", applyFreeInput);
-      freeInput.addEventListener("keydown", ev => { if (ev.key === "Enter") applyFreeInput(); });
-      grid.appendChild(freeInput);
-      frag.appendChild(grid);
+        updateFilterLibraryEntry(rec.key, { icon: next }).then(renderFilterLibraryDialog);
+      }));
     }
   });
   filterLibraryList.appendChild(frag);
@@ -34400,12 +34856,13 @@ async function removeLogFormat(id) {
    An exported file carries one ordinary (pattern/regex) format's definition
    — without its id/builtin/edited/createdAt, which belong to the local
    store — plus the globs of every filename rule mapped to it. Importing
-   always creates a NEW, non-builtin format (fresh id, so it never
-   overwrites an existing one, the builtin default included) and appends the
-   picked globs as rules after the existing ones (first match wins, so an
-   import never overrides an existing rule's precedence). Reached from
-   Settings → Log Formats → "Import…" and from a dropped/opened .json file
-   anywhere (loadFileDescriptors routes it here via readLogFormatExportFile). */
+   opens the format wizard prefilled with it (openFormatEditDialog's
+   importData) — saving there always creates a NEW, non-builtin format
+   (fresh id, so it never overwrites an existing one, the builtin default
+   included) and appends the checked globs as rules after the existing ones
+   (first match wins, so an import never overrides an existing rule's
+   precedence). Reached through the central import (Open → "Import…" or a
+   dropped file — see importPhiloggJsonText). */
 const LOG_FORMAT_FILE_FORMAT = "philogg-log-format";
 const LOG_FORMAT_FILE_VERSION = 1;
 const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup"];
@@ -34423,25 +34880,7 @@ function serializeLogFormatExport(formatId) {
 async function exportLogFormatToFile(formatId) {
   const data = serializeLogFormatExport(formatId);
   if (!data) return;
-  const json = JSON.stringify(data, null, 2);
-  const suggested = (data.logFormat.name.replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || "log-format") + ".logformat.json";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "PhiLogg log format", accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-    } catch (err) {
-      if (err && err.name === "AbortError") return;
-      downloadJsonFallback(json, suggested);
-    }
-  } else {
-    downloadJsonFallback(json, suggested);
-  }
-  showCopyToast("Log format exported");
+  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.logFormat.name, "log-format") + ".logformat.json", "PhiLogg log format")) showCopyToast("Log format exported");
 }
 
 // Parses + validates an exported file's text. Returns { logFormat,
@@ -34475,128 +34914,16 @@ function parseLogFormatExport(text) {
   return { logFormat, fileNamePatterns };
 }
 
-// Only small .json files are even read to check for the marker — a large
-// JSON log keeps loading as it always did without being read twice.
-const LOG_FORMAT_FILE_MAX_BYTES = 1024 * 1024;
-function mightBeLogFormatExport(name, size) {
-  return /\.json$/i.test(name || "") && !(size > LOG_FORMAT_FILE_MAX_BYTES);
-}
-
-// Imports queue up: several dropped format files open one dialog after another.
-const logFormatImportQueue = [];
-let logFormatImportCurrent = null;
-const logFormatImportDialog = el("#logFormatImportDialog");
-const logFormatImportName = el("#logFormatImportName");
-const logFormatImportRulesEl = el("#logFormatImportRules");
-function logFormatImportOpen() { return !logFormatImportDialog.classList.contains("hidden"); }
-
-// Entry point for a file's text: returns false when it isn't a log-format
-// export (caller loads it normally), true once it's been handled (queued
-// for the dialog, or rejected with a toast).
+// Import entry point (see importPhiloggJsonText): false when the text isn't
+// a log-format export, true once handled (wizard opened/queued, or rejected
+// with a toast).
 function importLogFormatText(text) {
   const parsed = parseLogFormatExport(text);
   if (!parsed) return false;
   if (parsed.error) { showCopyToast(parsed.error); return true; }
-  logFormatImportQueue.push(parsed);
-  if (!logFormatImportOpen()) openNextLogFormatImport();
+  queueImportEditor(() => openFormatEditDialog(null, parsed));
   return true;
 }
-
-function openNextLogFormatImport() {
-  logFormatImportCurrent = logFormatImportQueue.shift() || null;
-  if (!logFormatImportCurrent) return;
-  const { logFormat, fileNamePatterns } = logFormatImportCurrent;
-  logFormatImportName.value = logFormat.name;
-  updateLogFormatImportNameNote();
-  if (!fileNamePatterns.length) {
-    logFormatImportRulesEl.innerHTML = '<div class="filter-library-empty">The file carries no filename patterns.</div>';
-  } else {
-    // A glob an existing rule already has would never match first — offered,
-    // but unchecked by default.
-    logFormatImportRulesEl.innerHTML = fileNamePatterns.map((g, i) => {
-      const existing = state.formatRules.find(r => r.glob === g);
-      const owner = existing ? state.logFormats.find(f => f.id === existing.formatId) : null;
-      return '<label class="column-toggle-row"><input type="checkbox" data-idx="' + i + '"' + (existing ? "" : " checked") + '> <span>' + escapeHtml(g) +
-        (existing ? ' <span class="link-target-label">(already mapped to ' + escapeHtml(owner ? owner.name : "another format") + ')</span>' : "") + '</span></label>';
-    }).join("");
-  }
-  logFormatImportDialog.classList.remove("hidden");
-  logFormatImportName.focus();
-  logFormatImportName.select();
-}
-
-function updateLogFormatImportNameNote() {
-  const name = logFormatImportName.value.trim();
-  el("#logFormatImportNameNote").classList.toggle("hidden", !state.logFormats.some(f => f.name === name));
-}
-
-function closeLogFormatImportDialog() {
-  logFormatImportDialog.classList.add("hidden");
-  logFormatImportCurrent = null;
-  logFormatImportQueue.length = 0;
-}
-
-// Creates the format + the picked rules. Exposed separately from the
-// dialog so the name/pattern choice is testable without DOM clicks.
-async function commitLogFormatImport(parsed, name, pickedGlobs) {
-  const fmt = Object.assign({}, parsed.logFormat, {
-    id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
-    name: String(name).trim().slice(0, 80),
-    builtin: false, edited: false, createdAt: Date.now(),
-  });
-  await saveLogFormat(fmt);
-  state.logFormats.push(fmt);
-  for (const glob of pickedGlobs) {
-    if (state.formatRules.some(r => r.formatId === fmt.id && r.glob === glob)) continue;
-    const rule = {
-      id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
-      order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
-      createdAt: Date.now(),
-      glob,
-      formatId: fmt.id,
-    };
-    await saveFormatRule(rule);
-    state.formatRules.push(rule);
-  }
-  renderFormatList();
-  renderFormatRuleList();
-  renderFormatRuleFormatOptions();
-  return fmt;
-}
-
-logFormatImportName.addEventListener("input", updateLogFormatImportNameNote);
-logFormatImportName.addEventListener("keydown", ev => { if (ev.key === "Enter") { ev.preventDefault(); el("#logFormatImportConfirm").click(); } });
-logFormatImportDialog.addEventListener("click", ev => { if (ev.target === logFormatImportDialog) closeLogFormatImportDialog(); });
-el("#logFormatImportCancel").addEventListener("click", () => {
-  // Cancel skips just this file; any further queued import still opens.
-  logFormatImportDialog.classList.add("hidden");
-  openNextLogFormatImport();
-});
-el("#logFormatImportConfirm").addEventListener("click", async () => {
-  const parsed = logFormatImportCurrent;
-  const name = logFormatImportName.value.trim();
-  if (!parsed) return;
-  if (!name) { logFormatImportName.focus(); return; }
-  const picked = Array.from(logFormatImportRulesEl.querySelectorAll("input[data-idx]"))
-    .filter(cb => cb.checked).map(cb => parsed.fileNamePatterns[+cb.dataset.idx]);
-  logFormatImportDialog.classList.add("hidden");
-  const fmt = await commitLogFormatImport(parsed, name, picked);
-  showCopyToast('Log format "' + fmt.name + '" imported' + (picked.length ? " with " + picked.length + " filename rule" + (picked.length === 1 ? "" : "s") : ""));
-  openNextLogFormatImport();
-});
-
-const logFormatFileInput = el("#logFormatFileInput");
-el("#btnImportFormat").addEventListener("click", ev => {
-  ev.stopPropagation();
-  logFormatFileInput.click();
-});
-logFormatFileInput.addEventListener("change", ev => {
-  const file = ev.target.files[0];
-  logFormatFileInput.value = "";
-  if (!file) return;
-  file.text().then(text => { if (!importLogFormatText(text)) showCopyToast("Not a PhiLogg log format file"); })
-    .catch(() => showCopyToast("Could not read log format file"));
-});
 
 function renderFormatRuleList() {
   const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
@@ -35642,11 +35969,14 @@ function fwzNextHue() {
 // An existing format brings its stored examples + marks (sampleSetup), its
 // columns, levels and timestamp format; its own regex (a Pattern-mode
 // format's compiled one) pre-marks the examples until a line is marked.
-function openFormatEditDialog(id) {
+// importData (parseLogFormatExport's { logFormat, fileNamePatterns }, id
+// null) prefills a NEW format the same way from an imported file, plus the
+// file's filename patterns as checkboxes (renderFormatImportRules).
+function openFormatEditDialog(id, importData) {
   formatEditId = id;
-  const fmt = id ? state.logFormats.find(f => f.id === id) : null;
+  const fmt = id ? state.logFormats.find(f => f.id === id) : (importData ? importData.logFormat : null);
   const isMeta = !!(fmt && fmt.mode === "meta");
-  el("#formatEditTitle").textContent = fmt ? "Edit log format" : "Add log format";
+  el("#formatEditTitle").textContent = importData ? "Import log format" : fmt ? "Edit log format" : "Add log format";
   formatEditName.value = fmt ? fmt.name : "";
   formatEditMode = isMeta ? "meta" : "regex";
   formatEditMetaTargets = isMeta ? (fmt.targetFormatIds || []).slice() : [];
@@ -35674,11 +36004,12 @@ function openFormatEditDialog(id) {
     notice: "",
     undo: [],
     redo: [],
+    importPatterns: importData ? importData.fileNamePatterns : null,
   };
   const pushCol = (key, kind, label) => fwz.columns.push({ key, kind, label, hue: fwzNextHue() });
   pushCol("ts", "fixed", "Time");
   pushCol("level", "fixed", "Level");
-  (fmt && !isMeta ? formatColumnDefs(fmt.id) : DEFAULT_MIDDLE_COLUMNS).forEach(d => pushCol(d.key, d.kind, d.label));
+  (fmt && !isMeta ? formatColumnDefsOf(fmt) : DEFAULT_MIDDLE_COLUMNS).forEach(d => pushCol(d.key, d.kind, d.label));
   pushCol("message", "fixed", "Message");
   const keys = new Set(fwz.columns.map(c => c.key));
   fwz.marks = fwz.marks.filter(m => keys.has(m.key) && m.line < fwz.lines.length);
@@ -35691,6 +36022,7 @@ function openFormatEditDialog(id) {
   fwzColumnLabelNew.value = "";
   fwzShowColumnError("");
   renderFormatRuleInfo();
+  renderFormatImportRules();
   fwzAskResuggest(false);
   updateFormatEditModeUI();
   renderFormatEditMetaTargets();
@@ -35700,10 +36032,26 @@ function openFormatEditDialog(id) {
 }
 
 function closeFormatEditDialog() {
+  const wasOpen = formatDialogOpen();
   formatDialog.classList.add("hidden");
   fwzSampleEl.classList.remove("fwz-drop-active");
   fwz = null;
   formatEditId = null;
+  if (wasOpen) openNextImportEditor();
+}
+
+// An imported format's filename patterns: checked ones become rules on
+// Save. A glob an existing rule already has would never match first —
+// offered, but unchecked, with a note naming the format it's mapped to.
+function renderFormatImportRules() {
+  const globs = fwz.importPatterns || [];
+  el("#formatEditImportField").classList.toggle("hidden", !globs.length);
+  el("#formatEditImportRules").innerHTML = globs.map((g, i) => {
+    const existing = state.formatRules.find(r => r.glob === g);
+    const owner = existing ? state.logFormats.find(f => f.id === existing.formatId) : null;
+    return '<label class="column-toggle-row"><input type="checkbox" data-idx="' + i + '"' + (existing ? "" : " checked") + '> <span>' + escapeHtml(g) +
+      (existing ? ' <span class="link-target-label">(already mapped to ' + escapeHtml(owner ? owner.name : "another format") + ')</span>' : "") + '</span></label>';
+  }).join("");
 }
 
 // Which filename rules already point at the format being edited — shown
@@ -36489,14 +36837,18 @@ async function saveFormatEdit() {
   // See "Log format definitions" — editing the builtin default takes it off
   // the untouched-HEADER_RE fast path from now on.
   if (fmt.builtin) fmt.edited = true;
-  const glob = formatEditRuleGlob.value.trim();
+  const globs = [formatEditRuleGlob.value.trim()].concat(Array.from(el("#formatEditImportRules").querySelectorAll("input[data-idx]"))
+    .filter(cb => cb.checked).map(cb => (fwz.importPatterns || [])[+cb.dataset.idx])).filter(Boolean);
+  const imported = !!fwz.importPatterns;
 
   await saveLogFormat(fmt);
   const idx = state.logFormats.findIndex(f => f.id === fmt.id);
   if (idx === -1) state.logFormats.push(fmt); else state.logFormats[idx] = fmt;
-  // The optional rule field only ever ADDS a rule, appended last (first
-  // match wins, so it never overrides an existing rule's precedence).
-  if (glob && !state.formatRules.some(r => r.formatId === fmt.id && r.glob === glob)) {
+  // The optional rule field (and an import's checked patterns) only ever
+  // ADD rules, appended last (first match wins, so they never override an
+  // existing rule's precedence).
+  for (const glob of globs) {
+    if (state.formatRules.some(r => r.formatId === fmt.id && r.glob === glob)) continue;
     const rule = {
       id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
       order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
@@ -36507,6 +36859,7 @@ async function saveFormatEdit() {
     await saveFormatRule(rule);
     state.formatRules.push(rule);
   }
+  if (imported) showCopyToast('Log format "' + fmt.name + '" imported' + (globs.length ? " with " + globs.length + " filename rule" + (globs.length === 1 ? "" : "s") : ""));
   closeFormatEditDialog();
   renderFormatList();
   renderFormatRuleList();
@@ -36772,8 +37125,12 @@ document.addEventListener("keydown", ev => {
     // The format setup wizard sits on top of Settings: Esc closes just the
     // wizard, leaving Settings (and its unsaved format editor) open.
     if (formatDialogOpen()) { closeFormatEditDialog(); return; }
-    // Same for the log format import dialog — it also stacks above Settings.
-    if (logFormatImportOpen()) { closeLogFormatImportDialog(); return; }
+    // Same for the theme editor — it also stacks above Settings; an open
+    // color picker on top of it closes first.
+    if (themeEditorOpen()) {
+      if (!colorPickerPopup.classList.contains("hidden")) closeColorPicker(); else closeThemeEditor();
+      return;
+    }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
     closePlotFullscreen();
     closeSettingsDialog();
@@ -38044,7 +38401,6 @@ const SESSION_FILE_FORMAT = "philogg-session-export";
 const SESSION_FILE_VERSION = 1;
 const sessionExportDialog = el("#sessionExportDialog");
 const sessionMatchDialog = el("#sessionMatchDialog");
-const sessionFileInput = el("#sessionFileInput");
 const sessionLogFileInput = el("#sessionLogFileInput");
 
 // Two independent 32-bit FNV-1a passes (different offset bases) combined
@@ -38375,26 +38731,63 @@ function applySessionEntryByContent(rec, fileNode) {
 
 /* ---------- Import flow ---------- */
 
-async function importSessionFromFile() {
-  if (!window.showOpenFilePicker) { sessionFileInput.click(); return; }
+/* ---------- Central import (every app-internal JSON export) ----------
+   Open → "Import…" and a file dropped/opened anywhere (loadFileDescriptors)
+   both land here and dispatch on the file's `format` marker. Each element
+   opens in the same editor that creates it, prefilled (log format → format
+   wizard, theme/syntax scheme → theme editor, filter library preset →
+   "Save to filter library" dialog); a session runs its own matching flow;
+   a filter branch, which has no editor, attaches under the active node. */
+function importPhiloggJsonText(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return false; }
+  const format = data && typeof data === "object" && !Array.isArray(data) ? data.format : null;
+  switch (format) {
+    case SESSION_FILE_FORMAT: importSessionJson(text); return true;
+    case FILTER_FILE_FORMAT: importFilterBranchJson(text); return true;
+    case FILTER_LIBRARY_FILE_FORMAT: return importFilterLibraryJson(text);
+    case LOG_FORMAT_FILE_FORMAT: return importLogFormatText(text);
+    case THEME_FILE_FORMAT: return importThemeJson(text);
+    case SYNTAX_SCHEME_FILE_FORMAT: return importSyntaxSchemeJson(text);
+  }
+  return false;
+}
+
+// Only small .json files are even read to check for the marker — a large
+// JSON log keeps loading as it always did without being read twice.
+const PHILOGG_EXPORT_MAX_BYTES = 1024 * 1024;
+function mightBePhiloggExport(name, size) {
+  return /\.json$/i.test(name || "") && !(size > PHILOGG_EXPORT_MAX_BYTES);
+}
+
+async function importPickedFiles(files) {
+  for (const file of files) {
+    let text;
+    try { text = await file.text(); } catch { showCopyToast("Could not read " + file.name); continue; }
+    if (!importPhiloggJsonText(text)) showCopyToast(file.name + " is not a PhiLogg export");
+  }
+}
+
+const importFileInput = el("#importFileInput");
+async function importFromFilePicker() {
+  if (!window.showOpenFilePicker) { importFileInput.click(); return; }
   let handles;
   try {
     handles = await window.showOpenFilePicker({
-      multiple: false,
-      types: [{ description: "PhiLogg session", accept: { "application/json": [".json"] } }],
+      multiple: true,
+      types: [{ description: "PhiLogg export", accept: { "application/json": [".json"] } }],
     });
   } catch (err) {
     if (err && err.name === "AbortError") return;
-    sessionFileInput.click();
+    importFileInput.click();
     return;
   }
-  importSessionJson(await (await handles[0].getFile()).text());
+  importPickedFiles(await Promise.all(handles.map(h => h.getFile())));
 }
-
-sessionFileInput.addEventListener("change", ev => {
-  const file = ev.target.files[0];
-  if (file) file.text().then(importSessionJson).catch(() => showCopyToast("Could not read session file"));
-  sessionFileInput.value = "";
+importFileInput.addEventListener("change", ev => {
+  const files = Array.from(ev.target.files || []);
+  importFileInput.value = "";
+  if (files.length) importPickedFiles(files);
 });
 
 // Envelope validation mirrors importFilterJson: a file saved by a newer
