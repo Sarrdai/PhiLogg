@@ -789,6 +789,9 @@ SectionEnd
 Section "Explorer context menu" SEC_EXPLORER
   !insertmacro PhiLoggContextMenuVerb ".log" "Open in PhiLogg"
   !insertmacro PhiLoggContextMenuVerb ".zip" "Open in PhiLogg"
+  ; A gzip-compressed (rotated) log, e.g. app.log.1.gz — opened through the
+  ; same launch-argument route as a .log; the page inflates it.
+  !insertmacro PhiLoggContextMenuVerb ".gz" "Open in PhiLogg"
 
   ; Directory\shell (right-click ON a folder), not Directory\Background\shell
   ; (right-click empty space inside one) — matches the user-facing ask,
@@ -799,7 +802,7 @@ Section "Explorer context menu" SEC_EXPLORER
 SectionEnd
 
 !insertmacro MUI_FUNCTION_DESCRIPTION_BEGIN
-  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_EXPLORER} "Adds 'Open in PhiLogg' to the right-click menu for .log and .zip files, and 'Watch this Folder' for folders. Removed cleanly on uninstall."
+  !insertmacro MUI_DESCRIPTION_TEXT ${SEC_EXPLORER} "Adds 'Open in PhiLogg' to the right-click menu for .log, .gz and .zip files, and 'Watch this Folder' for folders. Removed cleanly on uninstall."
 !insertmacro MUI_FUNCTION_DESCRIPTION_END
 
 Function .onInstSuccess
@@ -872,6 +875,7 @@ Section Uninstall
   ; installed or upgraded.
   DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.log\shell\PhiLoggOpen"
   DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.zip\shell\PhiLoggOpen"
+  DeleteRegKey SHCTX "Software\Classes\SystemFileAssociations\.gz\shell\PhiLoggOpen"
   DeleteRegKey SHCTX "Software\Classes\Directory\shell\PhiLoggWatch"
 
   ; Delete deep links

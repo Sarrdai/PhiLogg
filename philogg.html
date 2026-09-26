@@ -4019,13 +4019,13 @@
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
-      <input type="file" id="fileInput" multiple hidden accept=".log,.txt,text/plain">
+      <input type="file" id="fileInput" multiple hidden accept=".log,.txt,.gz,text/plain,application/gzip">
       <input type="file" id="zipInput" hidden accept=".zip,application/zip">
       <input type="file" id="filterFileInput" hidden accept=".json,application/json">
       <input type="file" id="sessionFileInput" hidden accept=".json,application/json">
       <input type="file" id="themeFileInput" hidden accept=".json,application/json">
       <input type="file" id="syntaxSchemeFileInput" hidden accept=".json,application/json">
-      <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,text/plain">
+      <input type="file" id="sessionLogFileInput" hidden accept=".log,.txt,.gz,text/plain,application/gzip">
     </div>
   </header>
 
@@ -8672,11 +8672,13 @@ function getCompiledGlob(glob) {
 function invalidateGlobCompileCache() { globCompileCache.clear(); }
 
 // First matching rule wins (state.formatRules sorted by .order); a file
-// matching no rule falls back to the builtin default format.
+// matching no rule falls back to the builtin default format. A trailing
+// ".gz" is looked through (fileNameGlobTest), so "app.log.gz" resolves like
+// "app.log" unless a rule names the ".gz" itself.
 function resolveFormatIdForFilename(name) {
   const rules = state.formatRules.slice().sort((a, b) => a.order - b.order);
   for (const r of rules) {
-    if (getCompiledGlob(r.glob).test(name)) return r.formatId;
+    if (fileNameGlobTest(r.glob, name)) return r.formatId;
   }
   return DEFAULT_FORMAT_ID;
 }
@@ -25270,6 +25272,99 @@ function readFileWithProgress(file, onProgress) {
   });
 }
 
+/* ===================== gzip-compressed logs (.gz) =====================
+   A rotated log like "app.log.1.gz" opens transparently on every route that
+   ends in loadOneFileIntoTree (drag-drop, picker, the desktop wrapper's
+   native pick/drop, folder watch, ZIP entries) plus loadUrlIntoTree (?url=,
+   the desktop file-association route) and the format dialog's example-line
+   loader. Detection is by CONTENT (the two gzip magic bytes 1f 8b), never
+   by extension alone: a ".gz" that isn't actually compressed (e.g. a server
+   that already undid the Content-Encoding) just reads as plain text, and a
+   gzip stream without the extension still decompresses. Decompression is
+   the browser's native DecompressionStream("gzip") — the same Web API the
+   ZIP inflate path (readZipEntries' extract()) already uses, no library,
+   and identical in the browser and the Tauri desktop build (the Rust side
+   never reads log content itself; it only serves raw bytes over
+   philogg://local, so there is nothing to decompress natively).
+   The compressed bytes are streamed in chunk by chunk (Blob.stream()) and
+   the inflated output collected once — never more resident at once than
+   the ZIP path's own compressed+inflated pair.
+   Where the NAME matters (format rules, folder-watch patterns/log-file
+   detection), a trailing ".gz" is looked through (stripGzipExt,
+   fileNameGlobTest) — the node itself keeps its real on-disk name.
+   A gzipped file is always a static snapshot: tailing its raw compressed
+   bytes would be meaningless, so no tail is attached on load, and tailTick
+   drops a tail reattached later (session restore, folder rescan) the first
+   time it sees the gzip magic. */
+function isGzipBytes(bytes) {
+  return !!bytes && bytes.length >= 2 && bytes[0] === 0x1f && bytes[1] === 0x8b;
+}
+async function isGzipBlob(blob) {
+  if (!blob || blob.size < 2) return false;
+  return isGzipBytes(new Uint8Array(await blob.slice(0, 2).arrayBuffer()));
+}
+function stripGzipExt(name) {
+  return String(name || "").replace(/\.gz$/i, "");
+}
+// Glob test against a file name, looking through a trailing ".gz" — and,
+// behind it, a logrotate counter — as further chances: "*.log" still
+// matches "app.log.gz" and "app.log.1.gz" (the same "is this that log?"
+// reading isCompatibleFolderFile applies), while an explicit "*.gz" rule
+// keeps matching the real name first. A name without ".gz" is tested as-is
+// only, exactly as before.
+function fileNameGlobTest(glob, name) {
+  const re = getCompiledGlob(glob);
+  if (re.test(name)) return true;
+  const stripped = stripGzipExt(name);
+  if (stripped === name) return false;
+  if (re.test(stripped)) return true;
+  const unrotated = stripped.replace(/\.\d+$/, "");
+  return unrotated !== stripped && re.test(unrotated);
+}
+// Streams `blob` through DecompressionStream("gzip"); resolves with the
+// inflated bytes. onProgress(loadedCompressed, totalCompressed) fires per
+// consumed chunk. A corrupt/truncated stream rejects (the decompressor
+// errors on the bad chunk or on close), which callers surface like any
+// other read failure.
+async function gunzipBlob(blob, onProgress) {
+  const ds = new DecompressionStream("gzip");
+  const inflated = new Response(ds.readable).arrayBuffer();
+  inflated.catch(() => {}); // the writer side below reports the same error
+  const writer = ds.writable.getWriter();
+  // Blob.stream() everywhere real; the Response fallback only exists for
+  // environments whose Blob lacks it (jsdom in the regression suite).
+  const source = typeof blob.stream === "function" ? blob.stream() : new Response(await blob.arrayBuffer()).body;
+  const reader = source.getReader();
+  let loaded = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      await writer.write(value);
+      loaded += value.byteLength;
+      if (onProgress) onProgress(loaded, blob.size);
+    }
+    await writer.close();
+  } catch (err) {
+    try { reader.cancel(); } catch { /* already done */ }
+    writer.abort(err).catch(() => {});
+    throw err;
+  }
+  return new Uint8Array(await inflated);
+}
+// File-level wrapper: returns { file, gzip } — the file itself when it isn't
+// gzip, otherwise a new in-memory File carrying the inflated bytes under the
+// ORIGINAL name (callers strip ".gz" only where a name is interpreted).
+async function gunzipFileIfCompressed(file, onProgress) {
+  if (!(await isGzipBlob(file))) return { file, gzip: false };
+  const bytes = await gunzipBlob(file, onProgress);
+  return { file: new File([bytes], file.name, { lastModified: file.lastModified }), gzip: true };
+}
+async function gunzipBytesIfCompressed(bytes) {
+  const u8 = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  return isGzipBytes(u8) ? await gunzipBlob(new Blob([u8])) : u8;
+}
+
 const READ_WEIGHT = 0.55;  // share of the bar spent reading the file from disk
 const PARSE_WEIGHT = 0.45; // share of the bar spent parsing it into entries
 
@@ -25305,6 +25400,19 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
 
+  // gzip (see "gzip-compressed logs" above): inflated right before the text
+  // read, as the read phase's own progress — the text read of the in-memory
+  // result is then near-instant. A gzip file never tails (see below). The
+  // native route never inflates: Rust rejects gzip bytes up front
+  // (parse_log_file), which lands in its ordinary JS fallback here.
+  let gzip = false;
+  const inflate = async () => {
+    ({ file, gzip } = await gunzipFileIfCompressed(file, (loaded, total) => {
+      node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
+      scheduleLoadRender(node.id);
+    }));
+  };
+
   const fmt0 = state.logFormats.find(f => f.id === node.formatId);
   if (fmt0 && fmt0.mode === "meta") {
     // A meta-format file is fanned out into per-target virtual files and
@@ -25313,7 +25421,9 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     // live tail/localPath is wired for a meta-format file in v1 (see
     // loadMetaFormatText's own comment).
     deleteNode(node.id);
-    const text = await readFileWithProgress(file || await handle.getFile(), () => {});
+    if (!file) file = await handle.getFile();
+    await inflate();
+    const text = await readFileWithProgress(file, () => {});
     return await loadMetaFormatText(name, text, fmt0);
   }
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
@@ -25342,7 +25452,9 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
       }
     }
     if (file) {
+      await inflate();
       const text = await readFileWithProgress(file, (loaded, total) => {
+        if (gzip) return; // the inflate above already drove the read share of the bar
         node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
         scheduleLoadRender(node.id);
       });
@@ -25376,7 +25488,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   // explicit design anyway — see mergeFiles' own comment).
   const historyMatch = await matchFileHistory(node);
   if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
-  if (handle) {
+  if (handle && !gzip) { // a gzip file is a static snapshot — never tailed
     node.tail = {
       handle,
       offset: size,        // bytes consumed so far; the poll reads only file.slice(offset)
@@ -25386,6 +25498,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
       errorCount: 0,       // consecutive failed polls; reset to 0 by any clean poll
       lastGrowth: Date.now(), // drives the live dot's staleness window (isTailLive)
       wasLive: true,       // tailTick's own bookkeeping to know when to re-render on a stale flip
+      gzipChecked: true,   // just read: known not gzip (see tailTick)
     };
     state.tailFollow = true; // a freshly opened live file starts in follow mode
   }
@@ -25709,7 +25822,7 @@ function nativeDirHandle(path, name) {
       // too, or it filters them out on the Rust side before scanFolderHandle
       // ever gets a chance to widen anything.
       const [listed, subdirs] = await Promise.all([
-        window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS.concat(
+        window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS.concat([GZIP_LOG_EXTENSION],
           INLINE_TEXT_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e))),
         typeof window.philogg.listSubfolders === "function"
           ? window.philogg.listSubfolders(path) : Promise.resolve([]),
@@ -25781,6 +25894,7 @@ async function loadUrlIntoTree(url) {
   // meta-format is split in JS, so it always takes the fetch below.
   let node = null;
   let size = null;
+  let gzip = false; // see "gzip-compressed logs" — never tailed
   const formatId = resolveFormatIdForFilename(name);
   const fmt = state.logFormats.find(f => f.id === formatId);
   if (canParseNatively(urlTailHandle(url)) && !(fmt && fmt.mode === "meta")) {
@@ -25795,7 +25909,8 @@ async function loadUrlIntoTree(url) {
       // Rendered once, at the end of this function (tail included).
       if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
     } catch (err) {
-      // Not natively parseable — the fetch below fills this same node.
+      // Not natively parseable (including a gzip file, which Rust rejects
+      // up front) — the fetch below fills this same node.
     }
   }
   if (size === null) {
@@ -25813,7 +25928,16 @@ async function loadUrlIntoTree(url) {
       return;
     }
     const buf = await res.arrayBuffer();
-    const text = new TextDecoder().decode(buf);
+    gzip = isGzipBytes(new Uint8Array(buf, 0, Math.min(2, buf.byteLength)));
+    let bytes;
+    try {
+      bytes = await gunzipBytesIfCompressed(buf); // see "gzip-compressed logs"
+    } catch (err) {
+      if (node) deleteNode(node.id);
+      showCopyToast(`Could not decompress log from URL (${err.message})`);
+      return;
+    }
+    const text = new TextDecoder().decode(bytes);
     node = await addFile(name, text, undefined, undefined, node || undefined);
     size = buf.byteLength;
   }
@@ -25822,7 +25946,8 @@ async function loadUrlIntoTree(url) {
   // http(s) report link has no OS folder to reveal, but the context menu
   // still offers "Copy URL" for it (see openTreeContextMenu).
   node.sourceUrl = url;
-  if (isDesktopLocalUrl(url)) {
+  // A gzip file never tails (see "gzip-compressed logs").
+  if (isDesktopLocalUrl(url) && !gzip) {
     node.tail = {
       handle: urlTailHandle(url),
       offset: size,
@@ -25832,6 +25957,7 @@ async function loadUrlIntoTree(url) {
       errorCount: 0,
       lastGrowth: Date.now(),
       wasLive: true,
+      gzipChecked: true, // just read: known not gzip (see tailTick)
     };
     state.tailFollow = true;
   }
@@ -25876,8 +26002,10 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
   if (formatDialogOpen() && Array.isArray(files) && files.length) {
     const res = await fetch(files[0].url);
     if (!res.ok) { showCopyToast(`Couldn't open "${files[0].name}" (HTTP ${res.status})`); return; }
-    const bytes = await res.arrayBuffer();
-    fwzSuggestRuleFromFilename(files[0].name);
+    let bytes;
+    try { bytes = await gunzipBytesIfCompressed(await res.arrayBuffer()); }
+    catch (err) { showCopyToast(`Couldn't open "${files[0].name}" (${err.message})`); return; }
+    fwzSuggestRuleFromFilename(stripGzipExt(files[0].name));
     fwzAppendText(new TextDecoder().decode(bytes.slice(0, 512 * 1024)));
     return;
   }
@@ -26160,6 +26288,23 @@ async function tailTick() {
     t.busy = true;
     try {
       const f = await getPartialReadFile(t.handle);
+      // A gzip file is a static snapshot (see "gzip-compressed logs"): no
+      // load path attaches a tail to one (and marks the tail it does attach
+      // gzipChecked — it just read the bytes), but a reattach that only
+      // knows the handle (session restore's tryReattachFileTail, a folder
+      // rescan's mergeScannedFiles) can — checked once per such tail (a
+      // 2-byte read, a Range request on a ranged view), dropped here before
+      // its raw compressed bytes could ever be appended.
+      if (!t.gzipChecked) {
+        t.gzipChecked = true;
+        let gzip = false;
+        try { gzip = await isGzipBlob(f); } catch { /* unreadable head — the normal read below reports it */ }
+        if (gzip) {
+          delete node.tail;
+          changedRootIds.push(id);
+          return;
+        }
+      }
       let rotated = false;
       if (f.size < t.offset) {
         // File shrank — truncated or rotated. Start over with the new content.
@@ -26384,10 +26529,20 @@ const FOLDER_SCAN_MS = 3000;
 // Currently only *.log (CLAUDE.md/PROJECT.md's one supported log format) —
 // an array so a future "pluggable parser" session (FEATURE_BACKLOG.md) has
 // one obvious place to widen this.
+// A gzip-compressed log counts too (see "gzip-compressed logs"): its name
+// minus ".gz" must be a log name, where a rotation counter is allowed —
+// "app.log.gz" and logrotate's "app.log.1.gz" both qualify, a bare
+// "data.gz" or "app.tar.gz" does not. GZIP_LOG_EXTENSION is what the
+// desktop wrapper's native listing is additionally told to let through
+// (nativeDirHandle) — it filters by suffix only, the page refines here.
 const FOLDER_WATCH_EXTENSIONS = [".log"];
+const GZIP_LOG_EXTENSION = ".gz";
 function isCompatibleFolderFile(name) {
   const lower = name.toLowerCase();
-  return FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext));
+  if (FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext))) return true;
+  if (!lower.endsWith(GZIP_LOG_EXTENSION)) return false;
+  const inner = stripGzipExt(lower).replace(/\.\d+$/, "");
+  return FOLDER_WATCH_EXTENSIONS.some(ext => inner.endsWith(ext));
 }
 
 // A pattern's fields double as the per-pattern "auto rules" (see
@@ -26409,7 +26564,7 @@ function defaultFolderSettings() {
 // and the same getCompiledGlob() used there.
 function matchFolderPattern(settings, rec) {
   const patterns = settings && settings.patterns && settings.patterns.length ? settings.patterns : [defaultFolderPattern()];
-  return patterns.find(p => getCompiledGlob(p.pattern || "*").test(rec.name)) || null;
+  return patterns.find(p => fileNameGlobTest(p.pattern || "*", rec.name)) || null;
 }
 
 // A folder file's identity key for merging across rescans: relPath when
@@ -26481,7 +26636,7 @@ async function scanFolderHandle(dirHandle, settings) {
       // per-folder auto-open/auto-close/show-newest rules below still key
       // off it alone — those stay log-only).
       if (entryHandle.kind !== "file" || !(isCompatibleFolderFile(entryHandle.name) || inlineViewableKind(entryHandle.name))) continue;
-      if (!patterns.some(p => getCompiledGlob(p.pattern || "*").test(entryHandle.name))) continue;
+      if (!patterns.some(p => fileNameGlobTest(p.pattern || "*", entryHandle.name))) continue;
       const relPath = relDir ? relDir + "/" + entryHandle.name : entryHandle.name;
       const rec = { name: entryHandle.name, relPath, handle: entryHandle };
       if (needMtime) {
@@ -27179,6 +27334,13 @@ async function probeFolderFileRangeUncached(folder, rec) {
   // existing "probed, no range found" sentinel rather than probe wrong.
   const fmt0 = state.logFormats.find(f => f.id === formatId);
   if (fmt0 && fmt0.mode === "meta") return (rec._range = null);
+  // Same sentinel for a gzip file: its head/tail byte windows are
+  // compressed data, and inflating the whole file just to probe it would
+  // defeat the probe's whole point (cheap, near-constant cost). Also keeps
+  // loadFolderFileWindowed (gated on rec._range) on its full-load fallback.
+  let gzip = false;
+  try { gzip = await isGzipBlob(file); } catch { /* unreadable head — probeFileTimeRange decides below */ }
+  if (gzip) return (rec._range = null);
   return (rec._range = await probeFileTimeRange(file, formatId));
 }
 
@@ -34161,16 +34323,21 @@ function fwzAppendText(text) {
 
 function fwzLoadFile(file) {
   if (!file || !fwz) return Promise.resolve();
-  fwzSuggestRuleFromFilename(file.name);
-  // Only the head of a (possibly huge) log file is needed as examples.
-  const head = file.slice ? file.slice(0, 512 * 1024) : file;
-  const read = typeof head.text === "function" ? head.text() : new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => resolve(r.result);
-    r.onerror = () => reject(r.error);
-    r.readAsText(head);
-  });
-  return read.then(t => fwzAppendText(t), () => { if (fwz) { fwz.notice = "Couldn't read that file."; renderFwzResult(); } });
+  fwzSuggestRuleFromFilename(stripGzipExt(file.name));
+  // Only the head of a (possibly huge) log file is needed as examples. A
+  // gzip file is inflated first (see "gzip-compressed logs") — its raw
+  // head is compressed data.
+  const readHead = async () => {
+    const plain = file.slice ? (await gunzipFileIfCompressed(file)).file : file;
+    const head = plain.slice ? plain.slice(0, 512 * 1024) : plain;
+    return typeof head.text === "function" ? head.text() : new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+      r.readAsText(head);
+    });
+  };
+  return readHead().then(t => fwzAppendText(t), () => { if (fwz) { fwz.notice = "Couldn't read that file."; renderFwzResult(); } });
 }
 
 // Switches the active column by toggling classes in place — NOT via
@@ -35967,6 +36134,7 @@ async function reopenLocalPathForRestore(rec, placeholder) {
   activateQueuedFileNode(node);
   await pinFileFormat(node, rec.formatId);
   let size;
+  let gzip = false;
   try {
     try {
       size = (await parseLocalFileNatively(local.url, node, fraction => {
@@ -35974,8 +36142,12 @@ async function reopenLocalPathForRestore(rec, placeholder) {
         scheduleLoadRender(node.id);
       })).size;
     } catch (err) {
-      const file = await handle.getFile();
-      size = file.size;
+      // Includes a gzip file, which the native parser rejects up front —
+      // inflated here (see "gzip-compressed logs").
+      const raw = await handle.getFile();
+      size = raw.size;
+      let file;
+      ({ file, gzip } = await gunzipFileIfCompressed(raw));
       await parseLogTextAsync(await file.text(), node, (done, total) => {
         node.loadFraction = total ? done / total : 1;
         scheduleLoadRender(node.id);
@@ -35985,7 +36157,7 @@ async function reopenLocalPathForRestore(rec, placeholder) {
     delete node.loadFraction;
   }
   if (state.nodes[node.id] === node) flushLoadRender(node.id);
-  return { node, url: local.url, path: local.path || rec.localPath, handle, size };
+  return { node, url: local.url, path: local.path || rec.localPath, handle, size, gzip };
 }
 
 // Boot-time restore. Returns true if at least one file came back. Any error
@@ -36084,7 +36256,10 @@ async function restoreSessionFromCache(metaIn) {
       if (reopened) {
         node.localPath = reopened.path;
         node.sourceUrl = reopened.url;
-        if (!rec.folderId) node.tail = newTailState(reopened.handle, reopened.size);
+        if (!rec.folderId && !reopened.gzip) {
+          node.tail = newTailState(reopened.handle, reopened.size);
+          node.tail.gzipChecked = true; // just read: known not gzip (see tailTick)
+        }
       }
       // Plain (non-folder) file that was being tailed before the reload:
       // try to resume silently — see tryReattachFileTail.

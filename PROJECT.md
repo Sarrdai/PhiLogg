@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~35,900 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~37,400 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -458,7 +458,7 @@ being implemented on `claude/unified-toolbar-implementation`.**
 The extraction table's synthetic Index/t(ms) columns, virtualized rendering (extraction table + Link pair view), the Plot tab (zoom/pan/hover tooltip), value assertions, the Statistics panel (Table-only, Entry-Detail-style pin/hover), and the live pattern preview + ignored-columns mechanism. Start here for anything under `renderExtractTable()`/`renderPlotChart()`.
 
 ### `docs/persistence-and-sync.md`
-Undo/redo, bookmarks (the auto-managed "Bookmarks" filter node), notes, pin-bookmarks-into-filtered-view, tailing (live file updates), file loading (progress-on-the-real-row, multi-file load, merge), deep-link loading (`?url=`), folder watch + lazy loading, filter save/load JSON, the reusable filter library, the session cache (IndexedDB, survives a reload), per-file filter history, and session export/import. Start here for anything about `state.bookmarks`/`state.notes`, `node.tail`, or the `philogg-session-cache` IndexedDB database.
+Undo/redo, bookmarks (the auto-managed "Bookmarks" filter node), notes, pin-bookmarks-into-filtered-view, tailing (live file updates), file loading (progress-on-the-real-row, multi-file load, merge), deep-link loading (`?url=`), folder watch + lazy loading, filter save/load JSON, the reusable filter library, the session cache (IndexedDB, survives a reload), per-file filter history, and session export/import. Also where gzip-compressed logs (`.gz`) are handled: detected by magic bytes, inflated via `DecompressionStream("gzip")` on the JS route of `loadOneFileIntoTree`/`loadUrlIntoTree`/`reopenLocalPathForRestore` (the desktop native parser rejects gzip, so it takes that fallback), with `.gz` looked through for format rules and folder-watch patterns, and never tailed. Start here for anything about `state.bookmarks`/`state.notes`, `node.tail`, or the `philogg-session-cache` IndexedDB database.
 
 ### `docs/export.md`
 Export / Share (FEATURE_BACKLOG.md #31 + #32, one ticket-oriented concept): the "Copy for ticket" clipboard snippet (bounded, Markdown / Jira wiki / plain flavors) and the full-view attachments (`.log`/`.csv`/`.tsv`/standalone `.html` report) behind `#btnExport`/`#exportDialog`/`Ctrl+Shift+E` — what "the current view" means for export, the size caps, the shared save path (`showSaveFilePicker` or download), and the parts of the concept deliberately left out. Start here for anything about `collectExportContext`/`buildTicketSnippet`/`buildExportFileParts`.

@@ -169,6 +169,12 @@ deployments possible:
   once opened), and no extra library: uses the browser's native
   `DecompressionStream` Web API, identically in the plain-browser build and
   the desktop build.
+- **Open gzip-compressed logs** — a rotated `app.log.1.gz` opens like any
+  other log, however it arrives: drag-drop, the file picker, a watched
+  folder (where `*.log` patterns also pick up the `.gz` rotations), a ZIP
+  entry, or the desktop build's "Open in PhiLogg". It's decompressed on the
+  fly by the browser's own `DecompressionStream`, with no extra library. A
+  compressed file is a fixed snapshot, never live-tailed.
 - **View common text/image files right in the app** — `.txt`/`.xml`/`.json`
   and `.jpg`/`.jpeg`/`.png`/`.tiff`/`.tif`, however they're opened: a ZIP
   entry, a watched folder, or a direct open/drag-drop, all the same. JSON/XML

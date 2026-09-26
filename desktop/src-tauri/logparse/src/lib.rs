@@ -325,6 +325,14 @@ pub fn append_continuation(entry: &mut Entry, line: &str) {
     entry.raw.push_str(line);
 }
 
+/// True for a gzip stream (magic bytes `1f 8b`). The native parser never
+/// inflates: `parse_log_file` rejects such a file before streaming anything,
+/// and the page falls back to its own route, which inflates with
+/// `DecompressionStream("gzip")` (philogg.html, "gzip-compressed logs").
+pub fn is_gzip(bytes: &[u8]) -> bool {
+    bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
+}
+
 /// Bytes → text the way `FileReader.readAsText` (the page's own file read)
 /// does it: BOM sniffing for UTF-8/UTF-16LE/UTF-16BE, UTF-8 otherwise, and
 /// U+FFFD for every malformed sequence.
@@ -424,6 +432,14 @@ fn parse_chunk<'a>(chunk: &'a str, is_last: bool, parser: &Parser) -> ChunkResul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn gzip_magic_is_detected() {
+        assert!(is_gzip(&[0x1f, 0x8b, 0x08, 0x00]));
+        assert!(!is_gzip(&[0x1f]));
+        assert!(!is_gzip(b"2024-01-15 10:00:00,000\tINFO"));
+        assert!(!is_gzip(&[]));
+    }
 
     /// Every sequence of up to five tokens from an alphabet that hits each
     /// branch, against formatLocation's own regex (via the JS translation).

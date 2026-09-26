@@ -14,7 +14,7 @@ pub const MAIN: &str = "main";
 pub const PIP_W: f64 = 420.0;
 pub const PIP_H: f64 = 320.0;
 
-/// Windows/Linux: a `.log`/`.zip` file association or Explorer context-menu
+/// Windows/Linux: a `.log`/`.gz`/`.zip` file association or Explorer context-menu
 /// verb (see `desktop/src-tauri/windows/installer.nsi`) relaunches the app
 /// with the path as a plain argv entry — a folder-watch launch the same way,
 /// with a directory path instead of a file. macOS never does this — it
@@ -38,7 +38,10 @@ pub enum LaunchArg {
 pub fn classify_launch<I: IntoIterator<Item = String>>(argv: I) -> Option<LaunchArg> {
     for arg in argv.into_iter().skip(1) {
         let lower = arg.to_lowercase();
-        if lower.ends_with(".log") {
+        // A gzip-compressed (rotated) log, e.g. `app.log.1.gz`, takes the
+        // same single-URL route: the wrapper only serves its raw bytes, and
+        // `loadUrlIntoTree` inflates them page-side (DecompressionStream).
+        if lower.ends_with(".log") || lower.ends_with(".gz") {
             return Some(LaunchArg::LogFile(PathBuf::from(arg)));
         }
         if lower.ends_with(".zip") {
