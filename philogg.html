@@ -2458,6 +2458,18 @@
   .facet-value:hover{background:var(--bg-elevated); color:var(--text-primary);}
   .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .facet-value-name.facet-empty{font-style:italic; color:var(--text-tertiary);}
+  /* Value name in the colour of the most severe level among its entries. */
+  .facet-value-name.lvl-error{color:var(--level-error);}
+  .facet-value-name.lvl-warn{color:var(--level-warn);}
+  .facet-value-name.lvl-info{color:var(--level-info);}
+  .facet-value-name.lvl-debug{color:var(--level-debug);}
+  .facet-value-name.lvl-trace{color:var(--level-trace);}
+  .facet-value-name.lvl-custom-1{color:var(--level-custom-1);}
+  .facet-value-name.lvl-custom-2{color:var(--level-custom-2);}
+  .facet-value-name.lvl-custom-3{color:var(--level-custom-3);}
+  .facet-value-name.lvl-custom-4{color:var(--level-custom-4);}
+  .facet-value-name.lvl-custom-5{color:var(--level-custom-5);}
+  .facet-value-name.lvl-custom-6{color:var(--level-custom-6);}
   .facet-bar{height:6px; border-radius:3px; background:var(--bg-elevated-2); overflow:hidden;}
   .facet-bar > i{display:block; height:100%; background:var(--accent);}
   .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
@@ -13799,21 +13811,32 @@ function facetColumnsKey(nodeId) { return facetColumnsFor(nodeId).map(c => c.key
 
 function createFacetAcc(nodeId) {
   const cols = facetColumnsFor(nodeId);
+  // value -> { count, rank, level, formatId }: rank/level track the most
+  // severe level among the value's entries (same ranking as the Patterns
+  // tab's Level column), which colours the value's name.
   const maps = cols.map(() => new Map());
   const k = cols.length;
+  const bucketOf = makeLevelBucketer();
   return {
     step(e) {
+      const b = bucketOf(e.level, e.formatId);
+      const r = levelSortRank(b, e.formatId);
       for (let i = 0; i < k; i++) {
         const v = cols[i].value(e);
         const m = maps[i];
-        m.set(v, (m.get(v) || 0) + 1);
+        let a = m.get(v);
+        if (!a) { a = { count: 0, rank: Infinity, level: "", formatId: null }; m.set(v, a); }
+        a.count++;
+        if (r < a.rank) { a.rank = r; a.level = b; a.formatId = e.formatId; }
       }
     },
     finish() {
       return {
+        // values: [value, count, lvl-* class of its most severe level]
         columns: cols.map((col, i) => ({
           key: col.key, label: col.label,
-          values: [...maps[i]].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)),
+          values: [...maps[i]].map(([v, a]) => [v, a.count, a.level ? levelClass(a.level, a.formatId) : ""])
+            .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)),
         })),
       };
     },
@@ -13858,10 +13881,10 @@ function renderFacetPanel() {
       const shown = Math.min(col.values.length, FACET_TOP_N + (facetsShown.get(col.key) || 0));
       const max = col.values.length ? col.values[0][1] : 1;
       for (let i = 0; i < shown; i++) {
-        const [value, count] = col.values[i];
+        const [value, count, lvlCls] = col.values[i];
         const pct = count / total * 100;
         html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
-          '<span class="facet-value-name' + (value ? "" : " facet-empty") + '">' + escapeHtml(value || "(empty)") + "</span>" +
+          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
           '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
           '<span class="facet-pct">' + (pct > 0 && pct < 1 ? "<1" : Math.round(pct)) + "%</span></div>";

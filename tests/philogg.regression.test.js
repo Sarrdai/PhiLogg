@@ -32531,6 +32531,25 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "3", { ctrlKey: true });
   assert(T.fhActiveTab === "filter", "Ctrl+3 → Filtered");
 });
+
+await withApp(async (w, d, T) => {
+  section("288c. a facet value's name takes the colour of the most severe level among its entries");
+  const line = (i, level, thread) => `2024-01-15 10:00:${String(i).padStart(2, "0")},000\t${level}\t"${thread}"\tC:\\src\\Foo.cs\tline 1\t[Run]\t"message ${i}"`;
+  const TEXT = [line(0, "INFO", "A"), line(1, "WARN", "A"), line(2, "INFO", "B"), line(3, "ERROR", "C"), line(4, "DEBUG", "C"), line(5, "DEBUG", "D")].join("\n") + "\n";
+  const f = await w.addFile("lvl.log", TEXT, () => {});
+  T.state.activeId = f.id; w.render();
+  w.setFacetsOpen(true);
+  const cls = name => [...d.querySelectorAll('.facet-section[data-col="thread"] .facet-value-name')].find(n => n.textContent === name).className;
+  assert(cls("A").includes("lvl-warn") && !cls("A").includes("lvl-info"), "A (INFO+WARN) → warn, got " + cls("A"));
+  assert(cls("B").includes("lvl-info"), "B (INFO) → info, got " + cls("B"));
+  assert(cls("C").includes("lvl-error"), "C (ERROR+DEBUG) → error, got " + cls("C"));
+  assert(cls("D").includes("lvl-debug"), "D (DEBUG) → debug, got " + cls("D"));
+  const lvl = [...d.querySelectorAll('.facet-section[data-col="level"] .facet-value-name')];
+  assert(lvl.every(n => n.classList.contains("lvl-" + n.textContent.toLowerCase())), "the Level section colours each level by itself");
+  // level quick-filter narrows the result → colours follow it
+  T.state.levelFilter.add("INFO"); T.state.levelFilter.add("DEBUG"); w.render();
+  assert(cls("A").includes("lvl-info") && cls("C").includes("lvl-debug"), "colours follow the narrowed result");
+});
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -36842,4 +36861,5 @@ process.exitCode = failed ? 1 : 0;
       (clamps, hidden with the panel) and Patterns moved to the first view
       tab. Same session renumbered the Ctrl+N positions in GROUP 72 and
       194d and the tab order in 286b.
+      288c (same day): facet value names coloured by their most severe level.
    ============================================================ */
