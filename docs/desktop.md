@@ -414,6 +414,19 @@ tailing appends (small, incremental), session-cache restore (the text comes
 from IndexedDB), the windowed/partial minimap load, ZIP entries, and the
 plain browser build.
 
+**gzip-compressed logs (`.gz`) are not parsed natively either.**
+`parse_and_stream` checks the bytes it just read with
+`philogg_logparse::is_gzip` (magic `1f 8b`) and rejects before streaming
+anything. That lands in the caller's ordinary fallback: `loadOneFileIntoTree`,
+`loadUrlIntoTree` and `reopenLocalPathForRestore` all catch the rejection,
+fetch the file and parse it in JS, where `DecompressionStream("gzip")`
+inflates it first (`docs/persistence-and-sync.md` → "gzip-compressed logs").
+Detection is by content, so a gzip file without the extension is covered
+too. Rust never inflates: no new crate, and the JS parser's rules stay the
+one definition, so the golden fixtures are unchanged. A crate test pins
+`is_gzip`, and jsdom GROUP 285d/e covers the page-side fallback with a stub
+that rejects the same way.
+
 **Known difference:** a non-unicode JS regex counts UTF-16 code units, so a
 counted quantifier over an astral character (`.{2}` against one emoji) can
 match in JS and not natively. Format regexes don't count characters that
@@ -442,8 +455,8 @@ layout change: `UPDATE_NATIVE_BATCH=1 cargo test -p philogg-logparse`.
 
 Windows-only. Three right-click verbs, added by the installer as an
 *optional* component and cleanly removed on uninstall: **"Open in
-PhiLogg"** on a single `.log` or `.zip` file, and **"Watch this Folder"**
-on a folder.
+PhiLogg"** on a single `.log`, `.gz` or `.zip` file, and **"Watch this
+Folder"** on a folder.
 
 **Multi-selecting several `.log` files was deliberately dropped.** Windows
 cannot hand multiple selected paths to one process launch through a plain
@@ -466,12 +479,16 @@ a result.
 (`.log`-suffix only) is now `classify_launch(argv) -> Option<LaunchArg>`,
 returning which of two routes a launch needs:
 
-- `LaunchArg::LogFile` — a `.log` argv entry. Routes through the
+- `LaunchArg::LogFile` — a `.log` or `.gz` argv entry. Routes through the
   **existing, unchanged** `open_file`/`create_main(..., Some(path))` →
   `window.philoggLoadUrl` (`loadUrlIntoTree` in `philogg.html`) single-URL
   path. The file-association double-click launch and the new "Open in
   PhiLogg" verb invoke the exe identically (`"<exe>" "%1"`), so there is
-  nothing to distinguish and nothing new needed here.
+  nothing to distinguish and nothing new needed here. A `.gz` (a
+  gzip-compressed rotated log such as `app.log.1.gz`) takes the same route
+  because the wrapper never looks inside the file. It serves the raw bytes,
+  and `loadUrlIntoTree` inflates them page-side (see
+  `docs/persistence-and-sync.md` → "gzip-compressed logs").
 - `LaunchArg::LocalTarget` — a `.zip` argv entry, or one that `is_dir()`.
   `loadUrlIntoTree` has no ZIP awareness at all (it always does
   `addFile(name, text)` on whatever bytes it fetches) — that only exists in
@@ -533,6 +550,22 @@ was ever ticked. Default is checked (opt-out, not opt-in).
 install-flow change), this file won't pick it up automatically — re-diff
 against the new stock template and reapply the `; PHILOGG:`-marked edits
 rather than assuming this fork silently tracks upstream.
+
+**gzip-compressed logs (`.gz`).** All decompression happens in
+`philogg.html` (`DecompressionStream("gzip")`). The native parser refuses
+gzip bytes (see "Native parsing" above), so there is no native inflate and
+no new crate. The wrapper-side touch points are:
+- the `.gz` context-menu verb above;
+- `classify_launch` routing `.gz` as `LogFile`;
+- `pick_files` offering `gz` in its "Log files" filter;
+- the page passing `.gz` (`GZIP_LOG_EXTENSION`) to `list_folder` alongside
+  `.log`, so the native folder listing lets it through. The page itself
+  then decides which `.gz` names are logs (`isCompatibleFolderFile`).
+
+`.gz` is deliberately **not** in `tauri.conf.json` →
+`bundle.fileAssociations`. That would register PhiLogg as a handler for
+every gzip archive on the system, not just logs. The opt-in Explorer verb,
+"Open with…", the picker and drag-drop cover it instead.
 
 **Adding a future extension.** Not built as a generic system now — nothing
 asked for one, and two extensions don't justify one — but the actual

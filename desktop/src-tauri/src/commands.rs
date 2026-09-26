@@ -116,7 +116,7 @@ pub async fn pick_files(app: AppHandle) -> Vec<LocalFile> {
         .dialog()
         .file()
         .set_title("Open log files")
-        .add_filter("Log files", &["log", "txt"])
+        .add_filter("Log files", &["log", "txt", "gz"])
         .add_filter("All files", &["*"])
         .blocking_pick_files();
     let state = app.state::<AppState>();
@@ -302,6 +302,12 @@ fn parse_and_stream(
     use philogg_logparse as lp;
     let parser = lp::Parser::new(format)?;
     let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+    // A gzip-compressed log (`app.log.1.gz`) is inflated page-side: reject it
+    // before anything is streamed, which sends the page down its ordinary
+    // read + parse fallback (docs/desktop.md -> "Native parsing").
+    if lp::is_gzip(&bytes) {
+        return Err("gzip-compressed file: parsed by the page".into());
+    }
     let size = bytes.len() as u64;
     let text = lp::decode(&bytes);
     drop(bytes);
