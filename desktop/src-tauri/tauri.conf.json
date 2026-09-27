@@ -32,6 +32,7 @@
     "copyright": "Copyright © Philipp Klein",
     "resources": {
       "../../philogg.html": "philogg.html",
+      "../chat.html": "chat.html",
       "../../LICENSE.md": "LICENSE.md",
       "../THIRD_PARTY_NOTICES.md": "THIRD_PARTY_NOTICES.md"
     },

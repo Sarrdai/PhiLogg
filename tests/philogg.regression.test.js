@@ -9260,11 +9260,13 @@ await withApp(async (w, d, T) => {
   // nav item/section stay in the DOM even without window.philogg (this
   // suite's jsdom environment has none, same as a plain browser build), just
   // hidden via .hidden (see initIdeIntegration), so it still counts here.
+  // GROUP 304 added "Assistant" (the LLM assistant, desktop build only) the
+  // same way — present, hidden here.
   const navItems = [...d.querySelectorAll("#settingsNav .settings-nav-item")];
-  assert(navItems.length === 6, "the section nav lists exactly the six sections, got " + navItems.length);
+  assert(navItems.length === 7, "the section nav lists exactly the seven sections, got " + navItems.length);
   const targets = navItems.map(b => b.dataset.navTarget);
   assert(targets.includes("settingsSectionAppearance") && targets.includes("settingsSectionBehavior") &&
-    targets.includes("settingsSectionIde") && targets.includes("settingsSectionFormats") &&
+    targets.includes("settingsSectionIde") && targets.includes("settingsSectionLlm") && targets.includes("settingsSectionFormats") &&
     targets.includes("settingsSectionShortcuts") && targets.includes("settingsSectionLicense"),
     "nav items point at Appearance/Behavior/IDE Integration/Log Formats/Shortcuts/License, got " + JSON.stringify(targets));
   assert(targets[targets.length - 1] === "settingsSectionLicense", "License is always the last section in the list");
@@ -34329,6 +34331,189 @@ group(303);
   }, { indexedDB: factory });
 }
 
+/* ============================================================
+   GROUP 304 — LLM assistant, phase 4: the chat view (desktop/chat.html)
+   and its wiring. The browser build shows no trace of the assistant; the
+   desktop build (stubbed window.philogg) gets the toolbar button and
+   Settings → Assistant (model list, connection test). chat.html is loaded
+   in its own jsdom window and connected to the real main window through a
+   fake transport that relays JSON the way Rust does: pull snapshots,
+   streaming, clickable/greyed references, Stop, undo this round (incl.
+   the confirm), the "not loaded" hint, and a lost "changed" note healing
+   itself on the next pull. Sample data from tools/log-sim.
+   ============================================================ */
+group(304);
+const CHAT_HTML = fs.readFileSync(path.join(__dirname, "..", "desktop", "chat.html"), "utf8");
+function llmDesktopStub(extra) {
+  const calls = [];
+  const stub = Object.assign({
+    calls,
+    llmChat: () => Promise.reject(new Error("no model in this test")),
+    llmCancel: () => {},
+    llmModels: url => (calls.push(["models", url]), url.includes("9999") ? Promise.reject("cannot reach localhost:9999 — is LM Studio's server running?") : Promise.resolve(["qwen2.5-7b-instruct", "llama-3.2-3b"])),
+    llmChatWindow: (action, on) => { calls.push(["window", action, on]); return Promise.resolve(); },
+    llmViewNotify: msg => { calls.push(["notify", msg.type]); return Promise.resolve(); },
+  }, extra || {});
+  return stub;
+}
+// Opens chat.html in its own window, wired to the main window `w`:
+// view → main via llmHandleViewMessage, main → view via an llm.views entry,
+// both through JSON and a macrotask, like the Rust relay.
+function openChatView(w, T, opts = {}) {
+  let receive = null, closed = false;
+  const sent = [];
+  const deliver = msg => setTimeout(() => !closed && receive && receive(JSON.parse(JSON.stringify(msg))), 0);
+  const view = msg => { if (!opts.drop || !opts.drop(msg)) deliver(msg); };
+  T.llm.views.add(view);
+  const dom = new JSDOM(CHAT_HTML, {
+    runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(cw) {
+      cw.philoggChatTransport = {
+        mode: opts.mode || "window",
+        send: msg => { sent.push(msg); setTimeout(() => !closed && w.llmHandleViewMessage(JSON.parse(JSON.stringify(msg)), deliver), 0); },
+        onMessage: fn => { receive = fn; },
+      };
+      cw.confirm = () => (opts.confirm ? opts.confirm() : true);
+    },
+  });
+  return { dom, cw: dom.window, cd: dom.window.document, sent, view, close: () => { closed = true; T.llm.views.delete(view); dom.window.close(); } };
+}
+
+await withApp(async (w, d, T) => {
+  section("304a. Browser build: no assistant anywhere");
+  assert(!w.llmAvailable(), "no window.philogg.llmChat → not available");
+  assert(!isVisible(d.getElementById("btnAssistant"), w), "no toolbar button");
+  assert(!isVisible(d.getElementById("settingsNavItemLlm"), w) && !isVisible(d.getElementById("settingsSectionLlm"), w), "no Settings → Assistant");
+  assert(T.llm.ready === null, "no session database opened");
+});
+
+await withApp(async (w, d, T) => {
+  section("304b. Desktop build: toolbar button, Settings → Assistant");
+  const stub = w.philogg;
+  assert(w.llmAvailable() && isVisible(d.getElementById("btnAssistant"), w), "toolbar button shown");
+  d.getElementById("btnAssistant").click();
+  assert(stub.calls.some(c => c[0] === "window" && c[1] === "show"), "it opens (shows) the chat window");
+  w.openSettingsDialog();
+  assert(isVisible(d.getElementById("settingsSectionLlm"), w) && isVisible(d.getElementById("settingsNavItemLlm"), w), "Settings → Assistant shown");
+  assert(d.getElementById("settingsLlmTemperature").value === "0.2" && d.getElementById("settingsLlmMaxTurns").value === "12", "defaults shown");
+  d.getElementById("settingsLlmTest").click();
+  const status = d.getElementById("settingsLlmStatus");
+  assert(await waitFor(() => status.textContent.startsWith("Connected")), "connection test: " + status.textContent);
+  assert(stub.calls.find(c => c[0] === "models")[1] === "http://localhost:1234/v1", "…against the default endpoint");
+  const sel = d.getElementById("settingsLlmModel");
+  assert([...sel.options].map(o => o.value).join() === ",qwen2.5-7b-instruct,llama-3.2-3b", "model dropdown from /v1/models");
+  sel.value = "llama-3.2-3b";
+  sel.dispatchEvent(new w.Event("change"));
+  assert(w.localStorage.getItem("philogg-llm-model") === "llama-3.2-3b" && w.llmSettings().model === "llama-3.2-3b", "model choice stored");
+  const ep = d.getElementById("settingsLlmEndpoint");
+  ep.value = "http://localhost:9999/v1";
+  ep.dispatchEvent(new w.Event("change"));
+  d.getElementById("settingsLlmRefresh").click();
+  assert(await waitFor(() => status.classList.contains("error")) && status.textContent.includes("LM Studio"), "an unreachable server shows the bridge's reason");
+  const t = d.getElementById("settingsLlmTemperature");
+  t.value = "7";
+  t.dispatchEvent(new w.Event("change"));
+  assert(t.value === "2" && w.llmSettings().temperature === 2, "temperature clamped to 0..2");
+}, { philogg: llmDesktopStub() });
+
+await withApp(async (w, d, T) => {
+  section("304c. chat.html against the real main window: pull snapshots, stream, refs, Stop, undo");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion", "sensors"], entries: 1500, seed: 5 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  await T.llm.ready;
+  T.resetUndoRedo();
+  const chat = openChatView(w, T);
+  const { cd, cw } = chat;
+  assert(await waitFor(() => cw.philoggChatView.snapshot), "the view pulls a snapshot on load");
+  assert(cd.getElementById("chatEmpty").textContent.includes("temperature"), "empty chat: an example question");
+  assert(cd.documentElement.style.getPropertyValue("--accent") !== "", "the main window's theme variables are applied");
+  assert(cd.getElementById("sessionSelect").style.display === "none" && cd.getElementById("btnDock").style.display === "none", "phase 4: no session or dock controls yet (not in snapshot.features)");
+
+  let streamSeen = false;
+  const fake = llmFakeModel([
+    { calls: [["create_filter", { parentId: f.id, pattern: "Position reached axis=2 " }]] },
+    (req, res) => ({ content: "Filter " + res.create_filter[0].nodeId + " zeigt " + res.create_filter[0].matches + " Positionierungen." }),
+  ]);
+  const chatFn = fake.chat;
+  fake.chat = (...a) => chatFn(...a);
+  T.llmTransportOverride = fake;
+  const input = cd.getElementById("chatInput");
+  input.value = "Nur Achse 2 bitte";
+  input.dispatchEvent(new cw.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  assert(chat.sent.some(m => m.type === "send" && m.text === "Nur Achse 2 bitte") && input.value === "", "Enter sends and clears the input");
+  assert(await waitFor(() => cd.querySelectorAll(".round .msg-text").length === 1 && !cw.philoggChatView.snapshot.running), "the answer arrives by pull");
+  const round = T.llm.sessions[0].rounds[0];
+  const nodeId = round.created[0];
+  assert(cd.querySelector(".msg-user").textContent === "Nur Achse 2 bitte" && cd.querySelector(".msg-tool").textContent.includes("create_filter → " + nodeId), "user message and the tool step");
+  const link = cd.querySelector('.msg-text a.ref[data-token="' + nodeId + '"]');
+  assert(link, "the node id in the answer is a link");
+  T.state.activeId = f.id;
+  link.click();
+  assert(await waitFor(() => T.state.activeId === nodeId), "clicking it activates the node in the main window");
+  assert(w.philogg.calls.some(c => c[1] === "focusMain"), "…and brings the main window forward");
+
+  const undoBtn = cd.querySelector("button.undo-round");
+  assert(undoBtn && !undoBtn.disabled, "undo-this-round button enabled");
+  undoBtn.click();
+  assert(await waitFor(() => !T.state.nodes[nodeId]), "it takes the round back");
+  assert(await waitFor(() => cd.querySelector("button.undo-round").disabled && cd.querySelector(".ref-gone")), "then the button is disabled and the reference greyed out");
+
+  // Stop while the model is still thinking; the streamed text shows meanwhile.
+  const fake2 = llmFakeModel([]);
+  let finishStream;
+  fake2.chat = (id, ep, req, onEvent) => new Promise((res, rej) => {
+    onEvent({ type: "chunk", data: { choices: [{ delta: { content: "Ich schaue …" } }] } });
+    fake2.pending = { id, rej };
+  });
+  fake2.cancel = id => fake2.pending && fake2.pending.rej(new Error("cancelled"));
+  T.llmTransportOverride = fake2;
+  input.value = "Und jetzt?";
+  cd.getElementById("chatSend").click();
+  assert(await waitFor(() => cd.getElementById("chatSend").textContent === "Stop"), "while running the button is Stop");
+  assert(await waitFor(() => (cd.querySelector(".msg-stream") || {}).textContent === "Ich schaue …"), "the streamed text is shown");
+  cd.getElementById("chatSend").click();
+  assert(await waitFor(() => (cd.querySelectorAll(".msg-status")[0] || {}).textContent === "Stopped."), "Stop → the round shows 'Stopped.'");
+  assert(cd.getElementById("chatSend").textContent === "Send", "back to Send");
+
+  // needsConfirm: the person built a filter under the round's node.
+  T.llmTransportOverride = llmFakeModel([
+    { calls: [["create_filter", { parentId: f.id, pattern: "Sensor T1" }]] }, { content: "ok" }]);
+  await w.llmSend("Sensor T1");
+  const r3 = T.llm.sessions[0].rounds[2];
+  const mine = w.createFilterNode(r3.created[0], "text", "temperature");
+  w.pushCreateUndo(mine);
+  await waitFor(() => cd.querySelectorAll("button.undo-round").length === 3);
+  let asked = 0;
+  cw.confirm = () => { asked++; return true; };
+  cd.querySelectorAll("button.undo-round")[2].click();
+  assert(await waitFor(() => !T.state.nodes[r3.created[0]]) && asked === 1 && chat.sent.some(m => m.type === "undoRound" && m.force), "asks first, then removes with force");
+
+  // The hint for reference files that aren't loaded.
+  w.deleteNode(f.id);
+  w.llmNotify();
+  assert(await waitFor(() => cd.getElementById("chatHint").textContent.includes(f.name)), "'refers to … — not loaded' hint");
+  chat.close();
+}, { philogg: llmDesktopStub() });
+
+await withApp(async (w, d, T) => {
+  section("304d. A lost 'changed' note heals on the next pull");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion"], entries: 300, seed: 1 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  await T.llm.ready;
+  let dropping = true;
+  const chat = openChatView(w, T, { drop: msg => dropping && msg.type === "changed" });
+  await waitFor(() => chat.cw.philoggChatView.snapshot);
+  T.llmTransportOverride = llmFakeModel([{ content: "eins" }, { content: "zwei" }]);
+  await w.llmSend("a");
+  await sleep(20);
+  assert(chat.cd.querySelectorAll(".round").length === 0, "every note of round 1 was lost: the view is stale");
+  dropping = false;
+  await w.llmSend("b");
+  assert(await waitFor(() => chat.cd.querySelectorAll(".round").length === 2), "the next note pulls the whole session — round 1 included");
+  assert(chat.cd.querySelectorAll(".msg-text")[0].textContent === "eins", "…with its content");
+  chat.close();
+}, { philogg: llmDesktopStub() });
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -38699,5 +38884,9 @@ process.exitCode = failed ? 1 : 0;
       model (reference scenario, streaming deltas, compaction, Stop, limit,
       errors), one undo step per round, "undo this round", sessions in
       IndexedDB, references across a simulated restart.
+   Group 304 — same session (phase 4): desktop/chat.html in jsdom wired to
+      the main window (pull snapshots, stream, refs, Stop, undo + confirm,
+      hint, lost-note healing), browser build without the assistant,
+      Settings → Assistant against a stubbed bridge.
    ============================================================ */
 

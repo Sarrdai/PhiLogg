@@ -155,3 +155,60 @@ Tests (GROUP 303) drive the loop with a scripted fake model
 the reference scenario (message types → question → link → extraction under
 the link → plot), compaction, Stop, limit, errors, undo per round, "undo this
 round", and references across a simulated restart.
+
+## Chat view (`desktop/chat.html`)
+
+A small standalone page, packaged next to `philogg.html`
+(`tauri.conf.json` → `bundle.resources`) and served as
+`philogg://app/chat.html` (`protocol.rs`). Not a mode of `philogg.html`:
+that file has no central init to suppress, and a second app instance that
+touches the session cache is exactly the failure to avoid. It is a **thin
+view**:
+
+- It renders the snapshot it **pulls** (`{type:"getSnapshot"}` →
+  `llmSnapshot()`): session title and reference files, rounds (the person's
+  message, one line per tool step, answer texts with a minimal "- " list
+  rendering, round status), the resolved references, per-round undo state,
+  whether a round runs, the main window's theme variables (applied as CSS
+  variables) and `features` (controls the main window supports — the view
+  hides the rest). The main window only ever sends `{type:"changed"}`
+  (version bump) and the view answers with a pull, so a missed note heals on
+  the next one. `{type:"stream", text}` (the answer being typed) is the one
+  push, and cosmetic.
+- It sends commands: `send`, `stop`, `undoRound` (+ `force` after the
+  confirm the main window asks for with `{type:"undoResult", needsConfirm}`),
+  `reveal` (a clicked reference), `setAlwaysOnTop`, `openSettings`.
+  `llmHandleViewMessage(msg, reply)` handles them in the main window.
+- Transport (`chatTransport`): a preset `window.philoggChatTransport` (the
+  regression suite), `postMessage` when docked as an `<iframe>` (below), or —
+  in its own window — the Tauri commands `llm_view_to_main` (Rust evals
+  `window.philoggLlmViewMessage(msg)` in the main window) and
+  `llm_main_to_view` (evals `window.philoggChatReceive(msg)` in the chat
+  window; `window.philogg.llmViewNotify`).
+
+**The window** (`windows.rs` → `show_chat`/`hide_chat`/`set_chat_on_top`,
+command `llm_chat_window(action, on)`, bridge `window.philogg.llmChatWindow`):
+created on first use from an `async` command (the precaution PiP takes
+against tauri-apps/wry#583), as an **owned** window (`parent` = main): it
+floats above PhiLogg and minimizes with it but doesn't cover other programs.
+"Always on top" (📌 in the chat) switches to global `set_always_on_top` and
+is remembered (`philogg-llm-chat-on-top`). The X only **hides** it
+(`CloseRequested` → `prevent_close`); the toolbar button (`#btnAssistant`,
+with an activity dot while a round runs) shows it again. Hiding stores the
+geometry in the main page's localStorage (`philogg-llm-chat-geometry`, so
+`settings.json` via the mirror), and the next creation restores it. The
+chat window uses the same WebView2 data directory as the main window.
+Closing or hiding it never stops a running round — the loop lives in the
+main window.
+
+**Settings → Assistant** (`#settingsSectionLlm`, `initLlmAssistantUi`, shown
+only with `llmAvailable()`): server URL (`philogg-llm-endpoint`, default
+`http://localhost:1234/v1`), model (dropdown from `llmModels`, "Server
+default" = omit `model`), temperature (0–2, default 0.2), turn limit (1–50,
+default 12), connection test (the bridge's error text on failure).
+
+Tests: GROUP 304 loads `chat.html` in its own jsdom window and connects it
+to the real main window through a transport that relays JSON the way Rust
+does (pull, stream, references, Stop, undo + confirm, the "not loaded" hint,
+a lost note healing); plus the browser build without any trace of the
+assistant and the Settings section against a stubbed bridge.
