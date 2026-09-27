@@ -515,3 +515,104 @@ pub async fn pip_minimize(app: AppHandle) {
         let _ = window.minimize();
     }
 }
+
+/// LLM assistant (`docs/llm-assistant.md`): the model list of the local
+/// OpenAI-compatible server behind `base_url` (LM Studio's `/v1/models`).
+/// `philogg-llm` refuses anything but a loopback URL.
+#[tauri::command]
+pub async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || philogg_llm::list_models(&base_url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// LLM assistant: one chat-completions request (`request` is the page's own
+/// OpenAI-shaped JSON, normally streaming). Every SSE chunk reaches the page
+/// as `{type: "chunk", data}` over `on_event`, a non-streamed answer as
+/// `{type: "message", data}`; the page assembles text and tool calls itself.
+/// Resolves once the answer is complete, rejects with the reason otherwise
+/// (unreachable server, HTTP error, dropped connection, "cancelled").
+/// `request_id` is the page's own id, the handle `llm_cancel` takes.
+#[tauri::command]
+pub async fn llm_chat(
+    app: AppHandle,
+    request_id: String,
+    base_url: String,
+    request: serde_json::Value,
+    on_event: Channel,
+) -> Result<(), String> {
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    app.state::<AppState>()
+        .llm_requests
+        .lock()
+        .expect("llm_requests poisoned")
+        .insert(request_id.clone(), cancel.clone());
+    let body = request.to_string();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        philogg_llm::stream_chat(&base_url, &body, &cancel, &mut |event| {
+            let (kind, data) = match event {
+                philogg_llm::ChatEvent::Chunk(d) => ("chunk", d),
+                philogg_llm::ChatEvent::Message(d) => ("message", d),
+            };
+            // The payload is JSON text from the server; one that doesn't
+            // parse travels as a string so the page can report it.
+            let data: serde_json::Value = serde_json::from_str(&data).unwrap_or(serde_json::Value::String(data));
+            let msg = serde_json::json!({ "type": kind, "data": data }).to_string();
+            on_event.send(InvokeResponseBody::Json(msg)).map_err(|e| e.to_string())
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())
+    .and_then(|r| r);
+    app.state::<AppState>()
+        .llm_requests
+        .lock()
+        .expect("llm_requests poisoned")
+        .remove(&request_id);
+    result
+}
+
+/// LLM assistant: the chat's Stop button. The request's socket read notices
+/// within ~200 ms (`philogg-llm`'s poll interval) and drops the connection,
+/// which also stops the server's generation.
+#[tauri::command]
+pub fn llm_cancel(request_id: String, state: State<'_, AppState>) {
+    if let Some(flag) = state.llm_requests.lock().expect("llm_requests poisoned").get(&request_id) {
+        flag.store(true, Ordering::Relaxed);
+    }
+}
+
+/// The LLM assistant's chat window (`windows.rs`): `"show"` (create on first
+/// use, else show + focus), `"hide"`, `"alwaysOnTop"` with `on`, and
+/// `"focusMain"` (a reference clicked in the chat brings the log forward).
+/// `async` so the window is built off the IPC callback's stack — the same
+/// precaution `pip_enter` takes (tauri-apps/wry#583 deadlocked a window
+/// created from a synchronous command on Windows).
+#[tauri::command]
+pub async fn llm_chat_window(app: AppHandle, action: String, on: Option<bool>) {
+    match action.as_str() {
+        "show" => windows::show_chat(&app),
+        "hide" => windows::hide_chat(&app),
+        "alwaysOnTop" => windows::set_chat_on_top(&app, on.unwrap_or(false)),
+        "focusMain" => windows::focus_main(&app),
+        _ => {}
+    }
+}
+
+/// Chat window → main window: the chat is a thin view, every command it
+/// sends is handled by philogg.html's `philoggLlmViewMessage`.
+#[tauri::command]
+pub fn llm_view_to_main(app: AppHandle, msg: serde_json::Value) {
+    if let Some(main) = app.get_webview_window(windows::MAIN) {
+        let _ = main.eval(&format!("window.philoggLlmViewMessage && window.philoggLlmViewMessage({msg})"));
+    }
+}
+
+/// Main window → chat window (a snapshot, a "changed" note, streamed text).
+/// A no-op while the chat window doesn't exist.
+#[tauri::command]
+pub fn llm_main_to_view(app: AppHandle, msg: serde_json::Value) {
+    if let Some(chat) = app.get_webview_window(windows::CHAT) {
+        let _ = chat.eval(&format!("window.philoggChatReceive && window.philoggChatReceive({msg})"));
+    }
+}

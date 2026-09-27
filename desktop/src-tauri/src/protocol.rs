@@ -37,6 +37,12 @@ pub fn base_url() -> &'static str {
     }
 }
 
+/// The LLM assistant's chat window page. `?mac=1` tells it to leave room
+/// for the native traffic lights instead of drawing its own window controls.
+pub fn chat_url() -> String {
+    format!("{}app/chat.html{}", base_url(), if cfg!(target_os = "macos") { "?mac=1" } else { "" })
+}
+
 pub fn app_url(query: Option<&str>) -> String {
     match query {
         Some(q) => format!("{}app/philogg.html?{}", base_url(), q),
@@ -191,6 +197,7 @@ pub fn handle<R: tauri::Runtime>(
         let response = match parts.first().map(String::as_str) {
             Some("app") => match parts.get(1).map(String::as_str) {
                 None | Some("philogg.html") => read(&state.html_path, "text/html; charset=utf-8"),
+                Some("chat.html") => read(&state.chat_html_path, "text/html; charset=utf-8"),
                 Some(_) => text(404, "Not found"),
             },
             Some("local") => match parts.get(1).and_then(|id| state.local_file(id)) {

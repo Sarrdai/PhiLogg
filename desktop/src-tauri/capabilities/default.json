@@ -2,6 +2,6 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "The wrapper's own #[tauri::command]s need no ACL entry (only plugin/core commands do), and every plugin it uses (opener, single-instance) is driven from Rust, never from the page. So this grants nothing but the core IPC the injected script needs to reach those commands at all, plus core:window:allow-start-dragging: Tauri's own drag-region handling (the mousedown listener core injects into every window, see inject.js's module comment) calls that command directly, and it is deliberately NOT part of core:window's default set (unlike e.g. allow-internal-toggle-maximize, which is) — without it, clicking #toolbar's drag region is silently a no-op and the window cannot be moved at all.",
-  "windows": ["main"],
+  "windows": ["main", "chat"],
   "permissions": ["core:default", "core:window:allow-start-dragging"]
 }

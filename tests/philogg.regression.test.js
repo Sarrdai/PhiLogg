@@ -333,6 +333,10 @@ async function withApp(run, opts = {}) {
       set fmFolderId(v) { fmFolderId = v; },
       // Format setup wizard (GROUP 261).
       get fwz() { return fwz; },
+      // LLM assistant (GROUP 302+).
+      get llmCreatedNodeIds() { return llmCreatedNodeIds; },
+      get llm() { return llm; },
+      set llmTransportOverride(v) { llmTransportOverride = v; },
 
 
     };
@@ -9256,11 +9260,13 @@ await withApp(async (w, d, T) => {
   // nav item/section stay in the DOM even without window.philogg (this
   // suite's jsdom environment has none, same as a plain browser build), just
   // hidden via .hidden (see initIdeIntegration), so it still counts here.
+  // GROUP 304 added "Assistant" (the LLM assistant, desktop build only) the
+  // same way — present, hidden here.
   const navItems = [...d.querySelectorAll("#settingsNav .settings-nav-item")];
-  assert(navItems.length === 6, "the section nav lists exactly the six sections, got " + navItems.length);
+  assert(navItems.length === 7, "the section nav lists exactly the seven sections, got " + navItems.length);
   const targets = navItems.map(b => b.dataset.navTarget);
   assert(targets.includes("settingsSectionAppearance") && targets.includes("settingsSectionBehavior") &&
-    targets.includes("settingsSectionIde") && targets.includes("settingsSectionFormats") &&
+    targets.includes("settingsSectionIde") && targets.includes("settingsSectionLlm") && targets.includes("settingsSectionFormats") &&
     targets.includes("settingsSectionShortcuts") && targets.includes("settingsSectionLicense"),
     "nav items point at Appearance/Behavior/IDE Integration/Log Formats/Shortcuts/License, got " + JSON.stringify(targets));
   assert(targets[targets.length - 1] === "settingsSectionLicense", "License is always the last section in the list");
@@ -33938,6 +33944,853 @@ await withApp(async (w, d, T) => {
   assert(msgEl.textContent === ep.raw && ep.raw === pl.text.split("\n")[3], "plain text: Raw is the line itself");
 });
 
+/* ============================================================
+   GROUP 302 — LLM assistant, phase 1 (docs/llm-assistant-plan.md): the
+   tool registry (runLlmTool/LLM_TOOLS) the local LLM operates PhiLogg
+   through — overview, message types with per-placeholder value
+   distributions, filter/link creation with previews and error texts,
+   entries, value statistics, views/plots, bookmarks/notes, the result
+   budget. Sample data from tools/log-sim (motion, sensors, ids).
+   ============================================================ */
+group(302);
+async function llmSimFile(w, scenarios, entries, seed) {
+  const [file] = LOGSIM.generateToStrings({ scenarios, entries, seed });
+  return w.addFile(file.name, file.text, () => {});
+}
+const llmRun = (w, name, args) => w.runLlmTool(name, args === undefined ? {} : args);
+
+await withApp(async (w, d, T) => {
+  section("302a. get_overview + find_message_types with value distributions");
+  const f = await llmSimFile(w, ["motion", "sensors"], 2000, 3);
+  const ov = llmRun(w, "get_overview").result;
+  assert(ov.files.length === 1 && ov.files[0].id === f.id && ov.files[0].entries === 2000 && ov.files[0].from && ov.files[0].to, "overview lists the file with count and time span");
+  assert(ov.tree.length === 1 && ov.tree[0].id === f.id && ov.tree[0].count === 2000, "overview's tree starts at the file");
+  const r = llmRun(w, "find_message_types", { query: "position reached" }).result;
+  assert(r.types.length === 1 && /^Position reached axis=<#> actual=<#> job=J-<#>$/.test(r.types[0].type), "one 'Position reached' type, got " + JSON.stringify(r.types.map(t => t.type)));
+  const reached = f.entries.filter(e => e.message.startsWith("Position reached")).length;
+  const t = r.types[0];
+  assert(t.count === reached, "its count is every 'Position reached' entry (" + reached + "), got " + t.count);
+  assert(t.pattern === "Position reached axis=[*:int] actual=[*:float] job=J-[*:int]", "a ready-made typed extraction pattern, got " + t.pattern);
+  const axes = Object.keys(t.placeholders[0].values || {}).sort();
+  assert(axes.length >= 3 && axes.length <= 4 && axes.every(a => /^[1-4]$/.test(a)), "axis placeholder: few distinct values listed with counts, got " + JSON.stringify(t.placeholders[0]));
+  assert(Object.values(t.placeholders[0].values).reduce((s, n) => s + n, 0) === reached, "the value counts add up to the type's count");
+  assert(t.placeholders[1].distinct === ">10" && t.placeholders[1].min < t.placeholders[1].max, "actual=: many values → numeric range, got " + JSON.stringify(t.placeholders[1]));
+  assert(t.example && /^e\d+$/.test(t.example.id) && t.example.message.startsWith("Position reached"), "an example entry with its id");
+  const sens = llmRun(w, "find_message_types", { query: "temperature" }).result.types[0];
+  assert(sens && Object.keys(sens.placeholders[0].values).every(v => /^[123]$/.test(v)), "sensor name T<#>: values 1-3, got " + JSON.stringify(sens && sens.placeholders[0]));
+  const all = llmRun(w, "find_message_types", { limit: 2 }).result;
+  assert(all.types.length === 2 && all.typesFound >= 3 && all.types[0].count >= all.types[1].count, "limit + most frequent first");
+  assert(llmRun(w, "find_message_types", { nodeId: "n999999" }).error.includes("Unknown node"), "unknown node id → error text");
+  const narrow = w.createFilterNode(f.id, "text", "Move requested");
+  assert(T.state.activeId === narrow.id && llmRun(w, "find_message_types", { query: "temperature" }).result.nodeId === f.id, "without nodeId it searches the active node's whole file, not the selected filter");
+  assert(llmRun(w, "create_filter", { pattern: "Sensor T2" }).result.parentId === f.id, "create_filter without parentId goes under the file too");
+  assert(llmRun(w, "get_entries", {}).result.nodeId !== f.id, "get_entries without nodeId reads the active node");
+  assert(w.messagePatternValues('Job "a b" took 12 ms at 10.0.0.1:80').join("|") === "a b|12|10.0.0.1:80", "messagePatternValues: quoted content, number, ip in placeholder order");
+});
+
+await withApp(async (w, d, T) => {
+  section("302b. create_filter: extraction preview, errors, assistant marker");
+  const f = await llmSimFile(w, ["motion", "sensors"], 1500, 4);
+  const pat = "Position reached axis=[*:int] actual=[*:float] job=[*]";
+  const res = llmRun(w, "create_filter", { parentId: f.id, pattern: pat });
+  const c = res.result;
+  const expect = f.entries.filter(e => e.message.startsWith("Position reached")).length;
+  assert(!res.error && /^n\d+$/.test(c.nodeId) && c.matches === expect && c.of === 1500, "extraction filter created with its match count");
+  assert(c.columns.length === 3 && c.columns[0].type === "int" && c.columns[1].type === "float" && c.sampleValues.length === 5 && /^[1-4]$/.test(c.sampleValues[0][0]), "columns + sample values");
+  assert(c.examples.length === 4 && T.state.activeId === c.nodeId, "examples, and the new node is active");
+  assert(T.llmCreatedNodeIds.has(c.nodeId), "marked as created by the assistant");
+  w.render();
+  const row = d.querySelector('.tree-row[data-node-id="' + c.nodeId + '"]');
+  assert(row && row.querySelector(".tree-llm-mark"), "the tree row carries the ✦ marker");
+  assert(!d.querySelector('.tree-row[data-node-id="' + f.id + '"] .tree-llm-mark'), "a node the person made (the file) has none");
+  const zero = llmRun(w, "create_filter", { parentId: f.id, pattern: "no such text anywhere" }).result;
+  assert(zero.matches === 0 && zero.hint, "no match → a hint instead of silence");
+  const before = Object.keys(T.state.nodes).length;
+  assert(llmRun(w, "create_filter", { parentId: f.id, pattern: "(", mode: "regex" }).error.startsWith("Invalid regex"), "bad regex → error text");
+  assert(llmRun(w, "create_filter", { parentId: f.id, pattern: "x=[*:word>3]" }).error.startsWith("Invalid extraction pattern"), "condition on a word placeholder → error text");
+  assert(llmRun(w, "create_filter", { parentId: f.id, pattern: pat, invert: true }).error.includes("inverted"), "inverted extraction refused");
+  assert(llmRun(w, "create_filter", { parentId: f.id, pattern: "  " }).error, "empty pattern refused");
+  assert(llmRun(w, "create_filter", { parentId: "n424242", pattern: "x" }).error.includes("Unknown parent"), "unknown parent refused");
+  assert(Object.keys(T.state.nodes).length === before, "no node is created on an error");
+  const inv = llmRun(w, "create_filter", { parentId: f.id, pattern: "Sensor", invert: true }).result;
+  assert(T.state.nodes[inv.nodeId].inverted && inv.matches === 1500 - f.entries.filter(e => e.message.includes("Sensor")).length, "invert: NOT filter");
+  const rx = llmRun(w, "create_filter", { parentId: f.id, pattern: "Move requested axis=[12] ", mode: "regex" }).result;
+  assert(T.state.nodes[rx.nodeId].isRegex && rx.matches > 0 && rx.examples.every(e => /Move requested axis=[12] /.test(e.message)), "regex mode");
+  const bad = w.runLlmTool("create_filter", "{not json");
+  assert(bad.error.startsWith("Arguments are not valid JSON"), "raw JSON arguments that don't parse → error text");
+  assert(w.runLlmTool("nope", {}).error.startsWith("Unknown tool"), "unknown tool → error text");
+  assert(w.runLlmTool("create_filter", JSON.stringify({ parentId: f.id, pattern: "Sensor T2" })).result.matches > 0, "raw JSON arguments are parsed");
+});
+
+await withApp(async (w, d, T) => {
+  section("302c. Reference scenario: link, values after the link, stats, plot");
+  const f = await llmSimFile(w, ["motion", "sensors"], 3000, 5);
+  const reached = llmRun(w, "create_filter", { parentId: f.id, pattern: "Position reached axis=2 " }).result;
+  const temp = llmRun(w, "create_filter", { parentId: f.id, pattern: "Sensor T1 temperature=[*:float]" }).result;
+  const link = llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, direction: "after" });
+  const l = link.result;
+  assert(!link.error && l.pairs > 0 && l.pairs <= reached.matches && l.references === reached.matches && l.unpaired === reached.matches - l.pairs, "link: pairs, references, unpaired");
+  assert(l.dtMs && l.dtMs.min <= l.dtMs.median && l.dtMs.median <= l.dtMs.max, "Δt min/median/max");
+  assert(T.state.nodes[l.nodeId].filterType === "link" && T.state.nodes[l.nodeId].linkDirection === "after", "a real link node");
+  const vals = llmRun(w, "create_filter", { parentId: l.nodeId, pattern: "temperature=[*:float]" }).result;
+  assert(vals.matches === l.pairs && vals.columns.length === 1, "an extraction under the link tabulates the paired temperature");
+  const st = llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "1" }).result;
+  assert(st.n === l.pairs && st.min <= st.p10 && st.p10 <= st.median && st.median <= st.p90 && st.p90 <= st.max, "value stats: ordered percentiles, got " + JSON.stringify(st));
+  assert(llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "value" }).result.n === st.n, "column by name");
+  const unknownCol = llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "7" });
+  assert(unknownCol.error && unknownCol.result.columns.length === 1, "unknown column → error + the column list");
+  assert(llmRun(w, "get_value_stats", { nodeId: reached.nodeId }).error.includes("no extraction pattern"), "stats need an extraction");
+  const sv = llmRun(w, "show_view", { nodeId: vals.nodeId, view: "plot", plot: { type: "line", x: "time", y: "1" } });
+  assert(!sv.error && T.fhActiveTab === "plot" && T.state.activeId === vals.nodeId, "show_view opens the plot on the node");
+  assert(T.state.nodes[vals.nodeId].plotConfig.xCol === -1 && T.state.nodes[vals.nodeId].plotConfig.yCols.join() === "0", "plot axes set through sanitizePlotConfig, got " + JSON.stringify(T.state.nodes[vals.nodeId].plotConfig));
+  assert(llmRun(w, "show_view", { nodeId: reached.nodeId, view: "table" }).error.includes("extraction"), "table on a non-extraction node refused");
+  assert(llmRun(w, "show_view", { nodeId: vals.nodeId, view: "plot", plot: { y: "nope" } }).error, "unknown plot column refused");
+  llmRun(w, "show_view", { nodeId: reached.nodeId, view: "filtered" });
+  assert(T.fhActiveTab === "filter" && T.state.activeId === reached.nodeId, "filtered view");
+  assert(llmRun(w, "create_link", { refId: f.id, targetId: temp.nodeId }).error.includes("filter nodes"), "a file can't be a link side");
+  assert(llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, key: "no key here" }).error.startsWith("key must be"), "bad correlation key refused");
+  const keyed = llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, key: "thread" }).result;
+  assert(T.state.nodes[keyed.nodeId].linkKey.column === "thread", "key by column");
+  const dt = llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, maxDtMs: 200 }).result;
+  assert(T.state.nodes[dt.nodeId].linkDt.op === "<" && dt.pairs <= l.pairs, "maxDtMs → Δt condition");
+});
+
+await withApp(async (w, d, T) => {
+  section("302d. get_entries, annotate, result budget");
+  const f = await llmSimFile(w, ["ids", "motion"], 1200, 6);
+  const ge = llmRun(w, "get_entries", { nodeId: f.id, from: 5, max: 99 }).result;
+  assert(ge.total === 1200 && ge.from === 5 && ge.entries.length === 20 && ge.entries[0].id === f.entries[5].id, "get_entries: capped at 20, from offset");
+  assert(ge.entries.every(e => e.message.length <= 201), "messages shortened");
+  const ids = [f.entries[1].id, f.entries[2].id];
+  T.state.notes.set(ids[1], "my own note");
+  const an = llmRun(w, "annotate", { entryIds: ids, note: "axis 2 overshoot", bookmark: true }).result;
+  assert(an.bookmarked === 2 && an.noted === 2 && T.state.bookmarks.has(ids[0]) && T.state.bookmarks.has(ids[1]), "bookmarks set");
+  assert(T.state.notes.get(ids[0]) === "axis 2 overshoot" && T.state.notes.get(ids[1]) === "my own note\naxis 2 overshoot", "a note is added, the person's own note kept and extended");
+  llmRun(w, "annotate", { entryIds: ids, bookmark: true });
+  assert(T.state.bookmarks.has(ids[0]), "bookmark: true never toggles an existing bookmark off");
+  assert(llmRun(w, "annotate", { entryIds: ["e99999999"], bookmark: true }).error.includes("Unknown entry"), "unknown entry id refused");
+  assert(llmRun(w, "annotate", { entryIds: ids }).error.startsWith("Nothing to do"), "neither note nor bookmark refused");
+  const big = llmRun(w, "find_message_types", { nodeId: f.id, limit: 40 });
+  assert(big.text.length <= 6000, "every result fits the budget (" + big.text.length + " chars)");
+  const obj = { rows: Array.from({ length: 500 }, (_, i) => ({ i, text: "x".repeat(40) })) };
+  const txt = w.llmFitBudget(obj, 2000);
+  const back = JSON.parse(txt);
+  assert(txt.length <= 2000 && back.truncated === true && back.rows.length > 5 && back.rows.length < 500, "llmFitBudget halves the largest array and says so");
+  assert(w.llmFitBudget({ s: "y".repeat(5000) }, 1000).length <= 1000, "a single huge value is cut as text");
+  assert(w.llmToolSpecs().length === 8 && w.llmToolSpecs().every(s => s.type === "function" && s.function.parameters.type === "object"), "eight tools in the OpenAI tools shape");
+});
+
+/* ============================================================
+   GROUP 303 — LLM assistant, phase 3: the agent loop and sessions,
+   driven by a scripted fake model (no LM Studio): the reference scenario
+   (message types → question → link → plot), streamed text/tool-call
+   deltas, one undo step per round, history compaction, Stop, the turn
+   limit and errors, "undo this round" on top of the undo stack and after
+   further actions, references resolved after a simulated restart and with
+   the file gone. Sample data from tools/log-sim (motion, sensors).
+   ============================================================ */
+group(303);
+// A scripted chat-completions model. Each turn is an answer object
+// { content?, calls?: [[name, args], ...] } or a function(request, ctx) →
+// answer, or "hang" (never answers until cancelled). Answers are streamed
+// the way LM Studio does: content in two deltas, each tool call as a first
+// delta with id+name+half the arguments and a second with the rest.
+function llmFakeModel(script) {
+  const fake = { requests: [], cancelled: [], pending: null };
+  fake.chat = (requestId, endpoint, request, onEvent) => {
+    fake.requests.push(JSON.parse(JSON.stringify(request)));
+    fake.endpoint = endpoint;
+    const turn = script.shift();
+    if (!turn) return Promise.reject(new Error("fake model: script exhausted"));
+    if (turn === "hang") return new Promise((res, rej) => { fake.pending = { requestId, rej }; });
+    if (turn.fail) return Promise.reject(new Error(turn.fail));
+    const ans = typeof turn === "function" ? turn(request, llmToolResults(request)) : turn;
+    const chunk = delta => onEvent({ type: "chunk", data: { choices: [{ index: 0, delta }] } });
+    if (ans.content) {
+      const h = Math.ceil(ans.content.length / 2);
+      chunk({ role: "assistant", content: ans.content.slice(0, h) });
+      chunk({ content: ans.content.slice(h) });
+    }
+    (ans.calls || []).forEach(([name, args], i) => {
+      const a = JSON.stringify(args), h = Math.ceil(a.length / 2);
+      chunk({ tool_calls: [{ index: i, id: "c" + fake.requests.length + "_" + i, type: "function", function: { name, arguments: a.slice(0, h) } }] });
+      chunk({ tool_calls: [{ index: i, function: { arguments: a.slice(h) } }] });
+    });
+    onEvent({ type: "chunk", data: { choices: [{ index: 0, delta: {}, finish_reason: ans.calls ? "tool_calls" : "stop" }] } });
+    return Promise.resolve();
+  };
+  fake.cancel = requestId => { fake.cancelled.push(requestId); if (fake.pending) fake.pending.rej(new Error("cancelled")); };
+  return fake;
+}
+// name -> [parsed results], from the tool messages of a request (in order).
+function llmToolResults(request) {
+  const names = {};
+  request.messages.forEach(m => (m.tool_calls || []).forEach(tc => { names[tc.id] = tc.function.name; }));
+  const out = {};
+  request.messages.filter(m => m.role === "tool").forEach(m => {
+    let v; try { v = JSON.parse(m.content); } catch (e) { v = m.content; }
+    (out[names[m.tool_call_id]] = out[names[m.tool_call_id]] || []).push(v);
+  });
+  return out;
+}
+const llmLast = (res, name) => res[name][res[name].length - 1];
+
+await withApp(async (w, d, T) => {
+  section("303a. Reference scenario with a fake model: types → question → link → plot");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion", "sensors"], entries: 3000, seed: 5 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  T.resetUndoRedo();
+  const streamed = [];
+  T.llm.views.add(msg => { if (msg.type === "stream") streamed.push(msg.text); });
+  const fake = llmFakeModel([
+    { calls: [["get_overview", {}], ["find_message_types", { query: "position reached" }]] },
+    (req, res) => ({ calls: [
+      ["create_filter", { parentId: llmLast(res, "get_overview").files[0].id, pattern: llmLast(res, "find_message_types").types[0].pattern }],
+      ["create_filter", { parentId: llmLast(res, "get_overview").files[0].id, pattern: "Sensor T1 temperature=[*:float]" }],
+    ] }),
+    { content: "Welche Achse ist gemeint?\n- 1\n- 2\n- 3\n- 4" },
+    // round 2
+    (req, res) => ({ calls: [["create_filter", { parentId: llmLast(res, "get_overview").files[0].id, pattern: "Position reached axis=2 " }]] }),
+    (req, res) => ({ calls: [["create_link", { refId: llmLast(res, "create_filter").nodeId, targetId: res.create_filter[1].nodeId, direction: "after" }]] }),
+    (req, res) => ({ calls: [["create_filter", { parentId: llmLast(res, "create_link").nodeId, pattern: "temperature=[*:float]" }]] }),
+    (req, res) => ({ calls: [["show_view", { nodeId: llmLast(res, "create_filter").nodeId, view: "plot", plot: { type: "line", x: "time", y: "1" } }]] }),
+    (req, res) => ({ content: "Link-Filter " + llmLast(res, "create_link").nodeId + " paart jede Positionierung von Achse 2 mit der nächsten Temperatur; der Plot liegt in " + llmLast(res, "show_view").nodeId + "." }),
+    // round 3
+    { content: "<think>kurz</think>Gern." },
+  ]);
+  T.llmTransportOverride = fake;
+  const r1 = await w.llmSend("Mich interessiert der Temperaturwert nach jeder Positionierung.");
+  const req1 = fake.requests[0];
+  assert(req1.messages[0].role === "system" && req1.messages[0].content.includes("[*:float]") && req1.messages[1].content.startsWith("Mich interessiert"), "request: system prompt, then the person's message");
+  assert(req1.tools.length === 8 && req1.stream === true && req1.temperature === 0.2 && !("model" in req1), "request: 8 tools, streaming, default temperature, no model when none is chosen");
+  assert(fake.endpoint === "http://localhost:1234/v1", "default endpoint");
+  assert(r1.status === "done" && r1.created.length === 2, "round 1 done, two filters created (streamed tool-call deltas assembled), got " + r1.status + "/" + r1.error);
+  assert(r1.items.filter(i => i.kind === "tool").length === 4 && r1.items[r1.items.length - 1].text.startsWith("Welche Achse"), "round 1: four tool steps, then the question");
+  assert(streamed.some(t => t === "Welche Achse ist gemeint?\n- 1\n- 2\n- 3\n- 4") && streamed.some(t => t.length < 25), "the answer was streamed to views in pieces");
+  const sess = T.llm.sessions[0];
+  assert(sess.title.startsWith("Mich interessiert"), "session titled from the first question");
+  const created1 = r1.created.map(id => T.state.nodes[id]);
+  assert(created1.every(n => n && n.parentId === f.id) && created1.every(n => T.llmCreatedNodeIds.has(n.id)), "round-1 nodes are in the tree, marked");
+  assert(T.undoStack.length === 1 && T.undoStack[0].kind === "batch" && T.undoStack[0].actions.length === 2, "one undo step (batch) for the round");
+
+  const r2 = await w.llmSend("Achse 2, reached.");
+  assert(r2.status === "done" && r2.created.length === 3, "round 2: filter, link, extraction under the link — got " + r2.status + " " + r2.error);
+  const link = T.state.nodes[r2.created[1]], plotNode = T.state.nodes[r2.created[2]];
+  assert(link.filterType === "link" && plotNode.parentId === link.id && T.state.activeId === plotNode.id && T.fhActiveTab === "plot", "link → temperature extraction, plot on screen");
+  assert(T.undoStack.length === 2 && T.undoStack[1].actions.length === 3, "one more undo step, three creates");
+  const r2req1 = fake.requests[3];
+  const toolMsgs = r2req1.messages.filter(m => m.role === "tool");
+  assert(toolMsgs.length === 4 && toolMsgs.every(m => m.content.startsWith("{")), "round 2's first request still carries round 1's tool results verbatim");
+  assert(r2.refs[link.id] && r2.refs[link.id].kind === "node" && r2.refs[plotNode.id], "the answer's node ids became references");
+  assert(sess.files.length === 1 && sess.files[0].name === f.name && sess.files[0].key === f.cacheKey, "the file became the session's reference file");
+
+  const r3 = await w.llmSend("Danke");
+  const r3req = fake.requests[fake.requests.length - 1];
+  const r3tools = r3req.messages.filter(m => m.role === "tool");
+  const round1Tools = r3tools.slice(0, 4), round2Tools = r3tools.slice(4);
+  assert(round1Tools.every(m => !m.content.startsWith("{")) && round1Tools[2].content.startsWith("create_filter → n"), "compaction: round 1's tool results became one-liners, got " + round1Tools.map(m => m.content.slice(0, 40)).join(" | "));
+  assert(round2Tools.length === 4 && round2Tools.every(m => m.content.startsWith("{")), "the previous round stays verbatim");
+  assert(r3req.messages[0].content === req1.messages[0].content, "the system prompt never changes (prompt cache)");
+  assert(r3.items[0].text === "Gern." && sess.history[sess.history.length - 1].content === "Gern.", "<think> blocks are dropped");
+  assert(T.undoStack.length === 2, "a round without creations adds no undo step");
+
+  const snap = w.llmSnapshot();
+  assert(snap.session.rounds.length === 3 && snap.session.rounds[1].undo === "available" && snap.session.refs[r2.id + ":" + link.id].state === "link", "snapshot: rounds, undo state, resolved references");
+  w.undo();
+  assert(r2.created.every(id => !T.state.nodes[id]) && r1.created.every(id => T.state.nodes[id]), "Ctrl+Z takes back exactly round 2");
+  const snap2 = w.llmSnapshot();
+  assert(snap2.session.refs[r2.id + ":" + link.id].state === "gone" && snap2.session.rounds[1].undo === "none", "a deleted node's reference greys out; nothing left to undo");
+  w.redo();
+  assert(r2.created.every(id => T.state.nodes[id]) && T.state.nodes[link.id].filterType === "link", "redo restores the round under the same ids");
+  assert(w.llmRevealRef(r2.id, plotNode.id) && T.state.activeId === plotNode.id, "clicking a node reference activates it");
+});
+
+await withApp(async (w, d, T) => {
+  section("303b. Stop mid-round, the turn limit, transport errors, history healing");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion"], entries: 500, seed: 2 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  T.resetUndoRedo();
+  const fake = llmFakeModel([{ calls: [["create_filter", { parentId: f.id, pattern: "Move requested" }]] }, "hang"]);
+  T.llmTransportOverride = fake;
+  const p = w.llmSend("Zeig mir die Bewegungen");
+  assert(await waitFor(() => fake.pending), "second model turn is waiting");
+  assert(T.llm.running && w.llmSnapshot().running === true, "running shows in the snapshot");
+  assert(w.llmUndoRound(T.llm.running.roundId).reason === "running", "a running round can't be undone");
+  w.llmStop();
+  const r = await p;
+  assert(r.status === "stopped" && fake.cancelled[0] === fake.pending.requestId, "Stop cancels the request through the bridge and marks the round stopped");
+  assert(r.created.length === 1 && T.state.nodes[r.created[0]], "no automatic rollback: the filter made before Stop stays");
+  assert(T.undoStack.length === 1 && T.undoStack[0].kind === "batch", "…and is one undo step");
+  assert(!T.llm.running, "not running any more");
+
+  const s = { history: [
+    { role: "user", content: "x", round: 0 },
+    { role: "assistant", content: "", round: 0, tool_calls: [{ id: "a", type: "function", function: { name: "get_overview", arguments: "{}" } }, { id: "b", type: "function", function: { name: "get_entries", arguments: "{}" } }] },
+    { role: "tool", tool_call_id: "a", content: "{}", summary: "s", round: 0 },
+  ] };
+  w.llmHealHistory(s);
+  assert(s.history.length === 4 && s.history[3].tool_call_id === "b" && s.history[3].content.includes("Cancelled"), "an unanswered tool call gets a 'cancelled' answer right after its siblings");
+
+  w.localStorage.setItem("philogg-llm-max-turns", "2");
+  T.llmTransportOverride = llmFakeModel([{ calls: [["get_overview", {}]] }, { calls: [["get_overview", {}]] }]);
+  const lim = await w.llmSend("loop");
+  assert(lim.status === "limit" && /2 model turns/.test(lim.error), "turn limit ends the round with a note");
+  w.localStorage.removeItem("philogg-llm-max-turns");
+  T.llmTransportOverride = llmFakeModel([{ fail: "cannot reach localhost:1234 — is LM Studio's server running?" }]);
+  const err = await w.llmSend("hallo");
+  assert(err.status === "error" && err.error.includes("LM Studio"), "a transport error ends the round with its message");
+  T.llmTransportOverride = llmFakeModel([(req) => ({ content: "ok" })]);
+  const bad = llmFakeModel([]);
+  bad.chat = (id, ep, req, onEvent) => { onEvent({ type: "chunk", data: { error: { message: "Model unloaded" } } }); return Promise.resolve(); };
+  T.llmTransportOverride = bad;
+  assert((await w.llmSend("x")).error === "Model unloaded", "an error object inside the stream ends the round");
+  const unknown = llmFakeModel([{ calls: [["drop_database", {}]] }, { content: "sorry" }]);
+  T.llmTransportOverride = unknown;
+  const u = await w.llmSend("x");
+  assert(u.status === "done" && u.items[0].error && u.items[0].summary.includes("Unknown tool"), "an unknown tool comes back to the model as an error text");
+  const msg = llmFakeModel([]);
+  msg.chat = (id, ep, req, onEvent) => { onEvent({ type: "message", data: { choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "z", type: "function", function: { name: "get_overview", arguments: {} } }] }, finish_reason: "tool_calls" }] } }); msg.chat = (i, e, r, on) => { on({ type: "message", data: { choices: [{ message: { content: "fertig" }, finish_reason: "stop" }] } }); return Promise.resolve(); }; return Promise.resolve(); };
+  T.llmTransportOverride = msg;
+  const m = await w.llmSend("non-streamed");
+  assert(m.status === "done" && m.items[0].name === "get_overview" && m.items[1].text === "fertig", "a non-streamed answer (object arguments) works too");
+});
+
+await withApp(async (w, d, T) => {
+  section("303c. 'Undo this round' on top of the stack and after further actions");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion", "sensors"], entries: 800, seed: 3 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  T.resetUndoRedo();
+  const round = pat2 => [
+    { calls: [["create_filter", { parentId: f.id, pattern: "Position reached" }]] },
+    (req, res) => ({ calls: [["create_filter", { parentId: llmLast(res, "create_filter").nodeId, pattern: pat2 }]] }),
+    { content: "ok" },
+  ];
+  T.llmTransportOverride = llmFakeModel(round("axis=2 "));
+  const r1 = await w.llmSend("eins");
+  const res1 = w.llmUndoRound(r1.id);
+  assert(res1.ok && res1.via === "undo" && r1.created.every(id => !T.state.nodes[id]) && T.redoStack.length === 1, "on top of the undo stack it is Ctrl+Z");
+  assert(w.llmUndoRound(r1.id).reason === "nothing left", "then there is nothing left");
+  w.redo();
+  // Further work by the person: a filter of their own (an undo step of its own).
+  const own = w.createFilterNode(f.id, "text", "Sensor");
+  w.pushCreateUndo(own);
+  const res2 = w.llmUndoRound(r1.id);
+  assert(res2.ok && res2.via === "delete" && res2.removed === 1 && r1.created.every(id => !T.state.nodes[id]) && T.state.nodes[own.id], "otherwise the round's nodes are deleted (the nested one with its parent), the person's own filter stays");
+  assert(T.undoStack[T.undoStack.length - 1].kind === "batch" && T.undoStack[T.undoStack.length - 1].llmRoundId === r1.id + ":undo", "…as one new undo step");
+  w.undo();
+  assert(r1.created.every(id => T.state.nodes[id]) && T.state.nodes[r1.created[1]].parentId === r1.created[0], "which Ctrl+Z restores, nesting intact");
+  const child = w.createFilterNode(r1.created[1], "text", "axis=2");
+  w.pushCreateUndo(child);
+  const res3 = w.llmUndoRound(r1.id);
+  assert(!res3.ok && res3.needsConfirm && res3.foreign === 1 && T.state.nodes[r1.created[0]], "a filter of the person's under the round's nodes → asks first, deletes nothing");
+  const res4 = w.llmUndoRound(r1.id, true);
+  assert(res4.ok && !T.state.nodes[child.id] && !T.state.nodes[r1.created[0]], "confirmed: removed together");
+  assert(w.llmSnapshot().session.rounds[0].undo === "none", "the round's undo button is now disabled");
+});
+
+group(303);
+{
+  const factory = new IDBFactory();
+  let saved = null;
+  await withApp(async (w, d, T) => {
+    section("303d. Sessions persist; references resolve after a restart (entry by file + ordinal, node as text)");
+    const [file] = LOGSIM.generateToStrings({ scenarios: ["motion"], entries: 400, seed: 8 });
+    const f = await w.addFile(file.name, file.text, () => {});
+    await w.llmInit();
+    T.llmTransportOverride = llmFakeModel([
+      { calls: [["create_filter", { parentId: f.id, pattern: "Position reached axis=3" }]] },
+      (req, res) => ({ calls: [["get_entries", { nodeId: llmLast(res, "create_filter").nodeId, max: 2 }]] }),
+      (req, res) => ({ content: "Filter " + res.create_filter[0].nodeId + ", erster Treffer " + llmLast(res, "get_entries").entries[1].id + " (e999999 gibt es nicht)." }),
+    ]);
+    const r = await w.llmSend("Achse 3?");
+    const entryToken = Object.keys(r.refs).find(k => k.startsWith("e"));
+    const nodeToken = Object.keys(r.refs).find(k => k.startsWith("n"));
+    assert(entryToken && nodeToken && !r.refs.e999999, "entry and node references captured, an id that doesn't exist is not");
+    const entry = w.jumpToEntry && T.entryIndex[entryToken];
+    saved = { roundId: r.id, entryToken, nodeToken, raw: entry.raw, ordinal: r.refs[entryToken].ordinal, file: f.name };
+    assert(f.entries[saved.ordinal] === entry, "the entry reference is stored as file + ordinal");
+    await w.persistFileNode(f);
+    await w.persistMetaNow();
+    assert(await waitFor(async () => ((await w.llmDbOp("readonly", s => s.getAll())) || []).some(s => s.rounds.length === 1 && s.rounds[0].status === "done")), "the session is stored in its own IndexedDB database");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    await T.bootRestore;
+    await w.llmInit();
+    const snap = w.llmSnapshot();
+    assert(snap.session && snap.session.rounds.length === 1 && snap.session.rounds[0].status === "done", "restart: the session is back");
+    assert(snap.runId !== T.llm.sessions[0].rounds[0].refs[saved.nodeToken].runId, "a new app run");
+    const refs = snap.session.refs;
+    assert(refs[saved.roundId + ":" + saved.nodeToken].state === "text", "other run: a node reference is text only (the id may name another node now)");
+    assert(refs[saved.roundId + ":" + saved.entryToken].state === "link", "other run, file loaded: the entry reference is clickable");
+    assert(snap.session.missingFiles.length === 0, "no 'not loaded' hint");
+    assert(w.llmRevealRef(saved.roundId, saved.entryToken) && T.entryIndex[T.state.selectedId].raw === saved.raw, "clicking it selects the same entry, found by ordinal");
+    assert(!w.llmRevealRef(saved.roundId, saved.nodeToken), "the node reference does nothing");
+    w.deleteNode(T.state.rootIds[0]);
+    const snap2 = w.llmSnapshot();
+    assert(snap2.session.refs[saved.roundId + ":" + saved.entryToken].state === "text" && snap2.session.missingFiles[0] === saved.file, "file not loaded: text only, and the session says which file it refers to");
+    const [other] = LOGSIM.generateToStrings({ scenarios: ["sensors"], entries: 50, seed: 1 });
+    await w.addFile(other.name, other.text, () => {});
+    assert(w.llmSnapshot().session.refs[saved.roundId + ":" + saved.entryToken].state === "text", "a different log doesn't make it clickable");
+  }, { indexedDB: factory });
+}
+
+/* ============================================================
+   GROUP 304 — LLM assistant, phase 4: the chat view (desktop/chat.html)
+   and its wiring. The browser build shows no trace of the assistant; the
+   desktop build (stubbed window.philogg) gets the toolbar button and
+   Settings → Assistant (model list, connection test). chat.html is loaded
+   in its own jsdom window and connected to the real main window through a
+   fake transport that relays JSON the way Rust does: pull snapshots,
+   streaming, clickable/greyed references, Stop, undo this round (incl.
+   the confirm), the "not loaded" hint, and a lost "changed" note healing
+   itself on the next pull. Sample data from tools/log-sim.
+   ============================================================ */
+group(304);
+const CHAT_HTML = fs.readFileSync(path.join(__dirname, "..", "desktop", "chat.html"), "utf8");
+// The assistant is off by default (Settings → Assistant → Enable); the
+// groups that use it switch it on before the page boots.
+const llmOn = win => win.localStorage.setItem("philogg-llm-enabled", "1");
+function llmDesktopStub(extra) {
+  const calls = [];
+  const stub = Object.assign({
+    calls,
+    llmChat: () => Promise.reject(new Error("no model in this test")),
+    llmCancel: () => {},
+    llmModels: url => (calls.push(["models", url]), url.includes("9999") ? Promise.reject("cannot reach localhost:9999 — is LM Studio's server running?") : Promise.resolve(["qwen2.5-7b-instruct", "llama-3.2-3b"])),
+    llmChatWindow: (action, on) => { calls.push(["window", action, on]); return Promise.resolve(); },
+    llmViewNotify: msg => { calls.push(["notify", msg.type]); return Promise.resolve(); },
+  }, extra || {});
+  return stub;
+}
+// Opens chat.html in its own window, wired to the main window `w`:
+// view → main via llmHandleViewMessage, main → view via an llm.views entry,
+// both through JSON and a macrotask, like the Rust relay.
+function openChatView(w, T, opts = {}) {
+  let receive = null, closed = false;
+  const sent = [];
+  const deliver = msg => setTimeout(() => !closed && receive && receive(JSON.parse(JSON.stringify(msg))), 0);
+  const view = msg => { if (!opts.drop || !opts.drop(msg)) deliver(msg); };
+  T.llm.views.add(view);
+  const dom = new JSDOM(CHAT_HTML, {
+    runScripts: "dangerously", pretendToBeVisual: true,
+    beforeParse(cw) {
+      cw.philoggChatTransport = {
+        mode: opts.mode || "window",
+        send: msg => { sent.push(msg); setTimeout(() => !closed && w.llmHandleViewMessage(JSON.parse(JSON.stringify(msg)), deliver), 0); },
+        onMessage: fn => { receive = fn; },
+      };
+      // Native prompt()/confirm() must never be used (they look foreign in
+      // the webview) — chat.html has its own dialog.
+      cw.confirm = cw.prompt = () => { throw new Error("native dialog used"); };
+    },
+  });
+  return { dom, cw: dom.window, cd: dom.window.document, sent, view, close: () => { closed = true; T.llm.views.delete(view); dom.window.close(); } };
+}
+
+// Answers chat.html's in-page dialog (rename/confirm): waits for it, types
+// `value` into its input when given, then clicks OK. Returns the dialog's
+// title for assertions.
+async function answerChatDialog(cd, value) {
+  const dlg = cd.getElementById("chatDialog");
+  await waitFor(() => !dlg.classList.contains("hidden"));
+  const title = cd.getElementById("chatDialogTitle").textContent;
+  if (value != null) cd.getElementById("chatDialogInput").value = value;
+  cd.getElementById("chatDialogOk").click();
+  return title;
+}
+
+await withApp(async (w, d, T) => {
+  section("304a. Browser build: no assistant anywhere");
+  assert(!w.llmAvailable(), "no window.philogg.llmChat → not available");
+  assert(!isVisible(d.getElementById("btnAssistant"), w), "no toolbar button");
+  assert(!isVisible(d.getElementById("settingsNavItemLlm"), w) && !isVisible(d.getElementById("settingsSectionLlm"), w), "no Settings → Assistant");
+  assert(T.llm.ready === null, "no session database opened");
+});
+
+await withApp(async (w, d, T) => {
+  section("304b. Desktop build: toolbar button, Settings → Assistant");
+  const stub = w.philogg;
+  assert(w.llmAvailable() && isVisible(d.getElementById("btnAssistant"), w), "toolbar button shown");
+  d.getElementById("btnAssistant").click();
+  assert(stub.calls.some(c => c[0] === "window" && c[1] === "show"), "it opens (shows) the chat window");
+  w.openSettingsDialog();
+  assert(isVisible(d.getElementById("settingsSectionLlm"), w) && isVisible(d.getElementById("settingsNavItemLlm"), w), "Settings → Assistant shown");
+  assert(d.getElementById("settingsLlmTemperature").value === "0.2" && d.getElementById("settingsLlmMaxTurns").value === "12", "defaults shown");
+  d.getElementById("settingsLlmTest").click();
+  const status = d.getElementById("settingsLlmStatus");
+  assert(await waitFor(() => status.textContent.startsWith("Connected")), "connection test: " + status.textContent);
+  assert(stub.calls.find(c => c[0] === "models")[1] === "http://localhost:1234/v1", "…against the default endpoint");
+  const sel = d.getElementById("settingsLlmModel");
+  assert([...sel.options].map(o => o.value).join() === ",qwen2.5-7b-instruct,llama-3.2-3b", "model dropdown from /v1/models");
+  sel.value = "llama-3.2-3b";
+  sel.dispatchEvent(new w.Event("change"));
+  assert(w.localStorage.getItem("philogg-llm-model") === "llama-3.2-3b" && w.llmSettings().model === "llama-3.2-3b", "model choice stored");
+  const ep = d.getElementById("settingsLlmEndpoint");
+  ep.value = "http://localhost:9999/v1";
+  ep.dispatchEvent(new w.Event("change"));
+  d.getElementById("settingsLlmRefresh").click();
+  assert(await waitFor(() => status.classList.contains("error")) && status.textContent.includes("LM Studio"), "an unreachable server shows the bridge's reason");
+  const t = d.getElementById("settingsLlmTemperature");
+  t.value = "7";
+  t.dispatchEvent(new w.Event("change"));
+  assert(t.value === "2" && w.llmSettings().temperature === 2, "temperature clamped to 0..2");
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
+
+await withApp(async (w, d, T) => {
+  section("304c. chat.html against the real main window: pull snapshots, stream, refs, Stop, undo");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion", "sensors"], entries: 1500, seed: 5 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  await T.llm.ready;
+  T.resetUndoRedo();
+  const chat = openChatView(w, T);
+  const { cd, cw } = chat;
+  assert(await waitFor(() => cw.philoggChatView.snapshot), "the view pulls a snapshot on load");
+  assert(cd.getElementById("chatEmpty").textContent.includes("temperature"), "empty chat: an example question");
+  assert(cd.documentElement.style.getPropertyValue("--accent") !== "", "the main window's theme variables are applied");
+  assert(cd.getElementById("chatToolbar").style.display === "" && cd.getElementById("btnDock").style.display === "" && cd.getElementById("btnOnTop").style.display === "", "controls follow snapshot.features and the transport (window: sessions, dock, always-on-top)");
+
+  let streamSeen = false;
+  const fake = llmFakeModel([
+    { calls: [["create_filter", { parentId: f.id, pattern: "Position reached axis=2 " }]] },
+    (req, res) => ({ content: "Filter " + res.create_filter[0].nodeId + " zeigt " + res.create_filter[0].matches + " Positionierungen." }),
+  ]);
+  const chatFn = fake.chat;
+  fake.chat = (...a) => chatFn(...a);
+  T.llmTransportOverride = fake;
+  const input = cd.getElementById("chatInput");
+  input.value = "Nur Achse 2 bitte";
+  input.dispatchEvent(new cw.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+  assert(chat.sent.some(m => m.type === "send" && m.text === "Nur Achse 2 bitte") && input.value === "", "Enter sends and clears the input");
+  assert(await waitFor(() => cd.querySelectorAll(".round .msg-text").length === 1 && !cw.philoggChatView.snapshot.running), "the answer arrives by pull");
+  const round = T.llm.sessions[0].rounds[0];
+  const nodeId = round.created[0];
+  assert(cd.querySelector(".msg-user").textContent === "Nur Achse 2 bitte" && cd.querySelector(".msg-tool").textContent.includes("create_filter → " + nodeId), "user message and the tool step");
+  const link = cd.querySelector('.msg-text a.ref[data-token="' + nodeId + '"]');
+  assert(link, "the node id in the answer is a link");
+  T.state.activeId = f.id;
+  link.click();
+  assert(await waitFor(() => T.state.activeId === nodeId), "clicking it activates the node in the main window");
+  assert(w.philogg.calls.some(c => c[1] === "focusMain"), "…and brings the main window forward");
+
+  const undoBtn = cd.querySelector("button.undo-round");
+  assert(undoBtn && !undoBtn.disabled, "undo-this-round button enabled");
+  undoBtn.click();
+  assert(await waitFor(() => !T.state.nodes[nodeId]), "it takes the round back");
+  assert(await waitFor(() => cd.querySelector("button.undo-round").disabled && cd.querySelector(".ref-gone")), "then the button is disabled and the reference greyed out");
+
+  // Stop while the model is still thinking; the streamed text shows meanwhile.
+  const fake2 = llmFakeModel([]);
+  let finishStream;
+  fake2.chat = (id, ep, req, onEvent) => new Promise((res, rej) => {
+    onEvent({ type: "chunk", data: { choices: [{ delta: { content: "Ich schaue …" } }] } });
+    fake2.pending = { id, rej };
+  });
+  fake2.cancel = id => fake2.pending && fake2.pending.rej(new Error("cancelled"));
+  T.llmTransportOverride = fake2;
+  input.value = "Und jetzt?";
+  cd.getElementById("chatSend").click();
+  assert(await waitFor(() => cd.getElementById("chatSend").textContent === "Stop"), "while running the button is Stop");
+  assert(await waitFor(() => (cd.querySelector(".msg-stream") || {}).textContent === "Ich schaue …"), "the streamed text is shown");
+  cd.getElementById("chatSend").click();
+  assert(await waitFor(() => (cd.querySelectorAll(".msg-status")[0] || {}).textContent === "Stopped."), "Stop → the round shows 'Stopped.'");
+  assert(cd.getElementById("chatSend").textContent === "Send", "back to Send");
+
+  // needsConfirm: the person built a filter under the round's node.
+  T.llmTransportOverride = llmFakeModel([
+    { calls: [["create_filter", { parentId: f.id, pattern: "Sensor T1" }]] }, { content: "ok" }]);
+  await w.llmSend("Sensor T1");
+  const r3 = T.llm.sessions[0].rounds[2];
+  const mine = w.createFilterNode(r3.created[0], "text", "temperature");
+  w.pushCreateUndo(mine);
+  await waitFor(() => cd.querySelectorAll("button.undo-round").length === 3);
+  cd.querySelectorAll("button.undo-round")[2].click();
+  const asked = await answerChatDialog(cd);
+  assert(asked === "Undo this round?" && await waitFor(() => !T.state.nodes[r3.created[0]]) && chat.sent.some(m => m.type === "undoRound" && m.force), "asks first (in-page dialog), then removes with force");
+
+  // The hint for reference files that aren't loaded.
+  w.deleteNode(f.id);
+  w.llmNotify();
+  assert(await waitFor(() => cd.getElementById("chatHint").textContent.includes(f.name)), "'refers to … — not loaded' hint");
+  chat.close();
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
+
+await withApp(async (w, d, T) => {
+  section("304d. A lost 'changed' note heals on the next pull");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion"], entries: 300, seed: 1 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  await T.llm.ready;
+  let dropping = true;
+  const chat = openChatView(w, T, { drop: msg => dropping && msg.type === "changed" });
+  await waitFor(() => chat.cw.philoggChatView.snapshot);
+  T.llmTransportOverride = llmFakeModel([{ content: "eins" }, { content: "zwei" }]);
+  await w.llmSend("a");
+  await sleep(20);
+  assert(chat.cd.querySelectorAll(".round").length === 0, "every note of round 1 was lost: the view is stale");
+  dropping = false;
+  await w.llmSend("b");
+  assert(await waitFor(() => chat.cd.querySelectorAll(".round").length === 2), "the next note pulls the whole session — round 1 included");
+  assert(chat.cd.querySelectorAll(".msg-text")[0].textContent === "eins", "…with its content");
+  chat.close();
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
+
+/* ============================================================
+   GROUP 305 — LLM assistant, phase 5: several chat sessions (new, switch,
+   rename, delete — persisted, newest first, reference files as subtitle,
+   each with its own history) and answer buttons for the model's questions.
+   ============================================================ */
+group(305);
+await withApp(async (w, d, T) => {
+  section("305a. Sessions: new, switch, rename, delete; separate histories");
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["motion", "sensors"], entries: 600, seed: 4 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  await T.llm.ready;
+  const chat = openChatView(w, T);
+  const { cd, cw } = chat;
+  await waitFor(() => cw.philoggChatView.snapshot);
+  const fake = llmFakeModel([
+    { calls: [["create_filter", { parentId: f.id, pattern: "Sensor T1" }]] },
+    { content: "Welche Größe interessiert dich?\n- temperature\n- pressure\n- voltage" },
+    { content: "Neue Sitzung, neues Glück." },
+    { content: "Temperatur also." },
+  ]);
+  T.llmTransportOverride = fake;
+  await w.llmSend("Sensoren");
+  const a = T.llm.activeSessionId;
+  assert(await waitFor(() => cd.querySelectorAll("button.answer-opt").length === 3), "the question's options became buttons");
+  assert([...cd.querySelectorAll("button.answer-opt")].map(b => b.textContent).join("|") === "temperature|pressure|voltage", "…one per '- ' line");
+  cd.getElementById("btnNewSession").click();
+  assert(await waitFor(() => T.llm.activeSessionId !== a && cw.philoggChatView.snapshot.session === null || (cw.philoggChatView.snapshot.session && cw.philoggChatView.snapshot.session.rounds.length === 0)), "New chat: an empty session is active");
+  const b = T.llm.activeSessionId;
+  assert(b !== a && cd.querySelectorAll(".round").length === 0, "…and the view is empty");
+  cd.getElementById("btnNewSession").click();
+  await sleep(10);
+  assert(T.llm.activeSessionId === b && T.llm.sessions.length === 2, "New on an untouched empty chat reuses it");
+  await w.llmSend("Hallo");
+  const req = fake.requests[fake.requests.length - 1];
+  assert(req.messages.length === 2 && req.messages[1].content === "Hallo", "the new session's request carries only its own history");
+  const opts = () => [...cd.getElementById("sessionSelect").options];
+  assert(await waitFor(() => opts().length === 2 && opts()[0].value === b), "dropdown: both sessions, newest first");
+  assert(opts()[1].textContent === "Sensoren — " + f.name, "title from the first question, reference file as subtitle, got " + opts()[1].textContent);
+  const sel = cd.getElementById("sessionSelect");
+  sel.value = a;
+  sel.dispatchEvent(new cw.Event("change"));
+  assert(await waitFor(() => T.llm.activeSessionId === a && cd.querySelectorAll(".round").length === 1), "switching shows the other session's rounds");
+  cd.querySelectorAll("button.answer-opt")[0].click();
+  assert(await waitFor(() => T.llm.sessions.find(s => s.id === a).rounds.length === 2), "an answer button sends its text as the next message");
+  const last = fake.requests[fake.requests.length - 1];
+  assert(last.messages.some(m => m.content === "Sensoren") && last.messages[last.messages.length - 1].content === "temperature", "…into that session's own history");
+  assert(await waitFor(() => cd.querySelectorAll("button.answer-opt").length === 0), "buttons only under the newest round's question");
+  cd.getElementById("btnRenameSession").click();
+  await waitFor(() => !cd.getElementById("chatDialog").classList.contains("hidden"));
+  assert(cd.getElementById("chatDialogInput").value === "Sensoren", "the rename dialog is prefilled with the current title");
+  await answerChatDialog(cd, "Sensor-Analyse");
+  assert(await waitFor(() => T.llm.sessions.find(s => s.id === a).title === "Sensor-Analyse"), "rename");
+  assert(await waitFor(async () => ((await w.llmDbOp("readonly", s => s.getAll())) || []).some(s => s.id === a && s.title === "Sensor-Analyse")), "…persisted");
+  cd.getElementById("btnDeleteSession").click();
+  assert(await answerChatDialog(cd) === "Delete this chat?", "delete asks first");
+  assert(await waitFor(() => T.llm.sessions.length === 1 && T.llm.activeSessionId === b), "delete removes the chat, the other one becomes active");
+  assert(await waitFor(async () => { const all = await w.llmDbOp("readonly", s => s.getAll()); return all && all.length && !all.some(s => s.id === a); }), "…from IndexedDB too");
+  assert(T.state.nodes[T.llm.sessions.length && Object.keys(T.state.nodes).find(id => T.llmCreatedNodeIds.has(id))], "the filters a deleted chat created stay in the tree");
+  assert(!w.llmRenameSession(b, "   ") && !w.llmSwitchSession("nope"), "blank rename / unknown session refused");
+  T.llmTransportOverride = llmFakeModel(["hang"]);
+  const p = w.llmSend("warte");
+  await waitFor(() => T.llm.running);
+  assert(!w.llmDeleteSession(b) && w.llmStartNewSession() === null && !w.llmSwitchSession(b), "no delete/new/switch while a round runs");
+  assert(await waitFor(() => cd.getElementById("sessionSelect").disabled && cd.getElementById("btnNewSession").disabled), "…and the chat disables those controls");
+  w.llmStop();
+  await p;
+  chat.close();
+}, { philogg: llmDesktopStub(), beforeParse: llmOn, indexedDB: new IDBFactory() });
+
+/* ============================================================
+   GROUP 306 — LLM assistant, phase 6: docking. The chat as an <iframe>
+   side panel in the main window (postMessage transport), dock/undock
+   (window hidden/shown), the toolbar button toggling the docked panel, the
+   docked state remembered across a restart, and chat.html's own docked
+   transport.
+   ============================================================ */
+group(306);
+await withApp(async (w, d, T) => {
+  section("306a. Dock / undock in the main window");
+  await T.llm.ready;
+  const stub = w.philogg;
+  const panel = d.getElementById("llmDockPanel");
+  assert(!isVisible(panel, w), "not docked by default");
+  w.llmHandleViewMessage({ type: "dock" }, () => {});
+  const frame = panel.querySelector("iframe");
+  assert(isVisible(panel, w) && frame && frame.getAttribute("src") === "chat.html", "dock: the side panel holds chat.html in an iframe");
+  assert(stub.calls.some(c => c[1] === "hide") && w.localStorage.getItem("philogg-llm-docked") === "1", "…the window is hidden, the state remembered");
+  const posted = [];
+  frame.contentWindow.postMessage = m => posted.push(JSON.parse(JSON.stringify(m)));
+  w.dispatchEvent(new w.MessageEvent("message", { data: { philoggChat: { type: "getSnapshot" } }, source: frame.contentWindow }));
+  assert(await waitFor(() => posted.some(m => m.philoggChat && m.philoggChat.type === "snapshot")), "a pull from the iframe is answered into the iframe");
+  const snap = posted.find(m => m.philoggChat.type === "snapshot").philoggChat;
+  assert(snap.features.includes("dock") && snap.features.includes("sessions"), "features: dock, sessions");
+  w.dispatchEvent(new w.MessageEvent("message", { data: { philoggChat: { type: "send", text: "x" } }, source: w }));
+  await sleep(10);
+  assert(!T.llm.sessions.length, "messages from any other source are ignored");
+  T.llmTransportOverride = llmFakeModel([{ content: "hallo" }]);
+  posted.length = 0;
+  w.dispatchEvent(new w.MessageEvent("message", { data: { philoggChat: { type: "send", text: "hi" } }, source: frame.contentWindow }));
+  assert(await waitFor(() => T.llm.sessions.length === 1 && T.llm.sessions[0].rounds[0].status === "done"), "the docked chat drives the loop");
+  assert(posted.some(m => m.philoggChat.type === "changed"), "…and gets 'changed' notes");
+  d.getElementById("btnAssistant").click();
+  assert(!isVisible(panel, w) && panel.querySelector("iframe") === frame, "toolbar button hides the docked panel (the chat keeps running in the iframe)");
+  d.getElementById("btnAssistant").click();
+  assert(isVisible(panel, w), "…and shows it again");
+  const shows = stub.calls.filter(c => c[1] === "show").length;
+  w.llmHandleViewMessage({ type: "undock" }, () => {});
+  assert(!isVisible(panel, w) && !panel.querySelector("iframe") && w.localStorage.getItem("philogg-llm-docked") === "0", "undock: panel gone, state remembered");
+  assert(stub.calls.filter(c => c[1] === "show").length === shows + 1, "…and the window is shown again");
+  posted.length = 0;
+  w.llmNotify();
+  assert(!posted.length, "the removed iframe gets no more notes");
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
+
+await withApp(async (w, d, T) => {
+  section("306b. The docked state survives a restart");
+  const panel = d.getElementById("llmDockPanel");
+  assert(isVisible(panel, w) && panel.querySelector("iframe"), "docked at boot");
+  assert(!w.philogg.calls.some(c => c[1] === "show"), "the window is not opened");
+}, { philogg: llmDesktopStub(), beforeParse: win => { llmOn(win); win.localStorage.setItem("philogg-llm-docked", "1"); } });
+
+{
+  if (groupSelected()) {
+    section("306c. chat.html's docked transport (postMessage to the parent)");
+    const toParent = [];
+    const fakeParent = { postMessage: m => toParent.push(m) };
+    const dom = new JSDOM(CHAT_HTML, {
+      runScripts: "dangerously", pretendToBeVisual: true,
+      beforeParse(cw) { Object.defineProperty(cw, "parent", { value: fakeParent, configurable: true }); },
+    });
+    const cw = dom.window, cd = cw.document;
+    assert(toParent.length === 1 && toParent[0].philoggChat.type === "getSnapshot", "on load it pulls through the parent");
+    const snapshot = { type: "snapshot", available: true, features: ["sessions", "answers", "dock"], sessions: [], activeSessionId: null, session: null, running: false, theme: {} };
+    cw.dispatchEvent(new cw.MessageEvent("message", { data: { philoggChat: snapshot }, source: {} }));
+    assert(!cw.philoggChatView.snapshot, "a message from anything but the parent is ignored");
+    cw.dispatchEvent(new cw.MessageEvent("message", { data: { philoggChat: snapshot }, source: fakeParent }));
+    assert(cw.philoggChatView.snapshot && cd.getElementById("btnDock").dataset.state === "undock" && cd.getElementById("btnOnTop").style.display === "none", "docked: an undock button, no always-on-top");
+    assert(cd.getElementById("chatWc").style.display === "none", "docked: no window controls");
+    cd.getElementById("btnDock").click();
+    assert(toParent[toParent.length - 1].philoggChat.type === "undock", "undock goes to the parent");
+    dom.window.close();
+  }
+}
+
+/* ============================================================
+   GROUP 307 — 2026-09-28 (person-reported after the first desktop start):
+   the chat window looks like the main app — frameless with its own title
+   bar (drag region, the main window's window-control buttons, which act
+   through the transport), .toolbar-icon-btn SVG buttons instead of emoji,
+   the main window's primary/secondary button and theme variables
+   (accent-on, border-hover), and (same day, person-reported) rename /
+   confirm in an in-page dialog styled like the app's dialogs instead of
+   the webview's native prompt()/confirm(). macOS keeps the native traffic
+   lights.
+   ============================================================ */
+group(307);
+{
+  if (groupSelected()) {
+    section("307a. Chat window chrome: title bar, window controls, app-style buttons");
+    const acts = [];
+    const open = (search, transport) => {
+      const dom = new JSDOM(CHAT_HTML, {
+        runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/app/chat.html" + search,
+        beforeParse(cw) { cw.philoggChatTransport = transport; },
+      });
+      return dom;
+    };
+    const dom = open("", { mode: "window", send() {}, onMessage() {}, windowAction: a => acts.push(a) });
+    const cd = dom.window.document;
+    const bar = cd.getElementById("chatTitlebar");
+    assert(bar.hasAttribute("data-tauri-drag-region") && cd.getElementById("chatTitle").hasAttribute("data-tauri-drag-region"), "the title bar is the drag region");
+    assert(cd.getElementById("chatWc").style.display === "" && cd.querySelectorAll("#chatWc button").length === 3, "own window: minimize / maximize / close");
+    ["minimize", "maximize", "close"].forEach(a => cd.querySelector('#chatWc [data-act="' + a + '"]').click());
+    assert(acts.join() === "minimize,maximize,close", "they act through the transport (window_minimize / window_toggle_maximize / window_close)");
+    const btns = [...cd.querySelectorAll("#chatTitlebar button, #chatToolbar button")].filter(b => !b.closest("#chatWc"));
+    assert(btns.length === 6 && btns.every(b => b.classList.contains("toolbar-icon-btn") && b.querySelector("svg") && b.textContent.trim() === ""), "header buttons are the main window's icon buttons (SVG, no emoji)");
+    assert(!/[📌🗑⚙✎⇥⇤＋]/u.test(cd.body.innerHTML), "no emoji glyphs left");
+    dom.window.close();
+    const mac = open("?mac=1", { mode: "window", send() {}, onMessage() {}, windowAction() {} });
+    assert(mac.window.document.documentElement.classList.contains("mac") && mac.window.document.getElementById("chatWc").style.display === "none", "macOS: room for the traffic lights, no own controls");
+    mac.window.close();
+    const plain = open("", { mode: "window", send() {}, onMessage() {} });
+    assert(plain.window.document.getElementById("chatWc").style.display === "none", "a transport without window actions shows none");
+    plain.window.close();
+  }
+}
+{
+  if (groupSelected()) {
+    section("307c. In-page dialog instead of the webview's prompt()/confirm()");
+    const dom = new JSDOM(CHAT_HTML, { runScripts: "dangerously", pretendToBeVisual: true,
+      beforeParse(cw) { cw.philoggChatTransport = { mode: "window", send() {}, onMessage() {} }; cw.prompt = cw.confirm = () => { throw new Error("native"); }; } });
+    const cw = dom.window, cd = cw.document, dlg = cd.getElementById("chatDialog");
+    assert(dlg.classList.contains("hidden") && cw.getComputedStyle(dlg).display === "none", "hidden until needed");
+    let p = cw.philoggChatView.dialog({ title: "Rename this chat", value: "Alt", ok: "Rename" });
+    assert(cw.getComputedStyle(dlg).display !== "none" && cd.querySelector("#chatDialog .link-dialog-card") && cd.getElementById("chatDialogOk").className === "btn-mini" && cd.getElementById("chatDialogCancel").className === "btn-mini-secondary", "the main app's dialog card and buttons");
+    assert(cd.activeElement === cd.getElementById("chatDialogInput") && cd.getElementById("chatDialogOk").textContent === "Rename", "input focused, OK labelled");
+    cd.getElementById("chatDialogInput").value = "  Neu  ";
+    cd.getElementById("chatDialogInput").dispatchEvent(new cw.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    assert(await p === "Neu" && dlg.classList.contains("hidden"), "Enter confirms, trimmed");
+    p = cw.philoggChatView.dialog({ title: "x", value: "y" });
+    cd.getElementById("chatDialogInput").dispatchEvent(new cw.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert(await p === null, "Escape cancels");
+    p = cw.philoggChatView.dialog({ title: "x", value: "y" });
+    cd.getElementById("chatDialogInput").value = "   ";
+    cd.getElementById("chatDialogOk").click();
+    assert(await p === null, "an empty name is no rename");
+    p = cw.philoggChatView.dialog({ title: "Delete?", text: "sure", ok: "Delete", danger: true });
+    assert(cd.getElementById("chatDialogInput").classList.contains("hidden") && cd.getElementById("chatDialogOk").classList.contains("danger") && cd.getElementById("chatDialogText").textContent === "sure", "a confirm: no input, red OK, the text shown");
+    dlg.dispatchEvent(new cw.MouseEvent("click", { bubbles: true }));
+    assert(await p === null, "a click on the backdrop cancels");
+    p = cw.philoggChatView.dialog({ title: "Delete?", ok: "Delete" });
+    cd.getElementById("chatDialogOk").click();
+    assert(await p === true, "OK on a confirm → true");
+    dom.window.close();
+  }
+}
+await withApp(async (w, d, T) => {
+  section("307b. The snapshot carries the variables the app-style buttons need");
+  const theme = w.llmSnapshot().theme;
+  assert(theme["--accent-on"] && theme["--border-hover"] && theme["--accent-strong"] && theme["--bg-panel"], "accent-on, border-hover, accent-strong, bg-panel");
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
+
+/* ============================================================
+   GROUP 308 — 2026-09-28 (person-requested): an on/off switch for the
+   assistant in Settings → Assistant, default off. Off: no toolbar button,
+   no chat, no docked panel, sessions not even loaded; switching off stops
+   a running round and closes the window/panel (the docked preference
+   stays), a still-open view gets no answers.
+   ============================================================ */
+group(308);
+await withApp(async (w, d, T) => {
+  section("308a. Default off; switching on and off");
+  const stub = w.philogg;
+  const btn = d.getElementById("btnAssistant"), toggle = d.getElementById("settingsLlmEnabled"), panel = d.getElementById("llmDockPanel");
+  assert(!isVisible(btn, w) && toggle.getAttribute("aria-checked") === "false", "default: off, no chat button");
+  assert(isVisible(d.getElementById("settingsSectionLlm"), w), "the Settings section is there to switch it on");
+  assert(T.llm.ready === null && !isVisible(panel, w), "off: no sessions loaded, no docked panel (despite the docked preference)");
+  const replies = [];
+  w.llmHandleViewMessage({ type: "getSnapshot" }, m => replies.push(m));
+  await sleep(10);
+  assert(!replies.length, "off: a view gets no answers");
+  toggle.click();
+  assert(toggle.getAttribute("aria-checked") === "true" && w.localStorage.getItem("philogg-llm-enabled") === "1", "the switch stores on");
+  assert(isVisible(btn, w) && T.llm.ready !== null, "on: button shown, sessions loaded");
+  assert(isVisible(panel, w) && panel.querySelector("iframe"), "on: the remembered docked panel comes back");
+  await T.llm.ready;
+  T.llmTransportOverride = llmFakeModel(["hang"]);
+  const p = w.llmSend("warte");
+  await waitFor(() => T.llm.running);
+  toggle.click();
+  const r = await p;
+  assert(r.status === "stopped" && !T.llm.running, "switching off stops a running round");
+  assert(!isVisible(btn, w) && !isVisible(panel, w) && !panel.querySelector("iframe"), "off: button and docked panel gone");
+  assert(stub.calls.some(c => c[1] === "hide"), "…the chat window is hidden");
+  assert(w.localStorage.getItem("philogg-llm-enabled") === "0" && w.localStorage.getItem("philogg-llm-docked") === "1", "stored off; the docked preference stays");
+}, { philogg: llmDesktopStub(), beforeParse: win => win.localStorage.setItem("philogg-llm-docked", "1") });
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -38300,5 +39153,28 @@ process.exitCode = failed ? 1 : 0;
       []/{} after an identifier. Same session updated GROUP 1 and 70d
       (location assertions), 264 (wire shape + both native golden
       fixtures) and 169a (Pretty stage).
+   Group 302 — 2026-09-27 (docs/llm-assistant-plan.md phase 1): LLM
+      assistant tool registry — overview, message types with value
+      distributions, filter/link creation with previews and error texts,
+      entries, value stats, show_view/plot, annotate, result budget.
+   Group 303 — same session (phase 3): agent loop with a scripted fake
+      model (reference scenario, streaming deltas, compaction, Stop, limit,
+      errors), one undo step per round, "undo this round", sessions in
+      IndexedDB, references across a simulated restart.
+   Group 304 — same session (phase 4): desktop/chat.html in jsdom wired to
+      the main window (pull snapshots, stream, refs, Stop, undo + confirm,
+      hint, lost-note healing), browser build without the assistant,
+      Settings → Assistant against a stubbed bridge.
+   Group 305 — same session (phase 5): several chat sessions (new, switch,
+      rename, delete, persisted, separate histories) and answer buttons.
+   Group 306 — same session (phase 6): docking — the chat as an iframe side
+      panel (postMessage), dock/undock, toolbar toggle, remembered state,
+      chat.html's docked transport.
+   Group 307 — 2026-09-28 (person-reported): the chat window styled like
+      the main app — frameless title bar with drag region and window
+      controls, icon buttons instead of emoji, theme variables, in-page
+      rename/confirm dialog.
+   Group 308 — 2026-09-28 (person-requested): Settings → Assistant on/off
+      switch, default off (no button, chat, panel or sessions while off).
    ============================================================ */
 

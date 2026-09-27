@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~40,400 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~41,800 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -501,6 +501,26 @@ Handoff brief for Claude Design: build a realistic, mostly-static mockup
 of `docs/ui-concept-unified-extraction.md`'s unified toolbar (real dark
 theme tokens, sample data, scope of what must vs. needn't be interactive
 — only the Context/Filtered/Table/Plot/Stacked tab switch needs to work).
+
+### `docs/llm-assistant-plan.md`
+Implementation plan (German; phases 1–6 implemented, phase 7 — the acceptance test with LM Studio — open; current state in `docs/llm-assistant.md`): a desktop-only chat in which a local LLM (LM
+Studio, loopback-only HTTP on the Rust side) operates PhiLogg through a
+small tool registry (message types with per-placeholder value
+distributions, filter/link creation with previews, views/plots,
+bookmarks/notes) instead of reading the raw log. Covers the architecture
+(agent loop and sessions owned by the main window, chat window as a thin
+pull-snapshot view — avoiding the popout's sync bugs), the chat window
+(owned/always-on-top, hide into the app, dock, multiple sessions), one
+undo step per LLM turn, and a phased rollout. Refines backlog #70.
+
+### `docs/llm-assistant.md`
+The LLM assistant as built (desktop only): the tool registry the model
+operates PhiLogg through (`LLM_TOOLS`/`runLlmTool`, result budget, value
+distributions per placeholder), the Rust
+bridge (`desktop/src-tauri/llm`, loopback-only HTTP/SSE), the agent loop
+and sessions (one undo step per round, references that survive a restart),
+the chat view `desktop/chat.html` (own window or docked) and Settings →
+Assistant.
 
 ### `docs/ui-implementation-plan.md`
 Step-by-step implementation plan for `docs/ui-concept-unified-extraction.md`,
