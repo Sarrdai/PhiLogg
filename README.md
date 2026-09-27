@@ -379,6 +379,16 @@ deployments possible:
   `F11` again or `Esc` leaves it. Real OS fullscreen is desktop-only, so the
   shortcut is bound only in the desktop app — a plain browser keeps its own
   `F11`.
+- **Assistant: a local LLM operates PhiLogg** (desktop app) — a chat window
+  (toolbar button, Settings → Assistant) in which a model running on your
+  own machine in [LM Studio](https://lmstudio.ai) (or any OpenAI-compatible
+  server on `localhost`) finds message types, builds text/extraction/link
+  filters, opens tables and plots, and bookmarks/annotates entries — asking
+  back when your request is ambiguous. It never reads the raw log, only
+  summaries, and talks to `localhost` only. Everything it creates appears
+  in the filter tree right away (marked ✦); one message = one undo step,
+  and every round has "Undo this round". The node and entry ids in its
+  answers are links. Needs a model with tool-calling support.
 
 See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
 actually works internally.

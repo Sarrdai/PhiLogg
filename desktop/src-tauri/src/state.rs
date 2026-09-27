@@ -37,6 +37,9 @@ pub struct AppState {
     next_local_id: AtomicU64,
     /// Absolute path to the `philogg.html` this build serves.
     pub html_path: PathBuf,
+    /// The LLM assistant's chat view, `desktop/chat.html` (served as
+    /// `philogg://app/chat.html`).
+    pub chat_html_path: PathBuf,
     /// `settings.json` in the same well-known config directory as everything
     /// else this wrapper persists.
     pub settings_path: PathBuf,
@@ -89,6 +92,7 @@ impl AppState {
         Self {
             local_files: Mutex::new(LocalFiles::default()),
             next_local_id: AtomicU64::new(1),
+            chat_html_path: html_path.with_file_name("chat.html"),
             html_path,
             settings_path,
             is_quitting: AtomicBool::new(false),

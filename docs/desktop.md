@@ -93,8 +93,8 @@ reporting "painted" (the `app_ready` command, see "Main window" below).
 **Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
 (`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
 `pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`,
-`parseLogFile` (see "Native parsing" below), `llmModels`/`llmChat`/`llmCancel` (the LLM
-assistant, see `docs/llm-assistant.md`), and `getPathForFile`. That last one returns `null` permanently — no system webview can
+`parseLogFile` (see "Native parsing" below), `llmModels`/`llmChat`/`llmCancel`/`llmChatWindow`/`llmViewNotify` (the LLM
+assistant and its chat window `desktop/chat.html`, see `docs/llm-assistant.md`), and `getPathForFile`. That last one returns `null` permanently — no system webview can
 resolve a `File` object back to its OS path — which is why the wrapper opens files
 itself instead (next paragraph). `philogg.html` treats a null `getPathForFile` as "no
 path known", so nothing breaks; under this wrapper no route reaches that case any more.

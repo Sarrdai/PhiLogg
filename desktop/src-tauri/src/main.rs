@@ -34,8 +34,18 @@ use state::{AppState, CLOSE_TO_TRAY_KEY};
 /// reads the working copy next to the crate instead, so editing
 /// `philogg.html` and restarting is enough during development.
 fn html_path(app: &tauri::AppHandle) -> PathBuf {
+    resource_path(app, "philogg.html", &["..", ".."])
+}
+
+/// The LLM assistant's chat view (`desktop/chat.html`), packaged next to
+/// `philogg.html` and found the same three ways.
+fn chat_html_path(app: &tauri::AppHandle) -> PathBuf {
+    resource_path(app, "chat.html", &[".."])
+}
+
+fn resource_path(app: &tauri::AppHandle, name: &str, dev_dir: &[&str]) -> PathBuf {
     if let Ok(dir) = app.path().resource_dir() {
-        let packaged = dir.join("philogg.html");
+        let packaged = dir.join(name);
         if packaged.is_file() {
             return packaged;
         }
@@ -43,15 +53,16 @@ fn html_path(app: &tauri::AppHandle) -> PathBuf {
     // The portable build has no installer/resource dir at all — it ships
     // philogg.html sitting right next to the executable instead.
     if let Some(dir) = settings::portable_dir() {
-        let sibling = dir.join("philogg.html");
+        let sibling = dir.join(name);
         if sibling.is_file() {
             return sibling;
         }
     }
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("..")
-        .join("..")
-        .join("philogg.html")
+    let mut path = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    for part in dev_dir {
+        path.push(part);
+    }
+    path.join(name)
 }
 
 fn main() {
@@ -101,11 +112,15 @@ fn main() {
             commands::llm_models,
             commands::llm_chat,
             commands::llm_cancel,
+            commands::llm_chat_window,
+            commands::llm_view_to_main,
+            commands::llm_main_to_view,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
             let config_dir = settings::config_dir(&handle);
-            let state = AppState::new(html_path(&handle), config_dir.join("settings.json"));
+            let mut state = AppState::new(html_path(&handle), config_dir.join("settings.json"));
+            state.chat_html_path = chat_html_path(&handle);
             // Seeded from disk so the very first close already honours the
             // stored preference, before the page's own settings poll has run
             // even once. Default on, matching philogg.html's own default.

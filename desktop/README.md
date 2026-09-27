@@ -77,7 +77,9 @@ strip offers return-to-full and a minimize back to the taskbar),
 that does not go through the browser's File System Access API (see below),
 native log parsing (a file opened from disk is read and parsed by the Rust
 backend on every core, with the same rules as the page's own parser),
-and — Windows only, an optional installer component — Explorer right-click
+the LLM assistant (a chat window, `chat.html`, in which a local model in LM
+Studio operates PhiLogg — HTTP to `localhost` only, from Rust; see
+`docs/llm-assistant.md`), and — Windows only, an optional installer component — Explorer right-click
 entries: "Open in PhiLogg" on a `.log`/`.zip` file and "Watch this Folder"
 on a folder, cleanly removed on uninstall (see `docs/desktop.md` → "Windows
 Explorer context-menu integration").
@@ -100,13 +102,13 @@ directly; nothing is installed and nothing is written to the host machine.
 Both `settings.json` and the session cache move into a `data\` folder next
 to the exe instead of the usual OS locations, so the whole thing (app +
 settings + cache) stays self-contained on that one folder/drive. This only
-works because a `philogg-portable` marker file and a `philogg.html` copy
-ship inside the zip next to the exe — don't delete either, and don't rename
+works because a `philogg-portable` marker file and copies of `philogg.html`
+and `chat.html` ship inside the zip next to the exe — don't delete them, and don't rename
 or move the exe away from them.
 
 Building it locally: `npm run build` already produces the raw
 `src-tauri/target/release/philogg-desktop.exe`, which needs no install
-(WebView2 ships with Windows). Drop `philogg.html`, `LICENSE.md`,
+(WebView2 ships with Windows). Drop `philogg.html`, `desktop/chat.html`, `LICENSE.md`,
 `THIRD_PARTY_NOTICES.md` and an empty `philogg-portable` file next to it to
 get the same portable layout by hand.
 

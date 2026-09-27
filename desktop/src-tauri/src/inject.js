@@ -256,6 +256,16 @@
     llmCancel: function (requestId) {
       return invoke("llm_cancel", { requestId: requestId });
     },
+    // The chat window (desktop/chat.html, a thin view): llmChatWindow(action,
+    // on) — "show" | "hide" | "alwaysOnTop" | "focusMain"; llmViewNotify(msg)
+    // relays a message to it (Rust evals window.philoggChatReceive there).
+    // Its commands come back through window.philoggLlmViewMessage.
+    llmChatWindow: function (action, on) {
+      return invoke("llm_chat_window", { action: action, on: !!on });
+    },
+    llmViewNotify: function (msg) {
+      return invoke("llm_main_to_view", { msg: msg }).catch(function () {});
+    },
   };
 
   // ------------------------------------------------------------ frameless

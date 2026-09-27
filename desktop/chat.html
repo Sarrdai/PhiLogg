@@ -1,0 +1,330 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PhiLogg Assistant</title>
+<!--
+  The LLM assistant's chat (docs/llm-assistant.md → "Chat view"). A THIN
+  view: the agent loop, the sessions and everything about the filter tree
+  live in philogg.html's main window. This page only renders the complete
+  session snapshot it pulls from there ({type:"getSnapshot"} → {type:
+  "snapshot"}) and sends the person's commands back. A {type:"changed"}
+  note only says "there is something new" — the view answers with a pull,
+  so a missed note heals itself on the next one; there are no deltas to
+  lose (the lesson of the abandoned popout window, docs/desktop.md →
+  "Picture-in-picture"). {type:"stream"} carries the answer being typed,
+  purely cosmetic: the next snapshot replaces it.
+
+  Transports (chatTransport below): a preset window.philoggChatTransport
+  (the regression suite), an <iframe> inside the main window (docked,
+  postMessage), or its own desktop window (Tauri: llm_view_to_main /
+  window.philoggChatReceive).
+-->
+<style>
+  :root{
+    --bg-app:#0f121a; --bg-panel:#151924; --bg-elevated:#1b2030; --bg-elevated-2:#232a3d;
+    --border:#2a3144; --border-soft:#222839; --text-primary:#e6e9f0; --text-secondary:#a6adbf;
+    --text-tertiary:#737b90; --accent:#6fa8ff; --accent-soft:rgba(111,168,255,.14);
+    --level-error:#f0708a; --level-warn:#e8a94a;
+    --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0; height:100%; background:var(--bg-panel); color:var(--text-primary); font:13px/1.45 var(--font-ui);}
+  body{display:flex; flex-direction:column;}
+  #chatHeader{flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:6px 8px; border-bottom:1px solid var(--border); background:var(--bg-app);}
+  #chatTitle{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;}
+  #sessionSelect{flex:1 1 auto; min-width:0; max-width:100%; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:3px 6px; font:inherit;}
+  .hbtn{flex:0 0 auto; height:26px; min-width:26px; padding:0 6px; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--text-secondary); cursor:pointer; font:inherit;}
+  .hbtn:hover{background:var(--bg-elevated-2); color:var(--accent);}
+  .hbtn.on{color:var(--accent); border-color:var(--accent);}
+  .hbtn:disabled{opacity:.4; cursor:default;}
+  #chatHint{flex:0 0 auto; padding:5px 10px; font-size:12px; color:var(--level-warn); background:var(--bg-elevated); border-bottom:1px solid var(--border-soft);}
+  #chatHint:empty{display:none;}
+  #chatLog{flex:1 1 auto; overflow-y:auto; padding:10px;}
+  #chatEmpty{color:var(--text-tertiary); text-align:center; margin-top:30px; white-space:pre-line;}
+  .round{margin-bottom:14px;}
+  .msg-user{margin-left:18%; padding:6px 9px; border-radius:9px 9px 2px 9px; background:var(--accent-soft); white-space:pre-wrap; word-wrap:break-word;}
+  .msg-text{margin:6px 18% 0 0; white-space:pre-wrap; word-wrap:break-word;}
+  .msg-text ul{margin:2px 0; padding-left:18px;}
+  .msg-tool{margin:3px 0 0; font:11.5px/1.35 var(--font-mono); color:var(--text-tertiary); white-space:pre-wrap; word-wrap:break-word;}
+  .msg-tool.err{color:var(--level-error);}
+  .msg-stream{margin-top:6px; white-space:pre-wrap; color:var(--text-secondary);}
+  .msg-status{margin-top:5px; font-size:12px; color:var(--level-warn);}
+  .msg-status.error{color:var(--level-error);}
+  .round-actions{margin-top:5px; display:flex; gap:6px; flex-wrap:wrap;}
+  .answer-opt{border:1px solid var(--accent); color:var(--accent); background:transparent; border-radius:12px; padding:2px 10px; cursor:pointer; font:inherit; font-size:12px;}
+  .answer-opt:hover{background:var(--accent-soft);}
+  .undo-round{border:0; background:transparent; color:var(--text-tertiary); cursor:pointer; padding:0; font:inherit; font-size:11.5px; text-decoration:underline dotted;}
+  .undo-round:hover:not(:disabled){color:var(--accent);}
+  .undo-round:disabled{opacity:.5; cursor:default; text-decoration:none;}
+  .ref{font-family:var(--font-mono); font-size:12px; padding:0 2px; border-radius:3px;}
+  a.ref{color:var(--accent); cursor:pointer; text-decoration:underline dotted;}
+  a.ref:hover{background:var(--accent-soft);}
+  .ref-gone{color:var(--text-tertiary); text-decoration:line-through;}
+  .ref-text{color:var(--text-secondary);}
+  .busy-dots::after{content:"…"; animation:blink 1s infinite;}
+  @keyframes blink{50%{opacity:.2;}}
+  #chatInputRow{flex:0 0 auto; display:flex; gap:6px; padding:8px; border-top:1px solid var(--border); background:var(--bg-app);}
+  #chatInput{flex:1 1 auto; resize:none; height:54px; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border); border-radius:7px; padding:6px 8px; font:inherit;}
+  #chatInput:focus{outline:none; border-color:var(--accent);}
+  #chatSend{flex:0 0 auto; width:64px; border:0; border-radius:7px; background:var(--accent); color:#fff; cursor:pointer; font:inherit; font-weight:600;}
+  #chatSend.stop{background:var(--level-error);}
+  #chatSend:disabled{opacity:.5; cursor:default;}
+</style>
+</head>
+<body>
+  <div id="chatHeader">
+    <span id="chatTitle">Assistant</span>
+    <select id="sessionSelect" title="Chat sessions"></select>
+    <button type="button" class="hbtn" id="btnNewSession" title="New chat">＋</button>
+    <button type="button" class="hbtn" id="btnRenameSession" title="Rename this chat">✎</button>
+    <button type="button" class="hbtn" id="btnDeleteSession" title="Delete this chat">🗑</button>
+    <button type="button" class="hbtn" id="btnOnTop" title="Always on top (over every program)">📌</button>
+    <button type="button" class="hbtn" id="btnDock" title="Dock into the main window">⇥</button>
+    <button type="button" class="hbtn" id="btnChatSettings" title="Assistant settings">⚙</button>
+  </div>
+  <div id="chatHint"></div>
+  <div id="chatLog"><div id="chatEmpty">Ask about the loaded log — e.g.
+"I'm interested in the temperature after every positioning."</div></div>
+  <div id="chatInputRow">
+    <textarea id="chatInput" placeholder="Message (Enter sends, Shift+Enter new line)"></textarea>
+    <button type="button" id="chatSend">Send</button>
+  </div>
+<script>
+(function () {
+  "use strict";
+
+  // ------------------------------------------------------------ transport
+  function chatTransport() {
+    if (window.philoggChatTransport) return window.philoggChatTransport;
+    if (window.parent && window.parent !== window) {
+      // Docked: same origin as philogg.html, which listens for these.
+      return {
+        mode: "docked",
+        send: function (msg) { window.parent.postMessage({ philoggChat: msg }, "*"); },
+        onMessage: function (fn) {
+          window.addEventListener("message", function (ev) {
+            if (ev.source === window.parent && ev.data && ev.data.philoggChat) fn(ev.data.philoggChat);
+          });
+        },
+      };
+    }
+    // Own desktop window: Rust relays both ways (commands.rs llm_view_to_main,
+    // and an eval of window.philoggChatReceive for the other direction).
+    return {
+      mode: "window",
+      send: function (msg) {
+        try { window.__TAURI_INTERNALS__.invoke("llm_view_to_main", { msg: msg }); } catch (e) { /* no host */ }
+      },
+      onMessage: function (fn) { window.philoggChatReceive = fn; },
+    };
+  }
+  var transport = chatTransport();
+
+  // ------------------------------------------------------------ state
+  var snap = null;        // last snapshot
+  var stream = null;      // { roundId, text } of the running answer
+  var el = function (id) { return document.getElementById(id); };
+  var log = el("chatLog"), input = el("chatInput"), sendBtn = el("chatSend"), hint = el("chatHint");
+  var sessionSelect = el("sessionSelect");
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  // Text with references: every n123/e456 the main window resolved for this
+  // round becomes a link (clickable), a greyed-out id (node deleted), or
+  // plain text (another app run / file not loaded).
+  function renderRefs(text, roundId) {
+    var refs = (snap && snap.session && snap.session.refs) || {};
+    return esc(text).replace(/\b([ne]\d+)\b/g, function (token) {
+      var ref = refs[roundId + ":" + token];
+      if (!ref) return token;
+      var title = esc(ref.label + (ref.title ? " — " + ref.title : ""));
+      if (ref.state === "link") return '<a class="ref" data-round="' + esc(roundId) + '" data-token="' + token + '" title="' + title + '">' + token + "</a>";
+      if (ref.state === "gone") return '<span class="ref ref-gone" title="' + title + ' (deleted)">' + token + "</span>";
+      return '<span class="ref ref-text" title="' + title + ' (from another session of the app)">' + token + "</span>";
+    });
+  }
+  // Minimal markdown: "- " lines become a list.
+  function renderText(text, roundId) {
+    var lines = String(text).split("\n"), html = "", inList = false;
+    lines.forEach(function (line) {
+      var m = /^\s*[-*•]\s+(.*)$/.exec(line);
+      if (m) {
+        if (!inList) { html += "<ul>"; inList = true; }
+        html += "<li>" + renderRefs(m[1], roundId) + "</li>";
+      } else {
+        if (inList) { html += "</ul>"; inList = false; }
+        html += renderRefs(line, roundId) + "\n";
+      }
+    });
+    if (inList) html += "</ul>";
+    return html.replace(/\n$/, "");
+  }
+  // The answer options of a question (phase 5): the "- " lines of the last
+  // text of the newest round, when that round ended with a question.
+  function answerOptions(round) {
+    if (round.status !== "done") return [];
+    var last = round.items[round.items.length - 1];
+    if (!last || last.kind !== "text" || last.text.indexOf("?") === -1) return [];
+    var opts = [];
+    last.text.split("\n").forEach(function (line) {
+      var m = /^\s*[-*•]\s+(.{1,60})$/.exec(line);
+      if (m) opts.push(m[1].trim());
+    });
+    return opts.length >= 2 && opts.length <= 8 ? opts : [];
+  }
+
+  var STATUS_TEXT = { stopped: "Stopped.", limit: "Turn limit reached.", error: "Error" };
+
+  function render() {
+    if (!snap) return;
+    // Theme: the main window's own CSS variables.
+    var theme = snap.theme || {};
+    Object.keys(theme).forEach(function (k) { document.documentElement.style.setProperty(k, theme[k]); });
+
+    // Sessions dropdown.
+    var sessions = snap.sessions || [];
+    sessionSelect.innerHTML = sessions.length
+      ? sessions.map(function (s) {
+          return '<option value="' + esc(s.id) + '"' + (s.id === snap.activeSessionId ? " selected" : "") + ">" +
+            esc(s.title) + (s.files && s.files.length ? " — " + esc(s.files.join(", ")) : "") + "</option>";
+        }).join("")
+      : "<option>New chat</option>";
+    // Controls the main window supports (snapshot.features) — older/newer
+    // builds of the two halves stay compatible.
+    var features = snap.features || [];
+    ["sessionSelect", "btnNewSession", "btnRenameSession", "btnDeleteSession"].forEach(function (id) {
+      el(id).style.display = features.indexOf("sessions") !== -1 ? "" : "none";
+    });
+    el("chatTitle").style.display = features.indexOf("sessions") !== -1 ? "none" : "";
+    el("chatTitle").textContent = snap.session ? snap.session.title : "Assistant";
+    sessionSelect.disabled = !sessions.length || snap.running;
+    el("btnRenameSession").disabled = !snap.session;
+    el("btnDeleteSession").disabled = !snap.session || snap.running;
+    el("btnNewSession").disabled = snap.running;
+    el("btnOnTop").classList.toggle("on", !!snap.alwaysOnTop);
+    el("btnOnTop").style.display = transport.mode === "window" ? "" : "none";
+    el("btnDock").textContent = transport.mode === "docked" ? "⇤" : "⇥";
+    el("btnDock").title = transport.mode === "docked" ? "Undock into its own window" : "Dock into the main window";
+    el("btnDock").style.display = features.indexOf("dock") !== -1 && (transport.mode === "window" || transport.mode === "docked") ? "" : "none";
+
+    var s = snap.session;
+    hint.textContent = s && s.missingFiles && s.missingFiles.length
+      ? "Refers to " + s.missingFiles.join(", ") + " — not loaded." : "";
+
+    var html = "";
+    var rounds = s ? s.rounds : [];
+    rounds.forEach(function (r, idx) {
+      html += '<div class="round" data-round="' + esc(r.id) + '"><div class="msg-user">' + esc(r.user) + "</div>";
+      r.items.forEach(function (it) {
+        if (it.kind === "tool") html += '<div class="msg-tool' + (it.error ? " err" : "") + '" title="' + esc(it.args || "") + '">▸ ' + renderRefs(it.summary, r.id) + "</div>";
+        else html += '<div class="msg-text">' + renderText(it.text, r.id) + "</div>";
+      });
+      if (r.status === "running") {
+        var st = stream && stream.roundId === r.id ? stream.text : "";
+        html += st ? '<div class="msg-stream">' + esc(st) + "</div>" : '<div class="msg-stream busy-dots">Working</div>';
+      } else if (STATUS_TEXT[r.status]) {
+        html += '<div class="msg-status' + (r.status === "error" ? " error" : "") + '">' + STATUS_TEXT[r.status] + (r.error ? " " + esc(r.error) : "") + "</div>";
+      }
+      var opts = idx === rounds.length - 1 && !snap.running && (snap.features || []).indexOf("answers") !== -1 ? answerOptions(r) : [];
+      html += '<div class="round-actions">';
+      opts.forEach(function (o) { html += '<button type="button" class="answer-opt" data-answer="' + esc(o) + '">' + esc(o) + "</button>"; });
+      if (r.status !== "running") {
+        html += '<button type="button" class="undo-round" data-undo="' + esc(r.id) + '"' + (r.undo === "available" ? "" : " disabled") +
+          ' title="Removes the filters this round created (one undo step)">Undo this round</button>';
+      }
+      html += "</div></div>";
+    });
+    var atBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 40;
+    log.innerHTML = rounds.length ? html : '<div id="chatEmpty">' + (snap.available === false
+      ? "The assistant needs the PhiLogg desktop app."
+      : "Ask about the loaded log — e.g.\n\"I'm interested in the temperature after every positioning.\"") + "</div>";
+    if (atBottom || snap.running) log.scrollTop = log.scrollHeight;
+
+    sendBtn.textContent = snap.running ? "Stop" : "Send";
+    sendBtn.classList.toggle("stop", !!snap.running);
+  }
+
+  // ------------------------------------------------------------ incoming
+  var wanted = 0;
+  transport.onMessage(function (msg) {
+    if (!msg || typeof msg !== "object") return;
+    if (msg.type === "snapshot") {
+      snap = msg;
+      stream = msg.stream ? { roundId: msg.stream.roundId, text: msg.stream.text } : null;
+      render();
+    } else if (msg.type === "changed") {
+      // Pull, never trust a delta: fetch the whole session.
+      wanted++;
+      transport.send({ type: "getSnapshot" });
+    } else if (msg.type === "stream") {
+      if (!snap || !snap.session || snap.session.id !== msg.sessionId) return;
+      stream = { roundId: msg.roundId, text: msg.text };
+      var round = log.querySelector('.round[data-round="' + msg.roundId + '"] .msg-stream');
+      if (round) { round.classList.remove("busy-dots"); round.textContent = msg.text; log.scrollTop = log.scrollHeight; }
+      else render();
+    } else if (msg.type === "undoResult") {
+      if (msg.needsConfirm) {
+        var ok = window.confirm("You created " + msg.foreign + " filter(s) below this round's filters. They would be removed too. Undo the round anyway?");
+        if (ok) transport.send({ type: "undoRound", roundId: msg.roundId, force: true });
+      }
+    }
+  });
+
+  // ------------------------------------------------------------ outgoing
+  function send() {
+    if (snap && snap.running) { transport.send({ type: "stop" }); return; }
+    var text = input.value.trim();
+    if (!text) return;
+    input.value = "";
+    transport.send({ type: "send", text: text });
+  }
+  sendBtn.addEventListener("click", send);
+  input.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter" && !ev.shiftKey && !ev.isComposing) { ev.preventDefault(); send(); }
+  });
+  log.addEventListener("click", function (ev) {
+    var ref = ev.target.closest("a.ref");
+    if (ref) { transport.send({ type: "reveal", roundId: ref.dataset.round, token: ref.dataset.token }); return; }
+    var undoBtn = ev.target.closest("button.undo-round");
+    if (undoBtn && !undoBtn.disabled) { transport.send({ type: "undoRound", roundId: undoBtn.dataset.undo }); return; }
+    var opt = ev.target.closest("button.answer-opt");
+    if (opt && !(snap && snap.running)) transport.send({ type: "send", text: opt.dataset.answer });
+  });
+  sessionSelect.addEventListener("change", function () {
+    transport.send({ type: "switchSession", sessionId: sessionSelect.value });
+  });
+  el("btnNewSession").addEventListener("click", function () { transport.send({ type: "newSession" }); input.focus(); });
+  el("btnRenameSession").addEventListener("click", function () {
+    if (!snap || !snap.session) return;
+    var title = window.prompt("Rename this chat", snap.session.title);
+    if (title != null && title.trim()) transport.send({ type: "renameSession", sessionId: snap.session.id, title: title.trim() });
+  });
+  el("btnDeleteSession").addEventListener("click", function () {
+    if (!snap || !snap.session) return;
+    if (window.confirm("Delete the chat \"" + snap.session.title + "\"? The filters it created stay.")) {
+      transport.send({ type: "deleteSession", sessionId: snap.session.id });
+    }
+  });
+  el("btnOnTop").addEventListener("click", function () {
+    transport.send({ type: "setAlwaysOnTop", on: !(snap && snap.alwaysOnTop) });
+  });
+  el("btnDock").addEventListener("click", function () {
+    transport.send({ type: transport.mode === "docked" ? "undock" : "dock" });
+  });
+  el("btnChatSettings").addEventListener("click", function () { transport.send({ type: "openSettings" }); });
+
+  // Test seam (the regression suite reads what the view holds).
+  window.philoggChatView = { get snapshot() { return snap; }, get stream() { return stream; }, render: render };
+
+  transport.send({ type: "getSnapshot" });
+})();
+</script>
+</body>
+</html>

@@ -581,3 +581,38 @@ pub fn llm_cancel(request_id: String, state: State<'_, AppState>) {
         flag.store(true, Ordering::Relaxed);
     }
 }
+
+/// The LLM assistant's chat window (`windows.rs`): `"show"` (create on first
+/// use, else show + focus), `"hide"`, `"alwaysOnTop"` with `on`, and
+/// `"focusMain"` (a reference clicked in the chat brings the log forward).
+/// `async` so the window is built off the IPC callback's stack — the same
+/// precaution `pip_enter` takes (tauri-apps/wry#583 deadlocked a window
+/// created from a synchronous command on Windows).
+#[tauri::command]
+pub async fn llm_chat_window(app: AppHandle, action: String, on: Option<bool>) {
+    match action.as_str() {
+        "show" => windows::show_chat(&app),
+        "hide" => windows::hide_chat(&app),
+        "alwaysOnTop" => windows::set_chat_on_top(&app, on.unwrap_or(false)),
+        "focusMain" => windows::focus_main(&app),
+        _ => {}
+    }
+}
+
+/// Chat window → main window: the chat is a thin view, every command it
+/// sends is handled by philogg.html's `philoggLlmViewMessage`.
+#[tauri::command]
+pub fn llm_view_to_main(app: AppHandle, msg: serde_json::Value) {
+    if let Some(main) = app.get_webview_window(windows::MAIN) {
+        let _ = main.eval(&format!("window.philoggLlmViewMessage && window.philoggLlmViewMessage({msg})"));
+    }
+}
+
+/// Main window → chat window (a snapshot, a "changed" note, streamed text).
+/// A no-op while the chat window doesn't exist.
+#[tauri::command]
+pub fn llm_main_to_view(app: AppHandle, msg: serde_json::Value) {
+    if let Some(chat) = app.get_webview_window(windows::CHAT) {
+        let _ = chat.eval(&format!("window.philoggChatReceive && window.philoggChatReceive({msg})"));
+    }
+}
