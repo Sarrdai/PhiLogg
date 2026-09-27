@@ -8,6 +8,12 @@ use crate::state::AppState;
 use crate::{commands, inject, protocol, settings};
 
 pub const MAIN: &str = "main";
+/// The LLM assistant's chat window (`desktop/chat.html`).
+pub const CHAT: &str = "chat";
+/// `philogg.html`'s localStorage keys for the chat window, mirrored into
+/// `settings.json` by the page's settings poll like every `philogg-*` key.
+const CHAT_GEOMETRY_KEY: &str = "philogg-llm-chat-geometry";
+const CHAT_ON_TOP_KEY: &str = "philogg-llm-chat-on-top";
 
 /// The small fixed size the window takes on while in picture-in-picture. In
 /// logical pixels, same as the popout's content window was; tune later.
@@ -438,4 +444,104 @@ pub fn flush_pending_local(app: &AppHandle) {
     let Some(payload) = pending else { return };
     let Some(window) = app.get_webview_window(MAIN) else { return };
     eval_load_local(&window, &payload);
+}
+
+/// Shows the LLM assistant's chat window, creating it on first use. It is an
+/// *owned* window (`parent` = the main window): it floats above PhiLogg and
+/// minimizes with it, but doesn't cover other programs — unless the person
+/// turns on "always on top" (`set_chat_on_top`). Size and position come back
+/// from `settings.json` (`philogg-llm-chat-geometry`, written by
+/// `hide_chat`). The page is a thin view; nothing here ever copies app
+/// state into it (docs/llm-assistant.md → "Chat view").
+pub fn show_chat(app: &AppHandle) {
+    if let Some(chat) = app.get_webview_window(CHAT) {
+        let _ = chat.show();
+        let _ = chat.unminimize();
+        let _ = chat.set_focus();
+        return;
+    }
+    let Some(main) = app.get_webview_window(MAIN) else { return };
+    let state = app.state::<AppState>();
+    let stored = settings::read(&state.settings_path);
+    let Ok(url) = tauri::Url::parse(&protocol::chat_url()) else { return };
+    let geometry = stored
+        .get(CHAT_GEOMETRY_KEY)
+        .and_then(|g| serde_json::from_str::<serde_json::Value>(g).ok())
+        .and_then(|g| Some((g["x"].as_f64()?, g["y"].as_f64()?, g["w"].as_f64()?, g["h"].as_f64()?)));
+    let (w, h) = geometry.map(|g| (g.2, g.3)).unwrap_or((420.0, 640.0));
+    let mut builder = WebviewWindowBuilder::new(app, CHAT, WebviewUrl::CustomProtocol(url))
+        .title("PhiLogg Assistant")
+        .inner_size(w.max(300.0), h.max(260.0))
+        .min_inner_size(300.0, 260.0)
+        .background_color(tauri::window::Color(0x15, 0x19, 0x24, 0xff))
+        .always_on_top(stored.get(CHAT_ON_TOP_KEY).map(|v| v == "1").unwrap_or(false));
+    if let Some((x, y, _, _)) = geometry {
+        builder = builder.position(x, y);
+    }
+    // Frameless like the main window: chat.html draws its own title bar
+    // (drag region + the same window controls as inject.js's #tauri-wc).
+    // macOS keeps the native traffic lights over an overlay title bar.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.decorations(false);
+    }
+    // Same WebView2 data directory as the main window: two environments with
+    // different options in one process refuse to start.
+    if let Some(dir) = settings::portable_dir() {
+        builder = builder.data_directory(dir.join("data").join("webview"));
+    }
+    let Ok(builder) = builder.parent(&main) else { return };
+    let Ok(chat) = builder.build() else { return };
+    let chat_ref = chat.clone();
+    chat.on_window_event(move |event| {
+        if let WindowEvent::CloseRequested { api, .. } = event {
+            let app = chat_ref.app_handle();
+            if app.state::<AppState>().is_quitting.load(Ordering::Relaxed) {
+                return;
+            }
+            // The X only hides — the toolbar button brings it back, and the
+            // agent loop (main window) never notices either way.
+            api.prevent_close();
+            hide_chat(app);
+        }
+    });
+}
+
+/// Hides the chat window, remembering its geometry in the main page's
+/// localStorage (and so in `settings.json`).
+pub fn hide_chat(app: &AppHandle) {
+    let Some(chat) = app.get_webview_window(CHAT) else { return };
+    let scale = chat.scale_factor().unwrap_or(1.0);
+    if let (Ok(size), Ok(pos)) = (chat.inner_size(), chat.outer_position()) {
+        let geometry = serde_json::json!({
+            "x": pos.x as f64 / scale, "y": pos.y as f64 / scale,
+            "w": size.width as f64 / scale, "h": size.height as f64 / scale,
+        })
+        .to_string();
+        set_main_local_storage(app, CHAT_GEOMETRY_KEY, &geometry);
+    }
+    let _ = chat.hide();
+}
+
+/// "Always on top" — global, over every program (`set_always_on_top`).
+pub fn set_chat_on_top(app: &AppHandle, on: bool) {
+    if let Some(chat) = app.get_webview_window(CHAT) {
+        let _ = chat.set_always_on_top(on);
+    }
+    set_main_local_storage(app, CHAT_ON_TOP_KEY, if on { "1" } else { "0" });
+}
+
+fn set_main_local_storage(app: &AppHandle, key: &str, value: &str) {
+    if let Some(main) = app.get_webview_window(MAIN) {
+        let js = format!(
+            "try {{ localStorage.setItem({}, {}); }} catch (e) {{}}",
+            serde_json::to_string(key).unwrap_or_default(),
+            serde_json::to_string(value).unwrap_or_default()
+        );
+        let _ = main.eval(&js);
+    }
 }

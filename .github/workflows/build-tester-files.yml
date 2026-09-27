@@ -187,6 +187,7 @@ jobs:
           mkdir -p "$STAGE"
           cp desktop/src-tauri/target/release/philogg-desktop.exe "$STAGE/PhiLogg.exe"
           cp philogg.html "$STAGE/philogg.html"
+          cp desktop/chat.html "$STAGE/chat.html"
           cp LICENSE.md desktop/THIRD_PARTY_NOTICES.md "$STAGE/"
           touch "$STAGE/philogg-portable"
           (cd "$STAGE" && 7z a -tzip "../${STAGE}.zip" .)
