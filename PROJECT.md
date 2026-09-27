@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~39,400 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~40,400 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -181,6 +181,29 @@ own worker and actually parse on separate cores at once — the scenario this
 was built for (large files, several loaded together). See `tests/…` GROUP
 165 for the coverage (sandboxed worker-source execution + concurrent-load
 correctness) and GROUP 68's addendum for the queued-placeholder UX change.
+
+**JSON Lines formats (`mode: "json"`, FEATURE_BACKLOG.md #82).** Every line
+starting with `{` is one entry, parsed with `JSON.parse` (`compileJsonFormat`,
+a branch of `compileOneFormat`, so the main-thread loop, the parse workers —
+its helpers are in `buildLogParseWorkerSrc`'s list — tailing and the format
+dialog's preview share it). Time, level and message come from configurable
+keys (`tsKey`/`levelKey`/`messageKey`; a missing level is `INFO`, a
+missing message key leaves the whole line as the message); time is a number
+(epoch s/ms/µs/ns by magnitude), else `tsFormat` or `Date.parse` (ISO 8601).
+Custom columns are `columnDefs` entries with a **`path`**: `ctx.req.id`,
+`tags[0]` (negative index from the end), `["http.status"]` for a key
+containing a dot — and an unquoted dotted run prefers a *literal* key first,
+longest match wins, so OpenTelemetry-style flat keys resolve unescaped
+(`parseJsonPath`/`resolveJsonPath`). The column `key` is a sanitized
+identifier (`jsonColumnKey`) — a path never reaches an attribute or selector.
+Values land on `entry.fields` as text; objects and arrays as their JSON text
+(which the extraction table's array views parse back, see
+`docs/extraction-and-plotting.md` → "Array columns"). A `{` line that doesn't
+parse keeps the whole line as its message; any other line continues the
+previous entry. No native parse (`nativeFormatSpec` → null, the JS path
+takes over). Defined in the format dialog's JSON Lines kind
+(`docs/ui-and-views.md`); exported/imported like any format (`tsKey`/
+`levelKey`/`messageKey` are export fields).
 
 **Plain text: `fmt-plaintext`.** A code-level builtin (`PLAINTEXT_LOG_FORMAT`,
 `mode: "plaintext"`) that isn't stored in `state.logFormats` and so isn't
