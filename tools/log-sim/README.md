@@ -1,0 +1,88 @@
+# Log simulator
+
+Generates realistic sample logs that exercise every PhiLogg feature — in
+every log format PhiLogg parses — either as finished files (by entry count
+or approximate size) or growing live for tailing and folder watch.
+
+| File | What it is |
+| --- | --- |
+| `core.js` | The generator engine: scenarios, formats, size control, ZIP writer. UMD — `require`d by Node, loaded by the page via `<script src>`. |
+| `cli.js` | Headless front end (Node ≥ 18, no dependencies). |
+| `screenshot.js` | Opens `philogg.html` in headless Chromium with generated files (and their format definitions) loaded, and saves a screenshot. |
+| `../log-simulator.html` | Browser UI: the same options, download or write to a folder, plus live writing (tailing, rotation, burst, truncate). |
+
+Same seed + same options = byte-identical output in the CLI and the UI, in
+every time zone (timestamps are wall-clock values, not converted).
+
+## Quick start
+
+```bash
+node tools/log-sim/cli.js --list                        # formats + scenarios, with the features each one feeds
+node tools/log-sim/cli.js -n 20                         # 20 entries, default format, to stdout
+node tools/log-sim/cli.js -n 5000 -o /tmp/demo/app.log  # one file
+node tools/log-sim/cli.js --size 100MB -o /tmp/big.log  # ~6 s
+```
+
+## Formats (`-f`)
+
+| Name | Output | PhiLogg setup |
+| --- | --- | --- |
+| `default` | builtin log4net-style, tab-separated | none |
+| `custom` | log4j-like line + custom columns `requestId`/`user`/`tenant` | import `<prefix>.logformat.json` |
+| `bracket` | `[ts] LEVEL (thread) message` | import `<prefix>.logformat.json` |
+| `jsonl` | JSON Lines: nested `ctx`, literal dotted key `"http.status"`, arrays, objects | import `<prefix>.logformat.json` |
+| `syslog` | RFC 5424, numeric PRI as level (Integer level mode) | import `<prefix>.logformat.json` |
+| `mixed` | default lines interleaved with syslog lines | import the syslog definition, then add a Meta format `[syslog, Default]` |
+| `plain` | bare messages, `.txt` | open, then the text viewer's "Filter lines" |
+
+Whenever output goes to a file or folder, the matching PhiLogg format
+definition (`philogg-log-format` export, with a filename rule for the
+generated names) is written next to it — import it via Open → Import… or by
+dropping it onto PhiLogg. `--format-json` prints it instead.
+
+## Scenarios (`-s`, default: all)
+
+`basic`, `stacktrace`, `position`, `motion`, `timing`, `sensors`, `arrays`,
+`embedded`, `paths`, `ids`, `bursts`, `gaps`, `levels`, `text` —
+`--list` shows what each one contains, which PhiLogg feature it targets and
+a filter to try (e.g. `motion` → Link filter with a same-thread key and a
+Δt condition; `arrays` → array columns and the Heatmap). Select with
+`-s motion,position` or exclude with `-s all,-gaps,-text`.
+
+## Amount and files
+
+- `-n 5000` entries or `--size 20MB` per file.
+- `--files 4` writes `<prefix>-1..4<ext>` into the `-o` directory.
+  `--layout rotate` (default) continues one timeline across the files
+  (folder watch); `--layout parallel` gives each file its own service over
+  the same time range (merge, Sources), `--skew 1500` shifts each file's
+  clock by 1.5 s per index (per-file clock offset).
+- `--gzip` (each file `.gz`), `--zip -o out.zip` (one archive, stored),
+  `--crlf`, `--seed`, `--start 2026-01-15T08:00:00`, `--rate 10` (entries per
+  second of log time).
+
+## Live writing (tailing)
+
+```bash
+node tools/log-sim/cli.js --follow -o /tmp/watch/ --interval 200 --rotate-lines 500 --duration 60
+```
+
+Appends in real time (current wall-clock timestamps), opening/closing the
+file per entry so a tailing reader sees every line at once; `--rotate-lines`
+starts the next file (folder watch). The browser UI adds burst and truncate
+buttons.
+
+## For Claude sessions
+
+Use this instead of writing sample log lines by hand:
+
+```bash
+# test/demo data, format definition written alongside
+node tools/log-sim/cli.js -f jsonl -n 3000 -o "$SCRATCH/demo/"
+# screenshot of the real app with that data (Playwright is preinstalled globally)
+NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js --out "$SCRATCH/shot.png" "$SCRATCH"/demo/*
+# --eval runs page JS before the shot (the app's own functions, e.g. createFilterNode / render / applyFhView), --theme dark
+```
+
+Inside the regression suite, `require("../tools/log-sim/core.js")` and use
+`generateToStrings({format, entries, seed})` (see GROUP 300).
