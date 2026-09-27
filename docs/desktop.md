@@ -338,9 +338,7 @@ that description:
   **refused** — the command errors before streaming anything and the page
   parses that file in JS as before. `null` (a regex that failed to compile)
   reproduces the "every line is its own entry" fallback.
-- `applyFormatMatch`, `stripQuotes`, `formatLocation` (hand-written from the
-  end instead of a regex — it was half the parse time; a brute-force test
-  checks it against the regex), `appendContinuationLine`,
+- `applyFormatMatch`, `stripQuotes`, `appendContinuationLine`,
   `parseTimestamp`/`parseTimestampGeneric` and `String.prototype.trim`'s
   whitespace set are mirrored one function each; the Rust functions name
   their JS counterpart.
@@ -799,7 +797,7 @@ both.
 ## IDE Integration: jump from a log entry into a running Visual Studio (Windows only), Rider fast-follow
 
 `philogg.html`'s Location/Method columns already carry a parsed file path +
-line number (`formatLocation`/`parseIdeLocation`), but the log's path is
+line number (`entry.location`, split by `parseIdeLocation`), but the log's path is
 almost never the path on the machine reading it later (different drive,
 worktree, clone location). The Settings → IDE Integration section lets a
 person configure a shared **anchor pattern** (e.g. `Code\Projects`) both
