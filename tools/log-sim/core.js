@@ -293,7 +293,7 @@
         const r = g.int(0, 4);
         const user = g.pick(USERS);
         if (r === 0) return { level: "INFO", cls: "session", method: "Open", msg: "Session " + g.guid() + " opened for user \"" + user + "\" from 10.0." + g.int(0, 9) + "." + g.int(2, 250) + ":" + g.int(40000, 65000), ctx: { user } };
-        if (r === 1) return { level: "WARN", cls: "files", method: "Verify", msg: "Checksum mismatch for block 0x" + g.hex(8) + ": expected " + g.hex(8) + " got " + g.hex(8) };
+        if (r === 1) return { level: "WARN", cls: "files", method: "Verify", msg: "Checksum mismatch for block 0x" + g.hex(8) + ": expected 0x" + g.hex(8) + " got 0x" + g.hex(8) };
         if (r === 2) return { level: "DEBUG", cls: "http", method: "Send", msg: "GET https://api.example.com/v2/orders/" + g.int(1, 99999) + " -> 200 (" + g.int(5, 300) + " ms)", ctx: { req: g.reqId() } };
         if (r === 3) return { level: "DEBUG", cls: "repo", method: "Evict", msg: "Cache key " + g.hex(16) + " evicted" };
         return { level: "INFO", cls: "scheduler", method: "Dispatch", msg: "Worker-" + g.int(1, 8) + " picked up task " + g.int(1, 99999) };
@@ -302,7 +302,7 @@
 
     bursts: {
       label: "Error bursts",
-      weight: 0.4,
+      weight: 0.08,
       hint: "Rare bursts of 20-80 WARN/ERROR lines within about a second. Timeline minimap bars, level bar counts, Count/Time context filters, find bar navigation.",
       make(g, ts) {
         const n = g.int(20, 80);

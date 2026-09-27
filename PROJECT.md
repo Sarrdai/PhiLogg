@@ -428,6 +428,42 @@ Two companions ride along with `_cache` (cleared in the exact same places, nowhe
 - **`deleteNode()` invalidates nothing at all**, not even scoped: a surviving node's cached result depends only on its own `parentId` chain (same premise the scoped tail-tick variant above relies on), and deleting a node/subtree never changes any *surviving* node's `parentId` — the removed nodes are just dropped from `state.nodes`, nothing is reparented. The global sweep here used to force every remaining node's count badge to recompute from scratch on the very next render, which was the visible ~1s stall on delete that switching the active filter never had (switching touches no cache at all). `move`/`invert`/edit are unaffected by this and still use the global sweep.
 
 
+## Sample data and screenshots
+
+**The one way** to produce example logs and screenshots — for tests, the
+README's `docs/screenshots/`, a product homepage, guides or bug
+reproductions — is the log simulator in `tools/log-sim/`:
+
+1. **Data**: `node tools/log-sim/cli.js -f <format> -s <scenarios> -n <entries> -o <dir>/`
+   (`--list` names every format and scenario with the feature it feeds).
+   Deterministic per `--seed`, so a screenshot can be regenerated later with
+   identical content. Non-builtin formats get their `*.logformat.json`
+   written alongside.
+2. **Screenshot**: `NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js
+   --out <png> [--theme dark] [--size 1440x900] [--eval "<js>"] <dir>/*` —
+   headless Chromium with the real `philogg.html`, the files and their
+   formats loaded; `--eval` builds the scene through the app's own
+   functions and buttons (filters, tabs, plot settings — recipes in
+   `tools/log-sim/README.md`).
+3. **Record the command** (seed, options, `--eval`) next to where the
+   screenshot is used or in the session's changelog entry, so the next
+   update reproduces it instead of reinventing it. The README's own
+   screenshots are the reference example: `docs/screenshots/generate.sh`
+   (one data set, `scenes/common.js` builds the filter tree, one
+   `scenes/NN-name.js` per picture) regenerates all of them —
+   `docs/screenshots/generate.sh plot` just the matching ones. A new README
+   picture is a new scene file there.
+
+**Missing content is a simulator gap, not a reason to hand-write data.**
+If a case can't be produced — a new feature's log shape, a new format, a
+message pattern — extend `tools/log-sim/core.js` first (a scenario, or a
+format with its `exportFormat`) and cover it in GROUP 300, then generate.
+Log lines written by hand, by a one-off script or pasted from chat output
+are not the way. Likewise, a screenshot setup the helper can't express gets
+a new `screenshot.js` option rather than a private Playwright script.
+`tools/perf/gen-log.js` stays the one exception, fixed for the recorded
+performance baselines.
+
 ## Where everything else lives
 
 The sections below used to live directly in this file. They've moved to `docs/*.md` (grouped by topic, current-state description only — no session dates, no "pass 1 then pass 2" narrative) and to `CHANGELOG.md` (the full chronological history, newest-first). This section is the index: enough orientation per topic to know where to look, not the material itself.
