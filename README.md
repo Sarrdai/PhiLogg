@@ -479,7 +479,9 @@ node tools/log-sim/cli.js --list
 node tools/log-sim/cli.js -f jsonl --size 20MB -o demo/
 ```
 
-See [`tools/log-sim/README.md`](tools/log-sim/README.md).
+See [`tools/log-sim/README.md`](tools/log-sim/README.md). The screenshots in
+this README (and any product page or guide) are produced with it too — see
+`PROJECT.md` → "Sample data and screenshots".
 
 Project documentation is split by audience:
 
