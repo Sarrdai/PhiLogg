@@ -30,6 +30,9 @@ Deterministic synthetic log in the builtin default format: 650,000 entries
 ≈ 100 MB, every 10th with a stack-trace continuation line — close to the
 size the person tests with. `desktop-load-bench.sh` generates it itself if
 missing. Keep big files out of the repo (`/tmp` or the session scratchpad).
+Kept separate from the log simulator (`tools/log-sim/`, varied content in
+every format — `--size 100MB` for realistic big files) so the recorded
+baselines stay comparable.
 
 ## Level 1 — the native parser alone
 
