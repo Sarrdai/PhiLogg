@@ -34431,7 +34431,7 @@ await withApp(async (w, d, T) => {
   assert(await waitFor(() => cw.philoggChatView.snapshot), "the view pulls a snapshot on load");
   assert(cd.getElementById("chatEmpty").textContent.includes("temperature"), "empty chat: an example question");
   assert(cd.documentElement.style.getPropertyValue("--accent") !== "", "the main window's theme variables are applied");
-  assert(cd.getElementById("sessionSelect").style.display === "" && cd.getElementById("btnDock").style.display === "" && cd.getElementById("btnOnTop").style.display === "", "controls follow snapshot.features and the transport (window: sessions, dock, always-on-top)");
+  assert(cd.getElementById("chatToolbar").style.display === "" && cd.getElementById("btnDock").style.display === "" && cd.getElementById("btnOnTop").style.display === "", "controls follow snapshot.features and the transport (window: sessions, dock, always-on-top)");
 
   let streamSeen = false;
   const fake = llmFakeModel([
@@ -34651,12 +34651,58 @@ await withApp(async (w, d, T) => {
     cw.dispatchEvent(new cw.MessageEvent("message", { data: { philoggChat: snapshot }, source: {} }));
     assert(!cw.philoggChatView.snapshot, "a message from anything but the parent is ignored");
     cw.dispatchEvent(new cw.MessageEvent("message", { data: { philoggChat: snapshot }, source: fakeParent }));
-    assert(cw.philoggChatView.snapshot && cd.getElementById("btnDock").textContent === "⇤" && cd.getElementById("btnOnTop").style.display === "none", "docked: an undock button, no always-on-top");
+    assert(cw.philoggChatView.snapshot && cd.getElementById("btnDock").dataset.state === "undock" && cd.getElementById("btnOnTop").style.display === "none", "docked: an undock button, no always-on-top");
+    assert(cd.getElementById("chatWc").style.display === "none", "docked: no window controls");
     cd.getElementById("btnDock").click();
     assert(toParent[toParent.length - 1].philoggChat.type === "undock", "undock goes to the parent");
     dom.window.close();
   }
 }
+
+/* ============================================================
+   GROUP 307 — 2026-09-28 (person-reported after the first desktop start):
+   the chat window looks like the main app — frameless with its own title
+   bar (drag region, the main window's window-control buttons, which act
+   through the transport), .toolbar-icon-btn SVG buttons instead of emoji,
+   the main window's primary/secondary button and theme variables
+   (accent-on, border-hover). macOS keeps the native traffic lights.
+   ============================================================ */
+group(307);
+{
+  if (groupSelected()) {
+    section("307a. Chat window chrome: title bar, window controls, app-style buttons");
+    const acts = [];
+    const open = (search, transport) => {
+      const dom = new JSDOM(CHAT_HTML, {
+        runScripts: "dangerously", pretendToBeVisual: true, url: "http://localhost/app/chat.html" + search,
+        beforeParse(cw) { cw.philoggChatTransport = transport; },
+      });
+      return dom;
+    };
+    const dom = open("", { mode: "window", send() {}, onMessage() {}, windowAction: a => acts.push(a) });
+    const cd = dom.window.document;
+    const bar = cd.getElementById("chatTitlebar");
+    assert(bar.hasAttribute("data-tauri-drag-region") && cd.getElementById("chatTitle").hasAttribute("data-tauri-drag-region"), "the title bar is the drag region");
+    assert(cd.getElementById("chatWc").style.display === "" && cd.querySelectorAll("#chatWc button").length === 3, "own window: minimize / maximize / close");
+    ["minimize", "maximize", "close"].forEach(a => cd.querySelector('#chatWc [data-act="' + a + '"]').click());
+    assert(acts.join() === "minimize,maximize,close", "they act through the transport (window_minimize / window_toggle_maximize / window_close)");
+    const btns = [...cd.querySelectorAll("#chatTitlebar button, #chatToolbar button")].filter(b => !b.closest("#chatWc"));
+    assert(btns.length === 6 && btns.every(b => b.classList.contains("toolbar-icon-btn") && b.querySelector("svg") && b.textContent.trim() === ""), "header buttons are the main window's icon buttons (SVG, no emoji)");
+    assert(!/[📌🗑⚙✎⇥⇤＋]/u.test(cd.body.innerHTML), "no emoji glyphs left");
+    dom.window.close();
+    const mac = open("?mac=1", { mode: "window", send() {}, onMessage() {}, windowAction() {} });
+    assert(mac.window.document.documentElement.classList.contains("mac") && mac.window.document.getElementById("chatWc").style.display === "none", "macOS: room for the traffic lights, no own controls");
+    mac.window.close();
+    const plain = open("", { mode: "window", send() {}, onMessage() {} });
+    assert(plain.window.document.getElementById("chatWc").style.display === "none", "a transport without window actions shows none");
+    plain.window.close();
+  }
+}
+await withApp(async (w, d, T) => {
+  section("307b. The snapshot carries the variables the app-style buttons need");
+  const theme = w.llmSnapshot().theme;
+  assert(theme["--accent-on"] && theme["--border-hover"] && theme["--accent-strong"] && theme["--bg-panel"], "accent-on, border-hover, accent-strong, bg-panel");
+}, { philogg: llmDesktopStub() });
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -39037,5 +39083,8 @@ process.exitCode = failed ? 1 : 0;
    Group 306 — same session (phase 6): docking — the chat as an iframe side
       panel (postMessage), dock/undock, toolbar toggle, remembered state,
       chat.html's docked transport.
+   Group 307 — 2026-09-28 (person-reported): the chat window styled like
+      the main app — frameless title bar with drag region and window
+      controls, icon buttons instead of emoji, theme variables.
    ============================================================ */
 

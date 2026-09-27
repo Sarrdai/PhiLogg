@@ -478,6 +478,17 @@ pub fn show_chat(app: &AppHandle) {
     if let Some((x, y, _, _)) = geometry {
         builder = builder.position(x, y);
     }
+    // Frameless like the main window: chat.html draws its own title bar
+    // (drag region + the same window controls as inject.js's #tauri-wc).
+    // macOS keeps the native traffic lights over an overlay title bar.
+    #[cfg(target_os = "macos")]
+    {
+        builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        builder = builder.decorations(false);
+    }
     // Same WebView2 data directory as the main window: two environments with
     // different options in one process refuse to start.
     if let Some(dir) = settings::portable_dir() {

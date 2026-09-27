@@ -348,8 +348,9 @@ Vorab-Spike mit LM Studio, gesammelter Abnahmetest in Phase 7; Chat-UI in
   Hauptfensters; der bestehende Settings-Spiegel bringt sie nach
   `settings.json`, von dort liest Rust sie beim nächsten Erzeugen. (`pip_prev`
   ist entgegen der Formulierung im Plan nur prozess-lokal, nicht
-  persistiert.) Das Chat-Fenster hat einen normalen OS-Rahmen, keinen
-  rahmenlosen wie das Hauptfenster.
+  persistiert.) Das Chat-Fenster ist wie das Hauptfenster rahmenlos, mit
+  eigener Titelleiste und denselben Fenster-Buttons (nach dem ersten Start
+  unter Windows nachgezogen, 2026-09-28).
 - **Phase 4 — Features im Snapshot.** Der Snapshot trägt eine
   `features`-Liste (`sessions`, `answers`, `dock`); `chat.html` blendet nur
   diese Bedienelemente ein. So war jede Phase für sich vollständig, und die
