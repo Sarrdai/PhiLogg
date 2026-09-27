@@ -68,15 +68,15 @@ unter Windows (tauri-apps/wry#583). Konsequenzen für diesen Plan:
    können. Ausnahme: Streaming-Tokens der laufenden Antwort (rein kosmetisch,
    der finale Snapshot überschreibt sie).
 3. **Fenster-Erzeugung** aus einem `async`-Command bzw. über den Main-Thread,
-   wie es `enter_pip`/`create_main` heute tun — im Spike (Phase 0) unter
-   Windows verifizieren.
+   wie es `enter_pip`/`create_main` heute tun — unter Windows im
+   Abnahmetest (Phase 7) verifizieren.
 4. **Agent-Loop und Sessions leben im Hauptfenster.** Schließen/Verstecken
    des Chat-Fensters bricht keine laufende Anfrage ab; Andocken ist nur ein
    Wechsel der Ansicht.
 
-### Wo der Chat-UI-Code liegt (Entscheidung in Phase 0)
+### Wo der Chat-UI-Code liegt
 
-- **Empfehlung: `desktop/chat.html`** — eine kleine, eigenständige Seite,
+- **Entschieden: `desktop/chat.html`** — eine kleine, eigenständige Seite,
   als Resource neben `philogg.html` gepackt und über
   `philogg://app/chat.html` ausgeliefert. Grund: `philogg.html` hat kein
   zentrales `init()` (≈ 1.200 Top-Level-Funktionen, verstreute
@@ -229,15 +229,11 @@ auf dem, was aktuell geladen ist; die Bezugsdateien werden dann ergänzt.
 
 ## Phasen
 
-Jede Phase ist für sich mergebar und getestet.
-
-**Phase 0 — Spike (klein, teils lokal beim Nutzer)**
-- LM Studio + 1–2 Kandidatenmodelle mit Tool-Support: per `curl` mit einer
-  Handvoll Werkzeug-Schemas prüfen, ob Tool-Calls zuverlässig kommen und
-  Streaming mit Tool-Calls funktioniert. Ergebnis: Modellempfehlung.
-- Zweites Tauri-Fenster mit `parent` unter Windows öffnen/schließen/
-  verstecken ohne Deadlock; Laden von `philogg://app/chat.html`.
-- Entscheidung Chat-UI-Ort (Empfehlung oben) festhalten.
+Jede Phase ist für sich mergebar und getestet. Phasen 1–6 werden ohne
+echtes LM Studio umgesetzt (der Cloud-Container hat keins): Die Schnittstelle
+wird gegen das OpenAI-kompatible Format gebaut und mit einem Mock-Server bzw.
+Fake-Modell getestet. Der Test mit echtem LM Studio kommt gesammelt am Ende
+(Phase 7); Probleme dort werden gezielt an der Schnittstelle nachgearbeitet.
 
 **Phase 1 — Werkzeug-Registry in `philogg.html` (ohne LLM)**
 - Registry + die acht Werkzeuge, Ergebnis-Budgets, Fehlertexte.
@@ -254,7 +250,10 @@ Jede Phase ist für sich mergebar und getestet.
   async-Runtime-Zuwachs); SSE-Zeilenparser.
 - Loopback-Prüfung der URL.
 - `inject.js`: `window.philogg.llmModels/llmChat/llmCancel`.
-- Tests: `cargo test` für SSE-Parser und Loopback-Prüfung; `npm run build`.
+- Tests: `cargo test` für SSE-Parser und Loopback-Prüfung, dazu ein
+  kleiner lokaler Mock-Server im Test, der LM-Studio-typische Antworten
+  streamt (Text-Deltas, Tool-Call-Deltas über mehrere Chunks, `[DONE]`,
+  Verbindungsabbruch); `npm run build`.
 
 **Phase 3 — Agent-Loop + Sessions (headless)**
 - Loop, Undo-`"batch"`, Knoten-Kennzeichnung, Kontext-Haushalt, Abbruch,
@@ -272,8 +271,8 @@ Jede Phase ist für sich mergebar und getestet.
   Always-on-top), Toolbar-Button, Pull-Snapshot-Protokoll, Streaming-Anzeige,
   klickbare Knoten-/Eintrags-Referenzen, Stop-Button, Settings-Abschnitt.
 - Eine Session (Wechseln/Löschen folgt in Phase 5).
-- Tests: `chat.html` in jsdom mit Fake-Transport; manueller Test mit LM
-  Studio am Referenzszenario; Screenshot für README via Simulator.
+- Tests: `chat.html` in jsdom mit Fake-Transport; Screenshot für README
+  via Simulator.
 - Backlog-Eintrag #70 entfernen; `docs/desktop.md`, neuer Abschnitt in
   `docs/` für die Werkzeuge, README, CHANGELOG.
 
@@ -285,12 +284,23 @@ Jede Phase ist für sich mergebar und getestet.
 - Seitenpanel im Hauptfenster mit `chat.html` als `<iframe>`, Dock/Undock-
   Umschaltung, gemerkter Zustand.
 
+**Phase 7 — Abnahmetest mit dem Nutzer (lokal, Windows + LM Studio)**
+- Referenzszenario mit echtem LM Studio und einem lokalen Modell mit
+  Tool-Support durchspielen; Chat-Fenster unter Windows (öffnen,
+  verstecken, über PhiLogg schweben, Always-on-top, Andocken).
+- Gefundene Probleme werden gezielt an der Schnittstelle nachgearbeitet
+  (Request-/Stream-Format, Tool-Call-Parsing, System-Prompt,
+  Werkzeug-Beschreibungen, Fenster-Erzeugung) — kein Umbau der Architektur.
+- Ergebnis: Modellempfehlung in `docs/desktop.md` und README.
+
 ## Offene Fragen
 
-1. Modellwahl und minimale Modellgröße — Ergebnis aus Phase 0.
+1. Modellwahl und minimale Modellgröße — Ergebnis aus Phase 7.
 2. Datei-Export einer Session (Protokoll + Filter-JSON) — später, falls
    Bedarf.
 
 Entschieden (2026-09-27): Stop nimmt nichts automatisch zurück, jede Runde
 bekommt "Diese Runde zurücknehmen"; Sessions merken sich ihre
-Bezugsdateien, Verweise werden nach obiger Tabelle aufgelöst.
+Bezugsdateien, Verweise werden nach obiger Tabelle aufgelöst; kein
+Vorab-Spike mit LM Studio, gesammelter Abnahmetest in Phase 7; Chat-UI in
+`desktop/chat.html`.
