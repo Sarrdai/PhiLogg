@@ -20,8 +20,8 @@ owner `truncated: true`) until the result fits.
 | tool | returns |
 |---|---|
 | `get_overview` | files (count, time span, level counts), active node, current view, the whole tree (id, name, type, count, parent, depth) |
-| `find_message_types(nodeId?, query?, limit)` | the node's messages grouped by shape (`normalizeMessagePattern`, as the Patterns tab), most frequent first: count, levels, first/last time, a typed extraction `pattern` (`patternFilterValue(…, true)`), and per placeholder a value distribution (≤ 10 distinct → value + count, else min/max or examples; `messagePatternValues` reads the values in placeholder order) |
-| `create_filter(parentId, pattern, mode, invert)` | a `text` filter (substring, or extraction when the pattern has placeholders) or regex filter via `createFilterNode`: node id, match count, examples, for an extraction its columns and sample values — or an error text (invalid regex/pattern, inverted extraction, unknown parent) |
+| `find_message_types(nodeId?, query?, limit)` | the node's (default: the active node's whole file) messages grouped by shape (`normalizeMessagePattern`, as the Patterns tab), most frequent first: count, levels, first/last time, a typed extraction `pattern` (`patternFilterValue(…, true)`), and per placeholder a value distribution (≤ 10 distinct → value + count, else min/max or examples; `messagePatternValues` reads the values in placeholder order) |
+| `create_filter(parentId, pattern, mode, invert)` | (parent default: the active node's whole file) a `text` filter (substring, or extraction when the pattern has placeholders) or regex filter via `createFilterNode`: node id, match count, examples, for an extraction its columns and sample values — or an error text (invalid regex/pattern, inverted extraction, unknown parent) |
 | `create_link(refId, targetId, direction, key?, maxDtMs?/minDtMs?)` | `createLinkNode` (N = 1, not exclusive): pairs, references, unpaired, Δt min/median/max, examples; `key` is a column name or wildcard pattern (`linkKey`), the Δt bounds become `linkDt` |
 | `get_entries(nodeId, from, max ≤ 20)` | entries with id, time, level, message (first line, ≤ 200 chars) |
 | `get_value_stats(nodeId, column)` | min/max/mean/p10/median/p90 of one extraction column (own or inherited pattern, `llmExtractRows`); a non-numeric column gets its value distribution |
@@ -225,3 +225,26 @@ to the real main window through a transport that relays JSON the way Rust
 does (pull, stream, references, Stop, undo + confirm, the "not loaded" hint,
 a lost note healing); plus the browser build without any trace of the
 assistant and the Settings section against a stubbed bridge.
+
+## Docking
+
+The chat as a side panel of the main window: `#llmDockPanel` holds the same
+`chat.html` as an `<iframe>` (`src="chat.html"`, i.e. `philogg://app/chat.html`
+next to `philogg.html`); chat.html detects the parent and talks `postMessage`
+(`{philoggChat: msg}` both ways — the main window only accepts messages whose
+`source` is that iframe). `llmDock()` (the chat window's ⇥, or a restart with
+`philogg-llm-docked` = "1") hides the window and adds the iframe as another
+view; `llmUndock()` (⇤ in the docked chat) removes it and shows the window at
+its remembered place. While docked, the toolbar button shows/hides the panel
+without unloading it. Only a change of view: the loop and the sessions live
+in the main window either way, so docking in the middle of a round changes
+nothing about it. Hidden in picture-in-picture.
+
+Tests: GROUP 306 (dock/undock, postMessage routing and source check, toolbar
+toggle, the docked state at boot, chat.html's docked transport).
+
+## Screenshot
+
+`docs/screenshots/10-assistant.png` — `docs/screenshots/generate.sh assistant`:
+the reference scenario replayed through the real agent loop with a scripted
+stand-in model (`scenes/10-assistant.js`), docked chat on the right.
