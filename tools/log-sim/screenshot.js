@@ -48,7 +48,11 @@ async function main() {
     }
     if (opt.theme) await page.evaluate(t => applyTheme(t), opt.theme);
     await page.setInputFiles("#fileInput", logs);
-    await page.waitForFunction(n => state.rootIds.filter(id => state.nodes[id].entries && !state.nodes[id].loading).length >= n, logs.length, { timeout: 120000 });
+    // A file is parsed once its row's progress bar is gone (loadFraction is
+    // deleted at the end of the load) and it is no longer a queued placeholder.
+    await page.waitForFunction(n => state.rootIds.map(id => state.nodes[id])
+      .filter(f => f.type === "file" && f.loadFraction === undefined && !f.queued && f.entries && f.entries.length).length >= n,
+    logs.length, { timeout: 120000 });
     if (opt.eval) await page.evaluate(opt.eval);
     await page.waitForTimeout(+opt.wait);
     await page.screenshot({ path: opt.out });

@@ -33768,7 +33768,7 @@ await withApp(async (w, d, T) => {
   const types = new Set(gen.filter(e => e.scenario === "embedded").flatMap(e => w.findEmbeddedFragments(e.msg + (e.cont ? "\n" + e.cont.join("\n") : "")).map(h => h.type)));
   assert(["xml", "json", "dump"].every(t => types.has(t)), "embedded: XML, JSON and .NET dump fragments are detected, got " + [...types].join(","));
   const groups = new Set(gen.filter(e => e.scenario === "ids").map(e => w.normalizeMessagePattern(e.msg)));
-  assert(groups.size <= 5, "ids: GUID/IP/hex/URL messages collapse into their 5 shapes in the Patterns tab, got " + groups.size);
+  assert(groups.size <= 5, "ids: GUID/IP/hex/URL messages collapse into their 5 shapes in the Patterns tab, got " + groups.size + ": " + [...groups].map(k => w.patternDisplayText(k)).join(" | "));
   let maxGap = 0;
   for (let i = 1; i < gen.length; i++) maxGap = Math.max(maxGap, gen[i].ts - gen[i - 1].ts);
   assert(maxGap >= 5000, "gaps: at least one idle gap of >= 5 s, max was " + maxGap);

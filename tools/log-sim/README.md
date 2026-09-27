@@ -84,6 +84,9 @@ NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js --out "$SCRATCH/shot
 # --eval runs page JS before the shot (the app's own functions, e.g. createFilterNode / render / applyFhView), --theme dark
 ```
 
+`docs/screenshots/generate.sh` + `docs/screenshots/scenes/` (the README's
+screenshots) is the worked example of everything below.
+
 ### Building the scene with `--eval`
 
 `--eval` runs in the page after the files are parsed and before the shot,
