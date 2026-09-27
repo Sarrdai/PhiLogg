@@ -34377,10 +34377,24 @@ function openChatView(w, T, opts = {}) {
         send: msg => { sent.push(msg); setTimeout(() => !closed && w.llmHandleViewMessage(JSON.parse(JSON.stringify(msg)), deliver), 0); },
         onMessage: fn => { receive = fn; },
       };
-      cw.confirm = () => (opts.confirm ? opts.confirm() : true);
+      // Native prompt()/confirm() must never be used (they look foreign in
+      // the webview) — chat.html has its own dialog.
+      cw.confirm = cw.prompt = () => { throw new Error("native dialog used"); };
     },
   });
   return { dom, cw: dom.window, cd: dom.window.document, sent, view, close: () => { closed = true; T.llm.views.delete(view); dom.window.close(); } };
+}
+
+// Answers chat.html's in-page dialog (rename/confirm): waits for it, types
+// `value` into its input when given, then clicks OK. Returns the dialog's
+// title for assertions.
+async function answerChatDialog(cd, value) {
+  const dlg = cd.getElementById("chatDialog");
+  await waitFor(() => !dlg.classList.contains("hidden"));
+  const title = cd.getElementById("chatDialogTitle").textContent;
+  if (value != null) cd.getElementById("chatDialogInput").value = value;
+  cd.getElementById("chatDialogOk").click();
+  return title;
 }
 
 await withApp(async (w, d, T) => {
@@ -34487,10 +34501,9 @@ await withApp(async (w, d, T) => {
   const mine = w.createFilterNode(r3.created[0], "text", "temperature");
   w.pushCreateUndo(mine);
   await waitFor(() => cd.querySelectorAll("button.undo-round").length === 3);
-  let asked = 0;
-  cw.confirm = () => { asked++; return true; };
   cd.querySelectorAll("button.undo-round")[2].click();
-  assert(await waitFor(() => !T.state.nodes[r3.created[0]]) && asked === 1 && chat.sent.some(m => m.type === "undoRound" && m.force), "asks first, then removes with force");
+  const asked = await answerChatDialog(cd);
+  assert(asked === "Undo this round?" && await waitFor(() => !T.state.nodes[r3.created[0]]) && chat.sent.some(m => m.type === "undoRound" && m.force), "asks first (in-page dialog), then removes with force");
 
   // The hint for reference files that aren't loaded.
   w.deleteNode(f.id);
@@ -34565,11 +34578,14 @@ await withApp(async (w, d, T) => {
   const last = fake.requests[fake.requests.length - 1];
   assert(last.messages.some(m => m.content === "Sensoren") && last.messages[last.messages.length - 1].content === "temperature", "…into that session's own history");
   assert(await waitFor(() => cd.querySelectorAll("button.answer-opt").length === 0), "buttons only under the newest round's question");
-  cw.prompt = () => "Sensor-Analyse";
   cd.getElementById("btnRenameSession").click();
+  await waitFor(() => !cd.getElementById("chatDialog").classList.contains("hidden"));
+  assert(cd.getElementById("chatDialogInput").value === "Sensoren", "the rename dialog is prefilled with the current title");
+  await answerChatDialog(cd, "Sensor-Analyse");
   assert(await waitFor(() => T.llm.sessions.find(s => s.id === a).title === "Sensor-Analyse"), "rename");
   assert(await waitFor(async () => ((await w.llmDbOp("readonly", s => s.getAll())) || []).some(s => s.id === a && s.title === "Sensor-Analyse")), "…persisted");
-  cd.getElementById("btnDeleteSession").click(); // confirm stub → true
+  cd.getElementById("btnDeleteSession").click();
+  assert(await answerChatDialog(cd) === "Delete this chat?", "delete asks first");
   assert(await waitFor(() => T.llm.sessions.length === 1 && T.llm.activeSessionId === b), "delete removes the chat, the other one becomes active");
   assert(await waitFor(async () => { const all = await w.llmDbOp("readonly", s => s.getAll()); return all && all.length && !all.some(s => s.id === a); }), "…from IndexedDB too");
   assert(T.state.nodes[T.llm.sessions.length && Object.keys(T.state.nodes).find(id => T.llmCreatedNodeIds.has(id))], "the filters a deleted chat created stay in the tree");
@@ -34665,7 +34681,10 @@ await withApp(async (w, d, T) => {
    bar (drag region, the main window's window-control buttons, which act
    through the transport), .toolbar-icon-btn SVG buttons instead of emoji,
    the main window's primary/secondary button and theme variables
-   (accent-on, border-hover). macOS keeps the native traffic lights.
+   (accent-on, border-hover), and (same day, person-reported) rename /
+   confirm in an in-page dialog styled like the app's dialogs instead of
+   the webview's native prompt()/confirm(). macOS keeps the native traffic
+   lights.
    ============================================================ */
 group(307);
 {
@@ -34696,6 +34715,36 @@ group(307);
     const plain = open("", { mode: "window", send() {}, onMessage() {} });
     assert(plain.window.document.getElementById("chatWc").style.display === "none", "a transport without window actions shows none");
     plain.window.close();
+  }
+}
+{
+  if (groupSelected()) {
+    section("307c. In-page dialog instead of the webview's prompt()/confirm()");
+    const dom = new JSDOM(CHAT_HTML, { runScripts: "dangerously", pretendToBeVisual: true,
+      beforeParse(cw) { cw.philoggChatTransport = { mode: "window", send() {}, onMessage() {} }; cw.prompt = cw.confirm = () => { throw new Error("native"); }; } });
+    const cw = dom.window, cd = cw.document, dlg = cd.getElementById("chatDialog");
+    assert(dlg.classList.contains("hidden") && cw.getComputedStyle(dlg).display === "none", "hidden until needed");
+    let p = cw.philoggChatView.dialog({ title: "Rename this chat", value: "Alt", ok: "Rename" });
+    assert(cw.getComputedStyle(dlg).display !== "none" && cd.querySelector("#chatDialog .link-dialog-card") && cd.getElementById("chatDialogOk").className === "btn-mini" && cd.getElementById("chatDialogCancel").className === "btn-mini-secondary", "the main app's dialog card and buttons");
+    assert(cd.activeElement === cd.getElementById("chatDialogInput") && cd.getElementById("chatDialogOk").textContent === "Rename", "input focused, OK labelled");
+    cd.getElementById("chatDialogInput").value = "  Neu  ";
+    cd.getElementById("chatDialogInput").dispatchEvent(new cw.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    assert(await p === "Neu" && dlg.classList.contains("hidden"), "Enter confirms, trimmed");
+    p = cw.philoggChatView.dialog({ title: "x", value: "y" });
+    cd.getElementById("chatDialogInput").dispatchEvent(new cw.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    assert(await p === null, "Escape cancels");
+    p = cw.philoggChatView.dialog({ title: "x", value: "y" });
+    cd.getElementById("chatDialogInput").value = "   ";
+    cd.getElementById("chatDialogOk").click();
+    assert(await p === null, "an empty name is no rename");
+    p = cw.philoggChatView.dialog({ title: "Delete?", text: "sure", ok: "Delete", danger: true });
+    assert(cd.getElementById("chatDialogInput").classList.contains("hidden") && cd.getElementById("chatDialogOk").classList.contains("danger") && cd.getElementById("chatDialogText").textContent === "sure", "a confirm: no input, red OK, the text shown");
+    dlg.dispatchEvent(new cw.MouseEvent("click", { bubbles: true }));
+    assert(await p === null, "a click on the backdrop cancels");
+    p = cw.philoggChatView.dialog({ title: "Delete?", ok: "Delete" });
+    cd.getElementById("chatDialogOk").click();
+    assert(await p === true, "OK on a confirm → true");
+    dom.window.close();
   }
 }
 await withApp(async (w, d, T) => {
@@ -39085,6 +39134,7 @@ process.exitCode = failed ? 1 : 0;
       chat.html's docked transport.
    Group 307 — 2026-09-28 (person-reported): the chat window styled like
       the main app — frameless title bar with drag region and window
-      controls, icon buttons instead of emoji, theme variables.
+      controls, icon buttons instead of emoji, theme variables, in-page
+      rename/confirm dialog.
    ============================================================ */
 
