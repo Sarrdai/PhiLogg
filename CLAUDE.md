@@ -62,11 +62,14 @@ and a frameless window around the unmodified `philogg.html` — see
   adds/removes/changes a user-visible feature, update README's feature
   list/screenshots references accordingly instead of leaving it stale;
   keep implementation detail out of it and link to `PROJECT.md` for that.
-- **Sample data comes from the log simulator**, not hand-written lines:
-  `node tools/log-sim/cli.js --list` (formats, scenarios, what each feeds),
-  `tools/log-sim/screenshot.js` for app screenshots — see
-  `tools/log-sim/README.md`. A new feature that needs new log content gets
-  a scenario there.
+- **Sample data and screenshots come from the log simulator — always.**
+  Tests, demos, README/homepage screenshots and guides: generate logs with
+  `node tools/log-sim/cli.js` (`--list` shows formats/scenarios) and
+  capture the app with `tools/log-sim/screenshot.js` (`--eval` sets up
+  filters/tabs). If the simulator can't produce a case, **extend it first**
+  (scenario/format in `tools/log-sim/core.js` + GROUP 300), never write
+  example lines by hand, in a one-off script or in chat output. See
+  `PROJECT.md` → "Sample data and screenshots".
 - **Simplest solution that solves the actual problem** — no speculative
   complexity (size caps, expiry, etc.) until it's a real, current problem.
 - Code and comments in English.
