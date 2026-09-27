@@ -76,3 +76,82 @@ multi-line data, CRLF, unterminated last event), and a local mock server
 that streams LM-Studio-shaped chunks (text deltas, a tool-call delta split
 across two HTTP chunks, `[DONE]`), answers plain JSON, drops the connection
 mid-stream, returns HTTP errors/redirects, stays silent until cancelled.
+
+## Agent loop and sessions (`philogg.html`, "LLM assistant: agent loop and sessions")
+
+Everything runs in the **main window**; the chat is a view (next section).
+`llmAvailable()` (`window.philogg.llmChat` exists) gates the feature, so the
+browser build has none of it — not even the boot-time `llmInit()`.
+
+**A round** is one message of the person (`llmSend(text)`):
+`llmBuildRequest` → system prompt + history + `llmToolSpecs()` (streaming,
+`temperature`, `model` only when one is chosen) → the bridge
+(`llmTransport()`, `window.philogg.llmChat`) → `llmAnswerAssembler` joins the
+streamed text and tool-call deltas (by `index`; a non-streamed
+`{type:"message"}` answer works the same) → tool calls run through
+`runLlmTool`, each result goes back as a `tool` message and appears in the
+tree immediately (`render()` after every batch of calls) → next model turn,
+until the model answers with text (a result or a question — asking is not a
+tool, it simply ends the round), the turn limit hits (Settings, default 12),
+Stop, or an error. `<think>…</think>` blocks are dropped from answers.
+
+Round states: `done`, `stopped`, `limit`, `error` (the message is kept on the
+round). While a round streams, views get `{type:"stream", text}` notes —
+cosmetic, the next snapshot supersedes them.
+
+**Stop** (`llmStop`) cancels the request through `window.philogg.llmCancel`
+and ends the loop at once (the pending request promise is raced against an
+abort promise). Nothing is rolled back — Stop may mean "wrong direction" or
+"I've seen enough", and the app can't tell which. `llmHealHistory` gives
+every tool call left unanswered a "cancelled" tool message, as the
+chat-completions format requires.
+
+**Undo.** Every node a tool creates is recorded (`llmRoundCreated` →
+`round.created`, and `llmCreatedNodeIds` for the tree marker). When the round
+ends, `llmPushRoundBatch` pushes one `"batch"` of `"create"` actions — Ctrl+Z
+takes back the whole round. **"Undo this round"** (`llmUndoRound(roundId,
+force)`): if that batch is still on top of the undo stack it is simply
+`undo()`; otherwise the round's remaining nodes (only the top-most ones —
+nested ones go with their parent) are deleted as a new `"batch"` of
+`"delete"` actions, itself undoable. If the person created filters below
+them, it returns `{needsConfirm, foreign}` and deletes nothing until called
+with `force`. Nothing left → `{reason: "nothing left"}`, and the round's
+button is disabled (`undo: "none"` in the snapshot). Bookmarks/notes set by
+`annotate` and view changes are not part of the undo step.
+
+**Context budget.** Tool messages keep a one-line summary
+(`llmToolSummary`, e.g. `create_filter → n42 "…", 318 match(es)`); tool
+results of rounds older than the last `LLM_KEEP_FULL_ROUNDS` (2) are sent as
+that summary. The system prompt (`LLM_SYSTEM_PROMPT`: concepts, pattern
+syntax with examples, discover → ask when ambiguous → build → show, rules)
+never changes, so LM Studio's prompt cache keeps working.
+
+**Sessions** are stored in their own IndexedDB database (`philogg-llm`,
+store `sessions`, one record per session: `{id, title, files, history,
+rounds, version, …}`), never in the log session cache; the active one's id in
+`localStorage` (`philogg-llm-active-session`). A session's title is its first
+question.
+
+**References.** `llmCaptureRefs` scans a round's answers and tool summaries
+for ids (`n42`, `e1234`) that exist at that moment and stores what outlives
+a restart: a node with its name and definition, an entry as its file's
+session-cache key (`cacheKey`) plus ordinal — the scheme bookmarks already
+use — and the app run (`LLM_RUN_ID`, new per page load). The files touched
+become the session's reference files. `llmResolveRef` decides per snapshot:
+
+| situation | entry | node |
+|---|---|---|
+| same run, node exists | link | link |
+| same run, node deleted | link | greyed out (`gone` — ids are never reused within a run) |
+| other run, reference file loaded | link (by ordinal) | text |
+| reference file not loaded | text | text |
+
+A snapshot also lists the session's reference files that aren't loaded
+(`missingFiles`), shown as a hint in the chat. `llmRevealRef(roundId, token)`
+activates the node or `jumpToEntry`s the entry.
+
+Tests (GROUP 303) drive the loop with a scripted fake model
+(`llmTransportOverride`) that streams its answers the way LM Studio does:
+the reference scenario (message types → question → link → extraction under
+the link → plot), compaction, Stop, limit, errors, undo per round, "undo this
+round", and references across a simulated restart.
