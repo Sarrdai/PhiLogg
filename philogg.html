@@ -3042,6 +3042,9 @@
      runs, and the Settings → Assistant section. */
   #btnAssistant.hidden, #settingsNavItemLlm.hidden, #settingsSectionLlm.hidden{display:none;}
   #btnAssistant{position:relative;}
+  #llmDockPanel{flex:0 0 380px; width:380px; min-width:0; display:flex; border-left:1px solid var(--border); background:var(--bg-panel);}
+  #llmDockPanel.hidden, html.pip-mode #llmDockPanel{display:none;}
+  #llmDockPanel iframe{flex:1 1 auto; width:100%; height:100%; border:0; background:var(--bg-panel);}
   #btnAssistant.llm-busy::after{content:""; position:absolute; top:3px; right:3px; width:6px; height:6px; border-radius:50%; background:var(--accent); animation:llmBusyPulse 1.2s infinite;}
   @keyframes llmBusyPulse{50%{opacity:.3;}}
   .settings-row-control input[type="number"].llm-num{
@@ -4905,6 +4908,11 @@
         </div>
       </div>
     </section>
+
+    <!-- LLM assistant, docked (docs/llm-assistant.md → "Docking"): the same
+         desktop/chat.html as the chat window, as an <iframe> (postMessage).
+         Created by llmDock, only in the desktop build. -->
+    <aside id="llmDockPanel" class="hidden"></aside>
 
   </div>
 
@@ -40474,6 +40482,14 @@ function llmDefaultNodeId() {
   if (state.activeId && state.nodes[state.activeId]) return state.activeId;
   return state.rootIds.find(id => state.nodes[id] && !state.nodes[id].mergeSourceHidden) || null;
 }
+// Discovery and new filters default to the active node's whole FILE, not
+// the active node itself: a model that leaves the id out (small ones often
+// do) would otherwise search inside whatever filter the person happens to
+// have selected and find nothing.
+function llmDefaultFileId() {
+  const id = llmDefaultNodeId();
+  return id ? getRootFileId(id) : null;
+}
 
 // The extraction values of a node (its own pattern, or the one it inherits
 // — findExtractionAncestor), without touching the Table view's globals.
@@ -40575,7 +40591,7 @@ function llmToolGetOverview() {
 }
 
 function llmToolFindMessageTypes(args) {
-  const nodeId = args.nodeId || llmDefaultNodeId();
+  const nodeId = args.nodeId || llmDefaultFileId();
   if (!nodeId) return { error: "No log file is loaded." };
   const { node, error } = llmNode(nodeId);
   if (error) return { error };
@@ -40629,7 +40645,7 @@ function llmToolFindMessageTypes(args) {
 }
 
 function llmToolCreateFilter(args) {
-  const parentId = args.parentId || llmDefaultNodeId();
+  const parentId = args.parentId || llmDefaultFileId();
   if (!parentId) return { error: "No log file is loaded." };
   const { node: parent, error } = llmNode(parentId, "parent");
   if (error) return { error };
@@ -40821,7 +40837,7 @@ const LLM_TOOLS = [
     name: "find_message_types",
     description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
     parameters: { type: "object", properties: {
-      nodeId: { type: "string", description: "Node to analyse; default: the active node" },
+      nodeId: { type: "string", description: "Node to analyse; default: the whole file of the active node" },
       query: { type: "string", description: "Only types whose text contains this (case-insensitive)" },
       limit: { type: "integer", description: "Max. types to return (default 15, max 40)" },
     } },
@@ -40831,7 +40847,7 @@ const LLM_TOOLS = [
     name: "create_filter",
     description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further. mode \"regex\": JavaScript regex. Returns the new nodeId, match count and examples, or an error to correct.",
     parameters: { type: "object", properties: {
-      parentId: { type: "string", description: "Node to filter (a file or filter id); default: the active node" },
+      parentId: { type: "string", description: "Node to filter (a file or filter id); default: the whole file of the active node" },
       pattern: { type: "string" },
       mode: { type: "string", enum: ["text", "regex"] },
       invert: { type: "boolean", description: "Keep everything that does NOT match (not for extraction patterns)" },
@@ -41456,7 +41472,7 @@ function llmRevealRef(roundId, token) {
 /* ---------- the chat view channel (desktop/chat.html) ---------- */
 const LLM_CHAT_ON_TOP_KEY = "philogg-llm-chat-on-top";
 // Controls this build supports — the chat shows only those (snapshot.features).
-const LLM_VIEW_FEATURES = ["sessions", "answers"];
+const LLM_VIEW_FEATURES = ["sessions", "answers", "dock"];
 
 // A command from a chat view. `reply` answers the asking view only;
 // everything else reaches every view as a "changed" note, which each one
@@ -41508,7 +41524,50 @@ function llmHandleViewMessageMore(msg, reply) {
     default: llmHandleViewMessageDock(msg, reply);
   }
 }
-function llmHandleViewMessageDock(msg, reply) {}
+function llmHandleViewMessageDock(msg) {
+  if (msg.type === "dock") llmDock();
+  else if (msg.type === "undock") llmUndock();
+}
+
+/* ---------- docking: the chat as a side panel in the main window ---------- */
+// The same chat.html as an <iframe> in #llmDockPanel instead of its own
+// window — only a change of view: the loop and the sessions never notice.
+// Remembered across restarts (philogg-llm-docked). The toolbar button
+// shows/hides the docked panel; undocking closes it and shows the window at
+// its remembered place.
+const LLM_DOCKED_KEY = "philogg-llm-docked";
+let llmDockFrame = null;
+function llmDockView(msg) {
+  if (llmDockFrame && llmDockFrame.contentWindow) llmDockFrame.contentWindow.postMessage({ philoggChat: msg }, "*");
+}
+window.addEventListener("message", ev => {
+  if (!llmDockFrame || ev.source !== llmDockFrame.contentWindow) return;
+  if (ev.data && ev.data.philoggChat) llmHandleViewMessage(ev.data.philoggChat, llmDockView);
+});
+function llmIsDocked() {
+  try { return localStorage.getItem(LLM_DOCKED_KEY) === "1"; } catch (e) { return false; }
+}
+function llmDock() {
+  const panel = document.getElementById("llmDockPanel");
+  try { localStorage.setItem(LLM_DOCKED_KEY, "1"); } catch (e) { /* storage unavailable */ }
+  if (window.philogg && window.philogg.llmChatWindow) window.philogg.llmChatWindow("hide");
+  if (!llmDockFrame) {
+    llmDockFrame = document.createElement("iframe");
+    llmDockFrame.title = "Assistant";
+    llmDockFrame.src = "chat.html"; // next to philogg.html: philogg://app/chat.html
+    panel.appendChild(llmDockFrame);
+    llm.views.add(llmDockView);
+  }
+  panel.classList.remove("hidden");
+}
+function llmUndock() {
+  const panel = document.getElementById("llmDockPanel");
+  try { localStorage.setItem(LLM_DOCKED_KEY, "0"); } catch (e) { /* storage unavailable */ }
+  llm.views.delete(llmDockView);
+  if (llmDockFrame) { llmDockFrame.remove(); llmDockFrame = null; }
+  panel.classList.add("hidden");
+  llmOpenChat();
+}
 
 function llmStartNewSession() {
   if (llm.running) return null;
@@ -41558,6 +41617,13 @@ window.philoggLlmViewMessage = msg => llmHandleViewMessage(msg, llmWindowView);
 function llmOpenChat() {
   if (window.philogg && window.philogg.llmChatWindow) window.philogg.llmChatWindow("show");
 }
+// The toolbar button: the docked panel toggles, the window shows.
+function llmToggleChat() {
+  if (llmIsDocked()) {
+    if (!llmDockFrame) llmDock();
+    else document.getElementById("llmDockPanel").classList.toggle("hidden");
+  } else llmOpenChat();
+}
 
 // Toolbar button + Settings → Assistant, desktop build only.
 function initLlmAssistantUi() {
@@ -41568,7 +41634,8 @@ function initLlmAssistantUi() {
   });
   if (!available) return;
   llm.views.add(llmWindowView);
-  document.getElementById("btnAssistant").addEventListener("click", ev => { ev.stopPropagation(); llmOpenChat(); });
+  document.getElementById("btnAssistant").addEventListener("click", ev => { ev.stopPropagation(); llmToggleChat(); });
+  if (llmIsDocked()) llmDock();
 
   const s = llmSettings();
   const endpoint = document.getElementById("settingsLlmEndpoint");

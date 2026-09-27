@@ -33981,6 +33981,10 @@ await withApp(async (w, d, T) => {
   const all = llmRun(w, "find_message_types", { limit: 2 }).result;
   assert(all.types.length === 2 && all.typesFound >= 3 && all.types[0].count >= all.types[1].count, "limit + most frequent first");
   assert(llmRun(w, "find_message_types", { nodeId: "n999999" }).error.includes("Unknown node"), "unknown node id → error text");
+  const narrow = w.createFilterNode(f.id, "text", "Move requested");
+  assert(T.state.activeId === narrow.id && llmRun(w, "find_message_types", { query: "temperature" }).result.nodeId === f.id, "without nodeId it searches the active node's whole file, not the selected filter");
+  assert(llmRun(w, "create_filter", { pattern: "Sensor T2" }).result.parentId === f.id, "create_filter without parentId goes under the file too");
+  assert(llmRun(w, "get_entries", {}).result.nodeId !== f.id, "get_entries without nodeId reads the active node");
   assert(w.messagePatternValues('Job "a b" took 12 ms at 10.0.0.1:80').join("|") === "a b|12|10.0.0.1:80", "messagePatternValues: quoted content, number, ip in placeholder order");
 });
 
@@ -34427,7 +34431,7 @@ await withApp(async (w, d, T) => {
   assert(await waitFor(() => cw.philoggChatView.snapshot), "the view pulls a snapshot on load");
   assert(cd.getElementById("chatEmpty").textContent.includes("temperature"), "empty chat: an example question");
   assert(cd.documentElement.style.getPropertyValue("--accent") !== "", "the main window's theme variables are applied");
-  assert(cd.getElementById("sessionSelect").style.display === "" && cd.getElementById("btnDock").style.display === "none", "controls follow snapshot.features (sessions: yes, dock: not in this build)");
+  assert(cd.getElementById("sessionSelect").style.display === "" && cd.getElementById("btnDock").style.display === "" && cd.getElementById("btnOnTop").style.display === "", "controls follow snapshot.features and the transport (window: sessions, dock, always-on-top)");
 
   let streamSeen = false;
   const fake = llmFakeModel([
@@ -34579,6 +34583,80 @@ await withApp(async (w, d, T) => {
   await p;
   chat.close();
 }, { philogg: llmDesktopStub(), indexedDB: new IDBFactory() });
+
+/* ============================================================
+   GROUP 306 — LLM assistant, phase 6: docking. The chat as an <iframe>
+   side panel in the main window (postMessage transport), dock/undock
+   (window hidden/shown), the toolbar button toggling the docked panel, the
+   docked state remembered across a restart, and chat.html's own docked
+   transport.
+   ============================================================ */
+group(306);
+await withApp(async (w, d, T) => {
+  section("306a. Dock / undock in the main window");
+  await T.llm.ready;
+  const stub = w.philogg;
+  const panel = d.getElementById("llmDockPanel");
+  assert(!isVisible(panel, w), "not docked by default");
+  w.llmHandleViewMessage({ type: "dock" }, () => {});
+  const frame = panel.querySelector("iframe");
+  assert(isVisible(panel, w) && frame && frame.getAttribute("src") === "chat.html", "dock: the side panel holds chat.html in an iframe");
+  assert(stub.calls.some(c => c[1] === "hide") && w.localStorage.getItem("philogg-llm-docked") === "1", "…the window is hidden, the state remembered");
+  const posted = [];
+  frame.contentWindow.postMessage = m => posted.push(JSON.parse(JSON.stringify(m)));
+  w.dispatchEvent(new w.MessageEvent("message", { data: { philoggChat: { type: "getSnapshot" } }, source: frame.contentWindow }));
+  assert(await waitFor(() => posted.some(m => m.philoggChat && m.philoggChat.type === "snapshot")), "a pull from the iframe is answered into the iframe");
+  const snap = posted.find(m => m.philoggChat.type === "snapshot").philoggChat;
+  assert(snap.features.includes("dock") && snap.features.includes("sessions"), "features: dock, sessions");
+  w.dispatchEvent(new w.MessageEvent("message", { data: { philoggChat: { type: "send", text: "x" } }, source: w }));
+  await sleep(10);
+  assert(!T.llm.sessions.length, "messages from any other source are ignored");
+  T.llmTransportOverride = llmFakeModel([{ content: "hallo" }]);
+  posted.length = 0;
+  w.dispatchEvent(new w.MessageEvent("message", { data: { philoggChat: { type: "send", text: "hi" } }, source: frame.contentWindow }));
+  assert(await waitFor(() => T.llm.sessions.length === 1 && T.llm.sessions[0].rounds[0].status === "done"), "the docked chat drives the loop");
+  assert(posted.some(m => m.philoggChat.type === "changed"), "…and gets 'changed' notes");
+  d.getElementById("btnAssistant").click();
+  assert(!isVisible(panel, w) && panel.querySelector("iframe") === frame, "toolbar button hides the docked panel (the chat keeps running in the iframe)");
+  d.getElementById("btnAssistant").click();
+  assert(isVisible(panel, w), "…and shows it again");
+  const shows = stub.calls.filter(c => c[1] === "show").length;
+  w.llmHandleViewMessage({ type: "undock" }, () => {});
+  assert(!isVisible(panel, w) && !panel.querySelector("iframe") && w.localStorage.getItem("philogg-llm-docked") === "0", "undock: panel gone, state remembered");
+  assert(stub.calls.filter(c => c[1] === "show").length === shows + 1, "…and the window is shown again");
+  posted.length = 0;
+  w.llmNotify();
+  assert(!posted.length, "the removed iframe gets no more notes");
+}, { philogg: llmDesktopStub() });
+
+await withApp(async (w, d, T) => {
+  section("306b. The docked state survives a restart");
+  const panel = d.getElementById("llmDockPanel");
+  assert(isVisible(panel, w) && panel.querySelector("iframe"), "docked at boot");
+  assert(!w.philogg.calls.some(c => c[1] === "show"), "the window is not opened");
+}, { philogg: llmDesktopStub(), beforeParse: win => win.localStorage.setItem("philogg-llm-docked", "1") });
+
+{
+  if (groupSelected()) {
+    section("306c. chat.html's docked transport (postMessage to the parent)");
+    const toParent = [];
+    const fakeParent = { postMessage: m => toParent.push(m) };
+    const dom = new JSDOM(CHAT_HTML, {
+      runScripts: "dangerously", pretendToBeVisual: true,
+      beforeParse(cw) { Object.defineProperty(cw, "parent", { value: fakeParent, configurable: true }); },
+    });
+    const cw = dom.window, cd = cw.document;
+    assert(toParent.length === 1 && toParent[0].philoggChat.type === "getSnapshot", "on load it pulls through the parent");
+    const snapshot = { type: "snapshot", available: true, features: ["sessions", "answers", "dock"], sessions: [], activeSessionId: null, session: null, running: false, theme: {} };
+    cw.dispatchEvent(new cw.MessageEvent("message", { data: { philoggChat: snapshot }, source: {} }));
+    assert(!cw.philoggChatView.snapshot, "a message from anything but the parent is ignored");
+    cw.dispatchEvent(new cw.MessageEvent("message", { data: { philoggChat: snapshot }, source: fakeParent }));
+    assert(cw.philoggChatView.snapshot && cd.getElementById("btnDock").textContent === "⇤" && cd.getElementById("btnOnTop").style.display === "none", "docked: an undock button, no always-on-top");
+    cd.getElementById("btnDock").click();
+    assert(toParent[toParent.length - 1].philoggChat.type === "undock", "undock goes to the parent");
+    dom.window.close();
+  }
+}
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -38956,5 +39034,8 @@ process.exitCode = failed ? 1 : 0;
       Settings → Assistant against a stubbed bridge.
    Group 305 — same session (phase 5): several chat sessions (new, switch,
       rename, delete, persisted, separate histories) and answer buttons.
+   Group 306 — same session (phase 6): docking — the chat as an iframe side
+      panel (postMessage), dock/undock, toolbar toggle, remembered state,
+      chat.html's docked transport.
    ============================================================ */
 

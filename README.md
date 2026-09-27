@@ -41,7 +41,7 @@ deployments possible:
 | ![Plot](docs/screenshots/03-plot.png) Plotting extracted values — XY scatter colored by time, equal axis scale | ![Link view](docs/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view, matched by job id |
 | ![Context view](docs/screenshots/05-context-view.png) Context view — matches plus expandable gaps | ![Bookmarks](docs/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel with a stack trace |
 | ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme | ![Heatmap](docs/screenshots/08-heatmap.png) Heatmap of an array column over time |
-| ![Patterns](docs/screenshots/09-patterns.png) Patterns tab — messages grouped by shape | |
+| ![Patterns](docs/screenshots/09-patterns.png) Patterns tab — messages grouped by shape | ![Assistant](docs/screenshots/10-assistant.png) Assistant (desktop app): a local LLM builds a link and a plot, chat docked |
 
 ## Key features
 
@@ -388,7 +388,9 @@ deployments possible:
   summaries, and talks to `localhost` only. Everything it creates appears
   in the filter tree right away (marked ✦); one message = one undo step,
   and every round has "Undo this round". The node and entry ids in its
-  answers are links. Needs a model with tool-calling support.
+  answers are links. The chat is its own window (optionally always on top)
+  or docked as a side panel; several chats are kept. Needs a model with
+  tool-calling support.
 
 See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
 actually works internally.

@@ -1,8 +1,8 @@
 # Implementierungsplan: LLM-Assistent (lokales LLM, Desktop-Build)
 
-Status: **in Umsetzung** (2026-09-27) — Phasen 1–6 auf `claude/philogg-llm-integration-ml0joa`, Ist-Stand in `docs/llm-assistant.md`, Abweichungen unten unter "Abweichungen bei der Umsetzung". Konkretisiert Backlog-Eintrag
-#70 ("LLM integration with a chat window"); der Eintrag wird entfernt, sobald
-Phase 4 (erste nutzbare Version) gelandet ist.
+Status: **Phasen 1–6 umgesetzt, Phase 7 (Abnahmetest) offen** (2026-09-27) — auf `claude/philogg-llm-integration-ml0joa`, Ist-Stand in `docs/llm-assistant.md`, Abweichungen unten unter "Abweichungen bei der Umsetzung". Konkretisiert Backlog-Eintrag
+#70 ("LLM integration with a chat window"); der Eintrag wurde entfernt, als
+Phase 4 (erste nutzbare Version) gelandet war.
 
 ## Ziel
 
@@ -321,3 +321,40 @@ Vorab-Spike mit LM Studio, gesammelter Abnahmetest in Phase 7; Chat-UI in
   und reicht jedes `data:`-JSON unverändert als `{type:"chunk", data}` durch;
   Text- und Tool-Call-Deltas setzt `philogg.html` zusammen. So bleibt der
   Rust-Teil formatneutral und der Zusammenbau in jsdom testbar.
+- **Phase 1 — Standardknoten.** `find_message_types` und `create_filter`
+  ohne Id arbeiten auf der **ganzen Datei** des aktiven Knotens, nicht auf
+  dem aktiven Knoten selbst (beim Screenshot gefunden: ein Modell, das die
+  Id weglässt, suchte sonst im gerade gewählten Thread-Filter und fand
+  nichts). `get_entries` ohne Id liest weiterhin den aktiven Knoten.
+- **Phase 1 — flache Parameter für `create_link`.** Statt `key?, dt?` gibt
+  es `key` (Spaltenname oder Wildcard-Pattern), `maxDtMs`, `minDtMs` —
+  flacher für kleine Modelle. N ist immer 1, nicht exklusiv.
+- **Phase 1 — `annotate` hängt an.** Eine vorhandene Notiz des Menschen wird
+  nie überschrieben, der Befund wird angehängt; `bookmark: true` setzt nur,
+  schaltet nie aus.
+- **Phase 3 — Undo-Schritt am Rundenende.** Der `"batch"`-Schritt wird
+  gepusht, wenn die Runde endet (fertig, Stop, Limit, Fehler), nicht live
+  mitwachsend; Ctrl+Z während einer laufenden Runde betrifft also noch die
+  vorherige Aktion. Bookmarks/Notizen aus `annotate` und Ansichtswechsel
+  gehören nicht zum Undo-Schritt.
+- **Phase 3 — Session-Speicher.** Eine eigene IndexedDB-Datenbank
+  (`philogg-llm`, Store `sessions`), damit die Session-Cache-Datenbank der
+  Logs keine Versionserhöhung braucht. Bezugsdateien werden über den
+  `cacheKey` identifiziert — genau das, womit der Session-Cache Dateien
+  identifiziert (Bookmarks/Notizen: `cacheKey` + Ordinalzahl) —, nicht über
+  einen zusätzlichen Inhalts-Fingerprint.
+- **Phase 4 — Fenster-Geometrie.** Rust schreibt die Geometrie beim
+  Verstecken als `philogg-llm-chat-geometry` in das localStorage des
+  Hauptfensters; der bestehende Settings-Spiegel bringt sie nach
+  `settings.json`, von dort liest Rust sie beim nächsten Erzeugen. (`pip_prev`
+  ist entgegen der Formulierung im Plan nur prozess-lokal, nicht
+  persistiert.) Das Chat-Fenster hat einen normalen OS-Rahmen, keinen
+  rahmenlosen wie das Hauptfenster.
+- **Phase 4 — Features im Snapshot.** Der Snapshot trägt eine
+  `features`-Liste (`sessions`, `answers`, `dock`); `chat.html` blendet nur
+  diese Bedienelemente ein. So war jede Phase für sich vollständig, und die
+  beiden Hälften bleiben bei Versionsunterschieden kompatibel.
+- **Phase 4/6 — Screenshot.** Die README-Aufnahme zeigt den angedockten
+  Chat (Phase 6) statt eines eigenen Fensters: Headless-Chromium kann kein
+  zweites Tauri-Fenster aufnehmen; die Unterhaltung spielt ein geskriptetes
+  Ersatzmodell durch die echte Agent-Loop.
