@@ -2,6 +2,11 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: assistant plots every chart type (2026-09-27, person-requested: *"Erweitere die Plot Werkzeuge für den LLM Assistenten, er soll alle Einträge kennen."*)**. See `docs/llm-assistant.md` → tool table.
+  - `show_view`'s `plot` now takes all eight types plus `z`, `color`, `colorMap`, `columns` (column group), `array`, `row` and `ranges` (parallel-coordinates value ranges, open ends allowed); unknown types/colormaps/columns come back as errors with the valid list; the result reports the effective plot (column names, rows, rows in range). The system prompt names which chart fits which question.
+  - **Fix**: a range with an open end was not drawn on its axis (NaN height) — now clamped to the axis.
+  - **Tests**: new **Group 311**. Full suite **6848 passed, 0 failed**.
+
 - **feat: Radar and Parallel coordinates charts; Heatmap/Profile over a column group (2026-09-27, person-requested: *"Wäre es aus deiner Sicht sinnvoll, Heatmap und Profile auch allgemein für Tabellen zu erlauben?"* … *"Ich fände beide Plots wären eine sinnvolle Ergänzung. Implementiere alle hier besprochenen Erweiterungen"*)**. See `docs/extraction-and-plotting.md` → "Value charts".
   - **Column group** (`plotConfig.multiCols`, `#plotColList` with ▲/▼ reordering): an ordered set of plottable columns treated like an array per row. Heatmap/Profile can use it instead of an array column ("Values" select → Columns, `plotConfig.arraySource`), e.g. for `ch0=… ch1=… ch2=…`.
   - **Radar** (new chart type): one spoke per column, each on its own min..max scale — for mixed units; the row slider and Table-selection overlays work as in Profile.
