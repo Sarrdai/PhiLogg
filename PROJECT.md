@@ -502,6 +502,17 @@ of `docs/ui-concept-unified-extraction.md`'s unified toolbar (real dark
 theme tokens, sample data, scope of what must vs. needn't be interactive
 — only the Context/Filtered/Table/Plot/Stacked tab switch needs to work).
 
+### `docs/llm-assistant-plan.md`
+Unimplemented plan (German): a desktop-only chat in which a local LLM (LM
+Studio, loopback-only HTTP on the Rust side) operates PhiLogg through a
+small tool registry (message types with per-placeholder value
+distributions, filter/link creation with previews, views/plots,
+bookmarks/notes) instead of reading the raw log. Covers the architecture
+(agent loop and sessions owned by the main window, chat window as a thin
+pull-snapshot view — avoiding the popout's sync bugs), the chat window
+(owned/always-on-top, hide into the app, dock, multiple sessions), one
+undo step per LLM turn, and a phased rollout. Refines backlog #70.
+
 ### `docs/ui-implementation-plan.md`
 Step-by-step implementation plan for `docs/ui-concept-unified-extraction.md`,
 refined with four precisions from discussion: match-navigator only in the
