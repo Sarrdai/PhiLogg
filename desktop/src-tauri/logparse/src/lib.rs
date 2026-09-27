@@ -56,8 +56,7 @@ pub struct Entry {
     pub ts: Option<i64>,
     pub level: String,
     pub thread: String,
-    pub location_short: String,
-    pub location_full: String,
+    pub location: String,
     pub method: String,
     pub message: String,
     pub raw: String,
@@ -87,8 +86,7 @@ impl Serialize for Entry {
         m.serialize_entry("ts", &self.ts)?;
         m.serialize_entry("level", &self.level)?;
         m.serialize_entry("thread", &self.thread)?;
-        m.serialize_entry("locationShort", &self.location_short)?;
-        m.serialize_entry("locationFull", &self.location_full)?;
+        m.serialize_entry("location", &self.location)?;
         m.serialize_entry("method", &self.method)?;
         m.serialize_entry("message", &self.message)?;
         m.serialize_entry("raw", &self.raw)?;
@@ -185,14 +183,12 @@ impl Parser {
                 (tokens[3..mi].join(" "), m[1..m.len() - 1].to_string(), strip_quotes(&tokens[mi + 1..].join("\t")))
             }
         };
-        let (location_short, location_full) = format_location(&location_raw);
         Entry {
             ts_raw: ts_raw.to_string(),
             ts: timestamp::parse_default(ts_raw),
             level: if level.is_empty() { "INFO".into() } else { level },
             thread,
-            location_short,
-            location_full,
+            location: location_raw,
             method,
             message,
             raw: line.to_string(),
@@ -207,7 +203,6 @@ impl Parser {
         let get = |k: &str| groups.iter().find(|(n, _)| *n == k).and_then(|(_, v)| *v);
         // `groups.x || ""`: undefined and "" both fall back.
         let non_empty = |k: &str| get(k).filter(|v| !v.is_empty());
-        let (location_short, location_full) = format_location(get("location").unwrap_or(""));
         let fields = groups
             .iter()
             .filter(|(n, _)| !RESERVED_FIELD_KEYS.contains(n))
@@ -220,8 +215,7 @@ impl Parser {
             ts: ts_raw.and_then(|t| date.and_then(|d| timestamp::parse_generic(t, d))),
             level: non_empty("level").map_or_else(|| "INFO".to_string(), |l| js_trim(l).to_uppercase()),
             thread: strip_quotes(non_empty("thread").unwrap_or("")),
-            location_short,
-            location_full,
+            location: get("location").unwrap_or("").to_string(),
             method: non_empty("method").unwrap_or("").to_string(),
             message: get("message").map_or_else(|| line.to_string(), strip_quotes),
             raw: line.to_string(),
@@ -229,55 +223,6 @@ impl Parser {
             msg_open_quote: None,
         }
     }
-}
-
-/// `formatLocation(loc)`: `{short, full}`.
-fn format_location(loc: &str) -> (String, String) {
-    let short = location_short(loc).unwrap_or_else(|| loc.to_string());
-    (short, loc.to_string())
-}
-
-/// The `m[2] + ":" + m[3]` of formatLocation's
-/// `/^(.*?)[\\/]([^\\/]+?)\s+line\s+(\d+)\s*$/i`, worked out from the end
-/// instead of run as a regex (it was half the parse time). The tail
-/// `\s+line\s+\d+\s*$` can only sit in one place; the lazy file name then
-/// starts after the last separator and stops where the whitespace before
-/// `line` begins. `location_matches_the_regex` below checks this against the
-/// regex itself.
-fn location_short(loc: &str) -> Option<String> {
-    let t = loc.trim_end_matches(timestamp::is_js_space);
-    let digits_at = t.trim_end_matches(|c: char| c.is_ascii_digit()).len();
-    if digits_at == t.len() {
-        return None;
-    }
-    let before_digits = &t[..digits_at];
-    let before_ws = before_digits.trim_end_matches(timestamp::is_js_space);
-    let b = before_ws.as_bytes();
-    if before_ws.len() == before_digits.len() || b.len() < 4 || !b[b.len() - 4..].eq_ignore_ascii_case(b"line") {
-        return None;
-    }
-    let head = &before_ws[..b.len() - 4];
-    let ws_at = head.trim_end_matches(timestamp::is_js_space).len();
-    if ws_at == head.len() {
-        return None;
-    }
-    let sep = head.rfind(['\\', '/'])?;
-    if head[..sep].contains(['\n', '\r', '\u{2028}', '\u{2029}']) {
-        return None;
-    }
-    let name_at = sep + 1;
-    // The name needs one character; if the whitespace starts right after the
-    // separator, that character is whitespace and one more must follow.
-    let name_end = if ws_at > name_at {
-        ws_at
-    } else {
-        let first = head[name_at..].chars().next()?.len_utf8();
-        if name_at + first >= head.len() {
-            return None;
-        }
-        name_at + first
-    };
-    Some(format!("{}:{}", &head[name_at..name_end], &t[digits_at..]))
 }
 
 fn compile_js(src: &str) -> Result<Regex, String> {
@@ -439,25 +384,5 @@ mod tests {
         assert!(!is_gzip(&[0x1f]));
         assert!(!is_gzip(b"2024-01-15 10:00:00,000\tINFO"));
         assert!(!is_gzip(&[]));
-    }
-
-    /// Every sequence of up to five tokens from an alphabet that hits each
-    /// branch, against formatLocation's own regex (via the JS translation).
-    #[test]
-    fn location_matches_the_regex() {
-        let re = compile_js(r"^(.*?)[\\/]([^\\/]+?)\s+[lL][iI][nN][eE]\s+(\d+)\s*$").unwrap();
-        let alphabet = ["a", "/", "\\", " ", "\t", "line", "LiNe", "7", "42", "\r", "\u{A0}", "\u{2028}", "é"];
-        let mut level = vec![String::new()];
-        for _ in 0..5 {
-            level = level.iter().flat_map(|s| alphabet.iter().map(move |a| format!("{s}{a}"))).collect();
-            for s in &level {
-                let want = re.captures(s).map(|c| format!("{}:{}", &c[2], &c[3]));
-                assert_eq!(location_short(s), want, "{s:?}");
-            }
-        }
-        for s in ["C:\\src\\Foo.cs\tline 152", "/a/b/c.py  LINE 7 ", "x/ line 5", "x/  line 5", "x/y line  12\u{3000}", "a\rb/c line 1"] {
-            let want = re.captures(s).map(|c| format!("{}:{}", &c[2], &c[3]));
-            assert_eq!(location_short(s), want, "{s:?}");
-        }
     }
 }

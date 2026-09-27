@@ -22,7 +22,7 @@
 //! unsigned LEB128 varint (7 bits per byte, low bits first, high bit =
 //! "more"). Per entry: `raw`'s start as a delta from the previous entry's
 //! `raw` start, `raw`'s length; then `(start - rawStart, len)` for `tsRaw,
-//! level, thread, locationShort, locationFull, method, message`; then
+//! level, thread, location, method, message`; then
 //! `flags = hasMsgOpenQuote | customFieldCount << 1`; the open quote's
 //! `(start - rawStart, len)` if present; then per custom field
 //! `(name, value)` the same way. Every string is written after its entry's
@@ -83,7 +83,7 @@ pub fn encode_batch(entries: &[Entry], fraction: f64) -> Vec<u8> {
         varint(&mut w.table, utf16_len(&e.raw));
         prev_raw = raw_at;
         let ascii = e.raw.is_ascii();
-        for f in [&e.ts_raw, &e.level, &e.thread, &e.location_short, &e.location_full, &e.method, &e.message] {
+        for f in [&e.ts_raw, &e.level, &e.thread, &e.location, &e.method, &e.message] {
             w.field(f, &e.raw, ascii, raw_at);
         }
         varint(&mut w.table, u32::from(e.msg_open_quote.is_some()) | (e.fields.len() as u32) << 1);
@@ -159,7 +159,7 @@ pub fn decode_batch(bytes: &[u8]) -> (f64, Vec<Entry>) {
         let raw_len = next();
         let at = |s: u32, l: u32| String::from_utf16(&text[s as usize..(s + l) as usize]).unwrap();
         let mut e = Entry { ts: (!f64_at(16 + 8 * i).is_nan()).then(|| f64_at(16 + 8 * i) as i64), raw: at(raw_at, raw_len), ..Default::default() };
-        for f in [&mut e.ts_raw, &mut e.level, &mut e.thread, &mut e.location_short, &mut e.location_full, &mut e.method, &mut e.message] {
+        for f in [&mut e.ts_raw, &mut e.level, &mut e.thread, &mut e.location, &mut e.method, &mut e.message] {
             let (s, l) = (next(), next());
             *f = at(raw_at + s, l);
         }

@@ -273,7 +273,7 @@ async function withApp(run, opts = {}) {
       get BUILTIN_SYNTAX_SCHEMES() { return BUILTIN_SYNTAX_SCHEMES; },
       get customSyntaxSchemes() { return customSyntaxSchemes; },
       get syntaxSchemeChoice() { return syntaxSchemeChoice; },
-      get detailFormatHighlightEnabled() { return detailFormatHighlightEnabled; },
+      get detailView() { return detailView; },
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
       get accentChoices() { return accentChoices; },
@@ -411,7 +411,7 @@ await withApp(async (w, d, T) => {
   assert(f.entries[0].message.includes("at Foo.Bar()") && f.entries[0].message.includes("at Foo.Baz()"),
     "non-header continuation lines appended to the previous entry's message (stack trace handling)");
   assert(f.entries[0].level === "ERROR" && f.entries[1].level === "INFO", "level parsed correctly per entry");
-  assert(f.entries[0].locationShort === "Foo.cs:1", "location formatted as file:line");
+  assert(f.entries[0].location === "C:\\src\\Foo.cs line 1", "location kept in full (path + line), got " + f.entries[0].location);
   assert(f.entries[0].method === "DoWork", "method extracted from [brackets]");
   assert(typeof f.entries[0].ts === "number" && !Number.isNaN(f.entries[0].ts), "timestamp parsed to a valid number");
   assert(T.state.rootIds.includes(f.id), "file registered as a root node");
@@ -8240,7 +8240,7 @@ await withApp(async (w, d, T) => {
   assert(f.entries[0].level === "ERROR" && f.entries[1].level === "INFO", "level extraction unchanged");
   assert(f.entries[0].thread === "main", "thread extraction unchanged");
   assert(f.entries[0].method === "DoWork", "method extraction unchanged");
-  assert(f.entries[0].locationShort === "Foo.cs:0", "location extraction unchanged, got " + f.entries[0].locationShort);
+  assert(/Foo\.cs line 0$/.test(f.entries[0].location), "location extraction unchanged, got " + f.entries[0].location);
   assert(f.entries[0].message === "message 0", "message extraction unchanged");
   assert(!isNaN(f.entries[0].ts), "timestamp parses to a valid number");
 });
@@ -19242,9 +19242,9 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 169 — Entry detail: "format + syntax highlight embedded XML/JSON"
-   toggle (#detailFormatToggle, this session, person-requested). ON by
-   default (person-requested follow-up — originally shipped OFF, see
-   169a); auto-detects well-formed XML/JSON fragments EMBEDDED anywhere in
+   (this session, person-requested; since 2026-09-27 the Pretty stage of
+   #detailViewTabs, formerly the #detailFormatToggle button). The default
+   view (169a); auto-detects well-formed XML/JSON fragments EMBEDDED anywhere in
    the message's free text, pretty-prints and syntax-highlights just
    those, leaves the rest plain — still a one-click, persisted toggle to
    turn back off. Also detects a third fragment type — a .NET-style
@@ -19260,13 +19260,14 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(169);
 await withApp(async (w, d, T) => {
-  section("169a. Toggle defaults ON, persists, and gates raw vs formatted rendering");
+  section("169a. Pretty is the default view, persists, and gates plain vs formatted rendering");
 
-  const btn = d.querySelector("#detailFormatToggle");
-  assert(btn && btn.classList.contains("active") && T.detailFormatHighlightEnabled === true,
-    "the toggle defaults ON (person-requested)");
-  assert(w.localStorage.getItem("philogg-detail-format-highlight") === null,
-    "the ON default is a fallback for an UNSET key, nothing is written to localStorage just from starting up");
+  const btn = d.querySelector('#detailViewTabs [data-detail-view="pretty"]');
+  const parsedBtn = d.querySelector('#detailViewTabs [data-detail-view="parsed"]');
+  assert(btn && btn.classList.contains("active") && T.detailView === "pretty",
+    "Pretty is the default view (person-requested)");
+  assert(w.localStorage.getItem("philogg-detail-view") === null,
+    "the Pretty default is a fallback for an UNSET key, nothing is written to localStorage just from starting up");
 
   const f = await w.addFile("app.log", makeLog(0, 3), () => {});
   f.entries[0].message = 'Sending Control <ctrl><cmd>reset</cmd></ctrl> successful';
@@ -19277,15 +19278,15 @@ await withApp(async (w, d, T) => {
   assert(detailEl.textContent.startsWith("Sending Control") && detailEl.textContent.trim().endsWith("successful"),
     "ON: the surrounding plain text is untouched, got " + JSON.stringify(detailEl.textContent));
 
-  fireClick(btn, w);
-  assert(T.detailFormatHighlightEnabled === false && w.localStorage.getItem("philogg-detail-format-highlight") === "0",
-    "clicking the toggle turns it off and persists that explicit choice");
-  assert(detailEl.textContent === f.entries[0].message, "OFF: the raw message text is shown unchanged");
-  assert(!detailEl.querySelector(".syn-block"), "OFF: no syntax-highlight markup is present");
+  fireClick(parsedBtn, w);
+  assert(T.detailView === "parsed" && w.localStorage.getItem("philogg-detail-view") === "parsed",
+    "clicking Parsed switches the view and persists that explicit choice");
+  assert(detailEl.textContent === f.entries[0].message, "Parsed: the message text is shown unchanged");
+  assert(!detailEl.querySelector(".syn-block"), "Parsed: no syntax-highlight markup is present");
 
   fireClick(btn, w);
-  assert(T.detailFormatHighlightEnabled === true && btn.classList.contains("active") && w.localStorage.getItem("philogg-detail-format-highlight") === "1",
-    "clicking it again turns it back on and persists");
+  assert(T.detailView === "pretty" && btn.classList.contains("active") && w.localStorage.getItem("philogg-detail-view") === "pretty",
+    "clicking Pretty switches back and persists");
 });
 
 await withApp(async (w, d, T) => {
@@ -26510,8 +26511,8 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 230 — IDE Integration (this session): jump from a log entry's
    Location straight into a running IDE. Covers only the pure, DOM/IPC-free
-   remap logic — parseIdeLocation, resolveIdeSourcePath (next to
-   formatLocation), and buildRiderUri (near the context-menu wiring). The
+   remap logic — parseIdeLocation, resolveIdeSourcePath, and buildRiderUri
+   (near the context-menu wiring). The
    Visual Studio COM/PowerShell side (desktop/src-tauri/src/vs_integration.rs),
    the Settings dialog's Connect flow, and the context-menu items' live
    window.philogg-gated visibility are Windows-desktop-only and unreachable
@@ -29683,7 +29684,7 @@ group(264);
   // stays on the JS side).
   const toWire = (e, freeDate) => {
     const o = { id: "", tsRaw: e.tsRaw, ts: freeDate || isNaN(e.ts) ? null : e.ts, level: e.level, thread: e.thread,
-      locationShort: e.locationShort, locationFull: e.locationFull, method: e.method, message: e.message, raw: e.raw,
+      location: e.location, method: e.method, message: e.message, raw: e.raw,
       fields: Object.assign({}, e.fields) };
     if (e.msgOpenQuote) o.msgOpenQuote = e.msgOpenQuote;
     return o;
@@ -33796,6 +33797,147 @@ await withApp(async (w, d, T) => {
   assert(new TextDecoder().decode(await entries[2].extract()) === rot[2].text, "a stored entry extracts byte-for-byte");
 });
 
+/* ============================================================
+   GROUP 301 — 2026-09-27 (person-requested): entry detail "Raw | Parsed |
+   Pretty" switch (#detailViewTabs — Raw is the entry's original text, every
+   physical line, tabs, quotes; persisted; replaces the Format toggle; whole-line
+   filter matches marked; a link pair shows each real entry's own raw), the
+   location kept in full everywhere (locationShort/formatLocation removed,
+   the field is entry.location — detail header, sort), a link pair row
+   selected in the table now reaches the detail panel, and an empty []/{}
+   right after an identifier (.NET "Object[] arguments") is no embedded
+   JSON fragment. Sample data from tools/log-sim (stacktrace/motion
+   scenarios, jsonl + plain formats).
+   ============================================================ */
+group(301);
+await withApp(async (w, d, T) => {
+  section("301a. The location stays in full: entry.location, detail header, sort");
+  const [st] = LOGSIM.generateToStrings({ scenarios: ["stacktrace"], entries: 200, seed: 7 });
+  const f = await w.addFile(st.name, st.text, () => {});
+  const entry = f.entries.find(e => e.message.startsWith("Unhandled exception"));
+  assert(entry && /^C:\\src\\.+\.cs line \d+$/.test(entry.location), "the parsed location is the whole path plus line, got " + (entry && entry.location));
+  assert(!("locationShort" in entry) && !("locationFull" in entry) && typeof w.formatLocation === "undefined", "no short/full split any more");
+  assert(w.entryColumnValue(entry, "location") === entry.location, "the Location column reads entry.location");
+  T.state.activeId = f.id;
+  w.render();
+  w.selectEntry(entry.id);
+  const loc = d.querySelector("#detailMeta .detail-loc");
+  assert(loc && loc.textContent === entry.location && loc.title === entry.location, "the detail header shows the full location (and carries it as title), got " + (loc && loc.textContent));
+  const sorted = f.entries.slice().sort((a, b) => a.location.localeCompare(b.location));
+  T.state.sortColumn = "location"; T.state.sortDir = "asc";
+  w.render();
+  const firstRow = d.querySelector("#tableRows [data-entry-id]");
+  const firstShown = firstRow && f.entries.find(e => e.id === firstRow.dataset.entryId);
+  assert(firstShown.location === sorted[0].location, "sorting by Location orders by the full location, first row " + firstShown.location);
+  T.state.sortColumn = null;
+  w.render();
+
+  section("301b. Raw | Parsed | Pretty: Raw is the original text, unchanged; persisted");
+  w.selectEntry(entry.id);
+  const tab = v => d.querySelector('#detailViewTabs [data-detail-view="' + v + '"]');
+  const msgEl = d.querySelector("#detailMessage");
+  assert([...d.querySelectorAll("#detailViewTabs .view-tab")].map(b => b.textContent).join("|") === "Raw|Parsed|Pretty" && !d.querySelector("#detailFormatToggle"),
+    "three stages in one switch, the separate Format toggle is gone");
+  assert(tab("pretty").classList.contains("active") && T.detailView === "pretty", "Pretty is the default");
+  assert(msgEl.textContent === entry.message, "Pretty on a fragment-free message shows the parsed message");
+  tab("raw").click();
+  assert(tab("raw").classList.contains("active") && tab("raw").getAttribute("aria-pressed") === "true" && tab("pretty").getAttribute("aria-pressed") === "false", "Raw is now the active tab");
+  assert(msgEl.textContent === entry.raw, "Raw shows entry.raw exactly");
+  assert(entry.raw.includes("\t\"Unhandled exception") && entry.raw.split("\n").length === entry.message.split("\n").length && entry.raw.split("\n").length > 3,
+    "sanity: the raw text keeps the tab-separated header with its quotes and every continuation line");
+  assert(msgEl.textContent.includes("\n   at "), "stack-trace indentation kept");
+  assert(w.localStorage.getItem("philogg-detail-view") === "raw", "the choice is persisted");
+  const other = f.entries.find(e => e !== entry);
+  w.selectEntry(other.id);
+  assert(msgEl.textContent === other.raw, "Raw stays on for the next selected entry");
+  tab("parsed").click();
+  assert(msgEl.textContent === other.message && T.detailView === "parsed" && w.localStorage.getItem("philogg-detail-view") === "parsed", "Parsed shows the parsed message");
+  w.localStorage.setItem("philogg-detail-view", "raw");
+  w.initDetailViewSetting();
+  w.updateDetailPanel();
+  assert(tab("raw").classList.contains("active") && msgEl.textContent === other.raw, "initDetailViewSetting restores the persisted view");
+  w.localStorage.setItem("philogg-detail-view", "bogus");
+  w.initDetailViewSetting();
+  assert(T.detailView === "pretty", "an unknown stored value falls back to Pretty");
+  w.setDetailView("raw");
+
+  section("301c. Raw marks whole-line filter matches, not column-restricted ones");
+  const textNode = w.createFilterNode(f.id, "text", "Unhandled exception");
+  T.state.activeId = textNode.id;
+  w.render();
+  w.selectEntry(entry.id);
+  const marks = [...msgEl.querySelectorAll("mark")].map(m => m.textContent);
+  assert(marks.includes("Unhandled exception") && msgEl.textContent === entry.raw, "the active text filter's match is marked in the raw text, got " + JSON.stringify(marks));
+  const threadNode = w.createFilterNode(f.id, "text", entry.thread, false, null, false, ["thread"]);
+  T.state.activeId = threadNode.id;
+  w.render();
+  w.selectEntry(entry.id);
+  assert(msgEl.querySelectorAll("mark").length === 0, "a column-restricted filter marks nothing in the raw text");
+  assert(d.querySelector("#detailMeta .detail-thread mark"), "sanity: it still marks its own column in the header");
+
+  section("301d. An empty []/{} after an identifier is no embedded fragment");
+  const net = entry.message.split("\n").find(l => l.includes("Object[] arguments"));
+  assert(net, "sanity: the simulated .NET stack trace has an 'Object[] arguments' frame");
+  assert(w.findEmbeddedFragments(entry.message).length === 0, "no fragment detected in the stack trace");
+  const html = w.formatMessageWithHighlight(entry.message);
+  assert(!/syn-block/.test(html) && html.includes(w.escapeHtml(net)), "the frame stays on one line, unformatted");
+  assert(w.findEmbeddedFragments("new List{} and int[] x").length === 0, "{} after an identifier is skipped too");
+  assert(w.findEmbeddedFragments("items: [] ok").length === 1 && w.findEmbeddedFragments('Response: {"a":[]} done').length === 1,
+    "an empty array after punctuation/space and JSON containing [] are still fragments");
+  assert(w.findEmbeddedFragments("value Foo[\"x\"] done").length === 1, "a non-empty bracket span after an identifier is judged as before (valid JSON [\"x\"])");
+});
+
+await withApp(async (w, d, T) => {
+  section("301e. A link pair: reaches the detail panel from the table, Raw shows each entry's own text");
+  const [mo] = LOGSIM.generateToStrings({ scenarios: ["motion"], entries: 300, seed: 3 });
+  const f = await w.addFile(mo.name, mo.text, () => {});
+  const moves = w.createFilterNode(f.id, "text", "Move requested");
+  const reached = w.createFilterNode(f.id, "text", "Position reached");
+  const link = w.createLinkNode(moves.id, reached.id, "after", 1);
+  const child = w.createFilterNode(link.id, "text", "axis");
+  T.state.activeId = child.id;
+  w.render();
+  const row = d.querySelector("#tableRows [data-entry-id]");
+  assert(row && row.dataset.entryId.startsWith("pair:"), "sanity: a filter under a link lists pair rows in the table");
+  row.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  const pair = w.selectedEntry();
+  assert(pair && pair.isPair && pair.id === T.state.selectedId, "the selected pair resolves via selectedEntry()");
+  assert(w.currentRowActionEntry() === null, "row actions stay off for a pair row (no entryIndex entry) instead of throwing");
+  const msgEl = d.querySelector("#detailMessage");
+  w.setDetailView("parsed");
+  assert(!d.querySelector("#detailPanel").classList.contains("empty") && msgEl.textContent === pair.message, "Parsed shows the pair's combined message");
+  w.setDetailView("raw");
+  const parts = [...msgEl.querySelectorAll(".detail-raw-part")].map(p => p.textContent);
+  const real = w.getTupleEntries(pair);
+  assert(parts.length === 2 && parts[0] === real[0].raw && parts[1] === real[1].raw && !msgEl.textContent.includes("⟶"),
+    "Raw shows each real entry's original text in its own block, no synthetic separator, got " + JSON.stringify(parts));
+});
+
+await withApp(async (w, d, T) => {
+  section("301f. Raw for JSON Lines and plain text: the line as read");
+  await waitForFormatConfig(T);
+  const [jl] = LOGSIM.generateToStrings({ format: "jsonl", entries: 50, seed: 2 });
+  await logsimRegister(w, T, "jsonl", "fmt-sim-jsonl");
+  const fj = await w.addFile(jl.name, jl.text, () => {});
+  const ej = fj.entries.find(e => e.raw.startsWith("{"));
+  T.state.activeId = fj.id;
+  w.render();
+  w.selectEntry(ej.id);
+  w.setDetailView("raw");
+  const msgEl = d.querySelector("#detailMessage");
+  assert(msgEl.textContent === ej.raw && jl.text.split("\n").includes(ej.raw), "JSON Lines: Raw shows the compact JSON line from the file");
+  w.setDetailView("parsed");
+  assert(msgEl.textContent !== ej.raw, "sanity: Parsed shows the message key's value instead");
+  const [pl] = LOGSIM.generateToStrings({ format: "plain", entries: 30, seed: 2 });
+  const fp = await w.addFile(pl.name, pl.text, () => {}, "fmt-plaintext");
+  const ep = fp.entries[3];
+  T.state.activeId = fp.id;
+  w.render();
+  w.selectEntry(ep.id);
+  w.setDetailView("raw");
+  assert(msgEl.textContent === ep.raw && ep.raw === pl.text.split("\n")[3], "plain text: Raw is the line itself");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -37441,7 +37583,7 @@ process.exitCode = failed ? 1 : 0;
       session later the same day once the person's first real Visual
       Studio/Rider test caught two bugs the original design got wrong:
       IDE Integration — jump from a log entry's Location straight into a
-      running IDE. `parseIdeLocation` (next to `formatLocation`) extracts
+      running IDE. `parseIdeLocation` extracts
       the whole raw path + line number; `resolveIdeSourcePath` remaps that
       path onto a local checkout by anchoring on a shared, configurable
       **pattern** (same `*`/`?` convention as `compileGlob`'s file-pattern
@@ -38151,4 +38293,12 @@ process.exitCode = failed ? 1 : 0;
       (tools/log-sim/) — every generated format parses in the app through
       its exported definition, mixed via a meta format, scenario content,
       determinism/size/layouts, ZIP round trip.
+   Group 301 — 2026-09-27 (person-requested): entry detail Raw | Parsed |
+      Pretty switch (replaces #detailFormatToggle), the location kept in
+      full (locationShort/formatLocation removed, entry.location), link
+      pairs in the detail panel, and no embedded-JSON fragment for an empty
+      []/{} after an identifier. Same session updated GROUP 1 and 70d
+      (location assertions), 264 (wire shape + both native golden
+      fixtures) and 169a (Pretty stage).
    ============================================================ */
+
