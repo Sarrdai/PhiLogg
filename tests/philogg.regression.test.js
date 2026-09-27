@@ -1592,19 +1592,50 @@ await withApp(async (w, d, T) => {
   w.render();
   const rows = [...d.querySelectorAll(".tree-row")];
   const plainRow = rows.find(r => r.querySelector(".tree-label") && r.querySelector(".tree-label").textContent.includes("message 1"));
-  const fileRow = rows.find(r => r.querySelector(".tree-label") && r.querySelector(".tree-label").textContent === "a.log");
+  const fileRow = rows.find(r => r.dataset.nodeId === fb.id);
   assert(plainRow && fileRow, "located rows for a real drag-and-drop simulation");
-  const dt = mkDataTransfer(w);
-  fireDrag(plainRow, w, "dragstart", dt);
+  // Mouse-event drag (not HTML5 DnD — see treeDrag in philogg.html; Tauri's
+  // native drag-drop handler swallows HTML5 dragover/drop on Windows).
+  const plainNodeId = plainRow.dataset.nodeId;
+  const mouse = (el, type, x, buttons) => el.dispatchEvent(new w.MouseEvent(type, { bubbles: true, cancelable: true, button: 0, buttons, clientX: x, clientY: 10 }));
+  assert(plainRow.classList.contains("tree-draggable") && !plainRow.hasAttribute("draggable"),
+    "a filter row is mouse-draggable, not an HTML5 draggable");
   const dropOverlayBefore = d.querySelector("#dropOverlay").classList.contains("hidden");
-  fireDrag(fileRow, w, "dragover", dt);
-  assert(fileRow.classList.contains("drag-over"), "dragover on a valid drop target highlights it");
-  fireDrag(fileRow, w, "drop", dt);
-  // Internal tree drag must NOT trigger the file-drop overlay (isFileDrag()
-  // gates on dataTransfer.types including "Files" — our synthetic DT never
-  // sets that), regardless of before/after state.
+  mouse(plainRow, "mousedown", 10, 1);
+  mouse(fileRow, "mousemove", 12, 1);
+  assert(!fileRow.classList.contains("drag-over"), "a move below the threshold is not a drag yet (plain clicks stay clicks)");
+  mouse(fileRow, "mousemove", 40, 1);
+  assert(fileRow.classList.contains("drag-over"), "moving over a valid drop target highlights it");
+  mouse(plainRow, "mousemove", 41, 1);
+  assert(!plainRow.classList.contains("drag-over") && !fileRow.classList.contains("drag-over"),
+    "the dragged row itself is no drop target, and the previous target loses its highlight");
+  mouse(fileRow, "mousemove", 42, 1);
+  mouse(fileRow, "mouseup", 42, 0);
+  assert(T.state.nodes[plainNodeId].parentId === T.state.nodes[fileRow.dataset.nodeId].id, "dropping on another file's row reparents the filter under it");
+  assert(T.state.activeId === plainNodeId, "the moved filter becomes active");
+  assert(!d.querySelector("#tree .drag-over, #tree .dragging") && !d.body.classList.contains("tree-dragging"), "drag classes are cleared after the drop");
+  // Internal tree drag must NOT trigger the file-drop overlay.
   assert(d.querySelector("#dropOverlay").classList.contains("hidden") === dropOverlayBefore,
-    "internal tree drag does not toggle the file-drop overlay (isFileDrag gate)");
+    "internal tree drag does not toggle the file-drop overlay");
+  // Drop on another filter: becomes its child. A click right after the
+  // drag is swallowed (it isn't a selection click).
+  w.render();
+  const rows2 = [...d.querySelectorAll(".tree-row")];
+  const src = rows2.find(r => r.dataset.nodeId === gB.id);
+  const dst = rows2.find(r => r.dataset.nodeId === otherFilterA.id);
+  mouse(src, "mousedown", 10, 1);
+  mouse(dst, "mousemove", 50, 1);
+  mouse(dst, "mouseup", 50, 0);
+  assert(gB.parentId === otherFilterA.id, "dropping a filter on another filter appends it as that filter's child");
+  const clickEv = new w.MouseEvent("click", { bubbles: true, cancelable: true });
+  d.querySelector('.tree-row[data-node-id="' + gB.id + '"]').dispatchEvent(clickEv);
+  assert(clickEv.defaultPrevented, "the click that ends a drag is swallowed");
+  // A plain click (no move) never reparents.
+  const before = gA.parentId;
+  const gARow = d.querySelector('.tree-row[data-node-id="' + gA.id + '"]');
+  mouse(gARow, "mousedown", 10, 1);
+  mouse(d.querySelector('.tree-row[data-node-id="' + fb.id + '"]'), "mouseup", 10, 0);
+  assert(gA.parentId === before, "mousedown + mouseup without moving is not a drop");
 });
 
 /* ============================================================
@@ -23009,9 +23040,9 @@ group(199);
 /* ============================================================
    GROUP 201 — Clickable local file paths (linkifyPaths, eager verification, the popup)
    Origin: this session. Absolute Windows/Unix paths detected inside a
-   rendered message field get wrapped in a .fp-candidate span with a dim
-   "detected" underline regardless of build (so a browser build looks the
-   same, just never upgrades further) — only under a desktop wrapper
+   rendered message field get wrapped in a .fp-candidate span regardless of
+   build, with no underline of its own (updated by GROUP 309: only a
+   verified path is underlined) — only under a desktop wrapper
    (window.philogg.pathExists) does verifyVisibleFpCandidates(), called once
    per render, verify each newly-seen path and, only if it exists, upgrade
    it to the full link look (.fp-verified) and offer "Open
@@ -23099,9 +23130,9 @@ await withApp(async (w, d, T) => {
 
   const span = d.querySelector(".fp-candidate");
   assert(span && span.dataset.fp === "/var/log/app.log", "the rendered row wraps the detected path, got " + (span && span.dataset.fp));
-  assert(cs(span).textDecoration.includes("underline"),
-    "every detected candidate gets a visible underline immediately on render, before any verification — person-reported: with no cue at all, a detected path looked identical to plain text");
-  assert(!span.classList.contains("fp-verified"), "...but not the stronger .fp-verified look, since no window.philogg exists here to confirm it");
+  assert(!span.classList.contains("fp-verified"), "not .fp-verified, since no window.philogg exists here to confirm it");
+  assert(!cs(span).textDecoration.includes("underline"),
+    "an unverified candidate has no underline (GROUP 309 — the underline itself says the path is interactive)");
 
   span.dispatchEvent(new w.MouseEvent("mouseover", { bubbles: true }));
   await new Promise(r => setTimeout(r, 50));
@@ -23126,6 +23157,7 @@ await withApp(async (w, d, T) => {
   const span = d.querySelector(".fp-candidate");
   assert(span.classList.contains("fp-verified"),
     "an existing path is already marked verified right after render — no mouseover was dispatched here at all");
+  assert(w.getComputedStyle(span).textDecoration.includes("underline"), "a verified path is underlined");
   assert(pathExistsCalls === 1, "verified via exactly one pathExists() call, got " + pathExistsCalls);
 
   const menu = d.querySelector("#fpPathMenu");
@@ -34791,6 +34823,50 @@ await withApp(async (w, d, T) => {
   assert(w.localStorage.getItem("philogg-llm-enabled") === "0" && w.localStorage.getItem("philogg-llm-docked") === "1", "stored off; the docked preference stays");
 }, { philogg: llmDesktopStub(), beforeParse: win => win.localStorage.setItem("philogg-llm-docked", "1") });
 
+/* ============================================================
+   GROUP 309 — Native context menu off app-wide; path underline only when
+   interactive; numeric [*] columns plottable
+   Origin: 2026-09-27, person-reported bugs. (a) Right-clicking a Patterns
+   row opened the webview's own menu (Back/Reload/Print/Inspect): a
+   document-level "contextmenu" listener now suppresses it everywhere except
+   editable fields. (b) Covered by GROUP 201's updated asserts (no underline
+   until .fp-verified). (c) A Patterns-view "Filter" produces untyped [*]
+   placeholders — their numeric values showed in the Table but the Plot tab
+   only offered Index/t (ms); inferNumericTextColumns now types such a column
+   int/float when every non-empty value is a plain number. The tree
+   drag-and-drop rewrite (mouse events instead of HTML5 DnD) is covered in
+   GROUP 7.
+   ============================================================ */
+group(309);
+await withApp(async (w, d, T) => {
+  section("309a. No native context menu, except in editable fields");
+  const f = await w.addFile("a.log", makeLog(0, 6, { msgPrefix: "sensor", suffix: i => "temperature=" + (40 + i * 0.5).toFixed(1) + " mode=" + (i % 2 ? "on" : "off") + " done" }), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("patterns");
+  const prow = d.querySelector("#patternsRows .pattern-row");
+  assert(prow, "sanity: a Patterns row is rendered");
+  const ctx = el => { const ev = new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true }); el.dispatchEvent(ev); return ev.defaultPrevented; };
+  assert(ctx(prow), "right-click on a Patterns row: native menu suppressed");
+  assert(ctx(d.body), "right-click on empty page area: native menu suppressed");
+  assert(!ctx(d.querySelector("#filterInput")), "a text input keeps its native menu (cut/copy/paste)");
+
+  section("309b. Untyped [*] columns holding plain numbers are plottable");
+  const node = w.createFilterNode(f.id, "text", "sensor [*] temperature=[*] mode=[*] done");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  const typeOf = ci => T.extractColumns.find(c => c.colIndex === ci).type;
+  assert(typeOf(0) === "int", "an all-integer [*] column is typed int, got " + typeOf(0));
+  assert(typeOf(1) === "float", "a decimal [*] column is typed float, got " + typeOf(1));
+  assert(typeOf(2) === "text", "a non-numeric [*] column stays text, got " + typeOf(2));
+  w.applyFhView("plot");
+  const yCols = [...d.querySelectorAll("#plotYList input[type=checkbox]")].map(cb => cb.dataset.col);
+  assert(yCols.includes("0") && yCols.includes("1") && !yCols.includes("2"),
+    "Plot offers the numeric [*] columns, not the text one, got " + JSON.stringify(yCols));
+  w.switchExtractView("table");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -39176,5 +39252,10 @@ process.exitCode = failed ? 1 : 0;
       rename/confirm dialog.
    Group 308 — 2026-09-28 (person-requested): Settings → Assistant on/off
       switch, default off (no button, chat, panel or sessions while off).
+   Group 309 — 2026-09-27 (person-reported): native context menu suppressed
+      app-wide (editable fields exempt), numeric untyped [*] columns typed
+      int/float so the Plot tab offers them. Same session rewrote GROUP 7's
+      drag-and-drop part (mouse events) and updated GROUP 201 (underline only
+      once verified).
    ============================================================ */
 

@@ -2,6 +2,13 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: no native context menu, tree drag-and-drop in the desktop app, path underline only when interactive, numeric `[*]` columns plottable (2026-09-27, person-reported)**.
+  - **Context menu**: right-clicking e.g. a Patterns row opened the webview's own menu (Back/Reload/Print/Inspect). A document-level `contextmenu` listener now suppresses it app-wide, in the browser build too; text fields keep theirs (cut/copy/paste). See `PROJECT.md` → "Known gotchas".
+  - **Tree drag-and-drop**: dragging a filter onto a file or another filter (to append it as child) did nothing in the desktop app — on Windows, Tauri's native drag-drop handler (kept on for real OS paths of dropped files) swallows HTML5 `dragover`/`drop`. Reparenting now runs on mouse events (`treeDrag`, 5px threshold, click after a drag swallowed). See `docs/ui-and-views.md` → "Drag-and-drop", `docs/desktop.md` → "The drag-drop trade".
+  - **File paths**: the dim underline on every detected path (a debugging aid) is gone; only a path verified to exist is underlined, so the underline shows it's interactive. See `docs/desktop.md`.
+  - **Plot**: a Patterns-view "Filter" gives untyped `[*]` placeholders — numbers showed in the Table as TEXT, and the Plot tab offered only Index/t (ms). `inferNumericTextColumns()` types such a column int/float when all its values are plain numbers. See `docs/extraction-and-plotting.md`.
+  - **Tests**: new **Group 309**; GROUP 7 (drag part rewritten for mouse events) and GROUP 201 (underline) updated. Full suite **6799 passed, 0 failed**.
+
 - **feat: on/off switch for the assistant, default off (2026-09-28, person-requested: *"Gib dem Feature in den Settings noch einen On/Off Switch. Ausgeschaltet soll dann das Chat Icon nicht zu sehen sein. Default: Off"*)**. See `docs/llm-assistant.md` → "Chat view".
   - Settings → Assistant → **Enable assistant** (`philogg-llm-enabled`). Off: no toolbar chat button, no chat window or docked panel, sessions not loaded; switching off stops a running round and closes the chat (stored chats and the docked preference are kept).
   - **Tests**: new **Group 308**; the assistant groups 304–307 switch it on before boot. Screenshot scene `10-assistant.js` switches it on. Full suite **6781 passed, 0 failed**.

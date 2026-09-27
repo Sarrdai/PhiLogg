@@ -756,7 +756,8 @@
   .tree-row.active.multi-selected{box-shadow:none;}
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
-  .tree-row[draggable="true"]{cursor:grab;}
+  .tree-row.tree-draggable{cursor:grab;}
+  body.tree-dragging, body.tree-dragging *{cursor:grabbing !important; user-select:none;}
   .tree-row.dragging{opacity:.4;}
   .tree-row.drag-over{background:var(--accent-soft); box-shadow:inset 0 0 0 1.5px var(--accent);}
   /* Tree connector lines (replace the removed breadcrumb bar, person-
@@ -3938,17 +3939,14 @@
   #treeCtxInfoMenu.hidden{display:none;}
 
   /* Clickable local file paths (desktop build only for the actual link —
-     see verifyVisibleFpCandidates/openFpPathMenu). EVERY detected candidate
-     gets this dim dotted underline immediately on render, in every build —
-     person-reported: with no visible cue at all before verification, a
-     detected path was indistinguishable from plain text, so there was no
-     way to tell "nothing was detected here" apart from "verification
-     silently failed". .fp-verified (added once window.philogg.pathExists
-     confirms the file is actually there) upgrades it to the real link
-     look — accent color, solid cursor. Same popup shape as
+     see verifyVisibleFpCandidates/openFpPathMenu). A detected candidate
+     stays plain text; only .fp-verified (added once window.philogg.pathExists
+     confirms the path is actually there, right after render) gets the
+     underline — person-requested: the underline itself tells whether a
+     path is interactive, so a path that doesn't exist (or any path in the
+     browser build, which can't open one) never looks like a link. Same popup shape as
      #addToSelectionMenu/#treeCtxInfoMenu, reusing .ctx-item/.ctx-sep. */
-  .fp-candidate{text-decoration:underline dotted; text-decoration-color:var(--border-soft);}
-  .fp-candidate.fp-verified{text-decoration-color:var(--text-tertiary); cursor:pointer;}
+  .fp-candidate.fp-verified{text-decoration:underline dotted; text-decoration-color:var(--text-tertiary); cursor:pointer;}
   .fp-candidate.fp-verified:hover{color:var(--accent-strong); text-decoration-color:var(--accent-strong);}
   #fpPathMenu{
     position:fixed; z-index:51; background:var(--bg-elevated);
@@ -16536,9 +16534,67 @@ function renderFilterHistoryPreview(fileNode) {
   return box;
 }
 
-// Tracks the node currently being dragged in the tree (see renderNode's
-// dragstart/dragover/drop handlers). null while no drag is in progress.
-let draggedNodeId = null;
+// Tree drag-and-drop reparenting runs on plain mouse events, not HTML5 DnD
+// (person-reported: dragging a filter did nothing in the desktop app). The
+// desktop wrapper keeps Tauri's native drag-drop handler on — the only
+// source of real OS paths for a dropped file (see docs/desktop.md, "The
+// drag-drop trade") — and on Windows that handler takes over every drag in
+// the webview, so HTML5 dragover/drop never reach the page. Mouse events are
+// untouched by it, so the same code works in every build.
+// renderNode arms treeDrag on mousedown; it only becomes a drag past
+// TREE_DRAG_THRESHOLD_PX, so a plain click/double-click is unaffected. The
+// drop target is read from each event's own target (the row under the
+// pointer) via data-node-id, never from a row reference kept across events —
+// a render in between may have rebuilt #tree (CLAUDE.md "DOM identity").
+const TREE_DRAG_THRESHOLD_PX = 5;
+let treeDrag = null; // { id, x, y, active, targetId } while the button is down
+
+function treeDropTargetRow(target, dragId) {
+  const row = target instanceof Element ? target.closest("#tree .tree-row[data-node-id]") : null;
+  if (!row) return null;
+  const targetId = row.dataset.nodeId;
+  if (!state.nodes[targetId] || isDescendantOrSelf(dragId, targetId)) return null;
+  return row;
+}
+function clearTreeDragClasses() {
+  treeEl.querySelectorAll(".tree-row.drag-over, .tree-row.dragging").forEach(r => r.classList.remove("drag-over", "dragging"));
+  document.body.classList.remove("tree-dragging");
+}
+document.addEventListener("mousemove", ev => {
+  if (!treeDrag) return;
+  if (!(ev.buttons & 1)) { treeDrag = null; clearTreeDragClasses(); return; }
+  if (!treeDrag.active) {
+    if (Math.abs(ev.clientX - treeDrag.x) + Math.abs(ev.clientY - treeDrag.y) < TREE_DRAG_THRESHOLD_PX) return;
+    treeDrag.active = true;
+    document.body.classList.add("tree-dragging");
+  }
+  ev.preventDefault();
+  const sel = window.getSelection && window.getSelection();
+  if (sel && sel.rangeCount) sel.removeAllRanges();
+  const row = treeDropTargetRow(ev.target, treeDrag.id);
+  treeEl.querySelectorAll(".tree-row.drag-over").forEach(r => { if (r !== row) r.classList.remove("drag-over"); });
+  treeEl.querySelectorAll(".tree-row[data-node-id]").forEach(r => r.classList.toggle("dragging", r.dataset.nodeId === treeDrag.id));
+  if (row) row.classList.add("drag-over");
+  treeDrag.targetId = row ? row.dataset.nodeId : null;
+});
+document.addEventListener("mouseup", ev => {
+  if (!treeDrag) return;
+  const drag = treeDrag;
+  treeDrag = null;
+  clearTreeDragClasses();
+  if (!drag.active) return;
+  // The click a finished drag produces (on whatever row it ended over) is
+  // not a selection click — swallow it once.
+  const swallow = e => { e.stopPropagation(); e.preventDefault(); };
+  window.addEventListener("click", swallow, { capture: true, once: true });
+  setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 0);
+  const row = treeDropTargetRow(ev.target, drag.id);
+  if (!row) return;
+  const movedId = moveFilterNodeWithUndo(drag.id, row.dataset.nodeId);
+  if (movedId) { state.activeId = movedId; state.focusRegion = "tree"; }
+  else showCopyToast("Can't move here — would create a circular reference");
+  render();
+});
 
 // Manual double-click detection for tree rows, instead of a native
 // "dblclick" listener: a tree row's own click handler always ends in a full
@@ -16978,43 +17034,20 @@ function renderNode(id, depth, opts) {
     render();
   });
 
-  // Drag-and-drop reparenting: any filter node can be dragged — moving a
-  // node only ever changes its parentId (pure display repositioning), never
-  // an and/or/link node's bakedA/bakedB, so there is no structural cycle to
-  // guard against beyond the ordinary isDescendantOrSelf check (see
-  // moveNode). Every node (file or filter) is a valid drop target to become
-  // the new parent, exactly matching what Ctrl+V already allows.
+  // Drag-and-drop reparenting (mouse-event based — see treeDrag's comment):
+  // any filter node can be dragged — moving a node only ever changes its
+  // parentId (pure display repositioning), never an and/or/link node's
+  // bakedA/bakedB, so there is no structural cycle to guard against beyond
+  // the ordinary isDescendantOrSelf check (see moveNode). Every node (file or
+  // filter) is a valid drop target to become the new parent, exactly
+  // matching what Ctrl+V already allows.
   if (node.type === "filter" && !node.locked) {
-    row.draggable = true;
-    row.addEventListener("dragstart", ev => {
-      draggedNodeId = id;
-      ev.dataTransfer.effectAllowed = "move";
-      ev.dataTransfer.setData("text/plain", id);
-      row.classList.add("dragging");
-    });
-    row.addEventListener("dragend", () => {
-      draggedNodeId = null;
-      row.classList.remove("dragging");
-      treeEl.querySelectorAll(".tree-row.drag-over").forEach(el => el.classList.remove("drag-over"));
+    row.classList.add("tree-draggable");
+    row.addEventListener("mousedown", ev => {
+      if (ev.button !== 0 || ev.target.closest("input, textarea")) return;
+      treeDrag = { id, x: ev.clientX, y: ev.clientY, active: false, targetId: null };
     });
   }
-  row.addEventListener("dragover", ev => {
-    if (!draggedNodeId || draggedNodeId === id || isDescendantOrSelf(draggedNodeId, id)) return;
-    ev.preventDefault();
-    ev.dataTransfer.dropEffect = "move";
-    row.classList.add("drag-over");
-  });
-  row.addEventListener("dragleave", () => row.classList.remove("drag-over"));
-  row.addEventListener("drop", ev => {
-    ev.preventDefault();
-    row.classList.remove("drag-over");
-    if (!draggedNodeId) return;
-    const movedId = moveFilterNodeWithUndo(draggedNodeId, id);
-    if (movedId) { state.activeId = movedId; state.focusRegion = "tree"; }
-    else showCopyToast("Can't move here — would create a circular reference");
-    draggedNodeId = null;
-    render();
-  });
 
   wrap.appendChild(row);
   if (node.type === "file" && node.children.length === 0 && node.filterHistoryMatch) {
@@ -17474,6 +17507,25 @@ function sanitizeArrayViews(raw) {
     out[idx] = m;
   });
   return Object.keys(out).length ? out : null;
+}
+// A bare [*] column (type "text") whose every non-empty value is a plain
+// number is retyped int/float, so it sorts numerically and the Plot tab
+// offers it — a Patterns-view "Filter" (untyped [*]) or a hand-typed [*]
+// over numbers is then just as plottable as an explicit [*:float].
+const PLAIN_NUMBER_RE = /^[-+]?\d+(?:\.\d+)?$/;
+function inferNumericTextColumns() {
+  extractColumns = extractColumns.map(c => {
+    if (c.type !== "text" || c.colIndex < 0) return c;
+    let any = false, float = false;
+    for (const r of extractRowsData) {
+      const t = String(r.values[c.colIndex] == null ? "" : r.values[c.colIndex]).trim();
+      if (!t) continue;
+      if (!PLAIN_NUMBER_RE.test(t)) return c;
+      any = true;
+      if (t.indexOf(".") !== -1) float = true;
+    }
+    return any ? { ...c, type: float ? "float" : "int" } : c;
+  });
 }
 // A row's values with the negative-index expandos (Index/t(ms)/derived
 // columns) copied too — Array.prototype.slice only copies the dense part.
@@ -20349,6 +20401,7 @@ function renderExtractTable(node) {
     return { entry: e, values };
   });
   applyArrayViews(node);
+  inferNumericTextColumns();
   // Sorting is applied to extractRowsData itself (not just the table display)
   // so selection/copy stay index-consistent with what's on screen. This also
   // means the connected Plot tab's line order follows the sort — see
@@ -28409,6 +28462,18 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
 }
 window.philoggLoadLocalFiles = loadDesktopLocalFiles;
 
+// The browser's/webview's native context menu (Back, Reload, Save as,
+// Print, Inspect, ...) never opens anywhere in the app — PhiLogg's own
+// menus are the only right-click UI. Handlers that open one of those call
+// preventDefault themselves; this catches every other spot (Patterns rows,
+// empty panels, toolbars). Editable fields keep theirs for cut/copy/paste
+// and spellcheck suggestions.
+document.addEventListener("contextmenu", ev => {
+  const t = ev.target;
+  if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
+  ev.preventDefault();
+});
+
 let dragCounter = 0;
 const dropOverlay = el("#dropOverlay");
 // Distinguishes an OS file drag (dataTransfer.types includes "Files") from an
@@ -32438,10 +32503,8 @@ treeCtxInfoMenu.addEventListener("click", ev => ev.stopPropagation());
 /* ===================== Clickable local file paths (desktop build only) =====================
    linkifyPaths (see markFieldHtml) wraps every candidate absolute path found
    in a rendered row's message field in a .fp-candidate span regardless of
-   build, styled with a dim "detected" underline immediately (see its CSS
-   comment) — so the same philogg.html looks identical in the browser build,
-   which has no way to check or open an arbitrary path, and a detected path
-   is never indistinguishable from plain text even before it's confirmed.
+   build, unstyled until verified (see its CSS comment) — the browser build,
+   which has no way to check or open an arbitrary path, never underlines one.
    verifyVisibleFpCandidates(container), called from both renderVisibleRows
    (tableRows) and renderHighlightVisibleRows (highlightRows), is the only
    thing gated on window.philogg (desktop build): right after each render it
