@@ -38,7 +38,9 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | `fonts.rs` | system font enumeration |
 | `vs_integration.rs` | Visual Studio COM automation (Running Object Table) |
 
-Plus one workspace crate beside `src/`: `logparse/` (`philogg-logparse`), the
+Plus two workspace crates beside `src/`: `llm/` (`philogg-llm`, the LLM
+assistant's loopback-only HTTP/SSE client — see `docs/llm-assistant.md`) and
+`logparse/` (`philogg-logparse`), the
 native log parser — Tauri-free on purpose, so `cargo test -p philogg-logparse`
 runs without the webview toolchain. See "Native parsing" below.
 
@@ -91,7 +93,8 @@ reporting "painted" (the `app_ready` command, see "Main window" below).
 **Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
 (`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
 `pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`,
-`parseLogFile` (see "Native parsing" below), and `getPathForFile`. That last one returns `null` permanently — no system webview can
+`parseLogFile` (see "Native parsing" below), `llmModels`/`llmChat`/`llmCancel` (the LLM
+assistant, see `docs/llm-assistant.md`), and `getPathForFile`. That last one returns `null` permanently — no system webview can
 resolve a `File` object back to its OS path — which is why the wrapper opens files
 itself instead (next paragraph). `philogg.html` treats a null `getPathForFile` as "no
 path known", so nothing breaks; under this wrapper no route reaches that case any more.

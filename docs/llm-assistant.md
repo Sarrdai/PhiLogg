@@ -35,3 +35,44 @@ persistence carrier for purely cosmetic information) — and `renderNode`
 marks them with a small ✦.
 
 The registry exists in the browser build too, but nothing calls it there.
+
+## Rust bridge (`desktop/src-tauri/llm`, `commands.rs`)
+
+The HTTP side lives in the Tauri-free workspace crate `philogg-llm`
+(`cargo test -p philogg-llm` runs without the webview toolchain):
+
+- **Loopback only.** `parse_base_url` accepts `http://localhost`,
+  `http://127.0.0.1` and `http://[::1]` (optional port and path) and nothing
+  else — no https, no other host, no user info. `localhost` is connected as
+  127.0.0.1, then ::1, without a DNS lookup; a redirect is an error, not
+  followed; there is no proxy. This is why it is a small hand-written
+  HTTP/1.1 client over `TcpStream` instead of an HTTP crate: the guarantee
+  is a property of ~200 lines of code, not of a library's settings.
+- **Streaming.** `stream_chat` POSTs `{base}/chat/completions` and reads the
+  body (chunked, Content-Length or until close) line by line through
+  `SseParser`; every event's data goes to the callback until `[DONE]`. A
+  server answering with plain JSON produces one `Message` instead. A stream
+  that closes without `[DONE]` or a `finish_reason` is an error ("the
+  connection closed before the answer was complete").
+- **Cancel.** The socket's read timeout is 200 ms; every wake-up checks the
+  request's cancel flag, so Stop lands even while the model is still
+  processing the prompt and nothing streams yet. Dropping the connection
+  also stops LM Studio's generation. Idle limit: 10 minutes without a byte.
+- `list_models` — `GET {base}/models` → `data[].id`.
+- HTTP errors come back as `HTTP <status>: <error.message>`, an unreachable
+  server as "cannot reach … — is LM Studio's server running?".
+
+Tauri commands (`commands.rs`): `llm_models(baseUrl)`,
+`llm_chat(requestId, baseUrl, request, onEvent)` — each chunk reaches the
+page as `{type: "chunk", data}` (`{type: "message", data}` for a
+non-streamed answer) over an IPC channel, and the page assembles text and
+tool-call deltas itself — and `llm_cancel(requestId)` (flags in
+`AppState.llm_requests`). `inject.js` exposes them as
+`window.philogg.llmModels/llmChat/llmCancel`; `llmChat` is what the page
+feature-detects the whole assistant on.
+
+Tests: `cargo test -p philogg-llm` — URL checks, the SSE parser (comments,
+multi-line data, CRLF, unterminated last event), and a local mock server
+that streams LM-Studio-shaped chunks (text deltas, a tool-call delta split
+across two HTTP chunks, `[DONE]`), answers plain JSON, drops the connection
+mid-stream, returns HTTP errors/redirects, stays silent until cancelled.

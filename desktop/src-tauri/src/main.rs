@@ -98,6 +98,9 @@ fn main() {
             commands::pip_exit,
             commands::pip_enter,
             commands::pip_minimize,
+            commands::llm_models,
+            commands::llm_chat,
+            commands::llm_cancel,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

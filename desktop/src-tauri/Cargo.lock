@@ -2559,6 +2559,7 @@ dependencies = [
 name = "philogg-desktop"
 version = "0.1.0"
 dependencies = [
+ "philogg-llm",
  "philogg-logparse",
  "serde",
  "serde_json",
@@ -2570,6 +2571,13 @@ dependencies = [
  "urlencoding",
  "webview2-com",
  "windows",
+]
+
+[[package]]
+name = "philogg-llm"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]

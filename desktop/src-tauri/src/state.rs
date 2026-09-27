@@ -7,7 +7,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 /// `philogg.html`'s own key for the "close to system tray" setting. Mirrored
 /// out of the page's `localStorage` (see `settings.rs`) and cached here so
@@ -79,6 +79,9 @@ pub struct AppState {
     /// `windows::flush_pending_local`, called once `commands::app_ready`
     /// reports the page's first paint.
     pub pending_local_load: Mutex<Option<serde_json::Value>>,
+    /// The LLM assistant's running chat requests, request id -> cancel flag
+    /// (`commands::llm_chat`/`llm_cancel`).
+    pub llm_requests: Mutex<HashMap<String, Arc<AtomicBool>>>,
 }
 
 impl AppState {
@@ -101,6 +104,7 @@ impl AppState {
                 .unwrap_or_else(|_| "0".to_string()),
             last_settings: Mutex::new(None),
             pending_local_load: Mutex::new(None),
+            llm_requests: Mutex::new(HashMap::new()),
         }
     }
 
