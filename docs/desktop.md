@@ -169,16 +169,22 @@ that ever processes an OS file drop under this wrapper, regardless of whether th
 HTML-suppression is airtight on a given build. Covered by **Group 198**, alongside the
 "Couldn't load" toast now naming the actual failure reason instead of just the filename.
 
+**In-app drags don't use HTML5 DnD** (2026-09-27, person-reported: dragging a filter onto
+another node did nothing in the desktop app). On Windows the native handler takes over
+every drag in the webview, so HTML5 `dragover`/`drop` never reach the page (Tauri's own
+docs: disabling the handler "is required to use HTML5 drag and drop on the frontend on
+Windows"). The tree's filter reparenting therefore runs on plain mouse events (`treeDrag`
+in `philogg.html`, see `docs/ui-and-views.md` → "Drag-and-drop"), which the native
+handler leaves alone — no trade against OS paths needed.
+
 The native handler fires `DragDropEvent::Enter`/`Over`/`Leave` for *any* drag the
-webview sees, including an in-app one — reparenting a filter tree row via
-`philogg.html`'s own HTML5 `draggable` rows (`renderNode`'s `dragstart`) — not just an
-OS file drag. Only `Enter` carries `paths: Vec<PathBuf>`, so `handle_drag_drop`
+webview sees, including an in-app HTML5 one (none is left in `philogg.html` today, but a
+browser-native drag of selected text still counts) — not just an OS file drag. Only `Enter` carries `paths: Vec<PathBuf>`, so `handle_drag_drop`
 (`windows.rs`) checks it there and remembers the verdict (a `Cell<bool>` captured in the
 `on_window_event` closure) for the `Over`/`Leave`/`Drop` events that follow it in that
 same drag; an in-app drag's `Enter` always arrives with an empty `paths`, so the overlay
-is skipped for the whole gesture. Without this, dragging a filter row briefly showed the
-full-screen "Drop Logfiles to Load" overlay on top of the tree, which then swallowed the
-row's own `dragover`/`drop`.
+is skipped for the whole gesture, so such a drag never shows the full-screen "Drop
+Logfiles to Load" overlay.
 
 **Frameless window and window controls.** Off macOS the window is `decorations(false)`
 and the controls are *real DOM*: `inject.js` appends a three-button `#tauri-wc` block
@@ -688,17 +694,14 @@ One remaining accepted, open limitation: an unquoted path where the *filename it
 a directory) contains a space still isn't detected — quoting it at the source is the fix
 for that case, same as it always was.
 
-**Every** `.fp-candidate` gets a dim, muted dotted underline immediately on render, in
-every build, regardless of whether it's ever verified. This exists specifically so the
-feature is self-diagnosing: person-reported (this session, after building a portable
-installer from this branch) that a hovered path did nothing at all, and code review found
-no functional bug but a real gap — a candidate had *zero* CSS before verification
-succeeded, making it indistinguishable from plain text, so there was no way to tell
-"nothing was detected here" apart from "verification silently failed" apart from "the
-path genuinely doesn't exist." Now: no underline anywhere → detection itself isn't
-running (a build/packaging problem). A dim underline that never upgrades → detection
-works, verification is the broken half (the Tauri bridge, or the path really doesn't
-exist on disk). Full accent-colored underline + popup on hover → working as intended.
+**Only a verified path is underlined** (`.fp-candidate.fp-verified`, a dotted underline
+that turns accent-colored on hover). An unverified `.fp-candidate` — a path that doesn't
+exist, or any path in the browser build — has no styling at all, so the underline itself
+says "this is interactive" (person-requested, 2026-09-27: *"ich fände es praktischer, wenn
+ich schon am underline sehen kann ob ein Pfad interaktiv ist oder nicht"*). This replaced
+an earlier dim underline on *every* candidate, which had been added as a debugging aid to
+tell "detection isn't running" apart from "verification failed"; since verification runs
+right after each render (below), the underline appears almost at once for a real path.
 
 Verification itself is **eager and cached**, not hover-triggered:
 `verifyVisibleFpCandidates(container)` runs once at the end of every `renderVisibleRows()`
