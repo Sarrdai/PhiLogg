@@ -37,10 +37,11 @@ deployments possible:
 
 | | |
 |---|---|
-| ![Log view](docs/screenshots/01-log-view.png) Log view with filter tree | ![Extraction table](docs/screenshots/02-extraction-table.png) Extraction table |
-| ![Plot](docs/screenshots/03-plot.png) Plotting extracted values | ![Link view](docs/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view |
-| ![Context/Filtered split](docs/screenshots/05-highlight-split.png) Context/Filtered split — matches plus expandable gaps | ![Bookmarks](docs/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel |
-| ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme (default) | |
+| ![Log view](docs/screenshots/01-log-view.png) Log view with filter tree and column-restricted text match | ![Extraction table](docs/screenshots/02-extraction-table.png) Extraction table with statistics |
+| ![Plot](docs/screenshots/03-plot.png) Plotting extracted values — XY scatter colored by time, equal axis scale | ![Link view](docs/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view, matched by job id |
+| ![Context view](docs/screenshots/05-context-view.png) Context view — matches plus expandable gaps | ![Bookmarks](docs/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel with a stack trace |
+| ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme | ![Heatmap](docs/screenshots/08-heatmap.png) Heatmap of an array column over time |
+| ![Patterns](docs/screenshots/09-patterns.png) Patterns tab — messages grouped by shape | |
 
 ## Key features
 
@@ -449,7 +450,7 @@ scripts/
 release-please-config.json              release-please configuration (+ .release-please-manifest.json, the current version)
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
 docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing, performance)
-  screenshots/                          screenshots used by this README
+  screenshots/                          screenshots used by this README (generate.sh + scenes/ regenerate them)
 CHANGELOG.md                            full chronological, dated changelog
 FEATURE_BACKLOG.md                      unelaborated feature ideas
 CLAUDE.md                               instructions for AI coding sessions on this repo
@@ -479,7 +480,9 @@ node tools/log-sim/cli.js --list
 node tools/log-sim/cli.js -f jsonl --size 20MB -o demo/
 ```
 
-See [`tools/log-sim/README.md`](tools/log-sim/README.md).
+See [`tools/log-sim/README.md`](tools/log-sim/README.md). The screenshots in
+this README (and any product page or guide) are produced with it too — see
+`PROJECT.md` → "Sample data and screenshots".
 
 Project documentation is split by audience:
 

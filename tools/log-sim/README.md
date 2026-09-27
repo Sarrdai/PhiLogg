@@ -84,5 +84,46 @@ NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js --out "$SCRATCH/shot
 # --eval runs page JS before the shot (the app's own functions, e.g. createFilterNode / render / applyFhView), --theme dark
 ```
 
+`docs/screenshots/generate.sh` + `docs/screenshots/scenes/` (the README's
+screenshots) is the worked example of everything below.
+
+### Building the scene with `--eval`
+
+`--eval` runs in the page after the files are parsed and before the shot,
+with the app's globals in scope (`state`, `createFilterNode`, `render`, …).
+Prefer clicking the real buttons for UI state — it goes through the same
+code as a person would:
+
+```bash
+node tools/log-sim/cli.js -s position,basic -n 3000 -o "$SCRATCH/ev/"
+NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js --out plot.png --eval '
+  const f = state.rootIds[0];                       // first loaded file
+  createFilterNode(f, "text", "Position update x=[*:float] y=[*:float] z=[*:float]");
+  render();
+  document.querySelector("[data-fh-tab=\"plot\"]").click();
+' "$SCRATCH"/ev/*.log
+```
+
+- `createFilterNode(parentId, filterType, value, …)` creates and activates a
+  node and returns it (`.id` as the parent of a nested filter). A `"text"`
+  filter with `[*:…]` placeholders is an extraction (Table/Plot tabs);
+  `"level"` takes e.g. `["ERROR","WARN"]`.
+- Tabs: `[data-fh-tab="…"]` buttons (`table`, `plot`, …). Plot settings,
+  chart type and other controls: click them / set a select's value and
+  dispatch `change`.
+- Longer setups: keep them in a file, `--eval "$(cat setup.js)"`; raise
+  `--wait` for heavy views.
+- These are internal functions, not a stable API — if a recipe breaks after
+  a `philogg.html` change, fix the recipe (or add a `screenshot.js` option).
+
+### When the simulator can't produce a case
+
+Extend it — don't hand-write lines. A new scenario is one entry in
+`SCENARIOS` (`label`, `weight`, `hint`, `make(g, ts)` returning
+`{level, thread, cls, method, msg, cont, ctx, json}`, follow-ups via
+`g.schedule`); a new format is one entry in `FORMATS` (`render` plus an
+`exportFormat` whose regex matches it). Cover it in GROUP 300 of
+`tests/philogg.regression.test.js`.
+
 Inside the regression suite, `require("../tools/log-sim/core.js")` and use
 `generateToStrings({format, entries, seed})` (see GROUP 300).
