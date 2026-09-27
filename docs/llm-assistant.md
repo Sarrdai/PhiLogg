@@ -229,7 +229,12 @@ system prompt asks for that format), the chat shows one button per option;
 a click sends its text as the next message.
 
 **Settings → Assistant** (`#settingsSectionLlm`, `initLlmAssistantUi`, shown
-only with `llmAvailable()`): server URL (`philogg-llm-endpoint`, default
+only with `llmAvailable()`): **Enable assistant** (`philogg-llm-enabled`,
+**off by default**, `applyLlmEnabled`) — while off there is no toolbar
+button, no chat window or docked panel, the sessions aren't loaded and a
+still-open view gets no answers; switching off stops a running round and
+closes the window/panel but keeps the docked preference and the stored
+chats. Then server URL (`philogg-llm-endpoint`, default
 `http://localhost:1234/v1`), model (dropdown from `llmModels`, "Server
 default" = omit `model`), temperature (0–2, default 0.2), turn limit (1–50,
 default 12), connection test (the bridge's error text on failure).

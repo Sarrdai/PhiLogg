@@ -2,6 +2,10 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: on/off switch for the assistant, default off (2026-09-28, person-requested: *"Gib dem Feature in den Settings noch einen On/Off Switch. Ausgeschaltet soll dann das Chat Icon nicht zu sehen sein. Default: Off"*)**. See `docs/llm-assistant.md` → "Chat view".
+  - Settings → Assistant → **Enable assistant** (`philogg-llm-enabled`). Off: no toolbar chat button, no chat window or docked panel, sessions not loaded; switching off stops a running round and closes the chat (stored chats and the docked preference are kept).
+  - **Tests**: new **Group 308**; the assistant groups 304–307 switch it on before boot. Screenshot scene `10-assistant.js` switches it on. Full suite **6781 passed, 0 failed**.
+
 - **fix: assistant chat window styled like the main app (2026-09-28, person-reported after the first desktop start: *"Passe Buttons und Window Style des Chatfensters an die Hauptanwendung an."*)**. See `docs/llm-assistant.md` → "Chat view".
   - **Window**: frameless like the main window (macOS: overlay title bar with traffic lights); `chat.html` draws its own title bar — drag region, the main window's minimize/maximize/close buttons (close still only hides the chat).
   - **Buttons**: emoji glyphs replaced by the main window's `.toolbar-icon-btn` with SVG icons; the session controls moved to their own toolbar row; Send, answer buttons, select and input use the main app's button/field styles; the snapshot's theme now also carries `accent-on`/`border-hover`.
