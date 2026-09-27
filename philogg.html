@@ -794,10 +794,15 @@
      particular row has a button in it, so the icon never shifts sideways
      between rows. Toggles the node's real children — see renderNode. Rotates
      via a transform, not a different glyph, so collapse/expand reads as one
-     smooth flip. */
-  .tree-chevron-slot{flex:0 0 auto; width:16px; height:16px; display:flex; align-items:center; justify-content:center;}
+     smooth flip. The slot is only as wide as the visible glyph (10px) and
+     pulls the next item 3px closer: a 16px slot plus the row gap left a
+     wide blank between chevron and swatch, and the elbow into a row
+     without a chevron had to cross all of it (person-reported). The 16px
+     button overflows the slot so the hit target stays the same size;
+     decorateTreeGuides' geometry (TREE_CHEVRON_*) follows these numbers. */
+  .tree-chevron-slot{flex:0 0 auto; width:10px; height:16px; margin-right:-3px; display:flex; align-items:center; justify-content:center;}
   .tree-chevron{
-    width:16px; height:16px; margin:0; padding:0;
+    flex:0 0 auto; width:16px; height:16px; margin:0; padding:0;
     border:none; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
     color:var(--text-tertiary); border-radius:4px; transition:transform .12s ease;
     transform:rotate(-90deg);
@@ -16467,12 +16472,12 @@ function countFilterTreeNodes(roots) {
 
 // One non-interactive preview row for a serialized filter-history node (see
 // serializeFilterTreeForCache for the shape). depth mirrors renderNode's own
-// indentation (12 + depth*16 there; ghost rows sit inside their own inset
-// box, hence the smaller depth*16 without the +12).
+// per-level step (TREE_INDENT_STEP); ghost rows sit inside their own inset
+// box, hence no base offset.
 function renderGhostRow(sn, depth) {
   const row = document.createElement("div");
   row.className = "tree-ghost-row";
-  row.style.paddingLeft = (depth * 16) + "px";
+  row.style.paddingLeft = (depth * TREE_INDENT_STEP) + "px";
   const icon = document.createElement("span");
   icon.className = "tree-icon";
   icon.innerHTML = ghostIconFor(sn.filterType);
@@ -16698,6 +16703,21 @@ function nodeDisplayName(node) {
   return node.name;
 }
 
+// Horizontal indent per tree level (Files & Filters). Kept tight since the
+// connector lines (decorateTreeGuides) carry the hierarchy: 10px puts a
+// child's chevron just right of its parent's rail, with a short elbow
+// between them (was 18px before the lines, person-reported as wasted space).
+const TREE_INDENT_STEP = 10;
+// Chevron column geometry, mirroring .tree-chevron-slot's CSS: the slot's
+// center (where a parent's rail runs), where the visible chevron glyph
+// starts, and where the next item (swatch/icon) starts, all relative to the
+// row's paddingLeft. An elbow stops TREE_ELBOW_GAP short of whichever comes
+// first, so it never touches the chevron or the swatch (person-reported).
+const TREE_CHEVRON_CENTER = 5;
+const TREE_CHEVRON_GLYPH_START = 2;
+const TREE_CHEVRON_END = 14;
+const TREE_ELBOW_GAP = 2;
+
 // Grayed placeholder row for a file still waiting its turn in a multi-file
 // load (see createQueuedFileNode/loadFileDescriptors) — visually mirrors
 // folder watch's .folder-watch-file rows (same "known its spot, not read
@@ -16712,7 +16732,7 @@ function renderQueuedFileRow(node, depth) {
   wrap.dataset.type = "file";
   const row = document.createElement("div");
   row.className = "tree-row-queued";
-  row.style.paddingLeft = (8 + depth * 18) + "px"; // matches renderNode's own real-row indentation
+  row.style.paddingLeft = (8 + depth * TREE_INDENT_STEP) + "px"; // matches renderNode's own real-row indentation
   const icon = document.createElement("span");
   icon.className = "tree-icon";
   icon.innerHTML = ICON_FILE;
@@ -16807,7 +16827,7 @@ function renderNode(id, depth, opts) {
   // keeps an opened file's icon lined up with its closed siblings instead
   // of reading as more indented than them (person-reported).
   const folderTopLevelNoChevron = opts && opts.folderTopLevelNoChevron;
-  row.style.paddingLeft = (folderTopLevelNoChevron ? 12 : 8 + depth * 18) + "px";
+  row.style.paddingLeft = (folderTopLevelNoChevron ? 12 : 8 + depth * TREE_INDENT_STEP) + "px";
   // Lets a load tick (see updateLoadRowProgress) find and update this exact
   // row's count/progress-fill/percentage-of-parent directly, without a full
   // render() — every row, not just file rows, since a filter created under
@@ -17114,18 +17134,18 @@ function decorateTreeGuides(rootWrap) {
     if (link) {
       addGuide(row, "v", link.topOn, { left: link.x + "px", top: "0", height: "50%" });
       if (link.bottomOn !== null) addGuide(row, "v", link.bottomOn, { left: link.x + "px", top: "50%", bottom: "0" });
-      // Elbow ends at the chevron when there is one, else crosses the empty
-      // chevron slot up to the swatch/icon.
+      // Elbow ends just before the chevron when there is one, else crosses
+      // the empty chevron slot up to just before the swatch/icon.
       const pad = parseFloat(row.style.paddingLeft) || 0;
-      const end = pad + (row.querySelector(".tree-chevron") ? 1 : 20);
+      const end = pad - TREE_ELBOW_GAP + (row.querySelector(".tree-chevron") ? TREE_CHEVRON_GLYPH_START : TREE_CHEVRON_END);
       addGuide(row, "h", link.elbowOn, { left: (link.x - 1) + "px", width: Math.max(0, end - link.x + 1) + "px" });
     }
     const kids = [...wrap.children].slice(1).filter(rowOf);
     if (!kids.length) return;
-    const x = (parseFloat(row.style.paddingLeft) || 0) + 8;
+    const x = (parseFloat(row.style.paddingLeft) || 0) + TREE_CHEVRON_CENTER;
     const activeIdx = kids.findIndex(k => onPath.has(k));
     // Stem from below the parent's chevron down to the first child.
-    addGuide(row, "v", activeIdx >= 0, { left: x + "px", top: "calc(50% + 8px)", bottom: "0" });
+    addGuide(row, "v", activeIdx >= 0, { left: x + "px", top: "calc(50% + 5px)", bottom: "0" });
     const childRails = link && link.bottomOn !== null ? [...rails, { x: link.x, on: link.bottomOn }] : rails;
     kids.forEach((k, i) => {
       const last = i === kids.length - 1;
