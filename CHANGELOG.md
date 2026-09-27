@@ -2,6 +2,10 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: Files & Filters indent reduced (2026-09-27, person-reported: *"Die Einrückung von einer Ebene zur nächsten in Files & Filters ist mir zu groß. Seit wir die Linien eingeführt haben … verschwenden wir hier unnötig Platz."*)**. Indent per tree level 18px → 10px via a new `TREE_INDENT_STEP` constant, shared by real rows, queued placeholder rows and filter-history ghost rows (those used 16px).
+  - Follow-up (*"dort wo es kein Ausklappen-Element gibt, wirkt die Linie zu lang, dort wo das Element besteht, ist rechts davon viel freier Platz"*): the chevron column narrowed from 16px to its 10px glyph and pulls the swatch 3px closer, so a leaf's elbow no longer crosses a wide empty column and a chevron has no blank to its right. Follow-up: every elbow now stops the same 2px (`TREE_ELBOW_GAP`) short of the chevron glyph or, without a chevron, of the swatch — it touched the swatch. See `docs/ui-and-views.md` → "Tree row layout".
+  - **Tests**: new **Group 312**; GROUP 262's hardcoded rail x updated. Full suite **6859 passed, 0 failed**.
+
 - **feat: assistant plots every chart type (2026-09-27, person-requested: *"Erweitere die Plot Werkzeuge für den LLM Assistenten, er soll alle Einträge kennen."*)**. See `docs/llm-assistant.md` → tool table.
   - `show_view`'s `plot` now takes all eight types plus `z`, `color`, `colorMap`, `columns` (column group), `array`, `row` and `ranges` (parallel-coordinates value ranges, open ends allowed); unknown types/colormaps/columns come back as errors with the valid list; the result reports the effective plot (column names, rows, rows in range). The system prompt names which chart fits which question.
   - **Fix**: a range with an open end was not drawn on its axis (NaN height) — now clamped to the axis.
