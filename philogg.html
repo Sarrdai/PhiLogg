@@ -14101,13 +14101,26 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
-  clockOffset: "clock adjust", create: "filter creation",
+  clockOffset: "clock adjust", create: "filter creation", batch: "assistant round",
 };
 
 function undo() {
   const action = undoStack.pop();
   if (!action) { showCopyToast("Nothing to undo"); return; }
-  if (action.kind === "delete") {
+  undoAction(action);
+  redoStack.push(action);
+  updateUndoRedoButtons();
+  invalidateAllCaches();
+  render();
+  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
+}
+
+// One action's inverse. A "batch" (the LLM assistant's one-step-per-round,
+// see llmPushRoundBatch/llmUndoRound) undoes its own actions in reverse.
+function undoAction(action) {
+  if (action.kind === "batch") {
+    for (let i = action.actions.length - 1; i >= 0; i--) undoAction(action.actions[i]);
+  } else if (action.kind === "delete") {
     const restored = restoreSubtree(action.snapshot);
     insertAt(state.nodes[action.parentId], restored.id, action.index);
     state.activeId = restored.id;
@@ -14167,17 +14180,24 @@ function undo() {
       state.activeId = action.nodeId;
     }
   }
-  redoStack.push(action);
-  updateUndoRedoButtons();
-  invalidateAllCaches();
-  render();
-  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
 }
 
 function redo() {
   const action = redoStack.pop();
   if (!action) { showCopyToast("Nothing to redo"); return; }
-  if (action.kind === "delete") {
+  redoAction(action);
+  undoStack.push(action);
+  if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
+  updateUndoRedoButtons();
+  invalidateAllCaches();
+  render();
+  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " redone");
+}
+
+function redoAction(action) {
+  if (action.kind === "batch") {
+    action.actions.forEach(redoAction);
+  } else if (action.kind === "delete") {
     // The node is currently restored (undo put it back with its original
     // id) — deleting it again is the redo.
     if (state.nodes[action.snapshot.id]) deleteNode(action.snapshot.id);
@@ -14207,12 +14227,6 @@ function redo() {
       state.activeId = action.nodeId;
     }
   }
-  undoStack.push(action);
-  if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
-  updateUndoRedoButtons();
-  invalidateAllCaches();
-  render();
-  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " redone");
 }
 
 function updateUndoRedoButtons() {
@@ -40833,6 +40847,534 @@ function runLlmTool(name, args) {
   return { result, text: llmFitBudget(result), error: result.error || null };
 }
 
+/* ===================== LLM assistant: agent loop and sessions =====================
+   Lives in the main window only (docs/llm-assistant-plan.md → Architektur):
+   the chat window is a thin view that pulls complete session snapshots
+   (llmSnapshot) and sends commands (llmHandleViewMessage), so a missed
+   message heals itself on the next pull — there are no incremental deltas
+   to lose. Closing or hiding the chat never stops a running request.
+
+   One person's message = one ROUND: the model is called with the tools, the
+   tool calls it makes are run (each one lands in the tree right away), the
+   results go back, until it answers with text or the turn limit hits. A
+   round ends done (text), stopped (Stop), limit, or error. Everything the
+   round created is ONE undo step ("batch" of "create" actions,
+   llmPushRoundBatch), and "undo this round" (llmUndoRound) removes it later
+   too, as its own undo step.
+
+   Only present when the desktop wrapper provides window.philogg.llmChat —
+   llmAvailable() gates the toolbar button, the Settings section and boot. */
+const LLM_RUN_ID = Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+const LLM_KEEP_FULL_ROUNDS = 2;   // tool results of this many latest rounds stay verbatim in the prompt
+const LLM_DEFAULT_ENDPOINT = "http://localhost:1234/v1";
+const LLM_KEYS = {
+  endpoint: "philogg-llm-endpoint", model: "philogg-llm-model",
+  temperature: "philogg-llm-temperature", maxTurns: "philogg-llm-max-turns",
+  activeSession: "philogg-llm-active-session",
+};
+const LLM_DB_NAME = "philogg-llm";
+const LLM_SESSION_STORE = "sessions";
+
+const LLM_SYSTEM_PROMPT = [
+  "You operate PhiLogg, a log viewer, for a person who is looking at a log. You never see the raw log; you work only through the tools, and everything you create appears immediately in their filter tree.",
+  "",
+  "Concepts:",
+  "- Filter tree: every loaded file is a root node; filters nest, each one narrows its parent's entries. Nodes have ids like n12, entries ids like e345.",
+  "- Text filter (create_filter mode \"text\"): substring match on the whole line.",
+  "- Extraction filter: a text filter with placeholders pulls values out of the message into a table/plot. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*] (any text). Value conditions on int/float: [*:float>85], [*:int>=10,<20].",
+  "- Link filter (create_link): pairs each entry of a reference node with the nearest entry of a target node after (or before) it. To get values from the paired lines, create an extraction filter UNDER the link node.",
+  "",
+  "Pattern examples:",
+  "  Position reached axis=[*:int] actual=[*:float] job=[*]   (extract axis and position)",
+  "  Position reached axis=2    (plain text: only axis 2)",
+  "  temperature=[*:float>85]   (only readings above 85)",
+  "  completed in [*:int]ms",
+  "",
+  "How to work:",
+  "1. Discover: get_overview, then find_message_types (use its query and the ready-made 'pattern'; its placeholder value lists tell you which values exist).",
+  "2. If the request is ambiguous (which axis? which sensor? which event counts as 'done'?), ASK a short question instead of guessing — list the concrete options you found. Asking ends your turn; the person answers in the next message. When you ask, put each option on its own line starting with '- '.",
+  "3. Build: create the filters/links; check the counts in each result and fix the pattern if it matched nothing or an error came back.",
+  "4. Show: show_view (table or plot) so the person sees the result.",
+  "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something.",
+].join("\n");
+
+const llm = {
+  sessions: [],          // every stored session, newest activity last
+  activeSessionId: null,
+  ready: null,           // Promise — sessions loaded from IndexedDB
+  running: null,         // { sessionId, roundId, requestId, stopped, abort, onAbort }
+  stream: null,          // { sessionId, roundId, text } — the answer being streamed (cosmetic)
+  views: new Set(),      // fn(msg) — attached chat views (window transport, docked iframe, tests)
+};
+// Test seam: the scripted fake model the regression suite drives the loop
+// with; null = window.philogg.llmChat.
+let llmTransportOverride = null;
+
+function llmAvailable() {
+  return !!(window.philogg && typeof window.philogg.llmChat === "function");
+}
+
+function llmSettings() {
+  const num = (k, d, lo, hi) => {
+    const v = parseFloat(localStorage.getItem(k));
+    return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d;
+  };
+  return {
+    endpoint: localStorage.getItem(LLM_KEYS.endpoint) || LLM_DEFAULT_ENDPOINT,
+    model: localStorage.getItem(LLM_KEYS.model) || "",
+    temperature: num(LLM_KEYS.temperature, 0.2, 0, 2),
+    maxTurns: Math.round(num(LLM_KEYS.maxTurns, 12, 1, 50)),
+  };
+}
+
+/* ---------- persistence: own IndexedDB database, not the log session cache ---------- */
+function llmDbOp(mode, fn) {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") { resolve(null); return; }
+    let req;
+    try { req = indexedDB.open(LLM_DB_NAME, 1); } catch (e) { resolve(null); return; }
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains(LLM_SESSION_STORE)) req.result.createObjectStore(LLM_SESSION_STORE, { keyPath: "id" });
+    };
+    req.onerror = () => resolve(null);
+    req.onsuccess = () => {
+      const db = req.result;
+      let out;
+      try {
+        const tx = db.transaction(LLM_SESSION_STORE, mode);
+        const r = fn(tx.objectStore(LLM_SESSION_STORE));
+        if (r) r.onsuccess = () => { out = r.result; };
+        tx.oncomplete = () => { db.close(); resolve(out); };
+        tx.onerror = () => { db.close(); reject(tx.error); };
+      } catch (e) { db.close(); reject(e); }
+    };
+  });
+}
+function llmSaveSession(session) {
+  return llmDbOp("readwrite", store => store.put(JSON.parse(JSON.stringify(session)))).catch(() => {});
+}
+function llmDeleteStoredSession(id) {
+  return llmDbOp("readwrite", store => store.delete(id)).catch(() => {});
+}
+function llmInit() {
+  if (llm.ready) return llm.ready;
+  llm.ready = llmDbOp("readonly", store => store.getAll()).catch(() => null).then(list => {
+    llm.sessions = (list || []).sort((a, b) => (a.updatedAt || 0) - (b.updatedAt || 0));
+    let active = null;
+    try { active = localStorage.getItem(LLM_KEYS.activeSession); } catch (e) { /* storage unavailable */ }
+    llm.activeSessionId = llm.sessions.some(s => s.id === active) ? active
+      : (llm.sessions.length ? llm.sessions[llm.sessions.length - 1].id : null);
+    llmNotify();
+  });
+  return llm.ready;
+}
+
+function llmNewSession() {
+  const session = {
+    id: uid("chat") + "-" + LLM_RUN_ID, title: "", createdAt: Date.now(), updatedAt: Date.now(),
+    runId: LLM_RUN_ID, files: [], history: [], rounds: [], version: 1,
+  };
+  llm.sessions.push(session);
+  llmSetActiveSession(session.id);
+  return session;
+}
+function llmActiveSession() {
+  return llm.sessions.find(s => s.id === llm.activeSessionId) || null;
+}
+function llmSetActiveSession(id) {
+  llm.activeSessionId = id;
+  try { localStorage.setItem(LLM_KEYS.activeSession, id || ""); } catch (e) { /* storage unavailable */ }
+}
+function llmTouch(session) {
+  session.version = (session.version || 0) + 1;
+  session.updatedAt = Date.now();
+  session.runId = LLM_RUN_ID;
+}
+
+/* ---------- references: stable across restarts (see "Verweise im Chat-Protokoll") ---------- */
+// Node and entry ids only hold within one app run: node ids come from a
+// per-start counter and the session cache restores filters under NEW ids.
+// So each reference is stored with what outlives a restart — an entry as
+// its file's session-cache key + ordinal (the scheme bookmarks already use),
+// a node as its name and definition for display — and resolved on every
+// snapshot (llmResolveRef).
+function llmFileRef(root) {
+  if (!root.cacheKey) root.cacheKey = newCacheKey();
+  return { key: root.cacheKey, name: root.name };
+}
+function llmNodeDef(node) {
+  if (node.type === "file") return "file";
+  if (node.filterType === "link") return "link";
+  return (node.inverted ? "NOT " : "") + (node.isRegex ? "regex " : "") + String(node.value == null ? node.filterType : typeof node.value === "string" ? node.value : node.filterType);
+}
+function llmCaptureRefs(session, round, text) {
+  if (!text) return;
+  const re = /\b([ne])(\d+)\b/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const token = m[0];
+    if (round.refs[token]) continue;
+    if (m[1] === "n") {
+      const node = state.nodes[token];
+      if (!node) continue;
+      round.refs[token] = { kind: "node", runId: LLM_RUN_ID, id: token, label: nodeDisplayName(node), def: llmNodeDef(node) };
+      const rootId = getRootFileId(token);
+      if (rootId) llmAddSessionFile(session, state.nodes[rootId]);
+    } else {
+      const entry = entryIndex[token];
+      if (!entry) continue;
+      const root = state.rootIds.map(id => state.nodes[id]).find(r => r && r.type === "file" && !r.merged && r.entries.indexOf(entry) !== -1)
+        || state.rootIds.map(id => state.nodes[id]).find(r => r && r.type === "file" && r.entries.indexOf(entry) !== -1);
+      if (!root) continue;
+      const f = llmFileRef(root);
+      round.refs[token] = { kind: "entry", runId: LLM_RUN_ID, id: token, fileKey: f.key, fileName: f.name, ordinal: root.entries.indexOf(entry), label: llmCut(entry.message, 80) };
+      llmAddSessionFile(session, root);
+    }
+  }
+}
+function llmAddSessionFile(session, root) {
+  if (!root || root.type !== "file") return;
+  const f = llmFileRef(root);
+  if (!session.files.some(x => x.key === f.key)) session.files.push(f);
+}
+function llmLoadedFileByKey(key) {
+  return state.rootIds.map(id => state.nodes[id]).find(r => r && r.type === "file" && r.cacheKey === key) || null;
+}
+// → { state: "link" | "gone" | "text", entryId? }
+function llmResolveRef(ref) {
+  if (!ref) return { state: "text" };
+  const sameRun = ref.runId === LLM_RUN_ID;
+  if (ref.kind === "node") {
+    if (!sameRun) return { state: "text" };
+    return { state: state.nodes[ref.id] ? "link" : "gone" };
+  }
+  if (sameRun && entryIndex[ref.id]) return { state: "link", entryId: ref.id };
+  const root = llmLoadedFileByKey(ref.fileKey);
+  const entry = root && root.entries[ref.ordinal];
+  return entry ? { state: "link", entryId: entry.id } : { state: "text" };
+}
+
+/* ---------- model transport ---------- */
+function llmStripThinking(text) {
+  return String(text || "").replace(/<think>[\s\S]*?(<\/think>|$)/g, "").trim();
+}
+// Assembles one streamed (or plain) chat-completions answer from the
+// bridge's events: text deltas, tool-call deltas keyed by index (the id and
+// name arrive once, the arguments in pieces).
+function llmAnswerAssembler(onText) {
+  const out = { content: "", toolCalls: [], finishReason: null, error: null };
+  const call = i => out.toolCalls[i] || (out.toolCalls[i] = { id: "", name: "", arguments: "" });
+  return {
+    out,
+    event(ev) {
+      if (!ev || typeof ev !== "object") return;
+      const data = ev.data;
+      if (typeof data === "string") { out.error = "Unreadable answer from the server: " + llmCut(data, 200); return; }
+      if (data && data.error) { out.error = typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error)); return; }
+      const choice = data && Array.isArray(data.choices) ? data.choices[0] : null;
+      if (!choice) return;
+      if (choice.finish_reason) out.finishReason = choice.finish_reason;
+      const part = ev.type === "message" ? choice.message : choice.delta;
+      if (!part) return;
+      if (typeof part.content === "string" && part.content) {
+        out.content += part.content;
+        if (onText) onText(out.content);
+      }
+      (part.tool_calls || []).forEach((tc, j) => {
+        const c = call(Number.isInteger(tc.index) ? tc.index : j);
+        if (tc.id) c.id = tc.id;
+        if (tc.function) {
+          if (tc.function.name) c.name = ev.type === "message" ? tc.function.name : (c.name === tc.function.name ? c.name : c.name + tc.function.name);
+          if (tc.function.arguments != null) {
+            const a = typeof tc.function.arguments === "string" ? tc.function.arguments : JSON.stringify(tc.function.arguments);
+            c.arguments = ev.type === "message" ? a : c.arguments + a;
+          }
+        }
+      });
+    },
+  };
+}
+function llmTransport() {
+  if (llmTransportOverride) return llmTransportOverride;
+  return {
+    chat: (requestId, endpoint, request, onEvent) => window.philogg.llmChat(requestId, endpoint, request, onEvent),
+    cancel: requestId => window.philogg.llmCancel && window.philogg.llmCancel(requestId),
+  };
+}
+
+function llmBuildRequest(session) {
+  const s = llmSettings();
+  const current = session.rounds.length - 1;
+  const messages = [{ role: "system", content: LLM_SYSTEM_PROMPT }];
+  for (const m of session.history) {
+    if (m.role === "tool") {
+      // Context budget: older tool results shrink to their one-line summary;
+      // the system prompt stays constant (LM Studio's prompt cache).
+      const full = m.round > current - LLM_KEEP_FULL_ROUNDS;
+      messages.push({ role: "tool", tool_call_id: m.tool_call_id, content: full ? m.content : m.summary });
+    } else if (m.role === "assistant") {
+      const msg = { role: "assistant", content: m.content || "" };
+      if (m.tool_calls && m.tool_calls.length) msg.tool_calls = m.tool_calls;
+      messages.push(msg);
+    } else messages.push({ role: m.role, content: m.content });
+  }
+  const req = { messages, tools: llmToolSpecs(), tool_choice: "auto", temperature: s.temperature, stream: true };
+  if (s.model) req.model = s.model;
+  return req;
+}
+
+// A one-line result for the chat and for compacted history.
+function llmToolSummary(name, out) {
+  const r = out.result || {};
+  if (out.error) return name + " ✗ " + llmCut(out.error, 160);
+  switch (name) {
+    case "get_overview": return "get_overview → " + (r.files || []).length + " file(s), " + (r.tree || []).length + " node(s)";
+    case "find_message_types": return "find_message_types → " + (r.types || []).length + " of " + r.typesFound + " type(s)" + ((r.types || [])[0] ? ", top: " + llmCut(r.types[0].type, 60) : "");
+    case "create_filter": return "create_filter → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.matches + " match(es)";
+    case "create_link": return "create_link → " + r.nodeId + ", " + r.pairs + " pair(s), " + r.unpaired + " unpaired";
+    case "get_entries": return "get_entries → " + (r.entries || []).length + " of " + r.total + " (" + r.nodeId + ")";
+    case "get_value_stats": return "get_value_stats → " + r.nodeId + (r.n != null ? " n=" + r.n + " min " + r.min + " median " + r.median + " max " + r.max : "");
+    case "show_view": return "show_view → " + r.nodeId + " " + r.view;
+    case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "");
+    default: return name;
+  }
+}
+
+function llmNotify(extra) {
+  const msg = extra || { type: "changed", sessionId: llm.activeSessionId, version: (llmActiveSession() || {}).version || 0, running: !!llm.running };
+  llm.views.forEach(fn => { try { fn(msg); } catch (e) { /* a broken view must never break the loop */ } });
+  if (!extra) llmUpdateToolbarButton();
+}
+function llmUpdateToolbarButton() {
+  const btn = document.getElementById("btnAssistant");
+  if (btn) btn.classList.toggle("llm-busy", !!llm.running);
+}
+
+/* ---------- the loop ---------- */
+async function llmSend(text) {
+  text = String(text || "").trim();
+  if (!text || llm.running) return null;
+  if (llm.ready) await llm.ready;
+  let session = llmActiveSession();
+  if (!session) session = llmNewSession();
+  if (!session.title) session.title = llmCut(text, 60);
+  const round = { id: uid("round"), user: text, items: [], status: "running", error: null, created: [], refs: {}, startedAt: Date.now() };
+  const roundIdx = session.rounds.length;
+  session.rounds.push(round);
+  session.history.push({ role: "user", content: text, round: roundIdx });
+  const running = { sessionId: session.id, roundId: round.id, requestId: null, stopped: false };
+  running.abort = new Promise(resolve => { running.onAbort = resolve; });
+  llm.running = running;
+  llmRoundCreated = round.created;
+  llmTouch(session);
+  llmNotify();
+  const s = llmSettings();
+  let answered = false;
+  try {
+    for (let turn = 0; turn < s.maxTurns && !running.stopped; turn++) {
+      const request = llmBuildRequest(session);
+      running.requestId = uid("req") + "-" + LLM_RUN_ID;
+      llm.stream = { sessionId: session.id, roundId: round.id, text: "" };
+      const asm = llmAnswerAssembler(t => {
+        if (!llm.stream) return;
+        llm.stream.text = llmStripThinking(t);
+        llmNotify({ type: "stream", sessionId: session.id, roundId: round.id, text: llm.stream.text });
+      });
+      const call = Promise.resolve(llmTransport().chat(running.requestId, s.endpoint, request, ev => asm.event(ev)));
+      await Promise.race([call, running.abort.then(() => { throw new Error("cancelled"); })]);
+      llm.stream = null;
+      if (running.stopped) break;
+      const ans = asm.out;
+      if (ans.error) throw new Error(ans.error);
+      const calls = ans.toolCalls.filter(c => c && c.name);
+      const content = llmStripThinking(ans.content);
+      if (calls.length) {
+        calls.forEach((c, i) => { if (!c.id) c.id = "call_" + roundIdx + "_" + turn + "_" + i; });
+        session.history.push({
+          role: "assistant", content, round: roundIdx,
+          tool_calls: calls.map(c => ({ id: c.id, type: "function", function: { name: c.name, arguments: c.arguments || "{}" } })),
+        });
+        if (content) { round.items.push({ kind: "text", text: content }); llmCaptureRefs(session, round, content); }
+        for (const c of calls) {
+          if (running.stopped) break;
+          const out = runLlmTool(c.name, c.arguments || "{}");
+          const summary = llmToolSummary(c.name, out);
+          session.history.push({ role: "tool", tool_call_id: c.id, content: out.text, summary, round: roundIdx });
+          round.items.push({ kind: "tool", name: c.name, args: llmCut(c.arguments || "", 300), summary, error: !!out.error });
+          llmCaptureRefs(session, round, summary);
+          llmTouch(session);
+          llmNotify();
+        }
+        render();
+        continue;
+      }
+      session.history.push({ role: "assistant", content, round: roundIdx });
+      round.items.push({ kind: "text", text: content || "(empty answer)" });
+      llmCaptureRefs(session, round, content);
+      round.status = "done";
+      answered = true;
+      break;
+    }
+    if (!answered && !running.stopped) {
+      round.status = "limit";
+      round.error = "Stopped after " + s.maxTurns + " model turns (Settings → Assistant → turn limit).";
+    }
+  } catch (e) {
+    if (!running.stopped) {
+      round.status = "error";
+      round.error = String(e && e.message || e);
+    }
+  } finally {
+    if (running.stopped) round.status = "stopped";
+    llmHealHistory(session);
+    llm.stream = null;
+    llmRoundCreated = null;
+    llmPushRoundBatch(round);
+    llm.running = null;
+    llmTouch(session);
+    llmSaveSession(session);
+    render();
+    llmNotify();
+  }
+  return round;
+}
+
+// Every assistant tool call needs a tool answer before the next request —
+// a Stop between the two leaves some unanswered.
+function llmHealHistory(session) {
+  const answered = new Set(session.history.filter(m => m.role === "tool").map(m => m.tool_call_id));
+  for (let i = 0; i < session.history.length; i++) {
+    const m = session.history[i];
+    if (m.role !== "assistant" || !m.tool_calls) continue;
+    let at = i + 1;
+    while (at < session.history.length && session.history[at].role === "tool") at++;
+    m.tool_calls.forEach(tc => {
+      if (answered.has(tc.id)) return;
+      session.history.splice(at++, 0, { role: "tool", tool_call_id: tc.id, content: "{\"error\":\"Cancelled by the person (Stop).\"}", summary: tc.function.name + " ✗ cancelled", round: m.round });
+      answered.add(tc.id);
+    });
+  }
+}
+
+// One undo step for everything a round created (still existing, in
+// creation order — undo takes them back in reverse).
+function llmPushRoundBatch(round) {
+  const actions = round.created.filter(id => state.nodes[id]).map(id => ({ kind: "create", nodeId: id, parentId: state.nodes[id].parentId }));
+  if (!actions.length) return;
+  pushUndo({ kind: "batch", llmRoundId: round.id, actions });
+}
+
+function llmStop() {
+  const r = llm.running;
+  if (!r || r.stopped) return;
+  r.stopped = true;
+  if (r.requestId) { try { llmTransport().cancel(r.requestId); } catch (e) { /* bridge gone */ } }
+  r.onAbort();
+}
+
+function llmFindRound(roundId) {
+  for (const session of llm.sessions) {
+    const round = session.rounds.find(r => r.id === roundId);
+    if (round) return { session, round };
+  }
+  return null;
+}
+// "Undo this round". Ctrl+Z when the round's own batch is still on top of
+// the undo stack; otherwise the round's remaining nodes are deleted as one
+// new undo step (so it can be taken back). Nodes the person created below
+// them would go too — reported as needsConfirm unless `force`.
+function llmUndoRound(roundId, force) {
+  const found = llmFindRound(roundId);
+  if (!found) return { ok: false, reason: "unknown round" };
+  const round = found.round;
+  if (llm.running && llm.running.roundId === roundId) return { ok: false, reason: "running" };
+  const alive = round.created.filter(id => state.nodes[id]);
+  if (!alive.length) return { ok: false, reason: "nothing left" };
+  const top = undoStack[undoStack.length - 1];
+  if (top && top.kind === "batch" && top.llmRoundId === round.id) {
+    undo();
+    llmNotify();
+    return { ok: true, via: "undo" };
+  }
+  const own = new Set(round.created);
+  const topLevel = alive.filter(id => {
+    for (let p = state.nodes[id].parentId; p; p = state.nodes[p] && state.nodes[p].parentId) if (own.has(p) && state.nodes[p]) return false;
+    return true;
+  });
+  let foreign = 0;
+  const countForeign = id => (state.nodes[id].children || []).forEach(c => { if (!own.has(c)) foreign++; countForeign(c); });
+  topLevel.forEach(countForeign);
+  if (foreign && !force) return { ok: false, needsConfirm: true, foreign };
+  const actions = topLevel.map(id => {
+    const node = state.nodes[id];
+    const parent = state.nodes[node.parentId];
+    const action = { kind: "delete", snapshot: snapshotSubtree(id), parentId: node.parentId, index: parent ? parent.children.indexOf(id) : -1 };
+    deleteNode(id);
+    return action;
+  });
+  pushUndo({ kind: "batch", llmRoundId: round.id + ":undo", actions });
+  render();
+  llmNotify();
+  return { ok: true, via: "delete", removed: topLevel.length };
+}
+
+/* ---------- snapshots for the chat view ---------- */
+function llmThemeVars() {
+  const cs = getComputedStyle(document.documentElement);
+  const vars = {};
+  THEME_COLOR_KEYS.concat(["font-ui", "font-mono"]).forEach(k => {
+    const v = cs.getPropertyValue("--" + k).trim();
+    if (v) vars["--" + k] = v;
+  });
+  return vars;
+}
+function llmRoundUndoState(round) {
+  if (llm.running && llm.running.roundId === round.id) return "none";
+  return round.created.some(id => state.nodes[id]) ? "available" : "none";
+}
+// The complete state of one session as the chat renders it — small, and
+// always whole (pull, never a delta).
+function llmSnapshot(sessionId) {
+  const session = sessionId ? llm.sessions.find(s => s.id === sessionId) : llmActiveSession();
+  const base = {
+    type: "snapshot", available: llmAvailable(), runId: LLM_RUN_ID, theme: llmThemeVars(),
+    settings: { model: llmSettings().model, endpoint: llmSettings().endpoint },
+    sessions: llm.sessions.slice().reverse().map(s => ({ id: s.id, title: s.title || "New chat", files: s.files.map(f => f.name), updatedAt: s.updatedAt })),
+    activeSessionId: llm.activeSessionId,
+  };
+  if (!session) return Object.assign(base, { session: null, running: !!llm.running });
+  const refs = {};
+  const rounds = session.rounds.map(r => {
+    Object.keys(r.refs || {}).forEach(token => {
+      const ref = r.refs[token];
+      const res = llmResolveRef(ref);
+      refs[r.id + ":" + token] = { state: res.state, kind: ref.kind, label: ref.label, title: ref.kind === "node" ? ref.def : ref.fileName + " #" + (ref.ordinal + 1) };
+    });
+    return { id: r.id, user: r.user, items: r.items, status: r.status, error: r.error, undo: llmRoundUndoState(r), refTokens: Object.keys(r.refs || {}) };
+  });
+  const missing = session.files.filter(f => !llmLoadedFileByKey(f.key)).map(f => f.name);
+  return Object.assign(base, {
+    session: { id: session.id, title: session.title || "New chat", version: session.version, files: session.files.map(f => f.name), missingFiles: missing, rounds, refs },
+    running: !!(llm.running && llm.running.sessionId === session.id),
+    stream: llm.stream && llm.stream.sessionId === session.id ? llm.stream : null,
+  });
+}
+
+// Reveals what a chat reference points at (a click in the chat).
+function llmRevealRef(roundId, token) {
+  const found = llmFindRound(roundId);
+  const ref = found && found.round.refs[token];
+  const res = llmResolveRef(ref);
+  if (res.state !== "link") return false;
+  if (ref.kind === "node") {
+    state.activeId = ref.id;
+    state.multiSelect = new Set();
+    state.folderView = null;
+    render();
+  } else jumpToEntry(res.entryId);
+  return true;
+}
+
 /* ===================== Init ===================== */
 btnUndo.innerHTML = ICON_UNDO;
 btnRedo.innerHTML = ICON_REDO;
@@ -40957,6 +41499,9 @@ const bootRestore = bootMeta.then(meta => restoreSessionFromCache(meta)).then(re
   if (restored) showCopyToast("Session restored");
   return restoreWatchedFolders();
 }).then(() => bootMeta).then(meta => restoreViewersFromCache(meta));
+// LLM assistant (desktop build only — window.philogg.llmChat): load the
+// stored chat sessions. See "LLM assistant: agent loop and sessions".
+if (llmAvailable()) llmInit();
 </script>
 </body>
 </html>
