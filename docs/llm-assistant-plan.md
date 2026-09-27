@@ -116,7 +116,9 @@ Regeln für alle Werkzeuge:
 - Ergebnis-Budget ≈ 1.500 Tokens (Zeichenlimit mit Kürzungshinweis).
 - IDs statt Wiederholung: Knoten und Einträge werden per ID referenziert; der
   Chat rendert sie als anklickbare Links (Klick = `revealInFilteredView` /
-  Knoten aktivieren; tote IDs werden ausgegraut).
+  Knoten aktivieren). Wann ein Verweis auflösbar ist, regelt
+  "Verweise im Chat-Protokoll" unten — rohe IDs sind dafür nicht stabil
+  genug.
 - Validierung der Argumente, Fehler als Text zurück ans Modell (kein Throw).
 
 ## Agent-Loop
@@ -134,12 +136,73 @@ Regeln für alle Werkzeuge:
 - **Kontext-Haushalt**: ältere Werkzeug-Ergebnisse im Verlauf werden nach N
   Runden durch einen Einzeiler ersetzt ("create_filter → n42, 318 Treffer");
   der System-Prompt bleibt konstant (Prompt-Cache von LM Studio).
-- **Abbrechen**: Stop-Button bricht Stream und Loop ab; bereits angelegte
-  Knoten bleiben (und sind per Undo entfernbar).
+- **Abbrechen und Zurücknehmen** — siehe eigener Abschnitt unten.
 - **System-Prompt** (die "Bedienungsanleitung", ≈ 1–2k Tokens): PhiLogg-
   Begriffe (Filterbaum, Extraktion, Link), Pattern-Syntax mit 3–4 Beispielen,
   Vorgehen *entdecken → bei Mehrdeutigkeit fragen → bauen → zeigen*,
   Regeln (nie raten, kurz antworten, Befunde als Notiz an Einträge).
+
+## Stop und "Runde zurücknehmen"
+
+Eine Runde endet auf zwei Arten:
+
+- **Abgeschlossen**: Das Modell beendet sie selbst mit einer Textantwort
+  (Ergebnis oder Rückfrage). Die Knoten sind ein vollständiger Zwischenstand.
+- **Abgebrochen**: Der Nutzer drückt Stop, während noch Werkzeuge laufen.
+  Der Baum kann halbfertig sein (z. B. Extraktionsfilter da, Link fehlt).
+  Stop bricht Stream und Loop ab; die Runde wird im Chat als "abgebrochen"
+  markiert.
+
+**Keine automatische Rücknahme**, auch nicht beim Stop: Ein Stop kann
+"falsche Richtung" (weg damit) oder "ich sehe schon genug" (behalten)
+bedeuten — die App kann das nicht unterscheiden. Stattdessen trägt **jede
+Runde** im Chat einen Button **"Diese Runde zurücknehmen"**:
+
+- Liegt der `"batch"`-Schritt der Runde noch oben auf dem Undo-Stapel, ist
+  der Button gleichbedeutend mit Ctrl+Z.
+- Sonst (der Nutzer hat danach weitergearbeitet) löscht er gezielt die
+  Knoten der Runde, **selbst als ein eigener Undo-Schritt** (also wieder
+  herstellbar). Hat der Nutzer unter einem dieser Knoten eigene Filter
+  angelegt, fragt er vorher, weil die mit verschwinden würden.
+- Bereits gelöschte Knoten werden übersprungen; ist nichts mehr übrig, ist
+  der Button deaktiviert.
+
+## Verweise im Chat-Protokoll
+
+Das Protokoll enthält Verweise wie "Link-Filter n42" oder "Eintrag e1234".
+Beide ID-Arten sind **nur innerhalb eines App-Laufs** gültig:
+
+- Knoten-IDs kommen aus einem Zähler pro App-Start (`uid()`); der
+  Session-Cache stellt Filter beim Neustart unter **neuen** IDs wieder her
+  (`materializeCachedFilters`). Nach einem Neustart zeigt `n42` also auf
+  einen *anderen* Knoten — ein naiv gespeicherter Verweis würde an eine
+  falsche Stelle springen, statt tot zu sein.
+- Eintrags-IDs überleben einen Reload ebenfalls nicht; Bookmarks und Notizen
+  werden deshalb schon heute als **Datei + Ordinalzahl** persistiert
+  (`docs/persistence-and-sync.md` → "Session cache").
+
+Daher speichert jede Chat-Session:
+
+- ihre **Bezugsdateien** (Name + vorhandener Fingerprint, wie der
+  Session-Cache sie identifiziert) und die **Lauf-ID** des App-Starts, in dem
+  sie zuletzt aktiv war;
+- **Eintrags-Verweise** zusätzlich als Datei + Ordinalzahl (derselbe
+  Mechanismus wie bei Bookmarks);
+- **Knoten-Verweise** mit Namen und Filterdefinition als Anzeigetext.
+
+Auflösung beim Anzeigen:
+
+| Situation | Eintrags-Verweis | Knoten-Verweis |
+|---|---|---|
+| gleicher App-Lauf, Knoten existiert | klickbar | klickbar |
+| gleicher App-Lauf, Knoten gelöscht | klickbar | ausgegraut (IDs werden im Lauf nie wiederverwendet) |
+| anderer App-Lauf, Bezugsdatei geladen | klickbar (über Ordinalzahl) | nur Text |
+| Bezugsdatei nicht geladen | nur Text | nur Text |
+
+Der Chat zeigt zusätzlich einen Hinweis, wenn die Bezugsdateien der
+geöffneten Session nicht geladen sind ("bezieht sich auf `motion.log` —
+nicht geladen"). Neue Werkzeugaufrufe in so einer Session arbeiten normal
+auf dem, was aktuell geladen ist; die Bezugsdateien werden dann ergänzt.
 
 ## Chat-Fenster und Sessions
 
@@ -156,9 +219,10 @@ Regeln für alle Werkzeuge:
   wird dabei geschlossen, Undocken öffnet es an der gemerkten Position.
 - **Sessions**: Liste im Chat (Seitenleiste oder Dropdown) — *Neu*,
   *Wechseln*, *Umbenennen*, *Löschen*. Titel automatisch aus der ersten
-  Frage. Persistenz im Hauptfenster (eigener IndexedDB-Store, nicht im
-  Session-Cache der Logs). Sessions sind nicht an ein Log gebunden;
-  Referenzen auf nicht mehr existierende Knoten erscheinen ausgegraut.
+  Frage, Bezugsdatei(en) als Untertitel. Persistenz im Hauptfenster (eigener
+  IndexedDB-Store, nicht im Session-Cache der Logs). Wie Verweise nach einem
+  Neustart oder mit anderem Log aufgelöst werden, steht unter "Verweise im
+  Chat-Protokoll".
 - **Einstellungen** (Settings → Assistant, nur Desktop): Endpoint-URL
   (Default `http://localhost:1234/v1`), Modell (Dropdown aus `/v1/models`),
   Temperatur, Rundenlimit, Verbindungstest.
@@ -194,11 +258,14 @@ Jede Phase ist für sich mergebar und getestet.
 
 **Phase 3 — Agent-Loop + Sessions (headless)**
 - Loop, Undo-`"batch"`, Knoten-Kennzeichnung, Kontext-Haushalt, Abbruch,
-  Session-Store (IndexedDB), System-Prompt.
+  "Runde zurücknehmen", Session-Store (IndexedDB) mit Bezugsdateien und
+  stabilen Eintrags-Verweisen, System-Prompt.
 - Tests: Fake-Modell mit geskripteten Antworten spielt das
   Referenzszenario durch (Muster suchen → Rückfrage → Link → Plot) und prüft
   Baum, Undo-Verhalten und Verlaufskompaktierung — deterministisch, ohne
-  LM Studio.
+  LM Studio. Dazu: Stop mitten in der Runde, "Runde zurücknehmen" oben auf
+  dem Undo-Stapel und nach weiteren Nutzeraktionen, Verweis-Auflösung nach
+  simuliertem Neustart (Session-Cache-Restore) und mit fremdem Log.
 
 **Phase 4 — Chat-Fenster (erste nutzbare Version)**
 - `chat.html`, Fenster-Commands (öffnen/verstecken/Geometrie/
@@ -221,9 +288,9 @@ Jede Phase ist für sich mergebar und getestet.
 ## Offene Fragen
 
 1. Modellwahl und minimale Modellgröße — Ergebnis aus Phase 0.
-2. Soll ein Stop mitten in einer Runde die bereits angelegten Knoten
-   automatisch zurücknehmen, oder bleiben sie (Plan: bleiben, Undo möglich)?
-3. Brauchen Sessions einen Bezug zum Log (z. B. Dateiname im Titel), um
-   später zu wissen, worauf sie sich bezogen?
-4. Datei-Export einer Session (Protokoll + Filter-JSON) — später, falls
+2. Datei-Export einer Session (Protokoll + Filter-JSON) — später, falls
    Bedarf.
+
+Entschieden (2026-09-27): Stop nimmt nichts automatisch zurück, jede Runde
+bekommt "Diese Runde zurücknehmen"; Sessions merken sich ihre
+Bezugsdateien, Verweise werden nach obiger Tabelle aufgelöst.
