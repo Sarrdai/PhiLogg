@@ -2,6 +2,18 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: assistant plots every chart type (2026-09-27, person-requested: *"Erweitere die Plot Werkzeuge für den LLM Assistenten, er soll alle Einträge kennen."*)**. See `docs/llm-assistant.md` → tool table.
+  - `show_view`'s `plot` now takes all eight types plus `z`, `color`, `colorMap`, `columns` (column group), `array`, `row` and `ranges` (parallel-coordinates value ranges, open ends allowed); unknown types/colormaps/columns come back as errors with the valid list; the result reports the effective plot (column names, rows, rows in range). The system prompt names which chart fits which question.
+  - **Fix**: a range with an open end was not drawn on its axis (NaN height) — now clamped to the axis.
+  - **Tests**: new **Group 311**. Full suite **6848 passed, 0 failed**.
+
+- **feat: Radar and Parallel coordinates charts; Heatmap/Profile over a column group (2026-09-27, person-requested: *"Wäre es aus deiner Sicht sinnvoll, Heatmap und Profile auch allgemein für Tabellen zu erlauben?"* … *"Ich fände beide Plots wären eine sinnvolle Ergänzung. Implementiere alle hier besprochenen Erweiterungen"*)**. See `docs/extraction-and-plotting.md` → "Value charts".
+  - **Column group** (`plotConfig.multiCols`, `#plotColList` with ▲/▼ reordering): an ordered set of plottable columns treated like an array per row. Heatmap/Profile can use it instead of an array column ("Values" select → Columns, `plotConfig.arraySource`), e.g. for `ch0=… ch1=… ch2=…`.
+  - **Radar** (new chart type): one spoke per column, each on its own min..max scale — for mixed units; the row slider and Table-selection overlays work as in Profile.
+  - **Parallel coordinates** (new chart type): one axis per column, one line per row (sampled above 3000 lines), optional color-by; drag along an axis to set a value range (rows outside are dimmed, "n of N rows in range"), **Select in table** selects the rows in range, click an axis to clear its range.
+  - The chart type row now holds eight buttons, four per row.
+  - **Tests**: new **Group 310** (sensors scenario of the log simulator); GROUP 299 updated to eight chart types. Full suite **6831 passed, 0 failed**.
+
 - **fix: no native context menu, tree drag-and-drop in the desktop app, path underline only when interactive, numeric `[*]` columns plottable (2026-09-27, person-reported)**.
   - **Context menu**: right-clicking e.g. a Patterns row opened the webview's own menu (Back/Reload/Print/Inspect). A document-level `contextmenu` listener now suppresses it app-wide, in the browser build too; text fields keep theirs (cut/copy/paste). See `PROJECT.md` → "Known gotchas".
   - **Tree drag-and-drop**: dragging a filter onto a file or another filter (to append it as child) did nothing in the desktop app — on Windows, Tauri's native drag-drop handler (kept on for real OS paths of dropped files) swallows HTML5 `dragover`/`drop`. Reparenting now runs on mouse events (`treeDrag`, 5px threshold, click after a drag swallowed). See `docs/ui-and-views.md` → "Drag-and-drop", `docs/desktop.md` → "The drag-drop trade".
