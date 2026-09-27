@@ -1,6 +1,6 @@
 # Implementierungsplan: LLM-Assistent (lokales LLM, Desktop-Build)
 
-Status: **Plan, nicht umgesetzt** (2026-09-27). Konkretisiert Backlog-Eintrag
+Status: **in Umsetzung** (2026-09-27) — Phasen 1–6 auf `claude/philogg-llm-integration-ml0joa`, Ist-Stand in `docs/llm-assistant.md`, Abweichungen unten unter "Abweichungen bei der Umsetzung". Konkretisiert Backlog-Eintrag
 #70 ("LLM integration with a chat window"); der Eintrag wird entfernt, sobald
 Phase 4 (erste nutzbare Version) gelandet ist.
 
@@ -304,3 +304,20 @@ bekommt "Diese Runde zurücknehmen"; Sessions merken sich ihre
 Bezugsdateien, Verweise werden nach obiger Tabelle aufgelöst; kein
 Vorab-Spike mit LM Studio, gesammelter Abnahmetest in Phase 7; Chat-UI in
 `desktop/chat.html`.
+
+## Abweichungen bei der Umsetzung
+
+- **Phase 2 — kein `ureq`.** Statt der vorgeschlagenen HTTP-Abhängigkeit
+  ein kleiner, handgeschriebener HTTP/1.1-Client über `TcpStream` im
+  eigenen, Tauri-freien Crate `desktop/src-tauri/llm` (`philogg-llm`).
+  Gründe: Die einzige Gegenstelle ist ein lokaler Server — kein TLS, kein
+  Proxy, keine Redirects, kein DNS nötig; "nur Loopback" ist damit eine
+  Eigenschaft des Codes statt einer Bibliothekseinstellung (ureq würde
+  Redirects folgen und `localhost` per DNS auflösen). Und der Socket-Read-
+  Timeout (200 ms) macht Stop sofort wirksam, auch während das Modell noch
+  den Prompt verarbeitet und nichts streamt — mit einem blockierenden
+  ureq-Read nicht ohne Weiteres möglich.
+- **Phase 2 — SSE-Zusammenbau im Hauptfenster.** Rust parst die SSE-Zeilen
+  und reicht jedes `data:`-JSON unverändert als `{type:"chunk", data}` durch;
+  Text- und Tool-Call-Deltas setzt `philogg.html` zusammen. So bleibt der
+  Rust-Teil formatneutral und der Zusammenbau in jsdom testbar.

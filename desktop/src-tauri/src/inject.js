@@ -239,6 +239,23 @@
     setFullscreen: function (enabled) {
       return invoke("window_set_fullscreen", { enabled: enabled });
     },
+    // LLM assistant (docs/llm-assistant.md). philogg.html feature-detects
+    // the whole feature on llmChat. HTTP runs in Rust, loopback only
+    // (philogg-llm). llmChat hands onEvent `{ type: "chunk", data }` per SSE
+    // chunk (or one `{ type: "message", data }` for a non-streamed answer)
+    // and resolves after the last one; llmCancel(requestId) is Stop.
+    llmModels: function (baseUrl) {
+      return invoke("llm_models", { baseUrl: baseUrl });
+    },
+    llmChat: function (requestId, baseUrl, request, onEvent) {
+      var ch = channel(onEvent);
+      return invoke("llm_chat", { requestId: requestId, baseUrl: baseUrl, request: request, onEvent: ch.arg }).then(function () {
+        return ch.done;
+      });
+    },
+    llmCancel: function (requestId) {
+      return invoke("llm_cancel", { requestId: requestId });
+    },
   };
 
   // ------------------------------------------------------------ frameless
