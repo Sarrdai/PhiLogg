@@ -199,7 +199,11 @@ window controls as `inject.js`'s `#tauri-wc` (minimize / maximize / close via
 calling window, and close only hides the chat), and every header button is
 the main window's `.toolbar-icon-btn` with an SVG icon; Send is `.btn-mini`,
 answer buttons `.btn-mini-outline` (copied into chat.html, which can't share
-philogg.html's CSS). The snapshot's theme variables include `accent-on` and
+philogg.html's CSS). Rename and the confirms (delete a chat, undo a round the
+person built on) use an in-page dialog (`#chatDialog`, the app's
+`.link-dialog-card` with `.btn-mini`/`.btn-mini-secondary`; Enter confirms,
+Escape or a backdrop click cancels) — never the webview's native
+`prompt()`/`confirm()`, which render as foreign browser boxes. The snapshot's theme variables include `accent-on` and
 `border-hover` for them.
 "Always on top" (📌 in the chat) switches to global `set_always_on_top` and
 is remembered (`philogg-llm-chat-on-top`). The X only **hides** it

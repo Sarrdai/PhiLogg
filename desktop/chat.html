@@ -60,6 +60,22 @@
   #chatWc button:hover{background:var(--bg-elevated-2); color:var(--accent);}
   #chatWc button[data-act="close"]:hover{background:var(--level-error); color:#fff;}
   [data-tauri-drag-region]{cursor:default;}
+  /* In-page dialog (rename, confirm) — the main window's .link-dialog-card
+     look instead of the webview's native prompt()/confirm() boxes. */
+  #chatDialog{position:fixed; inset:0; z-index:50; background:rgba(16,19,26,.72); backdrop-filter:blur(2px); display:flex; align-items:flex-start; justify-content:center; padding-top:72px;}
+  #chatDialog.hidden{display:none;}
+  .link-dialog-card{width:min(360px, 88%); background:var(--bg-elevated); border:1px solid var(--border); border-radius:12px; padding:20px 22px; box-shadow:0 20px 45px rgba(0,0,0,.5);}
+  .link-dialog-title{font-size:13px; font-weight:650; margin-bottom:10px; color:var(--text-primary);}
+  #chatDialogText{font-size:12.5px; color:var(--text-secondary); margin-bottom:12px; white-space:pre-wrap;}
+  #chatDialogText:empty{display:none;}
+  #chatDialogInput{width:100%; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; padding:7px 10px; font:12.5px var(--font-ui);}
+  #chatDialogInput:focus{outline:none; border-color:var(--accent);}
+  #chatDialogInput.hidden{display:none;}
+  .link-dialog-actions{display:flex; justify-content:flex-end; gap:8px; margin-top:16px;}
+  .btn-mini{background:var(--accent); color:var(--accent-on); border:none; border-radius:6px; padding:8px 12px; font:650 12px var(--font-ui); cursor:pointer;}
+  .btn-mini.danger{background:var(--level-error); color:#fff;}
+  .btn-mini-secondary{background:transparent; color:var(--text-secondary); border:1px solid var(--border); border-radius:6px; padding:8px 12px; font:650 12px var(--font-ui); cursor:pointer;}
+  .btn-mini-secondary:hover{border-color:var(--accent); color:var(--accent-strong);}
   #chatHint{flex:0 0 auto; padding:5px 10px; font-size:12px; color:var(--level-warn); background:var(--bg-elevated); border-bottom:1px solid var(--border-soft);}
   #chatHint:empty{display:none;}
   #chatLog{flex:1 1 auto; overflow-y:auto; padding:10px;}
@@ -118,6 +134,17 @@
   <div id="chatHint"></div>
   <div id="chatLog"><div id="chatEmpty">Ask about the loaded log — e.g.
 "I'm interested in the temperature after every positioning."</div></div>
+  <div id="chatDialog" class="hidden">
+    <div class="link-dialog-card" role="dialog" aria-modal="true" aria-labelledby="chatDialogTitle">
+      <div class="link-dialog-title" id="chatDialogTitle"></div>
+      <div id="chatDialogText"></div>
+      <input type="text" id="chatDialogInput" autocomplete="off" spellcheck="false">
+      <div class="link-dialog-actions">
+        <button type="button" class="btn-mini-secondary" id="chatDialogCancel">Cancel</button>
+        <button type="button" class="btn-mini" id="chatDialogOk">OK</button>
+      </div>
+    </div>
+  </div>
   <div id="chatInputRow">
     <textarea id="chatInput" placeholder="Message (Enter sends, Shift+Enter new line)"></textarea>
     <button type="button" id="chatSend">Send</button>
@@ -303,6 +330,44 @@
     sendBtn.classList.toggle("stop", !!snap.running);
   }
 
+  // ------------------------------------------------------------ dialog
+  // chatDialog({title, text, value, ok, danger}) → Promise: the input's
+  // trimmed text (when `value` is given), true for a plain confirm, or null
+  // when cancelled (Cancel, Escape, a click on the backdrop).
+  var dialogEl = el("chatDialog"), dialogInput = el("chatDialogInput"), dialogDone = null;
+  function chatDialog(opts) {
+    if (dialogDone) dialogDone(null);
+    el("chatDialogTitle").textContent = opts.title;
+    el("chatDialogText").textContent = opts.text || "";
+    var withInput = opts.value != null;
+    dialogInput.classList.toggle("hidden", !withInput);
+    dialogInput.value = withInput ? opts.value : "";
+    el("chatDialogOk").textContent = opts.ok || "OK";
+    el("chatDialogOk").classList.toggle("danger", !!opts.danger);
+    dialogEl.classList.remove("hidden");
+    (withInput ? dialogInput : el("chatDialogOk")).focus();
+    if (withInput) dialogInput.select();
+    return new Promise(function (resolve) {
+      dialogDone = function (result) {
+        dialogDone = null;
+        dialogEl.classList.add("hidden");
+        resolve(result);
+      };
+    });
+  }
+  function dialogOk() {
+    if (!dialogDone) return;
+    if (dialogInput.classList.contains("hidden")) dialogDone(true);
+    else dialogDone(dialogInput.value.trim() || null);
+  }
+  el("chatDialogOk").addEventListener("click", dialogOk);
+  el("chatDialogCancel").addEventListener("click", function () { if (dialogDone) dialogDone(null); });
+  dialogEl.addEventListener("click", function (ev) { if (ev.target === dialogEl && dialogDone) dialogDone(null); });
+  dialogEl.addEventListener("keydown", function (ev) {
+    if (ev.key === "Enter") { ev.preventDefault(); dialogOk(); }
+    else if (ev.key === "Escape") { ev.preventDefault(); if (dialogDone) dialogDone(null); }
+  });
+
   // ------------------------------------------------------------ incoming
   var wanted = 0;
   transport.onMessage(function (msg) {
@@ -323,8 +388,13 @@
       else render();
     } else if (msg.type === "undoResult") {
       if (msg.needsConfirm) {
-        var ok = window.confirm("You created " + msg.foreign + " filter(s) below this round's filters. They would be removed too. Undo the round anyway?");
-        if (ok) transport.send({ type: "undoRound", roundId: msg.roundId, force: true });
+        chatDialog({
+          title: "Undo this round?",
+          text: "You created " + msg.foreign + " filter(s) below this round's filters. They would be removed too.",
+          ok: "Undo round", danger: true,
+        }).then(function (ok) {
+          if (ok) transport.send({ type: "undoRound", roundId: msg.roundId, force: true });
+        });
       }
     }
   });
@@ -355,14 +425,16 @@
   el("btnNewSession").addEventListener("click", function () { transport.send({ type: "newSession" }); input.focus(); });
   el("btnRenameSession").addEventListener("click", function () {
     if (!snap || !snap.session) return;
-    var title = window.prompt("Rename this chat", snap.session.title);
-    if (title != null && title.trim()) transport.send({ type: "renameSession", sessionId: snap.session.id, title: title.trim() });
+    var id = snap.session.id;
+    chatDialog({ title: "Rename this chat", value: snap.session.title, ok: "Rename" }).then(function (title) {
+      if (title) transport.send({ type: "renameSession", sessionId: id, title: title });
+    });
   });
   el("btnDeleteSession").addEventListener("click", function () {
     if (!snap || !snap.session) return;
-    if (window.confirm("Delete the chat \"" + snap.session.title + "\"? The filters it created stay.")) {
-      transport.send({ type: "deleteSession", sessionId: snap.session.id });
-    }
+    var id = snap.session.id;
+    chatDialog({ title: "Delete this chat?", text: "\u201c" + snap.session.title + "\u201d will be deleted. The filters it created stay in the tree.", ok: "Delete", danger: true })
+      .then(function (ok) { if (ok) transport.send({ type: "deleteSession", sessionId: id }); });
   });
   el("btnOnTop").addEventListener("click", function () {
     transport.send({ type: "setAlwaysOnTop", on: !(snap && snap.alwaysOnTop) });
@@ -373,7 +445,7 @@
   el("btnChatSettings").addEventListener("click", function () { transport.send({ type: "openSettings" }); });
 
   // Test seam (the regression suite reads what the view holds).
-  window.philoggChatView = { get snapshot() { return snap; }, get stream() { return stream; }, render: render };
+  window.philoggChatView = { get snapshot() { return snap; }, get stream() { return stream; }, render: render, dialog: chatDialog };
 
   transport.send({ type: "getSnapshot" });
 })();
