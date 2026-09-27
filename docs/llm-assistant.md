@@ -201,6 +201,19 @@ chat window uses the same WebView2 data directory as the main window.
 Closing or hiding it never stops a running round — the loop lives in the
 main window.
 
+**Sessions** (snapshot feature `sessions`): the header's dropdown lists every
+chat, newest activity first, titled by its first question (✎ renames) with
+its reference files as subtitle; ＋ starts a new one (an untouched empty chat
+is reused), 🗑 deletes one (the filters it created stay). Each session has its
+own model history. None of this while a round runs (`llmStartNewSession`,
+`llmSwitchSession`, `llmRenameSession`, `llmDeleteSession` refuse, the chat
+disables the controls).
+
+**Answer buttons** (feature `answers`): when the newest round ended with a
+question (`?`) whose options are "- " lines (2–8, each ≤ 60 chars — the
+system prompt asks for that format), the chat shows one button per option;
+a click sends its text as the next message.
+
 **Settings → Assistant** (`#settingsSectionLlm`, `initLlmAssistantUi`, shown
 only with `llmAvailable()`): server URL (`philogg-llm-endpoint`, default
 `http://localhost:1234/v1`), model (dropdown from `llmModels`, "Server

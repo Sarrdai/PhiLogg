@@ -41415,7 +41415,7 @@ function llmSnapshot(sessionId) {
   const base = {
     type: "snapshot", available: llmAvailable(), runId: LLM_RUN_ID, theme: llmThemeVars(),
     settings: { model: llmSettings().model, endpoint: llmSettings().endpoint },
-    sessions: llm.sessions.slice().reverse().map(s => ({ id: s.id, title: s.title || "New chat", files: s.files.map(f => f.name), updatedAt: s.updatedAt })),
+    sessions: llm.sessions.slice().sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).map(s => ({ id: s.id, title: s.title || "New chat", files: s.files.map(f => f.name), updatedAt: s.updatedAt })),
     activeSessionId: llm.activeSessionId,
     features: LLM_VIEW_FEATURES,
     alwaysOnTop: (() => { try { return localStorage.getItem(LLM_CHAT_ON_TOP_KEY) === "1"; } catch (e) { return false; } })(),
@@ -41456,7 +41456,7 @@ function llmRevealRef(roundId, token) {
 /* ---------- the chat view channel (desktop/chat.html) ---------- */
 const LLM_CHAT_ON_TOP_KEY = "philogg-llm-chat-on-top";
 // Controls this build supports — the chat shows only those (snapshot.features).
-const LLM_VIEW_FEATURES = [];
+const LLM_VIEW_FEATURES = ["sessions", "answers"];
 
 // A command from a chat view. `reply` answers the asking view only;
 // everything else reaches every view as a "changed" note, which each one
@@ -41496,8 +41496,58 @@ function llmHandleViewMessage(msg, reply) {
       llmHandleViewMessageMore(msg, reply);
   }
 }
-// Later phases' commands (sessions, docking) hook in here.
-function llmHandleViewMessageMore(msg, reply) {}
+// Session management (several chats, each with its own history and
+// reference files). Not while a round runs — the chat disables those
+// controls then, and this refuses them too.
+function llmHandleViewMessageMore(msg, reply) {
+  switch (msg.type) {
+    case "newSession": llmStartNewSession(); break;
+    case "switchSession": llmSwitchSession(msg.sessionId); break;
+    case "renameSession": llmRenameSession(msg.sessionId, msg.title); break;
+    case "deleteSession": llmDeleteSession(msg.sessionId); break;
+    default: llmHandleViewMessageDock(msg, reply);
+  }
+}
+function llmHandleViewMessageDock(msg, reply) {}
+
+function llmStartNewSession() {
+  if (llm.running) return null;
+  const cur = llmActiveSession();
+  // An untouched empty chat is reused rather than piling up empty ones.
+  const session = cur && !cur.rounds.length ? cur : llmNewSession();
+  llmNotify();
+  return session;
+}
+function llmSwitchSession(id) {
+  if (llm.running || !llm.sessions.some(s => s.id === id)) return false;
+  llmSetActiveSession(id);
+  llmNotify();
+  return true;
+}
+function llmRenameSession(id, title) {
+  const session = llm.sessions.find(s => s.id === id);
+  title = String(title || "").trim().slice(0, 120);
+  if (!session || !title) return false;
+  session.title = title;
+  llmTouch(session);
+  llmSaveSession(session);
+  llmNotify();
+  return true;
+}
+// Deletes the chat only — the filters it created stay in the tree.
+function llmDeleteSession(id) {
+  if (llm.running && llm.running.sessionId === id) return false;
+  const idx = llm.sessions.findIndex(s => s.id === id);
+  if (idx === -1) return false;
+  llm.sessions.splice(idx, 1);
+  llmDeleteStoredSession(id);
+  if (llm.activeSessionId === id) {
+    const next = llm.sessions[llm.sessions.length - 1];
+    llmSetActiveSession(next ? next.id : null);
+  }
+  llmNotify();
+  return true;
+}
 
 // The chat's own desktop window as a view: Rust relays (llm_main_to_view).
 function llmWindowView(msg) {
