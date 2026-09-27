@@ -430,7 +430,8 @@ tests/
   fixtures/native-parse-golden.json     parsing golden file shared with the native parser's cargo test
   README.md                             testing conventions
 tools/
-  log-simulator.html                    standalone tool: writes a growing .log file (any configured pattern), for testing tailing/folder watch
+  log-simulator.html                    log simulator UI: sample logs for every feature and format, as files or growing live (tailing/folder watch)
+  log-sim/                              the simulator's engine (core.js), headless CLI (cli.js) and screenshot helper — see its README.md
   perf/                                 performance measurement scripts (test data, jsdom render profile, headless desktop-app load timing) — see docs/performance-testing.md
 desktop/
   README.md                             desktop wrapper (Tauri): prerequisites, build/run steps, known limitations
@@ -466,8 +467,19 @@ npm test
 ```
 
 See `tests/README.md` for the suite's conventions before extending it.
-`tools/log-simulator.html` is a separate, standalone tool for exercising
-live tailing / folder watch against a real, growing file.
+The **log simulator** generates realistic sample logs in every format
+PhiLogg parses (default, custom columns, bracket, JSON Lines, syslog, mixed,
+plain text), with content for each feature (link pairs, plots, array
+columns, embedded XML/JSON, stack traces, bursts, gaps, …) — as files by
+entry count or approximate size, or growing live for tailing and folder
+watch. Use `tools/log-simulator.html` in the browser or the headless CLI:
+
+```bash
+node tools/log-sim/cli.js --list
+node tools/log-sim/cli.js -f jsonl --size 20MB -o demo/
+```
+
+See [`tools/log-sim/README.md`](tools/log-sim/README.md).
 
 Project documentation is split by audience:
 

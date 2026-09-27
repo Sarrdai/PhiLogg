@@ -494,7 +494,7 @@ The desktop wrapper's internal mechanism (`desktop/`, Tauri v2 + the OS webview)
 How to measure load/render performance at three levels — the Rust parser alone, the page in jsdom with a CPU profile, and the **real desktop app headless** in a cloud container (Xvfb + WebKitGTK, timings read back through the `settings.json` mirror) — with the scripts in `tools/perf/`, the traps (the release binary serves its own copy of `philogg.html`; fresh XDG dirs per run), and recorded baseline numbers.
 
 ### `docs/testing-and-limitations.md`
-The jsdom-based testing approach (and its known blind spots — no real layout/paint engine), plus the running list of known limitations and intentionally-deferred items (assertions/ignored-columns keyed by index not name, no cross-file filter combination, no AND/OR over a `link` node, etc.).
+The jsdom-based testing approach (and its known blind spots — no real layout/paint engine), the log simulator (`tools/log-sim/`: deterministic sample logs in every format for tests, demos and screenshots), plus the running list of known limitations and intentionally-deferred items (assertions/ignored-columns keyed by index not name, no cross-file filter combination, no AND/OR over a `link` node, etc.).
 
 ### `CHANGELOG.md`
 The full chronological changelog, newest-first — what shipped, in what order, and why, including the session narratives (dated, person-requested framing) that used to live inline in this file's feature sections.
