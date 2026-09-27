@@ -32,13 +32,9 @@
   }
   header h1 { font-size: 16px; margin: 0; font-weight: 600; }
   header .sub { color: var(--text-tertiary); font-size: 12px; }
-  main {
-    flex: 1; display: flex; min-height: 0;
-  }
-  .panel {
-    padding: 18px 20px; overflow-y: auto;
-  }
-  .controls { width: 380px; border-right: 1px solid var(--border); flex-shrink: 0; }
+  main { flex: 1; display: flex; min-height: 0; }
+  .panel { padding: 18px 20px; overflow-y: auto; }
+  .controls { width: 420px; border-right: 1px solid var(--border); flex-shrink: 0; }
   .output { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   fieldset {
     border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px 14px;
@@ -46,7 +42,6 @@
   }
   legend { padding: 0 6px; color: var(--text-secondary); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
   label { display: block; font-size: 12px; color: var(--text-secondary); margin: 10px 0 4px; }
-  label:first-of-type { margin-top: 0; }
   input[type="text"], input[type="number"], select {
     width: 100%; background: var(--bg-elevated); border: 1px solid var(--border);
     color: var(--text-primary); border-radius: 6px; padding: 7px 9px; font-family: var(--font-mono);
@@ -54,10 +49,13 @@
   }
   input[type="range"] { width: 100%; }
   .row { display: flex; gap: 8px; }
-  .row > div { flex: 1; }
-  .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 10px 0 0; }
-  .checkbox-row input { width: auto; }
+  .row > div { flex: 1; min-width: 0; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin: 8px 0 0; }
+  .checkbox-row input { width: auto; margin: 0; }
   .checkbox-row label { margin: 0; font-size: 13px; color: var(--text-primary); }
+  .scen-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 10px; }
+  .scen-grid .checkbox-row { margin-top: 4px; }
+  .scen-grid .checkbox-row label { cursor: help; }
   button {
     font-family: var(--font-ui); font-size: 13px; font-weight: 600; cursor: pointer;
     border-radius: 6px; padding: 9px 14px; border: 1px solid var(--border);
@@ -68,12 +66,13 @@
   button.primary { background: var(--accent); color: #08211f; border-color: var(--accent); }
   button.primary:hover:not(:disabled) { background: var(--accent-strong); }
   button.danger:hover:not(:disabled) { border-color: var(--error); color: var(--error); }
+  button.link { background: none; border: none; padding: 0; color: var(--accent); font-weight: 400; font-size: 12px; }
   .btn-row { display: flex; gap: 8px; margin-top: 12px; flex-wrap: wrap; }
   .btn-row button { flex: 1; min-width: 110px; }
   .status {
     font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary);
     background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
-    padding: 12px 14px; margin-bottom: 16px; line-height: 1.7;
+    padding: 12px 14px; margin-top: 12px; line-height: 1.7;
   }
   .status .dot {
     display: inline-block; width: 8px; height: 8px; border-radius: 50%;
@@ -82,99 +81,120 @@
   .status.live .dot { background: var(--accent); box-shadow: 0 0 0 3px rgba(79,199,195,.25); animation: pulse 1.5s infinite; }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
   .status b { color: var(--text-primary); }
-  .status-line { display: flex; justify-content: space-between; }
+  .status-line { display: flex; justify-content: space-between; gap: 10px; }
+  .status-line b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  progress { width: 100%; margin-top: 10px; accent-color: var(--accent); }
   #log {
     flex: 1; margin: 20px 20px 20px 0; background: var(--bg-panel); border: 1px solid var(--border);
     border-radius: 8px; overflow-y: auto; font-family: var(--font-mono); font-size: 12px;
     padding: 10px 12px; white-space: pre-wrap; word-break: break-all;
   }
   #log div { padding: 1px 0; }
-  #log .lvl-ERROR { color: var(--error); }
+  #log .lvl-ERROR, #log .lvl-FATAL { color: var(--error); }
   #log .lvl-WARN { color: var(--warn); }
-  #log .lvl-DEBUG, #log .lvl-TRACE { color: var(--text-tertiary); }
+  #log .lvl-DEBUG, #log .lvl-TRACE, #log .lvl-VERBOSE { color: var(--text-tertiary); }
   #log .marker { color: var(--accent); font-weight: 600; }
   .hint { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; line-height: 1.5; }
-  .unsupported {
-    margin: 40px auto; max-width: 520px; text-align: center; color: var(--text-secondary);
-    padding: 20px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel);
-  }
+  .hint code { color: var(--text-secondary); }
+  .note { font-size: 11px; color: var(--warn); margin-top: 6px; line-height: 1.5; }
 </style>
 </head>
 <body>
 
 <header>
   <h1>PhiLogg — Log Simulator</h1>
-  <span class="sub">writes fake log4net-style log files to disk, for testing tailing &amp; folder watch</span>
+  <span class="sub">generates sample logs for every PhiLogg feature — as files at once, or growing live for tailing &amp; folder watch</span>
 </header>
 
 <main id="main">
 <div class="panel controls">
 
   <fieldset>
-    <legend>Target</legend>
-    <label>Folder</label>
+    <legend>Content</legend>
+    <label for="format">Format</label>
+    <select id="format"></select>
+    <div class="hint" id="formatHint"></div>
+    <div class="note" id="formatNote"></div>
+
+    <label>Scenarios <button class="link" id="scenAll" type="button">all</button> · <button class="link" id="scenNone" type="button">none</button></label>
+    <div class="scen-grid" id="scenarios"></div>
+    <div class="hint">Hover a scenario for the PhiLogg features it exercises and a filter to try.</div>
+
+    <div class="row">
+      <div><label for="seed">Seed</label><input type="number" id="seed" value="1"></div>
+      <div><label for="rate">Entries / second</label><input type="number" id="rate" value="10" min="0.01" step="any"></div>
+    </div>
+    <label for="start">Start time (generated files)</label>
+    <input type="text" id="start" value="2026-01-15T08:00:00">
+    <label for="prefix">File name prefix</label>
+    <input type="text" id="prefix" placeholder="sim-default">
+    <div class="hint">Files are named <code>&lt;prefix&gt;-&lt;n&gt;&lt;ext&gt;</code>. Same seed + options = same bytes as <code>tools/log-sim/cli.js</code>.</div>
+  </fieldset>
+
+  <fieldset>
+    <legend>Generate files</legend>
+    <div class="row">
+      <div>
+        <label for="amountMode">Amount per file</label>
+        <select id="amountMode"><option value="entries">Entries</option><option value="size">Approx. size</option></select>
+      </div>
+      <div><label for="amount">&nbsp;</label><input type="text" id="amount" value="5000"></div>
+    </div>
+    <div class="hint" id="amountHint">Number of entries, e.g. 5000.</div>
+    <div class="row">
+      <div><label for="files">Files</label><input type="number" id="files" value="1" min="1"></div>
+      <div>
+        <label for="layout">Layout</label>
+        <select id="layout"><option value="rotate" title="one timeline split across the files (folder watch)">rotate</option><option value="parallel" title="one service per file over the same time range (merge)">parallel</option></select>
+      </div>
+      <div><label for="skew">Skew ms</label><input type="number" id="skew" value="0"></div>
+    </div>
+    <div class="row">
+      <div>
+        <label for="packaging">Packaging</label>
+        <select id="packaging"><option value="plain">plain files</option><option value="gzip">gzip each (.gz)</option><option value="zip">one .zip</option><option value="gzip+zip">.gz inside a .zip</option></select>
+      </div>
+      <div>
+        <label for="target">Save to</label>
+        <select id="target"><option value="download">download</option><option value="folder">chosen folder</option></select>
+      </div>
+    </div>
+    <div class="checkbox-row"><input type="checkbox" id="crlf"><label for="crlf">CRLF line endings</label></div>
+    <div class="btn-row">
+      <button id="btnGenerate" class="primary">Generate</button>
+      <button id="btnFormat">Format definition</button>
+    </div>
+    <progress id="genProgress" max="1" value="0" hidden></progress>
+  </fieldset>
+
+  <fieldset>
+    <legend>Live writing (tailing)</legend>
     <button id="btnPickFolder" style="width:100%">Choose folder…</button>
-    <div class="hint" id="folderHint">No folder selected yet.</div>
-
-    <label>File name prefix</label>
-    <input type="text" id="filePrefix" value="app">
-    <div class="hint">Files are named <code>&lt;prefix&gt;-&lt;n&gt;.log</code>, e.g. <code>app-1.log</code>, <code>app-2.log</code>…</div>
-  </fieldset>
-
-  <fieldset>
-    <!-- Same token vocabulary as PhiLogg's Settings -> Format Manager
-         (philogg.html's FORMAT_TOKEN_RE/FORMAT_TOKEN_FIELD) — keep these
-         two lists in sync if either changes. Left untouched, the defaults
-         below reproduce exactly today's log4net-style output. -->
-    <legend>Format</legend>
-    <label>Line pattern</label>
-    <input type="text" id="linePattern" value='%d\t%p\t&quot;%t&quot;\t%c\t[%M]\t&quot;%m&quot;%n'>
-    <div class="hint">%d/%date %p/%level %t/%thread %c/%logger %M/%method %m/%message %n — <code>\t</code> <code>\n</code> <code>\\</code> stand for a literal tab/newline/backslash.</div>
-
-    <label>Timestamp format</label>
-    <input type="text" id="tsFormat" value="yyyy-MM-dd HH:mm:ss,SSS">
-    <div class="hint">Tokens: yyyy MM dd HH mm ss SSS.</div>
-  </fieldset>
-
-  <fieldset>
-    <legend>Writing</legend>
+    <div class="hint" id="folderHint">No folder selected yet — needed for live writing and "Save to: chosen folder".</div>
     <label>Line interval: <span id="intervalLabel">500 ms</span></label>
     <input type="range" id="interval" min="50" max="3000" step="50" value="500">
-
     <label>Jitter (± randomize interval)</label>
     <input type="range" id="jitter" min="0" max="100" step="5" value="40">
-
-    <div class="checkbox-row">
-      <input type="checkbox" id="optStackTrace" checked>
-      <label for="optStackTrace">Occasionally emit a multi-line ERROR (stack trace)</label>
+    <div class="btn-row">
+      <button id="btnStart" class="primary">Start writing</button>
+      <button id="btnStop" disabled>Stop</button>
     </div>
-    <div class="checkbox-row">
-      <input type="checkbox" id="optXY" checked>
-      <label for="optXY">Recurring position message (x/y, for Plot testing)</label>
+    <div class="btn-row">
+      <button id="btnNextFile" disabled>Start next file ▸</button>
     </div>
-    <div class="hint">Emits <code>"Position update x=[float] y=[float]"</code> — a random-walk trajectory. Try the filter <code>x=[*:float] y=[*:float]</code> in PhiLogg.</div>
+    <div class="btn-row">
+      <button id="btnBurst" disabled>Write burst (50 entries)</button>
+      <button id="btnTruncate" class="danger" disabled>Truncate current file</button>
+    </div>
+    <div class="status" id="status">
+      <div class="status-line"><span><span class="dot"></span>State</span><b id="stState">idle</b></div>
+      <div class="status-line"><span>Current file</span><b id="stFile">—</b></div>
+      <div class="status-line"><span>Files started</span><b id="stFiles">0</b></div>
+      <div class="status-line"><span>Entries (current file)</span><b id="stLines">0</b></div>
+      <div class="status-line"><span>Entries (total)</span><b id="stLinesTotal">0</b></div>
+      <div class="status-line"><span>Bytes (current file)</span><b id="stBytes">0</b></div>
+    </div>
   </fieldset>
-
-  <div class="btn-row">
-    <button id="btnStart" class="primary">Start writing</button>
-    <button id="btnStop" disabled>Stop</button>
-  </div>
-  <div class="btn-row">
-    <button id="btnNextFile" disabled>Start next file ▸</button>
-  </div>
-  <div class="btn-row">
-    <button id="btnBurst" disabled>Write burst (50 lines)</button>
-    <button id="btnTruncate" class="danger" disabled>Truncate current file</button>
-  </div>
-
-  <div class="status" id="status">
-    <div class="status-line"><span><span class="dot"></span>State</span><b id="stState">idle</b></div>
-    <div class="status-line"><span>Current file</span><b id="stFile">—</b></div>
-    <div class="status-line"><span>Files started</span><b id="stFiles">0</b></div>
-    <div class="status-line"><span>Lines written (current file)</span><b id="stLines">0</b></div>
-    <div class="status-line"><span>Lines written (total)</span><b id="stLinesTotal">0</b></div>
-    <div class="status-line"><span>Bytes written (current file)</span><b id="stBytes">0</b></div>
-  </div>
 
 </div>
 
@@ -183,48 +203,186 @@
 </div>
 </main>
 
+<script src="log-sim/core.js"></script>
 <script>
 (function () {
   "use strict";
-
-  const supported = typeof window.showDirectoryPicker === "function";
-  if (!supported) {
-    document.getElementById("main").innerHTML =
-      '<div class="unsupported"><h2>Not supported in this browser</h2>' +
-      '<p>This tool writes files directly to disk via the File System Access API ' +
-      '(<code>showDirectoryPicker</code>), which only Chromium-based browsers ' +
-      '(Chrome, Edge, Opera…) implement. Open this file in one of those to use it.</p></div>';
+  const $ = (id) => document.getElementById(id);
+  const sim = window.PhiloggLogSim;
+  if (!sim) {
+    $("main").innerHTML = '<div class="panel">Could not load <code>log-sim/core.js</code> — keep this page next to its <code>log-sim/</code> folder.</div>';
     return;
   }
+  const canPickFolder = typeof window.showDirectoryPicker === "function";
 
-  // ---- DOM ----
-  const $ = (id) => document.getElementById(id);
-  const btnPickFolder = $("btnPickFolder");
-  const folderHint = $("folderHint");
-  const filePrefix = $("filePrefix");
-  const linePatternEl = $("linePattern");
-  const tsFormatEl = $("tsFormat");
-  const intervalEl = $("interval");
-  const intervalLabel = $("intervalLabel");
-  const jitterEl = $("jitter");
-  const optStackTrace = $("optStackTrace");
-  const optXY = $("optXY");
-  const btnStart = $("btnStart");
-  const btnStop = $("btnStop");
-  const btnNextFile = $("btnNextFile");
-  const btnBurst = $("btnBurst");
-  const btnTruncate = $("btnTruncate");
-  const statusBox = $("status");
-  const stState = $("stState");
-  const stFile = $("stFile");
-  const stFiles = $("stFiles");
-  const stLines = $("stLines");
-  const stLinesTotal = $("stLinesTotal");
-  const stBytes = $("stBytes");
+  // ---- content controls ----
+  const formatEl = $("format");
+  for (const [key, f] of Object.entries(sim.FORMATS)) formatEl.add(new Option(f.label, key));
+  const scenBox = $("scenarios");
+  for (const [key, s] of Object.entries(sim.SCENARIOS)) {
+    const row = document.createElement("div");
+    row.className = "checkbox-row";
+    row.innerHTML = '<input type="checkbox" checked><label></label>';
+    row.firstChild.id = "scen-" + key;
+    row.firstChild.value = key;
+    row.lastChild.htmlFor = "scen-" + key;
+    row.lastChild.textContent = s.label;
+    row.lastChild.title = s.hint;
+    scenBox.appendChild(row);
+  }
+  const scenChecks = () => [...scenBox.querySelectorAll("input")];
+  $("scenAll").addEventListener("click", () => scenChecks().forEach(c => { c.checked = true; }));
+  $("scenNone").addEventListener("click", () => scenChecks().forEach(c => { c.checked = false; }));
+
+  function updateFormatInfo() {
+    const f = sim.FORMATS[formatEl.value];
+    $("formatHint").textContent = f.hint;
+    const needsImport = !!sim.formatExport(formatEl.value);
+    $("formatNote").textContent = needsImport ? "PhiLogg needs this format's definition: use \"Format definition\" and import it (Open → Import…, or drop it)." : "";
+    $("btnFormat").disabled = !needsImport;
+    $("prefix").placeholder = "sim-" + formatEl.value;
+  }
+  formatEl.addEventListener("change", updateFormatInfo);
+
+  function contentOptions() {
+    const scenarios = scenChecks().filter(c => c.checked).map(c => c.value);
+    return {
+      format: formatEl.value,
+      scenarios: scenarios.length ? scenarios : ["basic"],
+      seed: +$("seed").value || 0,
+      rate: +$("rate").value || 10,
+      start: $("start").value.trim(),
+      prefix: $("prefix").value.trim() || null,
+      eol: $("crlf").checked ? "\r\n" : "\n",
+    };
+  }
+  const prefixOf = o => o.prefix || "sim-" + o.format;
+
+  // ---- output panel ----
   const logEl = $("log");
+  function logToPanel(text, cls) {
+    const div = document.createElement("div");
+    if (cls) div.className = cls;
+    div.textContent = text;
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+    while (logEl.childNodes.length > 500) logEl.removeChild(logEl.firstChild);
+  }
 
-  // ---- state ----
+  // ---- folder ----
   let dirHandle = null;
+  async function pickFolder() {
+    try {
+      dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
+      $("folderHint").textContent = "Writing into: " + (dirHandle.name || "(selected folder)");
+      updateButtons();
+    } catch (err) {
+      if (err && err.name !== "AbortError") $("folderHint").textContent = "Could not access folder: " + err.message;
+    }
+  }
+  if (!canPickFolder) {
+    $("btnPickFolder").disabled = true;
+    $("target").value = "download";
+    $("target").disabled = true;
+    $("folderHint").textContent = "This browser has no File System Access API (showDirectoryPicker) — live writing needs Chrome/Edge. Generating files works everywhere (download).";
+  }
+
+  // ---- generating files ----
+  $("amountMode").addEventListener("change", () => {
+    const size = $("amountMode").value === "size";
+    $("amount").value = size ? "10MB" : "5000";
+    $("amountHint").textContent = size ? "Approximate size per file, e.g. 500k, 10MB, 1.5GB." : "Number of entries, e.g. 5000.";
+  });
+
+  function downloadBlob(blob, name) {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+  }
+
+  async function saveOutput(blob, name, target) {
+    if (target === "folder") {
+      const fh = await dirHandle.getFileHandle(name, { create: true });
+      const w = await fh.createWritable({ keepExistingData: false });
+      await w.write(blob);
+      await w.close();
+    } else downloadBlob(blob, name);
+  }
+
+  const gzipBlob = blob => new Response(blob.stream().pipeThrough(new CompressionStream("gzip"))).blob();
+
+  let generating = false;
+  async function generate() {
+    const o = contentOptions();
+    o.files = Math.max(1, +$("files").value || 1);
+    o.layout = $("layout").value;
+    o.skew = +$("skew").value || 0;
+    if ($("amountMode").value === "size") {
+      o.size = sim.parseSize($("amount").value);
+      if (isNaN(o.size)) { logToPanel("Invalid size '" + $("amount").value + "' (e.g. 500k, 10MB)", "lvl-ERROR"); return; }
+    } else o.entries = Math.max(1, parseInt($("amount").value, 10) || 1);
+    const packaging = $("packaging").value;
+    const target = $("target").value;
+    if (target === "folder" && !dirHandle) { logToPanel("Choose a folder first (Live writing → Choose folder…).", "lvl-ERROR"); return; }
+    const gz = packaging.startsWith("gzip");
+    const zipped = packaging.endsWith("zip");
+    const progress = $("genProgress");
+    const total = o.files * (o.size || o.entries * 150);
+    generating = true;
+    updateButtons();
+    progress.hidden = false;
+    progress.value = 0;
+    try {
+      const zipFiles = [];
+      let chunks = null, name = null, done = 0, preview = 0;
+      for (const ev of sim.generateFiles(o)) {
+        if (ev.type === "file") { chunks = []; name = ev.name; logToPanel("── generating " + name + " ──", "marker"); }
+        else if (ev.type === "chunk") {
+          chunks.push(ev.text);
+          done += ev.text.length;
+          if (preview < 20) ev.text.split(/\r?\n/).slice(0, 20 - preview).forEach(l => { if (l) { logToPanel(l); preview++; } });
+          progress.value = Math.min(1, done / total);
+          await new Promise(r => setTimeout(r, 0)); // keep the page responsive on 100 MB+
+        } else {
+          let blob = new Blob(chunks, { type: "text/plain" });
+          let outName = name;
+          if (gz) { blob = await gzipBlob(blob); outName += ".gz"; }
+          if (zipped) zipFiles.push({ name: outName, data: new Uint8Array(await blob.arrayBuffer()) });
+          else await saveOutput(blob, outName, target);
+          logToPanel(outName + ": " + ev.entries + " entries, " + ev.bytes + " bytes" + (gz ? " (uncompressed)" : ""), "marker");
+          chunks = null;
+        }
+      }
+      if (zipped) {
+        const zipName = prefixOf(o) + ".zip";
+        await saveOutput(new Blob([sim.zipStore(zipFiles)], { type: "application/zip" }), zipName, target);
+        logToPanel("── " + zipName + " (" + zipFiles.length + " entries) ──", "marker");
+      }
+    } catch (err) {
+      logToPanel("Generation failed: " + err.message, "lvl-ERROR");
+    } finally {
+      generating = false;
+      progress.value = 1;
+      updateButtons();
+    }
+  }
+
+  async function saveFormatDefinition() {
+    const o = contentOptions();
+    const doc = sim.formatExport(o.format, prefixOf(o));
+    if (!doc) return;
+    const blob = new Blob([JSON.stringify(doc, null, 2) + "\n"], { type: "application/json" });
+    const target = $("target").value === "folder" && dirHandle ? "folder" : "download";
+    await saveOutput(blob, prefixOf(o) + ".logformat.json", target);
+    logToPanel("── format definition saved: " + prefixOf(o) + ".logformat.json — import it in PhiLogg (Open → Import…) ──", "marker");
+  }
+
+  // ---- live writing ----
+  let liveGen = null;
   let fileHandle = null;
   let currentFileName = null;
   let fileIndex = 0;
@@ -234,211 +392,51 @@
   let bytesInFile = 0;
   let linesTotal = 0;
 
-  // random-walk position, for the recurring x/y message
-  let posX = 0, posY = 0;
-
-  const THREADS = ["main", "worker-1", "worker-2", "io-dispatch"];
-  const SOURCES = [
-    { file: "C:\\src\\Scheduler.cs", method: "Tick" },
-    { file: "C:\\src\\Worker.cs", method: "ProcessItem" },
-    { file: "C:\\src\\Database.cs", method: "Query" },
-    { file: "C:\\src\\Network.cs", method: "Poll" },
-    { file: "C:\\src\\Motion.cs", method: "UpdatePosition" },
-  ];
-  const MESSAGES = [
-    "Heartbeat OK",
-    "Queue depth: {n} items",
-    "Cache hit ratio: {pct}%",
-    "Retrying operation, attempt {n}",
-    "Request completed in {n}ms",
-    "Buffer usage at {pct}%",
-  ];
-  // level weights: INFO common, DEBUG frequent, WARN occasional, ERROR rare
-  const LEVELS = ["INFO", "INFO", "INFO", "DEBUG", "DEBUG", "WARN", "ERROR"];
-
-  function pad2(n) { return n < 10 ? "0" + n : "" + n; }
-  function pad3(n) { return n < 10 ? "00" + n : n < 100 ? "0" + n : "" + n; }
-
-  function pick(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
-  function randInt(min, max) { return Math.floor(min + Math.random() * (max - min + 1)); }
-
-  const DEFAULT_LINE_PATTERN = '%d\\t%p\\t"%t"\\t%c\\t[%M]\\t"%m"%n';
-  const DEFAULT_TS_FORMAT = "yyyy-MM-dd HH:mm:ss,SSS";
-
-  // Same token vocabulary as PhiLogg's Settings -> Format Manager
-  // (philogg.html's FORMAT_TOKEN_RE/FORMAT_TOKEN_FIELD) — keep in sync if
-  // either changes. Longer word-forms listed before their single-letter
-  // alias so e.g. "%date" isn't consumed as "%d" + leftover "ate".
-  const FORMAT_TOKEN_RE = /%(date|d)(?:\{[^}]*\})?|%(level|p)|%(thread|t)|%(logger|c)|%(method|M)|%(message|m)|%n|%%/g;
-  const FORMAT_TOKEN_FIELD = {
-    date: "ts", d: "ts", level: "level", p: "level", thread: "thread", t: "thread",
-    logger: "location", c: "location", method: "method", M: "method", message: "message", m: "message",
-  };
-
-  // A single-line text input can't contain a literal tab/newline, so \t/\n/\\
-  // two-character sequences typed there are unescaped into real bytes —
-  // same convention philogg.html's pattern-mode compiler uses, so one
-  // pattern string works for both parsing and generating matching test data.
-  function unescapePatternText(s) {
-    return (s || "").replace(/\\\\|\\t|\\n/g, m => (m === "\\t" ? "\t" : m === "\\n" ? "\n" : "\\"));
-  }
-
-  function formatDateWithTokens(d, tsFormat) {
-    return (tsFormat || DEFAULT_TS_FORMAT).replace(/yyyy|MM|dd|HH|mm|ss|SSS/g, tok => {
-      if (tok === "yyyy") return "" + d.getFullYear();
-      if (tok === "MM") return pad2(d.getMonth() + 1);
-      if (tok === "dd") return pad2(d.getDate());
-      if (tok === "HH") return pad2(d.getHours());
-      if (tok === "mm") return pad2(d.getMinutes());
-      if (tok === "ss") return pad2(d.getSeconds());
-      return pad3(d.getMilliseconds()); // SSS
-    });
-  }
-
-  // Builds one line by substituting values into the configured pattern —
-  // the inverse of philogg.html's compileFormatPattern (which substitutes
-  // MATCH fragments instead of values). Left at the defaults above, this
-  // reproduces exactly the tool's original hardcoded log4net-style output.
-  function buildLineFromPattern(rawPattern, tsFormat) {
-    const level = pick(LEVELS);
-    const thread = pick(THREADS);
-    const src = pick(SOURCES);
-    const lineNo = randInt(10, 400);
-    let message;
-    let method = src.method;
-
-    if (optXY.checked && Math.random() < 0.3) {
-      posX += (Math.random() - 0.5) * 4;
-      posY += (Math.random() - 0.5) * 4;
-      message = "Position update x=" + posX.toFixed(3) + " y=" + posY.toFixed(3);
-      method = "UpdatePosition";
-    } else {
-      message = pick(MESSAGES)
-        .replace("{n}", randInt(1, 500))
-        .replace("{pct}", randInt(0, 100));
-    }
-
-    const values = {
-      ts: formatDateWithTokens(new Date(), tsFormat),
-      level, thread,
-      location: src.file + "\tline " + lineNo,
-      method, message,
-    };
-
-    const pattern = unescapePatternText(rawPattern || DEFAULT_LINE_PATTERN);
-    FORMAT_TOKEN_RE.lastIndex = 0;
-    let lastIndex = 0, line = "";
-    let m;
-    while ((m = FORMAT_TOKEN_RE.exec(pattern)) !== null) {
-      const tok = m[0];
-      // Literal text before this token (e.g. a closing quote right before
-      // %n) always gets appended first — %n/%% contribute nothing of
-      // their own beyond that.
-      line += pattern.slice(lastIndex, m.index);
-      lastIndex = FORMAT_TOKEN_RE.lastIndex;
-      if (tok === "%n") continue;
-      if (tok === "%%") { line += "%"; continue; }
-      const tokenWord = m[1] || m[2] || m[3] || m[4] || m[5] || m[6];
-      const field = FORMAT_TOKEN_FIELD[tokenWord];
-      const val = values[field];
-      line += val != null ? val : "";
-    }
-    line += pattern.slice(lastIndex);
-
-    if (level === "ERROR" && optStackTrace.checked && Math.random() < 0.5) {
-      line += "\n   at " + src.method + "() in " + src.file + ":line " + lineNo +
-        "\n   at Program.Main() in C:\\src\\Program.cs:line 21" +
-        "\n   System.InvalidOperationException: simulated failure for testing";
-    }
-
-    return { line, level };
-  }
-
-  function logToPanel(text, cls) {
-    const div = document.createElement("div");
-    if (cls) div.className = cls;
-    div.textContent = text;
-    logEl.appendChild(div);
-    logEl.scrollTop = logEl.scrollHeight;
-    // keep the panel from growing unbounded during a long test run
-    while (logEl.childNodes.length > 500) logEl.removeChild(logEl.firstChild);
-  }
-
   function updateStatus() {
-    stState.textContent = running ? "writing" : (fileHandle ? "paused" : "idle");
-    statusBox.classList.toggle("live", running);
-    stFile.textContent = currentFileName || "—";
-    stFiles.textContent = String(fileIndex);
-    stLines.textContent = String(linesInFile);
-    stLinesTotal.textContent = String(linesTotal);
-    stBytes.textContent = String(bytesInFile);
+    $("stState").textContent = running ? "writing" : (fileHandle ? "paused" : "idle");
+    $("status").classList.toggle("live", running);
+    $("stFile").textContent = currentFileName || "—";
+    $("stFiles").textContent = String(fileIndex);
+    $("stLines").textContent = String(linesInFile);
+    $("stLinesTotal").textContent = String(linesTotal);
+    $("stBytes").textContent = String(bytesInFile);
   }
 
   function updateButtons() {
-    const haveFolder = !!dirHandle;
-    btnStart.disabled = !haveFolder || running;
-    btnStop.disabled = !running;
-    btnNextFile.disabled = !running && !fileHandle;
-    btnBurst.disabled = !fileHandle;
-    btnTruncate.disabled = !fileHandle;
-  }
-
-  async function pickFolder() {
-    try {
-      dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
-      folderHint.textContent = "Writing into: " + (dirHandle.name || "(selected folder)");
-      updateButtons();
-    } catch (err) {
-      if (err && err.name !== "AbortError") {
-        folderHint.textContent = "Could not access folder: " + err.message;
-      }
-    }
+    $("btnGenerate").disabled = generating;
+    $("btnStart").disabled = !dirHandle || running;
+    $("btnStop").disabled = !running;
+    $("btnNextFile").disabled = !running && !fileHandle;
+    $("btnBurst").disabled = !fileHandle;
+    $("btnTruncate").disabled = !fileHandle;
   }
 
   // A FileSystemWritableFileStream writes to a hidden *.crswap file and only
-  // renames it into the real, visible file on close() — so a stream left
-  // open across many ticks (the original approach here) leaves the on-disk
-  // .log file permanently empty while everything actually written sits in
-  // the .crswap sidecar, invisible to anything (like PhiLogg's own tailing)
-  // watching the real file. To make every write actually land on disk
-  // immediately, each write below opens its own writable, writes at an
-  // explicit byte position (keepExistingData:true starts the cursor at 0,
-  // not at the end — an explicit position is what makes this an append
-  // rather than an overwrite), and closes again right away.
-
-  // Every disk-touching operation (open/truncate/write) is funneled through
-  // this single-file queue, so no two of them ever run concurrently.
-  // Person-reported (screenshots): app-2.log/app-3.log came out with lines
-  // mashed together (no newline between them, stray runs of leading
-  // whitespace) — root cause was writeOneLine()/writeText() reading
-  // fileHandle/bytesInFile, awaiting the actual disk write, and only THEN
-  // updating bytesInFile, with nothing stopping a second write (from the
-  // periodic ticker racing "Write burst", or racing "Start next file") from
-  // reading the SAME stale bytesInFile before the first write's increment
-  // landed — both writes then targeted the same byte position, corrupting
-  // whichever file was open at the time. Worse, if "Start next file" (which
-  // never waited for an in-flight write either) reset bytesInFile to 0 for
-  // the freshly-truncated new file while an old write's tail was still
-  // pending, that old write's late increment landed on the NEW file's
-  // counter instead — silently drifting it away from 0 before the new file
-  // had a single real byte, corrupting every write to that file from the
-  // very first one, permanently (the offset never resynced with reality).
-  // Queuing every op's critical section here means each one only ever reads
-  // fileHandle/bytesInFile after every earlier op (including its own
-  // trailing counter update) has fully finished — so a rotation's reset is
-  // always the last word, and two writes can never target the same offset.
+  // renames it into the real file on close() — a stream held open across
+  // ticks leaves the visible .log empty for the whole run. So every write
+  // opens its own writable, writes at an explicit byte position
+  // (keepExistingData:true starts the cursor at 0, not at the end) and
+  // closes right away.
+  //
+  // Every disk-touching operation goes through this one queue: a write
+  // reads fileHandle/bytesInFile, awaits the disk, and only then advances
+  // bytesInFile — two unserialized writes (ticker vs. burst, or a write
+  // racing "Start next file") would target the same offset and corrupt the
+  // file (lines glued together, NUL-padded gaps), or a late increment would
+  // land on a freshly rotated file's counter. Queued, each op sees every
+  // earlier op's final state.
   let writeQueue = Promise.resolve();
   function enqueue(fn) {
     const result = writeQueue.then(fn, fn);
-    writeQueue = result.catch(() => {}); // one rejected op must not wedge the queue for the rest
+    writeQueue = result.catch(() => {}); // one rejected op must not wedge the queue
     return result;
   }
 
   async function openNewFile() {
     return enqueue(async () => {
       fileIndex += 1;
-      const prefix = (filePrefix.value || "app").trim() || "app";
-      currentFileName = prefix + "-" + fileIndex + ".log";
+      const o = contentOptions();
+      currentFileName = prefixOf(o) + "-" + fileIndex + sim.FORMATS[o.format].ext;
       fileHandle = await dirHandle.getFileHandle(currentFileName, { create: true });
       const w = await fileHandle.createWritable({ keepExistingData: false });
       await w.close();
@@ -458,30 +456,37 @@
     });
   }
 
-  async function writeOneLine() {
+  async function writeOneEntry() {
     if (!fileHandle) return;
-    const { line, level } = buildLineFromPattern(linePatternEl.value, tsFormatEl.value);
-    await writeText(line + "\n");
+    const e = liveGen.next(sim.naiveNow());
+    const text = liveGen.render(e);
+    await writeText(text);
     linesInFile += 1;
     linesTotal += 1;
-    logToPanel(line, "lvl-" + level);
+    logToPanel(text.replace(/\r?\n$/, ""), "lvl-" + e.level);
     updateStatus();
   }
 
   function scheduleNext() {
     if (!running) return;
-    const base = parseInt(intervalEl.value, 10);
-    const jitterPct = parseInt(jitterEl.value, 10) / 100;
-    const delta = base * jitterPct;
-    const delay = Math.max(20, base + (Math.random() * 2 - 1) * delta);
+    const base = parseInt($("interval").value, 10);
+    const jitterPct = parseInt($("jitter").value, 10) / 100;
+    const delay = Math.max(20, base + (Math.random() * 2 - 1) * base * jitterPct);
     timerId = setTimeout(async () => {
-      await writeOneLine();
+      await writeOneEntry();
       scheduleNext();
     }, delay);
   }
 
+  function freshLiveGenerator() {
+    // Format/scenarios are read when writing starts; the seed still makes
+    // message content reproducible, the timestamps are the real clock.
+    liveGen = sim.createGenerator(Object.assign(contentOptions(), { start: sim.naiveNow() }));
+  }
+
   async function start() {
     if (!dirHandle || running) return;
+    if (!liveGen) freshLiveGenerator();
     if (!fileHandle) await openNewFile();
     running = true;
     updateButtons();
@@ -500,6 +505,7 @@
     const wasRunning = running;
     running = false;
     if (timerId) { clearTimeout(timerId); timerId = null; }
+    freshLiveGenerator(); // picks up a changed format/scenario for the new file
     await openNewFile();
     if (wasRunning) {
       running = true;
@@ -510,9 +516,7 @@
   }
 
   async function burst() {
-    for (let i = 0; i < 50; i++) {
-      await writeOneLine();
-    }
+    for (let i = 0; i < 50; i++) await writeOneEntry();
   }
 
   async function truncate() {
@@ -536,16 +540,17 @@
   }
 
   // ---- wiring ----
-  intervalEl.addEventListener("input", () => {
-    intervalLabel.textContent = intervalEl.value + " ms";
-  });
-  btnPickFolder.addEventListener("click", pickFolder);
-  btnStart.addEventListener("click", start);
-  btnStop.addEventListener("click", stop);
-  btnNextFile.addEventListener("click", nextFile);
-  btnBurst.addEventListener("click", burst);
-  btnTruncate.addEventListener("click", truncate);
+  $("interval").addEventListener("input", () => { $("intervalLabel").textContent = $("interval").value + " ms"; });
+  $("btnPickFolder").addEventListener("click", pickFolder);
+  $("btnGenerate").addEventListener("click", generate);
+  $("btnFormat").addEventListener("click", saveFormatDefinition);
+  $("btnStart").addEventListener("click", start);
+  $("btnStop").addEventListener("click", stop);
+  $("btnNextFile").addEventListener("click", nextFile);
+  $("btnBurst").addEventListener("click", burst);
+  $("btnTruncate").addEventListener("click", truncate);
 
+  updateFormatInfo();
   updateButtons();
   updateStatus();
 })();
