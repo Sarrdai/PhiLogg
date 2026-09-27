@@ -447,7 +447,12 @@ reproductions — is the log simulator in `tools/log-sim/`:
    `tools/log-sim/README.md`).
 3. **Record the command** (seed, options, `--eval`) next to where the
    screenshot is used or in the session's changelog entry, so the next
-   update reproduces it instead of reinventing it.
+   update reproduces it instead of reinventing it. The README's own
+   screenshots are the reference example: `docs/screenshots/generate.sh`
+   (one data set, `scenes/common.js` builds the filter tree, one
+   `scenes/NN-name.js` per picture) regenerates all of them —
+   `docs/screenshots/generate.sh plot` just the matching ones. A new README
+   picture is a new scene file there.
 
 **Missing content is a simulator gap, not a reason to hand-write data.**
 If a case can't be produced — a new feature's log shape, a new format, a
