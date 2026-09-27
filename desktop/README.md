@@ -292,8 +292,8 @@ follow-up the same day (one render per load instead of two, per-entry
 level work in `render()` memoized) brought that run to ~3.3 s (JS path
 ~8.1 s).
 Windows (WebView2) numbers after that fix are still to be measured. Also
-covered by `cargo test` (golden fixtures shared with the jsdom suite, a
-brute-force `formatLocation` check, the JS-regex translation) and the jsdom
+covered by `cargo test` (golden fixtures shared with the jsdom suite, the
+JS-regex translation) and the jsdom
 suite's Group 264.
 
 **Not yet run on macOS.** The window chrome specifically (the injected

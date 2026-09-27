@@ -348,6 +348,15 @@ deployments possible:
   and the log/text content size. Resizable/toggleable columns, multiline
   message display, multi-row select + copy, and a horizontal scrollbar in
   the Filter view for reading long messages in full.
+- **Entry detail: Raw, Parsed or Pretty** — the detail panel below the log
+  shows the selected entry in full: level, time, thread, the complete source
+  location (path and line) and method in its header, the whole multi-line
+  message below, in three stages. **Raw** shows the entry's original text
+  exactly as it stands in the file — every line, tabs, quotes and
+  indentation — with filter matches still marked (for a linked pair, both
+  entries' original lines). **Parsed** shows the parsed message; **Pretty**
+  (default) additionally pretty-prints and syntax-highlights XML/JSON
+  embedded in it. The choice is remembered across reloads.
 - **Word wrap** — a soft-wrap toggle in each log toolbar wraps long messages
   instead of scrolling sideways (it also wraps the Entry Detail message), and
   a separate toggle in the Text-View toolbar wraps a plain text file. Both are
