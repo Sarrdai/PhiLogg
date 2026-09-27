@@ -29484,26 +29484,26 @@ await withApp(async (w, d, T) => {
   w.render();
   assert(guides(f).length === 1 && on(f).length === 1, "the root row gets one stem, highlighted since the active node is below it");
   assert(on(A).length === 3 && on(A).some(g => g.classList.contains("h")), "A (on the path) highlights its upper link half, its elbow and its own stem, got " + on(A).length);
-  assert(at(A, 16).some(g => g.style.top === "50%" && !g.classList.contains("on")), "A's lower link half toward sibling B stays unhighlighted (the path turns into A)");
-  assert(on(A1).length === 2 && at(A1, 34).filter(g => g.classList.contains("on")).length === 2, "the active row itself highlights its upper link half and its elbow at its parent's x (34px)");
-  assert(at(A1, 16).length === 1 && !at(A1, 16)[0].classList.contains("on"), "A1 carries the root's pass-through rail (A has a later sibling), not highlighted");
+  assert(at(A, 13).some(g => g.style.top === "50%" && !g.classList.contains("on")), "A's lower link half toward sibling B stays unhighlighted (the path turns into A)");
+  assert(on(A1).length === 2 && at(A1, 23).filter(g => g.classList.contains("on")).length === 2, "the active row itself highlights its upper link half and its elbow at its parent's x (23px = 8 + TREE_INDENT_STEP + TREE_CHEVRON_CENTER)");
+  assert(at(A1, 13).length === 1 && !at(A1, 13)[0].classList.contains("on"), "A1 carries the root's pass-through rail (A has a later sibling), not highlighted");
   assert(on(A2).length === 0 && on(B).length === 0, "rows off the path get no highlighted segment");
-  assert(at(A2, 34).length === 2, "the last child gets only an upper half + elbow (no line continues below it)");
+  assert(at(A2, 23).length === 2, "the last child gets only an upper half + elbow (no line continues below it)");
   assert(w.getComputedStyle(guides(f)[0]).pointerEvents === "none", "guides never intercept clicks on the row");
   // Follow-up (person-reported): 1.5px filled boxes rendered at uneven
   // thickness (pixel snapping of a fractional width) — lines are integer
   // 2px borders now; and the multi-select outline no longer frames the
   // active row, where it cut across the lines.
-  const vCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("v")));
-  const hCs = w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h")));
+  const vCs = w.getComputedStyle(at(A1, 23).find(g => g.classList.contains("v")));
+  const hCs = w.getComputedStyle(at(A1, 23).find(g => g.classList.contains("h")));
   assert(vCs.borderLeftWidth === "2px", "vertical guides are a 2px left border, got " + vCs.borderLeftWidth);
   assert(hCs.borderTopWidth === "2px", "elbows are a 2px top border, got " + hCs.borderTopWidth);
   // Follow-up 2 (person-reported): a base height:0 on .tree-guide beat the
   // top:0/bottom:0 stretch, collapsing every rail, stem and lower half.
-  const rail = at(A1, 16)[0];
+  const rail = at(A1, 13)[0];
   assert(rail.style.bottom === "0px" && w.getComputedStyle(rail).height !== "0px",
     "a full-span rail has no fixed height, so top:0/bottom:0 can stretch it, got " + w.getComputedStyle(rail).height);
-  assert(w.getComputedStyle(at(A1, 34).find(g => g.classList.contains("h"))).height === "0px", "elbows are still zero-height (just their border)");
+  assert(w.getComputedStyle(at(A1, 23).find(g => g.classList.contains("h"))).height === "0px", "elbows are still zero-height (just their border)");
   T.state.multiSelect = new Set([A1.id, A2.id]);
   w.render();
   assert(rowOf(A1).classList.contains("multi-selected") && w.getComputedStyle(rowOf(A1)).boxShadow === "none",
@@ -29523,7 +29523,7 @@ await withApp(async (w, d, T) => {
   // Path through a later sibling: the root rail passes A's subtree highlighted.
   T.state.activeId = B.id;
   w.render();
-  assert(at(A1, 16).every(g => g.classList.contains("on")) && at(A2, 16).every(g => g.classList.contains("on")),
+  assert(at(A1, 13).every(g => g.classList.contains("on")) && at(A2, 13).every(g => g.classList.contains("on")),
     "with B active, the root rail running past A's children is highlighted");
   assert(on(A).length === 2 && !on(A).some(g => g.classList.contains("h")), "A's vertical passes through highlighted but its elbow and stem are not");
   assert(on(B).length === 2, "B highlights its upper half and elbow");
@@ -35050,6 +35050,52 @@ await withApp(async (w, d, T) => {
   assert(!r.error && r.result.plot.row === 1 && d.querySelectorAll("#plotSvg .plot-mark").length === 16, "profile of the first spectrum: 16 bins");
 });
 
+/* GROUP 312 — Files & Filters indent per level reduced to TREE_INDENT_STEP
+   (10px, was 18px) and a chevron column narrowed to its glyph (10px, was
+   16px): the connector lines carry the hierarchy, so the wide step only
+   wasted horizontal space, and leaf elbows crossing the empty chevron
+   column looked too long (person-reported). Real rows, queued
+   placeholder rows and filter-history ghost rows all use the same step, and
+   every child's elbow keeps a visible length. */
+group(312);
+await withApp(async (w, d, T) => {
+  section("312. Tree indent per level is TREE_INDENT_STEP (10px), narrow chevron column");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  const A = w.createFilterNode(f.id, "text", "message");
+  const A1 = w.createFilterNode(A.id, "text", "1");
+  const A1a = w.createFilterNode(A1.id, "text", "1");
+  T.state.activeId = A1a.id;
+  w.render();
+  const rowOf = n => d.querySelector('#tree .tree-row[data-node-id="' + n.id + '"]');
+  assert(w.eval("TREE_INDENT_STEP") === 10, "indent step constant is 10px");
+  assert([f, A, A1, A1a].map(n => rowOf(n).style.paddingLeft).join() === "8px,18px,28px,38px",
+    "rows indent 10px per level, got " + [f, A, A1, A1a].map(n => rowOf(n).style.paddingLeft).join());
+  [A, A1, A1a].forEach(n => {
+    const h = rowOf(n).querySelector(":scope > .tree-guide.h");
+    assert(h && parseFloat(h.style.width) >= 5, "elbow into " + n.id + " stays visible, got " + (h && h.style.width));
+  });
+  // Follow-up (person-reported): the chevron column is only as wide as its
+  // glyph, so a leaf's elbow (which crosses the empty column up to the
+  // swatch) stays short and a chevron has no wide blank to its right.
+  const leafH = rowOf(A1a).querySelector(":scope > .tree-guide.h");
+  assert(parseFloat(leafH.style.width) <= 20, "a leaf's elbow stays short, got " + leafH.style.width);
+  // Follow-up 2 (person-reported): the leaf elbow touched the swatch — it
+  // now stops the same gap short of it as a chevron row's elbow does of
+  // its chevron glyph.
+  const gap = w.eval("TREE_ELBOW_GAP");
+  assert(gap >= 2 && parseFloat(leafH.style.left) + parseFloat(leafH.style.width) === 38 + w.eval("TREE_CHEVRON_END") - gap,
+    "a leaf's elbow stops TREE_ELBOW_GAP before its swatch, got end " + (parseFloat(leafH.style.left) + parseFloat(leafH.style.width)));
+  const chevH = rowOf(A1).querySelector(":scope > .tree-guide.h");
+  assert(parseFloat(chevH.style.left) + parseFloat(chevH.style.width) === 28 + w.eval("TREE_CHEVRON_GLYPH_START") - gap,
+    "a chevron row's elbow stops the same gap before the chevron glyph");
+  const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
+  assert(css.includes(".tree-chevron-slot{flex:0 0 auto; width:10px; height:16px; margin-right:-3px;"), "chevron slot is 10px wide and pulls the swatch closer");
+  const q = w.renderQueuedFileRow({ id: "q", name: "q.log" }, 2).querySelector(".tree-row-queued");
+  assert(q.style.paddingLeft === "28px", "queued placeholder row uses the same step, got " + q.style.paddingLeft);
+  const g = w.renderGhostRow({ filterType: "text", value: "x", children: [] }, 2);
+  assert(g.style.paddingLeft === "20px", "filter-history ghost rows use the same step, got " + g.style.paddingLeft);
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -39445,4 +39491,7 @@ process.exitCode = failed ? 1 : 0;
       Heatmap/Profile over a column group instead of an array column.
    Group 311 — same session: assistant tool show_view covers every chart
       type (value charts, 3D, color-by, colormap, parallel ranges).
+   Group 312 — 2026-09-27 (person-reported): Files & Filters indent step
+      18px -> 10px (TREE_INDENT_STEP), chevron column 16px -> 10px so leaf
+      elbows stay short; GROUP 262's hardcoded rail x updated.
    ============================================================ */
