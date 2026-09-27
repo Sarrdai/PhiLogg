@@ -25,7 +25,8 @@
   :root{
     --bg-app:#0f121a; --bg-panel:#151924; --bg-elevated:#1b2030; --bg-elevated-2:#232a3d;
     --border:#2a3144; --border-soft:#222839; --text-primary:#e6e9f0; --text-secondary:#a6adbf;
-    --text-tertiary:#737b90; --accent:#6fa8ff; --accent-soft:rgba(111,168,255,.14);
+    --text-tertiary:#737b90; --accent:#6fa8ff; --accent-soft:rgba(111,168,255,.14); --accent-strong:#8bb8ff; --accent-on:#08201f;
+    --border-hover:color-mix(in srgb, var(--border) 70%, var(--text-tertiary) 30%);
     --level-error:#f0708a; --level-warn:#e8a94a;
     --font-ui:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     --font-mono:"SF Mono",SFMono-Regular,Consolas,"Liberation Mono",Menlo,monospace;
@@ -33,13 +34,32 @@
   *{box-sizing:border-box;}
   html,body{margin:0; height:100%; background:var(--bg-panel); color:var(--text-primary); font:13px/1.45 var(--font-ui);}
   body{display:flex; flex-direction:column;}
-  #chatHeader{flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:6px 8px; border-bottom:1px solid var(--border); background:var(--bg-app);}
-  #chatTitle{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:600;}
-  #sessionSelect{flex:1 1 auto; min-width:0; max-width:100%; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:3px 6px; font:inherit;}
-  .hbtn{flex:0 0 auto; height:26px; min-width:26px; padding:0 6px; border:1px solid transparent; border-radius:6px; background:transparent; color:var(--text-secondary); cursor:pointer; font:inherit;}
-  .hbtn:hover{background:var(--bg-elevated-2); color:var(--accent);}
-  .hbtn.on{color:var(--accent); border-color:var(--accent);}
-  .hbtn:disabled{opacity:.4; cursor:default;}
+  /* Title bar — the same look as philogg.html's #toolbar (--bg-panel, bottom
+     border) and, like the main window, frameless: it is the window's drag
+     handle (data-tauri-drag-region) and carries the window controls
+     (#chatWc, same shape as inject.js's #tauri-wc). */
+  #chatTitlebar{flex:0 0 auto; height:44px; display:flex; align-items:center; gap:6px; padding:0 8px 0 12px; background:var(--bg-panel); border-bottom:1px solid var(--border); user-select:none;}
+  html.mac #chatTitlebar{padding-left:78px;} /* native traffic lights sit top-left */
+  .brand-mark{display:inline-flex; align-items:center; justify-content:center; width:20px; height:20px; border-radius:5px; flex:0 0 auto;
+    background:linear-gradient(135deg, var(--accent), var(--accent-strong)); color:var(--accent-on);}
+  #chatTitle{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:650; font-size:13.5px; letter-spacing:.2px;}
+  #chatToolbar{flex:0 0 auto; display:flex; align-items:center; gap:6px; padding:6px 8px; border-bottom:1px solid var(--border); background:var(--bg-panel);}
+  #sessionSelect{flex:1 1 auto; min-width:0; height:28px; background:var(--bg-app); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:0 8px; font:12.5px var(--font-ui); cursor:pointer;}
+  #sessionSelect:disabled{opacity:.5; cursor:default;}
+  /* philogg.html's .toolbar-icon-btn, 1:1. */
+  .toolbar-icon-btn{display:flex; align-items:center; justify-content:center; width:28px; height:28px; flex:0 0 auto; padding:0;
+    background:var(--bg-elevated); color:var(--text-secondary); border:1px solid var(--border); border-radius:7px;
+    cursor:pointer; transition:background .12s, border-color .12s, color .12s;}
+  .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
+  .toolbar-icon-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
+  .toolbar-icon-btn.active{background:var(--accent-soft); border-color:var(--accent-strong); color:var(--accent-strong);}
+  /* inject.js's #tauri-wc, 1:1. */
+  #chatWc{display:flex; align-items:center; gap:2px; margin-left:4px; margin-right:-2px;}
+  #chatWc button{width:30px; height:30px; padding:0; border:0; border-radius:7px; display:flex; align-items:center; justify-content:center;
+    background:transparent; color:var(--text-secondary); cursor:pointer;}
+  #chatWc button:hover{background:var(--bg-elevated-2); color:var(--accent);}
+  #chatWc button[data-act="close"]:hover{background:var(--level-error); color:#fff;}
+  [data-tauri-drag-region]{cursor:default;}
   #chatHint{flex:0 0 auto; padding:5px 10px; font-size:12px; color:var(--level-warn); background:var(--bg-elevated); border-bottom:1px solid var(--border-soft);}
   #chatHint:empty{display:none;}
   #chatLog{flex:1 1 auto; overflow-y:auto; padding:10px;}
@@ -54,8 +74,9 @@
   .msg-status{margin-top:5px; font-size:12px; color:var(--level-warn);}
   .msg-status.error{color:var(--level-error);}
   .round-actions{margin-top:5px; display:flex; gap:6px; flex-wrap:wrap;}
-  .answer-opt{border:1px solid var(--accent); color:var(--accent); background:transparent; border-radius:12px; padding:2px 10px; cursor:pointer; font:inherit; font-size:12px;}
-  .answer-opt:hover{background:var(--accent-soft);}
+  /* philogg.html's .btn-mini-outline. */
+  .answer-opt{background:transparent; color:var(--text-secondary); border:1px solid var(--border); border-radius:6px; padding:5px 10px; font:11.5px var(--font-ui); cursor:pointer; transition:border-color .12s, color .12s;}
+  .answer-opt:hover{border-color:var(--accent); color:var(--accent-strong);}
   .undo-round{border:0; background:transparent; color:var(--text-tertiary); cursor:pointer; padding:0; font:inherit; font-size:11.5px; text-decoration:underline dotted;}
   .undo-round:hover:not(:disabled){color:var(--accent);}
   .undo-round:disabled{opacity:.5; cursor:default; text-decoration:none;}
@@ -66,24 +87,33 @@
   .ref-text{color:var(--text-secondary);}
   .busy-dots::after{content:"…"; animation:blink 1s infinite;}
   @keyframes blink{50%{opacity:.2;}}
-  #chatInputRow{flex:0 0 auto; display:flex; gap:6px; padding:8px; border-top:1px solid var(--border); background:var(--bg-app);}
-  #chatInput{flex:1 1 auto; resize:none; height:54px; background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border); border-radius:7px; padding:6px 8px; font:inherit;}
+  #chatInputRow{flex:0 0 auto; display:flex; align-items:flex-end; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--bg-panel);}
+  #chatInput{flex:1 1 auto; resize:none; height:54px; background:var(--bg-app); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font:12.5px/1.45 var(--font-ui);}
   #chatInput:focus{outline:none; border-color:var(--accent);}
-  #chatSend{flex:0 0 auto; width:64px; border:0; border-radius:7px; background:var(--accent); color:#fff; cursor:pointer; font:inherit; font-weight:600;}
-  #chatSend.stop{background:var(--level-error);}
+  /* philogg.html's .btn-mini (the primary button). */
+  #chatSend{flex:0 0 auto; min-width:64px; background:var(--accent); color:var(--accent-on); border:none; border-radius:6px; padding:8px 12px; font:650 12px var(--font-ui); cursor:pointer;}
+  #chatSend.stop{background:var(--level-error); color:#fff;}
   #chatSend:disabled{opacity:.5; cursor:default;}
 </style>
 </head>
 <body>
-  <div id="chatHeader">
-    <span id="chatTitle">Assistant</span>
+  <div id="chatTitlebar" data-tauri-drag-region>
+    <span class="brand-mark" data-tauri-drag-region><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/></svg></span>
+    <span id="chatTitle" data-tauri-drag-region>Assistant</span>
+    <button type="button" class="toolbar-icon-btn" id="btnOnTop" title="Always on top (over every program)"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2.5h4M7 2.5v4L4.5 9h7L9 6.5v-4M8 9v4.5"/></svg></button>
+    <button type="button" class="toolbar-icon-btn" id="btnDock" title="Dock into the main window"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M10 2.5v11"/></svg></button>
+    <button type="button" class="toolbar-icon-btn" id="btnChatSettings" title="Assistant settings"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg></button>
+    <div id="chatWc">
+      <button type="button" data-act="minimize" title="Minimize"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0" y="4.5" width="10" height="1" fill="currentColor"/></svg></button>
+      <button type="button" data-act="maximize" title="Maximize / Restore"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9"/></svg></button>
+      <button type="button" data-act="close" title="Close (the chat keeps running — the toolbar button brings it back)"><svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2" aria-hidden="true"><path d="M0.5 0.5l9 9M9.5 0.5l-9 9"/></svg></button>
+    </div>
+  </div>
+  <div id="chatToolbar">
     <select id="sessionSelect" title="Chat sessions"></select>
-    <button type="button" class="hbtn" id="btnNewSession" title="New chat">＋</button>
-    <button type="button" class="hbtn" id="btnRenameSession" title="Rename this chat">✎</button>
-    <button type="button" class="hbtn" id="btnDeleteSession" title="Delete this chat">🗑</button>
-    <button type="button" class="hbtn" id="btnOnTop" title="Always on top (over every program)">📌</button>
-    <button type="button" class="hbtn" id="btnDock" title="Dock into the main window">⇥</button>
-    <button type="button" class="hbtn" id="btnChatSettings" title="Assistant settings">⚙</button>
+    <button type="button" class="toolbar-icon-btn" id="btnNewSession" title="New chat"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg></button>
+    <button type="button" class="toolbar-icon-btn" id="btnRenameSession" title="Rename this chat"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10.5 3 13 5.5 6 12.5H3.5V10z"/></svg></button>
+    <button type="button" class="toolbar-icon-btn" id="btnDeleteSession" title="Delete this chat"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5"/></svg></button>
   </div>
   <div id="chatHint"></div>
   <div id="chatLog"><div id="chatEmpty">Ask about the loaded log — e.g.
@@ -119,9 +149,27 @@
         try { window.__TAURI_INTERNALS__.invoke("llm_view_to_main", { msg: msg }); } catch (e) { /* no host */ }
       },
       onMessage: function (fn) { window.philoggChatReceive = fn; },
+      windowAction: function (act) {
+        var cmd = { minimize: "window_minimize", maximize: "window_toggle_maximize", close: "window_close" }[act];
+        try { if (cmd) window.__TAURI_INTERNALS__.invoke(cmd); } catch (e) { /* no host */ }
+      },
     };
   }
   var transport = chatTransport();
+  var ICON_DOCK = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="2.5" width="12" height="11" rx="1.5"/><path d="M10 2.5v11"/></svg>';
+  var ICON_UNDOCK = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 2.5h4.5V7M13.5 2.5 8 8M11.5 9.5v3a1 1 0 0 1-1 1h-7a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1h3"/></svg>';
+
+  // Frameless own window: the title bar's window controls (the same
+  // commands the main window's injected #tauri-wc uses — they act on the
+  // calling window; close goes through its close request, which only hides
+  // the chat). macOS keeps its native traffic lights (?mac=1, see windows.rs).
+  var isMac = /[?&]mac=1\b/.test(location.search);
+  if (isMac) document.documentElement.classList.add("mac");
+  document.getElementById("chatWc").style.display = transport.windowAction && !isMac ? "" : "none";
+  document.getElementById("chatWc").addEventListener("click", function (ev) {
+    var btn = ev.target.closest("button[data-act]");
+    if (btn && transport.windowAction) transport.windowAction(btn.dataset.act);
+  });
 
   // ------------------------------------------------------------ state
   var snap = null;        // last snapshot
@@ -199,19 +247,23 @@
     // Controls the main window supports (snapshot.features) — older/newer
     // builds of the two halves stay compatible.
     var features = snap.features || [];
-    ["sessionSelect", "btnNewSession", "btnRenameSession", "btnDeleteSession"].forEach(function (id) {
-      el(id).style.display = features.indexOf("sessions") !== -1 ? "" : "none";
-    });
-    el("chatTitle").style.display = features.indexOf("sessions") !== -1 ? "none" : "";
-    el("chatTitle").textContent = snap.session ? snap.session.title : "Assistant";
+    var hasSessions = features.indexOf("sessions") !== -1;
+    el("chatToolbar").style.display = hasSessions ? "" : "none";
+    // With the session dropdown the title bar just names the window;
+    // without it, it names the one chat.
+    el("chatTitle").textContent = !hasSessions && snap.session ? snap.session.title : "Assistant";
     sessionSelect.disabled = !sessions.length || snap.running;
     el("btnRenameSession").disabled = !snap.session;
     el("btnDeleteSession").disabled = !snap.session || snap.running;
     el("btnNewSession").disabled = snap.running;
-    el("btnOnTop").classList.toggle("on", !!snap.alwaysOnTop);
+    el("btnOnTop").classList.toggle("active", !!snap.alwaysOnTop);
     el("btnOnTop").style.display = transport.mode === "window" ? "" : "none";
-    el("btnDock").textContent = transport.mode === "docked" ? "⇤" : "⇥";
-    el("btnDock").title = transport.mode === "docked" ? "Undock into its own window" : "Dock into the main window";
+    var docked = transport.mode === "docked";
+    if (el("btnDock").dataset.state !== (docked ? "undock" : "dock")) {
+      el("btnDock").dataset.state = docked ? "undock" : "dock";
+      el("btnDock").innerHTML = docked ? ICON_UNDOCK : ICON_DOCK;
+      el("btnDock").title = docked ? "Undock into its own window" : "Dock into the main window";
+    }
     el("btnDock").style.display = features.indexOf("dock") !== -1 && (transport.mode === "window" || transport.mode === "docked") ? "" : "none";
 
     var s = snap.session;

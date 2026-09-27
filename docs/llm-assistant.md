@@ -191,6 +191,16 @@ command `llm_chat_window(action, on)`, bridge `window.philogg.llmChatWindow`):
 created on first use from an `async` command (the precaution PiP takes
 against tauri-apps/wry#583), as an **owned** window (`parent` = main): it
 floats above PhiLogg and minimizes with it but doesn't cover other programs.
+Like the main window it is **frameless** (`decorations(false)`; macOS: overlay
+title bar with the native traffic lights, `chat.html?mac=1`): chat.html's
+own title bar (`#chatTitlebar`, `data-tauri-drag-region`) carries the same
+window controls as `inject.js`'s `#tauri-wc` (minimize / maximize / close via
+`window_minimize` / `window_toggle_maximize` / `window_close` — they act on the
+calling window, and close only hides the chat), and every header button is
+the main window's `.toolbar-icon-btn` with an SVG icon; Send is `.btn-mini`,
+answer buttons `.btn-mini-outline` (copied into chat.html, which can't share
+philogg.html's CSS). The snapshot's theme variables include `accent-on` and
+`border-hover` for them.
 "Always on top" (📌 in the chat) switches to global `set_always_on_top` and
 is remembered (`philogg-llm-chat-on-top`). The X only **hides** it
 (`CloseRequested` → `prevent_close`); the toolbar button (`#btnAssistant`,

@@ -37,9 +37,10 @@ pub fn base_url() -> &'static str {
     }
 }
 
-/// The LLM assistant's chat window page.
+/// The LLM assistant's chat window page. `?mac=1` tells it to leave room
+/// for the native traffic lights instead of drawing its own window controls.
 pub fn chat_url() -> String {
-    format!("{}app/chat.html", base_url())
+    format!("{}app/chat.html{}", base_url(), if cfg!(target_os = "macos") { "?mac=1" } else { "" })
 }
 
 pub fn app_url(query: Option<&str>) -> String {

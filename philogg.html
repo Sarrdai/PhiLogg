@@ -41414,7 +41414,7 @@ function llmUndoRound(roundId, force) {
 function llmThemeVars() {
   const cs = getComputedStyle(document.documentElement);
   const vars = {};
-  THEME_COLOR_KEYS.concat(["font-ui", "font-mono"]).forEach(k => {
+  THEME_COLOR_KEYS.concat(["accent-on", "border-hover", "font-ui", "font-mono"]).forEach(k => {
     const v = cs.getPropertyValue("--" + k).trim();
     if (v) vars["--" + k] = v;
   });

@@ -2,6 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: assistant chat window styled like the main app (2026-09-28, person-reported after the first desktop start: *"Passe Buttons und Window Style des Chatfensters an die Hauptanwendung an."*)**. See `docs/llm-assistant.md` → "Chat view".
+  - **Window**: frameless like the main window (macOS: overlay title bar with traffic lights); `chat.html` draws its own title bar — drag region, the main window's minimize/maximize/close buttons (close still only hides the chat).
+  - **Buttons**: emoji glyphs replaced by the main window's `.toolbar-icon-btn` with SVG icons; the session controls moved to their own toolbar row; Send, answer buttons, select and input use the main app's button/field styles; the snapshot's theme now also carries `accent-on`/`border-hover`.
+  - **Screenshot**: `docs/screenshots/10-assistant.png` regenerated (`docs/screenshots/generate.sh assistant`).
+  - **Tests**: new **Group 307**; Groups 304c/306c updated. Full suite **6759 passed, 0 failed**; desktop `npm run build` passes.
+
 - **feat: LLM assistant — a local LLM operates PhiLogg through a chat (desktop build) (2026-09-27, implements `docs/llm-assistant-plan.md` phases 1–6)**. See `docs/llm-assistant.md`.
   - **Phase 1 — tool registry**: `LLM_TOOLS`/`runLlmTool` in `philogg.html` — `get_overview`, `find_message_types` (message shapes with a per-placeholder value distribution and a ready-made extraction pattern), `create_filter`, `create_link`, `get_entries`, `get_value_stats`, `show_view` (incl. plot axes), `annotate` (bookmarks, notes that never overwrite the person's own). Results capped at ~1,500 tokens (`llmFitBudget`), argument problems come back as error text. Assistant-created nodes carry a ✦ in the tree (in-memory set, no node field). Tests: new **Group 302**.
   - **Phase 2 — Rust bridge**: new Tauri-free crate `desktop/src-tauri/llm` (`philogg-llm`): a small hand-written HTTP/1.1 + SSE client that only talks to `http://localhost|127.0.0.1|[::1]` (no DNS, no proxy, no redirects), Stop within ~200 ms via the socket read timeout; commands `llm_models`/`llm_chat`/`llm_cancel`, bridge `window.philogg.llmModels/llmChat/llmCancel`. Deviation from the plan: no `ureq` (see the plan's "Abweichungen"). Tests: `cargo test -p philogg-llm` (11, incl. a mock server streaming LM-Studio-shaped chunks).
