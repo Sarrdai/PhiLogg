@@ -19489,7 +19489,9 @@ function renderParallelChart(src, W, H) {
     });
     const brush = plotParallelBrushes.get(ax.colIndex);
     if (brush) {
-      const y0 = yPix(ax, brush[1]), y1 = yPix(ax, brush[0]);
+      // Clamped to the axis: an open range end (±Infinity, from the assistant) runs to the axis' end.
+      const clamp = v => Math.max(ax.min, Math.min(ax.max, v));
+      const y0 = yPix(ax, clamp(brush[1])), y1 = yPix(ax, clamp(brush[0]));
       parts.push('<rect class="plot-pc-brush" x="' + (ax.x - 6).toFixed(1) + '" y="' + y0.toFixed(1) + '" width="12" height="' + Math.max(1, y1 - y0).toFixed(1) + '"/>');
     }
     parts.push('<rect class="plot-pc-axis-hit" data-col="' + ax.colIndex + '" x="' + (ax.x - 8).toFixed(1) + '" y="' + top + '" width="16" height="' + plotH + '"/>');
@@ -41205,16 +41207,72 @@ function llmToolShowView(args) {
     };
     const p = args.plot;
     const cfg = node.plotConfig ? { ...node.plotConfig } : defaultPlotConfig();
-    if (p.type) cfg.type = p.type;
-    const x = colIdx(p.x);
-    if (x === null) return { error: "Unknown plot x column \"" + p.x + "\".", columns: ex.columns };
-    if (x !== undefined) cfg.xCol = x;
-    const ys = p.y == null ? [] : (Array.isArray(p.y) ? p.y : [p.y]).map(colIdx);
-    if (ys.some(y => y === null || y === undefined)) return { error: "Unknown plot y column.", columns: ex.columns };
-    if (ys.length) { cfg.yCols = ys; cfg.yColsMulti = ys; cfg.yColsInit = true; }
+    if (p.type !== undefined) {
+      if (!PLOT_CHART_TYPES.has(p.type)) return { error: "Unknown plot type \"" + p.type + "\". Use one of: " + [...PLOT_CHART_TYPES].join(", ") + "." };
+      cfg.type = p.type;
+    }
+    const list = v => (v == null ? [] : Array.isArray(v) ? v : [v]);
+    const one = (key, v) => {
+      const i = colIdx(v);
+      if (i === null) throw new Error("Unknown plot " + key + " column \"" + v + "\".");
+      return i;
+    };
+    let ranges = null;
+    try {
+      const x = one("x", p.x);
+      if (x !== undefined) cfg.xCol = x;
+      else if (cfg.type === "heatmap" && (cfg.xCol == null || cfg.xCol === INDEX_COL)) cfg.xCol = ELAPSED_COL;
+      const ys = list(p.y).map(v => one("y", v));
+      if (ys.length) { cfg.yCols = cfg.type === "scatter" || cfg.type === "3d" ? [ys[0]] : ys; cfg.yColsMulti = ys; cfg.yColsInit = true; }
+      const z = one("z", p.z);
+      if (z !== undefined) cfg.zCol = z;
+      if (p.color !== undefined) cfg.colorCol = p.color === null || p.color === "" || p.color === "none" ? null : one("color", p.color);
+      const cols = list(p.columns).map(v => one("columns", v));
+      if (cols.length) { cfg.multiCols = cols; cfg.multiColsInit = true; if (isArrayChartType(cfg.type) && p.array === undefined) cfg.arraySource = "columns"; }
+      if (p.array !== undefined) {
+        const a = one("array", p.array);
+        if (a !== undefined) { cfg.arrayCol = a; cfg.arraySource = "array"; }
+      }
+      if (p.ranges && typeof p.ranges === "object") {
+        ranges = new Map();
+        for (const [k, r] of Object.entries(p.ranges)) {
+          const lo = Array.isArray(r) && r[0] != null ? +r[0] : -Infinity, hi = Array.isArray(r) && r[1] != null ? +r[1] : Infinity;
+          if (Number.isNaN(lo) || Number.isNaN(hi)) throw new Error("Range for \"" + k + "\" must be [min, max] (null for open).");
+          ranges.set(one("ranges", k), [Math.min(lo, hi), Math.max(lo, hi)]);
+        }
+      }
+    } catch (err) {
+      return { error: err.message, columns: ex.columns };
+    }
+    if (Number.isInteger(p.row)) cfg.profileRow = p.row - 1;
+    if (p.colorMap !== undefined) {
+      if (!Object.prototype.hasOwnProperty.call(PLOT_COLOR_MAPS, p.colorMap)) return { error: "Unknown colorMap \"" + p.colorMap + "\". Use one of: " + Object.keys(PLOT_COLOR_MAPS).join(", ") + "." };
+      cfg.colorMap = p.colorMap;
+    }
     const clean = sanitizePlotConfig(cfg);
     node.plotConfig = clean;
-    out.plot = { type: clean.type, xCol: clean.xCol, yCols: clean.yCols };
+    render();
+    applyFhView(tab);
+    if (ranges && clean.type === "parallel") { plotParallelBrushes = ranges; renderPlotChart(); }
+    const name = i => (i == null ? null : (findExtractColumn(i) || { name: String(i) }).name);
+    const plot = { type: clean.type };
+    if (!isValueChartType(clean.type)) { plot.x = name(clean.xCol); plot.y = clean.yCols.map(name); }
+    if (clean.type === "3d") plot.z = name(clean.zCol);
+    if (clean.type === "heatmap") plot.x = name(clean.xCol);
+    if (["scatter", "3d", "parallel"].includes(clean.type) && clean.colorCol != null) plot.color = name(clean.colorCol);
+    if (isValueChartType(clean.type)) {
+      if (valueChartUsesArray()) plot.array = name(clean.arrayCol);
+      else plot.columns = clean.multiCols.map(name);
+      const src = valueChartSource();
+      plot.rows = src ? src.rows.length : 0;
+      if (clean.type === "profile" || clean.type === "radar") plot.row = profileRowPosition(plot.rows) + 1;
+      if (clean.type === "parallel" && plotParallelBrushes.size) {
+        plot.ranges = Object.fromEntries([...plotParallelBrushes].map(([k, r]) => [name(k), r]));
+        plot.rowsInRange = src && src.cols ? src.rows.filter(row => parallelRowInBrushes(row, src.cols)).length : 0;
+      }
+    }
+    out.plot = plot;
+    return out;
   }
   render();
   applyFhView(tab);
@@ -41311,14 +41369,26 @@ const LLM_TOOLS = [
   },
   {
     name: "show_view",
-    description: "Shows a node to the person: view log | filtered | table | plot | patterns. For plot, optionally plot = {type: line|scatter|bar, x: \"time\"|\"index\"|column, y: column or [columns]}.",
+    description: "Shows a node to the person: view log | filtered | table | plot | patterns. For plot, optionally plot = {type, ...}; columns are named by name, number, \"index\" or \"time\". " +
+      "line/bar: x + y (one or more columns). scatter: x + y + optional color. 3d: x + y + z + optional color. " +
+      "heatmap: x (default time) + either array (a column holding JSON arrays) or columns (same-unit columns); color = value. " +
+      "profile: array or columns, one row (row, 1-based, default last) against the rows selected in the table. " +
+      "radar: columns (3+, mixed units fine, each spoke on its own scale) + row. " +
+      "parallel: columns (2+, one axis each, one line per row) + optional color + ranges {column: [min, max]} (null = open end) to highlight the rows inside.",
     parameters: { type: "object", properties: {
       nodeId: { type: "string" },
       view: { type: "string", enum: ["log", "filtered", "table", "plot", "patterns"] },
       plot: { type: "object", properties: {
-        type: { type: "string", enum: ["line", "scatter", "bar"] },
+        type: { type: "string", enum: ["line", "bar", "scatter", "3d", "heatmap", "profile", "radar", "parallel"] },
         x: { type: "string" },
-        y: { type: "string" },
+        y: { type: "array", items: { type: "string" } },
+        z: { type: "string" },
+        color: { type: "string" },
+        colorMap: { type: "string", enum: Object.keys(PLOT_COLOR_MAPS) },
+        columns: { type: "array", items: { type: "string" } },
+        array: { type: "string" },
+        row: { type: "integer" },
+        ranges: { type: "object" },
       } },
     }, required: ["nodeId", "view"] },
     run: llmToolShowView,
@@ -41409,7 +41479,7 @@ const LLM_SYSTEM_PROMPT = [
   "1. Discover: get_overview, then find_message_types (use its query and the ready-made 'pattern'; its placeholder value lists tell you which values exist).",
   "2. If the request is ambiguous (which axis? which sensor? which event counts as 'done'?), ASK a short question instead of guessing — list the concrete options you found. Asking ends your turn; the person answers in the next message. When you ask, put each option on its own line starting with '- '.",
   "3. Build: create the filters/links; check the counts in each result and fix the pattern if it matched nothing or an error came back.",
-  "4. Show: show_view (table or plot) so the person sees the result.",
+  "4. Show: show_view (table or plot) so the person sees the result. Plot types: line/bar/scatter/3d for values over time or against each other; radar (one row against selected ones) and parallel (every row across several axes, ranges highlight rows) for several columns with different units; heatmap/profile for an array column or same-unit columns.",
   "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something.",
 ].join("\n");
 
