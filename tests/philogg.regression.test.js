@@ -247,12 +247,14 @@ async function withApp(run, opts = {}) {
       get extractRowsData() { return extractRowsData; },
       get patternsAnalysis() { return patternsAnalysis; },
       get extractColumns() { return extractColumns; },
+      get extractArrayColumns() { return extractArrayColumns; },
       get renamingNodeId() { return renamingNodeId; },
       get plotConfig() { return plotConfig; },
       get PLOT_COLOR_MAPS() { return PLOT_COLOR_MAPS; },
       get plotZoom() { return plotZoom; },
       set plotZoom(v) { plotZoom = v; },
       get plotLastRender() { return plotLastRender; },
+      get plotLastSeries() { return plotLastSeries; },
       get plot3dView() { return plot3dView; },
       set plot3dView(v) { plot3dView = v; },
       get plot3dLastRender() { return plot3dLastRender; },
@@ -33382,6 +33384,296 @@ await withApp(async (w, d, T) => {
   assert(saveDialog.classList.contains("hidden") && (await w.listFilterLibrary()).length === 2, "Cancel adds nothing");
 }, { indexedDB: new IDBFactory() });
 
+/* GROUP 297 — JSON Lines format mode (FEATURE_BACKLOG.md #82): a format
+   with mode "json" reads each "{"-line as one object; time/level/message
+   come from configurable keys, custom columns from paths (nested dots,
+   [n] indexes, ["a.b"] escapes, a literal dotted key winning first);
+   objects/arrays land as JSON text; the worker source parses identically. */
+group(297);
+const JSON_297_FMT = {
+  id: "fmt-json297", name: "JSON 297", mode: "json", builtin: false, edited: false, createdAt: 0,
+  tsKey: "@t", levelKey: "@l", messageKey: "@m", tsFormat: "",
+  columnDefs: [
+    { key: "ctx_userId", kind: "custom", label: "ctx.userId", path: "ctx.userId" },
+    { key: "ctx_req_id", kind: "custom", label: "ctx.req.id", path: "ctx.req.id" },
+    { key: "tags", kind: "custom", label: "tags", path: "tags" },
+    { key: "tags_0", kind: "custom", label: "tags[0]", path: "tags[0]" },
+    { key: "http_status", kind: "custom", label: "http.status", path: "http.status" },
+    { key: "odd", kind: "custom", label: '["a.b"].c', path: '["a.b"].c' },
+  ],
+};
+const JSON_297_TEXT = [
+  '{"@t":"2026-09-27T10:15:02.113","@l":"Error","@m":"Order failed","ctx":{"userId":4711,"req":{"id":"r-93a"}},"tags":["db","retry"],"http.status":500,"a.b":{"c":true}}',
+  "   at Orders.Submit() line 42",
+  '{"@t":1790000000,"@l":"Information","@m":"Retry ok","ctx":{"userId":12},"http":{"status":200}}',
+  "{not json at all",
+].join("\n") + "\n";
+await withApp(async (w, d, T) => {
+  section("297a. JSON path parsing/resolution and column keys");
+  const segs = w.parseJsonPath('ctx.items[1]["a.b"][-1]');
+  assert(JSON.stringify(segs) === JSON.stringify([{ name: "ctx" }, { name: "items" }, { index: 1 }, { name: "a.b", quoted: true }, { index: -1 }]), "segments: " + JSON.stringify(segs));
+  const obj = { ctx: { items: [0, { "a.b": [1, 2, 3] }] }, "http.status": 404, http: { status: 200 }, "x.y": { z: 1 } };
+  const get = p => w.resolveJsonPath(obj, w.parseJsonPath(p), 0);
+  assert(get('ctx.items[1]["a.b"][-1]') === 3, "nested dots, index, quoted key, negative index");
+  assert(get("http.status") === 404, "a literal dotted key wins over the nested path");
+  assert(get("x.y.z") === 1, "a literal dotted prefix is found, the rest resolved below it");
+  assert(get("ctx.nope") === undefined && get("ctx.items[5]") === undefined && get("ctx[0]") === undefined, "missing paths resolve to undefined");
+  assert(w.jsonValueText([1, "a"]) === '[1,"a"]' && w.jsonValueText(null) === "" && w.jsonValueText(false) === "false", "values as text");
+  const taken = new Set();
+  assert(w.jsonColumnKey("ctx.req.id", taken) === "ctx_req_id" && w.jsonColumnKey("ctx_req.id", taken) === "ctx_req_id_2", "sanitized, de-duplicated keys");
+  assert(w.jsonColumnKey("message", taken) === "message_" && w.jsonColumnKey('["0x"]', taken) === "f_0x", "reserved and digit-leading keys");
+  assert(w.parseJsonTimestamp(1790000000, null) === 1790000000000 && w.parseJsonTimestamp(1790000000123, null) === 1790000000123, "epoch seconds and ms");
+  assert(w.parseJsonTimestamp("1790000000", null) === 1790000000000, "an all-digit string is epoch too");
+});
+
+await withApp(async (w, d, T) => {
+  section("297b. A file under a JSON format: entries, continuation line, unparsable line");
+  await waitForFormatConfig(T);
+  T.state.logFormats.push(JSON.parse(JSON.stringify(JSON_297_FMT)));
+  T.state.formatRules.push({ id: "rule-json297", glob: "*.jsonl", formatId: JSON_297_FMT.id, order: 0, createdAt: 0 });
+  const f = await w.addFile("app.jsonl", JSON_297_TEXT, () => {});
+  assert(f.formatId === JSON_297_FMT.id && f.entries.length === 3, "3 entries, got " + f.entries.length);
+  const [a, b, c] = f.entries;
+  assert(a.level === "ERROR" && a.ts === new Date(2026, 8, 27, 10, 15, 2, 113).getTime(), "level upper-cased, ISO time parsed");
+  assert(a.message === "Order failed\n   at Orders.Submit() line 42", "a non-JSON line continues the entry's message, got " + JSON.stringify(a.message));
+  assert(a.fields.ctx_userId === "4711" && a.fields.ctx_req_id === "r-93a" && a.fields.tags === '["db","retry"]' && a.fields.tags_0 === "db", "nested, array and index columns");
+  assert(a.fields.http_status === "500" && b.fields.http_status === "200", "literal dotted key first, nested path otherwise");
+  assert(a.fields.odd === "true", "an escaped dotted key segment");
+  assert(b.ts === 1790000000000 && w.levelBucket(b.level, b.formatId) === "INFO" && !("ctx_req_id" in b.fields), "epoch time, INFORMATION -> INFO, a missing path adds no field");
+  assert(c.message === "{not json at all" && c.level === "INFO" && isNaN(c.ts), "an unparsable object line keeps the whole line as its message");
+  assert(w.entryColumnValue(a, "ctx_req_id") === "r-93a", "custom columns read through entryColumnValue");
+  assert(w.nativeFormatSpec(JSON_297_FMT) === null, "a JSON format never goes to the native parser");
+});
+
+await withApp(async (w, d, T) => {
+  section("297c. The worker source parses a JSON format identically");
+  const posted = [];
+  const sandboxSelf = {};
+  const ctx = vm.createContext({ self: sandboxSelf, postMessage: msg => posted.push(msg) });
+  vm.runInContext(w.buildLogParseWorkerSrc(), ctx);
+  sandboxSelf.onmessage({ data: { text: JSON_297_TEXT, fmt: JSON_297_FMT } });
+  const entries = posted.filter(m => m.type === "batch").flatMap(m => w.decodeNativeBatch(m.buf, m.strings).entries);
+  assert(entries.length === 3, "3 entries from the worker, got " + entries.length);
+  assert(entries[0].message.startsWith("Order failed\n") && entries[0].fields.ctx_req_id === "r-93a" && entries[0].fields.tags === '["db","retry"]', "fields survive the binary batch");
+  assert(entries[1].ts === 1790000000000 && entries[2].message === "{not json at all", "timestamps and fallback lines match the main-thread parse");
+});
+
+await withApp(async (w, d, T) => {
+  section("297d. Format dialog: JSON examples switch to JSON Lines, keys guessed, columns picked, saved, reopened, exported");
+  await waitForFormatConfig(T);
+  const change = elx => elx.dispatchEvent(new w.Event("change", { bubbles: true }));
+  w.openFormatEditDialog(null);
+  w.fwzAppendText(JSON_297_TEXT);
+  assert(d.querySelector("#formatEditModeJson").classList.contains("active"), "JSON example lines switch a new format to JSON Lines");
+  assert(isVisible(d.querySelector("#fwzJsonCols"), w) && !isVisible(d.querySelector("#fwzRegexField"), w) && !isVisible(d.querySelector("#fwzRegexCols"), w) && !isVisible(d.querySelector("#fwzClearMarks"), w),
+    "the key panel replaces the marked columns, the regex field and the marking tools");
+  assert(d.querySelector("#fwzJsonTsKey").value === "@t" && d.querySelector("#fwzJsonLevelKey").value === "@l" && d.querySelector("#fwzJsonMessageKey").value === "@m", "Serilog compact keys guessed");
+  const paths = [...d.querySelectorAll("#fwzJsonKeys input")].map(cb => cb.dataset.path);
+  assert(JSON.stringify(paths) === JSON.stringify(["ctx.userId", "ctx.req.id", "tags", '["http.status"]', '["a.b"].c', "http.status"]), "detected leaf paths, mapped keys left out: " + JSON.stringify(paths));
+  const cb = p => [...d.querySelectorAll("#fwzJsonKeys input")].find(x => x.dataset.path === p);
+  cb('["a.b"].c').checked = false;
+  change(cb('["a.b"].c'));
+  d.querySelector("#fwzJsonPathNew").value = "tags[0]";
+  fireClick(d.querySelector("#fwzJsonPathAddBtn"), w);
+  const head = [...d.querySelectorAll("#fwzPreview .fwz-prev-head span")].map(x => x.textContent);
+  assert(head.includes("tags[0]") && !head.includes('["a.b"].c') && head.includes("ctx.req.id"), "the preview shows the picked columns: " + head.join(","));
+  const firstRow = d.querySelectorAll("#fwzPreview .fwz-prev-row:not(.fwz-prev-head)")[0];
+  assert(firstRow && firstRow.textContent.includes("r-93a") && firstRow.textContent.includes("Order failed"), "the preview parses the examples");
+  d.querySelector("#formatEditName").value = "Serilog JSON";
+  await w.saveFormatEdit();
+  const fmt = T.state.logFormats.find(f => f.name === "Serilog JSON");
+  assert(fmt && fmt.mode === "json" && fmt.tsKey === "@t" && fmt.levelKey === "@l" && fmt.messageKey === "@m" && fmt.regex === "", "saved as a JSON format");
+  assert(fmt.columnDefs.map(c => c.path).join(",") === 'ctx.userId,ctx.req.id,tags,["http.status"],http.status,tags[0]', "column paths saved: " + fmt.columnDefs.map(c => c.path).join(","));
+  assert(fmt.columnDefs.every(c => /^[A-Za-z_][A-Za-z0-9_]*$/.test(c.key)) && new Set(fmt.columnDefs.map(c => c.key)).size === fmt.columnDefs.length, "keys are unique identifiers");
+  assert(fmt.sampleSetup && fmt.sampleSetup.lines.length === 4 && fmt.levels.some(l => l.name === "ERROR"), "examples and levels saved");
+  const keyBefore = fmt.columnDefs.find(c => c.path === "tags[0]").key;
+
+  w.openFormatEditDialog(fmt.id);
+  assert(d.querySelector("#formatEditModeJson").classList.contains("active") && d.querySelector("#fwzJsonTsKey").value === "@t", "Edit reopens the JSON kind with its keys");
+  assert(!cb('["a.b"].c').checked && cb("tags[0]").checked, "unchecked stays unchecked, added path stays checked");
+  await w.saveFormatEdit();
+  assert(T.state.logFormats.find(f => f.id === fmt.id).columnDefs.find(c => c.path === "tags[0]").key === keyBefore, "column keys stay stable across edits");
+
+  const exported = w.serializeLogFormatExport(fmt.id);
+  const parsed = w.parseLogFormatExport(JSON.stringify(exported));
+  assert(parsed && !parsed.error && parsed.logFormat.mode === "json" && parsed.logFormat.tsKey === "@t" && parsed.logFormat.columnDefs.some(c => c.path === "tags[0]"), "export/import carries the JSON keys and paths");
+
+  T.state.formatRules.push({ id: "rule-297d", glob: "*.jsonl", formatId: fmt.id, order: 0, createdAt: 0 });
+  const f = await w.addFile("svc.jsonl", JSON_297_TEXT, () => {});
+  const k = fmt.columnDefs.find(c => c.path === "ctx.req.id").key;
+  assert(f.entries[0].fields[k] === "r-93a", "a file under the saved format fills the columns");
+  T.state.activeId = f.id;
+  w.render();
+  const cell = d.querySelector('#tableBody [data-col="' + k + '"]');
+  assert(cell && cell.textContent === "r-93a", "the column shows in the log table");
+});
+
+/* GROUP 298 — Extraction on a column-restricted pattern and array columns:
+   a [*] pattern restricted to a JSON Lines column tabulates that column;
+   a column of JSON arrays switches between Joined / Per index / Aggregate /
+   Explode (header toggle + context menu), persisted as node.arrayViews. */
+group(298);
+const ARR_298_FMT = {
+  id: "fmt-json298", name: "JSON 298", mode: "json", builtin: false, edited: false, createdAt: 0,
+  tsKey: "t", levelKey: "l", messageKey: "m", tsFormat: "",
+  columnDefs: [
+    { key: "motor", kind: "custom", label: "motor", path: "motor" },
+    { key: "tags", kind: "custom", label: "tags", path: "tags" },
+    { key: "user", kind: "custom", label: "ctx.user", path: "ctx.user" },
+  ],
+};
+const ARR_298_TEXT = [
+  '{"t":1790000000000,"l":"INFO","m":"cycle","motor":[1.2,1.3,1.1,1.4],"tags":["a"],"ctx":{"user":7}}',
+  '{"t":1790000000250,"l":"INFO","m":"cycle","motor":[1.25,1.9,1.12,1.41],"tags":["a","b"],"ctx":{"user":8}}',
+  '{"t":1790000000500,"l":"WARN","m":"cycle","motor":[1.22,2.6,1.09],"tags":[],"ctx":{"user":9}}',
+].join("\n") + "\n";
+async function setup298(w, T) {
+  await waitForFormatConfig(T);
+  T.state.logFormats.push(JSON.parse(JSON.stringify(ARR_298_FMT)));
+  T.state.formatRules.push({ id: "rule-298", glob: "*.jsonl", formatId: ARR_298_FMT.id, order: 0, createdAt: 0 });
+  return await w.addFile("motor.jsonl", ARR_298_TEXT, () => {});
+}
+await withApp(async (w, d, T) => {
+  section("298a. A pattern restricted to a column is extracted from that column");
+  const f = await setup298(w, T);
+  const node = w.createFilterNode(f.id, "text", "[*:int]", false, null, false, ["user"]);
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  assert(T.extractRowsData.length === 3 && T.extractRowsData.map(r => r.values[0]).join(",") === "7,8,9", "values come from ctx.user, got " + T.extractRowsData.map(r => r.values[0]).join(","));
+  assert(T.extractArrayColumns.length === 0, "a scalar column is no array column");
+});
+
+await withApp(async (w, d, T) => {
+  section("298b. Array column: Joined default, then Per index / Aggregate / Explode via the header toggle and the context menu");
+  const f = await setup298(w, T);
+  const node = w.createFilterNode(f.id, "text", "[*]", false, null, false, ["motor"]);
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  assert(T.extractArrayColumns.length === 1 && T.extractArrayColumns[0].maxLen === 4, "the motor column is detected as an array column");
+  assert(T.extractRowsData[0].values[0] === "1.2, 1.3, 1.1, 1.4", "Joined is the default view, got " + T.extractRowsData[0].values[0]);
+  assert(JSON.stringify(T.extractRowsData[2].arrays[0]) === "[1.22,2.6,1.09]", "rows carry the parsed array");
+
+  const pick = mode => {
+    const btn = d.querySelector('#extractHead .extract-array-btn[data-array-col="0"]');
+    assert(btn, "the header shows the array toggle");
+    fireClick(btn, w);
+    const menu = d.querySelector("#extractContextMenu");
+    assert(isVisible(menu, w) && !isVisible(d.querySelector("#ctxRenameColumn"), w) && !isVisible(d.querySelector("#ctxExportCsv"), w), "the toggle opens only the array items of the context menu");
+    fireClick(menu.querySelector('.ctx-array-view[data-array-mode="' + mode + '"]'), w);
+  };
+  pick("index");
+  let names = T.extractColumns.map(c => c.name);
+  assert(names.join(",") === "Index,t (ms),value[0],value[1],value[2],value[3]", "Per index: one column per element, got " + names.join(","));
+  const c1 = T.extractColumns.find(c => c.name === "value[1]");
+  assert(c1.type === "float" && c1.colIndex < -1000 && w.isPlottableType(c1.type), "element columns are numeric, plottable, with a derived colIndex");
+  assert(T.extractRowsData.map(r => r.values[c1.colIndex]).join(",") === "1.3,1.9,2.6", "element values per row");
+  assert(T.extractRowsData[2].values[T.extractColumns.find(c => c.name === "value[3]").colIndex] === "", "a shorter array leaves the cell empty");
+  assert(T.extractRowsData[0].values.length === 1, "row.values keeps its dense length");
+  assert(JSON.stringify(node.arrayViews) === '{"0":"index"}', "stored on the node");
+
+  // The context menu on a derived column's header offers the same items.
+  d.querySelector('#extractHead th[data-col="' + c1.colIndex + '"]').dispatchEvent(new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: 10, clientY: 10 }));
+  const menu = d.querySelector("#extractContextMenu");
+  assert(!menu.querySelector('.ctx-array-view[data-array-mode="aggregate"]').classList.contains("hidden") && menu.querySelector('.ctx-array-view[data-array-mode="index"]').classList.contains("active"), "right-click on an element column shows the array views, current one active");
+  fireClick(menu.querySelector('.ctx-array-view[data-array-mode="aggregate"]'), w);
+  names = T.extractColumns.map(c => c.name);
+  assert(names.join(",") === "Index,t (ms),value.len,value.min,value.max,value.avg,value.sum", "Aggregate columns, got " + names.join(","));
+  const val = (name, r) => T.extractRowsData[r].values[T.extractColumns.find(c => c.name === name).colIndex];
+  assert(val("value.len", 2) === "3" && val("value.max", 1) === "1.9" && val("value.min", 2) === "1.09", "aggregates per row");
+
+  pick("explode");
+  assert(T.extractRowsData.length === 11, "Explode: one row per element (4+4+3), got " + T.extractRowsData.length);
+  names = T.extractColumns.map(c => c.name);
+  assert(names.join(",") === "Index,t (ms),value,value #", "the element column plus its element index, got " + names.join(","));
+  const idxCol = T.extractColumns.find(c => c.name === "value #").colIndex;
+  const r5 = T.extractRowsData[5];
+  assert(r5.entry === f.entries[1] && r5.values[0] === "1.9" && r5.values[idxCol] === "1" && r5.values[-1] === "250", "an exploded row keeps its entry, t(ms) and element index");
+  assert(T.extractColumns.find(c => c.colIndex === 0).type === "float", "the exploded column is numeric");
+
+  pick("joined");
+  assert(!node.arrayViews && T.extractRowsData.length === 3, "back to Joined removes the stored view");
+});
+
+await withApp(async (w, d, T) => {
+  section("298c. arrayViews persistence: clone, filter export/import, session cache; sanitizing");
+  const f = await setup298(w, T);
+  const node = w.createFilterNode(f.id, "text", "[*]", false, null, false, ["motor"]);
+  node.arrayViews = { 0: "index" };
+  const clone = w.cloneSubtree(node.id, f.id);
+  assert(clone && JSON.stringify(clone.arrayViews) === '{"0":"index"}' && clone.arrayViews !== node.arrayViews, "cloneSubtree copies arrayViews");
+  const branch = w.serializeFilterBranch(node.id, false);
+  assert(JSON.stringify(branch.roots[0].arrayViews) === '{"0":"index"}', "the filter export carries arrayViews");
+  const cached = w.serializeFilterTreeForCache(f);
+  assert(JSON.stringify(cached).includes('"arrayViews":{"0":"index"}'), "the session cache carries arrayViews");
+  assert(JSON.stringify(w.sanitizeArrayViews({ 0: "explode", 1: "explode", 2: "bogus", x: "index", 3: "joined", 4: "aggregate" })) === '{"0":"explode","4":"aggregate"}', "sanitizing keeps valid modes and one explode");
+  T.state.activeId = f.id;
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, activeRef: branch.activeRef, roots: branch.roots });
+  const before = f.children.length;
+  w.importPhiloggJsonText(json);
+  const imported = f.children.length > before ? T.state.nodes[f.children[f.children.length - 1]] : null;
+  assert(imported && JSON.stringify(imported.arrayViews) === '{"0":"index"}', "importing the filter file restores arrayViews");
+});
+
+/* GROUP 299 — Plot tab: Heatmap (X = a column, Y = element index, color =
+   value) and Profile (X = element index, Y = value for one row + the Table
+   tab's selected rows as overlays) for an array column; per-index element
+   columns plot as ordinary Line series. */
+group(299);
+await withApp(async (w, d, T) => {
+  section("299a. Heatmap and Profile chart types over an array column");
+  const f = await setup298(w, T);
+  const node = w.createFilterNode(f.id, "text", "[*]", false, null, false, ["motor"]);
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+  assert(d.querySelectorAll(".plot-type-btn").length === 6, "six chart types offered");
+
+  fireClick(d.querySelector('.plot-type-btn[data-type="heatmap"]'), w);
+  assert(T.plotConfig.type === "heatmap" && T.plotConfig.arrayCol === 0, "Heatmap picks the array column");
+  assert(d.querySelector("#plotArraySelect") && d.querySelector("#plotXSelect") && d.querySelector("#plotColorMapSelect"), "array, X and colormap controls");
+  assert(!d.querySelector("#plotYList") && !d.querySelector("#plotXMin"), "no Y list / range inputs");
+  const cells = d.querySelectorAll("#plotSvg .plot-heat-cell");
+  assert(cells.length === 11, "one cell per (row, element) with a value, got " + cells.length);
+  const hot = [...cells].find(c => c.querySelector("title").textContent.startsWith("value[1] = 2.6"));
+  assert(hot && hot.getAttribute("fill") === w.plotColorScale(1, T.plotConfig.colorMap), "the maximum gets the top of the colormap");
+  assert(d.querySelector("#plotSvg .plot-axis-title").textContent === "t (ms)", "X defaults to t(ms)");
+  fireClick(hot, w);
+  assert(T.fhActiveTab === "table", "clicking a cell reveals its row in the Table tab");
+  w.applyFhView("plot");
+
+  fireClick(d.querySelector('.plot-type-btn[data-type="profile"]'), w);
+  const slider = d.querySelector("#plotProfileRow");
+  assert(slider && slider.max === "2" && slider.value === "2", "Profile: a row slider, starting on the last row");
+  let marks = d.querySelectorAll("#plotSvg .plot-mark");
+  assert(marks.length === 3 && marks[0].getAttribute("data-row") === "2", "the last row's 3 elements, got " + marks.length);
+  T.state.tableSelection = null; // the heatmap click above selected a table row
+  slider.value = "0";
+  slider.dispatchEvent(new w.Event("input", { bubbles: true }));
+  marks = d.querySelectorAll("#plotSvg .plot-mark");
+  assert(T.plotConfig.profileRow === 0 && marks.length === 4 && marks[0].getAttribute("data-row") === "0", "sliding shows another row");
+  assert(d.querySelector("#plotProfileRowLabel").textContent === "1 of 3", "the label follows");
+  // Rows selected in the Table tab are overlaid.
+  T.state.tableSelection = new Set(["1,0", "2,0"]);
+  w.renderPlotChart();
+  marks = d.querySelectorAll("#plotSvg .plot-mark");
+  assert(marks.length === 11, "main row + two selected rows as overlays, got " + marks.length);
+  assert(JSON.stringify(w.sanitizePlotConfig({ type: "profile", arrayCol: 0, profileRow: 1 })).includes('"type":"profile","xCol":null') && w.sanitizePlotConfig({ type: "heatmap", arrayCol: -3 }).arrayCol === null, "sanitizing keeps the new fields valid");
+
+  // Per index: element columns are ordinary numeric Line series.
+  node.arrayViews = { 0: "index" };
+  fireClick(d.querySelector('.plot-type-btn[data-type="line"]'), w);
+  w.renderExtractTable(node);
+  const c1 = T.extractColumns.find(c => c.name === "value[1]");
+  const cb = d.querySelector('#plotYList input[data-col="' + c1.colIndex + '"]');
+  assert(cb, "element columns are offered as Y series");
+  fireClick(cb, w);
+  cb.checked = true;
+  cb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(T.plotLastSeries.some(s => s.col === c1.colIndex && s.pts.length === 3), "value[1] plots over time");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -37725,4 +38017,12 @@ process.exitCode = failed ? 1 : 0;
       adding directly; the template download is gone).
    Group 296 — same session: filter library preset export/import through
       the prefilled Save-to-library dialog, which also gained the icon pick.
+   Group 297 — 2026-09-27 (person-requested, FEATURE_BACKLOG.md #82): JSON
+      Lines format mode — path syntax, literal dotted keys, epoch/ISO time,
+      continuation/fallback lines, worker parity.
+   Group 298 — same session: extraction on a column-restricted pattern and
+      array columns (Joined / Per index / Aggregate / Explode, header toggle
+      + context menu, arrayViews persistence).
+   Group 299 — same session: Plot tab Heatmap + Profile chart types for
+      array columns, element columns as Line series.
    ============================================================ */

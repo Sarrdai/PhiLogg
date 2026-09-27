@@ -151,7 +151,11 @@ deployments possible:
 - **Value extraction** — turn a pattern like `x=[*:float] y=[*:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter/3D scatter, zoom/pan/rotate, click a point to
-  jump to its log entry). `float`/`int` placeholders can also carry an inline condition —
+  jump to its log entry). A pattern restricted to a column tabulates that
+  column; a column of **JSON arrays** can be shown joined, as one column per
+  element, as aggregates (len/min/max/avg/sum) or as one row per element,
+  and plotted as a **Heatmap** (element × time → color) or a **Profile**
+  (one row's array, with other rows overlaid). `float`/`int` placeholders can also carry an inline condition —
   `[*:float>=10]`, `[*:int<20,>10]` for a range, or `[*:float|>=10]`
   to compare against the absolute value — so a pattern matches/extracts only
   the entries whose value actually satisfies it.
@@ -316,6 +320,11 @@ deployments possible:
   what the level quick-filter bar shows for files using it; anything else
   falls into OTHER. Levels can also be matched by a numeric code instead of
   text (e.g. syslog severity), mapped to whichever names/colors you choose.
+  **JSON Lines** (structured logging — Serilog, `JsonConsoleFormatter`,
+  structlog, pino, …): paste a few lines and the keys are detected; pick
+  which ones hold time, level and message, and which paths become columns —
+  nested keys as `ctx.req.id`, array elements as `tags[0]`, keys containing
+  a dot as `["http.status"]`.
   A **Meta** format mode combines several of your own formats into one:
   point it at an ordered list of target formats and a file matching it gets
   split by grammar and auto-merged (see "A merged file shows its 'Sources'"
@@ -389,7 +398,9 @@ to a format with a glob rule (e.g. `app-*.log`), right in the same dialog or
 in the rule list. Time and Level are the only two mandatory columns —
 Thread/Location/Method/Message are each individually optional per format,
 and any other named regex group (`(?<name>...)`) becomes a **custom
-column** of its own, in whatever order you arrange the format's columns. Filters, sorting,
+column** of its own, in whatever order you arrange the format's columns.
+**JSON Lines** files (one JSON object per line) get a format kind of their
+own, with nested keys and array elements addressable by path. Filters, sorting,
 and export all work the same regardless of which format parsed a given file
 or which columns it defines.
 

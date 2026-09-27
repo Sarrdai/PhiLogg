@@ -858,7 +858,7 @@ The one place a log format is defined. Settings → Log Formats → **"+ Add for
 
 **Top row**:
 - **Name**.
-- **Kind** toggle: **Log format** (`formatEditMode = "regex"`) or **Meta (combines formats)**. Meta swaps the whole body below for the ordered target-format list (`#formatEditMetaField`, same picker as before) — a meta-format has no examples, columns, levels, or regex of its own.
+- **Kind** toggle: **Log format** (`formatEditMode = "regex"`), **JSON Lines** (`"json"`, see "JSON Lines kind" below) or **Meta (combines formats)**. Meta swaps the whole body below for the ordered target-format list (`#formatEditMetaField`, same picker as before) — a meta-format has no examples, columns, levels, or regex of its own.
 - **Use for files matching** (`#formatEditRuleGlob`, optional): on Save, a non-empty glob adds an ordinary filename rule for this format, appended **last** (`order` = max + 1, since the first matching rule wins), unless the same glob already points at this format. The field only ever *adds*. Reordering, editing, and removing rules stays in Settings → Filename rules, and the dialog lists the rules already using this format underneath (`renderFormatRuleInfo`). A file dropped or opened as examples pre-fills the still-empty field from its name (`fwzSuggestGlob`: `app-2026-09-23.log` → `app-*.log` — digit runs become `*`, and `*`s joined only by separators collapse). Nothing is saved on Cancel.
 
 **Body** (ordinary format): the sidebar holds **Columns** (+ "Show Message column") and **Log levels**. The main area holds the example lines, the **Regex** and **Timestamp format** fields, a status line, and the table **Preview**.
@@ -958,6 +958,18 @@ Regression-tested: **Group 261**:
 - **261h**: default-format-shaped examples (person-reported) — the suggestion claims the path as Location, doesn't pin one line's file, and matches every header line; a multi-line quoted message still starts its own entry, both with the suggestion and with hand marks (optional closing quote), and its closing quote is dropped in the preview, a real parse, and the sandboxed worker source.
 - **261g**: in edit mode, new examples stay on the format's own regex (no automatic suggestion, a no-match warning, the timestamp format untouched), while a new format still gets the suggestion; Re-suggest's warning, "Keep current", confirm (marks dropped, suggestion + timestamp format in place, preview following), and a single Undo reverting it.
 - **Also**: Groups 70e/70j/116d/117d/234a/260b/260c were rewritten for the dialog (see TEST PROVENANCE).
+
+### JSON Lines kind
+
+The same dialog defines a `mode: "json"` format (parsing: `PROJECT.md` → "JSON Lines formats"). The example lines, the level list (auto-filled from the parsed level values by the same `fwzSyncLevels`), the timestamp-format field and the table preview are shared with "Log format"; what changes:
+
+- **Keys panel** (`#fwzJsonCols`) replaces the marked-column list: three selects — **Time**, **Level**, **Message** (`#fwzJsonTsKey`/`…LevelKey`/`…MessageKey`) — and one checkbox row per detected leaf path (`detectJsonKeys`: nested objects walked, arrays and scalars are leaves; each row shows its types and "n/N" objects it occurs in, a sample as tooltip). Checked paths other than the three mapped keys become columns. A path typed into `#fwzJsonPathNew` (e.g. `items[0].sku`) is added checked even if no example has it. Keys containing `.`/`[`/quotes are listed bracket-quoted (`["http.status"]`, `jsonPathJoin`).
+- **Guessing**: until the person changes a select or a checkbox (`fwz.json.touched`), the three keys are guessed by name (`JSON_TS_KEY_NAMES` etc.: Serilog `@t/@l/@m`, `@timestamp`, `timestamp`/`time`/`ts`, `level`/`severity`, `message`/`msg`, …) and every other path is checked; afterwards newly seen paths are only added, unchecked. Editing a saved format starts "touched", with its own paths.
+- **Automatic switch**: the first examples of a NEW format that are JSON objects (`fwzLinesLookLikeJson`) switch the kind to JSON Lines, with a notice.
+- Hidden in this kind: the Regex field (`#fwzRegexField`), marking (the sample's mouseup is a no-op) and Re-suggest/Undo/Redo/Clear marks. The timestamp field may stay empty (ISO 8601 or epoch numbers).
+- **Save** requires a Time key and at least one JSON object among the examples (no Level key required — Serilog compact omits `@l` for Information, which then parses as INFO). Column keys: a saved column keeps its `key` across edits (filters restricted to a column refer to it by key); a new one gets `jsonColumnKey(path)`. `sampleSetup` stores the lines with no marks.
+
+Tested: GROUP 297d.
 
 ## General "don't jump" scroll anchoring + auto-reveal Filtered
 
