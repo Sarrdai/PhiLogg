@@ -115,7 +115,7 @@
        (room for exactly one mark) is just the pre-JS fallback. */
     --color-mark-w:3px;
     /* Syntax-highlight colors for embedded XML/JSON fragments in the entry
-       detail message (see #detailFormatToggle / formatMessageWithHighlight
+       detail message (see #detailViewTabs' Pretty / formatMessageWithHighlight
        in the Syntax highlight script section, and SYNTAX_COLOR_KEYS). Fixed
        hardcoded defaults for Dark/Light only (this block, plus the
        [data-theme="light"] override below) — every other theme (the four
@@ -514,11 +514,6 @@
   }
   .panel-toggle-btn:hover{background:var(--bg-elevated-2); color:var(--accent-strong);}
   .panel-toggle-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
-  /* Toggled state for a .panel-toggle-btn used as a persistent on/off switch
-     (currently just #detailFormatToggle) rather than a plain action button
-     like #detailToggle/#sidebarToggle — same convention as
-     .toolbar-icon-btn.active above. */
-  .panel-toggle-btn.active{background:var(--accent-soft); color:var(--accent-strong);}
 
   #sidebar{
     width:270px; flex:0 0 auto;
@@ -2313,6 +2308,18 @@
   #detailMeta .detail-thread, #detailMeta .detail-loc, #detailMeta .detail-method{
     font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); flex:0 0 auto; white-space:nowrap;
   }
+  /* The location is shown in full, but it is the one field long enough to
+     push the method out of the 34px line: it gives way first (down to about
+     a file name and line number), clipped at its START (rtl box, ltr content
+     in the <bdi>) so the end of the path stays visible; the title carries
+     the whole path. */
+  #detailMeta .detail-loc{flex:0 1 auto; min-width:16ch; overflow:hidden; text-overflow:ellipsis; direction:rtl;}
+  /* Parsed | Raw switch for the detail body (see updateDetailPanel). */
+  #detailViewTabs{flex:0 0 auto; height:24px;}
+  #detailViewTabs .view-tab{padding:0 8px; font-size:10.5px;}
+  /* Raw view of a link pair: each real entry's own original text, one block
+     per entry — the pair's combined raw is not a contiguous piece of any file. */
+  .detail-raw-part + .detail-raw-part{margin-top:6px; padding-top:6px; border-top:1px dashed var(--border);}
   #detailMeta .detail-sep{color:var(--text-tertiary); font-size:10px; flex:0 0 auto;}
   #detailMeta .detail-collapsed-msg{
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
@@ -2341,7 +2348,7 @@
   #detailPanel:not(.empty) #detailPlaceholder{display:none;}
   #detailPanel:not(.empty) #detailMessage{display:block;}
   /* Syntax-highlight spans for embedded XML/JSON fragments (see
-     formatMessageWithHighlight / #detailFormatToggle) — colors come from
+     formatMessageWithHighlight / #detailViewTabs' Pretty) — colors come from
      the --syntax-* custom properties (Theming: fixed for Dark/Light,
      optional per other theme, see the :root block up top). syn-block just
      switches white-space to pre (its own pretty-printed indentation is
@@ -4861,7 +4868,11 @@
           <div id="detailPanelHeader">
             <div id="detailPanelHeaderLabel">Entry detail</div>
             <div id="detailMeta"></div>
-            <button type="button" id="detailFormatToggle" class="panel-toggle-btn" title="Format XML/JSON"></button>
+            <div class="view-tabs" id="detailViewTabs" role="group" aria-label="Detail view">
+              <button type="button" class="view-tab" data-detail-view="raw" aria-pressed="false" title="The original text of the entry, unchanged">Raw</button>
+              <button type="button" class="view-tab" data-detail-view="parsed" aria-pressed="false" title="The parsed message, fields in the header line">Parsed</button>
+              <button type="button" class="view-tab active" data-detail-view="pretty" aria-pressed="true" title="Parsed, with embedded XML/JSON pretty-printed and highlighted">Pretty</button>
+            </div>
             <button type="button" id="detailToggle" class="panel-toggle-btn" title="Collapse (Ctrl+J)">
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
             </button>
@@ -6549,11 +6560,6 @@ const ICON_RENAME = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none"
 // used both in the tree (nodeIconHTML) and on the level bar's "Add to
 // tree" button (explicit mode, see initLevelFilterTreeModeSettings).
 const ICON_LEVEL = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 12V9"/><path d="M8 12V6"/><path d="M13 12V3"/></svg>';
-// #detailFormatToggle (embedded XML/JSON format + syntax highlight in the
-// entry detail message) — a "</>" code-bracket glyph, standing in for
-// "structured/code content" the same way ICON_MULTILINE's stacked lines
-// stand in for "multi-line text".
-const ICON_FORMAT_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 3.6 1.8 8l3.8 4.4"/><path d="M10.4 3.6 14.2 8l-3.8 4.4"/></svg>';
 
 /* ===================== Theme ===================== */
 // Settings page -> Appearance: a single dropdown (#settingsThemeSelect)
@@ -6600,7 +6606,7 @@ const THEME_ON_KEYS = ["level-error-on", "level-warn-on", "level-info-on", "leve
 
 // Every CSS custom property the OPTIONAL syntax-highlight color block
 // controls (see the entry-detail "format + highlight embedded XML/JSON"
-// feature, #detailFormatToggle) — a parallel array to THEME_COLOR_KEYS, but
+// feature, #detailViewTabs' Pretty) — a parallel array to THEME_COLOR_KEYS, but
 // unlike it, no theme (built-in flavor or custom/imported) is REQUIRED to
 // define these: applyTheme() only sets a var if the active theme's own
 // syntaxColors provides it (custom.syntaxColors[k], mirroring
@@ -8826,7 +8832,7 @@ function entryColumnValue(e, key) {
     case "time": return e.tsRaw || "";
     case "level": return e.level || "";
     case "thread": return e.thread || "";
-    case "location": return e.locationFull || "";
+    case "location": return e.location || "";
     case "method": return e.method || "";
     case "message": return e.message || "";
     default: return (e.fields && e.fields[key]) || "";
@@ -8880,7 +8886,7 @@ function entryComparator(column, dir, deltas) {
     } else if (column === "time") cmp = a.ts - b.ts;
     else if (column === "level") cmp = levelSortRank(levelBucket(a.level, a.formatId), a.formatId) - levelSortRank(levelBucket(b.level, b.formatId), b.formatId);
     else if (column === "thread") cmp = String(a.thread).localeCompare(String(b.thread));
-    else if (column === "location") cmp = String(a.locationShort).localeCompare(String(b.locationShort));
+    else if (column === "location") cmp = String(a.location).localeCompare(String(b.location));
     return cmp * sign;
   };
 }
@@ -8930,20 +8936,13 @@ function stripQuotes(s) {
   return s;
 }
 
-// Turns "C:\...\Foo.cs<TAB>line 152" into a short "Foo.cs:152" + full path for tooltip.
-function formatLocation(loc) {
-  const m = /^(.*?)[\\/]([^\\/]+?)\s+line\s+(\d+)\s*$/i.exec(loc);
-  if (m) return { short: m[2] + ":" + m[3], full: loc };
-  return { short: loc, full: loc };
-}
-
-// IDE Integration: unlike formatLocation above (which only keeps the
-// filename for display), this keeps the WHOLE raw path — resolveIdeSourcePath
-// needs every folder segment to find the anchor folder in. Greedy `.*` so a
-// path that happens to contain the literal substring "line" earlier still
-// resolves against the LAST " line N" suffix.
-function parseIdeLocation(locationFull) {
-  const m = /^(.*)\s+line\s+(\d+)\s*$/i.exec(locationFull || "");
+// IDE Integration: splits an entry's location ("C:\...\Foo.cs<TAB>line 152")
+// into the WHOLE path and the line number — resolveIdeSourcePath needs every
+// folder segment to find the anchor folder in. Greedy `.*` so a path that
+// happens to contain the literal substring "line" earlier still resolves
+// against the LAST " line N" suffix.
+function parseIdeLocation(location) {
+  const m = /^(.*)\s+line\s+(\d+)\s*$/i.exec(location || "");
   if (!m) return null;
   return { path: m[1], line: parseInt(m[2], 10) };
 }
@@ -8984,8 +8983,8 @@ function compileIdeAnchorPattern(pattern) {
 // connection-state global, so it's independently testable (see
 // tests/philogg.regression.test.js). solutionDir "" (Rider's case, no local
 // checkout path known) yields a plain project-relative path instead.
-function resolveIdeSourcePath(locationFull, anchorPattern, solutionDir) {
-  const parsed = parseIdeLocation(locationFull);
+function resolveIdeSourcePath(location, anchorPattern, solutionDir) {
+  const parsed = parseIdeLocation(location);
   if (!parsed) return { error: "no-location" };
   if (!anchorPattern) return { error: "anchor-not-found" };
   const re = compileIdeAnchorPattern(anchorPattern);
@@ -9027,16 +9026,13 @@ function parseHeaderLine(line) {
     message = stripQuotes(tokens.slice(methodIdx + 1).join("\t"));
   }
 
-  const loc = formatLocation(locationRaw);
-
   return {
     id: uid("e"),
     tsRaw,
     ts: parseTimestamp(tsRaw),
     level: level || "INFO",
     thread,
-    locationShort: loc.short,
-    locationFull: loc.full,
+    location: locationRaw,
     method,
     message,
     raw: line,
@@ -9311,7 +9307,6 @@ function validateFormatRegex(src) {
 const EMPTY_ENTRY_FIELDS = Object.freeze({});
 function applyFormatMatch(groups, line, compiledDate) {
   groups = groups || {};
-  const loc = formatLocation(groups.location || "");
   let fields = null;
   for (const k in groups) {
     if (!RESERVED_FIELD_KEYS.has(k) && groups[k] != null) {
@@ -9325,8 +9320,7 @@ function applyFormatMatch(groups, line, compiledDate) {
     ts: groups.ts ? parseTimestampGeneric(groups.ts, compiledDate) : NaN,
     level: (groups.level || "INFO").trim().toUpperCase(),
     thread: stripQuotes(groups.thread || ""),
-    locationShort: loc.short,
-    locationFull: loc.full,
+    location: groups.location || "",
     method: groups.method || "",
     message: groups.message != null ? stripQuotes(groups.message) : line,
     raw: line,
@@ -9628,8 +9622,7 @@ function compileJsonFormat(fmt) {
         ts: tsV === undefined ? NaN : parseJsonTimestamp(tsV, dateFrag),
         level: levelV == null ? "INFO" : jsonValueText(levelV).trim().toUpperCase(),
         thread: "",
-        locationShort: "",
-        locationFull: "",
+        location: "",
         method: "",
         message: msgSegs ? jsonValueText(resolveJsonPath(obj, msgSegs, 0)) : line,
         raw: line,
@@ -10084,7 +10077,7 @@ function buildLogParseWorkerSrc() {
   const fnDefs = [
     unescapePatternText, compileDateFormat, parseTimestampGeneric,
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
-    formatLocation, applyFormatMatch, parseTimestamp, parseHeaderLine,
+    applyFormatMatch, parseTimestamp, parseHeaderLine,
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
     compileFormatRegex, encodeEntryBatch,
     parseJsonPath, resolveJsonPath, jsonValueText, parseJsonTimestamp, compileJsonFormat,
@@ -10345,8 +10338,7 @@ function encodeEntryBatch(entries, fraction) {
     varint(raw.length);
     prevRaw = rawAt;
     field(e.tsRaw, raw, rawAt); field(e.level, raw, rawAt); field(e.thread, raw, rawAt);
-    field(e.locationShort, raw, rawAt); field(e.locationFull, raw, rawAt);
-    field(e.method, raw, rawAt); field(e.message, raw, rawAt);
+    field(e.location, raw, rawAt); field(e.method, raw, rawAt); field(e.message, raw, rawAt);
     const keys = Object.keys(e.fields);
     const open = e.msgOpenQuote !== undefined;
     varint((open ? 1 : 0) | keys.length << 1);
@@ -10435,8 +10427,8 @@ function decodeNativeBatch(buf, strings) {
   for (let i = 0; i < count; i++) {
     rawAt += next();
     const raw = S.substring(rawAt, rawAt + next());
-    const e = { id: "", tsRaw: str(), ts: ts[i], level: str(), thread: str(), locationShort: str(),
-      locationFull: str(), method: str(), message: str(), raw, fields: EMPTY_ENTRY_FIELDS };
+    const e = { id: "", tsRaw: str(), ts: ts[i], level: str(), thread: str(), location: str(),
+      method: str(), message: str(), raw, fields: EMPTY_ENTRY_FIELDS };
     const flags = next();
     if (flags & 1) e.msgOpenQuote = str();
     const k = flags >>> 1;
@@ -12214,8 +12206,7 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
     tsMin, tsMax, dtMs: tsMax - tsMin,
     level: refEntry.level,
     thread: refEntry.thread,
-    locationShort: refEntry.locationShort,
-    locationFull: refEntry.locationFull,
+    location: refEntry.location,
     method: refEntry.method,
     message: first.message + PAIR_SEPARATOR + second.message,
     raw: first.raw + PAIR_SEPARATOR + second.raw,
@@ -12623,14 +12614,13 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
    the tree — whose entries can reach a view without having passed every
    linear ancestor — never produce a highlight for text that isn't actually
    there. Match ranges are searched against whichever text is actually ON
-   SCREEN for a field (formatTime(e.ts), e.locationShort, ...) rather than
-   the raw value the filter engine itself tests (e.tsRaw, e.locationFull —
-   see entryColumnValue); those can diverge for "time"/"location" (a
-   formatted/abbreviated display vs. the raw stored string), so searching the
-   displayed text keeps the marked span trivially correct — always a real
-   substring of what's on screen — at the cost of occasionally under/over-
-   marking those two columns relative to the literal underlying match, an
-   accepted cosmetic-only trade-off.
+   SCREEN for a field (formatTime(e.ts), ...) rather than the raw value the
+   filter engine itself tests (e.tsRaw — see entryColumnValue); the two can
+   diverge for "time" (a formatted display vs. the raw stored string), so
+   searching the displayed text keeps the marked span trivially correct —
+   always a real substring of what's on screen — at the cost of occasionally
+   under/over-marking that column relative to the literal underlying match,
+   an accepted cosmetic-only trade-off.
 
    A SECOND, independent marker rides the same machinery: highlight-RULE
    match text (FEATURE_BACKLOG.md #20, highlightMatchTextEnabled /
@@ -12699,7 +12689,7 @@ let filePathLinksEnabled = true;
    wiring below), which needs no connection step since Rider resolves the
    target instance itself. Both share the anchor-pattern path remap
    (resolveIdeSourcePath/compileIdeAnchorPattern, defined next to
-   formatLocation above). */
+   parseIdeLocation above). */
 const IDE_ANCHOR_FOLDER_KEY = "philogg-ide-anchor-folder";
 const IDE_RIDER_ENABLED_KEY = "philogg-ide-rider-enabled";
 const IDE_RIDER_PROJECT_KEY = "philogg-ide-rider-project";
@@ -22883,7 +22873,7 @@ const DETAIL_COLLAPSED_KEY = "philogg-detail-collapsed";
 const sidebarToggleBtn = el("#sidebarToggle");
 const sidebarRailEl = el("#sidebarRail");
 const detailToggleBtn = el("#detailToggle");
-const detailFormatToggleBtn = el("#detailFormatToggle");
+const detailViewTabBtns = [...document.querySelectorAll("#detailViewTabs .view-tab")];
 let sidebarLastWidth = 270;
 let detailLastHeight = 190;
 
@@ -23162,12 +23152,7 @@ function toggleDetailCollapsed(collapsed) {
 }
 
 detailToggleBtn.addEventListener("click", () => toggleDetailCollapsed());
-detailFormatToggleBtn.addEventListener("click", () => {
-  detailFormatHighlightEnabled = !detailFormatHighlightEnabled;
-  localStorage.setItem(DETAIL_FORMAT_HIGHLIGHT_KEY, detailFormatHighlightEnabled ? "1" : "0");
-  updateDetailFormatToggleButton();
-  updateDetailPanel();
-});
+detailViewTabBtns.forEach(btn => btn.addEventListener("click", () => setDetailView(btn.dataset.detailView)));
 detailPanel.addEventListener("mouseenter", () => {
   if (!isDetailCollapsed() || !hoverExpandDetail) return;
   detailPanel.classList.add("peeking");
@@ -24548,16 +24533,18 @@ function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
 
 /* ===================== Entry detail: format + syntax highlight embedded
    XML/JSON (person-requested) =====================
-   #detailFormatToggle (next to #detailToggle in #detailPanelHeader) — a
-   single ON/OFF toggle for the entry detail message. OFF (default: the
-   original behavior, unchanged): the raw message text, exactly as parsed.
-   ON: auto-detects well-formed XML and/or JSON fragments EMBEDDED ANYWHERE
-   in the free text (e.g. `Sending Control <ctrl><cmd>reset</cmd></ctrl>
-   successful`, or `Response: {"status":"ok"} done`), pretty-prints and
-   syntax-highlights just those fragments, and leaves the surrounding text
-   untouched. Persisted like the other simple view toggles right above this
-   (TEXT_MATCH_HIGHLIGHT_*_KEY) — one global on/off, applied to whichever
-   message is currently shown, remembered across reloads.
+   #detailViewTabs (Raw | Parsed | Pretty, in #detailPanelHeader) — three
+   stages of the same entry, applied to whichever entry is shown and
+   remembered across reloads (one global choice, a way of reading entries,
+   not a property of one entry):
+     Raw     the entry's original text, entry.raw — every physical line,
+             tabs, indentation and quotes, nothing parsed away.
+     Parsed  the parsed message, fields in the header line.
+     Pretty  (default) Parsed, plus XML/JSON fragments EMBEDDED ANYWHERE in
+             the free text (e.g. `Sending Control <ctrl><cmd>reset</cmd>
+             </ctrl> successful`, or `Response: {"status":"ok"} done`)
+             pretty-printed and syntax-highlighted; the surrounding text is
+             untouched.
 
    Detection is two-pass by design (never trust a regex alone to decide
    "this is valid XML/JSON"): a cheap scan finds CANDIDATE spans (a
@@ -24567,17 +24554,63 @@ function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
    for a parsererror node; JSON.parse for JSON) before it's ever treated as
    a hit — a candidate that fails validation is left as plain text, so a
    stray `<` or `{` used as everyday punctuation never misfires. */
-const DETAIL_FORMAT_HIGHLIGHT_KEY = "philogg-detail-format-highlight";
-let detailFormatHighlightEnabled = true;
+const DETAIL_VIEW_KEY = "philogg-detail-view";
+const DETAIL_VIEWS = ["raw", "parsed", "pretty"];
+let detailView = "pretty"; // default Pretty, person-requested; an unset key writes nothing
 
-function initDetailFormatHighlightSetting() {
-  const stored = localStorage.getItem(DETAIL_FORMAT_HIGHLIGHT_KEY);
-  detailFormatHighlightEnabled = stored === null ? true : stored === "1"; // default ON, person-requested; still overridable and persisted either way
-  updateDetailFormatToggleButton();
+function initDetailViewSetting() {
+  const stored = localStorage.getItem(DETAIL_VIEW_KEY);
+  detailView = DETAIL_VIEWS.includes(stored) ? stored : "pretty";
+  updateDetailViewTabs();
 }
 
-function updateDetailFormatToggleButton() {
-  detailFormatToggleBtn.classList.toggle("active", detailFormatHighlightEnabled);
+function updateDetailViewTabs() {
+  for (const btn of detailViewTabBtns) {
+    const on = btn.dataset.detailView === detailView;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-pressed", String(on));
+  }
+}
+
+function setDetailView(view) {
+  if (!DETAIL_VIEWS.includes(view)) return;
+  detailView = view;
+  localStorage.setItem(DETAIL_VIEW_KEY, view);
+  updateDetailViewTabs();
+  updateDetailPanel();
+}
+
+// The original text behind an entry, one string per real log entry: a link
+// pair (see buildPairEntry) is made of two or more entries from different
+// places in the files, so its combined raw is split back into its parts.
+function entryRawParts(entry) {
+  return entry.isPair ? getTupleEntries(entry).map(e => e.raw) : [entry.raw];
+}
+
+// Match marking for the raw text. A filter without a column restriction
+// tests the whole raw line (see textFilterMatches), so its matches are
+// marked anywhere in it; a column-restricted filter or highlight rule has no
+// reliable place in the raw text and marks nothing here. The find bar marks
+// everything, as in every other view.
+function markRawHtml(mm, text) {
+  if (!mm.active) return escapeHtml(text);
+  const wholeLine = n => !(n.columns && n.columns.length);
+  const ranges = [];
+  mm.nodes.forEach((n, i) => { if (mm.specs[i] && wholeLine(n)) ranges.push(...findMatchRanges(text, mm.specs[i])); });
+  const hlRanges = [];
+  mm.hlNodes.forEach((n, i) => {
+    if (mm.hlSpecs[i] && wholeLine(n)) for (const [s, e] of findMatchRanges(text, mm.hlSpecs[i])) hlRanges.push({ start: s, end: e, color: n.highlightColor });
+  });
+  return markCombinedHtml(text, mergeMatchRanges(ranges), hlRanges, null, mm.findSpec ? findMatchRanges(text, mm.findSpec) : null);
+}
+
+// The selected entry as an object. A filter under a link node lists link
+// pairs in the ordinary log table, and pairs never enter entryIndex — those
+// are looked up in the current view instead.
+function selectedEntry() {
+  const id = state.selectedId;
+  if (!id) return null;
+  return entryIndex[id] || (id.startsWith("pair:") && currentViewEntries.find(e => e.id === id)) || null;
 }
 
 // Finds the end index of a balanced `{...}`/`[...]` span starting at
@@ -24636,7 +24669,7 @@ function matchXmlSpanEnd(text, start) {
 }
 
 // Scans `text` left to right for candidate XML/JSON spans and validates
-// each one, returning a list of {start, end, type: "xml"|"json"} hits in
+// each one, returning a list of {start, end, type: "xml"|"json"|"dump"} hits in
 // order, non-overlapping (a validated hit's whole span is skipped past
 // before resuming the scan).
 function findEmbeddedFragments(text) {
@@ -24653,7 +24686,10 @@ function findEmbeddedFragments(text) {
       }
     } else if (c === "{" || c === "[") {
       const end = matchBracketSpanEnd(text, i);
-      if (end !== -1) {
+      // An empty []/{} glued to an identifier is a type or index suffix
+      // (.NET's "Object[] arguments" in a stack trace), not a JSON value.
+      const emptyAfterIdentifier = end !== -1 && isWordChar(text[i - 1]) && !text.slice(i + 1, end - 1).trim();
+      if (end !== -1 && !emptyAfterIdentifier) {
         const candidate = text.slice(i, end);
         if (isValidJson(candidate)) {
           hits.push({ start: i, end, type: "json" });
@@ -24853,7 +24889,7 @@ function formatMessageWithHighlight(text) {
 // via the global index, so it works even if it isn't part of the current
 // filtered view.
 function updateDetailPanel() {
-  const entry = state.selectedId ? entryIndex[state.selectedId] : null;
+  const entry = selectedEntry();
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -24897,7 +24933,7 @@ function updateDetailPanel() {
       '<span class="detail-sep">·</span>' +
       '<span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' +
       '<span class="detail-sep">·</span>' +
-      '<span class="detail-loc" title="' + escapeHtml(entry.locationFull) + '">' + markField(entry.locationShort, "location") + '</span>' +
+      '<span class="detail-loc" title="' + escapeHtml(entry.location) + '"><bdi dir="ltr">' + markField(entry.location, "location") + '</bdi></span>' +
       '<span class="detail-sep">·</span>' +
       '<span class="detail-method">' + markField(entry.method, "method") + '</span>';
   }
@@ -24905,16 +24941,22 @@ function updateDetailPanel() {
   // there's actually something to mark or format, in which case both
   // markFieldHtml and formatMessageWithHighlight escape every non-matched/
   // non-fragment slice the same way — the CSS white-space: pre-wrap on
-  // #detailMessage preserves line breaks in either case. detailFormatHighlightEnabled
-  // (the #detailFormatToggle button, ON by default) takes priority over
-  // match marking, but ONLY on a message that actually HAS an embedded
-  // fragment to format — combining the two on the same substring space is
-  // still out of scope (see formatMessageWithHighlight's own comment), but
-  // with the toggle now defaulting on, falling all the way through to
-  // plain/unmarked text on every OTHER message (the common case: most
-  // messages contain no XML/JSON/dump at all) would silently break text-
-  // match highlighting for everyone, not just people who opted in.
-  const formatted = detailFormatHighlightEnabled ? formatMessageWithHighlight(entry.message) : null;
+  // #detailMessage preserves line breaks in either case. Pretty (the
+  // default view) takes priority over match marking, but ONLY on a message
+  // that actually HAS an embedded fragment to format — combining the two on
+  // the same substring space is still out of scope (see
+  // formatMessageWithHighlight's own comment), but falling all the way
+  // through to plain/unmarked text on every OTHER message (the common case:
+  // most messages contain no XML/JSON/dump at all) would silently break
+  // text-match highlighting in the default view.
+  if (detailView === "raw") {
+    const parts = entryRawParts(entry);
+    detailMessageEl.innerHTML = parts.length === 1 ? markRawHtml(mm, parts[0]) :
+      parts.map(raw => '<div class="detail-raw-part">' + markRawHtml(mm, raw) + "</div>").join("");
+    renderDetailNote(entry);
+    return;
+  }
+  const formatted = detailView === "pretty" ? formatMessageWithHighlight(entry.message) : null;
   if (formatted !== null && /class="syn-block/.test(formatted)) {
     detailMessageEl.innerHTML = formatted;
   } else if (mm.active) {
@@ -24924,11 +24966,14 @@ function updateDetailPanel() {
   } else {
     detailMessageEl.textContent = entry.message;
   }
+  renderDetailNote(entry);
+}
 
-  // Full note text, always shown here regardless of state.showNotes/
-  // multilineMessages — the one place a multi-line note stays readable even
-  // with note-rows hidden or MultiColumn's single-line rendering (see
-  // FEATURE_BACKLOG.md "Bookmarks rework").
+// Full note text, always shown here regardless of state.showNotes/
+// multilineMessages — the one place a multi-line note stays readable even
+// with note-rows hidden or MultiColumn's single-line rendering (see
+// FEATURE_BACKLOG.md "Bookmarks rework").
+function renderDetailNote(entry) {
   const note = state.notes.get(entry.id);
   if (note) {
     detailNoteEl.style.display = "block";
@@ -25898,11 +25943,8 @@ function autofitColumnWidth(key) {
       const dm = prev && !isPlainTextFormat(e.formatId) ? (e.ts - prev.ts) : null;
       text = dm == null ? "—" : formatDelta(dm);
     }
-    // "location" measures the SHORT form (locationShort) — what's actually
-    // on screen — same as before this feature; everything else (level/
-    // thread/method, and any custom column) reads via entryColumnValue,
-    // which already returns the right on-screen text for each.
-    else if (key === "location") text = e.locationShort;
+    // Everything else (level/thread/location/method, and any custom column)
+    // reads via entryColumnValue, which returns the on-screen text for each.
     else text = entryColumnValue(e, key);
     if (text && text.length > longest.length) longest = text;
   }
@@ -31199,11 +31241,11 @@ function openContextMenu(ev, entry) {
   // disappear when right-clicking Method for no good reason. Both items
   // just need the row's own Location to resolve.
   const ctxVsTarget = ideVsConnection
-    ? resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, ideVsConnection.solutionDir)
+    ? resolveIdeSourcePath(entry.location, ideAnchorFolder, ideVsConnection.solutionDir)
     : null;
   ctxOpenInVs.style.display = ctxVsTarget && !ctxVsTarget.error ? "" : "none";
   const ctxRiderTarget = (ideRiderEnabled && ideRiderProject)
-    ? resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, "")
+    ? resolveIdeSourcePath(entry.location, ideAnchorFolder, "")
     : null;
   ctxOpenInRider.style.display = ctxRiderTarget && !ctxRiderTarget.error ? "" : "none";
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
@@ -31398,7 +31440,7 @@ ctxExtractMessage.addEventListener("click", ev => {
 // through the existing showCopyToast — no new notification UI needed.
 function openEntryInVisualStudio(entry) {
   if (!ideVsConnection) return;
-  const target = resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, ideVsConnection.solutionDir);
+  const target = resolveIdeSourcePath(entry.location, ideAnchorFolder, ideVsConnection.solutionDir);
   if (target.error === "anchor-not-found") {
     showCopyToast('Anchor pattern "' + ideAnchorFolder + '" not found in this entry\'s path');
     return;
@@ -31432,7 +31474,7 @@ function openEntryInRider(entry) {
   // solutionDir "" makes resolveIdeSourcePath hand back a plain
   // project-relative path — Rider's own path resolution wants exactly that,
   // forward-slashed like the protocol's own documented examples.
-  const target = resolveIdeSourcePath(entry.locationFull, ideAnchorFolder, "");
+  const target = resolveIdeSourcePath(entry.location, ideAnchorFolder, "");
   if (target.error === "anchor-not-found") {
     showCopyToast('Anchor pattern "' + ideAnchorFolder + '" not found in this entry\'s path');
     return;
@@ -31975,7 +32017,7 @@ setupHitExpandGroups(".row-action-hit");
 // null with no selection, same as ctxEntry defaults to when nothing was
 // right-clicked yet.
 function currentRowActionEntry() {
-  return state.selectedId ? entryIndex[state.selectedId] : null;
+  return (state.selectedId && entryIndex[state.selectedId]) || null;
 }
 
 // Keeps every row-action button's disabled state (and the bookmark/note
@@ -40256,7 +40298,6 @@ btnNotes.forEach(b => b.innerHTML = ICON_NOTE);
 btnMultilineMsg.forEach(b => b.innerHTML = ICON_MULTILINE);
 btnWrapMsg.forEach(b => b.innerHTML = ICON_WRAP);
 itvWrapBtn.innerHTML = ICON_WRAP;
-detailFormatToggleBtn.innerHTML = ICON_FORMAT_HIGHLIGHT;
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
@@ -40299,7 +40340,7 @@ initMinimapBinningModeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
 initFilePathLinksSetting();
-initDetailFormatHighlightSetting();
+initDetailViewSetting();
 initLevelFilterTreeModeSettings();
 initTreeIndicatorModeSetting();
 initOpenScrollPositionSetting();
