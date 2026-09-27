@@ -152,11 +152,16 @@ deployments possible:
 - **Value extraction** — turn a pattern like `x=[*:float] y=[*:float]`
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter/3D scatter, zoom/pan/rotate, click a point to
-  jump to its log entry). A pattern restricted to a column tabulates that
+  jump to its log entry). Several columns with different units compare as a
+  **Radar** chart (one row against a few selected ones, each spoke on its
+  own scale) or as **Parallel coordinates** (every row as one line across
+  the axes; drag along an axis to keep a value range and select those rows
+  in the table). A pattern restricted to a column tabulates that
   column; a column of **JSON arrays** can be shown joined, as one column per
   element, as aggregates (len/min/max/avg/sum) or as one row per element,
   and plotted as a **Heatmap** (element × time → color) or a **Profile**
-  (one row's array, with other rows overlaid). `float`/`int` placeholders can also carry an inline condition —
+  (one row's array, with other rows overlaid); both also work on a group of
+  same-unit columns (e.g. `ch0=… ch1=… ch2=…`). `float`/`int` placeholders can also carry an inline condition —
   `[*:float>=10]`, `[*:int<20,>10]` for a range, or `[*:float|>=10]`
   to compare against the absolute value — so a pattern matches/extracts only
   the entries whose value actually satisfies it.
