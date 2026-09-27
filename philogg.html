@@ -839,6 +839,7 @@
      their label (added in renderNode) so the negation is visible at a glance
      without having to open the node. */
   .tree-row.inverted .tree-type-tag{color:var(--level-error); border-color:var(--level-error);}
+  .tree-llm-mark{flex:0 0 auto; font-size:10px; color:var(--accent); margin-left:4px; opacity:.85;}
   .tree-count{
     flex:0 0 auto; font-size:10.5px; color:var(--text-tertiary);
     font-variant-numeric:tabular-nums; padding:1px 5px;
@@ -16744,6 +16745,15 @@ function renderNode(id, depth, opts) {
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
     (node.label ? "  [" + node.name + "]" : "");
   row.appendChild(label);
+  // Created by the LLM assistant in this run (llmCreatedNodeIds — an
+  // in-memory set, not a node field).
+  if (llmCreatedNodeIds.has(id)) {
+    const mark = document.createElement("span");
+    mark.className = "tree-llm-mark";
+    mark.textContent = "✦";
+    mark.title = "Created by the assistant";
+    row.appendChild(mark);
+  }
 
   // The separate TXT/LNK/... badge is gone (person-reported: with "Icon"
   // selected it still showed up here, duplicating the same info the icon
@@ -40288,6 +40298,539 @@ async function matchFileHistory(node) {
     if (!best || r.savedAt > best.savedAt) best = r;
   }
   return best ? { record: best, tier: 2 } : null;
+}
+
+/* ===================== LLM assistant: tool registry =====================
+   The surface a local LLM operates PhiLogg through (docs/llm-assistant.md).
+   The model never sees the raw log — every tool answers with a compact
+   summary (counts, message types with per-placeholder value distributions,
+   a few example lines) under LLM_TOOL_BUDGET_CHARS, and refers to nodes and
+   entries by their runtime ids (n42 / e1234), which the chat turns into
+   clickable references. The registry itself has no caller in the browser
+   build; the agent loop below only runs when the desktop wrapper provides
+   window.philogg.llmChat.
+
+   Every tool validates its own arguments and reports a problem as
+   { error } — never a throw — so the model can correct itself (a pattern
+   that doesn't compile, an unknown node id, ...). */
+const LLM_TOOL_BUDGET_CHARS = 6000; // ≈ 1,500 tokens
+const LLM_MSG_CHARS = 200;          // one example message, cut to this
+const LLM_DISTINCT_VALUES = 10;     // ≤ this many distinct values → value + count, else a range
+
+// Node ids created by the assistant in this app run — a small marker in the
+// tree (renderNode), deliberately NOT a node field: a field would have to be
+// threaded through every persistence carrier for purely cosmetic info.
+// Survives undo/redo, since restoreSubtree reuses the original ids.
+const llmCreatedNodeIds = new Set();
+// Set by the agent loop while a round runs: every node a tool creates is
+// recorded there too (the round's own undo batch and "undo this round").
+let llmRoundCreated = null;
+
+function llmCut(s, n) {
+  s = String(s == null ? "" : s);
+  const line = s.indexOf("\n") === -1 ? s : s.slice(0, s.indexOf("\n")) + " …";
+  return line.length > n ? line.slice(0, n) + "…" : line;
+}
+function llmTime(nodeId, ts) {
+  return Number.isFinite(ts) ? formatTsFor(nodeId, ts) : null;
+}
+// A pair entry (link result) is referenced by its first real entry.
+function llmEntryId(e) { return e.isPair ? (e.first.isPair ? llmEntryId(e.first) : e.first.id) : e.id; }
+function llmEntrySummary(nodeId, e) {
+  return { id: llmEntryId(e), time: llmTime(nodeId, e.ts), level: e.level || undefined, message: llmCut(e.message, LLM_MSG_CHARS) };
+}
+
+// Shrinks a result object until its JSON fits the budget: the largest array
+// is halved (and the object that held it gets `truncated: true`), over and
+// over; a last-resort string cut covers a single oversized value.
+function llmFitBudget(result, budget = LLM_TOOL_BUDGET_CHARS) {
+  let text = JSON.stringify(result);
+  let guard = 0;
+  while (text.length > budget && guard++ < 60) {
+    let best = null;
+    const walk = (obj, depth) => {
+      if (!obj || typeof obj !== "object" || depth > 6) return;
+      for (const k of Object.keys(obj)) {
+        const v = obj[k];
+        if (Array.isArray(v) && v.length > 1) {
+          const size = JSON.stringify(v).length;
+          if (!best || size > best.size) best = { obj, k, size };
+        }
+        if (v && typeof v === "object") walk(v, depth + 1);
+      }
+    };
+    walk(result, 0);
+    if (!best) break;
+    const arr = best.obj[best.k];
+    best.obj[best.k] = arr.slice(0, Math.max(1, Math.floor(arr.length / 2)));
+    if (!Array.isArray(best.obj)) best.obj.truncated = true;
+    text = JSON.stringify(result);
+  }
+  if (text.length > budget) text = text.slice(0, budget - 40) + "… [truncated to fit the budget]";
+  return text;
+}
+
+function llmNode(id, what) {
+  const node = state.nodes[String(id || "")];
+  if (!node) return { error: "Unknown " + (what || "node") + " id \"" + id + "\". Call get_overview for the current ids." };
+  return { node };
+}
+function llmNodeRef(node) {
+  return { id: node.id, name: nodeDisplayName(node), type: node.type === "file" ? "file" : node.filterType, count: getEntries(node.id).length };
+}
+// The node a tool acts on when the model leaves nodeId out: the active one,
+// else the first file.
+function llmDefaultNodeId() {
+  if (state.activeId && state.nodes[state.activeId]) return state.activeId;
+  return state.rootIds.find(id => state.nodes[id] && !state.nodes[id].mergeSourceHidden) || null;
+}
+
+// The extraction values of a node (its own pattern, or the one it inherits
+// — findExtractionAncestor), without touching the Table view's globals.
+function llmExtractRows(node) {
+  const patternNode = findExtractionAncestor(node);
+  if (!patternNode) return null;
+  const spec = compileExtractPattern(patternNode.value);
+  if (!spec) return null;
+  const restrictCols = patternNode.columns && patternNode.columns.length ? patternNode.columns : null;
+  const rows = [];
+  for (const e of getEntries(node.id)) {
+    let m = null;
+    if (!restrictCols) m = spec.regex.exec(e.message);
+    else for (const key of restrictCols) { m = spec.regex.exec(entryColumnValue(e, key)); if (m) break; }
+    rows.push({ entry: e, values: spec.columns.map((c, i) => (m ? (m[i + 1] ?? "") : "")) });
+  }
+  const columns = spec.columns.map((c, i) => ({ index: i + 1, name: getColumnDisplayName(node, i, c.name), type: c.type }));
+  return { patternNode, spec, columns, rows };
+}
+
+// Per-placeholder value distribution for one message type: ≤ 10 distinct
+// values → each value with its count, else the numeric range (or a few
+// example values for text). `acc` is filled value by value (llmDistStep).
+function llmDistStep(acc, value) {
+  if (acc.values) {
+    acc.values.set(value, (acc.values.get(value) || 0) + 1);
+    if (acc.values.size > LLM_DISTINCT_VALUES) {
+      acc.examples = [...acc.values.keys()].slice(0, 3);
+      for (const [v] of acc.values) llmDistNumeric(acc, v);
+      acc.values = null;
+    }
+  } else {
+    acc.distinct = true;
+    llmDistNumeric(acc, value);
+  }
+}
+function llmDistNumeric(acc, v) {
+  const x = Number(v);
+  if (v === "" || !Number.isFinite(x)) { acc.nonNumeric = true; return; }
+  if (acc.min === undefined || x < acc.min) acc.min = x;
+  if (acc.max === undefined || x > acc.max) acc.max = x;
+}
+function llmDistResult(acc) {
+  if (acc.values) {
+    const values = {};
+    [...acc.values.entries()].sort((a, b) => b[1] - a[1]).forEach(([v, n]) => { values[v] = n; });
+    return { values };
+  }
+  const out = { distinct: ">" + LLM_DISTINCT_VALUES };
+  if (!acc.nonNumeric && acc.min !== undefined) { out.min = acc.min; out.max = acc.max; }
+  else out.examples = acc.examples;
+  return out;
+}
+
+// The raw values of a message's placeholders, in the same order
+// normalizeMessagePattern turns them into placeholders (same regex, same
+// first-line cut) — the value side of the Patterns tab's grouping.
+function messagePatternValues(message) {
+  let line = message || "";
+  const nl = line.indexOf("\n");
+  if (nl !== -1) line = line.slice(0, nl);
+  if (line.length > PATTERN_MAX_CHARS) line = line.slice(0, PATTERN_MAX_CHARS);
+  const out = [];
+  PATTERN_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = PATTERN_TOKEN_RE.exec(line)) !== null) {
+    // A quoted string's placeholder stands for its content, not the quotes.
+    out.push(m[3] !== undefined ? m[3].slice(1, -1) : m[0]);
+  }
+  return out;
+}
+
+function llmToolGetOverview() {
+  const files = state.rootIds.map(id => state.nodes[id]).filter(n => n && n.type === "file" && !n.mergeSourceHidden);
+  const tree = [];
+  const walk = (id, depth) => {
+    const n = state.nodes[id];
+    if (!n) return;
+    const ref = llmNodeRef(n);
+    if (depth) { ref.parentId = n.parentId; ref.depth = depth; }
+    if (n.inverted) ref.inverted = true;
+    if (nodeHasExtractableWildcards(n)) ref.extraction = true;
+    tree.push(ref);
+    (n.children || []).forEach(c => walk(c, depth + 1));
+  };
+  files.forEach(f => walk(f.id, 0));
+  const active = state.activeId && state.nodes[state.activeId];
+  const out = {
+    files: files.map(f => {
+      const r = fileEntryTimeRange(f.entries);
+      return { id: f.id, name: f.name, entries: f.entries.length, from: r ? llmTime(f.id, r.min) : null, to: r ? llmTime(f.id, r.max) : null, levels: getLevelCounts(f.id) };
+    }),
+    activeNodeId: active ? active.id : null,
+    view: fhActiveTab,
+    tree,
+  };
+  if (!files.length) out.note = "No log file is loaded — ask the person to open one.";
+  return out;
+}
+
+function llmToolFindMessageTypes(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const { node, error } = llmNode(nodeId);
+  if (error) return { error };
+  const limit = Math.max(1, Math.min(40, +args.limit || 15));
+  const query = typeof args.query === "string" ? args.query.trim().toLowerCase() : "";
+  const groups = new Map();
+  const entries = getEntries(node.id);
+  const bucketOf = makeLevelBucketer();
+  for (const e of entries) {
+    const key = normalizeMessagePattern(e.message);
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, count: 0, floatMask: 0, levels: {}, first: e.ts, last: e.ts, dists: null, sample: e };
+      groups.set(key, g);
+    }
+    g.count++;
+    g.floatMask |= patternFloatMask;
+    const lvl = bucketOf(e.level, e.formatId);
+    g.levels[lvl] = (g.levels[lvl] || 0) + 1;
+    if (e.ts < g.first) g.first = e.ts;
+    if (e.ts > g.last) g.last = e.ts;
+    g.pending = g.pending || [];
+    g.pending.push(e);
+  }
+  let list = [...groups.values()];
+  if (query) list = list.filter(g => patternDisplayText(g.key).toLowerCase().includes(query));
+  list.sort((a, b) => b.count - a.count);
+  const total = list.length;
+  list = list.slice(0, limit);
+  // Value distributions only for the groups actually returned.
+  const types = list.map(g => {
+    const dists = [];
+    for (const e of g.pending) {
+      messagePatternValues(e.message).forEach((v, i) => {
+        if (!dists[i]) dists[i] = { values: new Map() };
+        llmDistStep(dists[i], v);
+      });
+    }
+    return {
+      count: g.count,
+      levels: g.levels,
+      type: patternDisplayText(g.key),
+      pattern: patternFilterValue(g.key, g.floatMask, true),
+      placeholders: dists.map(llmDistResult),
+      first: llmTime(node.id, g.first),
+      last: llmTime(node.id, g.last),
+      example: llmEntrySummary(node.id, g.sample),
+    };
+  });
+  return { nodeId: node.id, entries: entries.length, typesFound: total, types };
+}
+
+function llmToolCreateFilter(args) {
+  const parentId = args.parentId || llmDefaultNodeId();
+  if (!parentId) return { error: "No log file is loaded." };
+  const { node: parent, error } = llmNode(parentId, "parent");
+  if (error) return { error };
+  const pattern = typeof args.pattern === "string" ? args.pattern : "";
+  if (!pattern.trim()) return { error: "pattern is empty." };
+  const mode = args.mode === "regex" ? "regex" : "text";
+  const invert = !!args.invert;
+  if (mode === "regex") {
+    try { new RegExp(pattern); } catch (e) { return { error: "Invalid regex: " + e.message }; }
+  } else if (isExtractPattern(pattern) && !compileExtractPattern(pattern)) {
+    return { error: "Invalid extraction pattern. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*]; value conditions only on int/float, e.g. [*:float>85]." };
+  }
+  const extraction = mode === "text" && isExtractPattern(pattern);
+  if (extraction && invert) return { error: "An extraction pattern can't be inverted — drop invert or the placeholders." };
+  const node = createFilterNode(parent.id, "text", pattern, invert, null, false, null, mode === "regex", false);
+  if (!node) return { error: "Could not create the filter." };
+  llmNoteCreated(node);
+  const entries = getEntries(node.id);
+  const out = { nodeId: node.id, name: node.name, parentId: parent.id, matches: entries.length, of: getEntries(parent.id).length };
+  if (extraction) {
+    const ex = llmExtractRows(node);
+    out.columns = ex.columns;
+    out.sampleValues = ex.rows.slice(0, 5).map(r => r.values);
+  }
+  out.examples = entries.slice(0, 4).map(e => llmEntrySummary(node.id, e));
+  if (!entries.length) out.hint = "No match. Check the exact text with find_message_types (case, spacing) or loosen the pattern.";
+  return out;
+}
+
+function llmToolCreateLink(args) {
+  const a = llmNode(args.refId, "reference node");
+  if (a.error) return { error: a.error };
+  const b = llmNode(args.targetId, "target node");
+  if (b.error) return { error: b.error };
+  const ref = a.node, target = b.node;
+  if (ref.type !== "filter" || target.type !== "filter") return { error: "Both sides of a link must be filter nodes (create_filter first)." };
+  if (getRootFileId(ref.id) !== getRootFileId(target.id)) return { error: "Both sides must belong to the same file." };
+  const direction = args.direction === "before" ? "before" : "after";
+  let key = null;
+  if (typeof args.key === "string" && args.key.trim()) {
+    const k = args.key.trim();
+    const colKey = activeColumnDefs().map(c => c.key).concat(["thread", "location", "method", "level"]).find(c => c.toLowerCase() === k.toLowerCase());
+    if (colKey) key = { column: colKey };
+    else if (isExtractPattern(k) && compileExtractPattern(k)) key = { pattern: k };
+    else return { error: "key must be a column name (e.g. thread) or a wildcard pattern such as \"axis=[*:int]\"." };
+  }
+  let dt = null;
+  if (args.maxDtMs != null || args.minDtMs != null) {
+    const ms = +(args.maxDtMs != null ? args.maxDtMs : args.minDtMs);
+    if (!Number.isFinite(ms) || ms < 0) return { error: "maxDtMs/minDtMs must be a non-negative number of milliseconds." };
+    dt = { op: args.maxDtMs != null ? "<" : ">", ms };
+  }
+  const node = createLinkNode(ref.id, target.id, direction, 1, { orderEnforced: false, exclusive: false, dt, key });
+  if (!node) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
+  llmNoteCreated(node);
+  const pairs = getEntries(node.id);
+  const dts = pairs.map(p => p.dtMs).filter(Number.isFinite).sort((x, y) => x - y);
+  const refCount = getEntries(ref.id).length;
+  const out = { nodeId: node.id, name: node.name, pairs: pairs.length, references: refCount, unpaired: Math.max(0, refCount - pairs.length) };
+  if (dts.length) out.dtMs = { min: dts[0], median: dts[Math.floor(dts.length / 2)], max: dts[dts.length - 1] };
+  out.examples = pairs.slice(0, 3).map(p => llmEntrySummary(node.id, p));
+  out.tip = "To get values from the paired lines, create_filter under this link with a pattern such as \"temperature=[*:float]\".";
+  return out;
+}
+
+function llmToolGetEntries(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const { node, error } = llmNode(nodeId);
+  if (error) return { error };
+  const entries = getEntries(node.id);
+  const from = Math.max(0, Math.floor(+args.from || 0));
+  const max = Math.max(1, Math.min(20, Math.floor(+args.max || 10)));
+  return { nodeId: node.id, total: entries.length, from, entries: entries.slice(from, from + max).map(e => llmEntrySummary(node.id, e)) };
+}
+
+function llmPercentile(sorted, p) {
+  if (!sorted.length) return null;
+  const idx = (sorted.length - 1) * p;
+  const lo = Math.floor(idx), hi = Math.ceil(idx);
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
+}
+function llmToolGetValueStats(args) {
+  const { node, error } = llmNode(args.nodeId);
+  if (error) return { error };
+  const ex = llmExtractRows(node);
+  if (!ex) return { error: "This node has no extraction pattern (and inherits none). Create one with placeholders such as [*:float]." };
+  const want = args.column == null ? 1 : args.column;
+  const col = ex.columns.find(c => String(c.index) === String(want) || c.name.toLowerCase() === String(want).toLowerCase());
+  if (!col) return { error: "Unknown column \"" + want + "\".", columns: ex.columns };
+  const vals = [];
+  for (const r of ex.rows) {
+    const v = parseValueForPlot(r.values[col.index - 1], col.type);
+    if (Number.isFinite(v)) vals.push(v);
+  }
+  if (!vals.length) {
+    const d = { values: new Map() };
+    ex.rows.forEach(r => llmDistStep(d, r.values[col.index - 1]));
+    return { nodeId: node.id, column: col, rows: ex.rows.length, numeric: false, distribution: llmDistResult(d) };
+  }
+  const sorted = vals.slice().sort((x, y) => x - y);
+  const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
+  const round = v => (v == null ? v : +v.toPrecision(6));
+  return {
+    nodeId: node.id, column: col, rows: ex.rows.length, n: vals.length,
+    min: round(sorted[0]), max: round(sorted[sorted.length - 1]), mean: round(mean),
+    p10: round(llmPercentile(sorted, 0.1)), median: round(llmPercentile(sorted, 0.5)), p90: round(llmPercentile(sorted, 0.9)),
+  };
+}
+
+const LLM_VIEWS = { log: "highlight", context: "highlight", filtered: "filter", table: "table", plot: "plot", patterns: "patterns" };
+function llmToolShowView(args) {
+  const { node, error } = llmNode(args.nodeId);
+  if (error) return { error };
+  const view = LLM_VIEWS[args.view] ? args.view : "filtered";
+  const tab = LLM_VIEWS[view];
+  if ((tab === "table" || tab === "plot") && !nodeIsExtractionView(node)) {
+    return { error: "Table/Plot need an extraction node (a pattern with placeholders such as [*:float]) or a node below one." };
+  }
+  state.activeId = node.id;
+  state.multiSelect = new Set();
+  state.folderView = null;
+  const out = { nodeId: node.id, view };
+  if (tab === "plot" && args.plot && typeof args.plot === "object") {
+    const ex = llmExtractRows(node);
+    const colIdx = v => {
+      if (v == null || v === "") return undefined;
+      const s = String(v).toLowerCase();
+      if (s === "index") return INDEX_COL;
+      if (s === "time" || s === "t" || s === "t (ms)") return ELAPSED_COL;
+      if (s === "dt" || s === "δt" || s === "δt (ms)") return DT_COL;
+      const c = ex.columns.find(c => String(c.index) === s || c.name.toLowerCase() === s);
+      return c ? c.index - 1 : null;
+    };
+    const p = args.plot;
+    const cfg = node.plotConfig ? { ...node.plotConfig } : defaultPlotConfig();
+    if (p.type) cfg.type = p.type;
+    const x = colIdx(p.x);
+    if (x === null) return { error: "Unknown plot x column \"" + p.x + "\".", columns: ex.columns };
+    if (x !== undefined) cfg.xCol = x;
+    const ys = p.y == null ? [] : (Array.isArray(p.y) ? p.y : [p.y]).map(colIdx);
+    if (ys.some(y => y === null || y === undefined)) return { error: "Unknown plot y column.", columns: ex.columns };
+    if (ys.length) { cfg.yCols = ys; cfg.yColsMulti = ys; cfg.yColsInit = true; }
+    const clean = sanitizePlotConfig(cfg);
+    node.plotConfig = clean;
+    out.plot = { type: clean.type, xCol: clean.xCol, yCols: clean.yCols };
+  }
+  render();
+  applyFhView(tab);
+  return out;
+}
+
+function llmToolAnnotate(args) {
+  const ids = Array.isArray(args.entryIds) ? args.entryIds.map(String) : typeof args.entryIds === "string" ? [args.entryIds] : [];
+  if (!ids.length) return { error: "entryIds is empty." };
+  if (ids.length > 50) return { error: "At most 50 entries per call." };
+  const unknown = ids.filter(id => !entryIndex[id]);
+  if (unknown.length) return { error: "Unknown entry id(s): " + unknown.slice(0, 5).join(", ") + ". Use the ids from get_entries/find_message_types." };
+  const note = typeof args.note === "string" ? args.note.trim() : "";
+  const bookmark = args.bookmark === true;
+  if (!note && !bookmark) return { error: "Nothing to do: give a note and/or bookmark: true." };
+  let bookmarked = 0, noted = 0;
+  for (const id of ids) {
+    if (bookmark && !state.bookmarks.has(id)) { toggleBookmark(id); bookmarked++; }
+    if (note) {
+      // Never overwrite a person's own note — the finding is appended.
+      const old = state.notes.get(id);
+      if (old !== note) setNoteAndRepaint(id, old && !old.includes(note) ? old + "\n" + note : note);
+      noted++;
+    }
+  }
+  schedulePersistMeta();
+  return { entries: ids.length, bookmarked, noted };
+}
+
+function llmNoteCreated(node) {
+  llmCreatedNodeIds.add(node.id);
+  if (llmRoundCreated) llmRoundCreated.push(node.id);
+}
+
+const LLM_TOOLS = [
+  {
+    name: "get_overview",
+    description: "Loaded files (entry count, time span, level counts), the active node and the whole filter tree (id, name, type, count, parent). Call this first.",
+    parameters: { type: "object", properties: {} },
+    run: llmToolGetOverview,
+  },
+  {
+    name: "find_message_types",
+    description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "Node to analyse; default: the active node" },
+      query: { type: "string", description: "Only types whose text contains this (case-insensitive)" },
+      limit: { type: "integer", description: "Max. types to return (default 15, max 40)" },
+    } },
+    run: llmToolFindMessageTypes,
+  },
+  {
+    name: "create_filter",
+    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further. mode \"regex\": JavaScript regex. Returns the new nodeId, match count and examples, or an error to correct.",
+    parameters: { type: "object", properties: {
+      parentId: { type: "string", description: "Node to filter (a file or filter id); default: the active node" },
+      pattern: { type: "string" },
+      mode: { type: "string", enum: ["text", "regex"] },
+      invert: { type: "boolean", description: "Keep everything that does NOT match (not for extraction patterns)" },
+    }, required: ["pattern"] },
+    run: llmToolCreateFilter,
+  },
+  {
+    name: "create_link",
+    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread) or of a pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references and Δt statistics.",
+    parameters: { type: "object", properties: {
+      refId: { type: "string" },
+      targetId: { type: "string" },
+      direction: { type: "string", enum: ["after", "before"] },
+      key: { type: "string", description: "Column name or wildcard pattern both sides must share" },
+      maxDtMs: { type: "number", description: "Keep only pairs closer than this (ms)" },
+      minDtMs: { type: "number", description: "Keep only pairs further apart than this (ms)" },
+    }, required: ["refId", "targetId"] },
+    run: llmToolCreateLink,
+  },
+  {
+    name: "get_entries",
+    description: "A few entries of a node (at most 20, messages shortened), with their entry ids for annotate.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string" },
+      from: { type: "integer", description: "Start index (default 0)" },
+      max: { type: "integer", description: "Default 10, max 20" },
+    } },
+    run: llmToolGetEntries,
+  },
+  {
+    name: "get_value_stats",
+    description: "min/max/mean/p10/median/p90 of one extraction column of a node (its own pattern or the one it inherits). column: 1-based placeholder number or column name.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string" },
+      column: { type: "string", description: "1-based placeholder number or column name, default 1" },
+    }, required: ["nodeId"] },
+    run: llmToolGetValueStats,
+  },
+  {
+    name: "show_view",
+    description: "Shows a node to the person: view log | filtered | table | plot | patterns. For plot, optionally plot = {type: line|scatter|bar, x: \"time\"|\"index\"|column, y: column or [columns]}.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string" },
+      view: { type: "string", enum: ["log", "filtered", "table", "plot", "patterns"] },
+      plot: { type: "object", properties: {
+        type: { type: "string", enum: ["line", "scatter", "bar"] },
+        x: { type: "string" },
+        y: { type: "string" },
+      } },
+    }, required: ["nodeId", "view"] },
+    run: llmToolShowView,
+  },
+  {
+    name: "annotate",
+    description: "Bookmarks entries and/or attaches a note to them (the note carries your finding for the person; an existing note is kept and extended).",
+    parameters: { type: "object", properties: {
+      entryIds: { type: "array", items: { type: "string" } },
+      note: { type: "string" },
+      bookmark: { type: "boolean" },
+    }, required: ["entryIds"] },
+    run: llmToolAnnotate,
+  },
+];
+const LLM_TOOL_MAP = new Map(LLM_TOOLS.map(t => [t.name, t]));
+
+// The tools in the OpenAI chat-completions `tools` shape.
+function llmToolSpecs() {
+  return LLM_TOOLS.map(t => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.parameters } }));
+}
+
+// Runs one tool call. `args` may be the model's raw JSON string. Never
+// throws: { text } is the budget-limited JSON handed back to the model,
+// { result } the full object (the agent loop builds its one-line summary
+// from it), { error } set when the call failed.
+function runLlmTool(name, args) {
+  const tool = LLM_TOOL_MAP.get(name);
+  let result;
+  if (!tool) result = { error: "Unknown tool \"" + name + "\". Available: " + LLM_TOOLS.map(t => t.name).join(", ") };
+  else {
+    let parsed = args;
+    if (typeof args === "string") {
+      try { parsed = args.trim() ? JSON.parse(args) : {}; } catch (e) { parsed = null; result = { error: "Arguments are not valid JSON: " + e.message }; }
+    }
+    if (!result) {
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) parsed = {};
+      try { result = tool.run(parsed) || {}; } catch (e) { result = { error: "Tool failed: " + (e && e.message || e) }; }
+    }
+  }
+  return { result, text: llmFitBudget(result), error: result.error || null };
 }
 
 /* ===================== Init ===================== */
