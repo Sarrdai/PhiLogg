@@ -5978,6 +5978,15 @@
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsLlmEnabled">Enable assistant</label>
+                <div class="settings-row-hint">Shows the chat button in the toolbar. Off by default; switching it off closes the chat (stored chats are kept).</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsLlmEnabled"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLlmEndpoint">Server URL</label>
                 <div class="settings-row-hint">LM Studio: Developer → Start server; the default is http://localhost:1234/v1.</div>
               </div>
@@ -41479,6 +41488,8 @@ const LLM_VIEW_FEATURES = ["sessions", "answers", "dock"];
 // answers with a pull (getSnapshot).
 function llmHandleViewMessage(msg, reply) {
   if (!msg || typeof msg !== "object") return;
+  // Switched off (Settings): a view that is still open gets no answers.
+  if (llmAvailable() && !llmEnabled()) return;
   switch (msg.type) {
     case "getSnapshot":
       if (llm.ready) llm.ready.then(() => reply(llmSnapshot()));
@@ -41625,6 +41636,30 @@ function llmToggleChat() {
   } else llmOpenChat();
 }
 
+// On/off switch (Settings → Assistant → "Enable assistant"), off by
+// default: the Settings section is there in every desktop build, the
+// toolbar button, the chat and the docked panel only while it is on.
+const LLM_ENABLED_KEY = "philogg-llm-enabled";
+function llmEnabled() {
+  try { return localStorage.getItem(LLM_ENABLED_KEY) === "1"; } catch (e) { return false; }
+}
+function applyLlmEnabled() {
+  const on = llmAvailable() && llmEnabled();
+  document.getElementById("btnAssistant").classList.toggle("hidden", !on);
+  if (on) {
+    llmInit();
+    if (llmIsDocked()) llmDock();
+    return;
+  }
+  // Off: stop a running round and close every view. The docked preference
+  // stays, so switching back on restores the panel.
+  llmStop();
+  if (window.philogg && window.philogg.llmChatWindow) window.philogg.llmChatWindow("hide");
+  llm.views.delete(llmDockView);
+  if (llmDockFrame) { llmDockFrame.remove(); llmDockFrame = null; }
+  document.getElementById("llmDockPanel").classList.add("hidden");
+}
+
 // Toolbar button + Settings → Assistant, desktop build only.
 function initLlmAssistantUi() {
   const available = llmAvailable();
@@ -41635,7 +41670,13 @@ function initLlmAssistantUi() {
   if (!available) return;
   llm.views.add(llmWindowView);
   document.getElementById("btnAssistant").addEventListener("click", ev => { ev.stopPropagation(); llmToggleChat(); });
-  if (llmIsDocked()) llmDock();
+  const enabledToggle = document.getElementById("settingsLlmEnabled");
+  pillSet(enabledToggle, llmEnabled());
+  enabledToggle.addEventListener("change", ev => {
+    try { localStorage.setItem(LLM_ENABLED_KEY, pillGet(ev.target) ? "1" : "0"); } catch (e) { /* storage unavailable */ }
+    applyLlmEnabled();
+  });
+  applyLlmEnabled();
 
   const s = llmSettings();
   const endpoint = document.getElementById("settingsLlmEndpoint");
@@ -41676,7 +41717,6 @@ function initLlmAssistantUi() {
   turns.addEventListener("change", () => { localStorage.setItem(LLM_KEYS.maxTurns, String(turns.value)); turns.value = llmSettings().maxTurns; });
   document.getElementById("settingsLlmRefresh").addEventListener("click", refresh);
   document.getElementById("settingsLlmTest").addEventListener("click", refresh);
-  llmInit();
 }
 
 /* ===================== Init ===================== */

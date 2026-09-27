@@ -4,6 +4,7 @@
 // LM Studio. The desktop bridge is stubbed so the (desktop-only) feature
 // shows up in the browser; the docked panel loads desktop/chat.html.
 window.philogg = { llmChat: () => Promise.reject(new Error("scripted")), llmCancel() {}, llmModels: async () => [], llmChatWindow() {}, llmViewNotify() {} };
+localStorage.setItem("philogg-llm-enabled", "1"); // off by default
 initLlmAssistantUi();
 (async () => {
   const results = req => {

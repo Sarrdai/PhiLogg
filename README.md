@@ -379,8 +379,8 @@ deployments possible:
   `F11` again or `Esc` leaves it. Real OS fullscreen is desktop-only, so the
   shortcut is bound only in the desktop app — a plain browser keeps its own
   `F11`.
-- **Assistant: a local LLM operates PhiLogg** (desktop app) — a chat window
-  (toolbar button, Settings → Assistant) in which a model running on your
+- **Assistant: a local LLM operates PhiLogg** (desktop app, off by default —
+  switch it on in Settings → Assistant) — a chat window (toolbar button) in which a model running on your
   own machine in [LM Studio](https://lmstudio.ai) (or any OpenAI-compatible
   server on `localhost`) finds message types, builds text/extraction/link
   filters, opens tables and plots, and bookmarks/annotates entries — asking

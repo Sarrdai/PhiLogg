@@ -34348,6 +34348,9 @@ group(303);
    ============================================================ */
 group(304);
 const CHAT_HTML = fs.readFileSync(path.join(__dirname, "..", "desktop", "chat.html"), "utf8");
+// The assistant is off by default (Settings → Assistant → Enable); the
+// groups that use it switch it on before the page boots.
+const llmOn = win => win.localStorage.setItem("philogg-llm-enabled", "1");
 function llmDesktopStub(extra) {
   const calls = [];
   const stub = Object.assign({
@@ -34432,7 +34435,7 @@ await withApp(async (w, d, T) => {
   t.value = "7";
   t.dispatchEvent(new w.Event("change"));
   assert(t.value === "2" && w.llmSettings().temperature === 2, "temperature clamped to 0..2");
-}, { philogg: llmDesktopStub() });
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
 
 await withApp(async (w, d, T) => {
   section("304c. chat.html against the real main window: pull snapshots, stream, refs, Stop, undo");
@@ -34510,7 +34513,7 @@ await withApp(async (w, d, T) => {
   w.llmNotify();
   assert(await waitFor(() => cd.getElementById("chatHint").textContent.includes(f.name)), "'refers to … — not loaded' hint");
   chat.close();
-}, { philogg: llmDesktopStub() });
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
 
 await withApp(async (w, d, T) => {
   section("304d. A lost 'changed' note heals on the next pull");
@@ -34529,7 +34532,7 @@ await withApp(async (w, d, T) => {
   assert(await waitFor(() => chat.cd.querySelectorAll(".round").length === 2), "the next note pulls the whole session — round 1 included");
   assert(chat.cd.querySelectorAll(".msg-text")[0].textContent === "eins", "…with its content");
   chat.close();
-}, { philogg: llmDesktopStub() });
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
 
 /* ============================================================
    GROUP 305 — LLM assistant, phase 5: several chat sessions (new, switch,
@@ -34598,7 +34601,7 @@ await withApp(async (w, d, T) => {
   w.llmStop();
   await p;
   chat.close();
-}, { philogg: llmDesktopStub(), indexedDB: new IDBFactory() });
+}, { philogg: llmDesktopStub(), beforeParse: llmOn, indexedDB: new IDBFactory() });
 
 /* ============================================================
    GROUP 306 — LLM assistant, phase 6: docking. The chat as an <iframe>
@@ -34643,14 +34646,14 @@ await withApp(async (w, d, T) => {
   posted.length = 0;
   w.llmNotify();
   assert(!posted.length, "the removed iframe gets no more notes");
-}, { philogg: llmDesktopStub() });
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
 
 await withApp(async (w, d, T) => {
   section("306b. The docked state survives a restart");
   const panel = d.getElementById("llmDockPanel");
   assert(isVisible(panel, w) && panel.querySelector("iframe"), "docked at boot");
   assert(!w.philogg.calls.some(c => c[1] === "show"), "the window is not opened");
-}, { philogg: llmDesktopStub(), beforeParse: win => win.localStorage.setItem("philogg-llm-docked", "1") });
+}, { philogg: llmDesktopStub(), beforeParse: win => { llmOn(win); win.localStorage.setItem("philogg-llm-docked", "1"); } });
 
 {
   if (groupSelected()) {
@@ -34751,7 +34754,42 @@ await withApp(async (w, d, T) => {
   section("307b. The snapshot carries the variables the app-style buttons need");
   const theme = w.llmSnapshot().theme;
   assert(theme["--accent-on"] && theme["--border-hover"] && theme["--accent-strong"] && theme["--bg-panel"], "accent-on, border-hover, accent-strong, bg-panel");
-}, { philogg: llmDesktopStub() });
+}, { philogg: llmDesktopStub(), beforeParse: llmOn });
+
+/* ============================================================
+   GROUP 308 — 2026-09-28 (person-requested): an on/off switch for the
+   assistant in Settings → Assistant, default off. Off: no toolbar button,
+   no chat, no docked panel, sessions not even loaded; switching off stops
+   a running round and closes the window/panel (the docked preference
+   stays), a still-open view gets no answers.
+   ============================================================ */
+group(308);
+await withApp(async (w, d, T) => {
+  section("308a. Default off; switching on and off");
+  const stub = w.philogg;
+  const btn = d.getElementById("btnAssistant"), toggle = d.getElementById("settingsLlmEnabled"), panel = d.getElementById("llmDockPanel");
+  assert(!isVisible(btn, w) && toggle.getAttribute("aria-checked") === "false", "default: off, no chat button");
+  assert(isVisible(d.getElementById("settingsSectionLlm"), w), "the Settings section is there to switch it on");
+  assert(T.llm.ready === null && !isVisible(panel, w), "off: no sessions loaded, no docked panel (despite the docked preference)");
+  const replies = [];
+  w.llmHandleViewMessage({ type: "getSnapshot" }, m => replies.push(m));
+  await sleep(10);
+  assert(!replies.length, "off: a view gets no answers");
+  toggle.click();
+  assert(toggle.getAttribute("aria-checked") === "true" && w.localStorage.getItem("philogg-llm-enabled") === "1", "the switch stores on");
+  assert(isVisible(btn, w) && T.llm.ready !== null, "on: button shown, sessions loaded");
+  assert(isVisible(panel, w) && panel.querySelector("iframe"), "on: the remembered docked panel comes back");
+  await T.llm.ready;
+  T.llmTransportOverride = llmFakeModel(["hang"]);
+  const p = w.llmSend("warte");
+  await waitFor(() => T.llm.running);
+  toggle.click();
+  const r = await p;
+  assert(r.status === "stopped" && !T.llm.running, "switching off stops a running round");
+  assert(!isVisible(btn, w) && !isVisible(panel, w) && !panel.querySelector("iframe"), "off: button and docked panel gone");
+  assert(stub.calls.some(c => c[1] === "hide"), "…the chat window is hidden");
+  assert(w.localStorage.getItem("philogg-llm-enabled") === "0" && w.localStorage.getItem("philogg-llm-docked") === "1", "stored off; the docked preference stays");
+}, { philogg: llmDesktopStub(), beforeParse: win => win.localStorage.setItem("philogg-llm-docked", "1") });
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -39136,5 +39174,7 @@ process.exitCode = failed ? 1 : 0;
       the main app — frameless title bar with drag region and window
       controls, icon buttons instead of emoji, theme variables, in-page
       rename/confirm dialog.
+   Group 308 — 2026-09-28 (person-requested): Settings → Assistant on/off
+      switch, default off (no button, chat, panel or sessions while off).
    ============================================================ */
 
