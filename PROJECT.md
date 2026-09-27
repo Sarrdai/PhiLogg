@@ -503,7 +503,7 @@ theme tokens, sample data, scope of what must vs. needn't be interactive
 — only the Context/Filtered/Table/Plot/Stacked tab switch needs to work).
 
 ### `docs/llm-assistant-plan.md`
-Unimplemented plan (German): a desktop-only chat in which a local LLM (LM
+Implementation plan (German, being implemented — current state in `docs/llm-assistant.md`): a desktop-only chat in which a local LLM (LM
 Studio, loopback-only HTTP on the Rust side) operates PhiLogg through a
 small tool registry (message types with per-placeholder value
 distributions, filter/link creation with previews, views/plots,
@@ -512,6 +512,12 @@ bookmarks/notes) instead of reading the raw log. Covers the architecture
 pull-snapshot view — avoiding the popout's sync bugs), the chat window
 (owned/always-on-top, hide into the app, dock, multiple sessions), one
 undo step per LLM turn, and a phased rollout. Refines backlog #70.
+
+### `docs/llm-assistant.md`
+The LLM assistant as built (desktop only): the tool registry the model
+operates PhiLogg through (`LLM_TOOLS`/`runLlmTool`, result budget, value
+distributions per placeholder), and — as the phases land — the Rust
+bridge, the agent loop and sessions, and the chat window.
 
 ### `docs/ui-implementation-plan.md`
 Step-by-step implementation plan for `docs/ui-concept-unified-extraction.md`,
