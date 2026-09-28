@@ -535,7 +535,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = fb.id;
   const filterB1 = w.createFilterNode(fb.id, "text", "other");
   const filterA1 = w.createFilterNode(fa.id, "text", "message");
-  const andB = w.createAndOrNode(filterB1.id, filterA1.id, "and");
+  const andB = w.createAndOrNode([filterB1.id, filterA1.id], "and");
   const andChild = w.createFilterNode(andB.id, "text", "1");
   w.invalidateAllCaches();
   [filterA1, filterB1, andB, andChild].forEach(n => w.getEntries(n.id));
@@ -911,7 +911,7 @@ await withApp(async (w, d, T) => {
   // unsupported — see PROJECT.md).
   const refA = w.createFilterNode(fa.id, "text", "message");
   const refA2 = w.createFilterNode(fa.id, "text", "message 1"); // subset of refA's own file
-  const andNode = w.createAndOrNode(refA.id, refA2.id, "and");
+  const andNode = w.createAndOrNode([refA.id, refA2.id], "and");
   w.render();
   const andCountBefore = w.getEntries(andNode.id).length;
   assert(andCountBefore > 0, "sanity: AND of two same-file filters has a non-empty intersection before any delete");
@@ -1149,7 +1149,7 @@ await withApp(async (w, d, T) => {
   // placed directly under extractNode's own root file (fa), not nested
   // under extractNode.
   const fFilterB = w.createFilterNode(fb.id, "text", "other");
-  const andNode = w.createAndOrNode(extractNode.id, fFilterB.id, "and");
+  const andNode = w.createAndOrNode([extractNode.id, fFilterB.id], "and");
   w.render();
   assert(andNode.parentId === fa.id, "sanity: AND node sits directly under file A, not under extractNode");
   const andCountBefore = w.getEntries(andNode.id).length;
@@ -1160,7 +1160,7 @@ await withApp(async (w, d, T) => {
   assert(branchJustThis && branchJustThis.roots.length === 1, "just this filter: exactly one exported root, got " + (branchJustThis && branchJustThis.roots.length));
   const bareRoot = branchJustThis.roots[0];
   assert(bareRoot.attach === "target" && bareRoot.children.length === 0, "the single exported node is tagged attach:target with no children");
-  assert(bareRoot.bakedA && bareRoot.bakedA.filterType === "text" && bareRoot.bakedB && bareRoot.bakedB.filterType === "text",
+  assert(bareRoot.baked[0] && bareRoot.baked[0].filterType === "text" && bareRoot.baked[1] && bareRoot.baked[1].filterType === "text",
     "bakedA/bakedB (each side's own flat condition) travel with the export even for 'just this filter'");
 
   // --- "Include ancestor chain" (includeAncestors=true): today's original
@@ -1190,9 +1190,9 @@ await withApp(async (w, d, T) => {
   // Assertions are a column-stat/highlight annotation, not part of what
   // determines matching — bakeNodeCondition intentionally only copies
   // fields that define the match itself, so they don't travel into bakedA.
-  assert(loadedAnd.bakedA && loadedAnd.bakedA.filterType === "text" && loadedAnd.bakedA.value === "message [*:int]",
+  assert(loadedAnd.baked[0] && loadedAnd.baked[0].filterType === "text" && loadedAnd.baked[0].value === "message [*:int]",
     "bakedA (extractNode's own matching condition) round-trips intact");
-  assert(loadedAnd.bakedB && loadedAnd.bakedB.filterType === "text" && loadedAnd.bakedB.value === "other",
+  assert(loadedAnd.baked[1] && loadedAnd.baked[1].filterType === "text" && loadedAnd.baked[1].value === "other",
     "bakedB (fFilterB's own condition) round-trips intact");
   assert(w.getEntries(loadedAnd.id).length >= 0, "reloaded AND node's getEntries() resolves without throwing (re-evaluated fresh against the new file's own data)");
 
@@ -1206,7 +1206,7 @@ await withApp(async (w, d, T) => {
   w.importFilterJson(jsonJustThis);
   const loadedBareAnd = T.state.nodes[fdAnchor.children[fdAnchor.children.length - 1]];
   assert(loadedBareAnd && loadedBareAnd.filterType === "and", "the AND node is created directly under the clicked target, no ancestor chain brought along");
-  assert(loadedBareAnd.bakedA && loadedBareAnd.bakedB, "its bakedA/bakedB are still intact — 'just this filter' never depended on the ancestor chain to begin with");
+  assert(loadedBareAnd.baked[0] && loadedBareAnd.baked[1], "its bakedA/bakedB are still intact — 'just this filter' never depended on the ancestor chain to begin with");
   assert(w.getEntries(loadedBareAnd.id).length >= 0, "getEntries() resolves without throwing, fully self-contained");
 
   function W_setLoadTarget(w, targetId) {
@@ -1540,9 +1540,9 @@ await withApp(async (w, d, T) => {
   // of where the second input lives.
   const fFilterA = w.createFilterNode(fa.id, "text", "message");
   const fFilterB = w.createFilterNode(fb.id, "text", "other");
-  const andNode = w.createAndOrNode(fFilterA.id, fFilterB.id, "and");
+  const andNode = w.createAndOrNode([fFilterA.id, fFilterB.id], "and");
   w.render();
-  assert(andNode.bakedA.filterType === "text" && andNode.bakedA.value === "message" && andNode.bakedB.value === "other",
+  assert(andNode.baked[0].filterType === "text" && andNode.baked[0].value === "message" && andNode.baked[1].value === "other",
     "AND node stores a flat baked condition snapshot of each side's own condition");
   assert(andNode.parentId === fa.id, "AND node is placed directly under file A (fFilterA's root), not nested under fFilterA");
 
@@ -1553,7 +1553,7 @@ await withApp(async (w, d, T) => {
   w.pasteClipboard();
   assert(fFilterA.children.length === beforePaste + 1, "AND node can be copy/pasted");
   const pastedAndId = fFilterA.children[fFilterA.children.length - 1];
-  assert(T.state.nodes[pastedAndId].bakedA.value === "message" && T.state.nodes[pastedAndId].bakedB.value === "other",
+  assert(T.state.nodes[pastedAndId].baked[0].value === "message" && T.state.nodes[pastedAndId].baked[1].value === "other",
     "pasted AND node's bakedA/bakedB carry the same flat condition data (cloneSubtree deep-copies them)");
 
   // Moving the AND node into what would have been a cyclic position under
@@ -1565,7 +1565,7 @@ await withApp(async (w, d, T) => {
   const movedOk1 = w.moveNode(andNode.id, childOfB.id);
   assert(movedOk1 === true, "moving the AND node under fFilterB's subtree now succeeds (no cycle risk any more)");
   assert(andNode.parentId === childOfB.id, "AND node's parentId updated to the new position");
-  assert(andNode.bakedA.value === "message" && andNode.bakedB.value === "other", "...but bakedA/bakedB are completely untouched by the move");
+  assert(andNode.baked[0].value === "message" && andNode.baked[1].value === "other", "...but bakedA/bakedB are completely untouched by the move");
   assert(w.getEntries(andNode.id), "getEntries still resolves correctly (no infinite recursion) after the move");
 
   // Cross-file cut/paste is now an ordinary paste too — no reconstruction,
@@ -1577,18 +1577,18 @@ await withApp(async (w, d, T) => {
   assert(T.state.clipboard === null, "cross-file cut succeeds as a plain move");
   assert(T.state.nodes[andNode.id], "the SAME node id survives a cross-file cut/paste — no reconstruction any more");
   assert(andNode.parentId === fb.id, "the AND node now sits under file B");
-  assert(andNode.bakedA.value === "message" && andNode.bakedB.value === "other", "bakedA/bakedB are unaffected by crossing a file boundary");
+  assert(andNode.baked[0].value === "message" && andNode.baked[1].value === "other", "bakedA/bakedB are unaffected by crossing a file boundary");
 
   // Legit same-file move still works
   const gA = w.createFilterNode(fa.id, "text", "g");
   const gB = w.createFilterNode(fa.id, "text", "h");
-  const gAnd = w.createAndOrNode(gA.id, gB.id, "and");
+  const gAnd = w.createAndOrNode([gA.id, gB.id], "and");
   const otherFilterA = w.createFilterNode(fa.id, "text", "y");
   T.state.activeId = otherFilterA.id;
   const movedOk = w.moveNode(gAnd.id, otherFilterA.id);
   assert(movedOk === true, "moveNode allows a non-cyclic reparent");
   assert(gAnd.parentId === otherFilterA.id, "AND node's parentId updated after a legit move");
-  assert(gAnd.bakedA.value === "g" && gAnd.bakedB.value === "h", "bakedA/bakedB survive a legit move untouched");
+  assert(gAnd.baked[0].value === "g" && gAnd.baked[1].value === "h", "bakedA/bakedB survive a legit move untouched");
 
   // Real drag-and-drop DOM path + isFileDrag() overlay gate
   w.render();
@@ -1916,7 +1916,7 @@ section("20. Session cache: persist in one window, restore in the next");
     const t1 = w.createFilterNode(f.id, "text", "message 1");
     const t2 = w.createFilterNode(f.id, "text", "ERROR");
     t2.highlightColor = "#ff0000";
-    const combo = w.createAndOrNode(t1.id, t2.id, "and");
+    const combo = w.createAndOrNode([t1.id, t2.id], "and");
 
     const bEntry = f.entries[5];
     savedEntryRaw = bEntry.raw;
@@ -1973,7 +1973,7 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(r1, "restore: first filter type/value");
     assert(r2 && r2.highlightColor === "#ff0000", "restore: highlight colour preserved");
     const combo = childNodes.find(n => n.filterType === "and");
-    assert(combo && combo.bakedA && combo.bakedA.value === "message 1" && combo.bakedB && combo.bakedB.value === "ERROR",
+    assert(combo && combo.baked[0] && combo.baked[0].value === "message 1" && combo.baked[1] && combo.baked[1].value === "ERROR",
       "restore: AND node's bakedA/bakedB round-tripped as plain data, no ref-remapping needed");
     // "message 1" matches entries 1, 10..19; ERROR matches 0,5,10,15,20,25 —
     // intersection is exactly {10, 15}.
@@ -2056,7 +2056,7 @@ group(21);
     const t1 = w.createFilterNode(f.id, "text", "message 1");
     const t2 = w.createFilterNode(f.id, "text", "ERROR");
     t2.highlightColor = "#ff0000";
-    const combo = w.createAndOrNode(t1.id, t2.id, "and");
+    const combo = w.createAndOrNode([t1.id, t2.id], "and");
 
     // Bookmarks on entries 5 and 15 (15 will be missing in the tier-3 fixture).
     savedRaw5 = f.entries[5].raw;
@@ -2160,7 +2160,7 @@ group(21);
     assert(r1 && r2 && r2.highlightColor === "#ff0000",
       "tier1: filter values + highlight colour round-trip");
     const combo = childNodes.find(n => n.filterType === "and");
-    assert(combo && combo.bakedA && combo.bakedA.value === "message 1" && combo.bakedB && combo.bakedB.value === "ERROR",
+    assert(combo && combo.baked[0] && combo.baked[0].value === "message 1" && combo.baked[1] && combo.baked[1].value === "ERROR",
       "tier1: AND node's bakedA/bakedB round-tripped as plain data");
     assert(w.getEntries(combo.id).length === 2, "tier1: AND node re-evaluates correctly (msgs 10,15)");
     assert(T.state.bookmarks.size === 2 && T.state.bookmarks.has(f.entries[5].id),
@@ -2472,8 +2472,8 @@ group(22);
 
     T.state.multiSelect = new Set([first.id, second.id, third.id]);
     const { actions } = w.describeBulkActions([first, second, third]);
-    assert(actions.some(a => a.action === "link" && /3-way/.test(a.label)),
-      "multi-hop dialog: 3-filter selection offers a labeled N-way Link… bulk action");
+    assert(actions.some(a => a.action === "link" && a.label === "Link…"),
+      "multi-hop dialog: 3-filter selection offers a plain Link… bulk action (no N-way suffix)");
 
     w.openLinkDialog([first.id, second.id, third.id]);
     assert(!d.querySelector("#linkDialog").classList.contains("hidden"), "multi-hop dialog: opens for 3 filters");
@@ -14489,10 +14489,10 @@ await withApp(async (w, d, T) => {
   // --- Placement: AND/OR/LINK always land as a new top-level child of the
   // shared root file, regardless of where the two inputs sit in the tree. ---
   const nested = w.createFilterNode(posFilter.id, "text", "pos 1"); // a filter NESTED under posFilter
-  const andNode = w.createAndOrNode(nested.id, valFilter.id, "and");
+  const andNode = w.createAndOrNode([nested.id, valFilter.id], "and");
   assert(andNode.parentId === f.id, "AND node is placed directly under the FILE, not nested under either input");
   assert(f.children.includes(andNode.id), "...and is a real top-level child of the file");
-  assert(andNode.bakedA.filterType === "text" && andNode.bakedA.value === "pos 1" && andNode.bakedB.value === "val",
+  assert(andNode.baked[0].filterType === "text" && andNode.baked[0].value === "pos 1" && andNode.baked[1].value === "val",
     "bakedA/bakedB are flat copies of each side's OWN single condition");
 
   // --- getEntries() evaluates bakedA/bakedB as predicates over its own
@@ -14504,7 +14504,7 @@ await withApp(async (w, d, T) => {
   const movedOk = w.moveNode(andNode.id, unrelatedParent.id);
   assert(movedOk === true, "moving an and/or/link node is always a plain, unguarded reparent now");
   assert(andNode.parentId === unrelatedParent.id, "parentId updated by the move");
-  assert(andNode.bakedA.value === "pos 1" && andNode.bakedB.value === "val", "bakedA/bakedB are untouched by the move");
+  assert(andNode.baked[0].value === "pos 1" && andNode.baked[1].value === "val", "bakedA/bakedB are untouched by the move");
   const after = w.getEntries(andNode.id).map(e => e.id);
   // unrelatedParent ("message") still matches every entry in this log, so
   // the AND's own input pool is unchanged in practice — the move is a
@@ -14531,7 +14531,7 @@ await withApp(async (w, d, T) => {
   // AND's result is UNCHANGED, delete B, verify it's STILL unchanged. ---
   const some = w.createFilterNode(f.id, "text", "message 5"); // "Some"
   const entry = w.createFilterNode(f.id, "text", "message");  // "Entry" (matches every entry)
-  const someAndEntry = w.createAndOrNode(some.id, entry.id, "and");
+  const someAndEntry = w.createAndOrNode([some.id, entry.id], "and");
   const reproCountBefore = w.getEntries(someAndEntry.id).length;
   assert(reproCountBefore === 1, "sanity: 'Some' AND 'Entry' matches exactly the one entry containing 'message 5'");
   w.deleteFilterNodeWithUndo(some.id);
@@ -14547,7 +14547,7 @@ await withApp(async (w, d, T) => {
   const afterTen = w.createFilterNode(f.id, "timerange", { from: f.entries[8].ts, to: null }); // C: "only entries after index 8"
   const aUnderC = w.createFilterNode(afterTen.id, "text", "message 5"); // A, NESTED under C
   const bPlain = w.createFilterNode(f.id, "text", "message");           // B, matches everything
-  const combinedUnderC = w.createAndOrNode(aUnderC.id, bPlain.id, "and");
+  const combinedUnderC = w.createAndOrNode([aUnderC.id, bPlain.id], "and");
   // A's own condition ("message 5") matches ONE entry file-wide (index 5),
   // which sits BEFORE C's "after index 8" restriction — if C's restriction
   // leaked in, the combined result would wrongly be empty.
@@ -14559,7 +14559,7 @@ await withApp(async (w, d, T) => {
   // created, so Unpack never leaves a duplicate of itself behind. ---
   const unpackA = w.createFilterNode(f.id, "text", "pos");
   const unpackB = w.createFilterNode(f.id, "text", "val");
-  const toUnpack = w.createAndOrNode(unpackA.id, unpackB.id, "and");
+  const toUnpack = w.createAndOrNode([unpackA.id, unpackB.id], "and");
   const resultBefore = w.getEntries(toUnpack.id).map(e => e.id);
   const parentBefore = toUnpack.parentId;
   const returnedId = w.unpackAndOrLinkNode(toUnpack.id);
@@ -14574,22 +14574,22 @@ await withApp(async (w, d, T) => {
 
   // --- Persistence carriers thread bakedA/bakedB through as plain data ---
   const clone = w.cloneSubtree(andNode.id, f.id);
-  assert(clone.bakedA.value === andNode.bakedA.value && clone.bakedB.value === andNode.bakedB.value,
+  assert(clone.baked[0].value === andNode.baked[0].value && clone.baked[1].value === andNode.baked[1].value,
     "cloneSubtree deep-copies bakedA/bakedB as plain data");
 
   const snap = w.snapshotSubtree(andNode.id);
   delete T.state.nodes[andNode.id];
   const restored = w.restoreSubtree(snap);
-  assert(restored.id === andNode.id && restored.bakedA.value === "pos 1" && restored.bakedB.value === "val",
+  assert(restored.id === andNode.id && restored.baked[0].value === "pos 1" && restored.baked[1].value === "val",
     "snapshotSubtree/restoreSubtree preserve the ORIGINAL id and bakedA/bakedB (undo/redo)");
 
   const { roots: cacheRoots } = w.serializeFilterTreeForCache(f);
-  const findAnd = list => { for (const n of list) { if (n.filterType === "and" && n.bakedA) return n; const r = findAnd(n.children); if (r) return r; } return null; };
+  const findAnd = list => { for (const n of list) { if (n.filterType === "and" && n.baked) return n; const r = findAnd(n.children); if (r) return r; } return null; };
   const serializedAnd = findAnd(cacheRoots);
   assert(serializedAnd, "serializeFilterTreeForCache emits bakedA/bakedB for an and/or node");
   const f2 = await w.addFile("128b.log", makeLog(0, 10), () => {});
   const refMap2 = w.materializeCachedFilters(f2, cacheRoots);
-  const restoredAndId = Object.values(refMap2).find(id => T.state.nodes[id].filterType === "and" && T.state.nodes[id].bakedA);
+  const restoredAndId = Object.values(refMap2).find(id => T.state.nodes[id].filterType === "and" && T.state.nodes[id].baked);
   assert(restoredAndId, "materializeCachedFilters carries bakedA/bakedB through as plain data, no ref-resolution needed");
 });
 
@@ -14829,7 +14829,7 @@ await withApp(async (w, d, T) => {
   // --- Same placement rule for an and/or/link node, at a non-FILE target ---
   const andA = w.createFilterNode(fb.id, "text", "message 1");
   const andB = w.createFilterNode(fb.id, "text", "message");
-  const andNode = w.createAndOrNode(andA.id, andB.id, "and");
+  const andNode = w.createAndOrNode([andA.id, andB.id], "and");
   const andCount = w.getEntries(andNode.id).length;
   const andBranch = w.serializeFilterBranch(andNode.id, false);
   const beforeChildren3 = nonFileTarget.children.length;
@@ -14837,7 +14837,7 @@ await withApp(async (w, d, T) => {
   w.importFilterJson(JSON.stringify({ format: "philogg-filters", version: 2, activeRef: andBranch.activeRef, roots: andBranch.roots }));
   assert(nonFileTarget.children.length === beforeChildren3 + 1, "an and/or/link node's export also lands under the current non-FILE target, not FILE");
   const loadedAnd = T.state.nodes[nonFileTarget.children[nonFileTarget.children.length - 1]];
-  assert(loadedAnd.filterType === "and" && loadedAnd.bakedA && loadedAnd.bakedB, "the imported and/or/link node is fully self-contained via its own bakedA/bakedB");
+  assert(loadedAnd.filterType === "and" && loadedAnd.baked[0] && loadedAnd.baked[1], "the imported and/or/link node is fully self-contained via its own bakedA/bakedB");
   assert(w.getEntries(loadedAnd.id).length >= 0, "it re-evaluates without throwing");
 
   // --- The export-scope prompt is asked as part of the actual Save filter…
@@ -14912,7 +14912,7 @@ await withApp(async (w, d, T) => {
   w.invalidateAllCaches();
   assert(w.getEntries(legacy.id).length === 0, "a combiner with no baked sides evaluates to nothing rather than throwing");
   let threw = null;
-  try { assert(w.createAndOrNode(legacy.id, plain.id, "and") === null, "combining it is refused (returns null)"); }
+  try { assert(w.createAndOrNode([legacy.id, plain.id], "and") === null, "combining it is refused (returns null)"); }
   catch (e) { threw = e; }
   assert(!threw, "combining a combiner with no baked sides doesn't throw, got " + (threw && threw.message));
   threw = null;
@@ -14928,7 +14928,7 @@ await withApp(async (w, d, T) => {
   // menu: a properly baked combiner in the same harness DOES offer Unpack.
   const okA = w.createFilterNode(f.id, "text", "message 3");
   const okB = w.createFilterNode(f.id, "text", "message 4");
-  const realAnd = w.createAndOrNode(okA.id, okB.id, "and");
+  const realAnd = w.createAndOrNode([okA.id, okB.id], "and");
   T.state.activeId = realAnd.id;
   w.render();
   w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {}, stopPropagation() {} }, realAnd.id);
@@ -14954,7 +14954,7 @@ await withApp(async (w, d, T) => {
   const link = w.createLinkNode(ref.id, tgt.id, "after", 1);
   w.invalidateAllCaches();
   assert(w.getEntries(link.id).length > 0, "sanity: the link node itself produces pair entries");
-  assert(w.createAndOrNode(link.id, plain.id, "and") === null,
+  assert(w.createAndOrNode([link.id, plain.id], "and") === null,
     "createAndOrNode refuses a link side — pair-entry ids never intersect a plain entry pool");
   const linkActions = w.describeBulkActions([T.state.nodes[link.id], T.state.nodes[plain.id]]).actions.map(a => a.action);
   assert(linkActions.join("/") === "link",
@@ -16916,11 +16916,11 @@ await withApp(async (w, d, T) => {
 
   // --- and/or sides: bakeNodeCondition/getEntriesFromBaked ---------------
   const other = w.createFilterNode(f.id, "text", "active", false, null, false, ["message"]);
-  const andNode = w.createAndOrNode(whole.id, other.id, "and");
+  const andNode = w.createAndOrNode([whole.id, other.id], "and");
   assert(andNode && JSON.stringify(w.getEntries(andNode.id).map(e => f.entries.indexOf(e))) === JSON.stringify([0]),
     "an AND over a whole-word side bakes the flag in: only \"Test is active\" satisfies both, got " +
     JSON.stringify(w.getEntries(andNode.id).map(e => f.entries.indexOf(e))));
-  assert(andNode.bakedA.wholeWord === true, "bakeNodeCondition copies wholeWord into the baked side");
+  assert(andNode.baked[0].wholeWord === true, "bakeNodeCondition copies wholeWord into the baked side");
 
   // --- Match highlighting honours it (textFilterMatchSpec/findMatchRanges) ---
   const spec = w.textFilterMatchSpec(whole);
@@ -25347,8 +25347,8 @@ await withApp(async (w, d, T) => {
    the DOM once and only toggles disabled/label afterwards.
    handleSidebarToolbarActionClick(action) dispatches to the pre-existing
    function/dialog each action already had (zero duplicated business logic).
-   Interim: a 2+ selection appends describeBulkActions' AND/OR/Link…/Merge as
-   a trailing group (moves into the selection bar later). "Apply from
+   A 2+ selection disables every button (the bulk actions live in the
+   floating selection bar, GROUP 319). "Apply from
    library…" left this toolbar (it stays on the tree context menu, GROUP 79
    /194). The retired dynamic-toolbar shape is in TEST PROVENANCE.
    ============================================================ */
@@ -25397,18 +25397,14 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220c. 2+ files selected: fixed buttons all disabled, interim trailing Merge group (group:'selection')");
+  section("220c. 2+ files selected: the toolbar is exactly the five fixed buttons, all disabled (Merge lives in the selection bar)");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   T.state.multiSelect = new Set([fa.id, fb.id]);
   T.state.activeId = fa.id;
   const { actions } = w.describeSidebarToolbarActions();
-  assert(actions.filter(a => !a.group).every(a => a.disabled), "fixed buttons all disabled for 2+ selected");
-  const mergeAction = actions.find(a => a.action === "merge");
-  assert(mergeAction && /Merge 2 files/.test(mergeAction.label), "a Merge action with the expected label, got " + JSON.stringify(actions.map(a => a.action)));
-  assert(mergeAction.group === "selection" && mergeAction.disabled === false, "Merge is an enabled button of the selection group");
-  assert(Array.isArray(mergeAction.target) && mergeAction.target.includes(fa.id) && mergeAction.target.includes(fb.id), "merge target is the array of selected file ids");
-  assert(!actions.some(a => a.action === "and" || a.action === "or" || a.action === "link"), "no AND/OR/Link for a files-only selection");
+  assert(actions.length === 5 && actions.every(a => a.disabled), "all five buttons disabled for 2+ selected");
+  assert(!actions.some(a => a.action === "merge" || a.action === "and" || a.action === "or" || a.action === "link"), "no bulk action on the toolbar");
 });
 
 await withApp(async (w, d, T) => {
@@ -25421,7 +25417,7 @@ await withApp(async (w, d, T) => {
   assert(sbState(actions) === "rename:on,edit:on,invert:on,clockOffset:off,addToLibrary:on", "text filter, got " + sbState(actions));
   assert(actions.filter(a => a.target !== t1.id).length === 0, "every action targets the selected filter");
 
-  const andNode = w.createAndOrNode(t1.id, t2.id, "and");
+  const andNode = w.createAndOrNode([t1.id, t2.id], "and");
   actions = pick(andNode.id);
   assert(sbState(actions) === "rename:on,edit:off,invert:on,clockOffset:off,addToLibrary:on", "AND node: no Edit, got " + sbState(actions));
 
@@ -25449,43 +25445,35 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220f. 2+ filters, same root: fixed buttons disabled + interim AND/OR/Link… group (2-way vs N-way Link label)");
+  section("220f. 2+ filters, same root: toolbar all disabled; describeBulkActions offers AND, OR, Link… for 2 and for 3 filters");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   T.state.multiSelect = new Set([t1.id, t2.id]);
   T.state.activeId = t1.id;
-  let { actions } = w.describeSidebarToolbarActions();
-  assert(actions.filter(a => !a.group).every(a => a.disabled), "fixed buttons disabled");
-  assert(actions.filter(a => a.group).map(a => a.action).join(",") === "and,or,link", "selection group AND, OR, Link…, got " + actions.map(a => a.action).join(","));
-  const link2 = actions.find(a => a.action === "link");
-  assert(link2 && !/-way/.test(link2.label), "2-filter Link… label has no N-way suffix");
+  assert(w.describeSidebarToolbarActions().actions.every(a => a.disabled), "toolbar buttons all disabled");
+  let actions = w.describeBulkActions([t1, t2]).actions;
+  assert(actions.map(a => a.action).join(",") === "and,or,link", "AND, OR, Link…, got " + actions.map(a => a.action).join(","));
+  assert(actions.find(a => a.action === "link").label === "Link…", "Link… label has no N-way suffix");
   const t3 = w.createFilterNode(f.id, "text", "message 3");
-  T.state.multiSelect = new Set([t1.id, t2.id, t3.id]);
-  ({ actions } = w.describeSidebarToolbarActions());
-  assert(/3-way/.test(actions.find(a => a.action === "link").label), "3-filter selection labels Link… as 3-way");
-  assert(!actions.some(a => a.action === "and" || a.action === "or"), "AND/OR stay two-filter-only");
+  actions = w.describeBulkActions([t1, t2, t3]).actions;
+  assert(actions.map(a => a.action).join(",") === "and,or,link", "3 filters: AND, OR, Link… too, got " + actions.map(a => a.action).join(","));
+  assert(actions.find(a => a.action === "link").label === "Link…", "3-filter Link… still has no N-way suffix");
 });
 
 await withApp(async (w, d, T) => {
-  section("220g. filters from different root files / mixed files+filters -> explanatory note, no selection group");
+  section("220g. filters from different root files / mixed files+filters -> explanatory note (selection bar), toolbar stays the disabled five");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   const ta = w.createFilterNode(fa.id, "text", "message 1");
   const tb = w.createFilterNode(fb.id, "text", "message 1");
   T.state.multiSelect = new Set([ta.id, tb.id]);
   T.state.activeId = ta.id;
-  let { actions, note } = w.describeSidebarToolbarActions();
-  assert(actions.length === 5 && !!note, "different roots: only the disabled fixed set plus a note");
-  T.state.multiSelect = new Set([fa.id, ta.id]);
-  ({ actions, note } = w.describeSidebarToolbarActions());
-  assert(actions.length === 5 && !!note, "mixed files+filters: note, no selection group");
-  w.render();
-  const noteEl = d.querySelector("#sidebarToolbar [data-stb-note]");
-  assert(noteEl && isVisible(noteEl, w) && noteEl.textContent === note, "the note is rendered in the toolbar");
-  T.state.multiSelect = new Set([ta.id]);
-  w.render();
-  assert(!isVisible(noteEl, w), "...and hidden again once the selection is valid");
+  assert(w.describeSidebarToolbarActions().actions.length === 5, "different roots: only the disabled fixed set");
+  let bulk = w.describeBulkActions([ta, tb]);
+  assert(bulk.actions.length === 0 && !!bulk.note, "different roots: no actions, a note");
+  bulk = w.describeBulkActions([fa, ta]);
+  assert(bulk.actions.length === 0 && !!bulk.note, "mixed files+filters: note, no actions");
 });
 
 await withApp(async (w, d, T) => {
@@ -25536,9 +25524,9 @@ await withApp(async (w, d, T) => {
   const fb = await w.addFile("b.log", makeLog(30, 5), () => {});
   T.state.multiSelect = new Set([f.id, fb.id]);
   T.state.activeId = f.id;
+  calls = [];
   w.handleSidebarToolbarActionClick("merge");
-  const mergeCall = calls.find(c => c[0] === "performBulkAction");
-  assert(mergeCall && mergeCall[1][0] === "merge" && mergeCall[1][1].includes(f.id) && mergeCall[1][1].includes(fb.id), "merge -> performBulkAction('merge', [ids])");
+  assert(calls.length === 0, "bulk actions are no longer handled by the toolbar (selection bar owns them)");
 
   calls = [];
   T.state.multiSelect = new Set();
@@ -25547,7 +25535,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220j. rendered toolbar: built once, fixed buttons always in the DOM, only disabled/label toggle, selection group appears for 2+");
+  section("220j. rendered toolbar: built once, fixed buttons always in the DOM, only disabled/label toggle, all disabled for 2+");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
@@ -25561,13 +25549,9 @@ await withApp(async (w, d, T) => {
   const after = btns();
   assert(before.every((b, i) => b === after[i]), "the same button elements survive a render (no rebuild)");
   assert(after.map(b => b.disabled ? "0" : "1").join("") === "11101", "text filter: Adjust clock… disabled, rest enabled");
-  assert(d.querySelectorAll('#sidebarToolbar [data-stb-group="sel"] [data-row-action]').length === 0, "no selection group for a single selection");
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
-  const selBtns = [...d.querySelectorAll('#sidebarToolbar [data-stb-group="sel"] [data-row-action]')].map(b => b.dataset.rowAction);
-  assert(selBtns.join(",") === "and,or,link", "2 filters selected: AND, OR, Link… group appears, got " + selBtns.join(","));
-  assert(btns().every((b, i) => b === before[i]), "...and the fixed buttons are still the same elements");
-  T.state.multiSelect = new Set(); w.render();
-  assert(d.querySelectorAll('#sidebarToolbar [data-stb-group="sel"] [data-row-action]').length === 0, "the group disappears with the selection");
+  assert(btns().length === 5 && btns().every(b => b.disabled), "2 filters selected: still the five buttons, all disabled (no NOT over several nodes)");
+  assert(btns().every((b, i) => b === before[i]), "...and they are still the same elements");
 });
 
 /* ============================================================
@@ -25596,8 +25580,8 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
-  const andN = w.createAndOrNode(t1.id, t2.id, "and");
-  const orN = w.createAndOrNode(t1.id, t2.id, "or");
+  const andN = w.createAndOrNode([t1.id, t2.id], "and");
+  const orN = w.createAndOrNode([t1.id, t2.id], "or");
   assert(w.nodeIconHTML(andN).includes("#i-and") && w.nodeIconHTML(orN).includes("#i-or"), "nodeIconHTML: AND -> and icon, OR -> or icon");
   w.render();
   const rows = [...d.querySelectorAll("#tree .tree-row")];
@@ -25691,13 +25675,13 @@ await withApp(async (w, d, T) => {
   const items2 = [...d.querySelectorAll("#treeContextMenu [data-action]")].map(n => n.dataset.action);
   assert(items2.includes("merge"), "Merge stays offered for a 2+ file bulk selection — not part of the AND/OR/Link exclusion");
 
-  // The sidebar toolbar, meanwhile, is still the one place offering the full
-  // set including AND/OR/Link for the same 2-filter selection.
+  // The floating selection bar (GROUP 319) is the one place offering
+  // AND/OR/Link for the same 2-filter selection.
   T.state.multiSelect = new Set([t1.id, t2.id]);
-  const { actions } = w.describeSidebarToolbarActions();
-  const toolbarNames = actions.map(a => a.action);
-  assert(toolbarNames.includes("and") && toolbarNames.includes("or") && toolbarNames.includes("link"),
-    "the sidebar toolbar is the sole remaining place AND/OR/Link are offered for a 2+ filter selection");
+  w.render();
+  const barNames = [...d.querySelectorAll("#selectionBar [data-selbar-action]")].map(b => b.dataset.selbarAction);
+  assert(barNames.includes("and") && barNames.includes("or") && barNames.includes("link"),
+    "the selection bar is the sole place AND/OR/Link are offered for a 2+ filter selection");
 });
 
 await withApp(async (w, d, T) => {
@@ -30833,7 +30817,7 @@ group(270);
     const f = await w.addFile("a.log", lines.join("\n") + "\n", () => {});
     const a = w.createFilterNode(f.id, "text", "message 1");
     const b = w.createFilterNode(f.id, "level", ["ERROR"]);
-    const or = w.createAndOrNode(a.id, b.id, "or");
+    const or = w.createAndOrNode([a.id, b.id], "or");
     T.state.activeId = or.id;
     w.applyFhView("highlight");
     w.render();
@@ -32645,7 +32629,7 @@ group(289);
     w.toggleInvertWithUndo(gapNode.id);
 
     // Baked as an AND side: evaluated by getEntriesFromBaked.
-    const andNode = w.createAndOrNode(gapNode.id, hb.id, "and");
+    const andNode = w.createAndOrNode([gapNode.id, hb.id], "and");
     assert(msgs(w, andNode.id).join("|") === "Heartbeat 11", "AND(gap per thread, 'Heartbeat') evaluates the baked gap condition");
   });
 
@@ -35176,12 +35160,12 @@ await withApp(async (w, d, T) => {
   const inLogOrder = list => list.every((e, i) => i === 0 || pos.get(list[i - 1].id) < pos.get(e.id));
   const step2 = w.createFilterNode(f.id, "text", "step 2/");
   const step1 = w.createFilterNode(f.id, "text", "step 1/");
-  const or = w.createAndOrNode(step2.id, step1.id, "or"); // A = step 2, B = step 1: collected in the "wrong" order
+  const or = w.createAndOrNode([step2.id, step1.id], "or"); // A = step 2, B = step 1: collected in the "wrong" order
   const orEntries = w.getEntries(or.id);
   assert(orEntries.length === f.entries.filter(e => /step [12]\//.test(e.message)).length && inLogOrder(orEntries),
     "an OR union lists step 1 before step 2 of each tick (same timestamp), as in the file");
   const step3 = w.createFilterNode(f.id, "text", "step 3/");
-  const nested = w.createAndOrNode(step3.id, or.id, "or"); // the inner OR is evaluated from its baked snapshot
+  const nested = w.createAndOrNode([step3.id, or.id], "or"); // the inner OR is evaluated from its baked snapshot
   const nestedEntries = w.getEntries(nested.id);
   assert(nestedEntries.some(e => e.message.includes("step 3/")) && inLogOrder(nestedEntries), "a nested (baked) OR keeps log order too");
 
@@ -35401,6 +35385,199 @@ await withApp(async (w, d, T) => {
   const dirs = [...d.querySelectorAll("#folderWatchList .tree-dir-row .tree-label")].map(l => l.textContent);
   assert(dirs.join(",") === "other,x,y", "unrelated subfolders stay collapsed, got " + dirs.join(","));
   assert(!d.querySelector("#folderWatchList .folder-watch-file-name") || ![...d.querySelectorAll("#folderWatchList .folder-watch-file-name")].some(l => l.textContent === "o.log"), "o.log stays hidden in its collapsed folder");
+});
+
+/* ============================================================
+   GROUP 319 — N-ary AND/OR (node.baked[]) + floating selection bar
+   Origin: 2026-09-28 (filter-actions Phase B). createAndOrNode(ids, mode)
+   takes 2+ filters; the node carries baked: [cond, cond, ...] (link keeps
+   bakedA/bakedB). #selectionBar (bottom of the sidebar) shows for 2+
+   selected nodes with describeBulkActions' actions or note.
+   ============================================================ */
+group(319);
+
+await withApp(async (w, d, T) => {
+  section("319a. createAndOrNode(ids, mode): 3-way AND/OR evaluation, name, baked[] shape, guards");
+  const f = await w.addFile("a.log", makeLog(0, 40), () => {});
+  const a = w.createFilterNode(f.id, "text", "message 1");
+  const b = w.createFilterNode(f.id, "text", "message 3");
+  const c = w.createFilterNode(f.id, "text", "ge 1");
+  const idsOf = n => new Set(w.getEntries(n.id).map(e => e.id));
+  const A = idsOf(a), B = idsOf(b), C = idsOf(c);
+  const and3 = w.createAndOrNode([a.id, b.id, c.id], "and");
+  assert(Array.isArray(and3.baked) && and3.baked.length === 3 && and3.bakedA === undefined && and3.bakedB === undefined, "baked is a 3-element array, no bakedA/bakedB");
+  assert(and3.baked.map(x => x.value).join("|") === "message 1|message 3|ge 1", "baked keeps selection order");
+  assert(and3.name === "“message 1” ∧ “message 3” ∧ “ge 1”", "name joins all display names with ∧, got " + and3.name);
+  const expAnd = [...A].filter(id => B.has(id) && C.has(id));
+  const gotAnd = w.getEntries(and3.id).map(e => e.id);
+  assert(gotAnd.length === expAnd.length && gotAnd.every(id => expAnd.includes(id)), "AND = entries matching all three (" + expAnd.length + ")");
+  const or3 = w.createAndOrNode([a.id, b.id, c.id], "or");
+  assert(or3.name === "“message 1” ∨ “message 3” ∨ “ge 1”", "OR name uses ∨");
+  const expOr = new Set([...A, ...B, ...C]);
+  const gotOr = w.getEntries(or3.id).map(e => e.id);
+  assert(gotOr.length === expOr.size && gotOr.every(id => expOr.has(id)), "OR = union of all three (" + expOr.size + ")");
+  const ts = w.getEntries(or3.id).map(e => e.ts);
+  assert(ts.every((t, i) => i === 0 || ts[i - 1] <= t), "OR result is chronological");
+  assert(w.createAndOrNode([a.id], "and") === null && w.createAndOrNode([], "or") === null, "fewer than 2 ids -> null");
+  assert(w.createAndOrNode([a.id, b.id], "xor") === null, "unknown mode -> null");
+  // nested: an AND node as one of 3 sides of an OR
+  const d1 = w.createFilterNode(f.id, "text", "message 2");
+  const nested = w.createAndOrNode([and3.id, d1.id, a.id], "or");
+  assert(nested && nested.baked[0].filterType === "and" && Array.isArray(nested.baked[0].baked) && nested.baked[0].baked.length === 3, "nested combiner bakes its own baked[]");
+  const expNested = new Set([...gotAnd, ...idsOf(d1), ...A]);
+  assert(w.getEntries(nested.id).length === expNested.size, "nested N-ary evaluation, expected " + expNested.size);
+  w.render();
+  const row = [...d.querySelectorAll("#tree .tree-row")].find(r => r.classList.contains("filter-and"));
+  assert(row && row.querySelector(".tree-label").title.includes("“message 1” ∧ “message 3” ∧ “ge 1”"), "row label carries the full name as tooltip");
+});
+
+await withApp(async (w, d, T) => {
+  section("319b. baked[] through every persistence carrier + undo/redo + Unpack + legacy import");
+  const f = await w.addFile("a.log", makeLog(0, 40), () => {});
+  const a = w.createFilterNode(f.id, "text", "message 1");
+  const b = w.createFilterNode(f.id, "text", "message 3");
+  const c = w.createFilterNode(f.id, "text", "message 2");
+  const node = w.createAndOrNode([a.id, b.id, c.id], "or");
+  const vals = n => (n.baked || []).map(x => x.value).join("|");
+  const V = "message 1|message 3|message 2";
+  assert(vals(node) === V, "sanity");
+  const cl = w.cloneSubtree(node.id, f.id);
+  assert(vals(cl) === V && cl.baked !== node.baked && cl.baked[0] !== node.baked[0], "cloneSubtree deep-copies baked[]");
+  const snap = w.snapshotSubtree(node.id);
+  assert(vals(snap) === V && snap.baked !== node.baked, "snapshotSubtree copies baked[]");
+  delete T.state.nodes[node.id];
+  const restored = w.restoreSubtree(snap);
+  assert(restored.id === node.id && vals(restored) === V, "restoreSubtree keeps id and baked[]");
+  T.state.nodes[restored.id] = restored;
+
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, ...(() => { const br = w.serializeFilterBranch(node.id, false); return { activeRef: br.activeRef, roots: br.roots }; })() });
+  assert(JSON.parse(json).roots[0].baked.length === 3, "serializeFilterBranch emits baked[]");
+  const f2 = await w.addFile("b.log", makeLog(0, 40), () => {});
+  const s = d.createElement("script"); s.textContent = `loadFilterTargetId = ${JSON.stringify(f2.id)};`; d.body.appendChild(s);
+  w.importFilterJson(json);
+  const imported = f2.children.map(id => T.state.nodes[id]).find(n => n.filterType === "or");
+  assert(imported && vals(imported) === V, "importFilterJson restores baked[]");
+  assert(w.getEntries(imported.id).length === w.getEntries(node.id).length, "imported node evaluates like the original");
+
+  const { roots } = w.serializeFilterTreeForCache(f);
+  const f3 = await w.addFile("c.log", makeLog(0, 40), () => {});
+  const refMap = w.materializeCachedFilters(f3, roots);
+  const cached = Object.values(refMap).map(id => T.state.nodes[id]).find(n => n.filterType === "or");
+  assert(cached && vals(cached) === V, "session cache round trip keeps baked[]");
+
+  // legacy shape (and/or with bakedA/bakedB) is rejected cleanly
+  const legacy = JSON.stringify({ format: "philogg-filters", version: 2, roots: [{ ref: 1, attach: "target", filterType: "and", name: "old", bakedA: { filterType: "text", value: "x" }, bakedB: { filterType: "text", value: "y" }, children: [] }] });
+  const before = f2.children.length;
+  let threw = null;
+  try { w.importFilterJson(legacy); } catch (e) { threw = e; }
+  assert(!threw && f2.children.length === before, "importing a legacy bakedA/bakedB and/or does not crash and creates nothing");
+  const oneSided = JSON.stringify({ format: "philogg-filters", version: 2, roots: [{ ref: 1, attach: "target", filterType: "or", name: "x", baked: [{ filterType: "text", value: "x" }], children: [] }] });
+  w.importFilterJson(oneSided);
+  assert(f2.children.length === before, "a baked[] with a single condition is rejected");
+
+  // Unpack -> one sibling per condition
+  const count = f.children.length;
+  w.unpackAndOrLinkNode(node.id);
+  assert(f.children.length === count + 3, "Unpack materializes all 3 conditions");
+  assert(w.hasBakedSides(node) && !w.hasBakedSides({ filterType: "and", baked: [{}] }), "hasBakedSides: and/or need 2+ baked conditions");
+});
+
+await withApp(async (w, d, T) => {
+  section("319c. undo/redo of creating a 3-way AND");
+  const f = await w.addFile("a.log", makeLog(0, 40), () => {});
+  const ids = ["message 1", "message 3", "message 2"].map(v => w.createFilterNode(f.id, "text", v).id);
+  T.state.multiSelect = new Set(ids);
+  w.performBulkAction("and", ids);
+  const made = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "and");
+  assert(made && made.baked.length === 3, "performBulkAction('and') over 3 ids creates a 3-way AND");
+  assert(T.state.multiSelect.size === 0, "selection cleared");
+  const madeId = made.id;
+  w.undo();
+  assert(!T.state.nodes[madeId], "undo removes the node");
+  w.redo();
+  const again = T.state.nodes[madeId];
+  assert(again && again.baked.length === 3 && again.baked[2].value === "message 2", "redo restores it with baked[]");
+});
+
+await withApp(async (w, d, T) => {
+  section("319d. selection bar: one per selection shape");
+  const bar = d.querySelector("#selectionBar");
+  const acts = () => [...bar.querySelectorAll("[data-selbar-action]")].map(b => b.dataset.selbarAction).join(",");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const fb = await w.addFile("b.log", makeLog(30, 10), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const t3 = w.createFilterNode(f.id, "text", "message 3");
+  const tb = w.createFilterNode(fb.id, "text", "message 3");
+  T.state.multiSelect = new Set(); w.render();
+  assert(!isVisible(bar, w), "hidden with no selection");
+  T.state.multiSelect = new Set([t1.id]); w.render();
+  assert(!isVisible(bar, w), "hidden with a single node");
+
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  assert(isVisible(bar, w), "visible for 2 filters");
+  assert(bar.querySelector(".selbar-count").textContent === "2 filters", "count label '2 filters'");
+  assert(acts() === "and,or,link,close", "2 filters: AND, OR, Link…, close, got " + acts());
+  assert(bar.querySelector('[data-selbar-action="link"]').textContent.trim() === "Link…", "Link… label");
+  T.state.multiSelect = new Set([t1.id, t2.id, t3.id]); w.render();
+  assert(bar.querySelector(".selbar-count").textContent === "3 filters" && acts() === "and,or,link,close", "3 filters: same actions, no N-way, got " + acts());
+  assert(d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "tree gets bottom padding while the bar shows");
+
+  // AND/OR hidden when a node fails canBeCombined (link node)
+  const link = w.createLinkNode(t1.id, t2.id, "after", 1);
+  T.state.multiSelect = new Set([link.id, t3.id]); w.render();
+  assert(acts() === "link,close", "AND/OR hidden when a link node is selected, got " + acts());
+
+  const bfile = [f.id, fb.id];
+  T.state.multiSelect = new Set(bfile); w.render();
+  assert(bar.querySelector(".selbar-count").textContent === "2 files" && acts() === "merge,close", "2 files: Merge only, got " + acts());
+  assert(bar.querySelector('[data-selbar-action="merge"]').textContent.trim() === "Merge 2 files", "Merge label");
+
+  T.state.multiSelect = new Set([t1.id, tb.id]); w.render();
+  assert(acts() === "close" && bar.querySelector(".selbar-msg").textContent.includes("different files"), "different roots: note, no actions");
+  T.state.multiSelect = new Set([f.id, t1.id]); w.render();
+  assert(acts() === "close" && bar.querySelector(".selbar-msg").textContent.includes("not both"), "mixed files+filters: note");
+  assert(bar.querySelector(".selbar-count").textContent === "2 selected", "mixed count label");
+  T.state.multiSelect = new Set(); w.render();
+  assert(!isVisible(bar, w) && !d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "hides again, padding class removed");
+});
+
+await withApp(async (w, d, T) => {
+  section("319e. selection bar: clicks (AND, close), Esc handling, DOM identity, toolbar stays disabled");
+  const bar = d.querySelector("#selectionBar");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  assert([...d.querySelectorAll("#sidebarToolbar [data-row-action]")].every(b => b.disabled), "toolbar buttons all disabled while 2+ selected");
+  const first = bar.querySelector('[data-selbar-action="and"]');
+  w.render();
+  assert(bar.querySelector('[data-selbar-action="and"]') === first, "a re-render with the same selection keeps the same bar buttons");
+  let bubbled = false;
+  d.body.addEventListener("click", () => { bubbled = true; });
+  first.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(!bubbled, "bar clicks do not bubble to document handlers");
+  const and = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "and");
+  assert(and && and.baked.length === 2 && T.state.multiSelect.size === 0 && !isVisible(bar, w), "AND click creates the node and the bar goes away");
+
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  bar.querySelector('[data-selbar-action="close"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(T.state.multiSelect.size === 0 && !isVisible(bar, w), "close button clears the selection");
+
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  const esc = () => d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const inp = d.createElement("input"); d.body.appendChild(inp); inp.focus();
+  inp.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(T.state.multiSelect.size === 2, "Esc while an input has focus leaves the selection alone");
+  inp.blur(); inp.remove();
+  esc();
+  assert(T.state.multiSelect.size === 0 && !isVisible(bar, w), "Esc clears the selection and hides the bar");
+
+  const fb = await w.addFile("b.log", makeLog(30, 10), () => {});
+  T.state.multiSelect = new Set([f.id, fb.id]); w.render();
+  bar.querySelector('[data-selbar-action="merge"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(Object.values(T.state.nodes).some(n => n.type === "file" && n.merged), "Merge N files button merges");
+  assert(T.state.multiSelect.size === 0, "selection cleared after merge");
 });
 
 console.log("\n" + "=".repeat(60));
@@ -39822,4 +39999,12 @@ process.exitCode = failed ? 1 : 0;
       instead of omitted, "Apply from library…" removed from it, built once)
       and added 220j (render toggles disabled only). Dropped: the per-selection
       button-set/separator assertions of the retired dynamic toolbar.
+   Group 319 — 2026-09-28 (person-requested, filter-actions Phase B): N-ary
+      AND/OR (createAndOrNode(ids, mode), node.baked[] replacing bakedA/bakedB
+      for and/or; link keeps bakedA/bakedB) through every persistence carrier;
+      floating #selectionBar (AND/OR/Link… for 2+ same-file filters, Merge N
+      files, note, close, Esc); interim 2+ group removed from #sidebarToolbar.
+      Same session updated 220c/f/g/i/j, 221c and the 3-way Link label
+      assertion (no "(N-way)" suffix any more); and/or bakedA/bakedB
+      assertions now read baked[0]/baked[1].
    ============================================================ */
