@@ -4,9 +4,10 @@
 //! mirrored settings all need to outlive any one window. Rust has no
 //! ambient mutable module scope, so they live here and are reached through
 //! Tauri's managed state.
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex};
 
 /// `philogg.html`'s own key for the "close to system tray" setting. Mirrored
@@ -75,6 +76,9 @@ pub struct AppState {
     /// Last `philogg-*` dump written to disk, so an unchanged poll doesn't
     /// touch the file at all.
     pub last_settings: Mutex<Option<String>>,
+    /// Hands each changed dump to `settings::spawn_writer`'s thread, so the
+    /// file write never runs on the main thread.
+    pub settings_writer: Sender<BTreeMap<String, String>>,
     /// A `{files, folders}` `philoggLoadLocalFiles` payload `windows::open_local`
     /// couldn't eval yet because the very first launch was a `.zip`/folder
     /// Explorer verb and no window (and so no loaded page) existed to eval
@@ -94,7 +98,6 @@ impl AppState {
             next_local_id: AtomicU64::new(1),
             chat_html_path: html_path.with_file_name("chat.html"),
             html_path,
-            settings_path,
             is_quitting: AtomicBool::new(false),
             close_to_tray: AtomicBool::new(true),
             pip_active: AtomicBool::new(false),
@@ -107,6 +110,8 @@ impl AppState {
                 .map(|d| d.as_nanos().to_string())
                 .unwrap_or_else(|_| "0".to_string()),
             last_settings: Mutex::new(None),
+            settings_writer: crate::settings::spawn_writer(settings_path.clone()),
+            settings_path,
             pending_local_load: Mutex::new(None),
             llm_requests: Mutex::new(HashMap::new()),
         }

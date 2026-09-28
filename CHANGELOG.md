@@ -2,6 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: desktop freezes on a slow (network) drive, dark bands while resizing a light-themed window (2026-09-28, person-reported: portable build run from a slow network share — the window froze for seconds now and then; resizing the PiP window showed the dark default theme in the uncovered strip until it caught up)**. See `docs/desktop.md` → "Settings: mirrored into a human-editable `settings.json`" and "Main window, tray, close-to-tray, single instance".
+  - **Root cause (freeze)**: non-`async` Tauri commands run on the main thread. `save_settings` wrote `settings.json` (next to the exe in the portable build) inline, and `list_folder`/`list_subfolders`/`path_exists`/`open_local_path`/`open_extracted_entry` did their file I/O there too — on a slow share every write or folder rescan stalled painting and resizing.
+  - `settings.json` is now written by a dedicated writer thread (ordered, coalesced, temp file + rename); the file-I/O commands are `#[tauri::command(async)]`.
+  - **Root cause (colors)**: the native window/webview background was hard-coded dark. It now follows the page's theme (`set_window_background`, stored as `philogg-desktop-window-bg` for the next launch's initial color).
+  - **Tests**: Rust unit tests in `settings.rs` (atomic write, writer keeps the newest dump) and `windows.rs` (stored color parsing); `cargo test --bin philogg-desktop` 4 passed. Headless desktop smoke run: light theme stored color `#f5f6f8` written through the writer thread. The jsdom suite doesn't load the Rust side / `inject.js`, so it wasn't run.
+
 - **fix: extraction of numbers with thousands separators (2026-09-28, person-reported: a value > 1000 logged as `1,234.5` — `[*:float]` returned only the entries below 1000, the auto-pattern split it into `[*:int],[*:float]`)**. See `docs/extraction-and-plotting.md` → "Thousands separators in numeric placeholders".
   - **Root cause**: `[*:float]` allows no `,`, so it matched only the `1` and the literal text after the placeholder then failed; the whole line dropped out.
   - Plain `[*:float]` now accepts the unambiguous shape with both separators (`1,234.5` / `1.234,5`). A lone `1,234` stays unguessed (en 1234 vs de 1.234, and one log can mix both); `[*:float@en]` / `[*:float@de]` (also on `int`) pin the format.
