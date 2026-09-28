@@ -2,6 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: assistant knows when Table/Plot are available (2026-09-28, person-reported: *"Das LLM hat öfter versucht einen Plot auszuführen obwohl keine Extraction vorlag … Bedingung für Tabelle/Plot klarstellen"*)**. See `docs/llm-assistant.md` → "Table/Plot condition".
+  - Every node result carries `tablePlot` (`get_overview` tree, `create_filter`; `create_link` always `false`), true exactly when `nodeIsExtractionView` holds (own or inherited extraction pattern).
+  - System prompt: a "Table/Plot condition" concept line and step 4 say to call `show_view` table/plot only with a `tablePlot: true` id, else create the extraction first (under a link: with the link as parent) or use `filtered`. `show_view`'s description repeats it; the link tip points to the new node.
+  - The refusal now names the concrete next step (`create_filter` with `parentId` = that node, then `show_view` on the new id).
+  - **Tests**: new **Group 315**. Full suite **6893 passed, 1 failed** — the one failure is GROUP 266's 50 ms scroll-timing check under heavy container load (run took 491 s); GROUP 266 alone passes 32/32.
+
 - **fix: same-timestamp entries keep their log order (2026-09-28, person-reported: *"Einträge mit dem gleichen Zeitstempel [haben] dann eine andere Reihenfolge im Viewer … als in der Datei. Und das muss auf jeden Fall abgesichert werden, dass gleiche Zeitstempel danach aber die Reihenfolge im ursprünglichen Log bewahren."*)**. See `docs/filters.md` → "Same-timestamp tie-break" and `docs/persistence-and-sync.md` → `fillMergedEntries`.
   - **Root cause**: every re-sort by time is a stable `a.ts - b.ts`, so ties keep the order they were *collected* in. A meta-format file was collected stream by stream (all lines of one grammar, then the other), so a default and a syslog line at the same millisecond came out in stream order, not file order.
   - **Meta-format merge**: `splitTextByMetaFormat` records each header line's physical position (`headerOrds`); `loadMetaFormatText` rebuilds the file's line order from it and `fillMergedEntries(…, logOrder)` copies in that order before the (stable) sort.
