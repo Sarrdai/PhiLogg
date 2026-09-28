@@ -9878,6 +9878,12 @@ function getCompiledFormat(formatId) {
 // parseLogTextAsync — for every transition shape (inside a run of one
 // grammar, or across a grammar switch, with or without a blank line
 // present at all).
+//
+// Each stream also carries headerOrds: the physical position (among all
+// header lines of the file) of every header line it received, in stream
+// order — one per entry the stream parses into. loadMetaFormatText uses it
+// to hand fillMergedEntries the entries in the file's own line order, so
+// same-timestamp entries from different grammars keep that order.
 function splitTextByMetaFormat(text, metaFmt) {
   const targets = (metaFmt.targetFormatIds || [])
     .map(id => state.logFormats.find(f => f.id === id))
@@ -9886,7 +9892,8 @@ function splitTextByMetaFormat(text, metaFmt) {
 
   const lines = text.split(/\r\n|\n/); // same split parseLogTextAsync uses — mixed LF/CRLF anywhere is already fine
   const buckets = compiled.map(() => []);
-  let currentIdx = -1;
+  const headerOrds = compiled.map(() => []); // per stream: each header line's position among ALL header lines of the file
+  let currentIdx = -1, headerCount = 0;
 
   for (const line of lines) {
     if (line === "") continue; // see "Blank lines" above — never emitted into any stream
@@ -9894,13 +9901,13 @@ function splitTextByMetaFormat(text, metaFmt) {
     for (let i = 0; i < compiled.length; i++) {
       if (compiled[i].c.isHeaderLine(line)) { matchedIdx = i; break; } // first-match-per-line, target order
     }
-    if (matchedIdx !== -1) { currentIdx = matchedIdx; buckets[matchedIdx].push(line); }
+    if (matchedIdx !== -1) { currentIdx = matchedIdx; buckets[matchedIdx].push(line); headerOrds[matchedIdx].push(headerCount++); }
     else if (currentIdx !== -1) { buckets[currentIdx].push(line); } // continuation of the most recently matched stream
     // else: no header has matched yet in this file — dropped, same as parseLogTextAsync's own pre-first-header rule.
   }
 
   return compiled
-    .map((t, i) => ({ formatId: t.id, name: t.name, text: buckets[i].join("\n") }))
+    .map((t, i) => ({ formatId: t.id, name: t.name, text: buckets[i].join("\n"), headerOrds: headerOrds[i] }))
     .filter(s => s.text !== ""); // a target that matched nothing in this file contributes no stream
 }
 
@@ -11041,6 +11048,12 @@ async function loadMetaFormatText(name, text, metaFmt) {
   merged.loadSources = [];
 
   const vnodes = [];
+  // Every stream's entries slotted back into the physical file's header
+  // order (see splitTextByMetaFormat's headerOrds) — captured per stream
+  // before its own chronological pre-sort below. Dropped (null) if any
+  // stream didn't parse to exactly one entry per header line; the merge
+  // then falls back to plain stream order for same-timestamp ties.
+  let logOrder = new Array(streams.reduce((n, s) => n + s.headerOrds.length, 0));
   metaFormatSplitInProgress = true;
   try {
     for (const s of streams) {
@@ -11055,6 +11068,8 @@ async function loadMetaFormatText(name, text, metaFmt) {
       // completion render would flash its already-complete minimap/table
       // as if it were the merge's own current state.
       const vnode = await addFile(s.name, s.text, undefined, s.formatId, placeholder);
+      if (logOrder && vnode.entries.length === s.headerOrds.length) vnode.entries.forEach((e, k) => { logOrder[s.headerOrds[k]] = e; });
+      else logOrder = null;
       // A virtual stream inherits the physical file's on-disk line order,
       // which is NOT guaranteed chronological within it (e.g. two producers
       // interleaving inside one syslog block) — mergeFiles' disjoint-range
@@ -11071,7 +11086,7 @@ async function loadMetaFormatText(name, text, metaFmt) {
   }
 
   state.activeId = merged.id; // belt-and-suspenders: activeId should already be untouched, but a thrown/caught stream load shouldn't leave it stranded
-  await fillMergedEntries(merged, vnodes);
+  await fillMergedEntries(merged, vnodes, logOrder);
   render();
   return merged;
 }
@@ -11700,7 +11715,12 @@ function createMergeShell(name, formatId) {
 // from before this session's rework; the node it writes into may already
 // have existed (and been visible/interactive, sources loading nested
 // under it) for a while now, rather than being created by this same call.
-async function fillMergedEntries(node, files) {
+//
+// logOrder (optional, meta-format only): every file's entries in their one
+// physical file's line order. The final sort is stable, so copying in that
+// order is what keeps same-timestamp entries from different streams in log
+// order; without it (independent files, no shared order) ties keep file order.
+async function fillMergedEntries(node, files, logOrder) {
   node.sources = files.map(f => ({ id: f.id, name: f.name, color: null, count: f.entries.length }));
   const total = files.reduce((sum, f) => sum + f.entries.length, 0);
 
@@ -11723,10 +11743,11 @@ async function fillMergedEntries(node, files) {
     scheduleLoadRender(node.id);
   } else {
     let copied = 0;
-    for (const f of files) {
+    if (logOrder) files.forEach(f => f.entries.forEach(e => { e.sourceId = f.id; }));
+    for (const f of logOrder ? [{ entries: logOrder }] : files) {
       for (let i = 0; i < f.entries.length; i += MERGE_CHUNK_ENTRIES) {
         const chunk = f.entries.slice(i, i + MERGE_CHUNK_ENTRIES);
-        chunk.forEach(e => { e.sourceId = f.id; });
+        if (!logOrder) chunk.forEach(e => { e.sourceId = f.id; });
         node.entries.push(...chunk);
         copied += Math.min(MERGE_CHUNK_ENTRIES, f.entries.length - i);
         // Rebased into the reserved tail of the merge's single combined
@@ -11895,6 +11916,19 @@ function upperBoundByTs(entries, ts) {
     if (entries[mid].ts <= ts) lo = mid + 1; else hi = mid;
   }
   return lo;
+}
+
+// Chronological comparator for re-sorting a set of entries gathered out of
+// log order (an "or" union, a multi-selection): entries sharing one exact
+// timestamp keep their original log order via `rank` (entry id -> position,
+// see buildOrderIndexMap) instead of whatever order they were collected in.
+// A NaN ts or an unranked entry compares exactly as the plain `a.ts - b.ts`
+// did (NaN = "equal" to the stable sort), so nothing else changes.
+function chronoComparator(rank) {
+  return (a, b) => {
+    const d = a.ts - b.ts;
+    return d === 0 ? rank.get(a.id) - rank.get(b.id) : d;
+  };
 }
 
 // Maps every entry id in `fileId`'s root file to its position in that file's
@@ -13384,7 +13418,7 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
     } else {
       const seen = new Set(aEntries.map(e => e.id));
       result = aEntries.concat(bEntries.filter(e => !seen.has(e.id)));
-      result.sort((a, b) => a.ts - b.ts);
+      result.sort(chronoComparator(buildOrderIndexMap(fileId)));
     }
   } else if (baked.filterType === "link") {
     const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
@@ -13553,7 +13587,7 @@ function getEntriesUncached(node, parentOverride) {
     } else {
       const seen = new Set(inputAEntries.map(e => e.id));
       result = inputAEntries.concat(inputBEntries.filter(e => !seen.has(e.id)));
-      result.sort((a, b) => a.ts - b.ts);
+      result.sort(chronoComparator(buildOrderIndexMap(fileId)));
     }
   } else if (node.filterType === "link") {
     // Self-contained, same as and/or: bakedA is the reference's own baked
@@ -21489,9 +21523,13 @@ let currentViewEntries = []; // entries backing the table right now (post node +
 // sort is layered on top (that sort, when active, is applied to the WHOLE
 // list including the spliced anchor right after — see renderTable — so it
 // ends up correctly positioned there too without any extra logic here).
+// Same-timestamp neighbours are ordered by log position (orderIndexMap), so
+// the anchor lands among its tied cluster where the file has it, not after it.
 function tempAnchorInsertIndex(list, entry) {
+  const rank = buildOrderIndexMap(getRootFileId(state.activeId));
+  const r = rank.get(entry.id);
   let idx = 0;
-  while (idx < list.length && list[idx].ts <= entry.ts) idx++;
+  while (idx < list.length && (list[idx].ts < entry.ts || (list[idx].ts === entry.ts && !(rank.get(list[idx].id) > r)))) idx++;
   return idx;
 }
 
@@ -24949,7 +24987,7 @@ function formatEntriesForClipboard(entries) {
 }
 function copyLogSelectionToClipboard() {
   const ids = state.logMultiSelect.size ? [...state.logMultiSelect] : (state.selectedId ? [state.selectedId] : []);
-  const entries = ids.map(id => entryIndex[id]).filter(Boolean).sort((a, b) => a.ts - b.ts);
+  const entries = ids.map(id => entryIndex[id]).filter(Boolean).sort(chronoComparator(buildOrderIndexMap(getRootFileId(state.activeId))));
   if (!entries.length) return;
   copyTextToClipboard(formatEntriesForClipboard(entries));
   showCopyToast(entries.length === 1 ? "Line copied" : entries.length + " lines copied");
