@@ -267,26 +267,29 @@ shape:
   carry an explicit height — `#viewBar > .row-action-separator{float:left;
   height:20px; margin:4px 4px}` — the 4px side margins making the gap from the
   separator to the button on each side equal the 4px gap between two adjacent
-  filter buttons (person-requested). The Library-presets group and its
-  **leading** separator (`#libraryPresetSep`) collapse out (`hidden`) when no
-  preset is pinned, so the bar never shows an empty "| |". Pinned presets
-  (`showInToolbar` on the `filterLibrary` record) render there as circle-pills
-  matching the filter buttons, icon from `LIBRARY_ICON_SET` (falling back to
-  `ICON_FILTER`); clicking one applies the preset onto the active node. Unlike
-  the standard-actions group, the pills' floating labels are driven by plain
-  CSS `:hover` scoped to `#libraryPresetBar` (the label floats and shifts
-  nothing, so `setupHitExpandGroups` isn't needed — and a CSS rule survives
-  the pill container's dynamic re-render). See `docs/persistence-and-sync.md`
-  → "Reusable filter library" for the record shape and storage.
+  filter buttons (person-requested). The **Library** group is the pinned-preset
+  pills (`#libraryPresetBar`, collapses out when nothing is pinned) followed by
+  the always-present **"Library ▾" split button** (`#btnLibrary`: accent
+  outline pill, book icon + "Library" label and a chevron segment, both open
+  `#libraryMenu`); its leading separator (`#libraryPresetSep`) is therefore
+  always shown while files are loaded (the whole `#viewBar` is hidden without
+  files). Pinned presets (`showInToolbar` on the `filterLibrary` record) render
+  as circle-pills matching the filter buttons, icon from `LIBRARY_ICON_SET`
+  (falling back to `ICON_FILTER`); clicking one applies the preset onto the
+  library target (the single selected node, else the active node; tooltip
+  "Apply <name> to <target>"). Unlike the standard-actions group, the pills'
+  floating labels are driven by plain CSS `:hover` scoped to `#libraryPresetBar`
+  (the label floats and shifts nothing, so `setupHitExpandGroups` isn't needed
+  — and a CSS rule survives the pill container's dynamic re-render). The menu
+  (search, target line, Pinned/More rows with star toggles, Save/Manage footer)
+  and the "Manage filter library" dialog are described in
+  `docs/persistence-and-sync.md` → "Reusable filter library", which also holds
+  the record shape and storage.
   **The management buttons that used to sit in a right-aligned
-  `#libraryManageBar` group here — "Add to Library" (`#btnAddToLibrary`,
-  `ICON_DISK`) and "Library" (`#btnOpenLibrary`, `ICON_BOOK`) — are removed
-  from `#viewBar` entirely** (this session, project-owner review): their
-  functionality moved into the Files & Filters sidebar toolbar instead, as
-  "Add to library…" (sidebar toolbar) and "Apply from library…" (tree context
-  menu) — see "`#sidebarToolbar`" further
-  down — now targeting the specific selected tree node rather than always the
-  active filter.
+  `#libraryManageBar` group here — "Add to Library" (`#btnAddToLibrary`) and
+  "Library" (`#btnOpenLibrary`) — were removed** (project-owner review): saving
+  is "Add to library…" in the sidebar toolbar (and the Library ▾ menu's footer),
+  applying is the Library ▾ menu — see "`#sidebarToolbar`" further down.
   **Table/Plot are context-aware now, not a swapped-out second group
   (person-requested, 2026-09-07, extended 2026-09-08 — unifies what used to
   be a Plot-only detour)**: "Time range"/"Select"/"After"/"Before" all
@@ -1155,9 +1158,9 @@ Person-reported/requested reworks (this session, screenshot-driven) to `renderNo
   - **1 file** → Adjust clock… only, and only when the file is neither merged nor empty (the guard `openClockOffsetDialog` itself enforces).
   - **The locked "Bookmarks" node, nothing selected, or 2+ selected** → all five disabled (no multi-node NOT; the 2+ actions live in the selection bar below).
 
-  **Not on this toolbar**: `Apply from library…` (stays on every node's tree context menu, `openTreeContextMenu`; the library dialog is `openFilterLibraryDialog`), `Copy`/`Cut`/`Save filter…`/`Load filter…` (Copy/Cut/Save filter… stay on the right-click menu; loading a filter file moved to the central Open → Import…/drop, see `docs/persistence-and-sync.md` → "Central import"), and `Time context…`/`Count context…` — removed from the right-click menu too, so there is no user-facing way to CREATE a context/countContext node for now (FEATURE_BACKLOG.md #79; existing ones are unaffected). "Add to library…" (`ICON_DISK`, the book-with-plus glyph) and the context menu's "Apply from library…" replaced `#viewBar`'s old `#btnAddToLibrary`/`#btnOpenLibrary` buttons (`#libraryManageBar`, removed), targeting the specific selected node rather than always `state.activeId`; `#libraryPresetBar` (pinned preset pills) is untouched. AND/OR/Link… are only offered in the selection bar (and Merge also on the context menu): `openTreeContextMenu` filters `and`/`or`/`link` out of `describeBulkActions`' output.
+  **Not on this toolbar**: `Apply from library…` (now the Library ▾ menu in `#viewBar`, `openLibraryMenu`; it is no longer on the tree context menu either), `Copy`/`Cut`/`Save filter…`/`Load filter…` (Copy/Cut/Save filter… stay on the right-click menu; loading a filter file moved to the central Open → Import…/drop, see `docs/persistence-and-sync.md` → "Central import"), and `Time context…`/`Count context…` — removed from the right-click menu too, so there is no user-facing way to CREATE a context/countContext node for now (FEATURE_BACKLOG.md #79; existing ones are unaffected). "Add to library…" (`ICON_DISK`, the book-with-plus glyph) replaced `#viewBar`'s old `#btnAddToLibrary` button (`#libraryManageBar`, removed), targeting the specific selected node rather than always `state.activeId`. AND/OR/Link… are only offered in the selection bar (and Merge also on the context menu): `openTreeContextMenu` filters `and`/`or`/`link` out of `describeBulkActions`' output.
 
-  **Icon sprite**: one hidden `<svg hidden>` at the top of `<body>` holds the approved `<symbol id="i-NAME">` drawings (file, filter, rename, edit, not, and, or, link, merge, clock, book, bookplus, gear, x, more, star, starf, search, chev, import, export, trash) on a 16×16 grid; `icon(name, cls)` returns `<svg class="icon …"><use href="#i-NAME"/></svg>`. The `.icon` class supplies size (`--icon-md` 14px; `.tree-icon` and `.ctx-item` scope it to `--icon-sm` 12px; `.icon-xs` is the 10px close glyph) and stroke (1.5, round caps/joins); symbol paths that must be filled (AND lens, OR discs, dots, filled star) carry their own fill. `ICON_FILE`, `ICON_FILTER`, `ICON_RENAME`, `ICON_EDIT`, `ICON_INVERT` (the `not` glyph), `ICON_LINK`, `ICON_MERGE`, `ICON_CLOCK`, `ICON_BOOK`, `ICON_DISK`, `ICON_GEAR`, `ICON_CLOSE`, `ICON_ELLIPSIS` call `icon()`; `ICON_AND`/`ICON_OR` replace the old `ICON_COMBINE` (`nodeIconHTML`, `ghostIconFor`, `describeBulkActions`; the library icon grid's persisted `"combine"` name maps to `ICON_AND`). A tree row for an AND/OR node carries `.filter-and`/`.filter-or`, tinting its icon `--level-info`/`--level-warn` unless the row is active. The other `ICON_*` constants are still standalone inline SVGs. Exports embed no icons, so they need no sprite.
+  **Icon sprite**: one `<svg id="iconSprite">` at the top of `<body>`, taken out of layout with an inline `position:absolute;width:0;height:0;overflow:hidden` (`hidden` does not hide an SVG — it kept a 15px line box that pushed the app past the viewport; `display:none` would break `<use>` references), holds the approved `<symbol id="i-NAME">` drawings (file, filter, rename, edit, not, and, or, link, merge, clock, book, bookplus, gear, x, more, star, starf, search, chev, import, export, trash) on a 16×16 grid; `icon(name, cls)` returns `<svg class="icon …"><use href="#i-NAME"/></svg>`. The `.icon` class supplies size (`--icon-md` 14px; `.tree-icon` and `.ctx-item` scope it to `--icon-sm` 12px; `.icon-xs` is the 10px close glyph) and stroke (1.5, round caps/joins); symbol paths that must be filled (AND lens, OR discs, dots, filled star) carry their own fill. `ICON_FILE`, `ICON_FILTER`, `ICON_RENAME`, `ICON_EDIT`, `ICON_INVERT` (the `not` glyph), `ICON_LINK`, `ICON_MERGE`, `ICON_CLOCK`, `ICON_BOOK`, `ICON_DISK`, `ICON_GEAR`, `ICON_CLOSE`, `ICON_ELLIPSIS` call `icon()`; `ICON_AND`/`ICON_OR` replace the old `ICON_COMBINE` (`nodeIconHTML`, `ghostIconFor`, `describeBulkActions`; the library icon grid's persisted `"combine"` name maps to `ICON_AND`). A tree row for an AND/OR node carries `.filter-and`/`.filter-or`, tinting its icon `--level-info`/`--level-warn` unless the row is active. The other `ICON_*` constants are still standalone inline SVGs. Exports embed no icons, so they need no sprite.
 
   **`setupHitExpandGroups` re-bind gotcha**: every pre-existing caller (`#viewBar`, the per-view toolbars) renders its buttons once at boot and only ever toggles `disabled`/`.active` afterward, so binding a container exactly once was always enough. A toolbar whose buttons get rebuilt calls `setupHitExpandGroups` again after each rebuild — naively doing so would attach a SECOND, stacking `mousemove`/`mouseleave` listener onto the same container on every render (and, since the selector matches document-wide, could even re-bind unrelated already-bound containers). Fixed with a small idempotency guard inside `setupHitExpandGroups` itself (`container.dataset.hitExpandBound`, skips a container that's already wired) plus switching its listener to re-query the container's *current* children on every event instead of closing over the entries captured at bind time — so an already-bound container's one listener keeps reflecting freshly rebuilt buttons with zero new wiring, and every existing one-time caller is byte-identical in behavior (its children never change, so the live query returns the same set every time). The toolbar's own hit elements carry an extra `sidebar-toolbar-hit` class (via `buildRowActionsHtml`'s new optional `hitClass` parameter) so its own `setupHitExpandGroups(".sidebar-toolbar-hit")` call is scoped to just itself, never re-scanning `#viewBar`/the per-view toolbars' own `.row-action-hit` elements.
 

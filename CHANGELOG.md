@@ -2,6 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: Library ▾ menu + "Manage filter library" dialog (2026-09-28, person-requested, phase C of the filter-actions redesign)**
+  - **Library ▾** (`#btnLibrary`, `#viewBar`, after the pinned pills, always present with a file loaded): a split button opening `#libraryMenu` — search, "Applies to <target>" (single selected node, else the active node; warning + disabled rows for no/locked target), Pinned and More rows (click / Enter applies, star pins without closing, ↑/↓ highlight), footer "Save "<name>" to library…" and "Manage library…"; empty library shows an explanation plus the footer. Pill tooltips read "Apply <name> to <target>". The separator before the group is now always shown.
+  - **Manage filter library** (`#filterLibraryDialog`): no Apply button any more; per row icon, name (double-click to rename inline: Enter/blur saves, Esc cancels), `date · N filters`, star (replaces the Toolbar switch), Export, Delete; **Import…** in the header. Delete is immediate with an **Undo** toast (`showCopyToast(msg, {label, onClick})`, minimal extension: clickable, 6 s).
+  - Removed: the "Apply from library…" tree-context-menu entry and the dialog's apply mode (`filterLibraryApplyTargetId`).
+  - **Tests**: new **Group 320**; GROUP 59b/193a/193b, the context-menu ordering assertions and the GROUP 296 export click updated. Full suite **7095 passed, 0 failed**.
+
 - **fix: icon sprite no longer pushes the layout down 15px (2026-09-28, regression from phase A)**: the sprite `<svg hidden width=0 height=0>` was still laid out by Chromium (`hidden` does not hide an SVG), so `#main` started at y=65 instead of 50 and the page overflowed the viewport by 15px, cutting off the selection bar. The sprite is now `position:absolute;width:0;height:0;overflow:hidden` (not `display:none`). Test in GROUP 318 asserts the inline style (jsdom has no layout); verified in Chromium: `scrollHeight === innerHeight`, `#main` top 50.
 
 - **feat: N-ary AND/OR + floating selection bar (2026-09-28, person-requested, phase B of the filter-actions redesign)**
