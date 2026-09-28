@@ -17,7 +17,7 @@ use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
 use crate::state::{AppState, CLOSE_TO_TRAY_KEY};
-use crate::{settings, windows};
+use crate::windows;
 
 /// The write half of the settings mirror (see `settings.rs`). Called by the
 /// injected poll only when its own diff says something actually changed, and
@@ -39,7 +39,19 @@ pub fn save_settings(values: BTreeMap<String, String>, state: State<'_, AppState
         return;
     }
     *last = Some(json);
-    settings::write(&state.settings_path, &values);
+    // Never written here: this command runs on the main thread — see
+    // `settings::spawn_writer`.
+    let _ = state.settings_writer.send(values);
+}
+
+/// Paints the native window (and the webview underneath the page) in the
+/// page's own background color. That color is what shows in the strip a
+/// resize uncovers before the webview has caught up with the new size —
+/// hard-coded dark, it flashed dark bands around a light theme. Sent by
+/// `inject.js` whenever the page's theme changes.
+#[tauri::command]
+pub fn set_window_background(window: tauri::WebviewWindow, rgb: [u8; 3]) {
+    let _ = window.set_background_color(Some(tauri::window::Color(rgb[0], rgb[1], rgb[2], 0xff)));
 }
 
 /// `FEATURE_BACKLOG.md` #52 ("Open File Location"), path half — the file
@@ -190,7 +202,7 @@ pub async fn pick_folder(app: AppHandle) -> Option<PickedFolder> {
 /// own IndexedDB record — and it is no widening of what the page can already
 /// reach: `reveal_path` takes a page-supplied path too, and the page is this
 /// wrapper's own content served from its own scheme, never remote.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_folder(
     app: AppHandle,
     path: String,
@@ -228,7 +240,7 @@ pub fn list_folder(
 /// native (Tauri) watched folder's "Include subfolders" used to be a silent
 /// no-op — `list_folder` only ever returned files, so `walk()` never found a
 /// directory entry to descend into.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn list_subfolders(path: String) -> Result<Vec<PickedFolder>, String> {
     let mut out = Vec::new();
     for entry in std::fs::read_dir(&path).map_err(|e| e.to_string())? {
@@ -356,7 +368,7 @@ pub fn reveal_local_url(app: AppHandle, url: String) {
 /// still be reading long after this command returns, same lifetime
 /// tradeoff every other use of `std::env::temp_dir()` in this file accepts.
 static OPEN_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Result<(), String> {
     let basename = std::path::Path::new(&name)
         .file_name()
@@ -375,9 +387,11 @@ pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Res
 
 /// Clickable-local-path feature: checks whether an absolute path the page
 /// found in a log line actually exists on this machine before offering it
-/// as a link. `std::fs::metadata` is a single syscall — safe to call on
-/// hover with no debounce concerns on the Rust side.
-#[tauri::command]
+/// as a link. `std::fs::metadata` is a single syscall, but on a network path
+/// that is a round trip — `async` keeps it (like every command here that
+/// touches a page-supplied path) off the main thread, which a plain
+/// `#[tauri::command]` runs on, so a slow share can't freeze the window.
+#[tauri::command(async)]
 pub fn path_exists(path: String) -> bool {
     std::fs::metadata(&path).is_ok()
 }
@@ -396,7 +410,7 @@ pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
 /// offered for a path `philogg.html` already considers a loadable log format
 /// (`isCompatibleFolderFile`), but `path_exists` may be stale by the time this
 /// runs, so it's re-checked here rather than trusted.
-#[tauri::command]
+#[tauri::command(async)]
 pub fn open_local_path(app: AppHandle, path: String) -> Result<LocalFile, String> {
     let p = std::path::PathBuf::from(&path);
     if !p.is_file() {

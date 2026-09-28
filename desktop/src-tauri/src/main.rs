@@ -86,6 +86,7 @@ fn main() {
         .register_asynchronous_uri_scheme_protocol(protocol::SCHEME, protocol::handle)
         .invoke_handler(tauri::generate_handler![
             commands::save_settings,
+            commands::set_window_background,
             commands::reveal_path,
             commands::reveal_local_url,
             commands::open_extracted_entry,

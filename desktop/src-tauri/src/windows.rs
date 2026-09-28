@@ -61,6 +61,25 @@ pub fn classify_launch<I: IntoIterator<Item = String>>(argv: I) -> Option<Launch
     None
 }
 
+/// Wrapper-owned `localStorage` key (mirrored into `settings.json` like the
+/// page's own `philogg-*` keys): the page's background color as `#rrggbb`,
+/// written by `inject.js` whenever the theme changes.
+const WINDOW_BG_KEY: &str = "philogg-desktop-window-bg";
+
+/// The stored page background, falling back to the dark theme's `--bg-panel`
+/// on a first run.
+fn window_background(stored: &std::collections::BTreeMap<String, String>) -> tauri::window::Color {
+    let rgb = stored
+        .get(WINDOW_BG_KEY)
+        .and_then(|hex| hex.strip_prefix('#'))
+        .filter(|hex| hex.len() == 6)
+        .and_then(|hex| u32::from_str_radix(hex, 16).ok());
+    match rgb {
+        Some(v) => tauri::window::Color((v >> 16) as u8, (v >> 8) as u8, v as u8, 0xff),
+        None => tauri::window::Color(0x15, 0x19, 0x24, 0xff),
+    }
+}
+
 pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
     let state = app.state::<AppState>();
     let query = file
@@ -70,18 +89,16 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
         return;
     };
 
-    let script = inject::script(
-        &settings::read(&state.settings_path),
-        &state.nonce,
-        protocol::base_url(),
-    );
+    let stored = settings::read(&state.settings_path);
+    let script = inject::script(&stored, &state.nonce, protocol::base_url());
 
     let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::CustomProtocol(url))
         .title("PhiLogg")
         .inner_size(1400.0, 900.0)
-        // Matches #toolbar/--bg-panel's dark-theme default, so there is no
-        // white flash before the page's own background paints.
-        .background_color(tauri::window::Color(0x15, 0x19, 0x24, 0xff))
+        // The page's own background as of the last run (see
+        // `window_background`), so there is no flash of another color
+        // before the page paints — nor in the strip a resize uncovers.
+        .background_color(window_background(&stored))
         // Tauri's native drag-drop handler is left ON, which suppresses the
         // HTML drop events philogg.html would otherwise use. That is the
         // deliberate trade: the native event is the only one carrying real
@@ -543,5 +560,29 @@ fn set_main_local_storage(app: &AppHandle, key: &str, value: &str) {
             serde_json::to_string(value).unwrap_or_default()
         );
         let _ = main.eval(&js);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{window_background, WINDOW_BG_KEY};
+    use std::collections::BTreeMap;
+
+    fn bg(value: Option<&str>) -> (u8, u8, u8, u8) {
+        let mut stored = BTreeMap::new();
+        if let Some(v) = value {
+            stored.insert(WINDOW_BG_KEY.to_string(), v.to_string());
+        }
+        let c = window_background(&stored);
+        (c.0, c.1, c.2, c.3)
+    }
+
+    #[test]
+    fn window_background_from_stored_hex() {
+        assert_eq!(bg(Some("#f5f6f8")), (0xf5, 0xf6, 0xf8, 0xff));
+        assert_eq!(bg(None), (0x15, 0x19, 0x24, 0xff));
+        assert_eq!(bg(Some("f5f6f8")), (0x15, 0x19, 0x24, 0xff));
+        assert_eq!(bg(Some("#fff")), (0x15, 0x19, 0x24, 0xff));
+        assert_eq!(bg(Some("#zzzzzz")), (0x15, 0x19, 0x24, 0xff));
     }
 }
