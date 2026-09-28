@@ -966,7 +966,21 @@ The **write** half only ever happens after a user interaction, so it needs no su
 guarantee: a ~1x/second poll in the page dumps every `philogg-*` key/value pair, diffed
 against the last dump before crossing the process boundary, plus a best-effort flush on
 `beforeunload`/`pagehide` so a change made right before quitting isn't lost. The Rust
-side diffs again before touching disk.
+side diffs again, then hands the dump to a dedicated writer thread
+(`settings::spawn_writer`) over a channel — `save_settings` itself never touches disk.
+A plain (non-`async`) `#[tauri::command]` runs on the main thread, and the portable build
+keeps `settings.json` next to the exe, possibly on a slow network drive: writing it
+inline froze the whole window (no repaint, no resize) for as long as the write took
+(person-reported, 2026-09-28). The writer coalesces dumps that queued up behind a slow
+write (only the newest matters) and writes via a temp file + rename, so a quit mid-write
+leaves the previous file intact.
+
+**Main-thread rule for commands.** The same applies to every command that does file I/O
+on a page-supplied path — `list_folder`, `list_subfolders` (the folder watch's rescan,
+every few seconds), `path_exists` (clickable local paths, on hover), `open_local_path`,
+`open_extracted_entry`: they are `#[tauri::command(async)]`, so a slow share delays only
+their own result. A new command that touches the filesystem (or anything else that can
+block) must be `async` too.
 
 **`window.close()` has to be routed through Rust.** `philogg.html`'s
 `quitOnLastFileClose` calls the plain DOM `window.close()`, which relies on the *host*
@@ -996,13 +1010,22 @@ the portable build has no installer/resource dir to read it from. Nothing else c
 the tray's "Open Config Folder" and "Clear Cache" already go through `config_dir()`/the
 webview APIs, so they work unmodified in either mode. See "Release" below for how the
 portable `.zip` is assembled, and `desktop/README.md` for the user-facing description.
+Caveat: Microsoft does not support a WebView2 user-data folder on a network drive (slow
+I/O, possible data loss) — a portable copy run from a share puts the IndexedDB session
+cache there. Nothing in the wrapper blocks on it, but the webview's own storage stays
+network-bound.
 
 ## Main window, tray, close-to-tray, single instance
 
 - **Main window**: there is no splash screen — startup is fast enough that the main
-  window is simply created visible right away. Its native background colour is set to the
-  dark theme's `#151924` (`#toolbar`/`--bg-panel`), so the moment before the page's own
-  background paints shows no white flash. The injected script still reports the page's
+  window is simply created visible right away. Its native background colour follows the
+  page's theme: `inject.js`'s `setUpWindowBackground` watches `<html>`'s `data-theme`/
+  `style`, sends `body`'s computed background to `set_window_background` (window +
+  webview background) and stores it as `philogg-desktop-window-bg` (mirrored into
+  `settings.json`), which `create_main` reads for the next launch's initial colour — dark
+  `#151924` on a first run. That colour is what shows before the page paints and in the
+  strip a resize uncovers before the webview catches up; hard-coded dark, it flashed dark
+  bands around a light theme while resizing the PiP window (person-reported, 2026-09-28). The injected script still reports the page's
   first paint — two nested `requestAnimationFrame`s after `DOMContentLoaded`, deliberately
   not the event itself — via the `app_ready` command; its only job now is
   `windows::flush_pending_local` (a cold-launch `.zip`/folder open that had to wait for the
