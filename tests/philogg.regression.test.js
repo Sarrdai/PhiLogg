@@ -18642,7 +18642,6 @@ await withApp(async (w, d, T) => {
   assert(!dialog.classList.contains("hidden"), "clicking the gear opens the folder watch settings dialog");
   assert(d.querySelector("#fwSettingsFolderName").textContent === "plogs", "dialog header names the folder it's editing");
   assert(d.querySelectorAll(".fw-pattern-card").length === 2, "one pattern card rendered per configured pattern, got " + d.querySelectorAll(".fw-pattern-card").length);
-  assert(d.querySelector("#fwSettingsRelPathRow").classList.contains("hidden"), "\"show relative path\" stays hidden until subfolders are included");
 
   fireClick(d.querySelector("#fwBtnAddPattern"), w);
   await waitFor(() => d.querySelectorAll(".fw-pattern-card").length === 3);
@@ -18651,66 +18650,24 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#fwSettingsClose"), w);
   assert(d.querySelector("#folderWatchSettingsDialog").classList.contains("hidden"), "close button hides the dialog again");
 
-  // --- Include subfolders + show relative path: recursive scan, and the
-  // grayed listing shows each file's path under the folder instead of just
-  // its basename.
+  // --- Include subfolders: recursive scan (the subfolder tree display
+  // itself is GROUP 317).
   const subFiles = { "Root.log": makeLog(0, 1), "sub": { "Nested.log": makeLog(1, 1) } };
   const subDir = fakeDirHandle("sublogs", subFiles);
   await w.addWatchedFolder(subDir);
   const sFolder = T.state.folders.find(f => f.name === "sublogs");
   assert(sFolder.files.length === 1, "without \"include subfolders\", nested files are not listed, got " + sFolder.files.length);
 
-  // Toggled through the REAL dialog checkboxes (not by mutating
+  // Toggled through the REAL dialog checkbox (not by mutating
   // folder.settings directly), to also catch a UI-wiring-only bug.
   w.render();
   fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
-  const subfoldersCb = d.querySelector("#fwSettingsSubfolders");
-  fireClick(subfoldersCb, w);
-  await waitFor(() => sFolder.settings.includeSubfolders === true);
-  assert(!d.querySelector("#fwSettingsRelPathRow").classList.contains("hidden"), "\"show relative path\" row appears once subfolders are included");
-  const relPathCb = d.querySelector("#fwSettingsShowRelPath");
-  fireClick(relPathCb, w);
-  await waitFor(() => sFolder.settings.showRelativePath === true && sFolder.files.length === 2);
+  assert(d.querySelector("#fwSettingsShowRelPath") === null, "the retired \"show relative path\" switch is gone (subfolders render as a tree now)");
+  fireClick(d.querySelector("#fwSettingsSubfolders"), w);
+  await waitFor(() => sFolder.settings.includeSubfolders === true && sFolder.files.length === 2);
   fireClick(d.querySelector("#fwSettingsClose"), w);
-  assert(sFolder.files.length === 2, "with \"include subfolders\" on, the nested file is now listed too, got " + sFolder.files.length);
   const nestedRec = sFolder.files.find(f => f.name === "Nested.log");
   assert(nestedRec && nestedRec.relPath === "sub/Nested.log", "the nested file's relPath includes its subfolder, got " + (nestedRec && nestedRec.relPath));
-  w.render();
-  const sBox = [...d.querySelectorAll(".folder-watch")].find(box => box.querySelector(".folder-watch-name").textContent === "sublogs");
-  const labels = [...sBox.querySelectorAll(".folder-watch-file-name")].map(l => l.textContent);
-  assert(labels.includes("sub/Nested.log"), "\"show relative path\" displays the nested file's path, not just its filename — got " + labels.join(","));
-
-  // Person-reported: the relative-path name must keep showing once the file
-  // is actually opened, not revert to the bare filename (nodeDisplayName).
-  const nestedRow = [...sBox.querySelectorAll(".folder-watch-file")].find(r => r.querySelector(".folder-watch-file-name").textContent === "sub/Nested.log");
-  fireDblClick(nestedRow, w);
-  await waitFor(() => sFolder.files.find(f => f.name === "Nested.log").nodeId !== null);
-  const nestedNodeId = sFolder.files.find(f => f.name === "Nested.log").nodeId;
-  assert(w.nodeDisplayName(T.state.nodes[nestedNodeId]) === "sub/Nested.log",
-    "nodeDisplayName keeps showing the relative path once the file is open, got " + w.nodeDisplayName(T.state.nodes[nestedNodeId]));
-  w.render();
-  const openedLabel = [...d.querySelectorAll(".tree-row .tree-label")].find(l => l.textContent === "sub/Nested.log");
-  assert(openedLabel !== undefined, "the opened file's tree row also shows the relative path, not just \"Nested.log\"");
-
-  // Person-reported (literal repro): turning "Show relative path" ON while
-  // the file is ALREADY open (not only right after opening it) must update
-  // its shown name immediately too.
-  fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
-  const relPathCb2 = d.querySelector("#fwSettingsShowRelPath");
-  fireClick(relPathCb2, w);
-  await waitFor(() => sFolder.settings.showRelativePath === false);
-  fireClick(d.querySelector("#fwSettingsClose"), w);
-  w.render();
-  assert([...d.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "Nested.log"),
-    "turning \"show relative path\" back OFF while the file stays open reverts its shown name to the bare filename");
-  fireClick([...d.querySelectorAll(".folder-watch-settings")].find(b => b.closest(".folder-watch").querySelector(".folder-watch-name").textContent === "sublogs"), w);
-  const relPathCb3 = d.querySelector("#fwSettingsShowRelPath");
-  fireClick(relPathCb3, w);
-  await waitFor(() => sFolder.settings.showRelativePath === true);
-  fireClick(d.querySelector("#fwSettingsClose"), w);
-  w.render();
-  assert([...d.querySelectorAll(".tree-row .tree-label")].some(l => l.textContent === "sub/Nested.log"),
-    "turning \"show relative path\" back ON while the file stays open shows the relative path again, live, with no re-open needed");
 
   // --- Per-pattern auto rules: auto-open newest, auto-close keep N (a
   // SLIDING WINDOW over the newest N — person-reported: a new, newer file
@@ -22207,21 +22164,43 @@ group(199);
   });
 
   await withApp(async (w, d, T) => {
-    section("201e. a nested-folder entry's full relative path is shown as the row's name and used as the loaded file's name (item 4)");
+    section("201e. ZIP subfolders render as collapsible folder rows (collapsed at first, GROUP 317); an entry shows its basename there and loads under its full relative path");
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "subfolder/app.log", data: ENTRY_A_TEXT, method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
+    const zipBuf = buildZipFixture([
+      { name: "top.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "subfolder/app.log", data: ENTRY_A_TEXT, method: 0 },
+      { name: "subfolder/inner/deep.log", data: ENTRY_A_TEXT, method: 0 },
+    ]);
+    const zip = await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
 
-    const row = d.querySelector("#zipList .folder-watch-file");
-    assert(row && row.textContent.includes("subfolder/app.log"),
-      "the row displays the entry's full relative path, not just its basename, got " + (row && row.textContent));
+    const dirRows = () => [...d.querySelectorAll("#zipList .tree-dir-row")].map(r => r.querySelector(".tree-label").textContent);
+    const fileLabels = () => [...d.querySelectorAll("#zipList .folder-watch-file-name")].map(l => l.textContent);
+    assert(dirRows().join(",") === "subfolder", "one collapsed folder row for the top-level subfolder, got " + dirRows().join(","));
+    assert(fileLabels().join(",") === "top.log", "entries inside a collapsed subfolder are not listed, got " + fileLabels().join(","));
+    const subRow = d.querySelector("#zipList .tree-dir-row");
+    assert(subRow.querySelector(".tree-icon path").getAttribute("d").startsWith("M1.7 3.7"), "a folder row carries the folder icon");
+    assert(subRow.querySelector(".tree-count").textContent === "2", "the folder row counts the entries below it, got " + subRow.querySelector(".tree-count").textContent);
+
+    fireClick(subRow, w);
+    assert(zip.expandedDirs.has("subfolder"), "clicking the folder row expands it");
+    assert(dirRows().join(",") === "subfolder,inner", "the nested subfolder shows up collapsed, got " + dirRows().join(","));
+    assert(fileLabels().join(",") === "app.log,top.log", "the expanded folder's entry shows its basename, got " + fileLabels().join(","));
+    const row = [...d.querySelectorAll("#zipList .folder-watch-file")].find(r => r.textContent.includes("app.log"));
+    assert(row.classList.contains("in-tree") && row.parentElement.parentElement.querySelector(".tree-guide"), "the nested entry sits in the tree with connector lines");
 
     row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]] && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
     const node = T.state.nodes[T.state.rootIds[0]];
     assert(node.name === "subfolder/app.log", "the loaded node keeps the full relative path as its name, got " + (node && node.name));
+    w.render();
+    const opened = d.querySelector('#zipList .tree-row[data-node-id="' + node.id + '"] .tree-label');
+    assert(opened && opened.textContent === "app.log" && opened.title === "subfolder/app.log", "the opened entry's tree row shows its basename, full path in the title");
+    assert(w.flattenTreeIds().includes(node.id), "an opened entry under an expanded folder is reachable by tree navigation");
+    fireClick(d.querySelector("#zipList .tree-dir-row"), w);
+    assert(!d.querySelector('#zipList .tree-row[data-node-id="' + node.id + '"]'), "collapsing the folder hides the opened entry too");
+    assert(!w.flattenTreeIds().includes(node.id), "...and takes it out of tree navigation");
   });
 
   await withApp(async (w, d, T) => {
@@ -32087,6 +32066,7 @@ group(284);
     eocd.writeUInt32LE(central.length, 12); eocd.writeUInt32LE(local.length, 16);
     const zip = await w.openZipSource(new w.File([Buffer.concat([local, central, eocd])], "logs.zip"), "logs.zip");
     assert(zip && zip.entries.length === 1 && w.isLogZipEntry(zip.entries[0]), "the .gz entry counts as a log entry (not an external/viewer file)");
+    fireClick(d.querySelector("#zipList .tree-dir-row"), w); // "rotated/" starts collapsed (GROUP 317)
     const row = d.querySelector("#zipList .folder-watch-file");
     row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries.length === 6);
@@ -35339,6 +35319,100 @@ await withApp(async (w, d, T) => {
   assert(key === w.normalizeMessagePattern("Throughput 812.3 msg/s"), "Patterns tab: grouped and plain values form one group");
   w.normalizeMessagePattern("Throughput 1,234.5 msg/s");
   assert(w.patternFilterValue(key, w.eval("patternFloatMask"), true) === "Throughput [*:float] msg/s", "Patterns tab typed filter: [*:float]");
+});
+
+/* ============================================================
+   GROUP 317 — Watched-folder subfolders as a tree (person-requested):
+   with "Include subfolders" on, each subfolder renders as a collapsible
+   folder row (chevron, folder icon, connector lines) instead of the retired
+   "Show relative path" labels. Collapsed by default; a folder watch rule
+   auto-opening a file expands the path to it. Expansion is per container
+   (folder.expandedDirs); tree navigation skips collapsed content. ZIP
+   archives get the same tree — see 201e.
+   ============================================================ */
+group(317);
+await withApp(async (w, d, T) => {
+  section("317a. subfolder rows: collapsed by default, expand/collapse by click, nested rows with lines, opened file inside");
+  function fakeDir(name, entries) {
+    return {
+      kind: "directory", name,
+      async *values() {
+        for (const [key, val] of Object.entries(entries)) {
+          if (typeof val === "string") yield { kind: "file", name: key, async getFile() { const b = new w.Blob([val]); b.text = async () => val; return b; } };
+          else yield fakeDir(key, val);
+        }
+      },
+    };
+  }
+  const files = { "Root.log": makeLog(0, 2), "sub": { "Nested.log": makeLog(1, 2), "deeper": { "Deep.log": makeLog(2, 2) } } };
+  await w.addWatchedFolder(fakeDir("tlogs", files));
+  const folder = T.state.folders[0];
+  folder.settings.includeSubfolders = true;
+  await w.rescanFolder(folder);
+  w.render();
+  const box = () => d.querySelector("#folderWatchList .folder-watch");
+  const dirLabels = () => [...box().querySelectorAll(".tree-dir-row .tree-label")].map(l => l.textContent);
+  const fileLabels = () => [...box().querySelectorAll(".folder-watch-file-name")].map(l => l.textContent);
+  assert(dirLabels().join(",") === "sub", "one collapsed folder row, got " + dirLabels().join(","));
+  assert(fileLabels().join(",") === "Root.log", "files inside a collapsed subfolder aren't listed, got " + fileLabels().join(","));
+  const subRow = box().querySelector(".tree-dir-row");
+  assert(subRow.querySelector(".tree-icon path").getAttribute("d").startsWith("M1.7 3.7"), "folder row has the folder icon");
+  assert(!subRow.querySelector(".tree-chevron").classList.contains("expanded"), "its chevron shows the collapsed state");
+
+  fireClick(subRow, w);
+  assert(dirLabels().join(",") === "sub,deeper", "expanding shows the nested (still collapsed) subfolder, got " + dirLabels().join(","));
+  assert(fileLabels().join(",") === "Nested.log,Root.log", "...and the subfolder's own files by basename, got " + fileLabels().join(","));
+  assert(box().querySelector(".tree-dir-row").querySelector(".tree-chevron").classList.contains("expanded"), "chevron flips to expanded");
+  const nestedRow = [...box().querySelectorAll(".folder-watch-file")].find(r => r.textContent.includes("Nested.log"));
+  assert(nestedRow.classList.contains("in-tree") && nestedRow.querySelector(".tree-guide.h"), "a nested listed file gets an elbow line into its folder");
+  assert(parseFloat(nestedRow.style.paddingLeft) > parseFloat(box().querySelector(".tree-dir-row").style.paddingLeft), "and sits one level deeper than its folder row");
+
+  fireDblClick(nestedRow, w);
+  const rec = folder.files.find(f => f.name === "Nested.log");
+  await waitFor(() => rec.nodeId && T.state.nodes[rec.nodeId].entries.length > 0);
+  w.render();
+  const openRow = box().querySelector('.tree-row[data-node-id="' + rec.nodeId + '"]');
+  assert(openRow && openRow.querySelector(".tree-label").textContent === "Nested.log", "the opened file renders inside its subfolder");
+  assert(openRow.querySelector(".tree-guide"), "...with connector lines");
+  assert(box().querySelector(".tree-dir-row").classList.contains("on-path"), "the folder row is on the highlighted path to the active file");
+  assert(w.flattenTreeIds().includes(rec.nodeId), "reachable by tree navigation while expanded");
+
+  fireClick(box().querySelector(".tree-dir-row"), w);
+  assert(!box().querySelector('.tree-row[data-node-id="' + rec.nodeId + '"]'), "collapsing hides the opened file");
+  assert(!w.flattenTreeIds().includes(rec.nodeId), "...and removes it from tree navigation");
+
+  folder.settings.includeSubfolders = false;
+  await w.rescanFolder(folder);
+  w.render();
+  assert(!box().querySelector(".tree-dir-row") && !box().querySelector(".in-tree"), "without subfolders the flat listing is unchanged");
+});
+
+await withApp(async (w, d, T) => {
+  section("317b. a file auto-opened by a folder watch rule expands the path to it");
+  function fakeDir(name, entries) {
+    return {
+      kind: "directory", name,
+      async *values() {
+        for (const [key, val] of Object.entries(entries)) {
+          if (typeof val === "string") yield { kind: "file", name: key, async getFile() { const b = new w.Blob([val]); b.text = async () => val; return b; } };
+          else yield fakeDir(key, val);
+        }
+      },
+    };
+  }
+  await w.addWatchedFolder(fakeDir("alogs", { "a.log": makeLog(0, 2), "x": { "y": { "z.log": makeLog(1, 2) } }, "other": { "o.log": makeLog(2, 2) } }));
+  const folder = T.state.folders[0];
+  folder.settings.includeSubfolders = true;
+  folder.settings.patterns = [{ pattern: "z.log", autoOpenNewest: true, autoCloseKeep: null, showNewest: null }, { pattern: "*" }];
+  await w.rescanFolder(folder);
+  const rec = folder.files.find(f => f.name === "z.log");
+  await waitFor(() => rec.nodeId && T.state.nodes[rec.nodeId]);
+  w.render();
+  assert([...folder.expandedDirs].sort().join(",") === "x,x/y", "the auto-opened file's folders are expanded, got " + [...folder.expandedDirs].join(","));
+  assert(d.querySelector('#folderWatchList .tree-row[data-node-id="' + rec.nodeId + '"]'), "the auto-opened file is visible");
+  const dirs = [...d.querySelectorAll("#folderWatchList .tree-dir-row .tree-label")].map(l => l.textContent);
+  assert(dirs.join(",") === "other,x,y", "unrelated subfolders stay collapsed, got " + dirs.join(","));
+  assert(!d.querySelector("#folderWatchList .folder-watch-file-name") || ![...d.querySelectorAll("#folderWatchList .folder-watch-file-name")].some(l => l.textContent === "o.log"), "o.log stays hidden in its collapsed folder");
 });
 
 console.log("\n" + "=".repeat(60));
@@ -39748,4 +39822,8 @@ process.exitCode = failed ? 1 : 0;
    Group 316 — 2026-09-28 (person-reported): extraction of numbers with
       thousands separators ([*:float] unambiguous shapes, @en/@de formats,
       normalized values, auto-patterns), log-sim "grouped" scenario.
+   Group 317 — 2026-09-28 (person-requested): watched-folder and ZIP
+      subfolders as collapsible tree rows (collapsed by default, auto-open
+      expands the path); retired "Show relative path". Same session updated
+      GROUP 164 (setting removed) and rewrote 201e (ZIP subfolder tree).
    ============================================================ */
