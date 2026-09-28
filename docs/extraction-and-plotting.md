@@ -130,6 +130,17 @@ Regression-tested: **Group 42**, rewritten in place the same session for the cum
 
 A wildcard `"text"` node restricted to columns (the filter popup's column chips, `node.columns`) is tabulated from those columns too: `renderExtractTable` runs the pattern against the first restricted column whose value it matches (`entryColumnValue`), the same columns `textFilterMatches` tests — otherwise against `e.message` as always. This is how a JSON Lines column (or any custom column) gets into the table: `[*]` restricted to `motor` tabulates that column's value; `[*:int]` restricted to `ctx.user` its number. Tested: GROUP 298a.
 
+## Thousands separators in numeric placeholders
+
+(2026-09-28, person-reported: a value logged as `1,234.5` matched `[*:float]` only up to the `,`, so every line ≥ 1000 silently dropped out of the extraction, and "Extract" split the number into `[*:int],[*:float]`.)
+
+- **Plain `[*:float]`** also accepts a grouped number that carries **both** separators — `1,234.5` or `1.234,5` (`EXTRACT_TYPES.float`). Only that shape is unambiguous: the last separator is the decimal one. A lone `1,234` could be 1234 (en) or 1.234 (de) depending on who wrote the message, and one log can mix both, so it is never guessed. Plain `[*:int]` never accepts grouping.
+- **Explicit number format**: `[*:float@en]` (`,` groups, `.` decimal), `[*:float@de]` (`.` groups, `,` decimal), same for `int` (`[*:int@en]` reads `12,345` as 12345). Grouping stays optional (`812,3` matches `@de`) but must be strict 3-digit groups (`numberFormatFragment`). The suffix goes before conditions: `[*:float@de>1000]`; condition values are always `.`-decimal. On `time`/`word`/`hex` the suffix is an invalid pattern, like a condition. It lives in the pattern string only (`column.numberFormat` is derived by `compileExtractPattern`), so no persistence carrier changed.
+- **Normalized values**: `normalizeExtractedNumber(raw, col)` turns a capture into plain `1234.5` — in `renderExtractTable`'s rows and `llmExtractRows`, and inside `valueSatisfiesConditions(raw, col)` (now takes the column, not its conditions). Table, sort, plot, statistics, assertions, copy/CSV and the assistant therefore never see a separator. The pattern chip shows the format (`float@de`).
+- **Auto-patterns**: `buildNumericExtractPattern` ("Extract" from a message) and the Patterns tab's `PATTERN_TOKEN_RE` treat a both-separator number as one number (→ one `[*:float]`, one Patterns group with the ungrouped values). An ambiguous `12,345` stays split; `@en`/`@de` is the explicit fix.
+- Explicit literal commas still work: `[*:int],[*:int]` on `1,234` backtracks to `1` and `234`.
+- Tested: GROUP 316 (sample data: log-sim's opt-in `grouped` scenario).
+
 ## Array columns
 
 A pattern column whose every non-empty value is a JSON array (`parseArrayCell`) is an **array column** (`applyArrayViews`, run by `renderExtractTable` right after the rows are built, before sorting). Its **view** is per viewing node — `node.arrayViews: { [colIndex]: mode }`, absent = Joined, threaded wherever `plotConfig` is (gated on `nodeIsExtractionView`: `cloneSubtree`, `snapshotSubtree`/`restoreSubtree`, `serializeFilterBranch`/import, `serializeFilterTreeForCache`/`materializeCachedFilters`; `sanitizeArrayViews` keeps valid modes and at most one explode):

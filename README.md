@@ -164,7 +164,9 @@ deployments possible:
   same-unit columns (e.g. `ch0=… ch1=… ch2=…`). `float`/`int` placeholders can also carry an inline condition —
   `[*:float>=10]`, `[*:int<20,>10]` for a range, or `[*:float|>=10]`
   to compare against the absolute value — so a pattern matches/extracts only
-  the entries whose value actually satisfies it.
+  the entries whose value actually satisfies it. Numbers with thousands separators
+  (`1,234.5`, `1.234,5`) are read as one value; `[*:float@en]` /
+  `[*:float@de]` pin the number format where it is ambiguous (`12,345`).
 - **Link filter** — pair up nearest-preceding/following entries across two
   filters (e.g. "the last position reading before each error"), chainable
   into multi-hop tuples via a guided dialog.
