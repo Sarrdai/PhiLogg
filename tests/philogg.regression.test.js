@@ -25565,8 +25565,13 @@ group(318);
 await withApp(async (w, d, T) => {
   section("318. sprite has every symbol; icon() markup; ICON_* migrated; AND/OR nodes get their own icon + tint class");
   const NAMES = "file filter rename edit not and or link merge clock book bookplus gear x more star starf search chev import export trash".split(" ");
-  const sprite = d.querySelector("body > svg[hidden]");
-  assert(sprite, "a hidden sprite <svg> sits at the top of <body>");
+  const sprite = d.querySelector("body > svg#iconSprite");
+  assert(sprite, "a sprite <svg> sits at the top of <body>");
+  // jsdom has no layout, so this asserts the inline style that takes the sprite out of flow. `hidden` does NOT hide an <svg> in Chromium
+  // (it left a 15px line box that pushed #main down and made the whole app overflow the viewport); display:none would break <use> gradients.
+  const sst = sprite.getAttribute("style") || "";
+  assert(/position:\s*absolute/.test(sst) && /width:\s*0/.test(sst) && /height:\s*0/.test(sst) && /overflow:\s*hidden/.test(sst), "sprite is out of layout flow (position:absolute, 0x0, overflow:hidden), got " + sst);
+  assert(!/display:\s*none/.test(sst), "sprite is not display:none");
   NAMES.forEach(n => { const s = sprite.querySelector("symbol#i-" + n); assert(s && s.getAttribute("viewBox") === "0 0 16 16", "symbol i-" + n + " present on a 16x16 grid"); });
   assert(w.icon("and") === '<svg class="icon" aria-hidden="true"><use href="#i-and"/></svg>', "icon(name) markup");
   assert(w.icon("x", "icon-xs").includes('class="icon icon-xs"'), "icon(name, cls) appends the class");
