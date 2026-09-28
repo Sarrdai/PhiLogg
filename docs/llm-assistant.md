@@ -59,10 +59,15 @@ The HTTP side lives in the Tauri-free workspace crate `philogg-llm`
   processing the prompt and nothing streams yet. Dropping the connection
   also stops LM Studio's generation. Idle limit: 10 minutes without a byte.
 - `list_models` — `GET {base}/models` → `data[].id`.
+- `model_details` — LM Studio's native `GET /api/v0/models` at the server
+  root (`/v1` stripped from the base path), passed through as JSON: per
+  model `state`, `max_context_length`, `loaded_context_length`. Other
+  servers answer an HTTP error.
 - HTTP errors come back as `HTTP <status>: <error.message>`, an unreachable
   server as "cannot reach … — is LM Studio's server running?".
 
 Tauri commands (`commands.rs`): `llm_models(baseUrl)`,
+`llm_model_details(baseUrl)` (bridge `window.philogg.llmModelDetails`),
 `llm_chat(requestId, baseUrl, request, onEvent)` — each chunk reaches the
 page as `{type: "chunk", data}` (`{type: "message", data}` for a
 non-streamed answer) over an IPC channel, and the page assembles text and
@@ -126,6 +131,24 @@ that summary. The system prompt (`LLM_SYSTEM_PROMPT`: concepts, pattern
 syntax with examples, discover → ask when ambiguous → build → show, rules)
 never changes, so LM Studio's prompt cache keeps working.
 
+**Context window bar.** Requests set `stream_options: {include_usage:
+true}`; LM Studio then ends the stream with a chunk carrying `usage` (and
+`model`) and an empty `choices`, which `llmAnswerAssembler` reads before its
+choice check. Since every request resends the whole history, the last
+turn's `prompt + completion` tokens are the window's current fill
+(`llmRecordContext` → `session.context = {used, prompt, completion, model,
+limit, limitKind}`, persisted with the session, in the snapshot as
+`context`). It can drop when older tool results get compacted. The limit
+comes from `llmFetchContextLimit` (`llmTransport().modelDetails`, once per
+round and on a model change, not awaited by the loop; `llm.contextFetch` is
+the pending promise): `llmContextLimitFrom` picks the chosen model, or the
+`state: "loaded"` one when none is chosen, and takes
+`loaded_context_length`, else `max_context_length` (`limitKind: "max"`).
+A server without that API leaves `limit` null. The chat (feature `context`)
+shows a bar above the input with "used / limit (%)" (warn color from 80 %,
+error from 95 %; only the token count without a limit) and the details in
+its tooltip.
+
 **Sessions** are stored in their own IndexedDB database (`philogg-llm`,
 store `sessions`, one record per session: `{id, title, files, history,
 rounds, version, …}`), never in the log session cache; the active one's id in
@@ -154,7 +177,8 @@ Tests (GROUP 303) drive the loop with a scripted fake model
 (`llmTransportOverride`) that streams its answers the way LM Studio does:
 the reference scenario (message types → question → link → extraction under
 the link → plot), compaction, Stop, limit, errors, undo per round, "undo this
-round", and references across a simulated restart.
+round", and references across a simulated restart. GROUP 313 covers the context
+bar (usage chunk, limit lookup, a server without `/api/v0/models`).
 
 ## Chat view (`desktop/chat.html`)
 

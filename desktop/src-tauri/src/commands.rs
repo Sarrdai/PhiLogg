@@ -526,6 +526,15 @@ pub async fn llm_models(base_url: String) -> Result<Vec<String>, String> {
         .map_err(|e| e.to_string())?
 }
 
+/// LLM assistant: LM Studio's native `/api/v0/models` (model state and
+/// context lengths — the chat's context bar), passed through as JSON.
+#[tauri::command]
+pub async fn llm_model_details(base_url: String) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || philogg_llm::model_details(&base_url))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
 /// LLM assistant: one chat-completions request (`request` is the page's own
 /// OpenAI-shaped JSON, normally streaming). Every SSE chunk reaches the page
 /// as `{type: "chunk", data}` over `on_event`, a non-streamed answer as

@@ -110,6 +110,7 @@ fn main() {
             commands::pip_enter,
             commands::pip_minimize,
             commands::llm_models,
+            commands::llm_model_details,
             commands::llm_chat,
             commands::llm_cancel,
             commands::llm_chat_window,
