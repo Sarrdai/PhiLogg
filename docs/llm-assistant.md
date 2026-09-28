@@ -19,13 +19,13 @@ owner `truncated: true`) until the result fits.
 
 | tool | returns |
 |---|---|
-| `get_overview` | files (count, time span, level counts), active node, current view, the whole tree (id, name, type, count, parent, depth) |
+| `get_overview` | files (count, time span, level counts), active node, current view, the whole tree (id, name, type, count, parent, depth; `extraction` = own placeholder pattern, `tablePlot` = Table/Plot available, i.e. `nodeIsExtractionView`) |
 | `find_message_types(nodeId?, query?, limit)` | the node's (default: the active node's whole file) messages grouped by shape (`normalizeMessagePattern`, as the Patterns tab), most frequent first: count, levels, first/last time, a typed extraction `pattern` (`patternFilterValue(…, true)`), and per placeholder a value distribution (≤ 10 distinct → value + count, else min/max or examples; `messagePatternValues` reads the values in placeholder order) |
-| `create_filter(parentId, pattern, mode, invert)` | (parent default: the active node's whole file) a `text` filter (substring, or extraction when the pattern has placeholders) or regex filter via `createFilterNode`: node id, match count, examples, for an extraction its columns and sample values — or an error text (invalid regex/pattern, inverted extraction, unknown parent) |
-| `create_link(refId, targetId, direction, key?, maxDtMs?/minDtMs?)` | `createLinkNode` (N = 1, not exclusive): pairs, references, unpaired, Δt min/median/max, examples; `key` is a column name or wildcard pattern (`linkKey`), the Δt bounds become `linkDt` |
+| `create_filter(parentId, pattern, mode, invert)` | (parent default: the active node's whole file) a `text` filter (substring, or extraction when the pattern has placeholders) or regex filter via `createFilterNode`: node id, match count, examples, `tablePlot`, for an extraction its columns and sample values — or an error text (invalid regex/pattern, inverted extraction, unknown parent) |
+| `create_link(refId, targetId, direction, key?, maxDtMs?/minDtMs?)` | `createLinkNode` (N = 1, not exclusive): pairs, references, unpaired, Δt min/median/max, examples, `tablePlot: false` and a tip to extract below the link; `key` is a column name or wildcard pattern (`linkKey`), the Δt bounds become `linkDt` |
 | `get_entries(nodeId, from, max ≤ 20)` | entries with id, time, level, message (first line, ≤ 200 chars) |
 | `get_value_stats(nodeId, column)` | min/max/mean/p10/median/p90 of one extraction column (own or inherited pattern, `llmExtractRows`); a non-numeric column gets its value distribution |
-| `show_view(nodeId, view, plot?)` | activates the node and opens log/filtered/table/plot/patterns; `plot` = `{type, x, y, z, color, colorMap, columns, array, row, ranges}` for every chart type (line/bar/scatter/3d/heatmap/profile/radar/parallel), columns as `time`/`index`/`dt` or a column number/name, stored through `sanitizePlotConfig`. `columns` sets the value charts' column group (heatmap/profile then read it instead of an array), `array` an array column, `row` (1-based) the Profile/Radar row, `ranges` `{column: [min, max]}` (null = open end) the parallel-coordinates ranges (`plotParallelBrushes`, set after the render so a node switch doesn't reset them). Unknown type/colormap/column → error text with the valid list. Returns the effective plot (column names, row count, for Parallel the rows in range) |
+| `show_view(nodeId, view, plot?)` | activates the node and opens log/filtered/table/plot/patterns; `plot` = `{type, x, y, z, color, colorMap, columns, array, row, ranges}` for every chart type (line/bar/scatter/3d/heatmap/profile/radar/parallel), columns as `time`/`index`/`dt` or a column number/name, stored through `sanitizePlotConfig`. `columns` sets the value charts' column group (heatmap/profile then read it instead of an array), `array` an array column, `row` (1-based) the Profile/Radar row, `ranges` `{column: [min, max]}` (null = open end) the parallel-coordinates ranges (`plotParallelBrushes`, set after the render so a node switch doesn't reset them). Unknown type/colormap/column → error text with the valid list. Returns the effective plot (column names, row count, for Parallel the rows in range). table/plot on a node without `tablePlot` → error naming the concrete fix (`create_filter` with placeholders under that node id — for a link, under the link — then `show_view` on the new id, or view `filtered`) |
 | `annotate(entryIds, note?, bookmark?)` | sets bookmarks (never toggles one off) and notes (an existing note is kept, the finding appended) |
 
 Entries are referenced by their id (`e1234`); a link pair by its first real
@@ -33,6 +33,11 @@ entry. Nodes the assistant created are listed in `llmCreatedNodeIds` — an
 in-memory set, not a node field (a field would have to go through every
 persistence carrier for purely cosmetic information) — and `renderNode`
 marks them with a small ✦.
+
+**Table/Plot condition.** Small models tended to call `show_view` table/plot
+on a plain filter or a link node. The condition is stated three times: the
+`tablePlot` flag in every node result, a "Table/Plot condition" line plus
+step 4 of the system prompt, and `show_view`'s description.
 
 The registry exists in the browser build too, but nothing calls it there.
 
