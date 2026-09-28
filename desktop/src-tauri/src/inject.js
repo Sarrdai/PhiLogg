@@ -247,6 +247,11 @@
     llmModels: function (baseUrl) {
       return invoke("llm_models", { baseUrl: baseUrl });
     },
+    // LM Studio's native model list (context lengths for the chat's
+    // context bar); rejects on servers without it.
+    llmModelDetails: function (baseUrl) {
+      return invoke("llm_model_details", { baseUrl: baseUrl });
+    },
     llmChat: function (requestId, baseUrl, request, onEvent) {
       var ch = channel(onEvent);
       return invoke("llm_chat", { requestId: requestId, baseUrl: baseUrl, request: request, onEvent: ch.arg }).then(function () {

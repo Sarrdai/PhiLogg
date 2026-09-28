@@ -103,6 +103,15 @@
   .ref-text{color:var(--text-secondary);}
   .busy-dots::after{content:"…"; animation:blink 1s infinite;}
   @keyframes blink{50%{opacity:.2;}}
+  /* Context window fill (snapshot.context): used tokens of the last request
+     against the model's loaded context length; details in the tooltip. */
+  #chatContext{flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:4px 10px; border-top:1px solid var(--border-soft); background:var(--bg-panel); font-size:11px; color:var(--text-tertiary); cursor:default;}
+  #chatContext.hidden{display:none;}
+  #chatContextBar{flex:1 1 auto; height:4px; border-radius:2px; background:var(--bg-elevated-2); overflow:hidden;}
+  #chatContextFill{height:100%; width:0; background:var(--accent); transition:width .2s;}
+  #chatContext.warn #chatContextFill{background:var(--level-warn);}
+  #chatContext.full #chatContextFill{background:var(--level-error);}
+  #chatContextLabel{flex:0 0 auto; font-variant-numeric:tabular-nums;}
   #chatInputRow{flex:0 0 auto; display:flex; align-items:flex-end; gap:8px; padding:8px; border-top:1px solid var(--border); background:var(--bg-panel);}
   #chatInput{flex:1 1 auto; resize:none; height:54px; background:var(--bg-app); color:var(--text-primary); border:1px solid var(--border); border-radius:6px; padding:6px 10px; font:12.5px/1.45 var(--font-ui);}
   #chatInput:focus{outline:none; border-color:var(--accent);}
@@ -145,6 +154,7 @@
       </div>
     </div>
   </div>
+  <div id="chatContext" class="hidden"><div id="chatContextBar"><div id="chatContextFill"></div></div><span id="chatContextLabel"></span></div>
   <div id="chatInputRow">
     <textarea id="chatInput" placeholder="Message (Enter sends, Shift+Enter new line)"></textarea>
     <button type="button" id="chatSend">Send</button>
@@ -328,6 +338,30 @@
 
     sendBtn.textContent = snap.running ? "Stop" : "Send";
     sendBtn.classList.toggle("stop", !!snap.running);
+    renderContext(features.indexOf("context") !== -1 ? snap.context : null);
+  }
+
+  function kTokens(n) { return n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + "k" : String(n); }
+  function renderContext(c) {
+    var box = el("chatContext");
+    box.classList.toggle("hidden", !c);
+    if (!c) return;
+    var pct = c.limit ? Math.min(100, c.used / c.limit * 100) : null;
+    el("chatContextBar").style.display = pct == null ? "none" : "";
+    el("chatContextFill").style.width = (pct == null ? 0 : pct) + "%";
+    box.classList.toggle("warn", pct != null && pct >= 80 && pct < 95);
+    box.classList.toggle("full", pct != null && pct >= 95);
+    el("chatContextLabel").textContent = pct == null ? kTokens(c.used) + " tokens"
+      : kTokens(c.used) + " / " + kTokens(c.limit) + " (" + Math.round(pct) + "%)";
+    var n = function (v) { return Number(v || 0).toLocaleString("en-US"); };
+    box.title = "Context window — last request\n" +
+      "Used: " + n(c.used) + " tokens" + (pct != null ? " (" + pct.toFixed(1) + "%)" : "") + "\n" +
+      "  prompt (system, tools, history): " + n(c.prompt) + "\n" +
+      "  answer: " + n(c.completion) + "\n" +
+      (c.limit ? "Context length: " + n(c.limit) + (c.limitKind === "max" ? " (model maximum — loaded length unknown)" : " (loaded)") + "\n"
+        : "Context length: unknown (the server doesn't report it)\n") +
+      (c.model ? "Model: " + c.model + "\n" : "") +
+      "Older tool results are shortened to one line, so the fill can drop.";
   }
 
   // ------------------------------------------------------------ dialog
