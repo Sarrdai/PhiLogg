@@ -6,6 +6,7 @@
 <title>PhiLogg</title>
 <style>
   :root{
+    --icon-md:14px; --icon-sm:12px;
     --bg-app:#10131a;
     --bg-panel:#151924;
     --bg-elevated:#1c2130;
@@ -735,10 +736,24 @@
      and the scrollable #sidebarScroll so it never scrolls away with the
      tree, unlike #treeActionBar which used to live inside #sidebarScroll. */
   #sidebarToolbar{
-    flex:0 0 auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
-    padding:6px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
-    min-height:28px;
+    flex:0 0 auto; display:flex; align-items:center; gap:2px; flex-wrap:wrap;
+    padding:4px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-panel);
+    min-height:36px;
   }
+  /* The transient 2+ selection group (interim, until the selection bar) and
+     the note live in their own flex containers, so each is a hover-label
+     group of its own (setupHitExpandGroups binds per parent element). */
+  #sidebarToolbar > [data-stb-group]{display:flex; align-items:center; gap:2px; margin-left:6px;}
+  #sidebarToolbar > [data-stb-group]:empty{display:none;}
+  #sidebarToolbar .row-action-separator{height:16px; align-self:center; margin:0 4px;}
+  /* Flat icon buttons, like the per-view toolbars: no chrome at rest, a hover
+     background, disabled = tertiary text at reduced opacity (never hidden). */
+  #sidebarToolbar .toolbar-icon-btn{
+    background:none; border-color:transparent; color:var(--text-secondary);
+  }
+  #sidebarToolbar .toolbar-icon-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #sidebarToolbar .toolbar-icon-btn:disabled{color:var(--text-tertiary);}
+  #sidebarToolbar .toolbar-icon-btn:disabled .row-action-hit{opacity:.45;}
 
   /* tree rows */
   .tree-row{
@@ -815,6 +830,15 @@
   .tree-chevron:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
   .tree-row.active .tree-icon{color:var(--accent);}
+  /* Sprite icons (icon() in the script): stroke-drawn on a 16x16 grid. Symbol
+     paths that must be filled carry their own fill. Tree rows and context-menu
+     items use the small size; .icon-xs is the 10px close glyph. AND/OR nodes
+     are tinted by kind (an active row's accent still wins). */
+  .icon{width:var(--icon-md); height:var(--icon-md); flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+  .icon.icon-xs{width:10px; height:10px;}
+  .tree-icon, .ctx-item{--icon-md:var(--icon-sm);}
+  .tree-row.filter-and:not(.active) .tree-icon{color:var(--level-info);}
+  .tree-row.filter-or:not(.active) .tree-icon{color:var(--level-warn);}
   /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
      the icon slot shows TXT/LNK/... text instead of a glyph. Fixed width
      sized to the longest tag typeTagFor() can ever produce ("FILE"/"TIME",
@@ -4232,6 +4256,31 @@
 </style>
 </head>
 <body>
+<!-- Icon sprite: 16x16 grid, drawn by .icon (stroke 1.5, round caps/joins). Referenced via icon(name) in the script. Paths that must be filled carry their own fill. -->
+<svg hidden aria-hidden="true" width="0" height="0">
+    <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 1.75h5l3.25 3.25v9.25H4ZM9 1.75V5h3.25"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 16 16"><path d="M2.5 3h11L9.25 8.25v4.25l-2.5 1.25V8.25Z"/></symbol>
+    <symbol id="i-rename" viewBox="0 0 16 16"><path d="M2.75 13.25h2.75l7-7-2.75-2.75-7 7ZM8.75 4.75l2.5 2.5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 16 16"><path d="M2.5 4.5h6M12 4.5h1.5M2.5 11.5h1.5M7.5 11.5h6"/><circle cx="10.25" cy="4.5" r="1.75"/><circle cx="5.75" cy="11.5" r="1.75"/></symbol>
+    <symbol id="i-not" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M4.25 11.75l7.5-7.5"/></symbol>
+    <symbol id="i-and" viewBox="0 0 16 16"><path d="M8 4.55a4.25 4.25 0 0 1 0 6.9a4.25 4.25 0 0 1 0-6.9Z" fill="currentColor"/><circle cx="5.9" cy="8" r="4.1" style="stroke-width:1.3"/><circle cx="10.1" cy="8" r="4.1" style="stroke-width:1.3"/></symbol>
+    <symbol id="i-or" viewBox="0 0 16 16"><circle cx="5.9" cy="8" r="4.1" fill="currentColor" fill-opacity=".4"/><circle cx="10.1" cy="8" r="4.1" fill="currentColor" fill-opacity=".4"/><circle cx="5.9" cy="8" r="4.1" style="stroke-width:1.3"/><circle cx="10.1" cy="8" r="4.1" style="stroke-width:1.3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 16 16"><path d="M6.5 9.5l3-3M7 5.5l1.25-1.25a2.5 2.5 0 0 1 3.5 3.5L10.5 9M9 10.5l-1.25 1.25a2.5 2.5 0 0 1-3.5-3.5L5.5 7"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 16 16"><path d="M4 2.5v2.75c0 1.75 1.25 2.75 4 3.75 2.75-1 4-2 4-3.75V2.5M8 9v4.5M5.75 11.5 8 13.75l2.25-2.25"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 4.75V8l2.25 1.5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 16 16"><path d="M2.5 3.5c2-.75 3.75-.5 5.5.75 1.75-1.25 3.5-1.5 5.5-.75v9c-2-.75-3.75-.5-5.5.75-1.75-1.25-3.5-1.5-5.5-.75ZM8 4.25v9"/></symbol>
+    <symbol id="i-bookplus" viewBox="0 0 16 16"><path d="M2.5 3.5c2-.75 3.75-.5 5.5.75v9c-1.75-1.25-3.5-1.5-5.5-.75ZM8 4.25c1.75-1.25 3.5-1.5 5.5-.75v3.75M12 9.75v4.5M9.75 12h4.5"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.25"/><path d="M8 1.75v2M8 12.25v2M1.75 8h2M12.25 8h2M3.6 3.6 5 5M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 16 16"><path d="m4.25 4.25 7.5 7.5M11.75 4.25l-7.5 7.5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></symbol>
+    <symbol id="i-star" viewBox="0 0 16 16"><path d="M8 2.25l1.75 3.6 3.95.55-2.85 2.8.7 3.95L8 11.3l-3.55 1.85.7-3.95L2.3 6.4l3.95-.55Z"/></symbol>
+    <symbol id="i-starf" viewBox="0 0 16 16"><path style="fill:currentColor" d="M8 2.25l1.75 3.6 3.95.55-2.85 2.8.7 3.95L8 11.3l-3.55 1.85.7-3.95L2.3 6.4l3.95-.55Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 16 16"><path d="m4.5 6.25 3.5 3.5 3.5-3.5"/></symbol>
+    <symbol id="i-import" viewBox="0 0 16 16"><path d="M2.5 9v3.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M8 2.5V10M5.25 7.25 8 10l2.75-2.75"/></symbol>
+    <symbol id="i-export" viewBox="0 0 16 16"><path d="M2.5 9v3.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M8 10V2.5M5.25 5.25 8 2.5l2.75 2.75"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 16 16"><path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.75 9h6l.75-9"/></symbol>
+</svg>
 <script>(function(){
   // FOUC fix: applies the stored (or system-preferred) theme to <html>
   // synchronously, before the rest of the page parses/paints, so the app
@@ -6548,7 +6597,16 @@ const PHILOGG_VERSION = "0.1.0"; // x-release-please-version
 const PHILOGG_BUILD = "dev";
 
 /* ===================== Icons ===================== */
-const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>';
+// Icon sprite: one hidden <svg> at the top of <body> holds <symbol id="i-NAME">
+// drawings on a 16x16 grid; icon(name) references one via <use>. Sized/stroked
+// by the .icon CSS class (md 14px by default; .tree-icon/.ctx-item scope it to
+// sm 12px, .icon-xs is the 10px close glyph). The ICON_* constants below that
+// call icon() are the migrated ones; the rest are still standalone inline SVGs
+// (FEATURE_BACKLOG.md, "Migrate remaining ICON_* constants to the icon sprite").
+function icon(name, cls = "") {
+  return '<svg class="icon' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+}
+const ICON_FILE = icon("file");
 // Same file glyph, plus a small circled "A" badge (Auto-Open, person-
 // requested — see renderNode's autoOpened opt) — marks a folder-watch file
 // that was opened automatically by a rule, not by hand.
@@ -6563,9 +6621,9 @@ const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"
 // replaces): an archive box with a "zipper" strip down the middle, so a ZIP
 // source reads as visually distinct from a watched folder at a glance.
 const ICON_ZIP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.2" width="12.4" height="11.6" rx="1.2"/><path d="M8 2.2v1.6M8 5.4v1.6M8 8.6v1.6"/><rect x="6.9" y="9.6" width="2.2" height="2.2" rx="0.4"/></svg>';
-const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+const ICON_GEAR = icon("gear");
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
-const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
+const ICON_FILTER = icon("filter");
 // "Filter for this message" row-action's own icon (distinct from the plain
 // funnel ICON_FILTER used by every other filter-creation button) — a
 // speech-bubble outline (this action's input is always the message column)
@@ -6577,13 +6635,13 @@ const ICON_MESSAGE_EXTRACT = '<svg viewBox="0 0 16 16" width="11" height="11" fi
 // ICON_FILE_AUTO's circled "A" (the circle's fill hides the funnel path
 // behind it so the "+" reads cleanly instead of visually merging).
 const ICON_FILTER_PLUS = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/></svg>';
-const ICON_CLOCK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.3l2.2 1.3"/></svg>';
+const ICON_CLOCK = icon("clock");
 // Recovered from the old per-row bookmark marker (removed in the "Bookmarks
 // rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
 // own icon (nodeIconHTML/ghostIconFor) so it no longer falls through to
 // ICON_CLOCK, which stays exclusively for time-range filter nodes.
 const ICON_BOOKMARK_FILLED = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
-const ICON_CLOSE = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>';
+const ICON_CLOSE = icon("x", "icon-xs");
 const ICON_TABLE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>';
 // Filter-tree icons for time-range nodes (nodeIconHTML/timeFilterIcon),
 // matching the "Before"/"After"/"Time range" row-action buttons' own icons
@@ -6602,11 +6660,11 @@ const ICON_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" 
 // Floppy-disk "save" — the Files & Filters sidebar toolbar's "Add to
 // library…" action (a disk, distinct from ICON_SAVE's download-to-tray
 // arrow used by "Save filter…").
-const ICON_DISK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5 2.5v3.5h5V2.5"/><rect x="5" y="9" width="6" height="4.5"/></svg>';
+const ICON_DISK = icon("bookplus");
 // Open book — the "Apply from library…" action (sidebar toolbar + tree
 // context menu).
-const ICON_BOOK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.3 5.3 3 3.5 3H2v9h1.5c1.8 0 3.3.3 4.5 1.2"/><path d="M8 4.2C9.2 3.3 10.7 3 12.5 3H14v9h-1.5c-1.8 0-3.3.3-4.5 1.2z"/><path d="M8 4.2v9"/></svg>';
-const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
+const ICON_BOOK = icon("book");
+const ICON_MERGE = icon("merge");
 // Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
 // MergeWindow's three explicit actions): two overlapping file glyphs for
 // "load individually" (no
@@ -6615,8 +6673,9 @@ const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" 
 // the dragged Window".
 const ICON_FILES_SEPARATE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h5l2 2v8H3z"/><path d="M8 2v2h2"/><path d="M7.4 6.2h5L14.4 8v6H9.4v-2.2"/><path d="M12.4 6.2v2h2"/></svg>';
 const ICON_MERGE_WINDOW = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 2v4c0 1.8 1.6 2.7 3.2 2.7M11.6 2v4c0 1.8-1.6 2.7-3.2 2.7v3"/><circle cx="3.6" cy="2" r="1.1"/><circle cx="11.6" cy="2" r="1.1"/><circle cx="8.4" cy="13" r="1.1"/><circle cx="13" cy="3.4" r="2.6" fill="var(--bg-panel)" stroke-width="0.9"/><text x="13" y="4.5" font-size="3.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">W</text></svg>';
-const ICON_COMBINE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6.2" cy="8" r="4.3"/><circle cx="9.8" cy="8" r="4.3"/></svg>';
-const ICON_LINK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6.3 9.7 9.7 6.3"/><path d="M6.7 6.9 4.9 8.7a2 2 0 0 0 2.8 2.8l1.8-1.8"/><path d="M9.3 9.1l1.8-1.8a2 2 0 0 0-2.8-2.8L6.5 6.3"/></svg>';
+const ICON_AND = icon("and");
+const ICON_OR = icon("or");
+const ICON_LINK = icon("link");
 const ICON_CONTEXT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2"/><path d="M10 3h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>';
 const ICON_CUT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><path d="M5.3 5.3 13 13M5.3 10.7 13 3"/></svg>';
@@ -6624,7 +6683,7 @@ const ICON_PASTE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" 
 const ICON_SAVE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 2v8M8 10 5 7M8 10l3-3"/><path d="M3 13h10"/></svg>';
 const ICON_FULLSCREEN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V3a1 1 0 0 1 1-1h3M14 6V3a1 1 0 0 0-1-1h-3M2 10v3a1 1 0 0 0 1 1h3M14 10v3a1 1 0 0 1-1 1h-3"/></svg>';
 const ICON_LOAD = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 10V2M8 2 5 5M8 2l3 3"/><path d="M3 13h10"/></svg>';
-const ICON_INVERT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M3.5 3.5l9 9"/></svg>';
+const ICON_INVERT = icon("not");
 const ICON_TARGET = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.2"/></svg>';
 const ICON_UNDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v4h4"/><path d="M4.4 8A5 5 0 1 1 5.6 12.4"/></svg>';
 const ICON_REDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4H8"/><path d="M11.6 8A5 5 0 1 0 10.4 12.4"/></svg>';
@@ -6656,12 +6715,12 @@ const ICON_HIGHLIGHT_MATCH_TEXT = '<svg viewBox="0 0 16 16" width="13" height="1
 const ICON_FILE_PATH_LINKS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.8 9.2 9.2 6.8"/><path d="M7.3 4.3 8.6 3a2.2 2.2 0 0 1 3.1 3.1l-1.3 1.3"/><path d="M8.7 11.7 7.4 13a2.2 2.2 0 0 1-3.1-3.1l1.3-1.3"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
-const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
+const ICON_EDIT = icon("edit");
 const ICON_INFO = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.3v4"/><circle cx="8" cy="5" r="0.15" fill="currentColor" stroke-width="1"/></svg>';
 // Price-tag glyph for the tree context menu's "Rename…" action (FEATURE_BACKLOG.md
 // #12 — F2 or right-click any filter node, see startRenameNode). Distinct from
 // ICON_EDIT: this sets a display label, not the filter's actual value.
-const ICON_RENAME = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.3 2 3a1 1 0 0 1 1-1h5.3L14 8.7 8.7 14 2 8.3Z"/><circle cx="5.3" cy="5.3" r="1" fill="currentColor" stroke="none"/></svg>';
+const ICON_RENAME = icon("rename");
 // Ascending-bars icon for a "level" filter node (FEATURE_BACKLOG.md #10) —
 // used both in the tree (nodeIconHTML) and on the level bar's "Add to
 // tree" button (explicit mode, see initLevelFilterTreeModeSettings).
@@ -16225,7 +16284,8 @@ function nodeIconHTML(node) {
     // the retired dedicated "extract" filterType used to.
     : (node.filterType === "text" && nodeHasExtractableWildcards(node)) ? ICON_TABLE
     : node.filterType === "text" ? ICON_FILTER
-    : (node.filterType === "and" || node.filterType === "or") ? ICON_COMBINE
+    : node.filterType === "and" ? ICON_AND
+    : node.filterType === "or" ? ICON_OR
     : node.filterType === "link" ? ICON_LINK
     : (node.filterType === "context" || node.filterType === "countContext") ? ICON_CONTEXT
     : node.filterType === "level" ? ICON_LEVEL
@@ -16541,7 +16601,8 @@ function ghostTypeTag(filterType) {
 // "text".
 function ghostIconFor(filterType) {
   return filterType === "text" ? ICON_FILTER
-    : (filterType === "and" || filterType === "or") ? ICON_COMBINE
+    : filterType === "and" ? ICON_AND
+    : filterType === "or" ? ICON_OR
     : filterType === "link" ? ICON_LINK
     : (filterType === "context" || filterType === "countContext") ? ICON_CONTEXT
     : filterType === "level" ? ICON_LEVEL
@@ -16885,7 +16946,8 @@ function renderNode(id, depth, opts) {
   const clipClass = clip && clip.id === id ? (clip.mode === "cut" ? " cut" : " copied") : "";
   const multiClass = state.multiSelect.has(id) ? " multi-selected" : "";
   const invertClass = node.inverted ? " inverted" : "";
-  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
+  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass +
+    (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
   // to the RIGHT of its file's icon column instead of visually overlapping
@@ -23654,7 +23716,7 @@ const ICON_COLLAPSE_ALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill=
 // The "Show more (+n)" filler row's own glyph — a plain plus, deliberately
 // different from the ellipsis the "… N lines" row next to it carries.
 const ICON_PLUS_SMALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>';
-const ICON_ELLIPSIS = '<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg>';
+const ICON_ELLIPSIS = icon("more");
 
 function isSidebarCollapsed() { return sidebarEl.classList.contains("collapsed"); }
 function isSidebarPeeking() { return sidebarEl.classList.contains("peeking"); }
@@ -33277,8 +33339,8 @@ function describeBulkActions(nodes) {
       // they'd produce could only ever be empty or type-mixed. Link… stays
       // offered either way: that's the supported way to chain onto a link.
       if (nodes.every(canBeCombined)) {
-        actions.push({ action: "and", label: "Combine (AND)", icon: ICON_COMBINE });
-        actions.push({ action: "or", label: "OR", icon: ICON_COMBINE });
+        actions.push({ action: "and", label: "Combine (AND)", icon: ICON_AND });
+        actions.push({ action: "or", label: "OR", icon: ICON_OR });
       }
       actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
     } else {
@@ -33308,156 +33370,69 @@ function performBulkAction(action, ids) {
 }
 
 // ===================== Sidebar toolbar (FEATURE_BACKLOG.md #77) =====================
-// Files & Filters gets its own always-visible toolbar (#sidebarToolbar, see
-// renderSidebarToolbar further down) using the same icon+hover-label
-// button concept as #viewBar/the per-view toolbars, instead of the old
-// tree-row icons/right-click-only actions. Its button SET depends entirely
-// on the current tree selection (state.multiSelect/state.activeId) —
-// describeSidebarToolbarActions below decides which buttons show,
-// handleSidebarToolbarActionClick runs whichever was clicked. Zero
-// duplicated business logic: every action here is a thin call into a
-// function that already existed for the tree context menu (startRenameNode,
-// editFilterNode, toggleInvertWithUndo, openClockOffsetDialog,
-// openFilterLibrarySaveDialog, openFilterLibraryDialog) or
-// performBulkAction/describeBulkActions for the 2+ selection cases.
+// Files & Filters gets its own toolbar (#sidebarToolbar, see
+// renderSidebarToolbar further down) using the same flat icon+hover-label
+// buttons as the per-view toolbars. Its button SET is fixed and never
+// changes with the selection — only which buttons are enabled does:
 //
-// AND/OR/Link… move EXCLUSIVELY here (person-confirmed): removed from the
-// old #treeActionBar (retired outright, folding its Merge case into this
-// toolbar's own "2+ files -> Merge") and from openTreeContextMenu's own
-// bulk-action rendering (Merge stays there, unaffected — see that
-// function's filter of describeBulkActions' output).
+//   Rename… | Edit filter… | Invert (NOT)  ·  Adjust clock…  ·  Add to library…
 //
-// Revised per project-owner review (still unshipped at the time, same
-// session): the button set is now always at most two `|`-separated groups
-// — a "what does this node ITSELF look like" group, then a "library"
-// group — rather than one long undifferentiated row:
-//  - 1 filter (unlocked): Rename/Edit/Invert | Add to library…/Apply from
-//    library… (Edit/Invert still conditionally present per filterType).
-//  - 1 filter (locked, the auto-managed "Bookmarks" node): nothing in group
-//    1 any more (Copy removed, see below) — just Apply from library…,
-//    disabled (same locked gate it already had).
-//  - 1 file: Adjust clock… | Apply from library… (omitted/disabled the same
-//    way as before).
-//  - 2+ files: Merge | Apply from library… (targeting state.activeId — a
-//    2+ selection has no single applicable node, same fallback the toolbar
-//    always used for this action).
-//  - 2+ filters (same root): AND/OR/Link…, unchanged — no library group
-//    here, same as before this revision.
-//  - anything unsupported (different roots / mixed types): the existing
-//    describeBulkActions() note, no actions.
-// `copy`/`cut`/`saveFilter` (Save filter…, file-based)/`loadFilter` (Load
-// filter…, file-based) are REMOVED from the toolbar entirely, for every
-// selection shape — still reachable exactly as before via the tree's
-// right-click context menu (openTreeContextMenu), unaffected here.
-// `context`/`countContext` (Time context…/Count context…) are removed from
-// here too, and — unlike the other four — also from the context menu (see
-// openTreeContextMenu's own comment): there is deliberately no user-facing
-// way left to CREATE a new one, for now (FEATURE_BACKLOG.md #79). Existing
-// context/countContext nodes are entirely unaffected — this only touches
-// the two menu items that used to create a fresh one.
+// describeSidebarToolbarActions below is the single source of truth for that
+// (label, target, disabled) per button; handleSidebarToolbarActionClick runs
+// whichever was clicked. Zero duplicated business logic: every action is a
+// thin call into a function that already existed for the tree context menu
+// (startRenameNode, editFilterNode, toggleInvertWithUndo,
+// openClockOffsetDialog, openFilterLibrarySaveDialog).
 //
-// "Add to library…" (new, `addToLibrary`) and "Apply from library…"
-// (pre-existing) replace the dedicated `#btnAddToLibrary`/`#btnOpenLibrary`
-// buttons that used to sit in #viewBar's own #libraryManageBar group
-// (removed outright, see the CSS/markup near #libraryPresetBar) — same
-// dialogs (openFilterLibrarySaveDialog/openFilterLibraryDialog), same
-// icons (ICON_DISK/ICON_BOOK), but now targeting the SPECIFIC selected
-// node rather than always state.activeId, more precise than the buttons
-// they replace.
+// Enable matrix (a disabled button is never hidden):
+//  - 1 unlocked filter: Rename, Add to library always; Edit only for
+//    text/gap/time filters; Invert (NOT) for everything but link/context/
+//    countContext (same guards openTreeContextMenu's single-node branch
+//    applies).
+//  - 1 file: Adjust clock… only when it isn't merged and has entries (same
+//    guard openClockOffsetDialog itself enforces).
+//  - the locked "Bookmarks" node, nothing selected, or 2+ selected: all off.
 //
-// Every action listed here stays ADDITIVE where it already had another
-// entry point: its pre-existing right-click menu entry point is untouched,
-// this toolbar is a second entry point, not a replacement.
+// Interim (until the selection bar): a 2+ selection appends
+// describeBulkActions' buttons (AND/OR/Link… for same-root filters, Merge for
+// files) as a trailing group, or its explanatory note.
 //
-// Returns { actions: [{action, label, icon, target, disabled?, separator?}],
-// note } — same "note instead of a silent no-op" convention
-// describeBulkActions itself uses. `target` is the node id (or, for a bulk
-// action, the array of selected ids) handleSidebarToolbarActionClick should
-// act on.
+// "Apply from library…" is not on this toolbar: it stays on the tree context
+// menu (openTreeContextMenu). copy/cut/saveFilter/loadFilter stay on the
+// context menu too; context/countContext have no creation entry point at all
+// (FEATURE_BACKLOG.md #79).
+//
+// Returns { actions: [{action, label, icon, target, disabled, separator?,
+// group?}], note } — the fixed buttons first, then (2+ selected only) the
+// bulk group flagged group:"selection". `target` is the node id (or, for a
+// bulk action, the array of selected ids) handleSidebarToolbarActionClick
+// should act on. `note` is describeBulkActions' explanation for a 2+
+// selection it can't act on.
 function describeSidebarToolbarActions() {
   const selectedIds = [...state.multiSelect];
   const nodes = selectedIds.map(id => state.nodes[id]).filter(Boolean);
-  const actions = [];
+  const node = nodes.length === 1 ? nodes[0] : null;
+  const filter = node && node.type === "filter" && !node.locked ? node : null;
+  const ft = filter ? filter.filterType : null;
+  const target = node ? node.id : null;
+  const actions = [
+    { action: "rename", label: "Rename…", icon: ICON_RENAME, target, disabled: !filter },
+    { action: "edit", label: "Edit filter…", icon: ICON_EDIT, target,
+      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft))) },
+    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", icon: ICON_INVERT, target,
+      disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
+    { action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK, target, separator: true,
+      disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
+    { action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target, separator: true, disabled: !filter },
+  ];
   let note;
-
-  // "Apply from library…" target resolution (shared by every selection
-  // shape below): the single selected node when there is exactly one, else
-  // state.activeId (0 or 2+ selected — no single applicable target) — same
-  // fallback this action has always used. Disabled with no active id or a
-  // locked target, same gate openTreeContextMenu's own `if (!node.locked)`
-  // already applies.
-  const applyLibTargetId = nodes.length === 1 ? nodes[0].id : state.activeId;
-  const applyLibTargetNode = applyLibTargetId ? state.nodes[applyLibTargetId] : null;
-  const applyLibDisabled = !applyLibTargetNode || !!applyLibTargetNode.locked;
-  const applyFromLibraryAction = (extra) => Object.assign({
-    action: "applyFromLibrary", label: "Apply from library…", icon: ICON_BOOK,
-    target: applyLibTargetId, disabled: applyLibDisabled,
-  }, extra);
-
-  if (nodes.length === 1) {
-    const node = nodes[0];
-    if (node.type === "file") {
-      // Same guard openClockOffsetDialog itself enforces (merged/empty file
-      // — see its own early return) — omitted rather than disabled, same
-      // convention the context menu's own clockOffset item already uses.
-      if (!node.merged && node.entries && node.entries.length) {
-        actions.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK, target: node.id });
-      }
-      // Group 2: Apply from library… only — a raw file has nothing to
-      // serialize into a preset, so no "Add to library…" here. Presets are
-      // file-agnostic on purpose (openTreeContextMenu's own comment), so
-      // applying one onto a file node makes sense same as onto a filter.
-      actions.push(applyFromLibraryAction({ separator: actions.length > 0 }));
-    } else if (node.type === "filter") {
-      if (node.locked) {
-        // Restricted node (the auto-managed "Bookmarks" filter) — Copy
-        // used to be the only thing offered here; now that Copy is gone
-        // from the toolbar entirely (see module comment), there's nothing
-        // left for group 1 at all — just the (disabled) library group.
-        actions.push(applyFromLibraryAction());
-      } else {
-        actions.push({ action: "rename", label: "Rename…", icon: ICON_RENAME, target: node.id });
-        // Edit/Invert conditionally present per filterType, same guards
-        // openTreeContextMenu's own single-node branch already applies.
-        if (node.filterType === "text" || node.filterType === "gap" || isTimeFilterType(node.filterType)) {
-          actions.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT, target: node.id });
-        }
-        if (node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
-          actions.push({
-            action: "invert",
-            label: node.inverted ? "Remove NOT" : "Invert (NOT)",
-            icon: ICON_INVERT,
-            target: node.id,
-          });
-        }
-        // Group 2: library actions, targeting THIS node specifically. "Add
-        // to library…" needs a real FILTER node (same guard
-        // openFilterLibrarySaveDialog/saveFilterToLibrary itself applies) —
-        // always true in this branch.
-        actions.push({ action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target: node.id, separator: true });
-        actions.push(applyFromLibraryAction({ target: node.id }));
-      }
-    }
-  } else if (nodes.length >= 2) {
-    // Reuses describeBulkActions unchanged — this is the one place AND/OR/
-    // Link (and Merge) still come from.
+  if (nodes.length >= 2) {
     const bulk = describeBulkActions(nodes);
-    bulk.actions.forEach(a => actions.push(Object.assign({}, a, { target: selectedIds })));
+    bulk.actions.forEach(a => actions.push(Object.assign({}, a, {
+      target: selectedIds, disabled: false, group: "selection",
+    })));
     note = bulk.note;
-    // A files-only 2+ selection additionally gets the library group
-    // (targeting the state.activeId fallback above — there's no single
-    // selected node to target more precisely than that). A 2+ FILTER
-    // selection (AND/OR/Link) or a mixed/different-root selection does
-    // NOT — unchanged from before this revision, person-confirmed scope.
-    if (nodes.every(n => n.type === "file")) {
-      actions.push(applyFromLibraryAction({ separator: actions.length > 0 }));
-    }
-  } else {
-    // 0 selected: same state.activeId fallback, so the toolbar isn't
-    // completely empty right after e.g. a delete leaves nothing selected.
-    actions.push(applyFromLibraryAction());
   }
-
   return { actions, note };
 }
 
@@ -33478,7 +33453,6 @@ function handleSidebarToolbarActionClick(action) {
     case "edit": editFilterNode(target); return;
     case "invert": toggleInvertWithUndo(target); render(); return;
     case "addToLibrary": openFilterLibrarySaveDialog(target); return;
-    case "applyFromLibrary": openFilterLibraryDialog(target); return;
     case "merge":
     case "and":
     case "or":
@@ -33631,7 +33605,7 @@ function openTreeContextMenu(ev, clickedId) {
       // inputs as real, visible sibling filters next to it — the node
       // itself is untouched — see unpackAndOrLinkNode.
       if ((node.filterType === "and" || node.filterType === "or" || node.filterType === "link") && hasBakedSides(node)) {
-        buckets.edit.push({ action: "unpack", label: "Unpack…", icon: ICON_COMBINE });
+        buckets.edit.push({ action: "unpack", label: "Unpack…", icon: node.filterType === "or" ? ICON_OR : node.filterType === "and" ? ICON_AND : ICON_LINK });
       }
     }
     // Applying from the library (FEATURE_BACKLOG.md "Reusable filter
@@ -33821,23 +33795,48 @@ treeContextMenu.addEventListener("click", ev => {
 
 const sidebarToolbarEl = el("#sidebarToolbar");
 
+// The fixed buttons are built once (first render with a file loaded); after
+// that a render only toggles each button's disabled state/label. The
+// transient 2+ selection group and note live in their own containers below,
+// rebuilt only when their content changes.
+let sidebarToolbarSelKey = null;
+
 function renderSidebarToolbar() {
   const hasFiles = state.rootIds.length > 0;
   // "" restores the CSS class's own display:flex rather than hardcoding a
   // value — same convention #viewBar's own hasFiles gating uses.
   sidebarToolbarEl.style.display = hasFiles ? "" : "none";
-  if (!hasFiles) { sidebarToolbarEl.innerHTML = ""; return; }
+  if (!hasFiles) return;
 
   const { actions, note } = describeSidebarToolbarActions();
-  sidebarToolbarEl.innerHTML = buildRowActionsHtml(actions, "rect", "sidebar-toolbar-hit") +
-    (note ? '<span class="ctx-note" style="padding:0;">' + note + "</span>" : "");
-  // Scoped to ".sidebar-toolbar-hit" (not the generic ".row-action-hit"
-  // every static toolbar answers to) so this repeated call — the button set
-  // is rebuilt on every render, unlike every other setupHitExpandGroups
-  // caller — never re-scans #viewBar/the per-view toolbars' own hit
-  // elements; its own idempotency guard makes calling it again here safe
-  // regardless (see that function's comment).
-  setupHitExpandGroups(".sidebar-toolbar-hit");
+  const fixed = actions.filter(a => !a.group);
+  if (!sidebarToolbarEl.querySelector("[data-stb-group=\"sel\"]")) {
+    sidebarToolbarEl.innerHTML = buildRowActionsHtml(fixed, "rect", "sidebar-toolbar-hit") +
+      '<div data-stb-group="sel"></div><span class="ctx-note" data-stb-note style="padding:0;" hidden></span>';
+    sidebarToolbarSelKey = null;
+    // Idempotent (per-container guard), so calling it again after the
+    // selection group is rebuilt below never stacks listeners.
+    setupHitExpandGroups(".sidebar-toolbar-hit");
+  }
+  fixed.forEach(a => {
+    const btn = sidebarToolbarEl.querySelector('[data-row-action="' + a.action + '"]');
+    if (!btn) return;
+    btn.disabled = !!a.disabled;
+    btn.title = a.label;
+    const lbl = btn.querySelector(".row-action-label");
+    if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
+  });
+
+  const sel = actions.filter(a => a.group === "selection");
+  const selKey = sel.map(a => a.action + "|" + a.label).join(",");
+  if (selKey !== sidebarToolbarSelKey) {
+    sidebarToolbarSelKey = selKey;
+    sidebarToolbarEl.querySelector("[data-stb-group=\"sel\"]").innerHTML = buildRowActionsHtml(sel, "rect", "sidebar-toolbar-hit");
+    setupHitExpandGroups(".sidebar-toolbar-hit");
+  }
+  const noteEl = sidebarToolbarEl.querySelector("[data-stb-note]");
+  noteEl.textContent = note || "";
+  noteEl.hidden = !note;
 }
 
 sidebarToolbarEl.addEventListener("click", ev => {
@@ -35485,7 +35484,7 @@ const LIBRARY_ICON_SET = [
   { name: "bookmark", svg: ICON_BOOKMARK_FILLED },
   { name: "table", svg: ICON_TABLE },
   { name: "link", svg: ICON_LINK },
-  { name: "combine", svg: ICON_COMBINE },
+  { name: "combine", svg: ICON_AND },
   { name: "level", svg: ICON_LEVEL },
   { name: "message", svg: ICON_MESSAGE_EXTRACT },
   { name: "note", svg: ICON_NOTE },
