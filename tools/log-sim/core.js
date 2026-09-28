@@ -317,6 +317,20 @@
       },
     },
 
+    ties: {
+      label: "Same-timestamp clusters",
+      weight: 1,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): one control-loop tick logs 3-6 steps 'Tick N step k/M' at the exact same millisecond; under the mixed format the steps alternate between default and syslog lines. Same-timestamp log order (merge, meta format split, OR filter).",
+      make(g, ts) {
+        const tick = ++g.state.tick;
+        const n = g.int(3, 6);
+        const step = k => ({ level: "DEBUG", thread: "control-loop", cls: "scheduler", method: "Tick", msg: "Tick " + tick + " step " + k + "/" + n, syslog: k % 2 === 0 });
+        for (let k = 2; k <= n; k++) g.schedule(ts, step(k));
+        return step(1);
+      },
+    },
+
     gaps: {
       label: "Idle gaps",
       weight: 0,
@@ -507,7 +521,7 @@
       label: "Mixed default + syslog (meta format)",
       ext: ".log",
       hint: "Default-format lines interleaved with syslog lines (sensor/position telemetry). Import the syslog format definition (written next to the output), then add a Meta format with targets [Simulator: RFC 5424 syslog, Default] and a filename rule. Meta format split, Sources grouping.",
-      render: (e, g) => (e.scenario === "sensors" || e.scenario === "position" ? renderSyslog(e, g) : renderDefault(e, g)),
+      render: (e, g) => (e.syslog || e.scenario === "sensors" || e.scenario === "position" ? renderSyslog(e, g) : renderDefault(e, g)),
       exportFormat: (prefix, ext) => exportDoc(SYSLOG_EXPORT, prefix, ext),
     },
     plain: {
@@ -523,7 +537,7 @@
 
   const DEFAULTS = {
     format: "default",
-    scenarios: Object.keys(SCENARIOS),
+    scenarios: "all",
     seed: 1,
     start: "2026-01-15T08:00:00",
     rate: 10,          // average entries per second
@@ -532,12 +546,13 @@
   };
 
   function normalizeScenarios(list) {
-    if (list == null || list === "all") return Object.keys(SCENARIOS);
+    const all = () => Object.keys(SCENARIOS).filter(n => !SCENARIOS[n].optIn);
+    if (list == null || list === "all") return all();
     const arr = Array.isArray(list) ? list : String(list).split(",");
     const names = arr.map(s => String(s).trim()).filter(Boolean);
     if (names.includes("all")) {
       const excluded = new Set(names.filter(n => n.startsWith("-")).map(n => n.slice(1)));
-      return Object.keys(SCENARIOS).filter(n => !excluded.has(n));
+      return all().filter(n => !excluded.has(n));
     }
     names.forEach(n => { if (!SCENARIOS[n]) throw new Error("Unknown scenario '" + n + "' (known: " + Object.keys(SCENARIOS).join(", ") + ")"); });
     return names;
@@ -583,6 +598,7 @@
         pos: { x: 0, y: 0, z: 1, heading: 0 },
         job: 0,
         sensors: [0, 1, 2].map(i => ({ t: 40 + i * 5, p: 1.013, v: 230 })),
+        tick: 0,
       },
     };
 

@@ -49,6 +49,12 @@ a filter to try (e.g. `motion` → Link filter with a same-thread key and a
 Δt condition; `arrays` → array columns and the Heatmap). Select with
 `-s motion,position` or exclude with `-s all,-gaps,-text`.
 
+`ties` is **opt-in** (`optIn: true`, never part of `all`, so every existing
+seed keeps its exact output): control-loop ticks of 3-6 `Tick N step k/M`
+lines at the exact same millisecond; under `-f mixed` the steps alternate
+between default and syslog lines. For same-timestamp log order
+(`-s ties,basic`).
+
 ## Amount and files
 
 - `-n 5000` entries or `--size 20MB` per file.
