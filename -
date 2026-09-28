@@ -1,0 +1,8 @@
+2026-01-15 08:00:00,133	INFO	"scheduler"	C:\src\Shop\Core\Scheduler.cs	line 120	[Report]	"Throughput 2,782.2 msg/s"
+2026-01-15 08:00:00,233	INFO	"main"	C:\src\Shop\Sensors\SensorHub.cs	line 405	[Poll]	"Meter reading 39.188,7 kWh"
+2026-01-15 08:00:00,387	INFO	"worker-4"	C:\src\Shop\Sensors\SensorHub.cs	line 405	[Poll]	"Meter reading 41.832,4 kWh"
+2026-01-15 08:00:00,402	INFO	"main"	C:\src\Shop\Sensors\SensorHub.cs	line 405	[Poll]	"Meter reading 48.594,9 kWh"
+2026-01-15 08:00:00,649	INFO	"main"	C:\src\Shop\Core\Scheduler.cs	line 120	[Report]	"Throughput 1,121.3 msg/s"
+2026-01-15 08:00:00,931	INFO	"worker-1"	C:\src\Shop\Sensors\SensorHub.cs	line 405	[Poll]	"Meter reading 49.426,3 kWh"
+2026-01-15 08:00:00,994	INFO	"main"	C:\src\Shop\Core\Scheduler.cs	line 120	[Report]	"Throughput 2,701.9 msg/s"
+2026-01-15 08:00:01,000	INFO	"scheduler"	C:\src\Shop\Data\Repository.cs	line 202	[Import]	"Batch imported 112 records"

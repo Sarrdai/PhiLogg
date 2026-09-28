@@ -4355,8 +4355,8 @@
             </div>
             <div id="filterTokenChips" class="filter-token-chips filter-section-row">
               <span class="filter-section-label">Insert</span>
-              <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [*:int>=10], [*:int&lt;20,>10], or [*:int|>=10] for |value|>=10">[int]</button>
-              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [*:float>=10], [*:float&lt;20,>10], or [*:float|>=10] for |value|>=10">[float]</button>
+              <button type="button" class="token-chip" data-token="int" title="Add a condition manually, e.g. [*:int>=10], [*:int&lt;20,>10], or [*:int|>=10] for |value|>=10. Thousands separators: [*:int@en] (1,234) or [*:int@de] (1.234)">[int]</button>
+              <button type="button" class="token-chip" data-token="float" title="Add a condition manually, e.g. [*:float>=10], [*:float&lt;20,>10], or [*:float|>=10] for |value|>=10. Thousands separators: 1,234.5 / 1.234,5 match as-is; [*:float@en] or [*:float@de] fixes the format">[float]</button>
               <button type="button" class="token-chip" data-token="time">[time]</button>
               <button type="button" class="token-chip" data-token="word">[word]</button>
               <button type="button" class="token-chip" data-token="hex">[hex]</button>
@@ -11112,9 +11112,25 @@ async function loadMetaFormatText(name, text, metaFmt) {
    post-match numeric check, on top of the structural regex match,
    everywhere a wildcard pattern is tested against an entry (extraction, and
    a plain "text" filter whose value contains tokens).
+
+   Thousands separators: a plain [*:float] also accepts a grouped number
+   that carries BOTH separators, since only that shape is unambiguous
+   ("1,234.5" / "1.234,5" — the last separator is the decimal one). A lone
+   "1,234" could be 1234 or 1.234 depending on who wrote the message, so it
+   is never guessed; float/int take an explicit number format suffix for
+   that instead: [*:float@en] ("," groups, "." decimal) or [*:float@de]
+   ("." groups, "," decimal), written before any conditions
+   ([*:float@de>1000]; condition values themselves stay "."-decimal).
+   Captured values are normalized to plain "1234.5" once
+   (normalizeExtractedNumber), so table, plot, sort, conditions and export
+   never see a separator.
 */
+const EXTRACT_NUMBER_FORMATS = {
+  en: { group: ",", decimal: "." },
+  de: { group: ".", decimal: "," },
+};
 const EXTRACT_TYPES = {
-  float: '[-+]?(?:\\d+\\.\\d+|\\.\\d+|\\d+)',
+  float: '[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+\\.\\d+|\\.\\d+|\\d+)',
   int: '[-+]?\\d+',
   // clock-style ("16:23:27", "16:23:27.697") or a number with a duration unit ("3.5s", "120ms")
   time: '(?:\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?|\\d+(?:\\.\\d+)?\\s?(?:ms|s|sec|secs|seconds|min|mins|minutes|h|hrs|hours))',
@@ -11136,8 +11152,34 @@ const VALUE_CONDITION_OP = '(?:>=|<=|==|>|<)';
 const VALUE_CONDITION_ONE = '\\|?' + VALUE_CONDITION_OP + VALUE_CONDITION_NUM;
 const VALUE_CONDITION_RE = new RegExp('(\\|?)(' + VALUE_CONDITION_OP + ')(' + VALUE_CONDITION_NUM + ')', 'g');
 
+// Regex fragment for a float/int placeholder carrying an explicit number
+// format (see EXTRACT_NUMBER_FORMATS): grouping is optional, but when
+// present it must be strict 3-digit groups.
+function numberFormatFragment(type, format) {
+  const f = EXTRACT_NUMBER_FORMATS[format];
+  const g = escapeRegExp(f.group), d = escapeRegExp(f.decimal);
+  const grouped = '\\d{1,3}(?:' + g + '\\d{3})+';
+  return type === "int"
+    ? '[-+]?(?:' + grouped + '|\\d+)'
+    : '[-+]?(?:' + grouped + '(?:' + d + '\\d+)?|\\d+' + d + '\\d+|' + d + '\\d+|\\d+)';
+}
+
+// Captured float/int substring -> plain "."-decimal string without
+// grouping ("1,234.5" -> "1234.5"). Without an explicit format only a
+// value holding a "," can be grouped, and the regex only lets that through
+// with both separators present, so the LAST separator is the decimal one.
+function normalizeExtractedNumber(raw, col) {
+  if (!raw || (col.type !== "float" && col.type !== "int")) return raw;
+  let f = col.numberFormat && EXTRACT_NUMBER_FORMATS[col.numberFormat];
+  if (!f) {
+    if (raw.indexOf(",") === -1) return raw;
+    f = raw.lastIndexOf(",") > raw.lastIndexOf(".") ? EXTRACT_NUMBER_FORMATS.de : EXTRACT_NUMBER_FORMATS.en;
+  }
+  return raw.split(f.group).join("").replace(f.decimal, ".");
+}
+
 const EXTRACT_TOKEN_RE = new RegExp(
-  '\\[(?:\\*:(float|int|time|word|hex)((?:' + VALUE_CONDITION_ONE + ')(?:,(?:' + VALUE_CONDITION_ONE + '))*)?|(\\*))\\]',
+  '\\[(?:\\*:(float|int|time|word|hex)(?:@(en|de))?((?:' + VALUE_CONDITION_ONE + ')(?:,(?:' + VALUE_CONDITION_ONE + '))*)?|(\\*))\\]',
   'g'
 );
 
@@ -11181,15 +11223,17 @@ function describeValueConditions(conditions) {
   return conditions.map(c => (c.abs ? "|" : "") + VALUE_CONDITION_SYMBOLS[c.op] + c.value).join(" ∧ ");
 }
 
-// Does a single captured raw substring (e.g. "12.5") satisfy a column's
+// Does a single captured raw substring (e.g. "12.5", or "1,234.5" —
+// normalized via the column's number format first) satisfy the column's
 // conditions? No conditions = always true. A capture that doesn't parse as
 // a number (shouldn't happen for float/int, the only types conditions are
 // allowed on) fails every condition rather than being treated as a match.
 // An `abs` condition compares |value| instead of value (e.g. [*:float|>=10]
 // matches both 10 and -15).
-function valueSatisfiesConditions(rawStr, conditions) {
+function valueSatisfiesConditions(rawStr, col) {
+  const conditions = col.conditions;
   if (!conditions) return true;
-  const num = parseFloat(rawStr);
+  const num = parseFloat(normalizeExtractedNumber(rawStr, col));
   if (Number.isNaN(num)) return false;
   return conditions.every(c => {
     const v = c.abs ? Math.abs(num) : num;
@@ -11217,16 +11261,17 @@ function wildcardMatch(regex, columns, text) {
   const m = regex.exec(text);
   if (!m) return null;
   for (let i = 0; i < columns.length; i++) {
-    if (!valueSatisfiesConditions(m[i + 1], columns[i].conditions)) return null;
+    if (!valueSatisfiesConditions(m[i + 1], columns[i])) return null;
   }
   return m;
 }
 
 // Compiles a template into { regex, columns }. columns is the ordered list
-// of { name, type, conditions? } to extract; duplicate types get suffixed
+// of { name, type, numberFormat?, conditions? } to extract; duplicate types get suffixed
 // (float, float 2, ...). Returns null if the resulting pattern isn't a
 // valid regex, OR if a numeric condition was written on a type that has no
-// natural ordering (time/word/hex) — same "invalid pattern" feedback path
+// natural ordering (time/word/hex), or a number format (@en/@de) on one of
+// those — same "invalid pattern" feedback path
 // as any other malformed template.
 function compileExtractPattern(pattern) {
   EXTRACT_TOKEN_RE.lastIndex = 0;
@@ -11237,18 +11282,19 @@ function compileExtractPattern(pattern) {
   let m;
   while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
     regexStr += escapeRegExp(pattern.slice(lastIndex, m.index));
-    const type = m[1] || "text"; // m[3] matched means it was the bare [*] wildcard
-    if (m[2] && !VALUE_CONDITION_TYPES.has(type)) return null; // conditions only make sense on float/int
-    const conditions = parseValueConditions(m[2]);
+    const type = m[1] || "text"; // m[4] matched means it was the bare [*] wildcard
+    if ((m[2] || m[3]) && !VALUE_CONDITION_TYPES.has(type)) return null; // formats/conditions only make sense on float/int
+    const conditions = parseValueConditions(m[3]);
     const base = "value";
     nameCounts[base] = (nameCounts[base] || 0) + 1;
     const name = nameCounts[base] > 1 ? base + " " + nameCounts[base] : base;
     const col = { name, type };
+    if (m[2]) col.numberFormat = m[2];
     if (conditions) col.conditions = conditions;
     columns.push(col);
     lastIndex = EXTRACT_TOKEN_RE.lastIndex;
     const isLast = lastIndex === pattern.length;
-    const frag = type === "text" ? (isLast ? ".*" : ".*?") : EXTRACT_TYPES[type];
+    const frag = type === "text" ? (isLast ? ".*" : ".*?") : m[2] ? numberFormatFragment(type, m[2]) : EXTRACT_TYPES[type];
     regexStr += "(" + frag + ")";
   }
   regexStr += escapeRegExp(pattern.slice(lastIndex));
@@ -13053,7 +13099,7 @@ function findMatchRanges(text, spec) {
     while ((m = re.exec(text)) !== null) {
       let ok = true;
       for (let i = 0; i < spec.wildcardColumns.length; i++) {
-        if (!valueSatisfiesConditions(m[i + 1], spec.wildcardColumns[i].conditions)) { ok = false; break; }
+        if (!valueSatisfiesConditions(m[i + 1], spec.wildcardColumns[i])) { ok = false; break; }
       }
       if (ok) ranges.push([m.index, m.index + m[0].length]);
       if (m[0].length === 0) re.lastIndex++; // guard against a zero-width token looping forever
@@ -14576,7 +14622,9 @@ function finishAnalysisFilter(node, tab) {
    in priority order: GUID, IPv4[:port], a "quoted string" (its content), a
    Windows/UNC or multi-segment Unix path, a hex literal/hash (0x…, or 8+
    hex digits mixing letters and digits), then any number — a sign only
-   when it isn't glued to a word ("Worker-3" keeps its dash). */
+   when it isn't glued to a word ("Worker-3" keeps its dash), and grouped
+   with thousands separators only when both separators are present
+   ("1,234.5", same unambiguous shape a plain [*:float] accepts). */
 const PATTERN_MAX_CHARS = 400;
 const PATTERN_PH_NUM = "";
 const PATTERN_PH_LABELS = { "": "<#>", "": "<guid>", "": "<ip>", "": "<str>", "": "<path>", "": "<hex>" };
@@ -14587,7 +14635,7 @@ const PATTERN_TOKEN_RE = new RegExp(
   '|("[^"\\n]*")' +
   "|((?:\\b[A-Za-z]:\\\\|\\\\\\\\)[^\\s\"'<>|,;]+|(?<![\\w.:/])\\/[\\w.-]+(?:\\/[\\w.-]*)+)" +
   "|(\\b0[xX][0-9a-fA-F]+\\b|\\b(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{8,}\\b)" +
-  "|((?:(?<![\\w.])[-+])?\\d+(?:\\.\\d+)?)",
+  "|((?:(?<![\\w.])[-+])?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?))",
   "g"
 );
 // Set by normalizeMessagePattern for the message just normalized: bit i is
@@ -18057,7 +18105,8 @@ function renderExtractPatternView(pattern, columns, opts) {
     num.textContent = chipIdx + 1;
     chip.appendChild(num);
     const condLabel = describeValueConditions(col.conditions);
-    chip.appendChild(document.createTextNode(col.type + (condLabel ? " " + condLabel : "")));
+    const typeLabel = col.type + (col.numberFormat ? "@" + col.numberFormat : "");
+    chip.appendChild(document.createTextNode(typeLabel + (condLabel ? " " + condLabel : "")));
     if (opts && opts.onToggle) {
       chip.classList.add("chip-toggleable");
       chip.title = col.ignored
@@ -18065,7 +18114,7 @@ function renderExtractPatternView(pattern, columns, opts) {
         : col.name + " \u2014 click to ignore this value (won\u2019t become a column)";
       chip.addEventListener("click", ev => { ev.stopPropagation(); opts.onToggle(chipIdx); });
     } else {
-      chip.title = col.name + " (" + col.type + (condLabel ? " " + condLabel : "") + ")";
+      chip.title = col.name + " (" + typeLabel + (condLabel ? " " + condLabel : "") + ")";
     }
     chip.addEventListener("mouseenter", () => highlightColumn(chipIdx));
     chip.addEventListener("mouseleave", clearColumnHighlight);
@@ -20794,7 +20843,7 @@ function renderExtractTable(node) {
   };
   extractRowsData = entries.map((e, r) => {
     const m = matchEntry(e);
-    const values = spec.columns.map((c, i) => (m ? (m[i + 1] ?? "") : ""));
+    const values = spec.columns.map((c, i) => (m ? normalizeExtractedNumber(m[i + 1] ?? "", c) : ""));
     // Expando properties on negative indices, not part of the dense
     // spec.columns range — .length and any spec.columns iteration over
     // `values` stay exactly as before (see the r.values.length assertion in
@@ -31239,7 +31288,7 @@ function updateFilterPatternPreview(val, baseEntries) {
     for (const e of baseEntries) {
       previewRe.lastIndex = 0;
       const mm = previewRe.exec(e.message);
-      if (mm && spec.columns.every((c, i) => valueSatisfiesConditions(mm[i + 1], c.conditions))) { sampleEntry = e; m = mm; break; }
+      if (mm && spec.columns.every((c, i) => valueSatisfiesConditions(mm[i + 1], c))) { sampleEntry = e; m = mm; break; }
     }
   }
 
@@ -31911,14 +31960,17 @@ el("#ctxCopy").addEventListener("click", () => {
 // [*:float] after [*:int] tries"). Clock times / durations are
 // recognized as a single [*:time] rather than being split into
 // separate numbers, and a number glued directly onto letters (e.g. inside
-// a hash or "v2") is left alone rather than being pulled out. Returns null
+// a hash or "v2") is left alone rather than being pulled out. A number
+// grouped with both separators ("1,234.5" / "1.234,5") stays ONE [*:float],
+// which a plain [*:float] matches (see EXTRACT_TYPES); a lone "1,234" is
+// ambiguous and is left split, [*:float@en]/@de is the explicit way. Returns null
 // if none were found — "Filter for this ___" (below) then falls back to
 // the exact literal text instead, so a message/method/thread with no
 // numbers in it is still filterable for its exact value.
 const NUMERIC_TOKEN_RE = new RegExp(
   "\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
   "|\\d+(?:\\.\\d+)?\\s?(?:ms|s|sec|secs|seconds|min|mins|minutes|h|hrs|hours)\\b" + // duration + unit
-  "|[-+]?\\d+(?:\\.\\d+)?",                                                          // standalone number
+  "|[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?)",     // standalone number (grouped only with both separators)
   "g"
 );
 function buildNumericExtractPattern(message) {
@@ -40987,7 +41039,7 @@ function llmExtractRows(node) {
     let m = null;
     if (!restrictCols) m = spec.regex.exec(e.message);
     else for (const key of restrictCols) { m = spec.regex.exec(entryColumnValue(e, key)); if (m) break; }
-    rows.push({ entry: e, values: spec.columns.map((c, i) => (m ? (m[i + 1] ?? "") : "")) });
+    rows.push({ entry: e, values: spec.columns.map((c, i) => (m ? normalizeExtractedNumber(m[i + 1] ?? "", c) : "")) });
   }
   const columns = spec.columns.map((c, i) => ({ index: i + 1, name: getColumnDisplayName(node, i, c.name), type: c.type }));
   return { patternNode, spec, columns, rows };
@@ -41140,7 +41192,7 @@ function llmToolCreateFilter(args) {
   if (mode === "regex") {
     try { new RegExp(pattern); } catch (e) { return { error: "Invalid regex: " + e.message }; }
   } else if (isExtractPattern(pattern) && !compileExtractPattern(pattern)) {
-    return { error: "Invalid extraction pattern. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*]; value conditions only on int/float, e.g. [*:float>85]." };
+    return { error: "Invalid extraction pattern. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*]; value conditions and number formats (@en = 1,234.5, @de = 1.234,5) only on int/float, e.g. [*:float>85], [*:float@de]." };
   }
   const extraction = mode === "text" && isExtractPattern(pattern);
   if (extraction && invert) return { error: "An extraction pattern can't be inverted — drop invert or the placeholders." };
@@ -41388,7 +41440,7 @@ const LLM_TOOLS = [
   },
   {
     name: "create_filter",
-    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further. mode \"regex\": JavaScript regex. Returns the new nodeId, match count and examples, or an error to correct.",
+    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further; [*:float@en] / [*:float@de] fix the thousands/decimal separators (1,234.5 vs 1.234,5). mode \"regex\": JavaScript regex. Returns the new nodeId, match count and examples, or an error to correct.",
     parameters: { type: "object", properties: {
       parentId: { type: "string", description: "Node to filter (a file or filter id); default: the whole file of the active node" },
       pattern: { type: "string" },
