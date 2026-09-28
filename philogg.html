@@ -545,8 +545,32 @@
     flex:1 1 auto; font-size:11px; font-weight:650; letter-spacing:.7px;
     text-transform:uppercase; color:var(--text-tertiary);
   }
-  #sidebarNormalContent{display:flex; flex-direction:column; min-height:0; height:100%;}
+  #sidebarNormalContent{display:flex; flex-direction:column; min-height:0; height:100%; position:relative;}
   #sidebarScroll{flex:1 1 auto; overflow-y:auto; min-height:0;}
+  #sidebarScroll.has-selbar{padding-bottom:56px;}
+  /* Floating selection bar (2+ nodes selected): dark pill in light themes,
+     light pill in dark ones (text-primary as background, bg-panel as text). */
+  #selectionBar{
+    position:absolute; left:10px; right:10px; bottom:10px; z-index:5;
+    background:var(--text-primary); color:var(--bg-panel); border-radius:9px;
+    padding:4px 4px 4px 10px; display:flex; align-items:center; flex-wrap:nowrap; gap:1px;
+    box-shadow:0 6px 18px rgba(0,0,0,.35); font-size:11.5px;
+    animation:selbar-in .18s ease;
+  }
+  #selectionBar[hidden]{display:none;}
+  @keyframes selbar-in{from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:none;}}
+  @media (prefers-reduced-motion:reduce){#selectionBar{animation:none; transition:none;}}
+  #selectionBar.has-note{flex-wrap:wrap;}
+  #selectionBar .selbar-count{font-weight:600; white-space:nowrap; margin-right:auto; padding-right:6px;}
+  #selectionBar .selbar-msg{flex:1 1 100%; order:5; font-size:11px; opacity:.85; line-height:1.35; padding:3px 0;}
+  #selectionBar button{
+    display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 6px;
+    border-radius:6px; border:0; background:transparent; color:inherit;
+    font:inherit; font-weight:500; cursor:pointer; white-space:nowrap;
+  }
+  #selectionBar button:hover{background:rgba(127,127,127,.3);}
+  #selectionBar .selbar-x{padding:0 5px; opacity:.75;}
+  #selectionBar .selbar-x:hover{opacity:1;}
   #sidebarRail{
     display:none; width:40px; height:100%; flex-direction:column; align-items:center;
     padding:6px 0 10px; gap:10px;
@@ -740,11 +764,6 @@
     padding:4px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-panel);
     min-height:36px;
   }
-  /* The transient 2+ selection group (interim, until the selection bar) and
-     the note live in their own flex containers, so each is a hover-label
-     group of its own (setupHitExpandGroups binds per parent element). */
-  #sidebarToolbar > [data-stb-group]{display:flex; align-items:center; gap:2px; margin-left:6px;}
-  #sidebarToolbar > [data-stb-group]:empty{display:none;}
   #sidebarToolbar .row-action-separator{height:16px; align-self:center; margin:0 4px;}
   /* Flat icon buttons, like the per-view toolbars: no chrome at rest, a hover
      background, disabled = tertiary text at reduced opacity (never hidden). */
@@ -4382,6 +4401,7 @@
           <div id="zipList"></div>
           <div id="tree"></div>
         </div>
+        <div id="selectionBar" role="toolbar" aria-label="Selection actions" hidden></div>
       </div>
       <div id="sidebarRail"></div>
     </aside>
@@ -11602,28 +11622,29 @@ function getRootFileId(nodeId) {
   return node ? node.id : null;
 }
 
-// and/or/link nodes carry two BAKED condition snapshots (node.bakedA/
-// node.bakedB — see bakeNodeCondition below and getEntries's "and"/"or"/
-// "link" handling) instead of a reference to another node. A baked
+// and/or/link nodes carry BAKED condition snapshots instead of a reference to
+// another node: and/or hold node.baked (an array of 2+ conditions), link holds
+// node.bakedA/node.bakedB (reference + target) — see bakeNodeCondition below
+// and getEntries's "and"/"or"/"link" handling. A baked
 // condition is a flat, self-contained copy of exactly the fields that
 // define ONE filter step (filterType/value/caseSensitive/etc — never id/
-// parentId/children/ancestors), so once created, node.bakedA/bakedB never
+// parentId/children/ancestors), so once created, node.baked/bakedA/bakedB never
 // look at state.nodes[...] again: deleting, renaming, moving, or replacing
 // the original source node(s) has zero effect on this node's result — which
 // is the whole point of baking rather than referencing.
 // node.parentId is the ONLY thing that determines this node's
 // input entries (getEntries(node.parentId), exactly like every other
 // filter type) — moving such a node just re-chains it onto a different
-// parent's output, same as any plain filter; it never touches bakedA/bakedB.
-// No cycle guard is needed: bakedA/bakedB hold plain data, not node-id
+// parent's output, same as any plain filter; it never touches its baked data.
+// No cycle guard is needed: baked/bakedA/bakedB hold plain data, not node-id
 // references, so there is nothing to cycle through except normal recursion
 // into a nested baked link (bounded by ordinary data-structure depth).
 
 // Copies exactly the fields that define one filter node's OWN single
 // condition — not its ancestors, not id/parentId/children/highlightColor/
-// label/anything structural. Used to build node.bakedA/bakedB for and/or/
-// link nodes (see the "Core data model" note above). For a source node
-// that is itself and/or/link, its own bakedA/bakedB are copied in as a
+// label/anything structural. Used to build node.baked (and/or) and
+// node.bakedA/bakedB (link) — see the "Core data model" note above. For a
+// source node that is itself and/or/link, its own baked data is copied in as a
 // nested predicate-pair (see getEntriesFromBaked's recursive handling) —
 // so a link-of-link (multi-hop) chain keeps working through this model.
 // Deep-copies one baked condition, tolerating a missing side (see
@@ -11632,12 +11653,44 @@ function cloneBaked(baked) {
   return baked ? JSON.parse(JSON.stringify(baked)) : null;
 }
 
-// True only for an and/or/link node that actually carries both baked sides.
+// True only for an and/or/link node that actually carries its baked sides:
+// and/or need node.baked with 2+ conditions, link needs bakedA and bakedB.
 // A combiner materialized from a pre-baking filter file / library preset has
 // neither (its old inputA/inputB node-id references are dropped on import),
-// and every action that reads bakedA/bakedB has to check first.
+// and every action that reads the baked data has to check first.
 function hasBakedSides(node) {
-  return !!(node && node.bakedA && node.bakedB);
+  if (!node) return false;
+  if (node.filterType === "and" || node.filterType === "or") return isBakedList(node.baked);
+  return !!(node.bakedA && node.bakedB);
+}
+function isBakedList(list) {
+  return Array.isArray(list) && list.length >= 2 && list.every(b => b && typeof b === "object");
+}
+
+// Copies whichever baked fields src carries (baked / bakedA / bakedB) onto
+// dst as deep copies — the one place every persistence carrier (clone,
+// snapshot, filter JSON, session cache) goes through for them.
+function copyBakedFields(src, dst) {
+  if (src.baked) dst.baked = JSON.parse(JSON.stringify(src.baked));
+  if (src.bakedA) dst.bakedA = JSON.parse(JSON.stringify(src.bakedA));
+  if (src.bakedB) dst.bakedB = JSON.parse(JSON.stringify(src.bakedB));
+}
+
+// Evaluates an N-ary AND/OR over baked conditions against one entry pool:
+// AND = entries matching every condition, OR = entries matching any (sorted
+// chronologically by the file's order).
+function combineBakedEntries(mode, bakedList, pool, fileId) {
+  const lists = (bakedList || []).map(b => getEntriesFromBaked(b, pool, fileId));
+  if (!lists.length) return [];
+  if (mode === "and") {
+    const idSets = lists.slice(1).map(l => new Set(l.map(e => e.id)));
+    return lists[0].filter(e => idSets.every(s => s.has(e.id)));
+  }
+  const seen = new Set();
+  const out = [];
+  for (const l of lists) for (const e of l) if (!seen.has(e.id)) { seen.add(e.id); out.push(e); }
+  out.sort(chronoComparator(buildOrderIndexMap(fileId)));
+  return out;
 }
 
 function bakeNodeCondition(node) {
@@ -11658,12 +11711,10 @@ function bakeNodeCondition(node) {
     baked.countBefore = node.countBefore || 0;
     baked.countAfter = node.countAfter || 0;
   } else if (node.filterType === "and" || node.filterType === "or") {
-    // cloneBaked, not a bare JSON round-trip: a combiner can legitimately
-    // reach here with no baked sides at all (a filter file or library preset
-    // written before this model existed carries the old node-id references
-    // instead), and JSON.parse(JSON.stringify(undefined)) throws.
-    baked.bakedA = cloneBaked(node.bakedA);
-    baked.bakedB = cloneBaked(node.bakedB);
+    // A combiner can legitimately reach here with no baked list at all (a
+    // filter file or library preset written before this model existed), and
+    // JSON.parse(JSON.stringify(undefined)) throws — hence the guard.
+    baked.baked = Array.isArray(node.baked) ? cloneBaked(node.baked) : [];
   } else if (node.filterType === "link") {
     baked.bakedA = cloneBaked(node.bakedA);
     baked.bakedB = cloneBaked(node.bakedB);
@@ -11676,15 +11727,15 @@ function bakeNodeCondition(node) {
   return baked;
 }
 
-// Combines two existing filters with AND (intersection) or OR (union, sorted
+// Combines 2+ existing filters with AND (intersection) or OR (union, sorted
 // by time) into a new, self-contained node holding a BAKED copy of each
-// source's own single condition (node.bakedA/node.bakedB — see
-// bakeNodeCondition/getEntries's "and"/"or" handling), not a reference to
-// the source nodes. Always placed as a new top-level child of the two
+// source's own single condition (node.baked, an array in selection order —
+// see bakeNodeCondition/getEntries's "and"/"or" handling), not a reference
+// to the source nodes. Always placed as a new top-level child of the two
 // sources' shared root file (same "independent, near the top" placement
 // syncBookmarksFilterNode/createSelectionFilterNode already use) — from
 // there it can be moved anywhere like any other node, which only changes
-// what entries it receives via getEntries(node.parentId), never bakedA/bakedB.
+// what entries it receives via getEntries(node.parentId), never its baked data.
 // Which nodes AND/OR accept as a side. Two exclusions, both because the
 // baked copy would evaluate to something meaningless rather than to that
 // filter's own condition:
@@ -11702,19 +11753,19 @@ function canBeCombined(node) {
   return true;
 }
 
-function createAndOrNode(idA, idB, mode) {
-  const a = state.nodes[idA];
-  const b = state.nodes[idB];
-  if (!a || !b) return null;
-  if (!canBeCombined(a) || !canBeCombined(b)) return null;
-  const rootId = getRootFileId(idA);
+function createAndOrNode(ids, mode) {
+  if (!Array.isArray(ids) || ids.length < 2) return null;
+  if (mode !== "and" && mode !== "or") return null;
+  const sources = ids.map(id => state.nodes[id]);
+  if (sources.some(n => !n || n.type !== "filter" || !canBeCombined(n))) return null;
+  const rootId = getRootFileId(ids[0]);
   const root = state.nodes[rootId];
   if (!root) return null;
   const symbol = mode === "and" ? " ∧ " : " ∨ ";
   const node = {
-    id: uid("n"), type: "filter", name: nodeDisplayName(a) + symbol + nodeDisplayName(b),
+    id: uid("n"), type: "filter", name: sources.map(nodeDisplayName).join(symbol),
     parentId: rootId, children: [], filterType: mode, value: null,
-    bakedA: bakeNodeCondition(a), bakedB: bakeNodeCondition(b), inverted: false,
+    baked: sources.map(bakeNodeCondition), inverted: false,
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
@@ -12555,7 +12606,7 @@ function formatDuration(ms) {
 
 // Deep-clones a filter node and all its descendant filters under a new parent,
 // assigning fresh ids throughout. The original subtree is left untouched.
-// and/or/link nodes keep bakedA/bakedB as-is (a plain deep copy, like every
+// and/or/link nodes keep their baked data as-is (a plain deep copy, like every
 // other field) — they're flat data with no node-id inside, so there is
 // nothing to remap and no dependency on where the clone (or anything else)
 // lives in the tree.
@@ -12571,8 +12622,7 @@ function cloneSubtree(nodeId, newParentId) {
     value: orig.value,
     inverted: !!orig.inverted,
   };
-  if (orig.bakedA) clone.bakedA = JSON.parse(JSON.stringify(orig.bakedA));
-  if (orig.bakedB) clone.bakedB = JSON.parse(JSON.stringify(orig.bakedB));
+  copyBakedFields(orig, clone);
   if (orig.filterType === "link") {
     clone.linkDirection = orig.linkDirection;
     clone.linkN = orig.linkN;
@@ -13471,7 +13521,7 @@ function getEntries(nodeId) {
 // doing the evaluating (needed by "context"/"countContext", which look at
 // the whole file's entries, and by "link", whose order-index map is
 // per-file). and/or/link baked conditions nest (see bakeNodeCondition's
-// "and"/"or"/"link" branch), so this recurses into baked.bakedA/bakedB —
+// "and"/"or"/"link" branch), so this recurses into baked.baked / baked.bakedA/bakedB —
 // exactly how a multi-hop chained link keeps working through this model.
 function getEntriesFromBaked(baked, poolEntries, fileId) {
   if (!baked) return [];
@@ -13509,16 +13559,7 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
     const bucketOf = makeLevelBucketer();
     result = parentEntries.filter(e => baked.value.includes(bucketOf(e.level, e.formatId)));
   } else if (baked.filterType === "and" || baked.filterType === "or") {
-    const aEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
-    const bEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
-    if (baked.filterType === "and") {
-      const bIds = new Set(bEntries.map(e => e.id));
-      result = aEntries.filter(e => bIds.has(e.id));
-    } else {
-      const seen = new Set(aEntries.map(e => e.id));
-      result = aEntries.concat(bEntries.filter(e => !seen.has(e.id)));
-      result.sort(chronoComparator(buildOrderIndexMap(fileId)));
-    }
+    result = combineBakedEntries(baked.filterType, baked.baked, poolEntries, fileId);
   } else if (baked.filterType === "link") {
     const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
     const targetEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
@@ -13672,22 +13713,13 @@ function getEntriesUncached(node, parentOverride) {
     const bucketOf = makeLevelBucketer();
     result = parentEntries.filter(e => node.value.includes(bucketOf(e.level, e.formatId)));
   } else if (node.filterType === "and" || node.filterType === "or") {
-    // Self-contained: bakedA/bakedB are flat condition snapshots (see
+    // Self-contained: node.baked holds flat condition snapshots (see
     // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
     // over THIS node's own ordinary input entries (parentEntries, exactly
     // like every other filter type) — no second entry stream, no reference
     // to another node anywhere.
     const fileId = getRootFileId(nodeId);
-    const inputAEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
-    const inputBEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
-    if (node.filterType === "and") {
-      const bIds = new Set(inputBEntries.map(e => e.id));
-      result = inputAEntries.filter(e => bIds.has(e.id));
-    } else {
-      const seen = new Set(inputAEntries.map(e => e.id));
-      result = inputAEntries.concat(inputBEntries.filter(e => !seen.has(e.id)));
-      result.sort(chronoComparator(buildOrderIndexMap(fileId)));
-    }
+    result = combineBakedEntries(node.filterType, node.baked, parentEntries, fileId);
   } else if (node.filterType === "link") {
     // Self-contained, same as and/or: bakedA is the reference's own baked
     // condition, bakedB the target's — both evaluated as predicates over
@@ -14100,8 +14132,7 @@ function snapshotSubtree(nodeId) {
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
-  if (node.bakedA) copy.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-  if (node.bakedB) copy.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+  copyBakedFields(node, copy);
   if (node.filterType === "link") {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
     copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
@@ -14166,6 +14197,7 @@ function restoreSubtree(snap) {
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
     children: [],
   };
+  if (snap.baked) node.baked = snap.baked;
   if (snap.bakedA) node.bakedA = snap.bakedA;
   if (snap.bakedB) node.bakedB = snap.bakedB;
   if (snap.filterType === "link") {
@@ -33307,13 +33339,14 @@ async function openFpPathHere(path) {
 }
 
 // Figures out which bulk actions the current multi-selection supports.
-// Shared by the right-click context menu and the always-visible action bar
-// above the tree, so both surfaces offer exactly the same logic/wording.
+// Shared by the right-click context menu and the floating selection bar at
+// the bottom of the sidebar (#selectionBar), so both surfaces offer exactly
+// the same logic/wording.
 // Returns { actions: [{action, label, icon}], note } — note is set instead
 // of actions when the selection doesn't support any bulk action yet.
-// Link accepts 2+ filters (reference + N ordered hops, see openLinkDialog);
-// AND/OR stay two-filter-only — generalizing set intersection/union to N
-// filters wasn't asked for and isn't the same kind of operation as chaining.
+// Link and AND/OR all accept 2+ filters of one file (Link: reference + N
+// ordered hops, see openLinkDialog; AND/OR: N-ary intersection/union, see
+// createAndOrNode).
 function describeBulkActions(nodes) {
   const allFiles = nodes.every(n => n.type === "file");
   const allFilters = nodes.every(n => n.type === "filter");
@@ -33333,19 +33366,15 @@ function describeBulkActions(nodes) {
       return { actions: [], note: "These filters belong to different files. Merge the files first, or pick filters from the same file." };
     }
     const actions = [];
-    if (nodes.length === 2) {
-      // AND/OR are withheld for sides canBeCombined() rejects (a link node's
-      // synthetic pair entries, a pre-baking imported combiner) — the node
-      // they'd produce could only ever be empty or type-mixed. Link… stays
-      // offered either way: that's the supported way to chain onto a link.
-      if (nodes.every(canBeCombined)) {
-        actions.push({ action: "and", label: "Combine (AND)", icon: ICON_AND });
-        actions.push({ action: "or", label: "OR", icon: ICON_OR });
-      }
-      actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
-    } else {
-      actions.push({ action: "link", label: "Link… (" + nodes.length + "-way)", icon: ICON_LINK });
+    // AND/OR are withheld when any node fails canBeCombined() (a link node's
+    // synthetic pair entries, a pre-baking imported combiner) — the node
+    // they'd produce could only ever be empty or type-mixed. Link… stays
+    // offered either way: that's the supported way to chain onto a link.
+    if (nodes.every(canBeCombined)) {
+      actions.push({ action: "and", label: "AND", icon: ICON_AND });
+      actions.push({ action: "or", label: "OR", icon: ICON_OR });
     }
+    actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
     return { actions };
   }
   return { actions: [], note: "Select either files (to merge) or filters (to combine) — not both at once." };
@@ -33363,7 +33392,8 @@ function performBulkAction(action, ids) {
   if (action === "merge") {
     mergeFiles(ids); // fire-and-forget — its own synchronous prefix (node creation + flushLoadRender) already ran by the time this returns; it drives its own progress rendering from here
   } else if (action === "and" || action === "or") {
-    if (createAndOrNode(ids[0], ids[1], action)) revealFilteredView();
+    const node = createAndOrNode(ids, action);
+    if (node) { pushCreateUndo(node); revealFilteredView(); }
   }
   state.multiSelect = new Set();
   render();
@@ -33393,21 +33423,17 @@ function performBulkAction(action, ids) {
 //    guard openClockOffsetDialog itself enforces).
 //  - the locked "Bookmarks" node, nothing selected, or 2+ selected: all off.
 //
-// Interim (until the selection bar): a 2+ selection appends
-// describeBulkActions' buttons (AND/OR/Link… for same-root filters, Merge for
-// files) as a trailing group, or its explanatory note.
+// The 2+ selection actions (AND/OR/Link…/Merge) live in the floating
+// selection bar (#selectionBar, renderSelectionBar) — this toolbar stays
+// static and fully disabled while 2+ nodes are selected.
 //
 // "Apply from library…" is not on this toolbar: it stays on the tree context
 // menu (openTreeContextMenu). copy/cut/saveFilter/loadFilter stay on the
 // context menu too; context/countContext have no creation entry point at all
 // (FEATURE_BACKLOG.md #79).
 //
-// Returns { actions: [{action, label, icon, target, disabled, separator?,
-// group?}], note } — the fixed buttons first, then (2+ selected only) the
-// bulk group flagged group:"selection". `target` is the node id (or, for a
-// bulk action, the array of selected ids) handleSidebarToolbarActionClick
-// should act on. `note` is describeBulkActions' explanation for a 2+
-// selection it can't act on.
+// Returns { actions: [{action, label, icon, target, disabled, separator?}] }.
+// `target` is the node id handleSidebarToolbarActionClick should act on.
 function describeSidebarToolbarActions() {
   const selectedIds = [...state.multiSelect];
   const nodes = selectedIds.map(id => state.nodes[id]).filter(Boolean);
@@ -33425,15 +33451,7 @@ function describeSidebarToolbarActions() {
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
     { action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target, separator: true, disabled: !filter },
   ];
-  let note;
-  if (nodes.length >= 2) {
-    const bulk = describeBulkActions(nodes);
-    bulk.actions.forEach(a => actions.push(Object.assign({}, a, {
-      target: selectedIds, disabled: false, group: "selection",
-    })));
-    note = bulk.note;
-  }
-  return { actions, note };
+  return { actions };
 }
 
 // Dispatches a sidebar-toolbar click to the underlying function/dialog —
@@ -33453,13 +33471,22 @@ function handleSidebarToolbarActionClick(action) {
     case "edit": editFilterNode(target); return;
     case "invert": toggleInvertWithUndo(target); render(); return;
     case "addToLibrary": openFilterLibrarySaveDialog(target); return;
-    case "merge":
-    case "and":
-    case "or":
-    case "link":
-      performBulkAction(action, target);
-      return;
   }
+}
+
+// Describes the floating selection bar for the current multi-selection, or
+// null when fewer than 2 nodes are selected. { label, actions, note } —
+// label is the count ("3 filters" / "2 files" / "3 selected"), actions/note
+// come straight from describeBulkActions (the single source of truth).
+function describeSelectionBar() {
+  const ids = [...state.multiSelect].filter(id => state.nodes[id]);
+  if (ids.length < 2) return null;
+  const nodes = ids.map(id => state.nodes[id]);
+  const bulk = describeBulkActions(nodes);
+  const allFiles = nodes.every(n => n.type === "file");
+  const allFilters = nodes.every(n => n.type === "filter");
+  const label = ids.length + (allFiles ? " files" : allFilters ? " filters" : " selected");
+  return { ids, label, actions: bulk.actions, note: bulk.note };
 }
 
 // The node the single-node context menu (copy/cut/paste/delete) was opened
@@ -33795,12 +33822,8 @@ treeContextMenu.addEventListener("click", ev => {
 
 const sidebarToolbarEl = el("#sidebarToolbar");
 
-// The fixed buttons are built once (first render with a file loaded); after
-// that a render only toggles each button's disabled state/label. The
-// transient 2+ selection group and note live in their own containers below,
-// rebuilt only when their content changes.
-let sidebarToolbarSelKey = null;
-
+// The buttons are built once (first render with a file loaded); after that
+// a render only toggles each button's disabled state/label.
 function renderSidebarToolbar() {
   const hasFiles = state.rootIds.length > 0;
   // "" restores the CSS class's own display:flex rather than hardcoding a
@@ -33808,17 +33831,13 @@ function renderSidebarToolbar() {
   sidebarToolbarEl.style.display = hasFiles ? "" : "none";
   if (!hasFiles) return;
 
-  const { actions, note } = describeSidebarToolbarActions();
-  const fixed = actions.filter(a => !a.group);
-  if (!sidebarToolbarEl.querySelector("[data-stb-group=\"sel\"]")) {
-    sidebarToolbarEl.innerHTML = buildRowActionsHtml(fixed, "rect", "sidebar-toolbar-hit") +
-      '<div data-stb-group="sel"></div><span class="ctx-note" data-stb-note style="padding:0;" hidden></span>';
-    sidebarToolbarSelKey = null;
-    // Idempotent (per-container guard), so calling it again after the
-    // selection group is rebuilt below never stacks listeners.
+  const { actions } = describeSidebarToolbarActions();
+  if (!sidebarToolbarEl.querySelector("[data-row-action]")) {
+    sidebarToolbarEl.innerHTML = buildRowActionsHtml(actions, "rect", "sidebar-toolbar-hit");
+    // Idempotent (per-container guard), so calling it again never stacks listeners.
     setupHitExpandGroups(".sidebar-toolbar-hit");
   }
-  fixed.forEach(a => {
+  actions.forEach(a => {
     const btn = sidebarToolbarEl.querySelector('[data-row-action="' + a.action + '"]');
     if (!btn) return;
     btn.disabled = !!a.disabled;
@@ -33826,18 +33845,48 @@ function renderSidebarToolbar() {
     const lbl = btn.querySelector(".row-action-label");
     if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
   });
-
-  const sel = actions.filter(a => a.group === "selection");
-  const selKey = sel.map(a => a.action + "|" + a.label).join(",");
-  if (selKey !== sidebarToolbarSelKey) {
-    sidebarToolbarSelKey = selKey;
-    sidebarToolbarEl.querySelector("[data-stb-group=\"sel\"]").innerHTML = buildRowActionsHtml(sel, "rect", "sidebar-toolbar-hit");
-    setupHitExpandGroups(".sidebar-toolbar-hit");
-  }
-  const noteEl = sidebarToolbarEl.querySelector("[data-stb-note]");
-  noteEl.textContent = note || "";
-  noteEl.hidden = !note;
+  renderSelectionBar();
 }
+
+// Floating selection bar (#selectionBar, bottom of the sidebar): shown while
+// 2+ nodes are selected, content from describeSelectionBar. Rebuilt only
+// when its content changes so a click on a button never lands on a node
+// that a same-tick render replaced.
+const selectionBarEl = el("#selectionBar");
+let selectionBarKey = null;
+function renderSelectionBar() {
+  const info = state.rootIds.length ? describeSelectionBar() : null;
+  const scrollEl = el("#sidebarScroll");
+  selectionBarEl.hidden = !info;
+  selectionBarEl.classList.toggle("has-note", !!(info && info.note));
+  scrollEl.classList.toggle("has-selbar", !!info);
+  if (!info) { selectionBarKey = null; scrollEl.style.paddingBottom = ""; return; }
+  const key = info.label + "|" + info.actions.map(a => a.action + ":" + a.label).join(",") + "|" + (info.note || "");
+  if (key !== selectionBarKey) {
+    selectionBarKey = key;
+    selectionBarEl.innerHTML =
+      '<span class="selbar-count">' + escapeHtml(info.label) + "</span>" +
+      (info.note ? '<span class="selbar-msg">' + escapeHtml(info.note) + "</span>" : "") +
+      info.actions.map(a => '<button type="button" data-selbar-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' + a.icon + escapeHtml(a.label) + "</button>").join("") +
+      '<button type="button" class="selbar-x" data-selbar-action="close" title="Clear selection (Esc)" aria-label="Clear selection">' + ICON_CLOSE + "</button>";
+  }
+  // Keep the last tree row reachable above the bar.
+  scrollEl.style.paddingBottom = (selectionBarEl.offsetHeight + 18) + "px";
+}
+
+selectionBarEl.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-selbar-action]");
+  if (!btn) return;
+  // Same stopPropagation rule as every click that may open a popup (Link…
+  // opens a dialog): the document-level outside-click closers must not see it.
+  ev.stopPropagation();
+  const action = btn.dataset.selbarAction;
+  if (action === "close") { state.multiSelect = new Set(); render(); return; }
+  // Re-derive rather than trust anything cached on the button.
+  const info = describeSelectionBar();
+  if (!info || !info.actions.some(a => a.action === action)) return;
+  performBulkAction(action, info.ids);
+});
 
 sidebarToolbarEl.addEventListener("click", ev => {
   const btn = ev.target.closest("[data-row-action]");
@@ -35087,8 +35136,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
     if (node.value !== null && node.value !== undefined) out.value = node.value;
     // and/or/link's baked condition snapshots — plain data, copied as-is,
     // no ref/remapping needed (see the module comment above).
-    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    copyBakedFields(node, out);
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -35159,8 +35207,7 @@ function materializeBakedAsNode(baked, parentId) {
     node.countBefore = baked.countBefore || 0;
     node.countAfter = baked.countAfter || 0;
   } else if (baked.filterType === "and" || baked.filterType === "or") {
-    node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
-    node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
+    node.baked = JSON.parse(JSON.stringify(baked.baked));
   } else if (baked.filterType === "link") {
     node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
     node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
@@ -35184,15 +35231,15 @@ function bakedConditionName(baked) {
   if (baked.filterType === "timerange") return timeRangeFilterName(baked.value);
   if (baked.filterType === "gap") return gapFilterName(baked.value);
   if (baked.filterType === "and" || baked.filterType === "or") {
-    return bakedConditionName(baked.bakedA) + (baked.filterType === "and" ? " ∧ " : " ∨ ") + bakedConditionName(baked.bakedB);
+    return (baked.baked || []).map(bakedConditionName).join(baked.filterType === "and" ? " ∧ " : " ∨ ");
   }
   if (baked.filterType === "link") return bakedConditionName(baked.bakedA) + " ⟶ " + bakedConditionName(baked.bakedB);
   if (baked.value && typeof baked.value === "object") return JSON.stringify(baked.value);
   return String(baked.value);
 }
 
-// Materializes an and/or/link node's own bakedA/bakedB back into two real,
-// visible sibling filter nodes (same filterType/fields), inserted right
+// Materializes an and/or/link node's own baked conditions back into real,
+// visible sibling filter nodes (one per condition) (same filterType/fields), inserted right
 // after the original node's own position. Purely ADDITIVE: the original node
 // keeps its id, its bakedA/bakedB and its result — its condition already
 // works, so there is nothing to replace. Unpack exists only to make the two
@@ -35208,10 +35255,10 @@ function unpackAndOrLinkNode(nodeId) {
   const parent = state.nodes[node.parentId];
   if (!parent) return null;
 
-  const cloneA = materializeBakedAsNode(node.bakedA, node.parentId);
-  const cloneB = materializeBakedAsNode(node.bakedB, node.parentId);
+  const sides = node.filterType === "link" ? [node.bakedA, node.bakedB] : node.baked;
+  const clones = sides.map(b => materializeBakedAsNode(b, node.parentId));
   const insertIndex = parent.children.indexOf(nodeId) + 1;
-  parent.children.splice(Math.max(0, insertIndex), 0, cloneA.id, cloneB.id);
+  parent.children.splice(Math.max(0, insertIndex), 0, ...clones.map(c => c.id));
 
   state.activeId = nodeId;
   invalidateAllCaches();
@@ -35382,6 +35429,7 @@ function materializeSerializedRoots(roots, resolveParentId) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.baked) node.baked = sn.baked;
     if (sn.bakedA) node.bakedA = sn.bakedA;
     if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;
@@ -35413,11 +35461,11 @@ function serializedFilterRootsValid(roots) {
     // (hand-edited file, or an old export from before this restriction
     // existed) would just be an unlocked look-alike with a stale match set.
     if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
-    // and/or/link carry their two sides as baked condition snapshots. A file
+    // and/or carry a baked list (2+ conditions), link its two baked sides. A file
     // or library preset written before that model carries node-id references
     // instead, which mean nothing here — importing it would produce a filter
     // that silently matches nothing, so reject it with a message instead.
-    if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !(sn.bakedA && sn.bakedB)) return false;
+    if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !hasBakedSides(sn)) return false;
     return (sn.children || []).every(validate);
   }
   return Array.isArray(roots) && roots.every(validate);
@@ -38975,7 +39023,8 @@ document.addEventListener("keydown", ev => {
     if (state.clipboard) { state.clipboard = null; needsRender = true; }
     if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); updateTableAssertButton(); }
     if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
-    if (state.multiSelect.size) { state.multiSelect = new Set(); needsRender = true; }
+    // Esc clears the selection (and its bar) — but not while typing in an input.
+    if (state.multiSelect.size && !inInput) { state.multiSelect = new Set(); needsRender = true; }
     if (needsRender) render();
     if (escExitsFocus) toggleFocusMode(false);
     return;
@@ -39665,8 +39714,7 @@ function serializeFilterTreeForCache(fileNode) {
       children: persistableChildren(node.children).map(ser),
     };
     if (node.value !== null && node.value !== undefined) out.value = node.value;
-    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    copyBakedFields(node, out);
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -39866,6 +39914,7 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.baked) node.baked = sn.baked;
     if (sn.bakedA) node.bakedA = sn.bakedA;
     if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;

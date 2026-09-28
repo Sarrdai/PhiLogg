@@ -54,8 +54,9 @@ deployments possible:
   active chain reads straight off the tree. The Files & Filters sidebar has its own icon
   toolbar (same icon+hover-label style as the log view's own toolbars) with a
   fixed set of buttons — Rename, Edit filter, Invert (NOT), Adjust clock and
-  Add to library — that enable or disable with the current selection (AND/OR/
-  Link… and Merge appear beside them while 2+ nodes are selected), alongside the
+  Add to library — that enable or disable with the current selection. Selecting 2+
+  nodes shows a floating selection bar at the bottom of the sidebar: AND / OR /
+  Link… over any number of filters of one file, or Merge N files. It sits alongside the
   tree's existing right-click menu (Copy/Cut/Save filter… stay there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
   shown in the tree instead of the raw pattern — handy for turning
