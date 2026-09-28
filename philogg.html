@@ -682,6 +682,10 @@
     color:var(--text-tertiary); opacity:.55;
   }
   .folder-watch-file:hover{opacity:.9; background:var(--bg-elevated-2);}
+  /* A listed file inside a subfolder tree (renderPathTree): same box model
+     as a .tree-row (left border, chevron slot, depth padding set inline) so
+     decorateTreeGuides' geometry lines up with real tree rows around it. */
+  .folder-watch-file.in-tree{position:relative; border-left:2px solid transparent;}
   .folder-watch-file .tree-icon{flex:0 0 auto; display:flex;}
   .folder-watch-file-name{
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
@@ -2932,7 +2936,6 @@
      column (it has only one topic: this one folder). */
   .fw-settings-card{width:min(560px, 94vw); max-height:min(760px, 90vh);}
   .fw-settings-body{padding:16px 22px 22px; overflow-y:auto;}
-  #fwSettingsRelPathRow.hidden{display:none;}
   .fw-pattern-card{margin-top:12px;}
   .fw-pattern-card:first-child{margin-top:0;}
   .fw-pattern-header{
@@ -6476,15 +6479,6 @@ SOFTWARE.</pre>
             </div>
             <div class="settings-row-control">
               <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="fwSettingsSubfolders"></button>
-            </div>
-          </div>
-          <div class="settings-row" id="fwSettingsRelPathRow">
-            <div class="settings-row-text">
-              <div class="settings-row-label">Show relative path</div>
-              <div class="settings-row-hint">Show each file's path under the folder instead of just its filename.</div>
-            </div>
-            <div class="settings-row-control">
-              <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="fwSettingsShowRelPath"></button>
             </div>
           </div>
         </div>
@@ -16346,6 +16340,14 @@ function viewerMapForOwner(ownerKind, ownerId) {
   return null;
 }
 
+// A folder-watch file hidden inside a collapsed subfolder row (renderPathTree).
+function isInCollapsedFolderDir(node) {
+  if (!node || !node.folderId) return false;
+  const folder = state.folders.find(f => f.id === node.folderId);
+  const rec = folder && folder.files.find(f => f.nodeId === node.id);
+  return !!rec && !isPathTreeVisible(folder, folderFileKey(rec));
+}
+
 function flattenTreeIds() {
   const ids = [];
   function walk(list) {
@@ -16374,7 +16376,7 @@ function flattenTreeIds() {
   // is toggled off, since no DOM row exists there to navigate to anyway).
   walk(state.rootIds.filter(id => {
     const node = state.nodes[id];
-    return !(node && (node.zipId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node)));
+    return !(node && (node.zipId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node) || isInCollapsedFolderDir(node)));
   }));
   // A viewer entry's virtual id, followed by its nested "Filter lines" text
   // versions (see viewerTextLogIds) — their visual position.
@@ -16402,7 +16404,8 @@ function flattenTreeIds() {
       const n = state.nodes[id];
       if (n && n.zipId === zip.id && !rootByName.has(n.name)) rootByName.set(n.name, id);
     });
-    zip.entries.forEach(entry => {
+    // Only entries shown under expanded subfolders, in rendered order.
+    forEachVisiblePathTreeItem(zip, buildPathTree(zip.entries, e => e.name), entry => {
       const openId = rootByName.get(entry.name);
       if (openId) walk([openId]);
       else if (zip.inlineViewers.has(entry.name)) pushViewer("zip", zip.id, entry.name);
@@ -16418,7 +16421,7 @@ function flattenTreeIds() {
   // ALSO aren't repositioned into their folder's slot above, so this is at
   // least internally consistent rather than a regression for this case.
   state.folders.forEach(folder => {
-    folder.inlineViewers.forEach((viewer, mapKey) => pushViewer("folder", folder.id, mapKey));
+    folder.inlineViewers.forEach((viewer, mapKey) => { if (isPathTreeVisible(folder, mapKey)) pushViewer("folder", folder.id, mapKey); });
   });
   // Directly opened/dropped non-log files (this session): no owning
   // container at all, so each gets a top-level virtual id, in the same
@@ -16767,21 +16770,8 @@ function startRenameNode(nodeId) {
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
 // default, etc.) still reads it directly.
-// Same "display only" idea for a folder-watch file with "show relative
-// path" on (Folder watch settings dialog): the grayed listing already shows
-// rec.relPath (renderInactiveFileRow) — this makes an OPENED file's name
-// (tree row, tab, ...) keep showing it too instead of reverting
-// to the bare filename the moment it's loaded (person-reported).
 function nodeDisplayName(node) {
   if (node.type === "filter" && node.label) return node.label;
-  if (node.type === "file" && node.folderId) {
-    const folder = state.folders.find(f => f.id === node.folderId);
-    const settings = folder && folder.settings;
-    if (settings && settings.includeSubfolders && settings.showRelativePath) {
-      const rec = folder.files.find(f => f.nodeId === node.id);
-      if (rec && rec.relPath) return rec.relPath;
-    }
-  }
   return node.name;
 }
 
@@ -17019,7 +17009,9 @@ function renderNode(id, depth, opts) {
   } else if (node.type === "filter" && node.filterType === "level" && !node.label) {
     label.appendChild(buildLevelNodeLabelContent(node));
   } else {
-    const displayName = nodeDisplayName(node);
+    // opts.labelText: a ZIP entry nested under its subfolder rows shows
+    // just its basename (renderZipSection); the title keeps the full path.
+    const displayName = (opts && opts.labelText) || nodeDisplayName(node);
     label.textContent = node.inverted ? "¬ " + displayName : displayName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
@@ -17195,12 +17187,21 @@ function renderNode(id, depth, opts) {
 // root down to the active row. Driven by the DOM rather than node.children
 // so hidden nodes, collapsed subtrees and merge "Sources" nesting are drawn
 // exactly as rendered. Each line runs at its parent's chevron center x.
+// Idempotent (clears what an earlier pass drew): container rows are reused
+// across renders (cachedInactiveRow) and a subfolder tree decorates subtrees
+// renderNode already decorated. Also walks a folder/ZIP's listed-file rows
+// (.folder-watch-file), which sit in the same wrap/row structure there.
 function decorateTreeGuides(rootWrap) {
+  rootWrap.querySelectorAll(".tree-guide").forEach(g => g.remove());
+  rootWrap.querySelectorAll(".on-path").forEach(r => r.classList.remove("on-path"));
   const onPath = new Set();
-  const activeRow = rootWrap.querySelector(".tree-row.active");
+  const activeRow = rootWrap.querySelector(".tree-row.active, .zip-entry-active");
   for (let w = activeRow && activeRow.parentElement; w && rootWrap.contains(w); w = w.parentElement) onPath.add(w);
   onPath.forEach(w => { const r = w.firstElementChild; if (r && r !== activeRow && r.classList.contains("tree-row")) r.classList.add("on-path"); });
-  const rowOf = w => (w.firstElementChild && w.firstElementChild.classList.contains("tree-row")) ? w.firstElementChild : null;
+  const rowOf = w => {
+    const r = w.firstElementChild;
+    return r && (r.classList.contains("tree-row") || r.classList.contains("folder-watch-file")) ? r : null;
+  };
   const addGuide = (row, cls, on, style) => {
     const g = document.createElement("span");
     g.className = "tree-guide " + cls + (on ? " on" : "");
@@ -17240,6 +17241,121 @@ function decorateTreeGuides(rootWrap) {
     });
   })(rootWrap, [], null);
 }
+
+// Subfolders of a watched folder (rec.relPath) or a ZIP (entry.name) render
+// as collapsible directory rows with the tree's connector lines instead of
+// "sub/app.log" labels. Collapsed by default; expansion is per container
+// (owner.expandedDirs — the directory's relative path, session-only) and
+// expandPathTreeTo opens the chain down to one file (a folder watch rule
+// auto-opening it). A container without subfolders keeps its flat listing.
+function buildPathTree(items, pathOf) {
+  const root = { dirs: new Map(), items: [] };
+  items.forEach(item => {
+    const parts = pathOf(item).split("/");
+    let level = root;
+    for (let i = 0; i < parts.length - 1; i++) {
+      let dir = level.dirs.get(parts[i]);
+      if (!dir) level.dirs.set(parts[i], dir = { name: parts[i], path: parts.slice(0, i + 1).join("/"), dirs: new Map(), items: [] });
+      level = dir;
+    }
+    level.items.push(item);
+  });
+  return root;
+}
+function expandedDirsOf(owner) { return owner.expandedDirs || (owner.expandedDirs = new Set()); }
+function expandPathTreeTo(owner, relPath) {
+  const parts = relPath.split("/");
+  for (let i = 1; i < parts.length; i++) expandedDirsOf(owner).add(parts.slice(0, i).join("/"));
+}
+function isPathTreeVisible(owner, relPath) {
+  const parts = relPath.split("/");
+  for (let i = 1; i < parts.length; i++) if (!expandedDirsOf(owner).has(parts.slice(0, i).join("/"))) return false;
+  return true;
+}
+// Rendered order: a level's directories first, then its files.
+function forEachVisiblePathTreeItem(owner, level, fn) {
+  level.dirs.forEach(dir => { if (expandedDirsOf(owner).has(dir.path)) forEachVisiblePathTreeItem(owner, dir, fn); });
+  level.items.forEach(fn);
+}
+function countPathTreeItems(level) {
+  let n = level.items.length;
+  level.dirs.forEach(dir => { n += countPathTreeItems(dir); });
+  return n;
+}
+// Fills `list` with the container's rows: renderItem(item, depth) returns
+// one item's wrap (row first, nested rows after — decorateTreeGuides'
+// structure) or null to skip it.
+function renderPathTree(owner, tree, renderItem, list) {
+  (function renderLevel(level, depth, out) {
+    level.dirs.forEach(dir => {
+      const wrap = document.createElement("div");
+      const expanded = expandedDirsOf(owner).has(dir.path);
+      wrap.appendChild(renderPathTreeDirRow(owner, dir, depth, expanded));
+      if (expanded) renderLevel(dir, depth + 1, wrap);
+      out.appendChild(wrap);
+    });
+    level.items.forEach(item => { const e = renderItem(item, depth); if (e) out.appendChild(e); });
+  })(tree, 0, list);
+  [...list.children].forEach(decorateTreeGuides);
+}
+// Reused while unchanged (cachedInactiveRow): a live-tailed file re-renders
+// the sidebar every tick, which would otherwise swallow a click on it.
+function renderPathTreeDirRow(owner, dir, depth, expanded) {
+  const count = countPathTreeItems(dir);
+  return cachedInactiveRow(owner, "\0dir:" + dir.path, depth + "|" + expanded + "|" + count, () => {
+    const row = document.createElement("div");
+    row.className = "tree-row tree-dir-row";
+    row.style.paddingLeft = (8 + depth * TREE_INDENT_STEP) + "px";
+    row.title = dir.path;
+    const slot = document.createElement("span");
+    slot.className = "tree-chevron-slot";
+    const chevron = document.createElement("button");
+    chevron.type = "button";
+    chevron.className = "tree-chevron" + (expanded ? " expanded" : "");
+    chevron.title = expanded ? "Collapse" : "Expand";
+    chevron.innerHTML = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+    slot.appendChild(chevron);
+    row.appendChild(slot);
+    const icon = document.createElement("span");
+    icon.className = "tree-icon";
+    icon.innerHTML = ICON_FOLDER;
+    row.appendChild(icon);
+    const label = document.createElement("span");
+    label.className = "tree-label";
+    label.textContent = dir.name;
+    row.appendChild(label);
+    const countEl = document.createElement("span");
+    countEl.className = "tree-count";
+    countEl.textContent = count.toLocaleString("de-DE");
+    row.appendChild(countEl);
+    // The chevron's click bubbles here — one toggle for the whole row.
+    row.addEventListener("click", () => {
+      const set = expandedDirsOf(owner);
+      if (set.has(dir.path)) set.delete(dir.path); else set.add(dir.path);
+      render();
+    });
+    return row;
+  });
+}
+// A listed (not opened) file row placed in a subfolder tree: indented and
+// given an empty chevron slot like a real tree row at that depth, wrapped
+// so decorateTreeGuides treats it as one tree item.
+function placeRowInPathTree(row, depth) {
+  row.classList.add("in-tree");
+  row.style.paddingLeft = (8 + depth * TREE_INDENT_STEP) + "px";
+  if (!row.firstElementChild || !row.firstElementChild.classList.contains("tree-chevron-slot")) {
+    const slot = document.createElement("span");
+    slot.className = "tree-chevron-slot";
+    row.insertBefore(slot, row.firstChild);
+  }
+}
+function pathTreeItemWrap(row, depth) {
+  placeRowInPathTree(row, depth);
+  const wrap = document.createElement("div");
+  wrap.appendChild(row);
+  return wrap;
+}
+function basenameOf(path) { return path.slice(path.lastIndexOf("/") + 1); }
 
 // The level array of the "level" filter node currently sitting at
 // state.activeId, or [] when the active node isn't one (auto mode's level
@@ -27035,14 +27151,21 @@ function renderZipSection(zip) {
     // so instead this looks the open node up directly by node.zipId +
     // node.name, which openZipEntry/loadFileDescriptors tag on the node
     // from the very first (queued-placeholder) render.
-    zip.entries.forEach(entry => {
+    // Subfolders render as collapsible directory rows (renderPathTree);
+    // depth is null for a flat archive, which keeps the plain listing.
+    const renderEntry = (entry, depth) => {
       const openId = state.rootIds.find(id => {
         const n = state.nodes[id];
         return n && n.zipId === zip.id && n.name === entry.name;
       });
-      if (openId) list.appendChild(renderNode(openId, 0, { folderTopLevelNoChevron: true }));
-      else list.appendChild(renderZipEntryRow(zip, entry));
-    });
+      if (!openId) return renderZipEntryRow(zip, entry, depth);
+      return depth == null
+        ? renderNode(openId, 0, { folderTopLevelNoChevron: true })
+        : renderNode(openId, depth, { labelText: basenameOf(entry.name) });
+    };
+    const tree = buildPathTree(zip.entries, e => e.name);
+    if (tree.dirs.size) renderPathTree(zip, tree, renderEntry, list);
+    else zip.entries.forEach(entry => list.appendChild(renderEntry(entry, null)));
     box.appendChild(list);
   } else {
     const note = document.createElement("div");
@@ -27092,17 +27215,22 @@ function cachedInactiveRow(owner, key, sig, build) {
   return row;
 }
 
-function renderInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn) {
+// `depth` (optional): the row sits in a subfolder tree (renderPathTree) at
+// that depth and comes back as a tree-item wrap instead of a bare row.
+function renderInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, depth) {
   const cachedViewer = viewersMap.get(mapKey);
   const isActive = !!cachedViewer && state.inlineViewer &&
     state.inlineViewer.ownerKind === ownerKind && state.inlineViewer.ownerId === ownerId &&
     state.inlineViewer.mapKey === mapKey;
   // Only the plain "not opened" row is reused — an opened one's handlers
   // close over its viewer and active state, and there are only a few.
-  if (!cachedViewer) return cachedInactiveRow(viewersMap, mapKey, displayLabel, () => buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, null, false));
-  return buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive);
+  if (!cachedViewer) {
+    const row = cachedInactiveRow(viewersMap, mapKey, displayLabel + "|" + depth, () => buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, null, false, null));
+    return depth == null ? row : pathTreeItemWrap(row, depth);
+  }
+  return buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive, depth);
 }
-function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive) {
+function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive, depth) {
 
   const row = document.createElement("div");
   row.className = "folder-watch-file zip-source-file" +
@@ -27167,6 +27295,13 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
   });
   row.addEventListener("dblclick", openFn);
   const nested = cachedViewer ? viewerTextLogIds(ownerKind, ownerId, mapKey) : [];
+  if (depth != null) {
+    // Tree item: the text versions nest in the same wrap, lines drawn by
+    // renderPathTree's decorateTreeGuides pass.
+    const wrap = pathTreeItemWrap(row, depth);
+    nested.forEach(id => wrap.appendChild(renderNode(id, depth + 1)));
+    return wrap;
+  }
   if (!nested.length) return row;
   // The entry's "Filter lines" text versions, one level below it.
   const frag = document.createDocumentFragment();
@@ -27180,8 +27315,9 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
   });
   return frag;
 }
-function renderZipEntryRow(zip, entry) {
-  return renderInlineViewerEntryRow("zip", zip.id, zip.inlineViewers, entry.name, entry.name, () => openZipEntry(entry, zip));
+function renderZipEntryRow(zip, entry, depth) {
+  const label = depth == null ? entry.name : basenameOf(entry.name);
+  return renderInlineViewerEntryRow("zip", zip.id, zip.inlineViewers, entry.name, label, () => openZipEntry(entry, zip), depth);
 }
 
 // Same "is this a log file?" question folder watch's scan filter already
@@ -29432,7 +29568,7 @@ function defaultFolderPattern() {
   return { pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: null, startFilterKeys: [], startPrimaryFilterKey: null };
 }
 function defaultFolderSettings() {
-  return { includeSubfolders: false, showRelativePath: false, patterns: [defaultFolderPattern()] };
+  return { includeSubfolders: false, patterns: [defaultFolderPattern()] };
 }
 
 // Returns the first pattern (in list order) matching rec.name — same
@@ -29794,6 +29930,8 @@ async function loadFolderFile(folder, rec, auto, quiet) {
       persist: { localPath: (rec.handle && rec.handle.localPath) || null, blob: file } });
     return;
   }
+  // An auto-opened file inside collapsed subfolders is revealed.
+  if (auto) expandPathTreeTo(folder, folderFileKey(rec));
   try {
     let node;
     try {
@@ -30005,7 +30143,10 @@ function renderFolderSection(folder) {
       const n = state.nodes[id];
       if (n && n.folderId === folder.id && !rootByName.has(n.name)) rootByName.set(n.name, id);
     });
-    folder.files.forEach(rec => {
+    // depth: null for a folder without subfolders (flat listing), else the
+    // rec's depth in its subfolder tree (renderPathTree).
+    const nodeOpts = (depth, extra) => Object.assign(depth == null ? { folderTopLevelNoChevron: true } : {}, extra);
+    const renderRec = (rec, depth) => {
       if (rec.nodeId && state.nodes[rec.nodeId]) {
         const n = state.nodes[rec.nodeId];
         // A source loaded specifically for a create-first folder-watch merge
@@ -30013,9 +30154,8 @@ function renderFolderSection(folder) {
         // its merge's own "Sources" node — never in the folder's own
         // listing too, or it would double-render (renderTree's own skip
         // logic has the same check for the plain top-level case).
-        if (n.mergeOwnerId && n.mergeSourceHidden) return;
-        list.appendChild(renderNode(rec.nodeId, 0, { folderTopLevelNoChevron: true, autoOpened: !!rec.openedByAuto }));
-        return;
+        if (n.mergeOwnerId && n.mergeSourceHidden) return null;
+        return renderNode(rec.nodeId, depth || 0, nodeOpts(depth, { autoOpened: !!rec.openedByAuto }));
       }
       // Still loading, or just finished but not yet linked: the real node
       // already exists (see createFileNode, called synchronously at the top
@@ -30033,23 +30173,25 @@ function renderFolderSection(folder) {
       const loadingId = rootByName.get(rec.name);
       if (loadingId) {
         const n = state.nodes[loadingId];
-        if (n.mergeOwnerId && n.mergeSourceHidden) return; // same double-render guard as above, mid-load
-        list.appendChild(renderNode(loadingId, 0, { folderTopLevelNoChevron: true }));
-        return;
+        if (n.mergeOwnerId && n.mergeSourceHidden) return null; // same double-render guard as above, mid-load
+        return renderNode(loadingId, depth || 0, nodeOpts(depth));
       }
       // Non-log, inline-viewable file (this session's generalization — see
       // openInlineViewer's own comment): never gets a rec.nodeId, so the
       // two branches above never match for it — reuses the same
       // open/select/close row renderer a ZIP entry's own non-log files use.
       if (inlineViewableKind(rec.name)) {
-        list.appendChild(renderInlineViewerEntryRow(
+        return renderInlineViewerEntryRow(
           "folder", folder.id, folder.inlineViewers, folderFileKey(rec), rec.name,
-          () => loadFolderFile(folder, rec)
-        ));
-        return;
+          () => loadFolderFile(folder, rec), depth
+        );
       }
-      list.appendChild(renderInactiveFileRow(folder, rec));
-    });
+      const row = renderInactiveFileRow(folder, rec, depth);
+      return depth == null ? row : pathTreeItemWrap(row, depth);
+    };
+    const tree = buildPathTree(folder.files, folderFileKey);
+    if (tree.dirs.size) renderPathTree(folder, tree, renderRec, list);
+    else folder.files.forEach(rec => { const e = renderRec(rec, null); if (e) list.appendChild(e); });
     box.appendChild(list);
   } else {
     const note = document.createElement("div");
@@ -30060,12 +30202,11 @@ function renderFolderSection(folder) {
   return box;
 }
 
-function renderInactiveFileRow(folder, rec) {
-  const showRelPath = folder.settings && folder.settings.includeSubfolders && folder.settings.showRelativePath;
-  const text = showRelPath && rec.relPath ? rec.relPath : rec.name;
-  // Reused while its label is unchanged — see cachedInactiveRow; kept on
-  // the rec itself, whose identity mergeScannedFiles preserves.
-  if (!rec._inactiveRow || rec._inactiveRow.sig !== text) rec._inactiveRow = { sig: text, row: buildInactiveFileRow(folder, rec, text) };
+function renderInactiveFileRow(folder, rec, depth) {
+  // Reused while its placement is unchanged — see cachedInactiveRow; kept
+  // on the rec itself, whose identity mergeScannedFiles preserves.
+  const sig = String(depth);
+  if (!rec._inactiveRow || rec._inactiveRow.sig !== sig) rec._inactiveRow = { sig, row: buildInactiveFileRow(folder, rec, rec.name) };
   return rec._inactiveRow.row;
 }
 function buildInactiveFileRow(folder, rec, text) {
@@ -30280,12 +30421,11 @@ function renderFolderMinimapSvg(folder, rows) {
   fmPlotLeft = FM_LABEL_WIDTH;
   fmPlotWidth = plotW;
 
-  const showRelPath = folder.settings && folder.settings.includeSubfolders && folder.settings.showRelativePath;
   const axis = fmAxis;
   const parts = [];
   rows.forEach((r, i) => {
     const y = i * (FM_ROW_HEIGHT + FM_ROW_GAP);
-    const label = showRelPath && r.rec.relPath ? r.rec.relPath : r.rec.name;
+    const label = r.rec.relPath || r.rec.name;
     const shortLabel = label.length > 24 ? "…" + label.slice(-23) : label;
     parts.push('<text class="fm-row-label" x="0" y="' + (y + FM_ROW_HEIGHT / 2) + '">' + escapeHtml(shortLabel) + '</text>');
     const key = folderFileKey(r.rec);
@@ -30606,8 +30746,6 @@ folderMinimapMergeWindowBtn.addEventListener("click", () => {
 const folderWatchSettingsDialog = el("#folderWatchSettingsDialog");
 const fwSettingsFolderName = el("#fwSettingsFolderName");
 const fwSettingsSubfolders = el("#fwSettingsSubfolders");
-const fwSettingsRelPathRow = el("#fwSettingsRelPathRow");
-const fwSettingsShowRelPath = el("#fwSettingsShowRelPath");
 const fwPatternList = el("#fwPatternList");
 const fwBtnAddPattern = el("#fwBtnAddPattern");
 let fwSettingsFolder = null; // the folder currently open in the dialog
@@ -30617,8 +30755,6 @@ function openFolderWatchSettingsDialog(folder) {
   if (!folder.settings) folder.settings = defaultFolderSettings();
   fwSettingsFolderName.textContent = folder.name;
   pillSet(fwSettingsSubfolders, !!folder.settings.includeSubfolders);
-  pillSet(fwSettingsShowRelPath, !!folder.settings.showRelativePath);
-  fwSettingsRelPathRow.classList.toggle("hidden", !folder.settings.includeSubfolders);
   renderFwPatternList();
   folderWatchSettingsDialog.classList.remove("hidden");
 }
@@ -30636,12 +30772,6 @@ async function commitFolderWatchSettings() {
 fwSettingsSubfolders.addEventListener("change", () => {
   if (!fwSettingsFolder) return;
   fwSettingsFolder.settings.includeSubfolders = pillGet(fwSettingsSubfolders);
-  fwSettingsRelPathRow.classList.toggle("hidden", !fwSettingsFolder.settings.includeSubfolders);
-  commitFolderWatchSettings();
-});
-fwSettingsShowRelPath.addEventListener("change", () => {
-  if (!fwSettingsFolder) return;
-  fwSettingsFolder.settings.showRelativePath = pillGet(fwSettingsShowRelPath);
   commitFolderWatchSettings();
 });
 fwBtnAddPattern.addEventListener("click", () => {

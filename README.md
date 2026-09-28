@@ -190,7 +190,9 @@ deployments possible:
   new files automatically. Each folder's own gear-icon settings dialog
   configures filename patterns (e.g. `App*.log`, `Input*.log`, each with its
   own auto-open-newest-file / auto-close-keep-N-open / show-M-newest-files
-  rules), plus include-subfolders and show-relative-path.
+  rules), plus include-subfolders — subfolders then show up as collapsible
+  folder rows in the tree (collapsed at first, expanded automatically to a
+  file an auto-open rule opens).
 - **Folder-watch minimap** — click a watched folder's own title to see a
   time-range timeline of its files (one bar per file, no files opened yet)
   instead of the normal log view. Hovering shows a time crosshair; dragging
@@ -202,8 +204,8 @@ deployments possible:
   load-time win, as long as the file's own entries are in chronological
   order), with a matching time filter already applied to the result.
 - **Open a `.zip` file as a log source** — pick or drop a `.zip` and get a
-  read-only listing of what's inside, full relative paths included for
-  nested entries (only the archive's central directory is read, nothing is
+  read-only listing of what's inside, subfolders as collapsible folder rows
+  in the tree (only the archive's central directory is read, nothing is
   extracted in bulk). Double-click a log file to inflate just that one entry
   and load it like any other, staying nested in the zip's own listing while
   open. Anything else opens with the OS's default app for it (or a browser
