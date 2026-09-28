@@ -475,6 +475,35 @@
     flush();
   }
 
+  // The native window's background shows wherever the webview hasn't
+  // painted yet — most visibly in the strip a resize uncovers (the mini
+  // window's included) — so it follows the page's theme instead of staying
+  // the dark default. Persisted under a wrapper-owned key so the next launch
+  // creates the window in the right color from the start (windows.rs's
+  // window_background). Themes switch via <html data-theme>, custom ones and
+  // accents via inline style on <html>, hence the observer on both.
+  function setUpWindowBackground() {
+    var KEY = "philogg-desktop-window-bg";
+    var last = null;
+    function sync() {
+      var m = /(\d+),\s*(\d+),\s*(\d+)/.exec(getComputedStyle(document.body).backgroundColor);
+      if (!m) return;
+      var rgb = [+m[1], +m[2], +m[3]];
+      var hex = "#" + rgb.map(function (v) { return (v < 16 ? "0" : "") + v.toString(16); }).join("");
+      if (hex === last) return;
+      last = hex;
+      try {
+        localStorage.setItem(KEY, hex);
+      } catch (err) {}
+      invoke("set_window_background", { rgb: rgb }).catch(function () {});
+    }
+    new MutationObserver(sync).observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme", "style"],
+    });
+    sync();
+  }
+
   function ready(fn) {
     if (document.readyState === "loading") {
       document.addEventListener("DOMContentLoaded", fn, { once: true });
@@ -485,6 +514,7 @@
 
   ready(function () {
     setUpChrome();
+    setUpWindowBackground();
     setUpSettingsMirror();
     // Tells the wrapper the page is up, so a cold-launch .zip/folder open
     // waiting in pending_local_load can be handed over (windows.rs's
