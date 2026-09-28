@@ -394,8 +394,9 @@ deployments possible:
   in the filter tree right away (marked ✦); one message = one undo step,
   and every round has "Undo this round". The node and entry ids in its
   answers are links. The chat is its own window (optionally always on top)
-  or docked as a side panel; several chats are kept. Needs a model with
-  tool-calling support.
+  or docked as a side panel; several chats are kept. A bar above the input
+  shows how full the model's context window is (hover for the token
+  details). Needs a model with tool-calling support.
 
 See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
 actually works internally.

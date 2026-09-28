@@ -177,6 +177,20 @@ fn models() {
 }
 
 #[test]
+fn model_details_use_the_native_api_at_the_server_root() {
+    let body = "{\"object\":\"list\",\"data\":[{\"id\":\"qwen2.5-7b-instruct\",\"state\":\"loaded\",\"max_context_length\":32768,\"loaded_context_length\":8192}]}";
+    let resp = format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+    let (url, server) = mock(vec![resp.into_bytes()], false);
+    let v = model_details(&url).unwrap();
+    assert_eq!(v["data"][0]["loaded_context_length"], 8192);
+    assert!(server.join().unwrap().starts_with("GET /api/v0/models HTTP/1.1\r\n"));
+    let body = "{\"error\":\"Unexpected endpoint or method.\"}";
+    let resp = format!("HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}", body.len(), body);
+    let (url, _s) = mock(vec![resp.into_bytes()], false);
+    assert_eq!(model_details(&url), Err("HTTP 404: Unexpected endpoint or method.".into()));
+}
+
+#[test]
 fn cancel_while_the_model_is_silent() {
     let head = b"HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\n\r\n".to_vec();
     let (url, _s) = mock(vec![head], true);
