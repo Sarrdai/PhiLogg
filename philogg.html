@@ -41510,6 +41510,7 @@ const llm = {
   running: null,         // { sessionId, roundId, requestId, stopped, abort, onAbort }
   stream: null,          // { sessionId, roundId, text } — the answer being streamed (cosmetic)
   views: new Set(),      // fn(msg) — attached chat views (window transport, docked iframe, tests)
+  contextFetch: null,    // Promise — the latest context-limit lookup (llmFetchContextLimit)
 };
 // Test seam: the scripted fake model the regression suite drives the loop
 // with; null = window.philogg.llmChat.
@@ -41667,7 +41668,7 @@ function llmStripThinking(text) {
 // bridge's events: text deltas, tool-call deltas keyed by index (the id and
 // name arrive once, the arguments in pieces).
 function llmAnswerAssembler(onText) {
-  const out = { content: "", toolCalls: [], finishReason: null, error: null };
+  const out = { content: "", toolCalls: [], finishReason: null, error: null, usage: null, model: null };
   const call = i => out.toolCalls[i] || (out.toolCalls[i] = { id: "", name: "", arguments: "" });
   return {
     out,
@@ -41676,6 +41677,10 @@ function llmAnswerAssembler(onText) {
       const data = ev.data;
       if (typeof data === "string") { out.error = "Unreadable answer from the server: " + llmCut(data, 200); return; }
       if (data && data.error) { out.error = typeof data.error === "string" ? data.error : (data.error.message || JSON.stringify(data.error)); return; }
+      // Token usage arrives in the last chunk (stream_options.include_usage),
+      // whose `choices` is empty — read it before the choice check.
+      if (data && data.usage) out.usage = data.usage;
+      if (data && typeof data.model === "string" && data.model) out.model = data.model;
       const choice = data && Array.isArray(data.choices) ? data.choices[0] : null;
       if (!choice) return;
       if (choice.finish_reason) out.finishReason = choice.finish_reason;
@@ -41704,6 +41709,7 @@ function llmTransport() {
   return {
     chat: (requestId, endpoint, request, onEvent) => window.philogg.llmChat(requestId, endpoint, request, onEvent),
     cancel: requestId => window.philogg.llmCancel && window.philogg.llmCancel(requestId),
+    modelDetails: endpoint => window.philogg.llmModelDetails ? window.philogg.llmModelDetails(endpoint) : Promise.reject(new Error("no bridge")),
   };
 }
 
@@ -41723,7 +41729,7 @@ function llmBuildRequest(session) {
       messages.push(msg);
     } else messages.push({ role: m.role, content: m.content });
   }
-  const req = { messages, tools: llmToolSpecs(), tool_choice: "auto", temperature: s.temperature, stream: true };
+  const req = { messages, tools: llmToolSpecs(), tool_choice: "auto", temperature: s.temperature, stream: true, stream_options: { include_usage: true } };
   if (s.model) req.model = s.model;
   return req;
 }
@@ -41753,6 +41759,53 @@ function llmNotify(extra) {
 function llmUpdateToolbarButton() {
   const btn = document.getElementById("btnAssistant");
   if (btn) btn.classList.toggle("llm-busy", !!llm.running);
+}
+
+/* ---------- context window (the chat's context bar) ---------- */
+// Every request resends the whole history, so the last answer's usage
+// (prompt + completion tokens) IS the context window's current fill. It can
+// shrink: older tool results are compacted to their summary
+// (LLM_KEEP_FULL_ROUNDS). The limit is the model's loaded context length
+// from LM Studio's native /api/v0/models — fetched once per round (a model
+// reloaded with another length is picked up on the next one); servers
+// without that API leave it null and the chat shows the used tokens only.
+function llmRecordContext(session, usage, model, refreshLimit) {
+  const prompt = Number(usage.prompt_tokens) || 0;
+  const completion = Number(usage.completion_tokens) || 0;
+  const prev = session.context || {};
+  const sameModel = prev.model === (model || null);
+  session.context = {
+    used: Number(usage.total_tokens) || prompt + completion, prompt, completion, model: model || null,
+    limit: sameModel ? prev.limit || null : null, limitKind: sameModel ? prev.limitKind || null : null,
+  };
+  llmTouch(session);
+  llmNotify();
+  if (refreshLimit || !sameModel) llm.contextFetch = llmFetchContextLimit(session, model);
+}
+// → { limit, limitKind: "loaded" | "max" } of `model` (or the loaded model
+// when none is chosen), null when the server doesn't say.
+function llmContextLimitFrom(details, model) {
+  const list = details && Array.isArray(details.data) ? details.data : [];
+  const m = (model && list.find(x => x && x.id === model)) || (!model && list.find(x => x && x.state === "loaded")) || null;
+  if (!m) return null;
+  if (Number(m.loaded_context_length) > 0) return { limit: Number(m.loaded_context_length), limitKind: "loaded" };
+  if (Number(m.max_context_length) > 0) return { limit: Number(m.max_context_length), limitKind: "max" };
+  return null;
+}
+function llmFetchContextLimit(session, model) {
+  let p;
+  try { p = Promise.resolve(llmTransport().modelDetails(llmSettings().endpoint)); } catch (e) { return Promise.resolve(); }
+  return p.then(details => {
+    const found = llmContextLimitFrom(details, model);
+    const ctx = session.context;
+    if (!found || !ctx || ctx.model !== (model || null)) return;
+    if (ctx.limit === found.limit && ctx.limitKind === found.limitKind) return;
+    ctx.limit = found.limit;
+    ctx.limitKind = found.limitKind;
+    llmTouch(session);
+    llmSaveSession(session);
+    llmNotify();
+  }, () => { /* no native API (other server) — the bar shows used tokens only */ });
 }
 
 /* ---------- the loop ---------- */
@@ -41791,6 +41844,7 @@ async function llmSend(text) {
       if (running.stopped) break;
       const ans = asm.out;
       if (ans.error) throw new Error(ans.error);
+      if (ans.usage) llmRecordContext(session, ans.usage, ans.model || s.model, turn === 0);
       const calls = ans.toolCalls.filter(c => c && c.name);
       const content = llmStripThinking(ans.content);
       if (calls.length) {
@@ -41963,6 +42017,7 @@ function llmSnapshot(sessionId) {
   return Object.assign(base, {
     session: { id: session.id, title: session.title || "New chat", version: session.version, files: session.files.map(f => f.name), missingFiles: missing, rounds, refs },
     running: !!(llm.running && llm.running.sessionId === session.id),
+    context: session.context || null,
     stream: llm.stream && llm.stream.sessionId === session.id ? llm.stream : null,
   });
 }
@@ -41985,7 +42040,7 @@ function llmRevealRef(roundId, token) {
 /* ---------- the chat view channel (desktop/chat.html) ---------- */
 const LLM_CHAT_ON_TOP_KEY = "philogg-llm-chat-on-top";
 // Controls this build supports — the chat shows only those (snapshot.features).
-const LLM_VIEW_FEATURES = ["sessions", "answers", "dock"];
+const LLM_VIEW_FEATURES = ["sessions", "answers", "dock", "context"];
 
 // A command from a chat view. `reply` answers the asking view only;
 // everything else reaches every view as a "changed" note, which each one

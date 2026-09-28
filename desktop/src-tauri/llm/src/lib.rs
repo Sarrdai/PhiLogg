@@ -316,6 +316,24 @@ pub fn list_models(base_url: &str) -> Result<Vec<String>, String> {
         .unwrap_or_default())
 }
 
+/// LM Studio's native `GET /api/v0/models` (the server root, next to the
+/// OpenAI-compatible `/v1` the base URL names) → its JSON as is. It carries
+/// what `/v1/models` lacks: per model `state` and `max_context_length` /
+/// `loaded_context_length`, which the chat's context bar needs. Other
+/// OpenAI-compatible servers don't have it (an HTTP error) — the page then
+/// shows the used tokens without a limit.
+pub fn model_details(base_url: &str) -> Result<serde_json::Value, String> {
+    let mut base = parse_base_url(base_url)?;
+    base.path = base.path.strip_suffix("/v1").unwrap_or(&base.path).to_string();
+    let never = AtomicBool::new(false);
+    let mut res = send(&base, "GET", "/api/v0/models", None, &never)?;
+    let body = read_all(&mut res.body)?;
+    if res.status != 200 {
+        return Err(http_error(res.status, &body));
+    }
+    serde_json::from_str(&body).map_err(|e| format!("unexpected /api/v0/models answer: {e}"))
+}
+
 /// `POST {base}/chat/completions` with `body` (the page's request JSON,
 /// normally `"stream": true`). Every SSE event's data reaches `on_event` as
 /// a `Chunk`, in order, until `[DONE]`; a server that answers with plain
