@@ -41055,6 +41055,7 @@ function llmToolGetOverview() {
     if (depth) { ref.parentId = n.parentId; ref.depth = depth; }
     if (n.inverted) ref.inverted = true;
     if (nodeHasExtractableWildcards(n)) ref.extraction = true;
+    if (nodeIsExtractionView(n)) ref.tablePlot = true;
     tree.push(ref);
     (n.children || []).forEach(c => walk(c, depth + 1));
   };
@@ -41147,7 +41148,7 @@ function llmToolCreateFilter(args) {
   if (!node) return { error: "Could not create the filter." };
   llmNoteCreated(node);
   const entries = getEntries(node.id);
-  const out = { nodeId: node.id, name: node.name, parentId: parent.id, matches: entries.length, of: getEntries(parent.id).length };
+  const out = { nodeId: node.id, name: node.name, parentId: parent.id, matches: entries.length, of: getEntries(parent.id).length, tablePlot: nodeIsExtractionView(node) };
   if (extraction) {
     const ex = llmExtractRows(node);
     out.columns = ex.columns;
@@ -41187,10 +41188,10 @@ function llmToolCreateLink(args) {
   const pairs = getEntries(node.id);
   const dts = pairs.map(p => p.dtMs).filter(Number.isFinite).sort((x, y) => x - y);
   const refCount = getEntries(ref.id).length;
-  const out = { nodeId: node.id, name: node.name, pairs: pairs.length, references: refCount, unpaired: Math.max(0, refCount - pairs.length) };
+  const out = { nodeId: node.id, name: node.name, pairs: pairs.length, references: refCount, unpaired: Math.max(0, refCount - pairs.length), tablePlot: false };
   if (dts.length) out.dtMs = { min: dts[0], median: dts[Math.floor(dts.length / 2)], max: dts[dts.length - 1] };
   out.examples = pairs.slice(0, 3).map(p => llmEntrySummary(node.id, p));
-  out.tip = "To get values from the paired lines, create_filter under this link with a pattern such as \"temperature=[*:float]\".";
+  out.tip = "This link has no table/plot itself. To get values from the paired lines, create_filter under this link with a pattern such as \"temperature=[*:float]\", then show_view table/plot on THAT new node.";
   return out;
 }
 
@@ -41246,7 +41247,10 @@ function llmToolShowView(args) {
   const view = LLM_VIEWS[args.view] ? args.view : "filtered";
   const tab = LLM_VIEWS[view];
   if ((tab === "table" || tab === "plot") && !nodeIsExtractionView(node)) {
-    return { error: "Table/Plot need an extraction node (a pattern with placeholders such as [*:float]) or a node below one." };
+    const fix = node.type === "filter" && node.filterType === "link"
+      ? "create_filter under this link (parentId " + node.id + ") with placeholders such as \"temperature=[*:float]\""
+      : "create_filter with placeholders such as \"temperature=[*:float]\" (parentId " + node.id + ")";
+    return { error: "Node " + node.id + " has no extraction (tablePlot is not true), so it has no table/plot. First " + fix + ", then call show_view with the NEW node's id. Use view \"filtered\" to just show these entries." };
   }
   state.activeId = node.id;
   state.multiSelect = new Set();
@@ -41427,7 +41431,7 @@ const LLM_TOOLS = [
   },
   {
     name: "show_view",
-    description: "Shows a node to the person: view log | filtered | table | plot | patterns. For plot, optionally plot = {type, ...}; columns are named by name, number, \"index\" or \"time\". " +
+    description: "Shows a node to the person: view log | filtered | table | plot | patterns. table and plot ONLY work on a node with tablePlot: true (an extraction filter — create_filter with placeholders — or a filter below one); files, plain text/regex filters and link nodes have no table/plot. For plot, optionally plot = {type, ...}; columns are named by name, number, \"index\" or \"time\". " +
       "line/bar: x + y (one or more columns). scatter: x + y + optional color. 3d: x + y + z + optional color. " +
       "heatmap: x (default time) + either array (a column holding JSON arrays) or columns (same-unit columns); color = value. " +
       "profile: array or columns, one row (row, 1-based, default last) against the rows selected in the table. " +
@@ -41526,6 +41530,7 @@ const LLM_SYSTEM_PROMPT = [
   "- Text filter (create_filter mode \"text\"): substring match on the whole line.",
   "- Extraction filter: a text filter with placeholders pulls values out of the message into a table/plot. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*] (any text). Value conditions on int/float: [*:float>85], [*:int>=10,<20].",
   "- Link filter (create_link): pairs each entry of a reference node with the nearest entry of a target node after (or before) it. To get values from the paired lines, create an extraction filter UNDER the link node.",
+  "- Table/Plot condition: only a node with tablePlot: true (in get_overview and in the create_filter result) has a table/plot — an extraction filter itself, or a filter below one. Files, plain text/regex filters and link nodes NEVER have one; show_view table/plot on them fails.",
   "",
   "Pattern examples:",
   "  Position reached axis=[*:int] actual=[*:float] job=[*]   (extract axis and position)",
@@ -41537,7 +41542,7 @@ const LLM_SYSTEM_PROMPT = [
   "1. Discover: get_overview, then find_message_types (use its query and the ready-made 'pattern'; its placeholder value lists tell you which values exist).",
   "2. If the request is ambiguous (which axis? which sensor? which event counts as 'done'?), ASK a short question instead of guessing — list the concrete options you found. Asking ends your turn; the person answers in the next message. When you ask, put each option on its own line starting with '- '.",
   "3. Build: create the filters/links; check the counts in each result and fix the pattern if it matched nothing or an error came back.",
-  "4. Show: show_view (table or plot) so the person sees the result. Plot types: line/bar/scatter/3d for values over time or against each other; radar (one row against selected ones) and parallel (every row across several axes, ranges highlight rows) for several columns with different units; heatmap/profile for an array column or same-unit columns.",
+  "4. Show: show_view (table or plot) so the person sees the result — but only with the id of a node whose result said tablePlot: true. No such node yet? Create the extraction filter first (under a link: create_filter with parentId = the link node), then show_view on that new id. If there is nothing to extract, use view \"filtered\" instead. Plot types: line/bar/scatter/3d for values over time or against each other; radar (one row against selected ones) and parallel (every row across several axes, ranges highlight rows) for several columns with different units; heatmap/profile for an array column or same-unit columns.",
   "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something.",
 ].join("\n");
 
