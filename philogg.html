@@ -2963,6 +2963,79 @@
   }
   .filter-library-pin.active{color:var(--accent-strong);}
 
+  /* ---------- Library ▾ split button (#btnLibrary in #viewBar) + its menu
+     (#libraryMenu) + the manage dialog rows. Accent outline pill: book icon +
+     "Library" segment and a chevron segment, both open the menu. ---------- */
+  #btnLibrary{
+    float:left; display:inline-flex; align-items:stretch; height:26px; margin:1px 4px; padding:0;
+    border:1px solid var(--accent); border-radius:99px; overflow:hidden; background:transparent;
+    color:var(--accent-strong); font:inherit; cursor:pointer;
+  }
+  #btnLibrary > span{display:flex; align-items:center; gap:5px; padding:0 9px; font-size:11.5px; font-weight:500; background:var(--accent-soft);}
+  #btnLibrary > span + span{border-left:1px solid var(--accent); padding:0 6px;}
+  #btnLibrary:hover > span, #btnLibrary[aria-expanded="true"] > span{background:var(--accent); color:var(--bg-panel);}
+  #btnLibrary:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
+  #btnLibrary .icon{width:13px; height:13px;}
+  #libraryMenu{
+    position:fixed; z-index:50; width:min(320px, calc(100vw - 16px)); max-height:min(560px, calc(100vh - 80px));
+    display:flex; flex-direction:column; background:var(--bg-elevated); border:1px solid var(--border);
+    border-radius:10px; box-shadow:0 12px 30px rgba(0,0,0,.5); font-size:12.5px; overflow:hidden;
+  }
+  #libraryMenu.hidden{display:none;}
+  #libraryMenu .lib-search{
+    flex:0 0 auto; margin:8px; height:28px; display:flex; align-items:center; gap:6px; padding:0 8px;
+    border:1px solid var(--border); border-radius:6px; color:var(--text-tertiary);
+  }
+  #libraryMenu .lib-search:focus-within{border-color:var(--accent);}
+  #libraryMenu .lib-search .icon{width:12px; height:12px; flex:0 0 auto;}
+  #libraryMenu .lib-search input{flex:1 1 auto; min-width:0; border:none; outline:none; background:transparent; color:var(--text-primary); font-size:12px; padding:0;}
+  #libraryMenu .lib-target{flex:0 0 auto; padding:0 12px 8px; font-size:11.5px; color:var(--text-secondary); border-bottom:1px solid var(--border-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #libraryMenu .lib-target b{color:var(--accent-strong); font-weight:500;}
+  #libraryMenu .lib-target.warn{color:var(--warn);}
+  #libraryMenuList{flex:1 1 auto; min-height:0; overflow-y:auto; padding-bottom:2px;}
+  #libraryMenu .lib-grp{padding:7px 12px 3px; font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--text-tertiary);}
+  #libraryMenu .lib-it{display:flex; align-items:center; gap:8px; padding:5px 12px; cursor:pointer; color:var(--text-primary);}
+  #libraryMenu .lib-it:hover, #libraryMenu .lib-it.kb{background:var(--accent-soft);}
+  #libraryMenu .lib-it.dis{opacity:.45; cursor:default;}
+  #libraryMenu .lib-it.dis:hover{background:transparent;}
+  #libraryMenu .lib-it > svg{flex:0 0 auto; color:var(--text-tertiary);}
+  #libraryMenu .lib-it-ico{flex:0 0 16px; width:16px; display:flex; align-items:center; justify-content:center; color:var(--text-secondary);}
+  #libraryMenu .lib-it-ico svg{width:14px; height:14px;}
+  #libraryMenu .lib-it-ico.filter-library-icon-emoji{font-size:13px; line-height:16px;}
+  #libraryMenu .lib-it .n{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #libraryMenu .lib-star{flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; margin:-2px -4px -2px 0; border:none; border-radius:5px; background:none; color:var(--text-tertiary); cursor:pointer;}
+  #libraryMenu .lib-star.on{color:var(--accent);}
+  #libraryMenu .lib-star:hover{color:var(--accent-strong); background:var(--bg-elevated-2);}
+  #libraryMenu .lib-empty{padding:14px 14px 10px; color:var(--text-secondary); font-size:12px; line-height:1.5;}
+  #libraryMenu .lib-foot{flex:0 0 auto; border-top:1px solid var(--border-soft); padding:4px 0;}
+  #libraryMenu .lib-foot .lib-it{color:var(--text-secondary);}
+  #libraryMenu .lib-foot .lib-it:hover{color:var(--accent-strong);}
+  #libraryMenu .lib-foot .lib-it.dis:hover{color:var(--text-secondary);}
+  #libraryMenu .lib-foot .lib-it .icon{width:13px; height:13px;}
+  #libraryMenu .lib-foot .lib-it span{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* Manage dialog (#filterLibraryDialog): header with Import…, rows = icon | name+meta | star | export | delete. */
+  .filter-library-head{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .filter-library-head .link-dialog-title{flex:1 1 auto; margin-bottom:0;}
+  .filter-library-head .btn-mini-secondary{display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 10px; flex:0 0 auto;}
+  .filter-library-head .icon, .lib-row-btn .icon{width:14px; height:14px;}
+  #filterLibraryList .filter-library-row-name{cursor:text;}
+  #filterLibraryList .filter-library-rename{
+    width:100%; box-sizing:border-box; height:24px; padding:0 6px; font:inherit; font-size:12px; color:var(--text-primary);
+    background:var(--bg-app); border:1px solid var(--accent); border-radius:5px; outline:none;
+  }
+  .lib-row-btn{
+    flex:0 0 auto; width:28px; height:28px; padding:0; display:flex; align-items:center; justify-content:center;
+    border:none; border-radius:6px; background:none; color:var(--text-tertiary); cursor:pointer;
+  }
+  .lib-row-btn:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
+  .lib-row-btn.lib-star-on{color:var(--accent);}
+  .lib-row-btn.lib-del:hover{color:var(--level-error); background:var(--level-error-soft);}
+  #copyToast.has-action{pointer-events:auto; display:flex; align-items:center; gap:12px;}
+  #copyToast .toast-action{
+    background:none; border:none; padding:0; font:inherit; font-weight:600; color:var(--accent-strong); cursor:pointer;
+  }
+  #copyToast .toast-action:hover{text-decoration:underline;}
+
   /* ---------- Settings page — a single wide, scrollable, sectioned dialog
      (not a menu of separate popups). Log Formats reuses the filter-library
      row layout above for both the format list and the rule list; Add/Edit
@@ -4551,6 +4624,9 @@
              nothing, so the JS setupHitExpandGroups mechanism isn't needed). -->
         <span class="row-action-separator" id="libraryPresetSep"></span>
         <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
+        <!-- "Library ▾" split button: always present while files are loaded
+             (also with zero presets); both segments open #libraryMenu. -->
+        <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library — apply, pin and manage presets"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>Library</span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
         <!-- Group 3: "New" on its own (person-requested), always divided from
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
@@ -4564,8 +4640,8 @@
              Library"/"Library", pinned far-right) that used to live here is
              removed (this session, project-owner review) — its two actions
              moved into the Files & Filters sidebar toolbar instead
-             (#sidebarToolbar's "Add to library…"/"Apply from library…",
-             see describeSidebarToolbarActions), now targeting the specific
+             (#sidebarToolbar's "Add to library…" and the "Library ▾" menu after
+             #libraryPresetBar above), now targeting the specific
              selected tree node rather than always the active filter. -->
       </div>
 
@@ -5064,6 +5140,16 @@
   <div id="fpPathMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
+  <!-- Library ▾ menu (#btnLibrary): search, target line, Pinned/More rows, footer. -->
+  <div id="libraryMenu" class="hidden" role="menu">
+    <div class="lib-search" id="libraryMenuSearchRow"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input type="text" id="libraryMenuSearch" placeholder="Search presets…" autocomplete="off" spellcheck="false" aria-label="Search presets"></div>
+    <div class="lib-target" id="libraryMenuTarget"></div>
+    <div id="libraryMenuList"></div>
+    <div class="lib-foot">
+      <div class="lib-it" id="libraryMenuSave" role="menuitem"></div>
+      <div class="lib-it" id="libraryMenuManage" role="menuitem"><svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg><span>Manage library…</span></div>
+    </div>
+  </div>
 
   <div id="extractContextMenu" class="hidden">
     <div class="ctx-item hidden" id="ctxRenameColumn">
@@ -5535,15 +5621,15 @@
     </div>
   </div>
 
-  <!-- "Apply from library…" on any node's context menu opens this — one
-       click per row applies that preset directly onto the clicked node,
-       reproducing the original filter's LOGIC re-evaluated against
-       whichever file it lands on now (same "re-evaluates, doesn't replay a
-       stored result" semantics as Save/Load filter — see importFilterJson,
-       reused here as the actual apply mechanism). -->
+  <!-- Manage filter library (Library ▾ menu → "Manage library…"): rename
+       (double-click the name), pin (star), icon, export, delete (with an Undo
+       toast) and Import…. Applying a preset happens in the Library ▾ menu. -->
   <div id="filterLibraryDialog" class="hidden">
     <div class="link-dialog-card">
-      <div class="link-dialog-title">Apply from filter library</div>
+      <div class="filter-library-head">
+        <div class="link-dialog-title">Manage filter library</div>
+        <button type="button" id="filterLibraryImportBtn" class="btn-mini-secondary" title="Import a filter preset file"><svg class="icon" aria-hidden="true"><use href="#i-import"/></svg>Import…</button>
+      </div>
       <div id="filterLibraryList"></div>
       <div class="link-dialog-actions">
         <button type="button" id="filterLibraryDialogClose" class="btn-mini-secondary">Close</button>
@@ -6681,8 +6767,7 @@ const ICON_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" 
 // library…" action (a disk, distinct from ICON_SAVE's download-to-tray
 // arrow used by "Save filter…").
 const ICON_DISK = icon("bookplus");
-// Open book — the "Apply from library…" action (sidebar toolbar + tree
-// context menu).
+// Open book — the "Library ▾" button of #viewBar.
 const ICON_BOOK = icon("book");
 const ICON_MERGE = icon("merge");
 // Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
@@ -17995,15 +18080,32 @@ function copyViaExecCommand(text) {
 }
 
 let toastTimer = null;
-function showCopyToast(message) {
+// `action` ({ label, onClick }) adds a button to the toast (e.g. "Undo") and
+// keeps it up longer; the toast is otherwise click-through.
+function showCopyToast(message, action) {
   copyToast.textContent = message;
+  copyToast.classList.toggle("has-action", !!action);
+  if (action) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toast-action";
+    btn.textContent = action.label;
+    btn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      hideCopyToast();
+      action.onClick();
+    });
+    copyToast.appendChild(btn);
+  }
   copyToast.classList.remove("hidden");
   requestAnimationFrame(() => copyToast.classList.add("show"));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    copyToast.classList.remove("show");
-    setTimeout(() => copyToast.classList.add("hidden"), 200);
-  }, 1400);
+  toastTimer = setTimeout(hideCopyToast, action ? 6000 : 1400);
+}
+function hideCopyToast() {
+  clearTimeout(toastTimer);
+  copyToast.classList.remove("show");
+  toastTimer = setTimeout(() => copyToast.classList.add("hidden"), 200);
 }
 
 /* ---------- Cell selection model ----------
@@ -24079,7 +24181,7 @@ function anyEscapeOverlayOpen() {
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
-    "filterLibraryDialog", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
@@ -30060,8 +30162,7 @@ async function loadFolderFile(folder, rec, auto, quiet) {
 // moment this pattern auto-opens a file — never for a file a person opens
 // themselves (loadFolderFile's own `auto` param already draws that line for
 // rec.openedByAuto/autoOpenFired, mirrored here). Reuses
-// applyFilterFromLibrary unchanged, exactly like the "Apply from library…"
-// context-menu action — the filter logic re-evaluates against this file's
+// applyFilterFromLibrary unchanged, exactly like the Library ▾ menu — the filter logic re-evaluates against this file's
 // own entries, never a replayed result from wherever it was saved.
 // Several presets can be selected; startPrimaryFilterKey (one of them, kept
 // in sync with the selection by the dialog) is applied LAST, so its own
@@ -33427,9 +33528,9 @@ function performBulkAction(action, ids) {
 // selection bar (#selectionBar, renderSelectionBar) — this toolbar stays
 // static and fully disabled while 2+ nodes are selected.
 //
-// "Apply from library…" is not on this toolbar: it stays on the tree context
-// menu (openTreeContextMenu). copy/cut/saveFilter/loadFilter stay on the
-// context menu too; context/countContext have no creation entry point at all
+// Applying a library preset is not on this toolbar: it is in the Library ▾
+// menu of #viewBar (openLibraryMenu). copy/cut/saveFilter/loadFilter stay on
+// the tree context menu; context/countContext have no creation entry point at all
 // (FEATURE_BACKLOG.md #79).
 //
 // Returns { actions: [{action, label, icon, target, disabled, separator?}] }.
@@ -33626,8 +33727,6 @@ function openTreeContextMenu(ev, clickedId) {
       // it's now "Add to library…" on the Files & Filters sidebar toolbar
       // (#sidebarToolbar, describeSidebarToolbarActions), acting on the
       // specific selected node rather than always the active filter.
-      // "Apply from library…" (below) stays here — it targets the right-
-      // clicked node, which the toolbar can't address arbitrarily.
       // "Unpack" (and/or/link only): materializes the node's two baked
       // inputs as real, visible sibling filters next to it — the node
       // itself is untouched — see unpackAndOrLinkNode.
@@ -33635,17 +33734,11 @@ function openTreeContextMenu(ev, clickedId) {
         buckets.edit.push({ action: "unpack", label: "Unpack…", icon: node.filterType === "or" ? ICON_OR : node.filterType === "and" ? ICON_AND : ICON_LINK });
       }
     }
-    // Applying from the library (FEATURE_BACKLOG.md "Reusable filter
-    // library") is offered on file nodes too — its presets are file-agnostic
-    // on purpose, so applying one makes sense from any node, not just
-    // filters. Skipped for the restricted "Bookmarks" node — applying
-    // something onto it would just be discarded the next time
-    // syncBookmarksFilterNode runs. (Loading a saved filter FILE goes
-    // through the central Open → "Import…"/drop instead, which attaches it
-    // under the active node — see importFilterBranchJson.)
-    if (!node.locked) {
-      buckets.library.push({ action: "applyFromLibrary", label: "Apply from library…", icon: ICON_LOAD });
-    }
+    // Applying a library preset is not offered here: it lives in the
+    // "Library ▾" menu of #viewBar (openLibraryMenu), which targets the
+    // selected/active node. (Loading a saved filter FILE goes through the
+    // central Open → "Import…"/drop instead, which attaches it under the
+    // active node — see importFilterBranchJson.)
     // Session export/import used to live here too (session-global, so they
     // appeared on every node), but that made them a context menu action on
     // a file for something that has nothing to do with that file — moved to
@@ -33803,10 +33896,6 @@ treeContextMenu.addEventListener("click", ev => {
       const newId = unpackAndOrLinkNode(treeCtxId);
       if (newId) { state.activeId = newId; render(); showCopyToast("Unpacked into its two inputs"); }
     }
-    return;
-  }
-  if (action === "applyFromLibrary") {
-    if (treeCtxId && state.nodes[treeCtxId]) openFilterLibraryDialog(treeCtxId);
     return;
   }
   // Everything else (merge/and/or/link) is a bulk action over the multi-selection.
@@ -35500,9 +35589,8 @@ function importFilterJson(text, successToast) {
    "Reusable filter library") =====================
    Named presets, saved from the Files & Filters sidebar toolbar's "Add to
    library…" action (acting on the specific selected filter node) and applied
-   to ANY node (file or filter, any file) via a pinned toolbar pill, the
-   sidebar toolbar's own "Apply from library…" action, or the tree context
-   menu's "Apply from library…" item — the global counterpart to the per-file filter
+   to ANY node (file or filter, any file) via a pinned toolbar pill or the
+   "Library ▾" menu in #viewBar — the global counterpart to the per-file filter
    history (see "File filter history" further below): that one auto-offers
    a ghost preview keyed by CONTENT FINGERPRINT (ambient, one file, no
    naming); this one is explicit, named, and file-agnostic on purpose — the
@@ -35611,6 +35699,16 @@ async function deleteFilterLibraryEntry(key) {
   await cacheStoreOp("filterLibrary", "readwrite", store => store.delete(key));
   await refreshFilterLibraryCache();
   await renderLibraryToolbarPresets();
+}
+
+// Puts a previously deleted record back under its original key (the manage
+// dialog's "Undo" toast).
+async function restoreFilterLibraryEntry(rec) {
+  await cacheStoreOp("filterLibrary", "readwrite", store => store.put(rec));
+  await refreshFilterLibraryCache();
+  await renderLibraryToolbarPresets();
+  if (!filterLibraryDialog.classList.contains("hidden")) await renderFilterLibraryDialog();
+  if (libraryMenuOpen()) renderLibraryMenu();
 }
 
 // Synchronous-read cache of the library's contents, for a UI spot that needs
@@ -35788,7 +35886,6 @@ let filterLibrarySaveTargetId = null;
 // save dialog is open for an import instead of a node, else null.
 let filterLibrarySaveImport = null;
 let filterLibrarySaveIcon = null;
-let filterLibraryApplyTargetId = null;
 
 function filterLibrarySaveOpen() { return !filterLibrarySaveDialog.classList.contains("hidden"); }
 function closeFilterLibrarySaveDialog() {
@@ -35896,13 +35993,68 @@ function buildLibraryIconGrid(current, onPick) {
   return grid;
 }
 
-function closeFilterLibraryDialog() { filterLibraryDialog.classList.add("hidden"); filterLibraryApplyTargetId = null; filterLibraryIconOpenKey = null; }
+function closeFilterLibraryDialog() { filterLibraryDialog.classList.add("hidden"); filterLibraryIconOpenKey = null; }
 // Which row's inline icon grid is currently expanded (by record key), or null.
 let filterLibraryIconOpenKey = null;
+
+// Number of filter nodes in a record's serialized roots (children included).
+function countSerializedFilters(roots) {
+  let n = 0;
+  (function walk(list) { (list || []).forEach(sn => { n++; walk(sn.children); }); })(roots);
+  return n;
+}
+
+// Double-click on a row's name swaps it for an input: Enter/blur saves through
+// updateFilterLibraryEntry, Esc cancels. Nothing re-renders on the name's
+// clicks, so the native dblclick is not interrupted (DOM identity gotcha).
+function startFilterLibraryRename(nameEl, rec) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "filter-library-rename";
+  input.maxLength = 80;
+  input.value = rec.name;
+  let done = false;
+  const finish = save => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (save && name && name !== rec.name) updateFilterLibraryEntry(rec.key, { name: name.slice(0, 80) }).then(renderFilterLibraryDialog);
+    else renderFilterLibraryDialog();
+  };
+  input.addEventListener("keydown", ev => {
+    ev.stopPropagation(); // keep the global Escape/shortcut handlers out of it
+    if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+// Deletes immediately; the toast's Undo puts the same record back (same key).
+async function deleteFilterLibraryEntryWithUndo(rec) {
+  await deleteFilterLibraryEntry(rec.key);
+  await renderFilterLibraryDialog();
+  if (libraryMenuOpen()) renderLibraryMenu();
+  showCopyToast('Deleted "' + rec.name + '"', { label: "Undo", onClick: () => restoreFilterLibraryEntry(rec) });
+}
+
+function libraryRowButton(cls, title, iconName, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "lib-row-btn " + cls;
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = icon(iconName);
+  b.addEventListener("click", ev => { ev.stopPropagation(); onClick(); });
+  return b;
+}
+
 async function renderFilterLibraryDialog() {
   const records = await listFilterLibrary();
   if (!records.length) {
-    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Select a filter and use "Add to library…" in the Files &amp; Filters sidebar toolbar.</div>';
+    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Select a filter and use "Add to library…" in the Files &amp; Filters toolbar.</div>';
     return;
   }
   filterLibraryList.innerHTML = "";
@@ -35924,54 +36076,24 @@ async function renderFilterLibraryDialog() {
     row.appendChild(iconBtn);
     const main = document.createElement("div");
     main.className = "filter-library-row-main";
-    main.innerHTML =
-      '<div class="filter-library-row-name">' + escapeHtml(rec.name) + '</div>' +
-      '<div class="filter-library-row-meta">' + escapeHtml(new Date(rec.savedAt).toLocaleString()) + '</div>';
+    const nameEl = document.createElement("div");
+    nameEl.className = "filter-library-row-name";
+    nameEl.title = "Double-click to rename";
+    nameEl.textContent = rec.name;
+    nameEl.addEventListener("dblclick", () => startFilterLibraryRename(nameEl, rec));
+    const n = countSerializedFilters(rec.roots);
+    const meta = document.createElement("div");
+    meta.className = "filter-library-row-meta";
+    meta.textContent = new Date(rec.savedAt).toLocaleDateString() + " · " + n + " filter" + (n === 1 ? "" : "s");
+    main.appendChild(nameEl);
+    main.appendChild(meta);
     row.appendChild(main);
-    // "Show in Filter Toolbar" pin toggle — the reusable pill switch
-    // (.settings-switch) instead of a plain checkbox (person-requested).
-    // Persists rec.showInToolbar and refreshes the toolbar pill row via
-    // updateFilterLibraryEntry. (A <div>, not a <label>, so the inner
-    // .settings-switch <label> isn't nested inside another label.)
-    const pin = document.createElement("div");
-    pin.className = "filter-library-pin" + (rec.showInToolbar ? " active" : "");
-    pin.title = "Show this preset as a pill in the Filter-Toolbar";
-    const pinLabelText = document.createElement("span");
-    pinLabelText.textContent = "Toolbar";
-    const pinSwitch = document.createElement("label");
-    pinSwitch.className = "settings-switch settings-switch-sm";
-    const pinCb = document.createElement("input");
-    pinCb.type = "checkbox";
-    pinCb.checked = !!rec.showInToolbar;
-    pinCb.addEventListener("click", ev => ev.stopPropagation());
-    pinCb.addEventListener("change", () => {
-      updateFilterLibraryEntry(rec.key, { showInToolbar: pinCb.checked }).then(renderFilterLibraryDialog);
-    });
-    const pinTrack = document.createElement("span");
-    pinTrack.className = "settings-switch-track";
-    pinSwitch.appendChild(pinCb);
-    pinSwitch.appendChild(pinTrack);
-    pin.appendChild(pinLabelText);
-    pin.appendChild(pinSwitch);
-    row.appendChild(pin);
-    const applyBtn = document.createElement("button");
-    applyBtn.type = "button";
-    applyBtn.className = "btn-mini";
-    applyBtn.textContent = "Apply";
-    applyBtn.addEventListener("click", () => {
-      const targetId = filterLibraryApplyTargetId;
-      closeFilterLibraryDialog();
-      if (targetId && state.nodes[targetId]) applyFilterFromLibrary(targetId, rec);
-    });
-    row.appendChild(applyBtn);
-    row.appendChild(customEntryRowButton("Export", "Export this preset as JSON", () => exportFilterLibraryEntry(rec)));
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "filter-library-row-del";
-    delBtn.title = "Delete from library";
-    delBtn.innerHTML = ICON_CLOSE;
-    delBtn.addEventListener("click", () => { deleteFilterLibraryEntry(rec.key).then(renderFilterLibraryDialog); });
-    row.appendChild(delBtn);
+    // Star = pinned as a pill in the Filter-Toolbar (record field showInToolbar).
+    row.appendChild(libraryRowButton("lib-star" + (rec.showInToolbar ? " lib-star-on" : ""),
+      rec.showInToolbar ? "Pinned to the toolbar — click to unpin" : "Pin to the toolbar", rec.showInToolbar ? "starf" : "star",
+      () => updateFilterLibraryEntry(rec.key, { showInToolbar: !rec.showInToolbar }).then(renderFilterLibraryDialog)));
+    row.appendChild(libraryRowButton("lib-export", "Export this preset as JSON", "export", () => exportFilterLibraryEntry(rec)));
+    row.appendChild(libraryRowButton("lib-del", "Delete from library", "trash", () => deleteFilterLibraryEntryWithUndo(rec)));
     frag.appendChild(row);
     // Inline icon grid, shown as a sibling block under the row while open.
     if (filterLibraryIconOpenKey === rec.key) {
@@ -35983,28 +36105,60 @@ async function renderFilterLibraryDialog() {
   });
   filterLibraryList.appendChild(frag);
 }
-async function openFilterLibraryDialog(nodeId) {
-  filterLibraryApplyTargetId = nodeId;
+async function openFilterLibraryDialog() {
   filterLibraryIconOpenKey = null;
   filterLibraryDialog.classList.remove("hidden");
   await renderFilterLibraryDialog();
 }
 filterLibraryDialog.addEventListener("click", ev => { if (ev.target === filterLibraryDialog) closeFilterLibraryDialog(); });
 el("#filterLibraryDialogClose").addEventListener("click", closeFilterLibraryDialog);
+// Import… goes through the central import (its preset branch opens the save
+// dialog prefilled); the dialog steps aside because the save dialog would
+// otherwise sit underneath it.
+el("#filterLibraryImportBtn").addEventListener("click", () => { closeFilterLibraryDialog(); importFromFilePicker(); });
 
-/* ---- Filter-library toolbar section ----
-   The pinned presets render as circle→pill .row-action-btn buttons matching
-   the filter-creation buttons, in their own group (#libraryPresetBar, "Library
-   Filter"); clicking one applies that preset onto the currently active node
-   (state.activeId), the same target and mechanism as the manage dialog's
-   "Apply". (The two management buttons, Add to Library/Library, used to live
-   in a separate right-aligned #libraryManageBar group wired here — removed
-   this session, relocated into #sidebarToolbar as "Add to library…"/"Apply
-   from library…", now targeting the specific selected node — see
-   describeSidebarToolbarActions.) The pills are rebuilt on every library
-   change by renderLibraryToolbarPresets. */
+/* ---- Filter-library toolbar section + "Library ▾" menu ----
+   #libraryPresetBar holds the pinned presets as circle→pill .row-action-btn
+   buttons (rebuilt on every library change by renderLibraryToolbarPresets);
+   #btnLibrary right after it is the "Library ▾" split button that opens
+   #libraryMenu: search, the target the preset will be applied to, the Pinned
+   / More rows (click or Enter applies, the star pins/unpins), and the footer
+   ("Save "<name>" to library…" and "Manage library…"). The target is the
+   single selected tree node, else the active node (resolveLibraryTarget);
+   a locked node (Bookmarks) or no node disables applying. Pills use the same
+   target and the same applyLibraryRecord. */
 const libraryPresetBar = el("#libraryPresetBar");
 const libraryPresetSep = el("#libraryPresetSep");
+const btnLibrary = el("#btnLibrary");
+const libraryMenu = el("#libraryMenu");
+const libraryMenuSearch = el("#libraryMenuSearch");
+const libraryMenuSearchRow = el("#libraryMenuSearchRow");
+const libraryMenuTarget = el("#libraryMenuTarget");
+const libraryMenuList = el("#libraryMenuList");
+const libraryMenuSave = el("#libraryMenuSave");
+const libraryMenuManage = el("#libraryMenuManage");
+// Index of the keyboard-highlighted row among the enabled preset rows.
+let libraryMenuKb = 0;
+
+// The node a library preset would be applied to: the single selected node,
+// else the active one. ok = a real, unlocked node (the Bookmarks node is
+// re-synced on every render, so anything applied onto it would vanish).
+function resolveLibraryTarget() {
+  const sel = state.multiSelect.size === 1 ? [...state.multiSelect][0] : null;
+  const id = sel && state.nodes[sel] ? sel : state.activeId;
+  const node = id ? state.nodes[id] : null;
+  if (!node) return { id: null, node: null, name: "", ok: false };
+  return { id, node, name: nodeDisplayName(node), ok: !node.locked };
+}
+
+const LIBRARY_NO_TARGET_MSG = "Select a file or filter to apply a preset";
+
+function applyLibraryRecord(rec) {
+  const t = resolveLibraryTarget();
+  if (!t.ok) { showCopyToast(LIBRARY_NO_TARGET_MSG); return; }
+  closeLibraryMenu();
+  applyFilterFromLibrary(t.id, rec);
+}
 
 async function renderLibraryToolbarPresets() {
   if (!libraryPresetBar) return;
@@ -36021,24 +36175,175 @@ async function renderLibraryToolbarPresets() {
     btn.type = "button";
     btn.className = "toolbar-icon-btn row-action-btn";
     btn.dataset.libKey = rec.key;
-    btn.title = "Apply preset: " + rec.name;
+    // "Apply <name> to <target>" — refreshed on hover/focus because the target
+    // (selection / active node) changes without the pills being rebuilt.
+    const setTitle = () => {
+      const t = resolveLibraryTarget();
+      btn.title = t.ok ? "Apply " + rec.name + " to " + t.name : "Apply " + rec.name + " — " + LIBRARY_NO_TARGET_MSG.toLowerCase();
+    };
+    setTitle();
+    btn.addEventListener("mouseenter", setTitle);
+    btn.addEventListener("focus", setTitle);
     const iconHtml = isEmojiIcon(rec.icon)
       ? '<span class="row-action-hit filter-library-icon-emoji">' + escapeHtml(libraryIconEmojiChar(rec.icon)) + '</span>'
       : '<span class="row-action-hit">' + libraryIconSvg(rec.icon) + '</span>';
     btn.innerHTML = iconHtml +
       '<span class="row-action-label">' + escapeHtml(rec.name) + '</span>';
-    btn.addEventListener("click", () => {
-      if (state.activeId && state.nodes[state.activeId]) applyFilterFromLibrary(state.activeId, rec);
-    });
+    btn.addEventListener("click", () => applyLibraryRecord(rec));
     frag.appendChild(btn);
   });
   libraryPresetBar.appendChild(frag);
-  // Hide the whole "Library Filter" group and its leading "|" divider when
-  // nothing is pinned, so the bar never shows an empty "| |".
-  const pinnedCount = records.filter(r => r.showInToolbar).length;
-  libraryPresetBar.hidden = pinnedCount === 0;
-  if (libraryPresetSep) libraryPresetSep.hidden = pinnedCount === 0;
+  // The pill group collapses when nothing is pinned; its leading "|" stays,
+  // because the Library ▾ button always follows it (the whole bar is hidden
+  // while no file is loaded).
+  libraryPresetBar.hidden = !records.some(r => r.showInToolbar);
+  if (libraryPresetSep) libraryPresetSep.hidden = false;
 }
+
+function libraryMenuOpen() { return !libraryMenu.classList.contains("hidden"); }
+function closeLibraryMenu() {
+  if (!libraryMenuOpen()) return;
+  libraryMenu.classList.add("hidden");
+  btnLibrary.setAttribute("aria-expanded", "false");
+}
+
+function libraryMenuRows() { return [...libraryMenuList.querySelectorAll(".lib-it:not(.dis)")]; }
+function setLibraryMenuKb(i) {
+  const rows = libraryMenuRows();
+  if (!rows.length) { libraryMenuKb = 0; return; }
+  libraryMenuKb = Math.max(0, Math.min(rows.length - 1, i));
+  rows.forEach((r, k) => r.classList.toggle("kb", k === libraryMenuKb));
+  if (rows[libraryMenuKb].scrollIntoView) rows[libraryMenuKb].scrollIntoView({ block: "nearest" });
+}
+
+function renderLibraryMenu() {
+  const t = resolveLibraryTarget();
+  const all = filterLibraryCache;
+  const doc = libraryMenu.ownerDocument;
+  const empty = all.length === 0;
+  libraryMenuSearchRow.style.display = empty ? "none" : "";
+  libraryMenuTarget.style.display = empty ? "none" : "";
+  libraryMenuTarget.className = "lib-target" + (t.ok ? "" : " warn");
+  libraryMenuTarget.textContent = "";
+  if (t.ok) {
+    libraryMenuTarget.append("Applies to ");
+    const b = doc.createElement("b");
+    b.textContent = t.name;
+    libraryMenuTarget.appendChild(b);
+    libraryMenuTarget.title = "Applies to " + t.name;
+  } else {
+    libraryMenuTarget.textContent = LIBRARY_NO_TARGET_MSG;
+    libraryMenuTarget.title = "";
+  }
+
+  libraryMenuList.textContent = "";
+  if (empty) {
+    const e = doc.createElement("div");
+    e.className = "lib-empty";
+    e.textContent = 'No presets yet. Select a filter and choose "Save to library…" below to reuse it on any file.';
+    libraryMenuList.appendChild(e);
+  } else {
+    const q = libraryMenuSearch.value.trim().toLowerCase();
+    const shown = q ? all.filter(r => (r.name || "").toLowerCase().includes(q)) : all;
+    const pinned = shown.filter(r => r.showInToolbar);
+    const more = shown.filter(r => !r.showInToolbar);
+    const addGroup = (label, recs) => {
+      if (!recs.length) return;
+      if (label) {
+        const g = doc.createElement("div");
+        g.className = "lib-grp";
+        g.textContent = label;
+        libraryMenuList.appendChild(g);
+      }
+      recs.forEach(rec => {
+        const row = doc.createElement("div");
+        row.className = "lib-it" + (t.ok ? "" : " dis");
+        row.setAttribute("role", "menuitem");
+        row.dataset.libKey = rec.key;
+        const ico = doc.createElement("span");
+        ico.className = "lib-it-ico" + (isEmojiIcon(rec.icon) ? " filter-library-icon-emoji" : "");
+        if (isEmojiIcon(rec.icon)) ico.textContent = libraryIconEmojiChar(rec.icon); else ico.innerHTML = libraryIconSvg(rec.icon);
+        const nm = doc.createElement("span");
+        nm.className = "n";
+        nm.textContent = rec.name;
+        nm.title = rec.name;
+        const star = doc.createElement("button");
+        star.type = "button";
+        star.className = "lib-star" + (rec.showInToolbar ? " on" : "");
+        star.title = rec.showInToolbar ? "Unpin from the toolbar" : "Pin to the toolbar";
+        star.setAttribute("aria-label", star.title);
+        star.innerHTML = icon(rec.showInToolbar ? "starf" : "star");
+        star.addEventListener("click", ev => {
+          ev.stopPropagation();
+          updateFilterLibraryEntry(rec.key, { showInToolbar: !rec.showInToolbar }).then(() => { if (libraryMenuOpen()) { renderLibraryMenu(); libraryMenuSearch.focus(); } });
+        });
+        row.append(ico, nm, star);
+        row.addEventListener("click", ev => { ev.stopPropagation(); if (t.ok) applyLibraryRecord(rec); else showCopyToast(LIBRARY_NO_TARGET_MSG); });
+        row.addEventListener("mouseenter", () => { if (!row.classList.contains("dis")) setLibraryMenuKb(libraryMenuRows().indexOf(row)); });
+        libraryMenuList.appendChild(row);
+      });
+    };
+    addGroup(pinned.length ? "Pinned" : "", pinned);
+    addGroup(pinned.length ? "More" : "", more);
+    if (!shown.length) {
+      const e = doc.createElement("div");
+      e.className = "lib-empty";
+      e.textContent = 'No presets match "' + libraryMenuSearch.value.trim() + '".';
+      libraryMenuList.appendChild(e);
+    }
+  }
+  setLibraryMenuKb(libraryMenuKb);
+
+  // Footer: saving needs a filter target, same guard as the sidebar's "Add to library…".
+  const canSave = !!(t.node && t.node.type === "filter" && !t.node.locked);
+  libraryMenuSave.className = "lib-it" + (canSave ? "" : " dis");
+  libraryMenuSave.textContent = "";
+  libraryMenuSave.insertAdjacentHTML("beforeend", icon("bookplus"));
+  const saveLabel = doc.createElement("span");
+  // Text filters are already named “like this”; wrap anything else (custom labels) in quotes.
+  saveLabel.textContent = canSave ? "Save " + (/^["“]/.test(t.name) ? t.name : "“" + t.name + "”") + " to library…" : "Save to library…";
+  libraryMenuSave.appendChild(saveLabel);
+  libraryMenuSave.title = canSave ? "" : "Select a filter to save it as a preset";
+}
+
+function openLibraryMenu() {
+  // stopPropagation on the opening click keeps the document handler from
+  // closing the other popups, so close them here.
+  closeOpenMenu(); closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFilterPopup(); closeColumnsPanel();
+  libraryMenuSearch.value = "";
+  libraryMenuKb = 0;
+  const rect = btnLibrary.getBoundingClientRect();
+  libraryMenu.style.top = (rect.bottom + 6) + "px";
+  libraryMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 328)) + "px";
+  libraryMenu.classList.remove("hidden");
+  btnLibrary.setAttribute("aria-expanded", "true");
+  renderLibraryMenu();
+  libraryMenuSearch.focus();
+  // The cache is kept fresh by every mutator; this catches a change from another tab.
+  refreshFilterLibraryCache().then(() => { if (libraryMenuOpen()) renderLibraryMenu(); });
+}
+btnLibrary.addEventListener("click", ev => {
+  ev.stopPropagation();
+  if (libraryMenuOpen()) closeLibraryMenu(); else openLibraryMenu();
+});
+libraryMenu.addEventListener("click", ev => ev.stopPropagation());
+libraryMenuSearch.addEventListener("input", () => { libraryMenuKb = 0; renderLibraryMenu(); });
+libraryMenuSearch.addEventListener("keydown", ev => {
+  if (ev.key === "ArrowDown") { ev.preventDefault(); setLibraryMenuKb(libraryMenuKb + 1); }
+  else if (ev.key === "ArrowUp") { ev.preventDefault(); setLibraryMenuKb(libraryMenuKb - 1); }
+  else if (ev.key === "Enter") {
+    ev.preventDefault();
+    const row = libraryMenuRows()[libraryMenuKb];
+    if (row) row.click();
+  }
+});
+libraryMenuSave.addEventListener("click", () => {
+  if (libraryMenuSave.classList.contains("dis")) return;
+  const t = resolveLibraryTarget();
+  closeLibraryMenu();
+  if (t.node && t.node.type === "filter") openFilterLibrarySaveDialog(t.id);
+});
+libraryMenuManage.addEventListener("click", () => { closeLibraryMenu(); openFilterLibraryDialog(); });
 
 /* ===================== Settings page =====================
    One wide, scrollable, sectioned dialog (Appearance, Log Formats, more
@@ -38944,6 +39249,7 @@ document.addEventListener("click", ev => {
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
+  if (!libraryMenu.contains(ev.target) && !btnLibrary.contains(ev.target)) closeLibraryMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
@@ -39017,6 +39323,7 @@ document.addEventListener("keydown", ev => {
     closeSessionExportDialog();
     closeFilterLibrarySaveDialog();
     closeFilterLibraryDialog();
+    closeLibraryMenu();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;

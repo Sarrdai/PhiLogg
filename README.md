@@ -291,9 +291,12 @@ deployments possible:
   cache, so a file deleted or moved in the meantime is left out of the
   restored session.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
-  presets you apply across different files — pin a preset (with an icon of
-  your choice) to the Filter-Toolbar for one-click reuse. Presets can be
-  exported and shared like everything else (see below).
+  presets you apply across different files — the **Library ▾** button in the
+  Filter-Toolbar opens a searchable menu (apply a preset to the selected or
+  active node, star it to pin it as a one-click pill, save the current filter,
+  or open "Manage library…" to rename, re-icon, export, import or delete —
+  with Undo). Presets can be exported and shared like everything else (see
+  below).
 - **One import for everything** — sessions, filters, filter presets, log
   formats, themes and syntax schemes are all shared as JSON: every list has
   an **Export** button, and **Open → Import…** (or simply dropping the file
