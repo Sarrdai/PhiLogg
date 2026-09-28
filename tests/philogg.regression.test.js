@@ -7152,7 +7152,7 @@ await withApp(async (w, d, T) => {
   assert(records[0].showInToolbar === false && records[0].icon === null,
     "new records default to showInToolbar:false / icon:null (unpinned, no icon)");
 
-  // "Add to library…" is OMITTED (not just disabled) when the selected node
+  // "Add to library…" is DISABLED (the toolbar is static) when the selected node
   // is a plain file, not a filter — a file/folder has nothing to serialize
   // into a preset, same guard openFilterLibrarySaveDialog's own caller
   // (saveFilterToLibrary) applies.
@@ -7160,7 +7160,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   ({ actions } = w.describeSidebarToolbarActions());
-  assert(!actions.some(a => a.action === "addToLibrary"), "'Add to library…' is not offered for a plain file selection");
+  assert(actions.find(a => a.action === "addToLibrary").disabled === true, "'Add to library…' is disabled for a plain file selection");
 
   // Blank name is a no-op (dialog stays open, nothing saved)
   T.state.multiSelect = new Set([textNode.id]);
@@ -21373,8 +21373,8 @@ await withApp(async (w, d, T) => {
   const pill = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
   assert(pill, "pinning the preset adds a pill to #libraryPresetBar");
   assert(pill.querySelector(".row-action-label").textContent === "toolbar preset", "the pill carries the preset name as its label");
-  // No icon assigned yet → ICON_FILTER fallback (funnel path, not a circle).
-  assert(pill.querySelector(".row-action-hit").innerHTML.includes("M2 3h12"), "with no icon assigned the pill shows the ICON_FILTER fallback");
+  // No icon assigned yet → ICON_FILTER fallback (the sprite's funnel).
+  assert(pill.querySelector(".row-action-hit").innerHTML.includes("#i-filter"), "with no icon assigned the pill shows the ICON_FILTER fallback");
   // Pills live in the "Library Filter" group (#libraryPresetBar) — the old
   // management buttons that used to sit alongside it in #libraryManageBar
   // are gone from #viewBar entirely (see GROUP 220/221's own regression
@@ -21414,7 +21414,7 @@ await withApp(async (w, d, T) => {
   await w.updateFilterLibraryEntry(key, { showInToolbar: true, icon: "clock" });
   await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
   const pill = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
-  assert(pill.querySelector(".row-action-hit").innerHTML.includes("<circle"), "the pill shows the assigned 'clock' icon (a circle), not the funnel fallback");
+  assert(pill.querySelector(".row-action-hit").innerHTML.includes("#i-clock"), "the pill shows the assigned 'clock' icon, not the funnel fallback");
 
   // The icon field actually persisted on the record.
   const rec = (await w.listFilterLibrary())[0];
@@ -25338,130 +25338,106 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 220 — Files & Filters sidebar toolbar (FEATURE_BACKLOG.md #77)
-   Origin: this session (rewritten same session, after project-owner review
-   of an initial pass — see the retired GROUP 220 in TEST PROVENANCE for
-   what that first shape looked like). New #sidebarToolbar, same icon+
-   hover-label button concept as #viewBar/the per-view toolbars
-   (buildRowActionsHtml, "rect" shape — the per-view toolbars' own look, not
-   #viewBar's circle — /setupHitExpandGroups), replacing the tree's row
-   icons/right-click-only actions with a selection-dependent toolbar of at
-   most two `|`-separated groups. describeSidebarToolbarActions() decides
-   the button set for every selection shape (0/1/2+ selected, file vs.
-   filter, locked Bookmarks node, same-root vs. different-root/mixed
-   multi-selection); handleSidebarToolbarActionClick(action) dispatches to
-   the pre-existing function/dialog each action already had (zero
-   duplicated business logic). AND/OR/Link… move EXCLUSIVELY here (person-
-   confirmed): removed from the retired #treeActionBar (its Merge case
-   folds into this toolbar's own "2+ files" case) and from
-   openTreeContextMenu's own bulk-action rendering (Merge stays there, see
-   GROUP 221c). `copy`/`cut`/`saveFilter`/`loadFilter`/`context`/
-   `countContext` are removed from the toolbar entirely, for every
-   selection shape (220h is the dedicated absence guard) — the first four
-   stay on the tree's right-click menu unaffected, the last two are removed
-   from there too (FEATURE_BACKLOG.md #79, see GROUP 60b). "Add to
-   library…"/"Apply from library…" replace #viewBar's old dedicated
-   #btnAddToLibrary/#btnOpenLibrary buttons (removal regression-guarded in
-   GROUP 194b), now targeting the specific selected node. Covers every
-   selection shape
-   describeSidebarToolbarActions handles, plus a representative spread of
-   handleSidebarToolbarActionClick's dispatch targets.
+   Origin: #77 (rewritten 2026-09-28 for the static toolbar). #sidebarToolbar
+   uses the same flat icon+hover-label buttons as the per-view toolbars
+   (buildRowActionsHtml, "rect" shape / setupHitExpandGroups) but its button
+   SET is fixed: Rename… | Edit filter… | Invert (NOT) · Adjust clock… ·
+   Add to library…. describeSidebarToolbarActions() returns that list with a
+   `disabled` flag per button (never omitted); renderSidebarToolbar() builds
+   the DOM once and only toggles disabled/label afterwards.
+   handleSidebarToolbarActionClick(action) dispatches to the pre-existing
+   function/dialog each action already had (zero duplicated business logic).
+   Interim: a 2+ selection appends describeBulkActions' AND/OR/Link…/Merge as
+   a trailing group (moves into the selection bar later). "Apply from
+   library…" left this toolbar (it stays on the tree context menu, GROUP 79
+   /194). The retired dynamic-toolbar shape is in TEST PROVENANCE.
    ============================================================ */
 group(220);
 
+const SB_FIXED = "rename,edit,invert,clockOffset,addToLibrary";
+const sbState = actions => actions.filter(a => !a.group).map(a => a.action + (a.disabled ? ":off" : ":on")).join(",");
+
 await withApp(async (w, d, T) => {
-  section("220a. describeSidebarToolbarActions: 0 selected -> Apply from library only, targeting state.activeId, disabled with no active id");
+  section("220a. describeSidebarToolbarActions: nothing selected -> the five fixed buttons, all disabled");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.multiSelect = new Set();
-  T.state.activeId = null;
-  let { actions, note } = w.describeSidebarToolbarActions();
-  assert(actions.length === 1 && actions[0].action === "applyFromLibrary",
-    "0 selected, no active id: only Apply from library…, got " + actions.map(a => a.action).join(","));
-  assert(actions[0].disabled === true, "...disabled with no active id");
-  assert(!note, "no explanatory note needed here");
-
   T.state.activeId = f.id;
-  ({ actions } = w.describeSidebarToolbarActions());
-  assert(actions[0].disabled === false && actions[0].target === f.id, "0 selected but a real active id: Apply from library… enabled, targeting state.activeId");
+  let { actions, note } = w.describeSidebarToolbarActions();
+  assert(actions.map(a => a.action).join(",") === SB_FIXED, "fixed set/order, got " + actions.map(a => a.action).join(","));
+  assert(actions.every(a => a.disabled === true), "nothing selected: every button disabled (not hidden), got " + sbState(actions));
+  assert(!note, "no explanatory note");
+  assert(!actions.some(a => a.action === "applyFromLibrary"), "Apply from library… is no longer on the toolbar");
+  const seps = actions.filter(a => a.separator).map(a => a.action).join(",");
+  assert(seps === "clockOffset,addToLibrary", "separators before Adjust clock… and Add to library…, got " + seps);
 });
 
 await withApp(async (w, d, T) => {
-  section("220b. describeSidebarToolbarActions: 1 file selected -> Adjust clock | Apply from library, Adjust clock excluded for a merged or empty file");
+  section("220b. 1 file selected: only Adjust clock… enabled; disabled for a merged or an empty file");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   T.state.multiSelect = new Set([fa.id]);
   T.state.activeId = fa.id;
   let { actions } = w.describeSidebarToolbarActions();
-  assert(actions.map(a => a.action).join(",") === "clockOffset,applyFromLibrary",
-    "a real, non-merged, non-empty file: exactly Adjust clock… then Apply from library…, got " + actions.map(a => a.action).join(","));
-  assert(actions[0].target === fa.id && actions[1].target === fa.id, "both actions target the selected file itself");
-  assert(!actions[0].separator && actions[1].separator === true, "the `|` separator sits directly before the library group, not before Adjust clock…");
+  assert(sbState(actions) === "rename:off,edit:off,invert:off,clockOffset:on,addToLibrary:off", "got " + sbState(actions));
+  assert(actions.find(a => a.action === "clockOffset").target === fa.id, "Adjust clock… targets the selected file");
 
   const merged = await w.mergeFiles([fa.id, fb.id]);
   T.state.multiSelect = new Set([merged.id]);
   T.state.activeId = merged.id;
   ({ actions } = w.describeSidebarToolbarActions());
-  assert(!actions.some(a => a.action === "clockOffset"), "a merged file has no clock of its own to adjust — Adjust clock… is omitted entirely, not just disabled");
-  assert(actions.length === 1 && actions[0].action === "applyFromLibrary" && !actions[0].separator,
-    "with Adjust clock… omitted, Apply from library… is the only action and carries no leading separator");
+  assert(actions.every(a => a.disabled), "a merged file has no clock of its own: everything disabled (buttons stay), got " + sbState(actions));
+  assert(actions.length === 5, "...and the button set is unchanged");
 
   const emptyFileId = "syntheticEmptyFile";
   T.state.nodes[emptyFileId] = { id: emptyFileId, type: "file", merged: false, entries: [], children: [] };
   T.state.multiSelect = new Set([emptyFileId]);
   T.state.activeId = emptyFileId;
   ({ actions } = w.describeSidebarToolbarActions());
-  assert(!actions.some(a => a.action === "clockOffset"), "an empty file (zero entries) also excludes Adjust clock…");
+  assert(actions.find(a => a.action === "clockOffset").disabled === true, "an empty file (zero entries) disables Adjust clock…");
 });
 
 await withApp(async (w, d, T) => {
-  section("220c. describeSidebarToolbarActions: 2+ files selected -> Merge | Apply from library (state.activeId fallback), no AND/OR/Link");
+  section("220c. 2+ files selected: fixed buttons all disabled, interim trailing Merge group (group:'selection')");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   T.state.multiSelect = new Set([fa.id, fb.id]);
   T.state.activeId = fa.id;
   const { actions } = w.describeSidebarToolbarActions();
+  assert(actions.filter(a => !a.group).every(a => a.disabled), "fixed buttons all disabled for 2+ selected");
   const mergeAction = actions.find(a => a.action === "merge");
-  assert(mergeAction && /Merge 2 files/.test(mergeAction.label), "2 files selected -> a Merge action with the expected label, got " + JSON.stringify(actions.map(a => a.action)));
-  assert(Array.isArray(mergeAction.target) && mergeAction.target.length === 2 &&
-    mergeAction.target.includes(fa.id) && mergeAction.target.includes(fb.id), "merge action's target is the array of selected file ids");
+  assert(mergeAction && /Merge 2 files/.test(mergeAction.label), "a Merge action with the expected label, got " + JSON.stringify(actions.map(a => a.action)));
+  assert(mergeAction.group === "selection" && mergeAction.disabled === false, "Merge is an enabled button of the selection group");
+  assert(Array.isArray(mergeAction.target) && mergeAction.target.includes(fa.id) && mergeAction.target.includes(fb.id), "merge target is the array of selected file ids");
   assert(!actions.some(a => a.action === "and" || a.action === "or" || a.action === "link"), "no AND/OR/Link for a files-only selection");
-  const applyLib = actions.find(a => a.action === "applyFromLibrary");
-  assert(applyLib && applyLib.separator === true, "Apply from library… is appended after Merge, with a leading separator");
-  assert(applyLib.target === fa.id, "with no single selected node, Apply from library… falls back to state.activeId (fa.id here)");
-  assert(applyLib.disabled === false, "...enabled since state.activeId is a valid, unlocked node");
 });
 
 await withApp(async (w, d, T) => {
-  section("220d. describeSidebarToolbarActions: 1 unlocked filter -> Rename/Edit/Invert | Add to library…/Apply from library…, Edit/Invert conditional per filterType");
+  section("220d. 1 unlocked filter: enable matrix per filter type (text / and-or / link)");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
-  const textNode = w.createFilterNode(f.id, "text", "message 1");
-  T.state.multiSelect = new Set([textNode.id]);
-  T.state.activeId = textNode.id;
-  const { actions } = w.describeSidebarToolbarActions();
-  const names = actions.map(a => a.action);
-  assert(names.join(",") === "rename,edit,invert,addToLibrary,applyFromLibrary",
-    "a plain text filter offers exactly rename, edit, invert | addToLibrary, applyFromLibrary, in order, got " + names.join(","));
-  assert(actions.every(a => a.target === textNode.id), "every action targets the selected filter node specifically");
-  const addLib = actions.find(a => a.action === "addToLibrary");
-  assert(addLib.separator === true, "the `|` separator sits directly before 'Add to library…', marking the group boundary");
-  assert(!actions.slice(0, 3).some(a => a.separator), "no separator inside the first group (rename/edit/invert)");
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const pick = id => { T.state.multiSelect = new Set([id]); T.state.activeId = id; return w.describeSidebarToolbarActions().actions; };
+  let actions = pick(t1.id);
+  assert(sbState(actions) === "rename:on,edit:on,invert:on,clockOffset:off,addToLibrary:on", "text filter, got " + sbState(actions));
+  assert(actions.filter(a => a.target !== t1.id).length === 0, "every action targets the selected filter");
 
-  // Edit/Invert excluded for a filterType that doesn't support them (same
-  // guards openTreeContextMenu's own single-node branch applies) — a link
-  // node, via createLinkNode.
+  const andNode = w.createAndOrNode(t1.id, t2.id, "and");
+  actions = pick(andNode.id);
+  assert(sbState(actions) === "rename:on,edit:off,invert:on,clockOffset:off,addToLibrary:on", "AND node: no Edit, got " + sbState(actions));
+
   const f2 = await w.addFile("b.log", makeLog(0, 20), () => {});
-  const t1 = w.createFilterNode(f2.id, "text", "message 1");
-  const t2 = w.createFilterNode(f2.id, "text", "message 2");
-  const linkNode = w.createLinkNode(t1.id, t2.id, "after", 1);
-  T.state.multiSelect = new Set([linkNode.id]);
-  T.state.activeId = linkNode.id;
-  const { actions: linkActions } = w.describeSidebarToolbarActions();
-  const linkNames = linkActions.map(a => a.action);
-  assert(linkNames.join(",") === "rename,addToLibrary,applyFromLibrary",
-    "a link filter drops edit/invert but keeps rename | addToLibrary, applyFromLibrary, got " + linkNames.join(","));
+  const l1 = w.createFilterNode(f2.id, "text", "message 1");
+  const l2 = w.createFilterNode(f2.id, "text", "message 2");
+  const linkNode = w.createLinkNode(l1.id, l2.id, "after", 1);
+  actions = pick(linkNode.id);
+  assert(sbState(actions) === "rename:on,edit:off,invert:off,clockOffset:off,addToLibrary:on", "link node: Rename + Add to library only, got " + sbState(actions));
+
+  t1.inverted = true;
+  assert(pick(t1.id).find(a => a.action === "invert").label === "Remove NOT", "an inverted filter's button reads 'Remove NOT'");
 });
 
 await withApp(async (w, d, T) => {
-  section("220e. describeSidebarToolbarActions: the locked 'Bookmarks' node -> Apply from library only, disabled");
+  section("220e. the locked 'Bookmarks' node: everything disabled");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   w.toggleBookmark(f.entries[0].id);
   const bmNode = Object.values(T.state.nodes).find(n => n.filterType === "bookmarks");
@@ -25469,37 +25445,30 @@ await withApp(async (w, d, T) => {
   T.state.multiSelect = new Set([bmNode.id]);
   T.state.activeId = bmNode.id;
   const { actions } = w.describeSidebarToolbarActions();
-  assert(actions.length === 1 && actions[0].action === "applyFromLibrary",
-    "the locked Bookmarks node offers only Apply from library… (Copy was the only thing shown here before this revision; it's gone from the toolbar entirely now), got " + actions.map(a => a.action).join(","));
-  assert(actions[0].disabled === true, "...disabled, same locked gate as always");
-  assert(actions[0].target === bmNode.id, "...still targeting the locked node itself, not falling back to state.activeId");
+  assert(actions.length === 5 && actions.every(a => a.disabled), "locked node: five buttons, all disabled, got " + sbState(actions));
 });
 
 await withApp(async (w, d, T) => {
-  section("220f. describeSidebarToolbarActions: 2+ filters, same root -> AND/OR/Link only, no library group, with the 2-way vs. N-way Link label difference");
+  section("220f. 2+ filters, same root: fixed buttons disabled + interim AND/OR/Link… group (2-way vs N-way Link label)");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   T.state.multiSelect = new Set([t1.id, t2.id]);
   T.state.activeId = t1.id;
   let { actions } = w.describeSidebarToolbarActions();
-  assert(actions.map(a => a.action).join(",") === "and,or,link",
-    "2 filters, same root -> exactly AND, OR, Link… — no library group for a 2+ FILTER selection, got " + actions.map(a => a.action).join(","));
+  assert(actions.filter(a => !a.group).every(a => a.disabled), "fixed buttons disabled");
+  assert(actions.filter(a => a.group).map(a => a.action).join(",") === "and,or,link", "selection group AND, OR, Link…, got " + actions.map(a => a.action).join(","));
   const link2 = actions.find(a => a.action === "link");
-  assert(link2 && !/-way/.test(link2.label), "2-filter Link… label has no N-way suffix, got " + (link2 && link2.label));
-  assert(Array.isArray(link2.target) && link2.target.length === 2, "link target is the 2-id selection array");
-
+  assert(link2 && !/-way/.test(link2.label), "2-filter Link… label has no N-way suffix");
   const t3 = w.createFilterNode(f.id, "text", "message 3");
   T.state.multiSelect = new Set([t1.id, t2.id, t3.id]);
   ({ actions } = w.describeSidebarToolbarActions());
-  const link3 = actions.find(a => a.action === "link");
-  assert(link3 && /3-way/.test(link3.label), "3-filter selection labels Link… as 3-way, got " + (link3 && link3.label));
-  assert(!actions.some(a => a.action === "and" || a.action === "or"), "AND/OR stay two-filter-only, same as describeBulkActions");
-  assert(!actions.some(a => a.action === "applyFromLibrary"), "still no library group for a 3-filter selection");
+  assert(/3-way/.test(actions.find(a => a.action === "link").label), "3-filter selection labels Link… as 3-way");
+  assert(!actions.some(a => a.action === "and" || a.action === "or"), "AND/OR stay two-filter-only");
 });
 
 await withApp(async (w, d, T) => {
-  section("220g. describeSidebarToolbarActions: filters from different root files, and a mixed files+filters selection -> explanatory note, zero actions");
+  section("220g. filters from different root files / mixed files+filters -> explanatory note, no selection group");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   const ta = w.createFilterNode(fa.id, "text", "message 1");
@@ -25507,115 +25476,134 @@ await withApp(async (w, d, T) => {
   T.state.multiSelect = new Set([ta.id, tb.id]);
   T.state.activeId = ta.id;
   let { actions, note } = w.describeSidebarToolbarActions();
-  assert(actions.length === 0, "filters from different root files offer zero actions, got " + actions.map(a => a.action).join(","));
-  assert(!!note, "...and an explanatory note instead of a silent no-op");
-
+  assert(actions.length === 5 && !!note, "different roots: only the disabled fixed set plus a note");
   T.state.multiSelect = new Set([fa.id, ta.id]);
   ({ actions, note } = w.describeSidebarToolbarActions());
-  assert(actions.length === 0 && !!note, "a mixed files+filters selection also gets a note, zero actions");
+  assert(actions.length === 5 && !!note, "mixed files+filters: note, no selection group");
+  w.render();
+  const noteEl = d.querySelector("#sidebarToolbar [data-stb-note]");
+  assert(noteEl && isVisible(noteEl, w) && noteEl.textContent === note, "the note is rendered in the toolbar");
+  T.state.multiSelect = new Set([ta.id]);
+  w.render();
+  assert(!isVisible(noteEl, w), "...and hidden again once the selection is valid");
 });
 
 await withApp(async (w, d, T) => {
-  section("220h. describeSidebarToolbarActions: copy/cut/saveFilter/loadFilter/context/countContext never appear, for any selection shape");
-  const REMOVED = ["copy", "cut", "saveFilter", "loadFilter", "context", "countContext"];
-  const assertNoneRemoved = (actions, label) =>
-    REMOVED.forEach(a => assert(!actions.some(x => x.action === a), "'" + a + "' does not appear in " + label + ", got " + actions.map(x => x.action).join(",")));
-
+  section("220h. removed actions never appear (copy/cut/saveFilter/loadFilter/context/countContext/applyFromLibrary)");
+  const REMOVED = ["copy", "cut", "saveFilter", "loadFilter", "context", "countContext", "applyFromLibrary"];
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const fb = await w.addFile("b.log", makeLog(20, 20), () => {});
-  const textNode = w.createFilterNode(f.id, "text", "message 1");
-  const textNode2 = w.createFilterNode(f.id, "text", "message 2");
-  w.toggleBookmark(f.entries[0].id);
-  const bmNode = Object.values(T.state.nodes).find(n => n.filterType === "bookmarks");
-
-  T.state.multiSelect = new Set(); T.state.activeId = textNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "0 selected");
-
-  T.state.multiSelect = new Set([f.id]); T.state.activeId = f.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "1 file selected");
-
-  T.state.multiSelect = new Set([f.id, fb.id]); T.state.activeId = f.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "2+ files selected");
-
-  T.state.multiSelect = new Set([textNode.id]); T.state.activeId = textNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "1 unlocked filter selected");
-
-  T.state.multiSelect = new Set([bmNode.id]); T.state.activeId = bmNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "the locked Bookmarks node selected");
-
-  T.state.multiSelect = new Set([textNode.id, textNode2.id]); T.state.activeId = textNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "2+ filters, same root, selected");
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const shapes = [[], [f.id], [f.id, fb.id], [t1.id], [t1.id, t2.id]];
+  shapes.forEach(ids => {
+    T.state.multiSelect = new Set(ids); T.state.activeId = f.id;
+    const names = w.describeSidebarToolbarActions().actions.map(a => a.action);
+    REMOVED.forEach(r => assert(!names.includes(r), "'" + r + "' absent for selection of " + ids.length));
+  });
 });
 
 await withApp(async (w, d, T) => {
-  section("220i. handleSidebarToolbarActionClick: dispatches to the correct underlying function/dialog with the correct (per-selection) target");
+  section("220i. handleSidebarToolbarActionClick: dispatches to the underlying function/dialog with the per-selection target; disabled/unknown actions are no-ops");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const textNode = w.createFilterNode(f.id, "text", "message 1");
-
   let calls = [];
-  const spy = name => {
-    const orig = w[name];
-    w[name] = (...args) => { calls.push([name, args]); return orig.apply(w, args); };
-  };
+  const spy = name => { const orig = w[name]; w[name] = (...args) => { calls.push([name, args]); return orig.apply(w, args); }; };
   spy("openClockOffsetDialog"); spy("startRenameNode"); spy("editFilterNode");
-  spy("toggleInvertWithUndo"); spy("openFilterLibrarySaveDialog"); spy("openFilterLibraryDialog");
-  spy("performBulkAction");
+  spy("toggleInvertWithUndo"); spy("openFilterLibrarySaveDialog"); spy("openFilterLibraryDialog"); spy("performBulkAction");
 
   T.state.multiSelect = new Set([textNode.id]);
   T.state.activeId = textNode.id;
-
   w.handleSidebarToolbarActionClick("rename");
   assert(calls.some(c => c[0] === "startRenameNode" && c[1][0] === textNode.id), "rename -> startRenameNode(target)");
-
   w.handleSidebarToolbarActionClick("edit");
   assert(calls.some(c => c[0] === "editFilterNode" && c[1][0] === textNode.id), "edit -> editFilterNode(target)");
-
   w.handleSidebarToolbarActionClick("invert");
   assert(calls.some(c => c[0] === "toggleInvertWithUndo" && c[1][0] === textNode.id), "invert -> toggleInvertWithUndo(target)");
-
   w.handleSidebarToolbarActionClick("addToLibrary");
   assert(calls.some(c => c[0] === "openFilterLibrarySaveDialog" && c[1][0] === textNode.id), "addToLibrary -> openFilterLibrarySaveDialog(target)");
 
-  w.handleSidebarToolbarActionClick("applyFromLibrary");
-  assert(calls.some(c => c[0] === "openFilterLibraryDialog" && c[1][0] === textNode.id), "applyFromLibrary -> openFilterLibraryDialog(target), targeting the specific selected node");
-
-  // These six no longer have a corresponding action entry at all — clicking
-  // them (e.g. a stale/cached button reference) is a silent no-op, same as
-  // any other disabled/nonexistent entry.
   calls = [];
-  ["context", "countContext", "copy", "cut", "saveFilter", "loadFilter"].forEach(a => w.handleSidebarToolbarActionClick(a));
-  assert(calls.length === 0, "clicking a removed action name is a no-op — no underlying function is ever called");
-  assert(!T.state.clipboard, "...and Copy/Cut in particular do not fall through to setting state.clipboard any more");
+  ["applyFromLibrary", "context", "countContext", "copy", "cut", "saveFilter", "loadFilter"].forEach(a => w.handleSidebarToolbarActionClick(a));
+  assert(calls.length === 0, "removed action names are no-ops");
+  assert(!T.state.clipboard, "...Copy/Cut in particular do not set state.clipboard");
 
-  // clockOffset needs a real file selected.
   T.state.multiSelect = new Set([f.id]);
   T.state.activeId = f.id;
   w.handleSidebarToolbarActionClick("clockOffset");
   assert(calls.some(c => c[0] === "openClockOffsetDialog" && c[1][0] === f.id), "clockOffset -> openClockOffsetDialog(target)");
 
-  // 0 selected -> applyFromLibrary falls back to state.activeId.
-  calls = [];
-  T.state.multiSelect = new Set();
-  T.state.activeId = textNode.id;
-  w.handleSidebarToolbarActionClick("applyFromLibrary");
-  assert(calls.some(c => c[0] === "openFilterLibraryDialog" && c[1][0] === textNode.id), "applyFromLibrary with 0 selected -> openFilterLibraryDialog(state.activeId)");
-
-  // Bulk action (merge) over a 2+ file selection.
   const fb = await w.addFile("b.log", makeLog(30, 5), () => {});
   T.state.multiSelect = new Set([f.id, fb.id]);
   T.state.activeId = f.id;
   w.handleSidebarToolbarActionClick("merge");
   const mergeCall = calls.find(c => c[0] === "performBulkAction");
-  assert(mergeCall && mergeCall[1][0] === "merge" && Array.isArray(mergeCall[1][1]) &&
-    mergeCall[1][1].includes(f.id) && mergeCall[1][1].includes(fb.id),
-    "merge -> performBulkAction('merge', [selected file ids])");
+  assert(mergeCall && mergeCall[1][0] === "merge" && mergeCall[1][1].includes(f.id) && mergeCall[1][1].includes(fb.id), "merge -> performBulkAction('merge', [ids])");
 
-  // A disabled entry is a no-op — the underlying function is never called.
   calls = [];
   T.state.multiSelect = new Set();
-  T.state.activeId = null;
-  w.handleSidebarToolbarActionClick("applyFromLibrary");
-  assert(!calls.some(c => c[0] === "openFilterLibraryDialog"), "a disabled action (no active id) is a no-op — the underlying function is never called");
+  w.handleSidebarToolbarActionClick("rename");
+  assert(calls.length === 0, "a disabled action (nothing selected) is a no-op");
+});
+
+await withApp(async (w, d, T) => {
+  section("220j. rendered toolbar: built once, fixed buttons always in the DOM, only disabled/label toggle, selection group appears for 2+");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const btns = () => [...d.querySelectorAll('#sidebarToolbar > [data-row-action]')];
+  T.state.multiSelect = new Set(); w.render();
+  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED, "five fixed buttons rendered, got " + btns().map(b => b.dataset.rowAction).join(","));
+  assert(btns().every(b => b.disabled), "all disabled with nothing selected");
+  assert(btns().every(b => b.querySelector("svg.icon use")), "every button draws a sprite icon");
+  const before = btns();
+  T.state.multiSelect = new Set([t1.id]); T.state.activeId = t1.id; w.render();
+  const after = btns();
+  assert(before.every((b, i) => b === after[i]), "the same button elements survive a render (no rebuild)");
+  assert(after.map(b => b.disabled ? "0" : "1").join("") === "11101", "text filter: Adjust clock… disabled, rest enabled");
+  assert(d.querySelectorAll('#sidebarToolbar [data-stb-group="sel"] [data-row-action]').length === 0, "no selection group for a single selection");
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  const selBtns = [...d.querySelectorAll('#sidebarToolbar [data-stb-group="sel"] [data-row-action]')].map(b => b.dataset.rowAction);
+  assert(selBtns.join(",") === "and,or,link", "2 filters selected: AND, OR, Link… group appears, got " + selBtns.join(","));
+  assert(btns().every((b, i) => b === before[i]), "...and the fixed buttons are still the same elements");
+  T.state.multiSelect = new Set(); w.render();
+  assert(d.querySelectorAll('#sidebarToolbar [data-stb-group="sel"] [data-row-action]').length === 0, "the group disappears with the selection");
+});
+
+/* ============================================================
+   GROUP 318 — Icon sprite (icon(), ICON_* re-pointing, AND/OR tree icons)
+   Origin: 2026-09-28. One hidden <svg> sprite at the top of <body> holds the
+   approved <symbol id="i-…"> drawings; icon(name) references one via <use>.
+   ICON_FILE/FILTER/RENAME/EDIT/INVERT/LINK/MERGE/CLOCK/BOOK/DISK/GEAR/CLOSE/
+   ELLIPSIS now call it; ICON_COMBINE is split into ICON_AND / ICON_OR.
+   ============================================================ */
+group(318);
+await withApp(async (w, d, T) => {
+  section("318. sprite has every symbol; icon() markup; ICON_* migrated; AND/OR nodes get their own icon + tint class");
+  const NAMES = "file filter rename edit not and or link merge clock book bookplus gear x more star starf search chev import export trash".split(" ");
+  const sprite = d.querySelector("body > svg[hidden]");
+  assert(sprite, "a hidden sprite <svg> sits at the top of <body>");
+  NAMES.forEach(n => { const s = sprite.querySelector("symbol#i-" + n); assert(s && s.getAttribute("viewBox") === "0 0 16 16", "symbol i-" + n + " present on a 16x16 grid"); });
+  assert(w.icon("and") === '<svg class="icon" aria-hidden="true"><use href="#i-and"/></svg>', "icon(name) markup");
+  assert(w.icon("x", "icon-xs").includes('class="icon icon-xs"'), "icon(name, cls) appends the class");
+  const use = n => (w.eval(n).match(/href="#i-([a-z]+)"/) || [])[1];
+  const expect = { ICON_FILE: "file", ICON_FILTER: "filter", ICON_RENAME: "rename", ICON_EDIT: "edit", ICON_INVERT: "not", ICON_LINK: "link",
+    ICON_MERGE: "merge", ICON_CLOCK: "clock", ICON_BOOK: "book", ICON_DISK: "bookplus", ICON_GEAR: "gear", ICON_CLOSE: "x",
+    ICON_ELLIPSIS: "more", ICON_AND: "and", ICON_OR: "or" };
+  Object.keys(expect).forEach(k => assert(use(k) === expect[k], k + " -> #i-" + expect[k] + ", got " + use(k)));
+  assert(w.eval("typeof ICON_COMBINE") === "undefined", "ICON_COMBINE is gone (split into ICON_AND / ICON_OR)");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const andN = w.createAndOrNode(t1.id, t2.id, "and");
+  const orN = w.createAndOrNode(t1.id, t2.id, "or");
+  assert(w.nodeIconHTML(andN).includes("#i-and") && w.nodeIconHTML(orN).includes("#i-or"), "nodeIconHTML: AND -> and icon, OR -> or icon");
+  w.render();
+  const rows = [...d.querySelectorAll("#tree .tree-row")];
+  assert(rows.some(r => r.classList.contains("filter-and")) && rows.some(r => r.classList.contains("filter-or")), "AND/OR tree rows carry filter-and / filter-or (icon tint hook)");
+  const bulk = w.describeBulkActions([t1, t2]).actions;
+  assert(bulk.find(a => a.action === "and").icon === w.eval("ICON_AND") && bulk.find(a => a.action === "or").icon === w.eval("ICON_OR"), "describeBulkActions uses ICON_AND / ICON_OR");
 });
 
 /* ============================================================
@@ -39826,4 +39814,12 @@ process.exitCode = failed ? 1 : 0;
       subfolders as collapsible tree rows (collapsed by default, auto-open
       expands the path); retired "Show relative path". Same session updated
       GROUP 164 (setting removed) and rewrote 201e (ZIP subfolder tree).
+   Group 318 — 2026-09-28 (person-requested, filter-actions Phase A): icon
+      sprite + icon() helper, migrated ICON_* constants, ICON_AND/ICON_OR
+      (ICON_COMBINE retired), AND/OR tree-row icons + tint classes. Same
+      session rewrote GROUPs 220a-i to the static sidebar toolbar contract
+      (fixed Rename/Edit/Invert · Adjust clock · Add to library, disabled
+      instead of omitted, "Apply from library…" removed from it, built once)
+      and added 220j (render toggles disabled only). Dropped: the per-selection
+      button-set/separator assertions of the retired dynamic toolbar.
    ============================================================ */
