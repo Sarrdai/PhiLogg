@@ -240,6 +240,13 @@ An entry without a key is never paired (a reference is dropped, a target is neve
 
 Verified against the exact reported shape (a decoy tie 11s earlier, then a same-millisecond burst with the target immediately preceding the reference, in both `before`/`after` directions), a plain no-ties case (regression guard — completely unaffected), and tie-break combined with exclusive matches (two references and two targets all sharing one timestamp, exclusivity still hands out the log-nearest *available* target to each). See `tests/philogg.regression.test.js` Group 23.
 
+**Same-timestamp entries keep log order everywhere a view re-sorts by time** (2026-09-28, person-reported). Every such sort is a stable `a.ts - b.ts`, so ties keep the order they were *collected* in, which is not always log order. Where a set is gathered out of log order, the sort goes through `chronoComparator(rank)` — `ts`, then `rank` (`buildOrderIndexMap` of the root file) on an exact tie; a NaN `ts` or an unranked id compares as before:
+- **`"or"`** (`getEntries` and the baked `getEntriesFromBaked` branch): A's matches, then B's, re-sorted.
+- **Copy of a multi-selection** (`copyLogSelectionToClipboard`): `state.logMultiSelect` is in click order.
+- **Temp anchor position** (`tempAnchorInsertIndex`): lands inside its tied cluster at its log position instead of after the whole cluster.
+
+The meta-format merge is handled at the source instead — see `docs/persistence-and-sync.md` → `fillMergedEntries`' `logOrder`. Tests: GROUP 314.
+
 ### Backward compatibility
 
 A serialized `link` node with no `linkOrderEnforced`/`linkExclusive` fields at all (e.g. hand-edited) still materializes cleanly with both flags defaulting `false` — verified by a regression test. A multi-hop tuple built through the dialog does **not** get its own `filterType`; it's a plain `link` node whose `bakedA` nests a previous hop's own baked condition (see "Chained links" above), so it round-trips through save/load exactly the way manually-chained links already did — `bakedA`/`bakedB` are plain data, copied wholesale by every persistence carrier with no ref-resolution step at all (see "Export/library" below).

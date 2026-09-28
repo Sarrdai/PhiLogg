@@ -2,6 +2,13 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: same-timestamp entries keep their log order (2026-09-28, person-reported: *"Einträge mit dem gleichen Zeitstempel [haben] dann eine andere Reihenfolge im Viewer … als in der Datei. Und das muss auf jeden Fall abgesichert werden, dass gleiche Zeitstempel danach aber die Reihenfolge im ursprünglichen Log bewahren."*)**. See `docs/filters.md` → "Same-timestamp tie-break" and `docs/persistence-and-sync.md` → `fillMergedEntries`.
+  - **Root cause**: every re-sort by time is a stable `a.ts - b.ts`, so ties keep the order they were *collected* in. A meta-format file was collected stream by stream (all lines of one grammar, then the other), so a default and a syslog line at the same millisecond came out in stream order, not file order.
+  - **Meta-format merge**: `splitTextByMetaFormat` records each header line's physical position (`headerOrds`); `loadMetaFormatText` rebuilds the file's line order from it and `fillMergedEntries(…, logOrder)` copies in that order before the (stable) sort.
+  - **Same bug elsewhere**: an OR filter (A's matches, then B's), copying a multi-selection (click order) and the temp anchor's position (after its whole tied cluster). These now break ties by log position (`chronoComparator` over `buildOrderIndexMap`).
+  - **Log simulator**: new opt-in `ties` scenario (same-millisecond control-loop ticks, alternating grammars under `-f mixed`). It is not part of `all`, so existing seeds produce the same output as before.
+  - **Tests**: new **Group 314** (5 of its assertions fail on the previous code). Full suite **6886 passed, 0 failed**.
+
 - **feat: context window bar in the assistant chat (2026-09-28, person-requested: *"Unterstützt die Schnittstelle zu LM-Studio eine Anzeige des Kontextwindows? Könnte man das visuell in den Chat einbauen? Als progressbar mit Details beim Hovern?"*)**. See `docs/llm-assistant.md` → "Context window bar".
   - Requests set `stream_options.include_usage`; the assembler reads the usage chunk (empty `choices`, previously dropped). The last turn's `prompt + completion` tokens are the fill, stored as `session.context`.
   - The limit is the model's loaded context length from LM Studio's native `/api/v0/models` (new `philogg-llm::model_details`, command `llm_model_details`, bridge `window.philogg.llmModelDetails`), fetched once per round. Other servers: used tokens only, no bar.
