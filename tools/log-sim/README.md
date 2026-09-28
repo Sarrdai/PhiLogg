@@ -55,6 +55,11 @@ lines at the exact same millisecond; under `-f mixed` the steps alternate
 between default and syslog lines. For same-timestamp log order
 (`-s ties,basic`).
 
+`grouped` is opt-in too: numbers with thousands separators below and above
+1000 — `Throughput 1,234.5 msg/s` (en), `Meter reading 12.345,6 kWh` (de)
+and `Batch imported 12,345 records` (en integer, ambiguous without
+`[*:int@en]`). For extraction number formats (`-s grouped`).
+
 ## Amount and files
 
 - `-n 5000` entries or `--size 20MB` per file.
