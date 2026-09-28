@@ -10,7 +10,7 @@ chronological, dated history — read it for "why/when did X change", not for
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~42,500 lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (~42,650 lines, inline CSS,
 vanilla JS — no framework, no build tooling; the only tooling is
 `scripts/strip-comments.js`, which release builds run over a throwaway copy
 — see `PROJECT.md` → "Release builds"). Personal tool for browser-based
@@ -90,6 +90,11 @@ and a frameless window around the unmodified `philogg.html` — see
   `cut-release`). **Never write a `!` suffix, a `BREAKING CHANGE:`
   footer, or a `Release-As:` footer unless the user explicitly asks for a
   major-version bump** — this project stays under `1.0.0` by design.
+- **No Claude attribution in commits or PRs.** Never add a
+  `Co-Authored-By:` line with a Claude/Anthropic mail address, a
+  `Claude-Session:` line or any claude.ai session link to commit messages,
+  PR titles or PR descriptions (person-requested; overrides the harness's
+  default attribution lines).
 - **No backward-compatibility/migration work required below `1.0.0`.**
   While the major version stays `0`, a session may change a persistence
   format, storage key, or in-app data shape (session cache, filter-library
