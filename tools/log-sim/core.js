@@ -108,6 +108,13 @@
     l10n: ["Ui", "Localization"],
   };
 
+  // n with `decimals` places, integer part grouped in threes by `group`
+  // ("1,234.5" / "1.234,5") — how culture-formatted log values look.
+  function groupThousands(n, decimals, group, decimal) {
+    const [int, frac] = n.toFixed(decimals).split(".");
+    return int.replace(/\B(?=(\d{3})+(?!\d))/g, group) + (frac ? decimal + frac : "");
+  }
+
   // ---------------------------------------------------------------- scenarios
   //
   // make(g, ts) returns one entry (partial — defaults filled by the
@@ -328,6 +335,19 @@
         const step = k => ({ level: "DEBUG", thread: "control-loop", cls: "scheduler", method: "Tick", msg: "Tick " + tick + " step " + k + "/" + n, syslog: k % 2 === 0 });
         for (let k = 2; k <= n; k++) g.schedule(ts, step(k));
         return step(1);
+      },
+    },
+
+    grouped: {
+      label: "Thousands separators",
+      weight: 4,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): numbers written with thousands separators, below and above 1000 — 'Throughput 1,234.5 msg/s' (en), 'Meter reading 12.345,6 kWh' (de), both unambiguous, and 'Batch imported 12,345 records' (en integer, ambiguous without a format). Filters: Throughput [*:float] msg/s, Batch imported [*:int@en] records",
+      make(g) {
+        const r = g.int(0, 2);
+        if (r === 0) return { level: "INFO", cls: "scheduler", method: "Report", msg: "Throughput " + groupThousands(g.float(200, 5000), 1, ",", ".") + " msg/s" };
+        if (r === 1) return { level: "INFO", cls: "sensors", method: "Poll", msg: "Meter reading " + groupThousands(g.float(500, 50000), 1, ".", ",") + " kWh" };
+        return { level: "INFO", cls: "repo", method: "Import", msg: "Batch imported " + groupThousands(g.int(100, 20000), 0, ",", ".") + " records" };
       },
     },
 
