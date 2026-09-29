@@ -2,6 +2,16 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: Left/Right expand and collapse tree nodes (2026-09-29, person-requested)**
+  - In `moveTreeSelection` (plain arrows with tree focus and Alt+Arrow from anywhere): Right on a collapsed node with children expands it, on an expanded one moves to its first listed child, on a leaf does nothing; Left on an expanded node collapses it, otherwise collapses its parent and selects it in one step (no-op on a top-level node). The chevron's "has collapsible children" rule (incl. the merge "Sources" node) is now the shared `nodeHasCollapsibleChildren`. `node.collapsed` remains display-only. While an inline viewer/folder view is shown, Left/Right keep the old parent/first-child jump.
+  - **Tests**: new **Group 324**; GROUP 36's arrow test updated (Left now collapses parents, Right expands first).
+
+- **feat: OS / browser shortcut collision audit (2026-09-29, FEATURE_BACKLOG #49)**
+  - `closeFile` defaults to **Alt+W in the plain browser build** (Chrome/Edge/Firefox reserve Ctrl+W and ignore `preventDefault`); the desktop build keeps Ctrl+W. New optional `browserDefault` on `SHORTCUT_ACTIONS` entries and `defaultShortcutBinding()` (checks `window.philogg` at call time), used by `getShortcutBinding`, so the conflict check, list rendering and Reset follow.
+  - `comboFromEvent` falls back to `ev.code` (`KeyX` / `DigitN`) when Alt is down and `ev.key` isn't a plain letter/digit (keeps QWERTZ/AZERTY layouts correct), fixing Alt+N / Alt+W and Alt+letter rebinding on macOS (Option dead keys); the recorder now stores the letter.
+  - `docs/ui-and-views.md`: new "OS / browser shortcut collisions" table (macOS desktop menu accelerators noted as unverified).
+  - **Tests**: new **Group 323**; GROUP 75 runs as the desktop build (`w.philogg = {}`).
+
 - **feat: recent-filter suggestions in the filter popup and the find bar (2026-09-29, FEATURE_BACKLOG #13)**
   - A dropdown under `#filterInput` (and `#findInput`) lists recently used filters: `Recent filters` for an empty input, `Matching recent filters` while typing (case-insensitive substring, matched part highlighted, an entry equal to the input is hidden; at most 8 rows). Rows show the search icon for entries recorded from the find bar, badges `.*` / `Aa` / `W` / `NOT` for their flags, and a hover `x` ("Remove from history"). Keyboard: Up/Down select, Enter or Tab applies (value + Syntax/Match case/Whole word/NOT, without committing), Escape closes the list before the popup/bar, Shift+Delete removes; mouse: mousedown applies, the x removes. In the find bar applying sets value + Aa + `.*` and re-runs the search.
   - History: `localStorage` `philogg.recentFilters` (last 50, deduped on value + the four flags, a re-use moves to the top), recorded by `commitFilter` (Add filter/Save), the find bar's Enter and "Add as filter" (source `find`, case/regex only) — never per keystroke. Storage failures are swallowed. Edit mode opens with the list closed until the user types. One reusable `createRecentDropdown()` serves both inputs.
