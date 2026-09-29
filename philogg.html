@@ -898,6 +898,19 @@
     color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
   }
   .tree-row:hover .tree-del{opacity:1;}
+  /* Mute (FEATURE_BACKLOG #14): eye button sits right before .tree-del,
+     same hover-reveal; on a muted row it stays visible in the warn tint. */
+  .tree-mute{
+    flex:0 0 auto; opacity:0; background:none; border:none; cursor:pointer;
+    color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
+  }
+  .tree-row:hover .tree-mute,.tree-mute:focus-visible{opacity:1;}
+  .tree-mute:hover{color:var(--accent-strong); background:var(--accent-soft);}
+  .tree-mute .icon{width:12px; height:12px;}
+  .tree-row.muted .tree-mute{opacity:1; color:var(--level-warn);}
+  .tree-row.muted .tree-label{text-decoration:line-through; text-decoration-color:var(--text-tertiary); color:var(--text-tertiary);}
+  .tree-row.muted .tree-icon,.tree-row.muted .tree-swatch{opacity:.45;}
+  .tree-row.muted .tree-count{font-style:italic;}
   /* Bugfix (this session, person-reported: couldn't close an opened non-log
      ZIP/folder-watch entry at all): renderZipEntryRow's placeholder row
      reuses .tree-del as-is (see its own comment) but is NOT a .tree-row —
@@ -4350,6 +4363,8 @@
     <symbol id="i-filter" viewBox="0 0 16 16"><path d="M2.5 3h11L9.25 8.25v4.25l-2.5 1.25V8.25Z"/></symbol>
     <symbol id="i-rename" viewBox="0 0 16 16"><path d="M2.75 13.25h2.75l7-7-2.75-2.75-7 7ZM8.75 4.75l2.5 2.5"/></symbol>
     <symbol id="i-edit" viewBox="0 0 16 16"><path d="M2.5 4.5h6M12 4.5h1.5M2.5 11.5h1.5M7.5 11.5h6"/><circle cx="10.25" cy="4.5" r="1.75"/><circle cx="5.75" cy="11.5" r="1.75"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.75 8s2.25-4.25 6.25-4.25S14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8Z"/><circle cx="8" cy="8" r="1.9"/></symbol>
+    <symbol id="i-eye-off" viewBox="0 0 16 16"><path d="M1.75 8s2.25-4.25 6.25-4.25S14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8Z"/><path d="M2.5 13.5l11-11"/></symbol>
     <symbol id="i-not" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M4.25 11.75l7.5-7.5"/></symbol>
     <symbol id="i-and" viewBox="0 0 16 16"><path d="M8 4.55a4.25 4.25 0 0 1 0 6.9a4.25 4.25 0 0 1 0-6.9Z" fill="currentColor"/><circle cx="5.9" cy="8" r="4.1" style="stroke-width:1.3"/><circle cx="10.1" cy="8" r="4.1" style="stroke-width:1.3"/></symbol>
     <symbol id="i-or" viewBox="0 0 16 16"><circle cx="5.9" cy="8" r="4.1" fill="currentColor" fill-opacity=".4"/><circle cx="10.1" cy="8" r="4.1" fill="currentColor" fill-opacity=".4"/><circle cx="5.9" cy="8" r="4.1" style="stroke-width:1.3"/><circle cx="10.1" cy="8" r="4.1" style="stroke-width:1.3"/></symbol>
@@ -6834,6 +6849,8 @@ const ICON_SAVE = icon("save");
 const ICON_FULLSCREEN = icon("fullscreen");
 const ICON_LOAD = icon("load");
 const ICON_INVERT = icon("not");
+const ICON_EYE = icon("eye");
+const ICON_EYE_OFF = icon("eye-off");
 const ICON_TARGET = icon("target");
 const ICON_UNDO = icon("undo");
 const ICON_REDO = icon("redo");
@@ -11548,11 +11565,22 @@ function nodeHasExtractableWildcards(node) {
 function findExtractionAncestor(node) {
   let cur = node;
   while (cur && cur.type === "filter") {
+    // A muted node passes its parent's result through unchanged (see
+    // getEntries): it neither carries nor blocks anything, so look further up
+    // as if it weren't there.
+    if (cur.muted) { cur = state.nodes[cur.parentId]; continue; }
     if (nodeHasExtractableWildcards(cur)) return cur;
     if (cur.filterType === "link") return null;
     cur = state.nodes[cur.parentId];
   }
   return null;
+}
+
+// True for an active (non-muted) link node — the only kind whose result is
+// synthetic pair entries. A muted link node passes plain entries through and
+// so gets the ordinary entry table, not the Link pair view.
+function isLinkNode(node) {
+  return !!node && node.type === "filter" && node.filterType === "link" && !node.muted;
 }
 
 // Whether a node shows a Table/Plot view at all — true for a node that
@@ -12752,6 +12780,7 @@ function cloneSubtree(nodeId, newParentId) {
     value: orig.value,
     inverted: !!orig.inverted,
   };
+  if (orig.muted) clone.muted = true;
   copyBakedFields(orig, clone);
   if (orig.filterType === "link") {
     clone.linkDirection = orig.linkDirection;
@@ -13258,9 +13287,9 @@ function getTextMatchHighlightNodes() {
   const activeNode = state.nodes[state.activeId];
   if (!activeNode) return [];
   if (textMatchHighlightScope === "last") {
-    return (activeNode.type === "filter" && activeNode.filterType === "text") ? [activeNode] : [];
+    return (activeNode.type === "filter" && activeNode.filterType === "text" && !activeNode.muted) ? [activeNode] : [];
   }
-  return getChain(state.activeId).filter(n => n.type === "filter" && n.filterType === "text");
+  return getChain(state.activeId).filter(n => n.type === "filter" && n.filterType === "text" && !n.muted);
 }
 
 // Same "does this text filter carry a wildcard/value-token pattern"
@@ -13412,7 +13441,7 @@ function getHighlightMatchNodes() {
     const node = state.nodes[stack.pop()];
     if (!node) continue;
     stack.push(...node.children);
-    if (node.type === "filter" && node.filterType === "text" && node.highlightColor) out.push(node);
+    if (node.type === "filter" && node.filterType === "text" && node.highlightColor && !node.muted) out.push(node);
   }
   return out;
 }
@@ -13625,6 +13654,10 @@ function getEntries(nodeId) {
   const node = state.nodes[nodeId];
   if (!node) return [];
   if (node.type === "file") return node.entries;
+  // Muted node (FEATURE_BACKLOG #14): passes its parent's result through
+  // unchanged. Deliberately not cached on the node itself, so toggling it
+  // can never leave a stale _cache/_levelCounts behind.
+  if (node.muted) return getEntries(node.parentId);
   if (node._cache) return node._cache;
   if (getEntriesInProgress.has(nodeId)) return [];
   getEntriesInProgress.add(nodeId);
@@ -14262,6 +14295,7 @@ function snapshotSubtree(nodeId) {
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
+  if (node.muted) copy.muted = true;
   copyBakedFields(node, copy);
   if (node.filterType === "link") {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
@@ -14327,6 +14361,7 @@ function restoreSubtree(snap) {
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
     children: [],
   };
+  if (snap.muted) node.muted = true;
   if (snap.baked) node.baked = snap.baked;
   if (snap.bakedA) node.bakedA = snap.bakedA;
   if (snap.bakedB) node.bakedB = snap.bakedB;
@@ -14410,6 +14445,7 @@ function deleteFilterNodeWithUndo(nodeId) {
 function captureNodeFields(node) {
   return {
     filterType: node.filterType, value: node.value, inverted: !!node.inverted, name: node.name,
+    muted: !!node.muted,
     label: node.label,
     ignoredColumns: node.ignoredColumns ? node.ignoredColumns.slice() : undefined,
     caseSensitive: !!node.caseSensitive,
@@ -14423,6 +14459,7 @@ function captureNodeFields(node) {
 function applyNodeFields(node, fields) {
   node.filterType = fields.filterType; node.value = fields.value;
   node.inverted = fields.inverted; node.name = fields.name;
+  if (fields.muted) node.muted = true; else delete node.muted;
   if (fields.label) node.label = fields.label; else delete node.label;
   if (fields.ignoredColumns) node.ignoredColumns = fields.ignoredColumns.slice(); else delete node.ignoredColumns;
   if (fields.caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
@@ -14460,6 +14497,30 @@ function toggleInvertWithUndo(nodeId) {
     // used for move/delete is needed here too.
     invalidateAllCaches();
   });
+}
+
+// Mute/unmute filter nodes (FEATURE_BACKLOG #14). A muted node passes its
+// parent's result through unchanged (see getEntries). `ids` may hold several
+// nodes (multi-select): they toggle as ONE undo step (kind "batch", like the LLM assistant rounds).
+// Files and the locked Bookmarks/Sources-style nodes are not mutable.
+function isMutableNode(node) {
+  return !!node && node.type === "filter" && !node.locked;
+}
+function toggleMuteWithUndo(ids, forceMuted) {
+  const nodes = (Array.isArray(ids) ? ids : [ids]).map(id => state.nodes[id]).filter(isMutableNode);
+  if (!nodes.length) return;
+  const target = forceMuted === undefined ? !nodes.every(n => n.muted) : !!forceMuted;
+  const entries = [];
+  nodes.forEach(node => {
+    if (!!node.muted === target) return;
+    const before = captureNodeFields(node);
+    if (target) node.muted = true; else delete node.muted;
+    entries.push({ kind: "edit", nodeId: node.id, before, after: captureNodeFields(node) });
+  });
+  if (!entries.length) return;
+  invalidateAllCaches();
+  const label = target ? "mute" : "unmute";
+  pushUndo(entries.length === 1 ? { ...entries[0], label } : { kind: "batch", actions: entries, label });
 }
 
 // Sets/clears a node's custom display label (FEATURE_BACKLOG.md #12 — "Rename
@@ -14518,7 +14579,7 @@ function undo() {
   updateUndoRedoButtons();
   invalidateAllCaches();
   render();
-  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
+  showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
 }
 
 // One action's inverse. A "batch" (the LLM assistant's one-step-per-round,
@@ -14597,7 +14658,7 @@ function redo() {
   updateUndoRedoButtons();
   invalidateAllCaches();
   render();
-  showCopyToast((UNDO_KIND_LABELS[action.kind] || action.kind) + " redone");
+  showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " redone");
 }
 
 function redoAction(action) {
@@ -14640,8 +14701,8 @@ function updateUndoRedoButtons() {
   btnRedo.disabled = redoStack.length === 0;
   const nextUndo = undoStack[undoStack.length - 1];
   const nextRedo = redoStack[redoStack.length - 1];
-  btnUndo.title = nextUndo ? "Undo " + (UNDO_KIND_LABELS[nextUndo.kind] || nextUndo.kind) + " (Ctrl+Z)" : "Nothing to undo";
-  btnRedo.title = nextRedo ? "Redo " + (UNDO_KIND_LABELS[nextRedo.kind] || nextRedo.kind) + " (Ctrl+Shift+Z)" : "Nothing to redo";
+  btnUndo.title = nextUndo ? "Undo " + (nextUndo.label || UNDO_KIND_LABELS[nextUndo.kind] || nextUndo.kind) + " (Ctrl+Z)" : "Nothing to undo";
+  btnRedo.title = nextRedo ? "Redo " + (nextRedo.label || UNDO_KIND_LABELS[nextRedo.kind] || nextRedo.kind) + " (Ctrl+Shift+Z)" : "Nothing to redo";
 }
 
 function getChain(id) {
@@ -15134,7 +15195,7 @@ const facetsAnalysis = makeEntryAnalysis(createFacetAcc, facetColumnsKey, c => {
 
 function facetsAvailable() {
   const node = state.nodes[state.activeId];
-  return !!node && !(node.type === "filter" && node.filterType === "link");
+  return !!node && !isLinkNode(node);
 }
 
 // Shown/hidden and (re)filled from renderMainView — the panel sits beside
@@ -15805,7 +15866,7 @@ function activeNavScroller(nodeId) {
   if (nodeIsExtractionView(node) &&
       (fhActiveTab === "table" || fhActiveTab === "plot")) return extractScroll;
   if (fhActiveTab === "patterns") return patternsScroll;
-  if (node && node.type === "filter" && node.filterType === "link") return linkScroll;
+  if (isLinkNode(node)) return linkScroll;
   return tableBody;
 }
 
@@ -16289,7 +16350,7 @@ function renderMainView() {
   }
 
   const activeNode = state.nodes[state.activeId];
-  const isLink = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
+  const isLink = isLinkNode(activeNode);
   const extractCapable = nodeIsExtractionView(activeNode);
 
   // A tab left on Table/Plot from a previously-active extraction node falls
@@ -17108,7 +17169,8 @@ function renderNode(id, depth, opts) {
   const clipClass = clip && clip.id === id ? (clip.mode === "cut" ? " cut" : " copied") : "";
   const multiClass = state.multiSelect.has(id) ? " multi-selected" : "";
   const invertClass = node.inverted ? " inverted" : "";
-  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass +
+  const muteClass = node.muted ? " muted" : "";
+  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass + muteClass +
     (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
@@ -17265,6 +17327,7 @@ function renderNode(id, depth, opts) {
   // just equal the file's own row right above it.
   const ownCount = sourcesOwnerFile ? (sourcesOwnerFile.sources || []).length : getEntries(id).length;
   count.textContent = ownCount.toLocaleString("de-DE");
+  if (node.muted) count.title = "Muted — passes all " + ownCount.toLocaleString("de-DE") + " entries through";
   row.appendChild(count);
 
   // The row-count percentage BAR (a little track+fill line) was removed
@@ -17282,6 +17345,14 @@ function renderNode(id, depth, opts) {
   // when the same node is ALSO an ordinary top-level row elsewhere (the
   // bulk-merge case), where it keeps its own ✕ since opts.mergeSourceColor
   // isn't set for that call.
+  if (isMutableNode(node) && !(opts && opts.mergeSourceColor)) {
+    const mute = document.createElement("button");
+    mute.className = "tree-mute";
+    mute.innerHTML = node.muted ? ICON_EYE_OFF : ICON_EYE;
+    mute.title = node.muted ? "Unmute (M)" : "Mute — pass entries through unchanged (M)";
+    mute.addEventListener("click", ev => { ev.stopPropagation(); toggleMuteWithUndo([id]); render(); });
+    row.appendChild(mute);
+  }
   if (!node.locked && !(opts && opts.mergeSourceColor)) {
     const del = document.createElement("button");
     del.className = "tree-del";
@@ -22407,7 +22478,7 @@ function computeHighlightMap(fileId) {
     const node = state.nodes[stack.pop()];
     if (!node) continue;
     stack.push(...node.children);
-    if (node.type !== "filter" || !node.highlightColor) continue;
+    if (node.type !== "filter" || !node.highlightColor || node.muted) continue;
     const entries = getEntries(node.id);
     if (node.filterType === "link") {
       entries.forEach(pair => getTupleEntries(pair).forEach(e => addColor(e.id, node.highlightColor)));
@@ -22692,7 +22763,7 @@ function contextMatchesAndGaps(node, root) {
   const matchIds = new Set();
   // Root-file indices of the matches, ascending.
   let idxs = null;
-  if (node.filterType !== "link") {
+  if (!isLinkNode(node)) {
     // Every other filter keeps its parent's order, so its result is normally
     // a subsequence of the root's entries: one walk along both finds the
     // indices without an id -> index map. Anything else (an "or" re-sorted
@@ -24950,7 +25021,7 @@ function updateMinimapRenderedRange() {
 // Returns [] when nothing should be marked.
 function minimapMarkedEntries() {
   const activeNode = state.nodes[state.activeId];
-  const isLinkActive = !!(activeNode && activeNode.type === "filter" && activeNode.filterType === "link");
+  const isLinkActive = isLinkNode(activeNode);
   if (isLinkActive && linkSelectedPairIndex != null && linkPairsData[linkSelectedPairIndex]) {
     return linkPairsData[linkSelectedPairIndex].realEntries;
   }
@@ -33510,7 +33581,10 @@ function describeBulkActions(nodes) {
     const roots = nodes.map(n => getRootFileId(n.id));
     const sameRoot = roots.every(r => r && r === roots[0]);
     if (!sameRoot) {
-      return { actions: [], short: "Filters from different files", note: "These filters belong to different files. Merge the files first, or pick filters from the same file." };
+      // Mute is a per-node flag with no same-file requirement.
+      const mutableAny = nodes.filter(isMutableNode);
+      const allMutedAny = mutableAny.length && mutableAny.every(n => n.muted);
+      return { actions: mutableAny.length ? [{ action: "mute", label: allMutedAny ? "Unmute" : "Mute", icon: allMutedAny ? ICON_EYE_OFF : ICON_EYE }] : [], short: "Filters from different files", note: "These filters belong to different files. Merge the files first, or pick filters from the same file." };
     }
     const actions = [];
     // AND/OR are withheld when any node fails canBeCombined() (a link node's
@@ -33522,6 +33596,13 @@ function describeBulkActions(nodes) {
       actions.push({ action: "or", label: "OR", icon: ICON_OR });
     }
     actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
+    // Mute/Unmute (FEATURE_BACKLOG #14): "Unmute" only when every mutable
+    // selected node is already muted, else "Mute" = mute all of them.
+    const mutable = nodes.filter(isMutableNode);
+    if (mutable.length) {
+      const allMuted = mutable.every(n => n.muted);
+      actions.push({ action: "mute", label: allMuted ? "Unmute" : "Mute", icon: allMuted ? ICON_EYE_OFF : ICON_EYE });
+    }
     return { actions };
   }
   return { actions: [], short: "Select only files or only filters", note: "Select either files (to merge) or filters (to combine) — not both at once." };
@@ -33530,6 +33611,12 @@ function describeBulkActions(nodes) {
 // Runs a bulk action (shared by the context menu and the sidebar toolbar —
 // see describeSidebarToolbarActions/handleSidebarToolbarActionClick below).
 function performBulkAction(action, ids) {
+  if (action === "mute") {
+    toggleMuteWithUndo(ids);
+    state.multiSelect = new Set();
+    render();
+    return;
+  }
   if (action === "link") {
     state.multiSelect = new Set();
     openLinkDialog(ids);
@@ -33596,6 +33683,8 @@ function describeSidebarToolbarActions() {
       disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft))) },
     { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", icon: ICON_INVERT, target,
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
+    { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target,
+      disabled: !filter },
     { action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK, target, separator: true,
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
     { action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target, separator: true, disabled: !filter },
@@ -33619,6 +33708,7 @@ function handleSidebarToolbarActionClick(action) {
     case "rename": startRenameNode(target); return;
     case "edit": editFilterNode(target); return;
     case "invert": toggleInvertWithUndo(target); render(); return;
+    case "mute": toggleMuteWithUndo([target]); render(); return;
     case "addToLibrary": openFilterLibrarySaveDialog(target); return;
   }
 }
@@ -33757,6 +33847,12 @@ function openTreeContextMenu(ev, clickedId) {
           icon: ICON_INVERT,
         });
       }
+      // Mute (FEATURE_BACKLOG #14) applies to every filter type.
+      buckets.edit.push({
+        action: "mute",
+        label: node.muted ? "Unmute" : "Mute",
+        icon: node.muted ? ICON_EYE_OFF : ICON_EYE,
+      });
       // "Time context…"/"Count context…" — CREATION menu items removed
       // (FEATURE_BACKLOG.md #79, person-confirmed, this session): there is
       // now no user-facing way to create a fresh context/countContext node,
@@ -33929,6 +34025,13 @@ treeContextMenu.addEventListener("click", ev => {
     }
     return;
   }
+  if (action === "mute" && !(state.multiSelect.size >= 2 && state.multiSelect.has(treeCtxId))) {
+    if (treeCtxId && state.nodes[treeCtxId]) {
+      toggleMuteWithUndo([treeCtxId]);
+      render();
+    }
+    return;
+  }
   if (action === "context") {
     if (treeCtxId && state.nodes[treeCtxId]) openContextDialog(treeCtxId);
     return;
@@ -33983,7 +34086,7 @@ function renderSidebarToolbar() {
       sidebarToolbarMultiKey = key;
       const closeBtn = '<button type="button" class="stb-btn stb-x" data-multi-action="close" title="Clear selection (Esc)" aria-label="Clear selection">' + ICON_CLOSE + "</button>";
       sidebarToolbarEl.innerHTML = info.actions.length
-        ? '<span class="stb-cnt">' + escapeHtml(info.label) + "</span>" +
+        ? '<span class="stb-cnt"' + (info.note ? ' title="' + escapeHtml(info.note) + '"' : "") + ">" + escapeHtml(info.label) + "</span>" +
           info.actions.map(a => '<button type="button" class="stb-btn stb-' + a.action + '" data-multi-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' + a.icon + escapeHtml(a.label) + "</button>").join("") +
           '<span class="stb-sp"></span>' + closeBtn
         : '<span class="stb-msg" title="' + escapeHtml(info.note || info.short) + '">' + escapeHtml(info.short) + "</span>" + closeBtn;
@@ -34003,6 +34106,13 @@ function renderSidebarToolbar() {
     btn.title = a.label;
     const lbl = btn.querySelector(".row-action-label");
     if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
+    // The mute button's glyph follows the selected node's state (eye / eye-off).
+    if (a.action === "mute") {
+      const hit = btn.querySelector(".row-action-hit"), svg = hit && hit.querySelector("svg");
+      const use = svg && svg.querySelector("use");
+      const want = a.icon === ICON_EYE_OFF ? "#i-eye-off" : "#i-eye";
+      if (use && use.getAttribute("href") !== want) use.setAttribute("href", want);
+    }
   });
 }
 
@@ -35286,6 +35396,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
     if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
+    if (node.muted) out.muted = true;
     if (node.selectionFilter) out.selectionFilter = true;
     return out;
   }
@@ -35559,6 +35670,7 @@ function materializeSerializedRoots(roots, resolveParentId) {
     if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
+    if (sn.muted === true) node.muted = true;
     if (sn.selectionFilter) node.selectionFilter = true;
     if (sn.baked) node.baked = sn.baked;
     if (sn.bakedA) node.bakedA = sn.bakedA;
@@ -36472,6 +36584,7 @@ const SHORTCUT_ACTIONS = [
   { id: "findNext",      label: "Find bar: next match",                default: { key: "f3" } },
   { id: "findPrev",      label: "Find bar: previous match",            default: { shift: true, key: "f3" } },
   { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
+  { id: "muteFilter",    label: "Mute/unmute a filter",                default: { key: "m" } },
   { id: "editFilter",    label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
   { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" } },
   { id: "toggleSidebar", label: "Collapse/expand Files & Filters",     default: { ctrl: true, key: "b" } },
@@ -39499,6 +39612,20 @@ document.addEventListener("keydown", ev => {
     return;
   }
 
+  // FEATURE_BACKLOG #14: mute/unmute the active filter, or every selected
+  // filter (2+ multi-selected) as one undo step.
+  if (matchesShortcut(ev, "muteFilter")) {
+    const ae = document.activeElement;
+    if (ae && (ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable)) return;
+    const ids = state.multiSelect.size >= 2 ? [...state.multiSelect] : [state.activeId];
+    if (ids.some(id => isMutableNode(state.nodes[id]))) {
+      ev.preventDefault();
+      toggleMuteWithUndo(ids);
+      render();
+    }
+    return;
+  }
+
   if (matchesShortcut(ev, "editFilter")) {
     if (editFilterNode(state.activeId)) ev.preventDefault();
     return;
@@ -40082,6 +40209,7 @@ function serializeFilterTreeForCache(fileNode) {
     if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
     if (node.highlightColor) out.highlightColor = node.highlightColor;
     if (node.label) out.label = node.label;
+    if (node.muted) out.muted = true;
     if (node.selectionFilter) out.selectionFilter = true;
     return out;
   }
@@ -40262,6 +40390,7 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
+    if (sn.muted === true) node.muted = true;
     if (sn.selectionFilter) node.selectionFilter = true;
     if (sn.baked) node.baked = sn.baked;
     if (sn.bakedA) node.bakedA = sn.bakedA;

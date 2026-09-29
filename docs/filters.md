@@ -388,6 +388,20 @@ A sibling of the Time context filter above (`filterType: "countContext"`, fields
 
 Tested: **GROUP 289**.
 
+## Muting a filter node
+
+`FEATURE_BACKLOG.md` #14 (2026-09-29). A filter node can carry `muted: true` (absent = false): `getEntries` then returns its parent's result untouched, so the step is effectively switched off while it stays in the tree with its colour, assertions, NOT flag and children. Children keep evaluating, against the muted node's (= its parent's) result, i.e. against the nearest non-muted ancestor. A muted node is never cached on itself (the check sits before `node._cache`, one property read), and toggling goes through `toggleMuteWithUndo(ids)` -> `invalidateAllCaches()` like the NOT toggle. NOT is ignored while muted and comes back on unmute.
+
+Not mutable: file nodes and locked nodes (Bookmarks/Sources) — `isMutableNode`. Every other filter type (text, time, level, idset, gap, context, and/or, link, ...) can be muted; there is no subtree muting.
+
+**Controls**: the tree row's eye button (`.tree-mute`, right before `.tree-del`; `stopPropagation` so the click neither selects nor opens anything), the sidebar toolbar's Mute/Unmute button (after Invert (NOT); glyph flips eye / eye-off), the tree context menu's single-node item (next to Invert) and its multi-select item, and the rebindable `muteFilter` shortcut (`M`, on the active node or on all of a 2+ multi-selection). A multi-node toggle is ONE undo step: an `edit` entry per changed node wrapped in the `batch` undo kind (the label reads `Unmute` when every mutable selected node is muted, otherwise `Mute` = mute all).
+
+**Look**: a muted row's label is struck through in `--text-tertiary`, icon and swatch at 45% opacity, the count is italic and shows the parent's count (tooltip "Muted — passes all N entries through"), the eye stays visible in `--level-warn`.
+
+**Where a muted node is skipped** (it is a tree-position property, not a condition): `findExtractionAncestor` continues upward past it, so a muted wildcard node does not unlock Table/Plot and assertions on it are never evaluated; `isLinkNode` is false for a muted link node, so it renders the plain entry table instead of the Link pair view; `computeHighlightMap`, `getTextMatchHighlightNodes` and `getHighlightMatchNodes` ignore it. Creating AND/OR/Link from a selection containing a muted node bakes the node's real condition (unaffected by mute); Unpack creates unmuted nodes.
+
+**Persistence**: `muted` is written by `cloneSubtree`, `snapshotSubtree` (read by `restoreSubtree`), `captureNodeFields`/`applyNodeFields`, `serializeFilterBranch` (read by `importFilterJson`, so library presets and JSON exports keep it) and `serializeFilterTreeForCache` (read by `materializeCachedFilters`). Regression-tested: **Group 321**.
+
 ## Filter rules: the three movement classes, and Table/Plot upward-lookup inheritance
 
 **This session (2026-09-04), person-requested**: a filter created as a child of an extraction-pattern node (a `"text"` node whose pattern has `[*:...]`/`[*]` wildcards) used to lose Table/Plot entirely, even though conceptually it should still show the (now further-filtered) extraction table/plot. Fixed by having Table/Plot look **upward** through the tree instead of only ever asking about the active node itself.

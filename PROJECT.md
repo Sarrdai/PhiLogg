@@ -413,6 +413,8 @@ Toggling `inverted` is a **structural-equivalent change** for caching purposes e
 
 In the tree, an inverted node's label gets a `"¬ "` prefix and its type tag turns red (`.tree-row.inverted .tree-type-tag`) — visible without opening the node.
 
+**Mute interaction** (`muted: true`, see `docs/filters.md` → "Muting a filter node"): `getEntries` returns the parent's result for a muted node before any inversion/caching, so NOT is ignored (but kept) while muted.
+
 ### 3. Memoization
 
 Every filter node caches its computed result on `node._cache`, since a filter's own type/value never change after creation — only *structural* changes (move, delete) can invalidate a result, so `getEntries()` is a cheap cache hit on every render except right after such a change. This is what makes the tree, level-quick-filter counts, and breadcrumb cheap to recompute on every render without visibly recursing the whole chain each time.
