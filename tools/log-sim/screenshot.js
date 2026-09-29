@@ -48,6 +48,9 @@ async function main() {
     }
     if (opt.theme) await page.evaluate(t => applyTheme(t), opt.theme);
     await page.setInputFiles("#fileInput", logs);
+    // Several files at once raise the "Merge these files?" prompt; keep them
+    // as separate files (a merge would leave fewer files than the wait below expects).
+    if (logs.length > 1) await page.click("#mergeLoadDialogNo");
     // A file is parsed once its row's progress bar is gone (loadFraction is
     // deleted at the end of the load) and it is no longer a queued placeholder.
     await page.waitForFunction(n => state.rootIds.map(id => state.nodes[id])
