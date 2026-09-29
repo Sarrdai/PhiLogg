@@ -2563,6 +2563,29 @@
   }
   .pattern-chip.chip-highlight{box-shadow:0 0 0 1px currentColor;}
   .pattern-chip.chip-toggleable{cursor:pointer;}
+  .pattern-chip-sub{opacity:.65; font-size:.9em;}
+  /* Plot tab: role chips (setPlotColumnRole / plotRolesOf) */
+  .pattern-chip.chip-role{cursor:pointer;}
+  .pattern-chip.chip-role:hover{background:var(--accent-soft) !important;}
+  .pattern-chip-roles{display:inline-flex; gap:2px; margin-left:2px;}
+  .pattern-role{
+    font-family:var(--font-ui); font-size:9.5px; font-weight:800; line-height:1;
+    padding:2px 4px; border-radius:3px; color:#0b1016;
+  }
+  .pattern-role.empty{background:transparent !important; color:var(--text-tertiary); border:1px dashed var(--border); font-weight:600;}
+  .pattern-grp{
+    font-family:var(--font-ui); font-size:10px; font-weight:700; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--text-tertiary); margin:0 4px 0 2px;
+  }
+  .pattern-sep{display:inline-block; width:1px; height:14px; background:var(--border); margin:0 8px; vertical-align:middle;}
+  .plot-axis-clickable{cursor:pointer;}
+  .plot-axis-clickable:hover{fill:var(--accent-strong);}
+  .plot-axis-caret{opacity:.6;}
+  #plotRoleMenu .ctx-item.disabled{color:var(--text-tertiary); cursor:not-allowed;}
+  #plotRoleMenu .ctx-item.disabled:hover{background:none; color:var(--text-tertiary);}
+  #plotRoleMenu .role-ck{width:14px; color:var(--accent); font-weight:800; flex:0 0 auto;}
+  #plotRoleMenu .role-kb, #plotRoleMenu .role-note{margin-left:auto; font-size:10.5px; color:var(--text-tertiary);}
+  #plotRoleMenu .role-kb{font-family:var(--font-ui); font-weight:800; padding:2px 4px; border-radius:3px; background:var(--bg-elevated-2); color:var(--text-secondary);}
   .pattern-chip.chip-ignored{opacity:.45; text-decoration:line-through;}
   .pattern-chip.chip-ignored .pattern-chip-num{filter:grayscale(.6);}
   .pattern-chip-num{
@@ -3708,6 +3731,8 @@
   .plot-y-list{display:flex; flex-direction:column; gap:4px;}
   .plot-y-item{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
   .plot-y-item input{accent-color:var(--accent); flex:0 0 auto;}
+  .plot-field label.plot-y-item{text-transform:none; letter-spacing:normal; font-weight:400; font-size:11.5px; color:var(--text-secondary);}
+  .plot-y-unit{opacity:.6; font-size:.9em;}
   .plot-y-swatch{width:9px; height:9px; border-radius:2px; flex:0 0 auto;}
   .plot-col-item{display:flex; align-items:center; gap:4px;}
   .plot-col-item .plot-y-item{flex:1 1 auto; min-width:0;}
@@ -4063,13 +4088,13 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu{
+  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu, #plotRoleMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
   }
   #openMenu{min-width:180px;}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden{display:none;}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden{display:none;}
   #extractContextMenu .ctx-item.hidden{display:none;}
   .ctx-item{
     display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px;
@@ -11519,6 +11544,22 @@ function wildcardMatch(regex, columns, text) {
   return m;
 }
 
+// Base name for an extraction column: the word right before its placeholder
+// ("temperature=[*:float]" -> "temperature"), skipping stop words; no usable
+// word -> "value". Case is preserved.
+const EXTRACT_NAME_STOP_WORDS = new Set(["in", "at", "of", "after", "to", "for", "by", "from", "with", "is", "was", "the", "a", "an", "on"]);
+// Short English words that follow a placeholder but are not units ("v=[*:float] and more").
+const EXTRACT_UNIT_STOP_WORDS = new Set(["and", "or", "in", "at", "to", "of", "on", "for", "is", "was", "the", "a", "an", "by", "if", "not", "per", "via", "but"]);
+function deriveExtractColumnBase(before) {
+  const t = before.trimEnd().replace(/[=:]$/, "").trimEnd();
+  if (!/[A-Za-z_][\w.-]*$/.test(t)) return "value";
+  const ws = t.split(/\s+/).filter(Boolean);
+  let j = ws.length - 1;
+  while (j >= 0 && EXTRACT_NAME_STOP_WORDS.has(ws[j].toLowerCase())) j--;
+  if (j < 0) return "value";
+  const w = ws[j].match(/[A-Za-z_][\w.-]*$/);
+  return w && !EXTRACT_NAME_STOP_WORDS.has(w[0].toLowerCase()) ? w[0] : "value";
+}
 // Compiles a template into { regex, columns }. columns is the ordered list
 // of { name, type, numberFormat?, conditions? } to extract; duplicate types get suffixed
 // (float, float 2, ...). Returns null if the resulting pattern isn't a
@@ -11532,19 +11573,23 @@ function compileExtractPattern(pattern) {
   let regexStr = "";
   const columns = [];
   const nameCounts = {};
+  const tokenEnds = [];
+  const tokenStarts = [];
   let m;
   while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
+    tokenStarts.push(m.index);
     regexStr += escapeRegExp(pattern.slice(lastIndex, m.index));
     const type = m[1] || "text"; // m[4] matched means it was the bare [*] wildcard
     if ((m[2] || m[3]) && !VALUE_CONDITION_TYPES.has(type)) return null; // formats/conditions only make sense on float/int
     const conditions = parseValueConditions(m[3]);
-    const base = "value";
+    const base = deriveExtractColumnBase(pattern.slice(lastIndex, m.index));
     nameCounts[base] = (nameCounts[base] || 0) + 1;
     const name = nameCounts[base] > 1 ? base + " " + nameCounts[base] : base;
     const col = { name, type };
     if (m[2]) col.numberFormat = m[2];
     if (conditions) col.conditions = conditions;
     columns.push(col);
+    tokenEnds.push(EXTRACT_TOKEN_RE.lastIndex);
     lastIndex = EXTRACT_TOKEN_RE.lastIndex;
     const isLast = lastIndex === pattern.length;
     const frag = type === "text" ? (isLast ? ".*" : ".*?") : m[2] ? numberFormatFragment(type, m[2]) : EXTRACT_TYPES[type];
@@ -11552,6 +11597,14 @@ function compileExtractPattern(pattern) {
   }
   regexStr += escapeRegExp(pattern.slice(lastIndex));
   if (columns.length === 0) return null;
+  // Unit: a short unit word right after a float/int/hex placeholder
+  // ("temperature=[*:float] C", "[*:int]ms") — shown in plot axis titles.
+  columns.forEach((col, i) => {
+    if (col.type !== "float" && col.type !== "int" && col.type !== "hex") return;
+    const after = pattern.slice(tokenEnds[i], i + 1 < columns.length ? tokenStarts[i + 1] : pattern.length);
+    const u = after.match(/^\s?([A-Za-z°%µ/]{1,4})(?=\s|$|[,;)\]])/);
+    if (u && !EXTRACT_UNIT_STOP_WORDS.has(u[1].toLowerCase())) col.unit = u[1];
+  });
   try {
     // "s" (dotAll): a "text"/word wildcard's `.`/`.*` must also match a
     // literal newline inside e.message, or a pattern spanning a multi-line
@@ -18122,6 +18175,11 @@ function setColumnIgnored(node, colIndex, ignored) {
 function findExtractColumn(colIndex) {
   return extractColumns.find(c => c.colIndex === colIndex) || null;
 }
+// Plot axis / color-bar title: the column name plus its compiled unit
+// ("temperature [C]"); a rename changes the name only, the unit stays.
+function columnAxisLabel(col) {
+  return col.name + (col.unit ? " [" + col.unit + "]" : "");
+}
 /* ===================== Array columns in the extraction table =====================
    A pattern column whose every non-empty value is a JSON array (typically
    a JSON Lines column like "motorCurrent":[1.2,1.3,1.1], tabulated through
@@ -18663,10 +18721,43 @@ function downloadCsvFallback(csvText, filename) {
    whole matching column in the table (and vice versa); hovering a row's
    gutter highlights every chip at once, since the whole pattern produced it. */
 function renderExtractPatternView(pattern, columns, opts) {
+  lastPatternViewArgs = [pattern, columns, opts];
   extractPatternEl.innerHTML = "";
   EXTRACT_TOKEN_RE.lastIndex = 0;
   let lastIndex = 0, idx = 0, m;
   const frag = document.createDocumentFragment();
+  // Plot tab with something plottable: chips carry role badges and open the
+  // role menu on click (the Table tab keeps click = ignore toggle).
+  const roleMode = extractView === "plot" && extractColumns.some(c => isPlottableType(c.type));
+  if (roleMode) {
+    const grp = txt => { const g = document.createElement("span"); g.className = "pattern-grp"; g.textContent = txt; return g; };
+    frag.appendChild(grp("Row"));
+    extractColumns.filter(c => c.colIndex < 0 && isPlottableType(c.type)).forEach(c => {
+      const color = columnColor(c.colIndex);
+      const chip = document.createElement("span");
+      chip.className = "pattern-chip chip-role";
+      chip.dataset.col = c.colIndex;
+      chip.style.color = color;
+      chip.style.borderColor = hexToRgba(color, 0.5);
+      chip.style.background = hexToRgba(color, 0.14);
+      const num = document.createElement("span");
+      num.className = "pattern-chip-num";
+      num.style.background = color;
+      num.textContent = c.colIndex === INDEX_COL ? "#" : c.colIndex === ELAPSED_COL ? "t" : "\u0394";
+      chip.appendChild(num);
+      chip.appendChild(document.createTextNode(c.name + " "));
+      chip.title = c.name + " \u2014 click to choose its plot role";
+      chip.addEventListener("click", ev => { ev.stopPropagation(); openPlotRoleMenu(c.colIndex, chip); });
+      chip.addEventListener("mouseenter", () => highlightColumn(c.colIndex));
+      chip.addEventListener("mouseleave", clearColumnHighlight);
+      fillRoleBadges(chip);
+      frag.appendChild(chip);
+    });
+    const sep = document.createElement("span");
+    sep.className = "pattern-sep";
+    frag.appendChild(sep);
+    frag.appendChild(grp("Message"));
+  }
   while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
     if (m.index > lastIndex) frag.appendChild(document.createTextNode(pattern.slice(lastIndex, m.index)));
     const chipIdx = idx; // fixed per-chip snapshot — idx keeps mutating after this closure is created
@@ -18685,12 +18776,22 @@ function renderExtractPatternView(pattern, columns, opts) {
     chip.appendChild(num);
     const condLabel = describeValueConditions(col.conditions);
     const typeLabel = col.type + (col.numberFormat ? "@" + col.numberFormat : "");
-    chip.appendChild(document.createTextNode(typeLabel + (condLabel ? " " + condLabel : "")));
-    if (opts && opts.onToggle) {
+    chip.appendChild(document.createTextNode(col.name + " "));
+    const sub = document.createElement("span");
+    sub.className = "pattern-chip-sub";
+    sub.textContent = col.unit || typeLabel;
+    chip.appendChild(sub);
+    if (condLabel) chip.appendChild(document.createTextNode(" " + condLabel));
+    if (roleMode) {
+      chip.classList.add("chip-role");
+      chip.title = col.name + " (" + typeLabel + (condLabel ? " " + condLabel : "") + ") \u2014 click to choose its plot role";
+      chip.addEventListener("click", ev => { ev.stopPropagation(); openPlotRoleMenu(chipIdx, chip); });
+      fillRoleBadges(chip);
+    } else if (opts && opts.onToggle) {
       chip.classList.add("chip-toggleable");
       chip.title = col.ignored
-        ? "Ignored — click to include " + col.name + " as a column again"
-        : col.name + " \u2014 click to ignore this value (won\u2019t become a column)";
+        ? "Ignored — click to include " + col.name + " (" + typeLabel + (condLabel ? " " + condLabel : "") + ") as a column again"
+        : col.name + " (" + typeLabel + (condLabel ? " " + condLabel : "") + ") \u2014 click to ignore this value (won\u2019t become a column)";
       chip.addEventListener("click", ev => { ev.stopPropagation(); opts.onToggle(chipIdx); });
     } else {
       chip.title = col.name + " (" + typeLabel + (condLabel ? " " + condLabel : "") + ")";
@@ -18703,6 +18804,186 @@ function renderExtractPatternView(pattern, columns, opts) {
   }
   if (lastIndex < pattern.length) frag.appendChild(document.createTextNode(pattern.slice(lastIndex)));
   extractPatternEl.appendChild(frag);
+}
+
+/* ---------- Plot tab: role chips ----------
+   While the Plot tab is active every chip in #extractPatternView shows the
+   role its column plays in the current chart (X / Y / Z / C, or its position
+   in the column group of a radar/parallel/heatmap/profile) and a click opens
+   a role menu. All role changes go through setPlotColumnRole, which mutates
+   plotConfig exactly like the sidebar controls do. The menu is ONE body-level
+   element keyed by the column index, so a tail tick rebuilding the chips
+   never closes it. */
+let lastPatternViewArgs = null;
+// Column whose value is the array a heatmap/profile draws (a pattern column shown as array).
+function plotArrayColumnFor(ci) { return extractArrayColumns.find(a => a.base === ci && a.maxLen > 0) || null; }
+function plotChipIsPlottable(ci) {
+  const c = findExtractColumn(ci);
+  if (c && isPlottableType(c.type)) return true;
+  return (plotConfig.type === "heatmap" || plotConfig.type === "profile") && !!plotArrayColumnFor(ci);
+}
+// Role badges of a column under the current plotConfig, in display order.
+function plotRolesOf(ci) {
+  const c = plotConfig, t = c.type, r = [];
+  if (isValueChartType(t)) {
+    if (valueChartUsesArray()) { if (ci === c.arrayCol) r.push("V"); }
+    else { const k = c.multiCols.indexOf(ci); if (k >= 0) r.push(String(k + 1)); }
+    if (t === "heatmap" && c.xCol === ci) r.push("X");
+    if (t === "parallel" && c.colorCol === ci) r.push("C");
+    return r;
+  }
+  if (c.xCol === ci) r.push("X");
+  if (t === "scatter" || t === "3d" ? c.yCols[0] === ci : c.yCols.includes(ci)) r.push("Y");
+  if (t === "3d" && c.zCol === ci) r.push("Z");
+  if ((t === "scatter" || t === "3d") && c.colorCol === ci) r.push("C");
+  return r;
+}
+function fillRoleBadges(chip) {
+  const ci = +chip.dataset.col;
+  let box = chip.querySelector(".pattern-chip-roles");
+  if (!plotChipIsPlottable(ci)) { if (box) box.remove(); return; }
+  if (!box) { box = document.createElement("span"); box.className = "pattern-chip-roles"; chip.appendChild(box); }
+  const roles = plotRolesOf(ci);
+  const color = columnColor(ci);
+  box.innerHTML = roles.length
+    ? roles.map(r => '<span class="pattern-role" style="background:' + color + '">' + r + "</span>").join("")
+    : '<span class="pattern-role empty">+</span>';
+}
+// In-place refresh (from renderPlotChart) so badges follow sidebar changes.
+function refreshPlotRoleBadges() {
+  if (extractView !== "plot") return;
+  extractPatternEl.querySelectorAll(".pattern-chip.chip-role").forEach(fillRoleBadges);
+}
+function setPlotColumnRole(role, ci) {
+  const c = plotConfig, t = c.type;
+  const single = t === "scatter" || t === "3d";
+  if (role === "x") c.xCol = ci;
+  else if (role === "y") {
+    c.yCols = single ? [ci].concat(c.yCols.filter(v => v !== ci)) : (c.yCols.includes(ci) ? c.yCols.filter(v => v !== ci) : c.yCols.concat(ci));
+  }
+  else if (role === "z") c.zCol = ci;
+  else if (role === "color") c.colorCol = c.colorCol === ci ? null : ci;
+  else if (role === "nocolor") c.colorCol = null;
+  else if (role === "cols") {
+    if (c.multiCols.includes(ci)) { c.multiCols = c.multiCols.filter(v => v !== ci); plotParallelBrushes.delete(ci); }
+    else { c.multiCols = c.multiCols.concat(ci); c.arraySource = "columns"; c.profileRow = -1; }
+  }
+  else if (role === "values") { c.arraySource = "array"; c.arrayCol = ci; c.profileRow = -1; }
+  else if (role === "none") {
+    if (!single) c.yCols = c.yCols.filter(v => v !== ci);
+    if (c.colorCol === ci) c.colorCol = null;
+    if (c.multiCols.includes(ci)) { c.multiCols = c.multiCols.filter(v => v !== ci); plotParallelBrushes.delete(ci); }
+  }
+  plotZoom = null;
+  renderPlotControls();
+  renderPlotChart();
+}
+function plotColumnLabel(ci) {
+  const c = findExtractColumn(ci);
+  return c ? columnAxisLabel(c) : String(ci);
+}
+// Menu items for one chip: { t, kb, on, dis, note, fn }
+function plotRoleMenuItems(ci) {
+  const c = plotConfig, t = c.type, roles = plotRolesOf(ci);
+  const plottable = plotChipIsPlottable(ci);
+  const ec = findExtractColumn(ci);
+  const numeric = !!ec && isPlottableType(ec.type);
+  const valueChart = isValueChartType(t);
+  const items = [];
+  if (numeric) {
+    items.push({ t: "X axis", kb: "X", on: roles.includes("X"), dis: valueChart && t !== "heatmap", note: valueChart && t !== "heatmap" ? "Heatmap" : "", fn: () => setPlotColumnRole("x", ci) });
+    items.push({ t: t === "line" || t === "bar" ? "Y axis (add/remove)" : "Y axis", kb: "Y", on: roles.includes("Y"), dis: valueChart, note: valueChart ? "Line, Bar, Scatter" : "", fn: () => setPlotColumnRole("y", ci) });
+    items.push({ t: "Z axis", kb: "Z", on: roles.includes("Z"), dis: t !== "3d", note: t !== "3d" ? "3D" : "", fn: () => setPlotColumnRole("z", ci) });
+    const colorOk = t === "scatter" || t === "3d" || t === "parallel";
+    items.push({ t: "Color by", kb: "C", on: roles.includes("C"), dis: !colorOk, note: colorOk ? "" : "Scatter, 3D, Parallel", fn: () => setPlotColumnRole("color", ci) });
+    if (valueChart) {
+      const inCols = c.multiCols.includes(ci) && !valueChartUsesArray();
+      items.push({ t: c.multiCols.includes(ci) ? "Remove from columns" : "Add to columns", on: inCols, fn: () => setPlotColumnRole("cols", ci) });
+    }
+  }
+  if ((t === "heatmap" || t === "profile") && plotArrayColumnFor(ci)) {
+    items.push({ t: "Values", kb: "V", on: roles.includes("V"), fn: () => setPlotColumnRole("values", ci) });
+  }
+  if (plottable) {
+    const removable = roles.some(r => r === "C") || roles.some(r => /^\d+$/.test(r)) || (roles.includes("Y") && !(t === "scatter" || t === "3d") && !valueChart);
+    items.push({ t: "Not plotted", dis: !removable, note: !removable && roles.length ? "pick another column" : "", fn: () => setPlotColumnRole("none", ci) });
+  }
+  if (ci >= 0 && lastPatternViewArgs && lastPatternViewArgs[2] && lastPatternViewArgs[2].onToggle) {
+    const col = lastPatternViewArgs[1][ci];
+    if (items.length) items.push({ sep: true });
+    items.push({ t: col && col.ignored ? "Include column" : "Ignore column", fn: () => lastPatternViewArgs[2].onToggle(ci) });
+  }
+  return items;
+}
+plotSvg.addEventListener("click", ev => {
+  const t = ev.target.closest && ev.target.closest(".plot-axis-clickable");
+  if (!t) return;
+  ev.stopPropagation();
+  openPlotAxisMenu(t.dataset.axis, t);
+}, true);
+let plotRoleMenuEl = null;
+function closePlotRoleMenu() { if (plotRoleMenuEl) plotRoleMenuEl.classList.add("hidden"); }
+function plotRoleMenuIsOpen() { return !!plotRoleMenuEl && !plotRoleMenuEl.classList.contains("hidden"); }
+function showPlotRoleMenu(anchor, title, items) {
+  if (!plotRoleMenuEl) {
+    plotRoleMenuEl = document.createElement("div");
+    plotRoleMenuEl.id = "plotRoleMenu";
+    plotRoleMenuEl.className = "hidden";
+    document.body.appendChild(plotRoleMenuEl);
+    plotRoleMenuEl.addEventListener("click", ev => ev.stopPropagation());
+    document.addEventListener("click", () => closePlotRoleMenu());
+    document.addEventListener("keydown", ev => {
+      if (ev.key === "Escape" && plotRoleMenuIsOpen()) { ev.preventDefault(); ev.stopPropagation(); closePlotRoleMenu(); }
+    }, true);
+  }
+  const menu = plotRoleMenuEl;
+  menu.innerHTML = "";
+  const head = document.createElement("div");
+  head.className = "ctx-meta";
+  head.textContent = title;
+  menu.appendChild(head);
+  items.forEach(it => {
+    if (it.sep) { const sp = document.createElement("div"); sp.className = "ctx-sep"; menu.appendChild(sp); return; }
+    const row = document.createElement("div");
+    row.className = "ctx-item" + (it.dis ? " disabled" : "");
+    const ck = document.createElement("span"); ck.className = "role-ck"; ck.textContent = it.on ? "✓" : "";
+    row.appendChild(ck);
+    row.appendChild(document.createTextNode(it.t));
+    if (it.kb) { const kb = document.createElement("span"); kb.className = "role-kb"; kb.textContent = it.kb; row.appendChild(kb); }
+    else if (it.note) { const n = document.createElement("span"); n.className = "role-note"; n.textContent = it.note; row.appendChild(n); }
+    row.addEventListener("click", ev => {
+      ev.stopPropagation();
+      if (it.dis) return;
+      closePlotRoleMenu();
+      it.fn();
+    });
+    menu.appendChild(row);
+  });
+  const a = anchor.getBoundingClientRect();
+  menu.classList.remove("hidden");
+  menu.style.left = Math.max(8, Math.min(a.left, window.innerWidth - menu.offsetWidth - 8)) + "px";
+  let top = a.bottom + 4;
+  if (top + menu.offsetHeight > window.innerHeight - 8) top = Math.max(8, a.top - menu.offsetHeight - 4);
+  menu.style.top = top + "px";
+}
+function openPlotRoleMenu(ci, anchor) {
+  showPlotRoleMenu(anchor, plotColumnLabel(ci), plotRoleMenuItems(ci));
+}
+// Axis-title menu (2D SVG charts): pick the column for the X axis, the Y
+// axis or the color scale.
+function openPlotAxisMenu(axis, anchor) {
+  const t = plotConfig.type;
+  const cols = extractColumns.filter(c => isPlottableType(c.type));
+  let list = cols, title = "X axis", on;
+  if (axis === "x") on = ci => plotConfig.xCol === ci;
+  else if (axis === "y") {
+    title = t === "line" || t === "bar" ? "Y axis (one or more)" : "Y axis";
+    if (t === "line" || t === "bar") list = cols.filter(c => c.colIndex !== plotConfig.xCol);
+    on = ci => plotConfig.yCols.includes(ci);
+  } else { title = "Color by"; on = ci => plotConfig.colorCol === ci; }
+  const items = list.map(c => ({ t: columnAxisLabel(c), on: on(c.colIndex), fn: () => setPlotColumnRole(axis, c.colIndex) }));
+  if (axis === "color") items.push({ t: "None", on: plotConfig.colorCol == null, fn: () => setPlotColumnRole("nocolor", null) });
+  showPlotRoleMenu(anchor, title, items);
 }
 
 function highlightColumn(col) {
@@ -19175,7 +19456,13 @@ function formatAxisNumber(v) {
 // separate variable rather than every one of its many other call sites
 // switching to read fhActiveTab directly — a smaller, lower-risk diff.
 function switchExtractView(view) {
+  const changed = extractView !== view;
   extractView = view;
+  if (changed) {
+    closePlotRoleMenu();
+    // The pattern view was just built for the previous view (renderExtractTable runs first): rebuild it for this one.
+    if (lastPatternViewArgs) renderExtractPatternView(...lastPatternViewArgs);
+  }
   extractScroll.classList.toggle("hidden", view !== "table");
   tableToolbar.classList.toggle("hidden", view !== "table");
   plotWrap.classList.toggle("hidden", view !== "plot");
@@ -20018,7 +20305,7 @@ function renderValueChart() {
       parts.push('<text class="plot-tick-label" x="' + (left - 8) + '" y="' + (py + 3) + '" text-anchor="end">' + escapeHtml(shortPlotLabel(src.tick(t), 10)) + "</text>");
     });
     axes();
-    parts.push('<text class="plot-axis-title" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(xCol.name) + "</text>");
+    parts.push('<text class="plot-axis-title" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(columnAxisLabel(xCol)) + "</text>");
     axisTitleY(src.axisTitle);
     pushColorbar(parts, left + plotW + 24, top, plotH, vLo, vHi);
   } else {
@@ -20340,7 +20627,7 @@ function renderPlotControls() {
     html += '<div class="plot-field"><label>Y axis (select one or more)</label><div class="plot-y-list" id="plotYList">' +
       plottable.filter(c => c.index !== plotConfig.xCol).map((c, i) =>
         '<label class="plot-y-item"><input type="checkbox" data-col="' + c.index + '"' + (plotConfig.yCols.includes(c.index) ? " checked" : "") + '>' +
-        '<span class="plot-y-swatch" style="background:' + columnColor(c.index) + '"></span>' + escapeHtml(c.name) + '</label>'
+        '<span class="plot-y-swatch" style="background:' + columnColor(c.index) + '"></span>' + escapeHtml(c.name) + (c.unit ? ' <span class="plot-y-unit">' + escapeHtml(c.unit) + '</span>' : '') + '</label>'
       ).join("") + '</div></div>';
     if (plottable.length > 2) {
       html += '<div class="plot-checkbox-row"><button type="button" role="switch" aria-checked="' + (plotConfig.normalize ? "true" : "false") + '" class="pill-toggle" id="plotNormalize"></button><label for="plotNormalize">Normalize each series (0\u20131)</label></div>';
@@ -20379,8 +20666,12 @@ function renderPlotControls() {
   // DOM replacement (and the listener re-attachment below, which only makes
   // sense paired with a fresh set of nodes) entirely — the still-live
   // elements (and any dropdown open on one of them) are left alone.
-  if (html === lastPlotControlsHtml) return;
-  lastPlotControlsHtml = html;
+  // The selected values (select .value / checkbox state) are set after the
+  // markup below, so they belong in the cache key too — a role chip or axis
+  // menu changes plotConfig without rebuilding anything else.
+  const controlsKey = html + "\0" + JSON.stringify([plotConfig.xCol, plotConfig.yCols, plotConfig.zCol, plotConfig.colorCol, plotConfig.multiCols, plotConfig.arraySource, plotConfig.arrayCol]);
+  if (controlsKey === lastPlotControlsHtml) return;
+  lastPlotControlsHtml = controlsKey;
   plotControls.innerHTML = html;
 
   plotControls.querySelectorAll(".plot-type-btn").forEach(btn => {
@@ -20469,6 +20760,8 @@ function plotTypeIcon(type) {
   return '<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor"><circle cx="4" cy="11" r="1.4"/><circle cx="9" cy="6" r="1.4"/><circle cx="12.5" cy="9.5" r="1.4"/><circle cx="6.5" cy="4" r="1.4"/></svg>';
 }
 
+// Trailing hint on a clickable 2D axis title (opens openPlotAxisMenu).
+const PLOT_AXIS_CARET = '<tspan class="plot-axis-caret"> \u25be</tspan>';
 const PLOT_MARGIN = { left: 72, right: 20, top: 16, bottom: 52 };
 // How far zooming OUT / panning may go past the home view's own bounds, as a
 // fraction of the home span on EACH side (person-reported: a mark sitting
@@ -20508,6 +20801,7 @@ function updatePlotFilterInfo() {
 }
 
 function renderPlotChart() {
+  refreshPlotRoleBadges();
   if (isValueChartType(plotConfig.type)) {
     plotSvg.classList.remove("hidden");
     plot3dCanvas.classList.add("hidden");
@@ -20744,10 +21038,10 @@ function renderPlotChart() {
   // one Y series — with several, the per-series legend below already names
   // each one by its own color, and one shared Y title couldn't describe
   // them all anyway.
-  parts.push('<text class="plot-axis-title" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(findExtractColumn(plotConfig.xCol).name) + "</text>");
+  parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="x" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.xCol))) + PLOT_AXIS_CARET + "</text>");
   if (series.length === 1) {
     const yTitleX = 14, yTitleY = top + plotH / 2;
-    parts.push('<text class="plot-axis-title" x="' + yTitleX + '" y="' + yTitleY + '" text-anchor="middle" transform="rotate(-90 ' + yTitleX + ' ' + yTitleY + ')">' + escapeHtml(series[0].name) + "</text>");
+    parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="y" x="' + yTitleX + '" y="' + yTitleY + '" text-anchor="middle" transform="rotate(-90 ' + yTitleX + ' ' + yTitleY + ')">' + escapeHtml(columnAxisLabel(findExtractColumn(series[0].col))) + PLOT_AXIS_CARET + "</text>");
   }
 
   // Marks. A point/bar whose axis value fails its column's assertion (see
@@ -20819,7 +21113,7 @@ function renderPlotChart() {
     }
     parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + 4) + '">' + formatAxisNumber(scatterColorMax) + "</text>");
     parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH) + '">' + formatAxisNumber(scatterColorMin) + "</text>");
-    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH / 2) + '" transform="rotate(0 0 0)">' + escapeHtml(findExtractColumn(plotConfig.colorCol).name) + "</text>");
+    parts.push('<text class="plot-tick-label plot-axis-clickable" data-axis="color" x="' + (legendX + 16) + '" y="' + (legendTop + legendH / 2) + '" transform="rotate(0 0 0)">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.colorCol))) + PLOT_AXIS_CARET + "</text>");
   }
 
   // Legend for multi-series line/bar
@@ -20991,9 +21285,9 @@ function renderPlot3D() {
   // Axis lines (world -1..1 on each tied/auto axis, through the origin) —
   // drawn first, marks on top, so overlapping points stay legible.
   const axisEnds = [
-    { name: xCol.name, from: [-1, 0, 0], to: [1, 0, 0] },
-    { name: yCol.name, from: [0, -1, 0], to: [0, 1, 0] },
-    { name: zCol.name, from: [0, 0, -1], to: [0, 0, 1] },
+    { name: columnAxisLabel(xCol), from: [-1, 0, 0], to: [1, 0, 0] },
+    { name: columnAxisLabel(yCol), from: [0, -1, 0], to: [0, 1, 0] },
+    { name: columnAxisLabel(zCol), from: [0, 0, -1], to: [0, 0, 1] },
   ].map(a => ({
     name: a.name,
     p0: project3dPoint(a.from[0], a.from[1], a.from[2], plot3dView, cx, cy, scale),
@@ -21365,6 +21659,7 @@ function renderExtractTable(node) {
   if (extractNodeId !== node.id || plotConfig !== node.plotConfig) {
     state.tableSelection = null;
     selectionAnchor = null;
+    closePlotRoleMenu();
     loadPlotConfigForNode(node);
     extractSortCol = null;
     extractSortDir = "asc";
@@ -21383,6 +21678,8 @@ function renderExtractTable(node) {
     extractHead.innerHTML = "";
     extractBody.innerHTML = "";
     extractPatternEl.textContent = "Invalid pattern";
+    lastPatternViewArgs = null;
+    closePlotRoleMenu();
     return;
   }
   // row.values always holds one entry PER COMPILED COLUMN (spec.columns,
