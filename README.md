@@ -52,10 +52,12 @@ deployments possible:
   result of the one above it. Connector lines tie each filter to its
   parent, and the path down to the selected filter is highlighted, so the
   active chain reads straight off the tree. The Files & Filters sidebar has its own icon
-  toolbar (same icon+hover-label style as the log view's own toolbars)
-  whose buttons change with the current selection — Adjust clock for a
-  file, Merge for 2+ files, Rename/Edit/Invert plus Add-to-library/Apply-
-  from-library for a filter, AND/OR/Link… for 2+ filters — alongside the
+  toolbar (same icon+hover-label style as the log view's own toolbars) with a
+  fixed set of buttons — Rename, Edit filter, Invert (NOT), Adjust clock and
+  Add to library — that enable or disable with the current selection. Selecting 2+
+  nodes swaps that row for the bulk actions on a highlighted bar: AND / OR /
+  Link… over any number of filters of one file, or Merge N files (or a short
+  hint when the selection can't be combined). It sits alongside the
   tree's existing right-click menu (Copy/Cut/Save filter… stay there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
   shown in the tree instead of the raw pattern — handy for turning
@@ -290,9 +292,12 @@ deployments possible:
   cache, so a file deleted or moved in the meantime is left out of the
   restored session.
 - **Filter save/load** (`.json`) and a **reusable filter library** for
-  presets you apply across different files — pin a preset (with an icon of
-  your choice) to the Filter-Toolbar for one-click reuse. Presets can be
-  exported and shared like everything else (see below).
+  presets you apply across different files — the **Library ▾** button in the
+  Filter-Toolbar opens a searchable menu (apply a preset to the selected or
+  active node, star it to pin it as a one-click pill, save the current filter,
+  or open "Manage library…" to rename, re-icon, export, import or delete —
+  with Undo). Presets can be exported and shared like everything else (see
+  below).
 - **One import for everything** — sessions, filters, filter presets, log
   formats, themes and syntax schemes are all shared as JSON: every list has
   an **Export** button, and **Open → Import…** (or simply dropping the file

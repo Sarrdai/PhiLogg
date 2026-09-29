@@ -6,6 +6,7 @@
 <title>PhiLogg</title>
 <style>
   :root{
+    --icon-md:14px; --icon-sm:12px;
     --bg-app:#10131a;
     --bg-panel:#151924;
     --bg-elevated:#1c2130;
@@ -544,7 +545,7 @@
     flex:1 1 auto; font-size:11px; font-weight:650; letter-spacing:.7px;
     text-transform:uppercase; color:var(--text-tertiary);
   }
-  #sidebarNormalContent{display:flex; flex-direction:column; min-height:0; height:100%;}
+  #sidebarNormalContent{display:flex; flex-direction:column; min-height:0; height:100%; position:relative;}
   #sidebarScroll{flex:1 1 auto; overflow-y:auto; min-height:0;}
   #sidebarRail{
     display:none; width:40px; height:100%; flex-direction:column; align-items:center;
@@ -735,10 +736,39 @@
      and the scrollable #sidebarScroll so it never scrolls away with the
      tree, unlike #treeActionBar which used to live inside #sidebarScroll. */
   #sidebarToolbar{
-    flex:0 0 auto; display:flex; align-items:center; gap:4px; flex-wrap:wrap;
-    padding:6px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-elevated);
-    min-height:28px;
+    flex:0 0 auto; display:flex; align-items:center; gap:2px; flex-wrap:wrap;
+    padding:4px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-panel);
+    min-height:36px;
   }
+  #sidebarToolbar .row-action-separator{height:16px; align-self:center; margin:0 4px;}
+  /* Flat icon buttons, like the per-view toolbars: no chrome at rest, a hover
+     background, disabled = tertiary text at reduced opacity (never hidden). */
+  #sidebarToolbar .toolbar-icon-btn{
+    background:none; border-color:transparent; color:var(--text-secondary);
+  }
+  #sidebarToolbar .toolbar-icon-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #sidebarToolbar .toolbar-icon-btn:disabled{color:var(--text-tertiary);}
+  #sidebarToolbar .toolbar-icon-btn:disabled .row-action-hit{opacity:.45;}
+  /* Multi mode (2+ nodes selected): the single-node row is replaced by the bulk
+     actions (count · AND · OR · Link… / Merge N files / a short message · ×) and
+     the bar takes the same highlight as selected tree rows, so the mode switch
+     is visible. Same height as the normal row (28px buttons + 2x4px padding). */
+  #sidebarToolbar{transition:background .15s ease;}
+  #sidebarToolbar.multi{background:var(--accent-soft); flex-wrap:nowrap;}
+  @media (prefers-reduced-motion:reduce){#sidebarToolbar{transition:none;}}
+  #sidebarToolbar .stb-cnt{font-size:12px; font-weight:600; color:var(--accent-strong); padding:0 6px 0 2px; white-space:nowrap;}
+  #sidebarToolbar .stb-msg{font-size:11.5px; color:var(--text-secondary); flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:2px; cursor:default;}
+  #sidebarToolbar .stb-sp{flex:1 1 auto;}
+  #sidebarToolbar .stb-btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:5px; height:28px; min-width:28px; padding:0 6px;
+    border:0; border-radius:6px; background:none; color:var(--text-secondary);
+    font:inherit; font-size:12px; font-weight:500; white-space:nowrap; cursor:pointer;
+  }
+  #sidebarToolbar .stb-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #sidebarToolbar .stb-btn:focus-visible{outline:2px solid var(--accent-strong); outline-offset:-2px;}
+  #sidebarToolbar .stb-btn .icon{width:14px; height:14px; flex:0 0 auto;}
+  #sidebarToolbar .stb-btn.stb-and .icon{color:var(--info);}
+  #sidebarToolbar .stb-btn.stb-or .icon{color:var(--warn);}
 
   /* tree rows */
   .tree-row{
@@ -815,6 +845,15 @@
   .tree-chevron:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
   .tree-row.active .tree-icon{color:var(--accent);}
+  /* Sprite icons (icon() in the script): stroke-drawn on a 16x16 grid. Symbol
+     paths that must be filled carry their own fill. Tree rows and context-menu
+     items use the small size; .icon-xs is the 10px close glyph. AND/OR nodes
+     are tinted by kind (an active row's accent still wins). */
+  .icon{width:var(--icon-md); height:var(--icon-md); flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+  .icon.icon-xs{width:10px; height:10px;}
+  .tree-icon, .ctx-item{--icon-md:var(--icon-sm);}
+  .tree-row.filter-and:not(.active) .tree-icon{color:var(--level-info);}
+  .tree-row.filter-or:not(.active) .tree-icon{color:var(--level-warn);}
   /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
      the icon slot shows TXT/LNK/... text instead of a glyph. Fixed width
      sized to the longest tag typeTagFor() can ever produce ("FILE"/"TIME",
@@ -2920,6 +2959,79 @@
   }
   .filter-library-pin.active{color:var(--accent-strong);}
 
+  /* ---------- Library ▾ split button (#btnLibrary in #viewBar) + its menu
+     (#libraryMenu) + the manage dialog rows. Accent outline pill,
+     icon-only: a book segment and a chevron segment, both open the menu. ---------- */
+  #btnLibrary{
+    float:left; display:inline-flex; align-items:stretch; height:26px; margin:1px 4px; padding:0;
+    border:1px solid var(--accent); border-radius:99px; overflow:hidden; background:transparent;
+    color:var(--accent-strong); font:inherit; cursor:pointer;
+  }
+  #btnLibrary > span{display:flex; align-items:center; gap:5px; padding:0 8px; background:var(--accent-soft);}
+  #btnLibrary > span + span{border-left:1px solid var(--accent); padding:0 6px;}
+  #btnLibrary:hover > span, #btnLibrary[aria-expanded="true"] > span{background:var(--accent); color:var(--bg-panel);}
+  #btnLibrary:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
+  #btnLibrary .icon{width:13px; height:13px;}
+  #libraryMenu{
+    position:fixed; z-index:50; width:min(320px, calc(100vw - 16px)); max-height:min(560px, calc(100vh - 80px));
+    display:flex; flex-direction:column; background:var(--bg-elevated); border:1px solid var(--border);
+    border-radius:10px; box-shadow:0 12px 30px rgba(0,0,0,.5); font-size:12.5px; overflow:hidden;
+  }
+  #libraryMenu.hidden{display:none;}
+  #libraryMenu .lib-search{
+    flex:0 0 auto; margin:8px; height:28px; display:flex; align-items:center; gap:6px; padding:0 8px;
+    border:1px solid var(--border); border-radius:6px; color:var(--text-tertiary);
+  }
+  #libraryMenu .lib-search:focus-within{border-color:var(--accent);}
+  #libraryMenu .lib-search .icon{width:12px; height:12px; flex:0 0 auto;}
+  #libraryMenu .lib-search input{flex:1 1 auto; min-width:0; border:none; outline:none; background:transparent; color:var(--text-primary); font-size:12px; padding:0;}
+  #libraryMenu .lib-target{flex:0 0 auto; padding:0 12px 8px; font-size:11.5px; color:var(--text-secondary); border-bottom:1px solid var(--border-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #libraryMenu .lib-target b{color:var(--accent-strong); font-weight:500;}
+  #libraryMenu .lib-target.warn{color:var(--warn);}
+  #libraryMenuList{flex:1 1 auto; min-height:0; overflow-y:auto; padding-bottom:2px;}
+  #libraryMenu .lib-grp{padding:7px 12px 3px; font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--text-tertiary);}
+  #libraryMenu .lib-it{display:flex; align-items:center; gap:8px; padding:5px 12px; cursor:pointer; color:var(--text-primary);}
+  #libraryMenu .lib-it:hover, #libraryMenu .lib-it.kb{background:var(--accent-soft);}
+  #libraryMenu .lib-it.dis{opacity:.45; cursor:default;}
+  #libraryMenu .lib-it.dis:hover{background:transparent;}
+  #libraryMenu .lib-it > svg{flex:0 0 auto; color:var(--text-tertiary);}
+  #libraryMenu .lib-it-ico{flex:0 0 16px; width:16px; display:flex; align-items:center; justify-content:center; color:var(--text-secondary);}
+  #libraryMenu .lib-it-ico svg{width:14px; height:14px;}
+  #libraryMenu .lib-it-ico.filter-library-icon-emoji{font-size:13px; line-height:16px;}
+  #libraryMenu .lib-it .n{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #libraryMenu .lib-star{flex:0 0 auto; display:flex; align-items:center; justify-content:center; width:22px; height:22px; padding:0; margin:-2px -4px -2px 0; border:none; border-radius:5px; background:none; color:var(--text-tertiary); cursor:pointer;}
+  #libraryMenu .lib-star.on{color:var(--accent);}
+  #libraryMenu .lib-star:hover{color:var(--accent-strong); background:var(--bg-elevated-2);}
+  #libraryMenu .lib-empty{padding:14px 14px 10px; color:var(--text-secondary); font-size:12px; line-height:1.5;}
+  #libraryMenu .lib-foot{flex:0 0 auto; border-top:1px solid var(--border-soft); padding:4px 0;}
+  #libraryMenu .lib-foot .lib-it{color:var(--text-secondary);}
+  #libraryMenu .lib-foot .lib-it:hover{color:var(--accent-strong);}
+  #libraryMenu .lib-foot .lib-it.dis:hover{color:var(--text-secondary);}
+  #libraryMenu .lib-foot .lib-it .icon{width:13px; height:13px;}
+  #libraryMenu .lib-foot .lib-it span{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* Manage dialog (#filterLibraryDialog): header with Import…, rows = icon | name+meta | star | export | delete. */
+  .filter-library-head{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .filter-library-head .link-dialog-title{flex:1 1 auto; margin-bottom:0;}
+  .filter-library-head .btn-mini-secondary{display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 10px; flex:0 0 auto;}
+  .filter-library-head .icon, .lib-row-btn .icon{width:14px; height:14px;}
+  #filterLibraryList .filter-library-row-name{cursor:text;}
+  #filterLibraryList .filter-library-rename{
+    width:100%; box-sizing:border-box; height:24px; padding:0 6px; font:inherit; font-size:12px; color:var(--text-primary);
+    background:var(--bg-app); border:1px solid var(--accent); border-radius:5px; outline:none;
+  }
+  .lib-row-btn{
+    flex:0 0 auto; width:28px; height:28px; padding:0; display:flex; align-items:center; justify-content:center;
+    border:none; border-radius:6px; background:none; color:var(--text-tertiary); cursor:pointer;
+  }
+  .lib-row-btn:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
+  .lib-row-btn.lib-star-on{color:var(--accent);}
+  .lib-row-btn.lib-del:hover{color:var(--level-error); background:var(--level-error-soft);}
+  #copyToast.has-action{pointer-events:auto; display:flex; align-items:center; gap:12px;}
+  #copyToast .toast-action{
+    background:none; border:none; padding:0; font:inherit; font-weight:600; color:var(--accent-strong); cursor:pointer;
+  }
+  #copyToast .toast-action:hover{text-decoration:underline;}
+
   /* ---------- Settings page — a single wide, scrollable, sectioned dialog
      (not a menu of separate popups). Log Formats reuses the filter-library
      row layout above for both the format list and the rule list; Add/Edit
@@ -4232,6 +4344,31 @@
 </style>
 </head>
 <body>
+<!-- Icon sprite: 16x16 grid, drawn by .icon (stroke 1.5, round caps/joins). Referenced via icon(name) in the script. Paths that must be filled carry their own fill. -->
+<svg id="iconSprite" aria-hidden="true" width="0" height="0" style="position:absolute;width:0;height:0;overflow:hidden">
+    <symbol id="i-file" viewBox="0 0 16 16"><path d="M4 1.75h5l3.25 3.25v9.25H4ZM9 1.75V5h3.25"/></symbol>
+    <symbol id="i-filter" viewBox="0 0 16 16"><path d="M2.5 3h11L9.25 8.25v4.25l-2.5 1.25V8.25Z"/></symbol>
+    <symbol id="i-rename" viewBox="0 0 16 16"><path d="M2.75 13.25h2.75l7-7-2.75-2.75-7 7ZM8.75 4.75l2.5 2.5"/></symbol>
+    <symbol id="i-edit" viewBox="0 0 16 16"><path d="M2.5 4.5h6M12 4.5h1.5M2.5 11.5h1.5M7.5 11.5h6"/><circle cx="10.25" cy="4.5" r="1.75"/><circle cx="5.75" cy="11.5" r="1.75"/></symbol>
+    <symbol id="i-not" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M4.25 11.75l7.5-7.5"/></symbol>
+    <symbol id="i-and" viewBox="0 0 16 16"><path d="M8 4.55a4.25 4.25 0 0 1 0 6.9a4.25 4.25 0 0 1 0-6.9Z" fill="currentColor"/><circle cx="5.9" cy="8" r="4.1" style="stroke-width:1.3"/><circle cx="10.1" cy="8" r="4.1" style="stroke-width:1.3"/></symbol>
+    <symbol id="i-or" viewBox="0 0 16 16"><circle cx="5.9" cy="8" r="4.1" fill="currentColor" fill-opacity=".4"/><circle cx="10.1" cy="8" r="4.1" fill="currentColor" fill-opacity=".4"/><circle cx="5.9" cy="8" r="4.1" style="stroke-width:1.3"/><circle cx="10.1" cy="8" r="4.1" style="stroke-width:1.3"/></symbol>
+    <symbol id="i-link" viewBox="0 0 16 16"><path d="M6.5 9.5l3-3M7 5.5l1.25-1.25a2.5 2.5 0 0 1 3.5 3.5L10.5 9M9 10.5l-1.25 1.25a2.5 2.5 0 0 1-3.5-3.5L5.5 7"/></symbol>
+    <symbol id="i-merge" viewBox="0 0 16 16"><path d="M4 2.5v2.75c0 1.75 1.25 2.75 4 3.75 2.75-1 4-2 4-3.75V2.5M8 9v4.5M5.75 11.5 8 13.75l2.25-2.25"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 4.75V8l2.25 1.5"/></symbol>
+    <symbol id="i-book" viewBox="0 0 16 16"><path d="M2.5 3.5c2-.75 3.75-.5 5.5.75 1.75-1.25 3.5-1.5 5.5-.75v9c-2-.75-3.75-.5-5.5.75-1.75-1.25-3.5-1.5-5.5-.75ZM8 4.25v9"/></symbol>
+    <symbol id="i-bookplus" viewBox="0 0 16 16"><path d="M2.5 3.5c2-.75 3.75-.5 5.5.75v9c-1.75-1.25-3.5-1.5-5.5-.75ZM8 4.25c1.75-1.25 3.5-1.5 5.5-.75v3.75M12 9.75v4.5M9.75 12h4.5"/></symbol>
+    <symbol id="i-gear" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.25"/><path d="M8 1.75v2M8 12.25v2M1.75 8h2M12.25 8h2M3.6 3.6 5 5M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 16 16"><path d="m4.25 4.25 7.5 7.5M11.75 4.25l-7.5 7.5"/></symbol>
+    <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></symbol>
+    <symbol id="i-star" viewBox="0 0 16 16"><path d="M8 2.25l1.75 3.6 3.95.55-2.85 2.8.7 3.95L8 11.3l-3.55 1.85.7-3.95L2.3 6.4l3.95-.55Z"/></symbol>
+    <symbol id="i-starf" viewBox="0 0 16 16"><path style="fill:currentColor" d="M8 2.25l1.75 3.6 3.95.55-2.85 2.8.7 3.95L8 11.3l-3.55 1.85.7-3.95L2.3 6.4l3.95-.55Z"/></symbol>
+    <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></symbol>
+    <symbol id="i-chev" viewBox="0 0 16 16"><path d="m4.5 6.25 3.5 3.5 3.5-3.5"/></symbol>
+    <symbol id="i-import" viewBox="0 0 16 16"><path d="M2.5 9v3.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M8 2.5V10M5.25 7.25 8 10l2.75-2.75"/></symbol>
+    <symbol id="i-export" viewBox="0 0 16 16"><path d="M2.5 9v3.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M8 10V2.5M5.25 5.25 8 2.5l2.75 2.75"/></symbol>
+    <symbol id="i-trash" viewBox="0 0 16 16"><path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.75 9h6l.75-9"/></symbol>
+</svg>
 <script>(function(){
   // FOUC fix: applies the stored (or system-preferred) theme to <html>
   // synchronously, before the rest of the page parses/paints, so the app
@@ -4482,6 +4619,9 @@
              nothing, so the JS setupHitExpandGroups mechanism isn't needed). -->
         <span class="row-action-separator" id="libraryPresetSep"></span>
         <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
+        <!-- "Library ▾" split button: always present while files are loaded
+             (also with zero presets); both segments open #libraryMenu. -->
+        <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library" aria-label="Filter library"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
         <!-- Group 3: "New" on its own (person-requested), always divided from
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
@@ -4495,8 +4635,8 @@
              Library"/"Library", pinned far-right) that used to live here is
              removed (this session, project-owner review) — its two actions
              moved into the Files & Filters sidebar toolbar instead
-             (#sidebarToolbar's "Add to library…"/"Apply from library…",
-             see describeSidebarToolbarActions), now targeting the specific
+             (#sidebarToolbar's "Add to library…" and the "Library ▾" menu after
+             #libraryPresetBar above), now targeting the specific
              selected tree node rather than always the active filter. -->
       </div>
 
@@ -4995,6 +5135,16 @@
   <div id="fpPathMenu" class="hidden"></div>
 
   <div id="treeContextMenu" class="hidden"></div>
+  <!-- Library ▾ menu (#btnLibrary): search, target line, Pinned/More rows, footer. -->
+  <div id="libraryMenu" class="hidden" role="menu">
+    <div class="lib-search" id="libraryMenuSearchRow"><svg class="icon" aria-hidden="true"><use href="#i-search"/></svg><input type="text" id="libraryMenuSearch" placeholder="Search presets…" autocomplete="off" spellcheck="false" aria-label="Search presets"></div>
+    <div class="lib-target" id="libraryMenuTarget"></div>
+    <div id="libraryMenuList"></div>
+    <div class="lib-foot">
+      <div class="lib-it" id="libraryMenuSave" role="menuitem"></div>
+      <div class="lib-it" id="libraryMenuManage" role="menuitem"><svg class="icon" aria-hidden="true"><use href="#i-gear"/></svg><span>Manage library…</span></div>
+    </div>
+  </div>
 
   <div id="extractContextMenu" class="hidden">
     <div class="ctx-item hidden" id="ctxRenameColumn">
@@ -5466,15 +5616,15 @@
     </div>
   </div>
 
-  <!-- "Apply from library…" on any node's context menu opens this — one
-       click per row applies that preset directly onto the clicked node,
-       reproducing the original filter's LOGIC re-evaluated against
-       whichever file it lands on now (same "re-evaluates, doesn't replay a
-       stored result" semantics as Save/Load filter — see importFilterJson,
-       reused here as the actual apply mechanism). -->
+  <!-- Manage filter library (Library ▾ menu → "Manage library…"): rename
+       (double-click the name), pin (star), icon, export, delete (with an Undo
+       toast) and Import…. Applying a preset happens in the Library ▾ menu. -->
   <div id="filterLibraryDialog" class="hidden">
     <div class="link-dialog-card">
-      <div class="link-dialog-title">Apply from filter library</div>
+      <div class="filter-library-head">
+        <div class="link-dialog-title">Manage filter library</div>
+        <button type="button" id="filterLibraryImportBtn" class="btn-mini-secondary" title="Import a filter preset file"><svg class="icon" aria-hidden="true"><use href="#i-import"/></svg>Import…</button>
+      </div>
       <div id="filterLibraryList"></div>
       <div class="link-dialog-actions">
         <button type="button" id="filterLibraryDialogClose" class="btn-mini-secondary">Close</button>
@@ -6548,7 +6698,16 @@ const PHILOGG_VERSION = "0.1.0"; // x-release-please-version
 const PHILOGG_BUILD = "dev";
 
 /* ===================== Icons ===================== */
-const ICON_FILE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg>';
+// Icon sprite: one hidden <svg> at the top of <body> holds <symbol id="i-NAME">
+// drawings on a 16x16 grid; icon(name) references one via <use>. Sized/stroked
+// by the .icon CSS class (md 14px by default; .tree-icon/.ctx-item scope it to
+// sm 12px, .icon-xs is the 10px close glyph). The ICON_* constants below that
+// call icon() are the migrated ones; the rest are still standalone inline SVGs
+// (FEATURE_BACKLOG.md, "Migrate remaining ICON_* constants to the icon sprite").
+function icon(name, cls = "") {
+  return '<svg class="icon' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
+}
+const ICON_FILE = icon("file");
 // Same file glyph, plus a small circled "A" badge (Auto-Open, person-
 // requested — see renderNode's autoOpened opt) — marks a folder-watch file
 // that was opened automatically by a rule, not by hand.
@@ -6563,9 +6722,9 @@ const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none"
 // replaces): an archive box with a "zipper" strip down the middle, so a ZIP
 // source reads as visually distinct from a watched folder at a glance.
 const ICON_ZIP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.2" width="12.4" height="11.6" rx="1.2"/><path d="M8 2.2v1.6M8 5.4v1.6M8 8.6v1.6"/><rect x="6.9" y="9.6" width="2.2" height="2.2" rx="0.4"/></svg>';
-const ICON_GEAR = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>';
+const ICON_GEAR = icon("gear");
 const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
-const ICON_FILTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>';
+const ICON_FILTER = icon("filter");
 // "Filter for this message" row-action's own icon (distinct from the plain
 // funnel ICON_FILTER used by every other filter-creation button) — a
 // speech-bubble outline (this action's input is always the message column)
@@ -6577,13 +6736,13 @@ const ICON_MESSAGE_EXTRACT = '<svg viewBox="0 0 16 16" width="11" height="11" fi
 // ICON_FILE_AUTO's circled "A" (the circle's fill hides the funnel path
 // behind it so the "+" reads cleanly instead of visually merging).
 const ICON_FILTER_PLUS = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/></svg>';
-const ICON_CLOCK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.3l2.2 1.3"/></svg>';
+const ICON_CLOCK = icon("clock");
 // Recovered from the old per-row bookmark marker (removed in the "Bookmarks
 // rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
 // own icon (nodeIconHTML/ghostIconFor) so it no longer falls through to
 // ICON_CLOCK, which stays exclusively for time-range filter nodes.
 const ICON_BOOKMARK_FILLED = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
-const ICON_CLOSE = '<svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>';
+const ICON_CLOSE = icon("x", "icon-xs");
 const ICON_TABLE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>';
 // Filter-tree icons for time-range nodes (nodeIconHTML/timeFilterIcon),
 // matching the "Before"/"After"/"Time range" row-action buttons' own icons
@@ -6602,11 +6761,10 @@ const ICON_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" 
 // Floppy-disk "save" — the Files & Filters sidebar toolbar's "Add to
 // library…" action (a disk, distinct from ICON_SAVE's download-to-tray
 // arrow used by "Save filter…").
-const ICON_DISK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M3 2.5h8l2.5 2.5v8.5H3z"/><path d="M5 2.5v3.5h5V2.5"/><rect x="5" y="9" width="6" height="4.5"/></svg>';
-// Open book — the "Apply from library…" action (sidebar toolbar + tree
-// context menu).
-const ICON_BOOK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4.2C6.8 3.3 5.3 3 3.5 3H2v9h1.5c1.8 0 3.3.3 4.5 1.2"/><path d="M8 4.2C9.2 3.3 10.7 3 12.5 3H14v9h-1.5c-1.8 0-3.3.3-4.5 1.2z"/><path d="M8 4.2v9"/></svg>';
-const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M4 2.2v4.3c0 2 1.8 3 3.6 3M12 2.2v4.3c0 2-1.8 3-3.6 3v3.3"/><circle cx="4" cy="2.2" r="1.2"/><circle cx="12" cy="2.2" r="1.2"/><circle cx="8.4" cy="13.8" r="1.2"/></svg>';
+const ICON_DISK = icon("bookplus");
+// Open book — the "Library ▾" button of #viewBar.
+const ICON_BOOK = icon("book");
+const ICON_MERGE = icon("merge");
 // Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
 // MergeWindow's three explicit actions): two overlapping file glyphs for
 // "load individually" (no
@@ -6615,8 +6773,9 @@ const ICON_MERGE = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" 
 // the dragged Window".
 const ICON_FILES_SEPARATE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h5l2 2v8H3z"/><path d="M8 2v2h2"/><path d="M7.4 6.2h5L14.4 8v6H9.4v-2.2"/><path d="M12.4 6.2v2h2"/></svg>';
 const ICON_MERGE_WINDOW = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 2v4c0 1.8 1.6 2.7 3.2 2.7M11.6 2v4c0 1.8-1.6 2.7-3.2 2.7v3"/><circle cx="3.6" cy="2" r="1.1"/><circle cx="11.6" cy="2" r="1.1"/><circle cx="8.4" cy="13" r="1.1"/><circle cx="13" cy="3.4" r="2.6" fill="var(--bg-panel)" stroke-width="0.9"/><text x="13" y="4.5" font-size="3.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">W</text></svg>';
-const ICON_COMBINE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.3"><circle cx="6.2" cy="8" r="4.3"/><circle cx="9.8" cy="8" r="4.3"/></svg>';
-const ICON_LINK = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6.3 9.7 9.7 6.3"/><path d="M6.7 6.9 4.9 8.7a2 2 0 0 0 2.8 2.8l1.8-1.8"/><path d="M9.3 9.1l1.8-1.8a2 2 0 0 0-2.8-2.8L6.5 6.3"/></svg>';
+const ICON_AND = icon("and");
+const ICON_OR = icon("or");
+const ICON_LINK = icon("link");
 const ICON_CONTEXT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2"/><path d="M10 3h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2"/></svg>';
 const ICON_COPY = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>';
 const ICON_CUT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><path d="M5.3 5.3 13 13M5.3 10.7 13 3"/></svg>';
@@ -6624,7 +6783,7 @@ const ICON_PASTE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" 
 const ICON_SAVE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 2v8M8 10 5 7M8 10l3-3"/><path d="M3 13h10"/></svg>';
 const ICON_FULLSCREEN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V3a1 1 0 0 1 1-1h3M14 6V3a1 1 0 0 0-1-1h-3M2 10v3a1 1 0 0 0 1 1h3M14 10v3a1 1 0 0 1-1 1h-3"/></svg>';
 const ICON_LOAD = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 10V2M8 2 5 5M8 2l3 3"/><path d="M3 13h10"/></svg>';
-const ICON_INVERT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><path d="M3.5 3.5l9 9"/></svg>';
+const ICON_INVERT = icon("not");
 const ICON_TARGET = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.2"/></svg>';
 const ICON_UNDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v4h4"/><path d="M4.4 8A5 5 0 1 1 5.6 12.4"/></svg>';
 const ICON_REDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4H8"/><path d="M11.6 8A5 5 0 1 0 10.4 12.4"/></svg>';
@@ -6656,12 +6815,12 @@ const ICON_HIGHLIGHT_MATCH_TEXT = '<svg viewBox="0 0 16 16" width="13" height="1
 const ICON_FILE_PATH_LINKS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.8 9.2 9.2 6.8"/><path d="M7.3 4.3 8.6 3a2.2 2.2 0 0 1 3.1 3.1l-1.3 1.3"/><path d="M8.7 11.7 7.4 13a2.2 2.2 0 0 1-3.1-3.1l1.3-1.3"/></svg>';
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
-const ICON_EDIT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M11.3 2.3a1.5 1.5 0 0 1 2.1 2.1L5.5 12.3 2 13l.7-3.5 8.6-8.2Z"/><path d="M9.7 3.9l2.1 2.1"/></svg>';
+const ICON_EDIT = icon("edit");
 const ICON_INFO = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.3v4"/><circle cx="8" cy="5" r="0.15" fill="currentColor" stroke-width="1"/></svg>';
 // Price-tag glyph for the tree context menu's "Rename…" action (FEATURE_BACKLOG.md
 // #12 — F2 or right-click any filter node, see startRenameNode). Distinct from
 // ICON_EDIT: this sets a display label, not the filter's actual value.
-const ICON_RENAME = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.3 2 3a1 1 0 0 1 1-1h5.3L14 8.7 8.7 14 2 8.3Z"/><circle cx="5.3" cy="5.3" r="1" fill="currentColor" stroke="none"/></svg>';
+const ICON_RENAME = icon("rename");
 // Ascending-bars icon for a "level" filter node (FEATURE_BACKLOG.md #10) —
 // used both in the tree (nodeIconHTML) and on the level bar's "Add to
 // tree" button (explicit mode, see initLevelFilterTreeModeSettings).
@@ -11543,28 +11702,29 @@ function getRootFileId(nodeId) {
   return node ? node.id : null;
 }
 
-// and/or/link nodes carry two BAKED condition snapshots (node.bakedA/
-// node.bakedB — see bakeNodeCondition below and getEntries's "and"/"or"/
-// "link" handling) instead of a reference to another node. A baked
+// and/or/link nodes carry BAKED condition snapshots instead of a reference to
+// another node: and/or hold node.baked (an array of 2+ conditions), link holds
+// node.bakedA/node.bakedB (reference + target) — see bakeNodeCondition below
+// and getEntries's "and"/"or"/"link" handling. A baked
 // condition is a flat, self-contained copy of exactly the fields that
 // define ONE filter step (filterType/value/caseSensitive/etc — never id/
-// parentId/children/ancestors), so once created, node.bakedA/bakedB never
+// parentId/children/ancestors), so once created, node.baked/bakedA/bakedB never
 // look at state.nodes[...] again: deleting, renaming, moving, or replacing
 // the original source node(s) has zero effect on this node's result — which
 // is the whole point of baking rather than referencing.
 // node.parentId is the ONLY thing that determines this node's
 // input entries (getEntries(node.parentId), exactly like every other
 // filter type) — moving such a node just re-chains it onto a different
-// parent's output, same as any plain filter; it never touches bakedA/bakedB.
-// No cycle guard is needed: bakedA/bakedB hold plain data, not node-id
+// parent's output, same as any plain filter; it never touches its baked data.
+// No cycle guard is needed: baked/bakedA/bakedB hold plain data, not node-id
 // references, so there is nothing to cycle through except normal recursion
 // into a nested baked link (bounded by ordinary data-structure depth).
 
 // Copies exactly the fields that define one filter node's OWN single
 // condition — not its ancestors, not id/parentId/children/highlightColor/
-// label/anything structural. Used to build node.bakedA/bakedB for and/or/
-// link nodes (see the "Core data model" note above). For a source node
-// that is itself and/or/link, its own bakedA/bakedB are copied in as a
+// label/anything structural. Used to build node.baked (and/or) and
+// node.bakedA/bakedB (link) — see the "Core data model" note above. For a
+// source node that is itself and/or/link, its own baked data is copied in as a
 // nested predicate-pair (see getEntriesFromBaked's recursive handling) —
 // so a link-of-link (multi-hop) chain keeps working through this model.
 // Deep-copies one baked condition, tolerating a missing side (see
@@ -11573,12 +11733,44 @@ function cloneBaked(baked) {
   return baked ? JSON.parse(JSON.stringify(baked)) : null;
 }
 
-// True only for an and/or/link node that actually carries both baked sides.
+// True only for an and/or/link node that actually carries its baked sides:
+// and/or need node.baked with 2+ conditions, link needs bakedA and bakedB.
 // A combiner materialized from a pre-baking filter file / library preset has
 // neither (its old inputA/inputB node-id references are dropped on import),
-// and every action that reads bakedA/bakedB has to check first.
+// and every action that reads the baked data has to check first.
 function hasBakedSides(node) {
-  return !!(node && node.bakedA && node.bakedB);
+  if (!node) return false;
+  if (node.filterType === "and" || node.filterType === "or") return isBakedList(node.baked);
+  return !!(node.bakedA && node.bakedB);
+}
+function isBakedList(list) {
+  return Array.isArray(list) && list.length >= 2 && list.every(b => b && typeof b === "object");
+}
+
+// Copies whichever baked fields src carries (baked / bakedA / bakedB) onto
+// dst as deep copies — the one place every persistence carrier (clone,
+// snapshot, filter JSON, session cache) goes through for them.
+function copyBakedFields(src, dst) {
+  if (src.baked) dst.baked = JSON.parse(JSON.stringify(src.baked));
+  if (src.bakedA) dst.bakedA = JSON.parse(JSON.stringify(src.bakedA));
+  if (src.bakedB) dst.bakedB = JSON.parse(JSON.stringify(src.bakedB));
+}
+
+// Evaluates an N-ary AND/OR over baked conditions against one entry pool:
+// AND = entries matching every condition, OR = entries matching any (sorted
+// chronologically by the file's order).
+function combineBakedEntries(mode, bakedList, pool, fileId) {
+  const lists = (bakedList || []).map(b => getEntriesFromBaked(b, pool, fileId));
+  if (!lists.length) return [];
+  if (mode === "and") {
+    const idSets = lists.slice(1).map(l => new Set(l.map(e => e.id)));
+    return lists[0].filter(e => idSets.every(s => s.has(e.id)));
+  }
+  const seen = new Set();
+  const out = [];
+  for (const l of lists) for (const e of l) if (!seen.has(e.id)) { seen.add(e.id); out.push(e); }
+  out.sort(chronoComparator(buildOrderIndexMap(fileId)));
+  return out;
 }
 
 function bakeNodeCondition(node) {
@@ -11599,12 +11791,10 @@ function bakeNodeCondition(node) {
     baked.countBefore = node.countBefore || 0;
     baked.countAfter = node.countAfter || 0;
   } else if (node.filterType === "and" || node.filterType === "or") {
-    // cloneBaked, not a bare JSON round-trip: a combiner can legitimately
-    // reach here with no baked sides at all (a filter file or library preset
-    // written before this model existed carries the old node-id references
-    // instead), and JSON.parse(JSON.stringify(undefined)) throws.
-    baked.bakedA = cloneBaked(node.bakedA);
-    baked.bakedB = cloneBaked(node.bakedB);
+    // A combiner can legitimately reach here with no baked list at all (a
+    // filter file or library preset written before this model existed), and
+    // JSON.parse(JSON.stringify(undefined)) throws — hence the guard.
+    baked.baked = Array.isArray(node.baked) ? cloneBaked(node.baked) : [];
   } else if (node.filterType === "link") {
     baked.bakedA = cloneBaked(node.bakedA);
     baked.bakedB = cloneBaked(node.bakedB);
@@ -11617,15 +11807,15 @@ function bakeNodeCondition(node) {
   return baked;
 }
 
-// Combines two existing filters with AND (intersection) or OR (union, sorted
+// Combines 2+ existing filters with AND (intersection) or OR (union, sorted
 // by time) into a new, self-contained node holding a BAKED copy of each
-// source's own single condition (node.bakedA/node.bakedB — see
-// bakeNodeCondition/getEntries's "and"/"or" handling), not a reference to
-// the source nodes. Always placed as a new top-level child of the two
+// source's own single condition (node.baked, an array in selection order —
+// see bakeNodeCondition/getEntries's "and"/"or" handling), not a reference
+// to the source nodes. Always placed as a new top-level child of the two
 // sources' shared root file (same "independent, near the top" placement
 // syncBookmarksFilterNode/createSelectionFilterNode already use) — from
 // there it can be moved anywhere like any other node, which only changes
-// what entries it receives via getEntries(node.parentId), never bakedA/bakedB.
+// what entries it receives via getEntries(node.parentId), never its baked data.
 // Which nodes AND/OR accept as a side. Two exclusions, both because the
 // baked copy would evaluate to something meaningless rather than to that
 // filter's own condition:
@@ -11643,19 +11833,19 @@ function canBeCombined(node) {
   return true;
 }
 
-function createAndOrNode(idA, idB, mode) {
-  const a = state.nodes[idA];
-  const b = state.nodes[idB];
-  if (!a || !b) return null;
-  if (!canBeCombined(a) || !canBeCombined(b)) return null;
-  const rootId = getRootFileId(idA);
+function createAndOrNode(ids, mode) {
+  if (!Array.isArray(ids) || ids.length < 2) return null;
+  if (mode !== "and" && mode !== "or") return null;
+  const sources = ids.map(id => state.nodes[id]);
+  if (sources.some(n => !n || n.type !== "filter" || !canBeCombined(n))) return null;
+  const rootId = getRootFileId(ids[0]);
   const root = state.nodes[rootId];
   if (!root) return null;
   const symbol = mode === "and" ? " ∧ " : " ∨ ";
   const node = {
-    id: uid("n"), type: "filter", name: nodeDisplayName(a) + symbol + nodeDisplayName(b),
+    id: uid("n"), type: "filter", name: sources.map(nodeDisplayName).join(symbol),
     parentId: rootId, children: [], filterType: mode, value: null,
-    bakedA: bakeNodeCondition(a), bakedB: bakeNodeCondition(b), inverted: false,
+    baked: sources.map(bakeNodeCondition), inverted: false,
   };
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
@@ -12496,7 +12686,7 @@ function formatDuration(ms) {
 
 // Deep-clones a filter node and all its descendant filters under a new parent,
 // assigning fresh ids throughout. The original subtree is left untouched.
-// and/or/link nodes keep bakedA/bakedB as-is (a plain deep copy, like every
+// and/or/link nodes keep their baked data as-is (a plain deep copy, like every
 // other field) — they're flat data with no node-id inside, so there is
 // nothing to remap and no dependency on where the clone (or anything else)
 // lives in the tree.
@@ -12512,8 +12702,7 @@ function cloneSubtree(nodeId, newParentId) {
     value: orig.value,
     inverted: !!orig.inverted,
   };
-  if (orig.bakedA) clone.bakedA = JSON.parse(JSON.stringify(orig.bakedA));
-  if (orig.bakedB) clone.bakedB = JSON.parse(JSON.stringify(orig.bakedB));
+  copyBakedFields(orig, clone);
   if (orig.filterType === "link") {
     clone.linkDirection = orig.linkDirection;
     clone.linkN = orig.linkN;
@@ -13412,7 +13601,7 @@ function getEntries(nodeId) {
 // doing the evaluating (needed by "context"/"countContext", which look at
 // the whole file's entries, and by "link", whose order-index map is
 // per-file). and/or/link baked conditions nest (see bakeNodeCondition's
-// "and"/"or"/"link" branch), so this recurses into baked.bakedA/bakedB —
+// "and"/"or"/"link" branch), so this recurses into baked.baked / baked.bakedA/bakedB —
 // exactly how a multi-hop chained link keeps working through this model.
 function getEntriesFromBaked(baked, poolEntries, fileId) {
   if (!baked) return [];
@@ -13450,16 +13639,7 @@ function getEntriesFromBaked(baked, poolEntries, fileId) {
     const bucketOf = makeLevelBucketer();
     result = parentEntries.filter(e => baked.value.includes(bucketOf(e.level, e.formatId)));
   } else if (baked.filterType === "and" || baked.filterType === "or") {
-    const aEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
-    const bEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
-    if (baked.filterType === "and") {
-      const bIds = new Set(bEntries.map(e => e.id));
-      result = aEntries.filter(e => bIds.has(e.id));
-    } else {
-      const seen = new Set(aEntries.map(e => e.id));
-      result = aEntries.concat(bEntries.filter(e => !seen.has(e.id)));
-      result.sort(chronoComparator(buildOrderIndexMap(fileId)));
-    }
+    result = combineBakedEntries(baked.filterType, baked.baked, poolEntries, fileId);
   } else if (baked.filterType === "link") {
     const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
     const targetEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
@@ -13613,22 +13793,13 @@ function getEntriesUncached(node, parentOverride) {
     const bucketOf = makeLevelBucketer();
     result = parentEntries.filter(e => node.value.includes(bucketOf(e.level, e.formatId)));
   } else if (node.filterType === "and" || node.filterType === "or") {
-    // Self-contained: bakedA/bakedB are flat condition snapshots (see
+    // Self-contained: node.baked holds flat condition snapshots (see
     // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
     // over THIS node's own ordinary input entries (parentEntries, exactly
     // like every other filter type) — no second entry stream, no reference
     // to another node anywhere.
     const fileId = getRootFileId(nodeId);
-    const inputAEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
-    const inputBEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
-    if (node.filterType === "and") {
-      const bIds = new Set(inputBEntries.map(e => e.id));
-      result = inputAEntries.filter(e => bIds.has(e.id));
-    } else {
-      const seen = new Set(inputAEntries.map(e => e.id));
-      result = inputAEntries.concat(inputBEntries.filter(e => !seen.has(e.id)));
-      result.sort(chronoComparator(buildOrderIndexMap(fileId)));
-    }
+    result = combineBakedEntries(node.filterType, node.baked, parentEntries, fileId);
   } else if (node.filterType === "link") {
     // Self-contained, same as and/or: bakedA is the reference's own baked
     // condition, bakedB the target's — both evaluated as predicates over
@@ -14041,8 +14212,7 @@ function snapshotSubtree(nodeId) {
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
-  if (node.bakedA) copy.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-  if (node.bakedB) copy.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+  copyBakedFields(node, copy);
   if (node.filterType === "link") {
     copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
     copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
@@ -14107,6 +14277,7 @@ function restoreSubtree(snap) {
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
     children: [],
   };
+  if (snap.baked) node.baked = snap.baked;
   if (snap.bakedA) node.bakedA = snap.bakedA;
   if (snap.bakedB) node.bakedB = snap.bakedB;
   if (snap.filterType === "link") {
@@ -16225,7 +16396,8 @@ function nodeIconHTML(node) {
     // the retired dedicated "extract" filterType used to.
     : (node.filterType === "text" && nodeHasExtractableWildcards(node)) ? ICON_TABLE
     : node.filterType === "text" ? ICON_FILTER
-    : (node.filterType === "and" || node.filterType === "or") ? ICON_COMBINE
+    : node.filterType === "and" ? ICON_AND
+    : node.filterType === "or" ? ICON_OR
     : node.filterType === "link" ? ICON_LINK
     : (node.filterType === "context" || node.filterType === "countContext") ? ICON_CONTEXT
     : node.filterType === "level" ? ICON_LEVEL
@@ -16541,7 +16713,8 @@ function ghostTypeTag(filterType) {
 // "text".
 function ghostIconFor(filterType) {
   return filterType === "text" ? ICON_FILTER
-    : (filterType === "and" || filterType === "or") ? ICON_COMBINE
+    : filterType === "and" ? ICON_AND
+    : filterType === "or" ? ICON_OR
     : filterType === "link" ? ICON_LINK
     : (filterType === "context" || filterType === "countContext") ? ICON_CONTEXT
     : filterType === "level" ? ICON_LEVEL
@@ -16885,7 +17058,8 @@ function renderNode(id, depth, opts) {
   const clipClass = clip && clip.id === id ? (clip.mode === "cut" ? " cut" : " copied") : "";
   const multiClass = state.multiSelect.has(id) ? " multi-selected" : "";
   const invertClass = node.inverted ? " inverted" : "";
-  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass;
+  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass +
+    (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
   // to the RIGHT of its file's icon column instead of visually overlapping
@@ -17901,15 +18075,32 @@ function copyViaExecCommand(text) {
 }
 
 let toastTimer = null;
-function showCopyToast(message) {
+// `action` ({ label, onClick }) adds a button to the toast (e.g. "Undo") and
+// keeps it up longer; the toast is otherwise click-through.
+function showCopyToast(message, action) {
   copyToast.textContent = message;
+  copyToast.classList.toggle("has-action", !!action);
+  if (action) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "toast-action";
+    btn.textContent = action.label;
+    btn.addEventListener("click", ev => {
+      ev.stopPropagation();
+      hideCopyToast();
+      action.onClick();
+    });
+    copyToast.appendChild(btn);
+  }
   copyToast.classList.remove("hidden");
   requestAnimationFrame(() => copyToast.classList.add("show"));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => {
-    copyToast.classList.remove("show");
-    setTimeout(() => copyToast.classList.add("hidden"), 200);
-  }, 1400);
+  toastTimer = setTimeout(hideCopyToast, action ? 6000 : 1400);
+}
+function hideCopyToast() {
+  clearTimeout(toastTimer);
+  copyToast.classList.remove("show");
+  toastTimer = setTimeout(() => copyToast.classList.add("hidden"), 200);
 }
 
 /* ---------- Cell selection model ----------
@@ -23654,7 +23845,7 @@ const ICON_COLLAPSE_ALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill=
 // The "Show more (+n)" filler row's own glyph — a plain plus, deliberately
 // different from the ellipsis the "… N lines" row next to it carries.
 const ICON_PLUS_SMALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>';
-const ICON_ELLIPSIS = '<svg viewBox="0 0 16 16" width="12" height="12" fill="currentColor"><circle cx="3" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/><circle cx="13" cy="8" r="1.4"/></svg>';
+const ICON_ELLIPSIS = icon("more");
 
 function isSidebarCollapsed() { return sidebarEl.classList.contains("collapsed"); }
 function isSidebarPeeking() { return sidebarEl.classList.contains("peeking"); }
@@ -23985,7 +24176,7 @@ function anyEscapeOverlayOpen() {
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
-    "filterLibraryDialog", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
@@ -29966,8 +30157,7 @@ async function loadFolderFile(folder, rec, auto, quiet) {
 // moment this pattern auto-opens a file — never for a file a person opens
 // themselves (loadFolderFile's own `auto` param already draws that line for
 // rec.openedByAuto/autoOpenFired, mirrored here). Reuses
-// applyFilterFromLibrary unchanged, exactly like the "Apply from library…"
-// context-menu action — the filter logic re-evaluates against this file's
+// applyFilterFromLibrary unchanged, exactly like the Library ▾ menu — the filter logic re-evaluates against this file's
 // own entries, never a replayed result from wherever it was saved.
 // Several presets can be selected; startPrimaryFilterKey (one of them, kept
 // in sync with the selection by the dialog) is applied LAST, so its own
@@ -33245,13 +33435,15 @@ async function openFpPathHere(path) {
 }
 
 // Figures out which bulk actions the current multi-selection supports.
-// Shared by the right-click context menu and the always-visible action bar
-// above the tree, so both surfaces offer exactly the same logic/wording.
-// Returns { actions: [{action, label, icon}], note } — note is set instead
-// of actions when the selection doesn't support any bulk action yet.
-// Link accepts 2+ filters (reference + N ordered hops, see openLinkDialog);
-// AND/OR stay two-filter-only — generalizing set intersection/union to N
-// filters wasn't asked for and isn't the same kind of operation as chaining.
+// Shared by the right-click context menu and #sidebarToolbar's multi mode
+// (describeSidebarToolbarMultiActions), so both surfaces offer exactly the
+// same logic/wording.
+// Returns { actions: [{action, label, icon}], note, short } — note (full
+// explanation) and short (one-line form for the toolbar) are set instead of
+// actions when the selection doesn't support any bulk action yet.
+// Link and AND/OR all accept 2+ filters of one file (Link: reference + N
+// ordered hops, see openLinkDialog; AND/OR: N-ary intersection/union, see
+// createAndOrNode).
 function describeBulkActions(nodes) {
   const allFiles = nodes.every(n => n.type === "file");
   const allFilters = nodes.every(n => n.type === "filter");
@@ -33260,7 +33452,7 @@ function describeBulkActions(nodes) {
     // A plain-text file's ts are line numbers, not times — interleaving it
     // with anything by ts would be meaningless.
     if (nodes.some(n => isPlainTextFormat(n.formatId))) {
-      return { actions: [], note: "Plain-text files have line numbers instead of timestamps and can't be merged." };
+      return { actions: [], short: "Plain-text files can't be merged", note: "Plain-text files have line numbers instead of timestamps and can't be merged." };
     }
     return { actions: [{ action: "merge", label:"Merge " + nodes.length + " files", icon: ICON_MERGE }] };
   }
@@ -33268,25 +33460,21 @@ function describeBulkActions(nodes) {
     const roots = nodes.map(n => getRootFileId(n.id));
     const sameRoot = roots.every(r => r && r === roots[0]);
     if (!sameRoot) {
-      return { actions: [], note: "These filters belong to different files. Merge the files first, or pick filters from the same file." };
+      return { actions: [], short: "Filters from different files", note: "These filters belong to different files. Merge the files first, or pick filters from the same file." };
     }
     const actions = [];
-    if (nodes.length === 2) {
-      // AND/OR are withheld for sides canBeCombined() rejects (a link node's
-      // synthetic pair entries, a pre-baking imported combiner) — the node
-      // they'd produce could only ever be empty or type-mixed. Link… stays
-      // offered either way: that's the supported way to chain onto a link.
-      if (nodes.every(canBeCombined)) {
-        actions.push({ action: "and", label: "Combine (AND)", icon: ICON_COMBINE });
-        actions.push({ action: "or", label: "OR", icon: ICON_COMBINE });
-      }
-      actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
-    } else {
-      actions.push({ action: "link", label: "Link… (" + nodes.length + "-way)", icon: ICON_LINK });
+    // AND/OR are withheld when any node fails canBeCombined() (a link node's
+    // synthetic pair entries, a pre-baking imported combiner) — the node
+    // they'd produce could only ever be empty or type-mixed. Link… stays
+    // offered either way: that's the supported way to chain onto a link.
+    if (nodes.every(canBeCombined)) {
+      actions.push({ action: "and", label: "AND", icon: ICON_AND });
+      actions.push({ action: "or", label: "OR", icon: ICON_OR });
     }
+    actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
     return { actions };
   }
-  return { actions: [], note: "Select either files (to merge) or filters (to combine) — not both at once." };
+  return { actions: [], short: "Select only files or only filters", note: "Select either files (to merge) or filters (to combine) — not both at once." };
 }
 
 // Runs a bulk action (shared by the context menu and the sidebar toolbar —
@@ -33301,164 +33489,68 @@ function performBulkAction(action, ids) {
   if (action === "merge") {
     mergeFiles(ids); // fire-and-forget — its own synchronous prefix (node creation + flushLoadRender) already ran by the time this returns; it drives its own progress rendering from here
   } else if (action === "and" || action === "or") {
-    if (createAndOrNode(ids[0], ids[1], action)) revealFilteredView();
+    const node = createAndOrNode(ids, action);
+    if (node) { pushCreateUndo(node); revealFilteredView(); }
   }
   state.multiSelect = new Set();
   render();
 }
 
 // ===================== Sidebar toolbar (FEATURE_BACKLOG.md #77) =====================
-// Files & Filters gets its own always-visible toolbar (#sidebarToolbar, see
-// renderSidebarToolbar further down) using the same icon+hover-label
-// button concept as #viewBar/the per-view toolbars, instead of the old
-// tree-row icons/right-click-only actions. Its button SET depends entirely
-// on the current tree selection (state.multiSelect/state.activeId) —
-// describeSidebarToolbarActions below decides which buttons show,
-// handleSidebarToolbarActionClick runs whichever was clicked. Zero
-// duplicated business logic: every action here is a thin call into a
-// function that already existed for the tree context menu (startRenameNode,
-// editFilterNode, toggleInvertWithUndo, openClockOffsetDialog,
-// openFilterLibrarySaveDialog, openFilterLibraryDialog) or
-// performBulkAction/describeBulkActions for the 2+ selection cases.
+// Files & Filters gets its own toolbar (#sidebarToolbar, see
+// renderSidebarToolbar further down) using the same flat icon+hover-label
+// buttons as the per-view toolbars. Its button SET is fixed and never
+// changes with the selection — only which buttons are enabled does:
 //
-// AND/OR/Link… move EXCLUSIVELY here (person-confirmed): removed from the
-// old #treeActionBar (retired outright, folding its Merge case into this
-// toolbar's own "2+ files -> Merge") and from openTreeContextMenu's own
-// bulk-action rendering (Merge stays there, unaffected — see that
-// function's filter of describeBulkActions' output).
+//   Rename… | Edit filter… | Invert (NOT)  ·  Adjust clock…  ·  Add to library…
 //
-// Revised per project-owner review (still unshipped at the time, same
-// session): the button set is now always at most two `|`-separated groups
-// — a "what does this node ITSELF look like" group, then a "library"
-// group — rather than one long undifferentiated row:
-//  - 1 filter (unlocked): Rename/Edit/Invert | Add to library…/Apply from
-//    library… (Edit/Invert still conditionally present per filterType).
-//  - 1 filter (locked, the auto-managed "Bookmarks" node): nothing in group
-//    1 any more (Copy removed, see below) — just Apply from library…,
-//    disabled (same locked gate it already had).
-//  - 1 file: Adjust clock… | Apply from library… (omitted/disabled the same
-//    way as before).
-//  - 2+ files: Merge | Apply from library… (targeting state.activeId — a
-//    2+ selection has no single applicable node, same fallback the toolbar
-//    always used for this action).
-//  - 2+ filters (same root): AND/OR/Link…, unchanged — no library group
-//    here, same as before this revision.
-//  - anything unsupported (different roots / mixed types): the existing
-//    describeBulkActions() note, no actions.
-// `copy`/`cut`/`saveFilter` (Save filter…, file-based)/`loadFilter` (Load
-// filter…, file-based) are REMOVED from the toolbar entirely, for every
-// selection shape — still reachable exactly as before via the tree's
-// right-click context menu (openTreeContextMenu), unaffected here.
-// `context`/`countContext` (Time context…/Count context…) are removed from
-// here too, and — unlike the other four — also from the context menu (see
-// openTreeContextMenu's own comment): there is deliberately no user-facing
-// way left to CREATE a new one, for now (FEATURE_BACKLOG.md #79). Existing
-// context/countContext nodes are entirely unaffected — this only touches
-// the two menu items that used to create a fresh one.
+// describeSidebarToolbarActions below is the single source of truth for that
+// (label, target, disabled) per button; handleSidebarToolbarActionClick runs
+// whichever was clicked. Zero duplicated business logic: every action is a
+// thin call into a function that already existed for the tree context menu
+// (startRenameNode, editFilterNode, toggleInvertWithUndo,
+// openClockOffsetDialog, openFilterLibrarySaveDialog).
 //
-// "Add to library…" (new, `addToLibrary`) and "Apply from library…"
-// (pre-existing) replace the dedicated `#btnAddToLibrary`/`#btnOpenLibrary`
-// buttons that used to sit in #viewBar's own #libraryManageBar group
-// (removed outright, see the CSS/markup near #libraryPresetBar) — same
-// dialogs (openFilterLibrarySaveDialog/openFilterLibraryDialog), same
-// icons (ICON_DISK/ICON_BOOK), but now targeting the SPECIFIC selected
-// node rather than always state.activeId, more precise than the buttons
-// they replace.
+// Enable matrix (a disabled button is never hidden):
+//  - 1 unlocked filter: Rename, Add to library always; Edit only for
+//    text/gap/time filters; Invert (NOT) for everything but link/context/
+//    countContext (same guards openTreeContextMenu's single-node branch
+//    applies).
+//  - 1 file: Adjust clock… only when it isn't merged and has entries (same
+//    guard openClockOffsetDialog itself enforces).
+//  - the locked "Bookmarks" node, nothing selected, or 2+ selected: all off
+//    (with 2+ selected the row is not rendered at all, see multi mode below).
 //
-// Every action listed here stays ADDITIVE where it already had another
-// entry point: its pre-existing right-click menu entry point is untouched,
-// this toolbar is a second entry point, not a replacement.
+// With 2+ nodes selected the toolbar switches to a different content
+// (multi mode, describeSidebarToolbarMultiActions / renderSidebarToolbar):
+// the single-node row above is not rendered at all and the bulk actions
+// (AND/OR/Link…/Merge N files) or a short message take its place.
 //
-// Returns { actions: [{action, label, icon, target, disabled?, separator?}],
-// note } — same "note instead of a silent no-op" convention
-// describeBulkActions itself uses. `target` is the node id (or, for a bulk
-// action, the array of selected ids) handleSidebarToolbarActionClick should
-// act on.
+// Applying a library preset is not on this toolbar: it is in the Library ▾
+// menu of #viewBar (openLibraryMenu). copy/cut/saveFilter/loadFilter stay on
+// the tree context menu; context/countContext have no creation entry point at all
+// (FEATURE_BACKLOG.md #79).
+//
+// Returns { actions: [{action, label, icon, target, disabled, separator?}] }.
+// `target` is the node id handleSidebarToolbarActionClick should act on.
 function describeSidebarToolbarActions() {
   const selectedIds = [...state.multiSelect];
   const nodes = selectedIds.map(id => state.nodes[id]).filter(Boolean);
-  const actions = [];
-  let note;
-
-  // "Apply from library…" target resolution (shared by every selection
-  // shape below): the single selected node when there is exactly one, else
-  // state.activeId (0 or 2+ selected — no single applicable target) — same
-  // fallback this action has always used. Disabled with no active id or a
-  // locked target, same gate openTreeContextMenu's own `if (!node.locked)`
-  // already applies.
-  const applyLibTargetId = nodes.length === 1 ? nodes[0].id : state.activeId;
-  const applyLibTargetNode = applyLibTargetId ? state.nodes[applyLibTargetId] : null;
-  const applyLibDisabled = !applyLibTargetNode || !!applyLibTargetNode.locked;
-  const applyFromLibraryAction = (extra) => Object.assign({
-    action: "applyFromLibrary", label: "Apply from library…", icon: ICON_BOOK,
-    target: applyLibTargetId, disabled: applyLibDisabled,
-  }, extra);
-
-  if (nodes.length === 1) {
-    const node = nodes[0];
-    if (node.type === "file") {
-      // Same guard openClockOffsetDialog itself enforces (merged/empty file
-      // — see its own early return) — omitted rather than disabled, same
-      // convention the context menu's own clockOffset item already uses.
-      if (!node.merged && node.entries && node.entries.length) {
-        actions.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK, target: node.id });
-      }
-      // Group 2: Apply from library… only — a raw file has nothing to
-      // serialize into a preset, so no "Add to library…" here. Presets are
-      // file-agnostic on purpose (openTreeContextMenu's own comment), so
-      // applying one onto a file node makes sense same as onto a filter.
-      actions.push(applyFromLibraryAction({ separator: actions.length > 0 }));
-    } else if (node.type === "filter") {
-      if (node.locked) {
-        // Restricted node (the auto-managed "Bookmarks" filter) — Copy
-        // used to be the only thing offered here; now that Copy is gone
-        // from the toolbar entirely (see module comment), there's nothing
-        // left for group 1 at all — just the (disabled) library group.
-        actions.push(applyFromLibraryAction());
-      } else {
-        actions.push({ action: "rename", label: "Rename…", icon: ICON_RENAME, target: node.id });
-        // Edit/Invert conditionally present per filterType, same guards
-        // openTreeContextMenu's own single-node branch already applies.
-        if (node.filterType === "text" || node.filterType === "gap" || isTimeFilterType(node.filterType)) {
-          actions.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT, target: node.id });
-        }
-        if (node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
-          actions.push({
-            action: "invert",
-            label: node.inverted ? "Remove NOT" : "Invert (NOT)",
-            icon: ICON_INVERT,
-            target: node.id,
-          });
-        }
-        // Group 2: library actions, targeting THIS node specifically. "Add
-        // to library…" needs a real FILTER node (same guard
-        // openFilterLibrarySaveDialog/saveFilterToLibrary itself applies) —
-        // always true in this branch.
-        actions.push({ action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target: node.id, separator: true });
-        actions.push(applyFromLibraryAction({ target: node.id }));
-      }
-    }
-  } else if (nodes.length >= 2) {
-    // Reuses describeBulkActions unchanged — this is the one place AND/OR/
-    // Link (and Merge) still come from.
-    const bulk = describeBulkActions(nodes);
-    bulk.actions.forEach(a => actions.push(Object.assign({}, a, { target: selectedIds })));
-    note = bulk.note;
-    // A files-only 2+ selection additionally gets the library group
-    // (targeting the state.activeId fallback above — there's no single
-    // selected node to target more precisely than that). A 2+ FILTER
-    // selection (AND/OR/Link) or a mixed/different-root selection does
-    // NOT — unchanged from before this revision, person-confirmed scope.
-    if (nodes.every(n => n.type === "file")) {
-      actions.push(applyFromLibraryAction({ separator: actions.length > 0 }));
-    }
-  } else {
-    // 0 selected: same state.activeId fallback, so the toolbar isn't
-    // completely empty right after e.g. a delete leaves nothing selected.
-    actions.push(applyFromLibraryAction());
-  }
-
-  return { actions, note };
+  const node = nodes.length === 1 ? nodes[0] : null;
+  const filter = node && node.type === "filter" && !node.locked ? node : null;
+  const ft = filter ? filter.filterType : null;
+  const target = node ? node.id : null;
+  const actions = [
+    { action: "rename", label: "Rename…", icon: ICON_RENAME, target, disabled: !filter },
+    { action: "edit", label: "Edit filter…", icon: ICON_EDIT, target,
+      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft))) },
+    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", icon: ICON_INVERT, target,
+      disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
+    { action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK, target, separator: true,
+      disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
+    { action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target, separator: true, disabled: !filter },
+  ];
+  return { actions };
 }
 
 // Dispatches a sidebar-toolbar click to the underlying function/dialog —
@@ -33478,14 +33570,24 @@ function handleSidebarToolbarActionClick(action) {
     case "edit": editFilterNode(target); return;
     case "invert": toggleInvertWithUndo(target); render(); return;
     case "addToLibrary": openFilterLibrarySaveDialog(target); return;
-    case "applyFromLibrary": openFilterLibraryDialog(target); return;
-    case "merge":
-    case "and":
-    case "or":
-    case "link":
-      performBulkAction(action, target);
-      return;
   }
+}
+
+// Describes #sidebarToolbar's multi mode for the current multi-selection, or
+// null when fewer than 2 nodes are selected. { ids, label, actions, short,
+// note } — label is the count ("3 filters" / "2 files", null when the
+// selection is mixed), actions/short/note come straight from
+// describeBulkActions (the single source of truth); short is the one-line
+// message, note the full explanation shown as its tooltip.
+function describeSidebarToolbarMultiActions() {
+  const ids = [...state.multiSelect].filter(id => state.nodes[id]);
+  if (ids.length < 2) return null;
+  const nodes = ids.map(id => state.nodes[id]);
+  const bulk = describeBulkActions(nodes);
+  const allFiles = nodes.every(n => n.type === "file");
+  const allFilters = nodes.every(n => n.type === "filter");
+  const label = bulk.actions.length ? ids.length + (allFiles ? " files" : allFilters ? " filters" : " selected") : null;
+  return { ids, label, actions: bulk.actions, short: bulk.short, note: bulk.note };
 }
 
 // The node the single-node context menu (copy/cut/paste/delete) was opened
@@ -33625,26 +33727,18 @@ function openTreeContextMenu(ev, clickedId) {
       // it's now "Add to library…" on the Files & Filters sidebar toolbar
       // (#sidebarToolbar, describeSidebarToolbarActions), acting on the
       // specific selected node rather than always the active filter.
-      // "Apply from library…" (below) stays here — it targets the right-
-      // clicked node, which the toolbar can't address arbitrarily.
       // "Unpack" (and/or/link only): materializes the node's two baked
       // inputs as real, visible sibling filters next to it — the node
       // itself is untouched — see unpackAndOrLinkNode.
       if ((node.filterType === "and" || node.filterType === "or" || node.filterType === "link") && hasBakedSides(node)) {
-        buckets.edit.push({ action: "unpack", label: "Unpack…", icon: ICON_COMBINE });
+        buckets.edit.push({ action: "unpack", label: "Unpack…", icon: node.filterType === "or" ? ICON_OR : node.filterType === "and" ? ICON_AND : ICON_LINK });
       }
     }
-    // Applying from the library (FEATURE_BACKLOG.md "Reusable filter
-    // library") is offered on file nodes too — its presets are file-agnostic
-    // on purpose, so applying one makes sense from any node, not just
-    // filters. Skipped for the restricted "Bookmarks" node — applying
-    // something onto it would just be discarded the next time
-    // syncBookmarksFilterNode runs. (Loading a saved filter FILE goes
-    // through the central Open → "Import…"/drop instead, which attaches it
-    // under the active node — see importFilterBranchJson.)
-    if (!node.locked) {
-      buckets.library.push({ action: "applyFromLibrary", label: "Apply from library…", icon: ICON_LOAD });
-    }
+    // Applying a library preset is not offered here: it lives in the
+    // "Library ▾" menu of #viewBar (openLibraryMenu), which targets the
+    // selected/active node. (Loading a saved filter FILE goes through the
+    // central Open → "Import…"/drop instead, which attaches it under the
+    // active node — see importFilterBranchJson.)
     // Session export/import used to live here too (session-global, so they
     // appeared on every node), but that made them a context menu action on
     // a file for something that has nothing to do with that file — moved to
@@ -33804,10 +33898,6 @@ treeContextMenu.addEventListener("click", ev => {
     }
     return;
   }
-  if (action === "applyFromLibrary") {
-    if (treeCtxId && state.nodes[treeCtxId]) openFilterLibraryDialog(treeCtxId);
-    return;
-  }
   // Everything else (merge/and/or/link) is a bulk action over the multi-selection.
   performBulkAction(action, [...state.multiSelect]);
 });
@@ -33821,26 +33911,65 @@ treeContextMenu.addEventListener("click", ev => {
 
 const sidebarToolbarEl = el("#sidebarToolbar");
 
+// Single mode: the buttons are built once (on entering the mode); after that
+// a render only toggles each button's disabled state/label. Multi mode (2+
+// selected): the row is replaced by the bulk actions (describeSidebarToolbarMultiActions)
+// and rebuilt only when its content changes, so a click never lands on a
+// button that a same-tick render replaced. #sidebarToolbar.multi paints the
+// selected-row highlight.
+let sidebarToolbarMultiKey = null;
 function renderSidebarToolbar() {
   const hasFiles = state.rootIds.length > 0;
   // "" restores the CSS class's own display:flex rather than hardcoding a
   // value — same convention #viewBar's own hasFiles gating uses.
   sidebarToolbarEl.style.display = hasFiles ? "" : "none";
-  if (!hasFiles) { sidebarToolbarEl.innerHTML = ""; return; }
+  if (!hasFiles) return;
 
-  const { actions, note } = describeSidebarToolbarActions();
-  sidebarToolbarEl.innerHTML = buildRowActionsHtml(actions, "rect", "sidebar-toolbar-hit") +
-    (note ? '<span class="ctx-note" style="padding:0;">' + note + "</span>" : "");
-  // Scoped to ".sidebar-toolbar-hit" (not the generic ".row-action-hit"
-  // every static toolbar answers to) so this repeated call — the button set
-  // is rebuilt on every render, unlike every other setupHitExpandGroups
-  // caller — never re-scans #viewBar/the per-view toolbars' own hit
-  // elements; its own idempotency guard makes calling it again here safe
-  // regardless (see that function's comment).
-  setupHitExpandGroups(".sidebar-toolbar-hit");
+  const info = describeSidebarToolbarMultiActions();
+  sidebarToolbarEl.classList.toggle("multi", !!info);
+  if (info) {
+    const key = [info.label, info.short, info.actions.map(a => a.action + ":" + a.label).join(",")].join("|");
+    if (key !== sidebarToolbarMultiKey) {
+      sidebarToolbarMultiKey = key;
+      const closeBtn = '<button type="button" class="stb-btn stb-x" data-multi-action="close" title="Clear selection (Esc)" aria-label="Clear selection">' + ICON_CLOSE + "</button>";
+      sidebarToolbarEl.innerHTML = info.actions.length
+        ? '<span class="stb-cnt">' + escapeHtml(info.label) + "</span>" +
+          info.actions.map(a => '<button type="button" class="stb-btn stb-' + a.action + '" data-multi-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' + a.icon + escapeHtml(a.label) + "</button>").join("") +
+          '<span class="stb-sp"></span>' + closeBtn
+        : '<span class="stb-msg" title="' + escapeHtml(info.note || info.short) + '">' + escapeHtml(info.short) + "</span>" + closeBtn;
+    }
+    return;
+  }
+  if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]")) {
+    sidebarToolbarMultiKey = null;
+    sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "rect", "sidebar-toolbar-hit");
+    // Idempotent (per-container guard), so calling it again never stacks listeners.
+    setupHitExpandGroups(".sidebar-toolbar-hit");
+  }
+  describeSidebarToolbarActions().actions.forEach(a => {
+    const btn = sidebarToolbarEl.querySelector('[data-row-action="' + a.action + '"]');
+    if (!btn) return;
+    btn.disabled = !!a.disabled;
+    btn.title = a.label;
+    const lbl = btn.querySelector(".row-action-label");
+    if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
+  });
 }
 
 sidebarToolbarEl.addEventListener("click", ev => {
+  const multiBtn = ev.target.closest("[data-multi-action]");
+  if (multiBtn) {
+    // Same stopPropagation rule as every click that may open a popup (Link…
+    // opens a dialog): the document-level outside-click closers must not see it.
+    ev.stopPropagation();
+    const action = multiBtn.dataset.multiAction;
+    if (action === "close") { state.multiSelect = new Set(); render(); return; }
+    // Re-derive rather than trust anything cached on the button.
+    const info = describeSidebarToolbarMultiActions();
+    if (!info || !info.actions.some(a => a.action === action)) return;
+    performBulkAction(action, info.ids);
+    return;
+  }
   const btn = ev.target.closest("[data-row-action]");
   if (!btn || btn.disabled) return;
   // Same CLAUDE.md "stopPropagation on any click handler that opens a
@@ -35088,8 +35217,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
     if (node.value !== null && node.value !== undefined) out.value = node.value;
     // and/or/link's baked condition snapshots — plain data, copied as-is,
     // no ref/remapping needed (see the module comment above).
-    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    copyBakedFields(node, out);
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -35160,8 +35288,7 @@ function materializeBakedAsNode(baked, parentId) {
     node.countBefore = baked.countBefore || 0;
     node.countAfter = baked.countAfter || 0;
   } else if (baked.filterType === "and" || baked.filterType === "or") {
-    node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
-    node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
+    node.baked = JSON.parse(JSON.stringify(baked.baked));
   } else if (baked.filterType === "link") {
     node.bakedA = JSON.parse(JSON.stringify(baked.bakedA));
     node.bakedB = JSON.parse(JSON.stringify(baked.bakedB));
@@ -35185,15 +35312,15 @@ function bakedConditionName(baked) {
   if (baked.filterType === "timerange") return timeRangeFilterName(baked.value);
   if (baked.filterType === "gap") return gapFilterName(baked.value);
   if (baked.filterType === "and" || baked.filterType === "or") {
-    return bakedConditionName(baked.bakedA) + (baked.filterType === "and" ? " ∧ " : " ∨ ") + bakedConditionName(baked.bakedB);
+    return (baked.baked || []).map(bakedConditionName).join(baked.filterType === "and" ? " ∧ " : " ∨ ");
   }
   if (baked.filterType === "link") return bakedConditionName(baked.bakedA) + " ⟶ " + bakedConditionName(baked.bakedB);
   if (baked.value && typeof baked.value === "object") return JSON.stringify(baked.value);
   return String(baked.value);
 }
 
-// Materializes an and/or/link node's own bakedA/bakedB back into two real,
-// visible sibling filter nodes (same filterType/fields), inserted right
+// Materializes an and/or/link node's own baked conditions back into real,
+// visible sibling filter nodes (one per condition) (same filterType/fields), inserted right
 // after the original node's own position. Purely ADDITIVE: the original node
 // keeps its id, its bakedA/bakedB and its result — its condition already
 // works, so there is nothing to replace. Unpack exists only to make the two
@@ -35209,10 +35336,10 @@ function unpackAndOrLinkNode(nodeId) {
   const parent = state.nodes[node.parentId];
   if (!parent) return null;
 
-  const cloneA = materializeBakedAsNode(node.bakedA, node.parentId);
-  const cloneB = materializeBakedAsNode(node.bakedB, node.parentId);
+  const sides = node.filterType === "link" ? [node.bakedA, node.bakedB] : node.baked;
+  const clones = sides.map(b => materializeBakedAsNode(b, node.parentId));
   const insertIndex = parent.children.indexOf(nodeId) + 1;
-  parent.children.splice(Math.max(0, insertIndex), 0, cloneA.id, cloneB.id);
+  parent.children.splice(Math.max(0, insertIndex), 0, ...clones.map(c => c.id));
 
   state.activeId = nodeId;
   invalidateAllCaches();
@@ -35383,6 +35510,7 @@ function materializeSerializedRoots(roots, resolveParentId) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.baked) node.baked = sn.baked;
     if (sn.bakedA) node.bakedA = sn.bakedA;
     if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;
@@ -35414,11 +35542,11 @@ function serializedFilterRootsValid(roots) {
     // (hand-edited file, or an old export from before this restriction
     // existed) would just be an unlocked look-alike with a stale match set.
     if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
-    // and/or/link carry their two sides as baked condition snapshots. A file
+    // and/or carry a baked list (2+ conditions), link its two baked sides. A file
     // or library preset written before that model carries node-id references
     // instead, which mean nothing here — importing it would produce a filter
     // that silently matches nothing, so reject it with a message instead.
-    if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !(sn.bakedA && sn.bakedB)) return false;
+    if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !hasBakedSides(sn)) return false;
     return (sn.children || []).every(validate);
   }
   return Array.isArray(roots) && roots.every(validate);
@@ -35453,9 +35581,8 @@ function importFilterJson(text, successToast) {
    "Reusable filter library") =====================
    Named presets, saved from the Files & Filters sidebar toolbar's "Add to
    library…" action (acting on the specific selected filter node) and applied
-   to ANY node (file or filter, any file) via a pinned toolbar pill, the
-   sidebar toolbar's own "Apply from library…" action, or the tree context
-   menu's "Apply from library…" item — the global counterpart to the per-file filter
+   to ANY node (file or filter, any file) via a pinned toolbar pill or the
+   "Library ▾" menu in #viewBar — the global counterpart to the per-file filter
    history (see "File filter history" further below): that one auto-offers
    a ghost preview keyed by CONTENT FINGERPRINT (ambient, one file, no
    naming); this one is explicit, named, and file-agnostic on purpose — the
@@ -35485,7 +35612,7 @@ const LIBRARY_ICON_SET = [
   { name: "bookmark", svg: ICON_BOOKMARK_FILLED },
   { name: "table", svg: ICON_TABLE },
   { name: "link", svg: ICON_LINK },
-  { name: "combine", svg: ICON_COMBINE },
+  { name: "combine", svg: ICON_AND },
   { name: "level", svg: ICON_LEVEL },
   { name: "message", svg: ICON_MESSAGE_EXTRACT },
   { name: "note", svg: ICON_NOTE },
@@ -35564,6 +35691,16 @@ async function deleteFilterLibraryEntry(key) {
   await cacheStoreOp("filterLibrary", "readwrite", store => store.delete(key));
   await refreshFilterLibraryCache();
   await renderLibraryToolbarPresets();
+}
+
+// Puts a previously deleted record back under its original key (the manage
+// dialog's "Undo" toast).
+async function restoreFilterLibraryEntry(rec) {
+  await cacheStoreOp("filterLibrary", "readwrite", store => store.put(rec));
+  await refreshFilterLibraryCache();
+  await renderLibraryToolbarPresets();
+  if (!filterLibraryDialog.classList.contains("hidden")) await renderFilterLibraryDialog();
+  if (libraryMenuOpen()) renderLibraryMenu();
 }
 
 // Synchronous-read cache of the library's contents, for a UI spot that needs
@@ -35741,7 +35878,6 @@ let filterLibrarySaveTargetId = null;
 // save dialog is open for an import instead of a node, else null.
 let filterLibrarySaveImport = null;
 let filterLibrarySaveIcon = null;
-let filterLibraryApplyTargetId = null;
 
 function filterLibrarySaveOpen() { return !filterLibrarySaveDialog.classList.contains("hidden"); }
 function closeFilterLibrarySaveDialog() {
@@ -35849,13 +35985,68 @@ function buildLibraryIconGrid(current, onPick) {
   return grid;
 }
 
-function closeFilterLibraryDialog() { filterLibraryDialog.classList.add("hidden"); filterLibraryApplyTargetId = null; filterLibraryIconOpenKey = null; }
+function closeFilterLibraryDialog() { filterLibraryDialog.classList.add("hidden"); filterLibraryIconOpenKey = null; }
 // Which row's inline icon grid is currently expanded (by record key), or null.
 let filterLibraryIconOpenKey = null;
+
+// Number of filter nodes in a record's serialized roots (children included).
+function countSerializedFilters(roots) {
+  let n = 0;
+  (function walk(list) { (list || []).forEach(sn => { n++; walk(sn.children); }); })(roots);
+  return n;
+}
+
+// Double-click on a row's name swaps it for an input: Enter/blur saves through
+// updateFilterLibraryEntry, Esc cancels. Nothing re-renders on the name's
+// clicks, so the native dblclick is not interrupted (DOM identity gotcha).
+function startFilterLibraryRename(nameEl, rec) {
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "filter-library-rename";
+  input.maxLength = 80;
+  input.value = rec.name;
+  let done = false;
+  const finish = save => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (save && name && name !== rec.name) updateFilterLibraryEntry(rec.key, { name: name.slice(0, 80) }).then(renderFilterLibraryDialog);
+    else renderFilterLibraryDialog();
+  };
+  input.addEventListener("keydown", ev => {
+    ev.stopPropagation(); // keep the global Escape/shortcut handlers out of it
+    if (ev.key === "Enter") { ev.preventDefault(); finish(true); }
+    else if (ev.key === "Escape") { ev.preventDefault(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+}
+
+// Deletes immediately; the toast's Undo puts the same record back (same key).
+async function deleteFilterLibraryEntryWithUndo(rec) {
+  await deleteFilterLibraryEntry(rec.key);
+  await renderFilterLibraryDialog();
+  if (libraryMenuOpen()) renderLibraryMenu();
+  showCopyToast('Deleted "' + rec.name + '"', { label: "Undo", onClick: () => restoreFilterLibraryEntry(rec) });
+}
+
+function libraryRowButton(cls, title, iconName, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "lib-row-btn " + cls;
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = icon(iconName);
+  b.addEventListener("click", ev => { ev.stopPropagation(); onClick(); });
+  return b;
+}
+
 async function renderFilterLibraryDialog() {
   const records = await listFilterLibrary();
   if (!records.length) {
-    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Select a filter and use "Add to library…" in the Files &amp; Filters sidebar toolbar.</div>';
+    filterLibraryList.innerHTML = '<div class="filter-library-empty">No saved filters yet. Select a filter and use "Add to library…" in the Files &amp; Filters toolbar.</div>';
     return;
   }
   filterLibraryList.innerHTML = "";
@@ -35877,54 +36068,24 @@ async function renderFilterLibraryDialog() {
     row.appendChild(iconBtn);
     const main = document.createElement("div");
     main.className = "filter-library-row-main";
-    main.innerHTML =
-      '<div class="filter-library-row-name">' + escapeHtml(rec.name) + '</div>' +
-      '<div class="filter-library-row-meta">' + escapeHtml(new Date(rec.savedAt).toLocaleString()) + '</div>';
+    const nameEl = document.createElement("div");
+    nameEl.className = "filter-library-row-name";
+    nameEl.title = "Double-click to rename";
+    nameEl.textContent = rec.name;
+    nameEl.addEventListener("dblclick", () => startFilterLibraryRename(nameEl, rec));
+    const n = countSerializedFilters(rec.roots);
+    const meta = document.createElement("div");
+    meta.className = "filter-library-row-meta";
+    meta.textContent = new Date(rec.savedAt).toLocaleDateString() + " · " + n + " filter" + (n === 1 ? "" : "s");
+    main.appendChild(nameEl);
+    main.appendChild(meta);
     row.appendChild(main);
-    // "Show in Filter Toolbar" pin toggle — the reusable pill switch
-    // (.settings-switch) instead of a plain checkbox (person-requested).
-    // Persists rec.showInToolbar and refreshes the toolbar pill row via
-    // updateFilterLibraryEntry. (A <div>, not a <label>, so the inner
-    // .settings-switch <label> isn't nested inside another label.)
-    const pin = document.createElement("div");
-    pin.className = "filter-library-pin" + (rec.showInToolbar ? " active" : "");
-    pin.title = "Show this preset as a pill in the Filter-Toolbar";
-    const pinLabelText = document.createElement("span");
-    pinLabelText.textContent = "Toolbar";
-    const pinSwitch = document.createElement("label");
-    pinSwitch.className = "settings-switch settings-switch-sm";
-    const pinCb = document.createElement("input");
-    pinCb.type = "checkbox";
-    pinCb.checked = !!rec.showInToolbar;
-    pinCb.addEventListener("click", ev => ev.stopPropagation());
-    pinCb.addEventListener("change", () => {
-      updateFilterLibraryEntry(rec.key, { showInToolbar: pinCb.checked }).then(renderFilterLibraryDialog);
-    });
-    const pinTrack = document.createElement("span");
-    pinTrack.className = "settings-switch-track";
-    pinSwitch.appendChild(pinCb);
-    pinSwitch.appendChild(pinTrack);
-    pin.appendChild(pinLabelText);
-    pin.appendChild(pinSwitch);
-    row.appendChild(pin);
-    const applyBtn = document.createElement("button");
-    applyBtn.type = "button";
-    applyBtn.className = "btn-mini";
-    applyBtn.textContent = "Apply";
-    applyBtn.addEventListener("click", () => {
-      const targetId = filterLibraryApplyTargetId;
-      closeFilterLibraryDialog();
-      if (targetId && state.nodes[targetId]) applyFilterFromLibrary(targetId, rec);
-    });
-    row.appendChild(applyBtn);
-    row.appendChild(customEntryRowButton("Export", "Export this preset as JSON", () => exportFilterLibraryEntry(rec)));
-    const delBtn = document.createElement("button");
-    delBtn.type = "button";
-    delBtn.className = "filter-library-row-del";
-    delBtn.title = "Delete from library";
-    delBtn.innerHTML = ICON_CLOSE;
-    delBtn.addEventListener("click", () => { deleteFilterLibraryEntry(rec.key).then(renderFilterLibraryDialog); });
-    row.appendChild(delBtn);
+    // Star = pinned as a pill in the Filter-Toolbar (record field showInToolbar).
+    row.appendChild(libraryRowButton("lib-star" + (rec.showInToolbar ? " lib-star-on" : ""),
+      rec.showInToolbar ? "Pinned to the toolbar — click to unpin" : "Pin to the toolbar", rec.showInToolbar ? "starf" : "star",
+      () => updateFilterLibraryEntry(rec.key, { showInToolbar: !rec.showInToolbar }).then(renderFilterLibraryDialog)));
+    row.appendChild(libraryRowButton("lib-export", "Export this preset as JSON", "export", () => exportFilterLibraryEntry(rec)));
+    row.appendChild(libraryRowButton("lib-del", "Delete from library", "trash", () => deleteFilterLibraryEntryWithUndo(rec)));
     frag.appendChild(row);
     // Inline icon grid, shown as a sibling block under the row while open.
     if (filterLibraryIconOpenKey === rec.key) {
@@ -35936,28 +36097,60 @@ async function renderFilterLibraryDialog() {
   });
   filterLibraryList.appendChild(frag);
 }
-async function openFilterLibraryDialog(nodeId) {
-  filterLibraryApplyTargetId = nodeId;
+async function openFilterLibraryDialog() {
   filterLibraryIconOpenKey = null;
   filterLibraryDialog.classList.remove("hidden");
   await renderFilterLibraryDialog();
 }
 filterLibraryDialog.addEventListener("click", ev => { if (ev.target === filterLibraryDialog) closeFilterLibraryDialog(); });
 el("#filterLibraryDialogClose").addEventListener("click", closeFilterLibraryDialog);
+// Import… goes through the central import (its preset branch opens the save
+// dialog prefilled); the dialog steps aside because the save dialog would
+// otherwise sit underneath it.
+el("#filterLibraryImportBtn").addEventListener("click", () => { closeFilterLibraryDialog(); importFromFilePicker(); });
 
-/* ---- Filter-library toolbar section ----
-   The pinned presets render as circle→pill .row-action-btn buttons matching
-   the filter-creation buttons, in their own group (#libraryPresetBar, "Library
-   Filter"); clicking one applies that preset onto the currently active node
-   (state.activeId), the same target and mechanism as the manage dialog's
-   "Apply". (The two management buttons, Add to Library/Library, used to live
-   in a separate right-aligned #libraryManageBar group wired here — removed
-   this session, relocated into #sidebarToolbar as "Add to library…"/"Apply
-   from library…", now targeting the specific selected node — see
-   describeSidebarToolbarActions.) The pills are rebuilt on every library
-   change by renderLibraryToolbarPresets. */
+/* ---- Filter-library toolbar section + "Library ▾" menu ----
+   #libraryPresetBar holds the pinned presets as circle→pill .row-action-btn
+   buttons (rebuilt on every library change by renderLibraryToolbarPresets);
+   #btnLibrary right after it is the "Library ▾" split button that opens
+   #libraryMenu: search, the target the preset will be applied to, the Pinned
+   / More rows (click or Enter applies, the star pins/unpins), and the footer
+   ("Save "<name>" to library…" and "Manage library…"). The target is the
+   single selected tree node, else the active node (resolveLibraryTarget);
+   a locked node (Bookmarks) or no node disables applying. Pills use the same
+   target and the same applyLibraryRecord. */
 const libraryPresetBar = el("#libraryPresetBar");
 const libraryPresetSep = el("#libraryPresetSep");
+const btnLibrary = el("#btnLibrary");
+const libraryMenu = el("#libraryMenu");
+const libraryMenuSearch = el("#libraryMenuSearch");
+const libraryMenuSearchRow = el("#libraryMenuSearchRow");
+const libraryMenuTarget = el("#libraryMenuTarget");
+const libraryMenuList = el("#libraryMenuList");
+const libraryMenuSave = el("#libraryMenuSave");
+const libraryMenuManage = el("#libraryMenuManage");
+// Index of the keyboard-highlighted row among the enabled preset rows.
+let libraryMenuKb = 0;
+
+// The node a library preset would be applied to: the single selected node,
+// else the active one. ok = a real, unlocked node (the Bookmarks node is
+// re-synced on every render, so anything applied onto it would vanish).
+function resolveLibraryTarget() {
+  const sel = state.multiSelect.size === 1 ? [...state.multiSelect][0] : null;
+  const id = sel && state.nodes[sel] ? sel : state.activeId;
+  const node = id ? state.nodes[id] : null;
+  if (!node) return { id: null, node: null, name: "", ok: false };
+  return { id, node, name: nodeDisplayName(node), ok: !node.locked };
+}
+
+const LIBRARY_NO_TARGET_MSG = "Select a file or filter to apply a preset";
+
+function applyLibraryRecord(rec) {
+  const t = resolveLibraryTarget();
+  if (!t.ok) { showCopyToast(LIBRARY_NO_TARGET_MSG); return; }
+  closeLibraryMenu();
+  applyFilterFromLibrary(t.id, rec);
+}
 
 async function renderLibraryToolbarPresets() {
   if (!libraryPresetBar) return;
@@ -35974,24 +36167,175 @@ async function renderLibraryToolbarPresets() {
     btn.type = "button";
     btn.className = "toolbar-icon-btn row-action-btn";
     btn.dataset.libKey = rec.key;
-    btn.title = "Apply preset: " + rec.name;
+    // "Apply <name> to <target>" — refreshed on hover/focus because the target
+    // (selection / active node) changes without the pills being rebuilt.
+    const setTitle = () => {
+      const t = resolveLibraryTarget();
+      btn.title = t.ok ? "Apply " + rec.name + " to " + t.name : "Apply " + rec.name + " — " + LIBRARY_NO_TARGET_MSG.toLowerCase();
+    };
+    setTitle();
+    btn.addEventListener("mouseenter", setTitle);
+    btn.addEventListener("focus", setTitle);
     const iconHtml = isEmojiIcon(rec.icon)
       ? '<span class="row-action-hit filter-library-icon-emoji">' + escapeHtml(libraryIconEmojiChar(rec.icon)) + '</span>'
       : '<span class="row-action-hit">' + libraryIconSvg(rec.icon) + '</span>';
     btn.innerHTML = iconHtml +
       '<span class="row-action-label">' + escapeHtml(rec.name) + '</span>';
-    btn.addEventListener("click", () => {
-      if (state.activeId && state.nodes[state.activeId]) applyFilterFromLibrary(state.activeId, rec);
-    });
+    btn.addEventListener("click", () => applyLibraryRecord(rec));
     frag.appendChild(btn);
   });
   libraryPresetBar.appendChild(frag);
-  // Hide the whole "Library Filter" group and its leading "|" divider when
-  // nothing is pinned, so the bar never shows an empty "| |".
-  const pinnedCount = records.filter(r => r.showInToolbar).length;
-  libraryPresetBar.hidden = pinnedCount === 0;
-  if (libraryPresetSep) libraryPresetSep.hidden = pinnedCount === 0;
+  // The pill group collapses when nothing is pinned; its leading "|" stays,
+  // because the Library ▾ button always follows it (the whole bar is hidden
+  // while no file is loaded).
+  libraryPresetBar.hidden = !records.some(r => r.showInToolbar);
+  if (libraryPresetSep) libraryPresetSep.hidden = false;
 }
+
+function libraryMenuOpen() { return !libraryMenu.classList.contains("hidden"); }
+function closeLibraryMenu() {
+  if (!libraryMenuOpen()) return;
+  libraryMenu.classList.add("hidden");
+  btnLibrary.setAttribute("aria-expanded", "false");
+}
+
+function libraryMenuRows() { return [...libraryMenuList.querySelectorAll(".lib-it:not(.dis)")]; }
+function setLibraryMenuKb(i) {
+  const rows = libraryMenuRows();
+  if (!rows.length) { libraryMenuKb = 0; return; }
+  libraryMenuKb = Math.max(0, Math.min(rows.length - 1, i));
+  rows.forEach((r, k) => r.classList.toggle("kb", k === libraryMenuKb));
+  if (rows[libraryMenuKb].scrollIntoView) rows[libraryMenuKb].scrollIntoView({ block: "nearest" });
+}
+
+function renderLibraryMenu() {
+  const t = resolveLibraryTarget();
+  const all = filterLibraryCache;
+  const doc = libraryMenu.ownerDocument;
+  const empty = all.length === 0;
+  libraryMenuSearchRow.style.display = empty ? "none" : "";
+  libraryMenuTarget.style.display = empty ? "none" : "";
+  libraryMenuTarget.className = "lib-target" + (t.ok ? "" : " warn");
+  libraryMenuTarget.textContent = "";
+  if (t.ok) {
+    libraryMenuTarget.append("Applies to ");
+    const b = doc.createElement("b");
+    b.textContent = t.name;
+    libraryMenuTarget.appendChild(b);
+    libraryMenuTarget.title = "Applies to " + t.name;
+  } else {
+    libraryMenuTarget.textContent = LIBRARY_NO_TARGET_MSG;
+    libraryMenuTarget.title = "";
+  }
+
+  libraryMenuList.textContent = "";
+  if (empty) {
+    const e = doc.createElement("div");
+    e.className = "lib-empty";
+    e.textContent = 'No presets yet. Select a filter and choose "Save to library…" below to reuse it on any file.';
+    libraryMenuList.appendChild(e);
+  } else {
+    const q = libraryMenuSearch.value.trim().toLowerCase();
+    const shown = q ? all.filter(r => (r.name || "").toLowerCase().includes(q)) : all;
+    const pinned = shown.filter(r => r.showInToolbar);
+    const more = shown.filter(r => !r.showInToolbar);
+    const addGroup = (label, recs) => {
+      if (!recs.length) return;
+      if (label) {
+        const g = doc.createElement("div");
+        g.className = "lib-grp";
+        g.textContent = label;
+        libraryMenuList.appendChild(g);
+      }
+      recs.forEach(rec => {
+        const row = doc.createElement("div");
+        row.className = "lib-it" + (t.ok ? "" : " dis");
+        row.setAttribute("role", "menuitem");
+        row.dataset.libKey = rec.key;
+        const ico = doc.createElement("span");
+        ico.className = "lib-it-ico" + (isEmojiIcon(rec.icon) ? " filter-library-icon-emoji" : "");
+        if (isEmojiIcon(rec.icon)) ico.textContent = libraryIconEmojiChar(rec.icon); else ico.innerHTML = libraryIconSvg(rec.icon);
+        const nm = doc.createElement("span");
+        nm.className = "n";
+        nm.textContent = rec.name;
+        nm.title = rec.name;
+        const star = doc.createElement("button");
+        star.type = "button";
+        star.className = "lib-star" + (rec.showInToolbar ? " on" : "");
+        star.title = rec.showInToolbar ? "Unpin from the toolbar" : "Pin to the toolbar";
+        star.setAttribute("aria-label", star.title);
+        star.innerHTML = icon(rec.showInToolbar ? "starf" : "star");
+        star.addEventListener("click", ev => {
+          ev.stopPropagation();
+          updateFilterLibraryEntry(rec.key, { showInToolbar: !rec.showInToolbar }).then(() => { if (libraryMenuOpen()) { renderLibraryMenu(); libraryMenuSearch.focus(); } });
+        });
+        row.append(ico, nm, star);
+        row.addEventListener("click", ev => { ev.stopPropagation(); if (t.ok) applyLibraryRecord(rec); else showCopyToast(LIBRARY_NO_TARGET_MSG); });
+        row.addEventListener("mouseenter", () => { if (!row.classList.contains("dis")) setLibraryMenuKb(libraryMenuRows().indexOf(row)); });
+        libraryMenuList.appendChild(row);
+      });
+    };
+    addGroup(pinned.length ? "Pinned" : "", pinned);
+    addGroup(pinned.length ? "More" : "", more);
+    if (!shown.length) {
+      const e = doc.createElement("div");
+      e.className = "lib-empty";
+      e.textContent = 'No presets match "' + libraryMenuSearch.value.trim() + '".';
+      libraryMenuList.appendChild(e);
+    }
+  }
+  setLibraryMenuKb(libraryMenuKb);
+
+  // Footer: saving needs a filter target, same guard as the sidebar's "Add to library…".
+  const canSave = !!(t.node && t.node.type === "filter" && !t.node.locked);
+  libraryMenuSave.className = "lib-it" + (canSave ? "" : " dis");
+  libraryMenuSave.textContent = "";
+  libraryMenuSave.insertAdjacentHTML("beforeend", icon("bookplus"));
+  const saveLabel = doc.createElement("span");
+  // Text filters are already named “like this”; wrap anything else (custom labels) in quotes.
+  saveLabel.textContent = canSave ? "Save " + (/^["“]/.test(t.name) ? t.name : "“" + t.name + "”") + " to library…" : "Save to library…";
+  libraryMenuSave.appendChild(saveLabel);
+  libraryMenuSave.title = canSave ? "" : "Select a filter to save it as a preset";
+}
+
+function openLibraryMenu() {
+  // stopPropagation on the opening click keeps the document handler from
+  // closing the other popups, so close them here.
+  closeOpenMenu(); closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFilterPopup(); closeColumnsPanel();
+  libraryMenuSearch.value = "";
+  libraryMenuKb = 0;
+  const rect = btnLibrary.getBoundingClientRect();
+  libraryMenu.style.top = (rect.bottom + 6) + "px";
+  libraryMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 328)) + "px";
+  libraryMenu.classList.remove("hidden");
+  btnLibrary.setAttribute("aria-expanded", "true");
+  renderLibraryMenu();
+  libraryMenuSearch.focus();
+  // The cache is kept fresh by every mutator; this catches a change from another tab.
+  refreshFilterLibraryCache().then(() => { if (libraryMenuOpen()) renderLibraryMenu(); });
+}
+btnLibrary.addEventListener("click", ev => {
+  ev.stopPropagation();
+  if (libraryMenuOpen()) closeLibraryMenu(); else openLibraryMenu();
+});
+libraryMenu.addEventListener("click", ev => ev.stopPropagation());
+libraryMenuSearch.addEventListener("input", () => { libraryMenuKb = 0; renderLibraryMenu(); });
+libraryMenuSearch.addEventListener("keydown", ev => {
+  if (ev.key === "ArrowDown") { ev.preventDefault(); setLibraryMenuKb(libraryMenuKb + 1); }
+  else if (ev.key === "ArrowUp") { ev.preventDefault(); setLibraryMenuKb(libraryMenuKb - 1); }
+  else if (ev.key === "Enter") {
+    ev.preventDefault();
+    const row = libraryMenuRows()[libraryMenuKb];
+    if (row) row.click();
+  }
+});
+libraryMenuSave.addEventListener("click", () => {
+  if (libraryMenuSave.classList.contains("dis")) return;
+  const t = resolveLibraryTarget();
+  closeLibraryMenu();
+  if (t.node && t.node.type === "filter") openFilterLibrarySaveDialog(t.id);
+});
+libraryMenuManage.addEventListener("click", () => { closeLibraryMenu(); openFilterLibraryDialog(); });
 
 /* ===================== Settings page =====================
    One wide, scrollable, sectioned dialog (Appearance, Log Formats, more
@@ -38897,6 +39241,7 @@ document.addEventListener("click", ev => {
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
+  if (!libraryMenu.contains(ev.target) && !btnLibrary.contains(ev.target)) closeLibraryMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
@@ -38970,13 +39315,15 @@ document.addEventListener("keydown", ev => {
     closeSessionExportDialog();
     closeFilterLibrarySaveDialog();
     closeFilterLibraryDialog();
+    closeLibraryMenu();
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
     if (state.clipboard) { state.clipboard = null; needsRender = true; }
     if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); updateTableAssertButton(); }
     if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
-    if (state.multiSelect.size) { state.multiSelect = new Set(); needsRender = true; }
+    // Esc clears the selection (and with it the toolbar's multi mode) — but not while typing in an input.
+    if (state.multiSelect.size && !inInput) { state.multiSelect = new Set(); needsRender = true; }
     if (needsRender) render();
     if (escExitsFocus) toggleFocusMode(false);
     return;
@@ -39666,8 +40013,7 @@ function serializeFilterTreeForCache(fileNode) {
       children: persistableChildren(node.children).map(ser),
     };
     if (node.value !== null && node.value !== undefined) out.value = node.value;
-    if (node.bakedA) out.bakedA = JSON.parse(JSON.stringify(node.bakedA));
-    if (node.bakedB) out.bakedB = JSON.parse(JSON.stringify(node.bakedB));
+    copyBakedFields(node, out);
     if (node.filterType === "link") {
       out.linkDirection = node.linkDirection; out.linkN = node.linkN;
       out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
@@ -39867,6 +40213,7 @@ function materializeCachedFilters(fileNode, roots) {
     if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
     if (sn.label && typeof sn.label === "string") node.label = sn.label;
     if (sn.selectionFilter) node.selectionFilter = true;
+    if (sn.baked) node.baked = sn.baked;
     if (sn.bakedA) node.bakedA = sn.bakedA;
     if (sn.bakedB) node.bakedB = sn.bakedB;
     state.nodes[node.id] = node;
