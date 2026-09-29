@@ -790,8 +790,8 @@ await withApp(async (w, d, T) => {
   {
     const bmRow = d.querySelector('.tree-row[data-node-id="' + bookmarksNode().id + '"]');
     const bmIcon = bmRow.querySelector(".tree-icon").innerHTML;
-    assert(bmIcon.includes("M4 2.5h8v11l-4-2.6-4 2.6z"), "the 'Bookmarks' filter node renders the recovered bookmark icon, not a fallback");
-    assert(!bmIcon.includes("cx=\"8\" cy=\"8\" r=\"6\""), "the 'Bookmarks' filter node's icon is NOT the clock icon");
+    assert(bmIcon.includes("#i-bookmark-filled"), "the 'Bookmarks' filter node renders the recovered bookmark icon, not a fallback");
+    assert(!bmIcon.includes("#i-clock"), "the 'Bookmarks' filter node's icon is NOT the clock icon");
 
     const timeNode = w.createFilterNode(fa.id, "after", fa.entries[0].ts);
     w.render();
@@ -799,7 +799,7 @@ await withApp(async (w, d, T) => {
     const timeIcon = timeRow.querySelector(".tree-icon").innerHTML;
     // Was the generic clock icon before Group 192 (this session, 2026-09-08)
     // gave time filters their own icon per direction/range — see Group 192.
-    assert(timeIcon.includes("M8 13V3M8 13l-3-3M8 13l3-3"), "a time-range filter node shows the \"After\" row-action's arrow-down icon, unaffected by the Bookmarks icon change");
+    assert(timeIcon.includes("#i-time-after"), "a time-range filter node shows the \"After\" row-action's arrow-down icon, unaffected by the Bookmarks icon change");
     w.deleteFilterNodeWithUndo(timeNode.id);
   }
 
@@ -10100,8 +10100,8 @@ await withApp(async (w, d) => {
    philogg-hover-expand-sidebar/-detail in localStorage) — so hovering one
    panel can be toggled without affecting the other. Both default ON.
 
-   Icon-swap-to-pin-while-peeking is asserted via the raw SVG markup (a
-   "<circle" only appears in ICON_PIN, not any chevron) since the icon
+   Icon-swap-to-pin-while-peeking is asserted via the raw SVG markup (the
+   "#i-pin" sprite reference only appears in ICON_PIN, not any chevron) since the icon
    constants aren't exposed on the bridge (top-level const, see withApp's
    own comment). max-width/max-height capping is asserted via raw
    stylesheet text, same reasoning as Group 90 (jsdom has no real layout
@@ -10142,13 +10142,13 @@ await withApp(async (w, d, T) => {
   assert(isVisible(detailBody, w), "...revealing the SAME body element used when expanded");
   assert(detailMeta.querySelector(".detail-thread") && !detailMeta.querySelector(".detail-collapsed-msg"),
     "...and the header now shows the full field set, exactly like expanded — not the collapsed summary");
-  assert(detailToggleBtn.innerHTML.includes("<circle"), "toggle icon swaps to the pin icon while peeking");
+  assert(detailToggleBtn.innerHTML.includes("#i-pin"), "toggle icon swaps to the pin icon while peeking");
   assert(!isVisible(detailResizerEl, w), "no drag handle while peeking (still logically collapsed)");
   detailPanel.dispatchEvent(new w.MouseEvent("mouseleave", { bubbles: false }));
   assert(!detailPanel.classList.contains("peeking") && !isVisible(detailBody, w), "leaving collapses the body again");
   assert(detailMeta.querySelector(".detail-collapsed-msg") && !detailMeta.querySelector(".detail-thread"),
     "...and the header reverts to the truncated summary");
-  assert(!detailToggleBtn.innerHTML.includes("<circle"), "toggle icon reverts to a chevron once peeking ends");
+  assert(!detailToggleBtn.innerHTML.includes("#i-pin"), "toggle icon reverts to a chevron once peeking ends");
 
   // Clicking the toggle while peeking pins it open (same as the sidebar) —
   // the toggle button sits in #detailPanelHeader, the same place it always
@@ -12050,9 +12050,11 @@ await withApp(async (w, d, T) => {
   // needle path), not the old teardrop map-pin outline.
   const pinBtn = d.querySelector(".toggle-pin");
   const pinSvg = pinBtn.querySelector("svg");
-  assert(pinSvg.querySelector("circle") && pinSvg.querySelector("path"),
-    "#btnPinBookmarks (ICON_PIN) is a circle+path thumbtack shape");
-  assert(!pinSvg.innerHTML.includes("c-2.4 0-4.3"), "the old teardrop map-pin path is gone from ICON_PIN");
+  assert(pinSvg.innerHTML.includes('href="#i-pin"'), "#btnPinBookmarks (ICON_PIN) references the pin sprite symbol");
+  const pinSym = d.querySelector("#i-pin");
+  assert(pinSym && pinSym.querySelector("circle") && pinSym.querySelector("path"),
+    "the pin symbol is a circle+path thumbtack shape");
+  assert(!pinSym.innerHTML.includes("c-2.4 0-4.3"), "the old teardrop map-pin path is gone from the pin symbol");
 
   assert(d.querySelector("#settingsDialog").classList.contains("hidden"), "settings dialog starts hidden");
   fireClick(d.querySelector("#btnSettings"), w);
@@ -21269,13 +21271,12 @@ await withApp(async (w, d, T) => {
   w.render();
 
   // ICON_* are top-level `const`s in the page script, not exposed on `window`
-  // (see README "jsdom gotcha") — so identify each icon by the distinctive
-  // path data it shares with its matching VIEWBAR_ROW_ACTIONS entry, rather
-  // than by object identity.
-  const PATH_AFTER = "M8 13V3M8 13l-3-3M8 13l3-3"; // "After" row-action (arrow down)
-  const PATH_BEFORE = "M8 3v10M8 3l-3 3M8 3l3 3"; // "Before" row-action (arrow up)
-  const PATH_RANGE = "M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"; // "Time range" row-action
-  const PATH_CLOCK = "M8 5v3.3l2.2 1.3"; // generic ICON_CLOCK
+  // (see README "jsdom gotcha") — so identify each icon by its sprite
+  // reference (icon() markup), rather than by object identity.
+  const PATH_AFTER = 'href="#i-time-after"'; // "After" row-action look (arrow down)
+  const PATH_BEFORE = 'href="#i-time-before"'; // "Before" row-action look (arrow up)
+  const PATH_RANGE = 'href="#i-time-range"'; // "Time range" row-action look
+  const PATH_CLOCK = 'href="#i-clock"'; // generic ICON_CLOCK
 
   // --- from-only ("after") -> arrow-down icon, matching the "After" row-action button ---
   const afterNode = w.createFilterNode(f.id, "timerange", { from: f.entries[10].ts, to: null });
@@ -21308,7 +21309,7 @@ await withApp(async (w, d, T) => {
   const textNode = w.createFilterNode(f.id, "text", "hello");
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
   assert(w.nodeIconHTML(textNode) !== w.nodeIconHTML(extractNode), "plain text filter and extraction-wildcard text filter still get visually distinct icons (funnel vs. table)");
-  assert(w.nodeIconHTML(extractNode).includes("rect"), "text filter with extractable wildcards still gets the table icon, matching the \"Extract\" row-action button");
+  assert(w.nodeIconHTML(extractNode).includes('href="#i-table"'), "text filter with extractable wildcards still gets the table icon, matching the \"Extract\" row-action button");
 });
 
 /* ============================================================
@@ -21549,7 +21550,7 @@ await withApp(async (w, d, T) => {
   const node = w.createFilterNode(f.id, "text", "message");
   node.filterType = "idset";
   const html = w.nodeIconHTML(node);
-  assert(html.includes("M3 8.5l3.3 3.5") && !html.includes("M3 4.5l1.3"),
+  assert(html.includes('href="#i-check"') && !html.includes("#i-checklist"),
     "an idset (selection) node uses the single-check ICON_CHECK, not the multi-line ICON_CHECKLIST");
 });
 
@@ -22177,7 +22178,7 @@ group(199);
     assert(dirRows().join(",") === "subfolder", "one collapsed folder row for the top-level subfolder, got " + dirRows().join(","));
     assert(fileLabels().join(",") === "top.log", "entries inside a collapsed subfolder are not listed, got " + fileLabels().join(","));
     const subRow = d.querySelector("#zipList .tree-dir-row");
-    assert(subRow.querySelector(".tree-icon path").getAttribute("d").startsWith("M1.7 3.7"), "a folder row carries the folder icon");
+    assert(subRow.querySelector(".tree-icon use").getAttribute("href") === "#i-folder", "a folder row carries the folder icon");
     assert(subRow.querySelector(".tree-count").textContent === "2", "the folder row counts the entries below it, got " + subRow.querySelector(".tree-count").textContent);
 
     fireClick(subRow, w);
@@ -25575,7 +25576,7 @@ await withApp(async (w, d, T) => {
   NAMES.forEach(n => { const s = sprite.querySelector("symbol#i-" + n); assert(s && s.getAttribute("viewBox") === "0 0 16 16", "symbol i-" + n + " present on a 16x16 grid"); });
   assert(w.icon("and") === '<svg class="icon" aria-hidden="true"><use href="#i-and"/></svg>', "icon(name) markup");
   assert(w.icon("x", "icon-xs").includes('class="icon icon-xs"'), "icon(name, cls) appends the class");
-  const use = n => (w.eval(n).match(/href="#i-([a-z]+)"/) || [])[1];
+  const use = n => (w.eval(n).match(/href="#i-([a-z-]+)"/) || [])[1];
   const expect = { ICON_FILE: "file", ICON_FILTER: "filter", ICON_RENAME: "rename", ICON_EDIT: "edit", ICON_INVERT: "not", ICON_LINK: "link",
     ICON_MERGE: "merge", ICON_CLOCK: "clock", ICON_BOOK: "book", ICON_DISK: "bookplus", ICON_GEAR: "gear", ICON_CLOSE: "x",
     ICON_ELLIPSIS: "more", ICON_AND: "and", ICON_OR: "or" };
@@ -25593,6 +25594,26 @@ await withApp(async (w, d, T) => {
   assert(rows.some(r => r.classList.contains("filter-and")) && rows.some(r => r.classList.contains("filter-or")), "AND/OR tree rows carry filter-and / filter-or (icon tint hook)");
   const bulk = w.describeBulkActions([t1, t2]).actions;
   assert(bulk.find(a => a.action === "and").icon === w.eval("ICON_AND") && bulk.find(a => a.action === "or").icon === w.eval("ICON_OR"), "describeBulkActions uses ICON_AND / ICON_OR");
+
+  // Every ICON_* constant in the page script goes through icon() (FEATURE_BACKLOG #93): no inline <svg viewBox/width/stroke attributes left,
+  // and each referenced sprite symbol exists.
+  const constNames = [...html.matchAll(/^const (ICON_[A-Z_0-9]+) = /gm)].map(m => m[1]);
+  assert(constNames.length >= 60, "found the ICON_* constants in the page source, got " + constNames.length);
+  constNames.forEach(k => {
+    const v = w.eval(k);
+    assert(!/viewBox|width=|stroke-width=/.test(v), k + " carries no inline svg sizing/stroke attributes");
+    const ref = (v.match(/^<svg class="icon[^"]*" aria-hidden="true"><use href="#i-([a-z-]+)"\/><\/svg>$/) || [])[1];
+    assert(ref && sprite.querySelector("symbol#i-" + ref), k + " -> existing sprite symbol, got " + ref);
+  });
+  // Badge symbols keep their letter / plus inside the symbol; filled glyph keeps its own fill.
+  const symHtml = n => sprite.querySelector("symbol#i-" + n).innerHTML;
+  [["file-auto", ">A<"], ["file-partial", ">P<"], ["merge-window", ">W<"]].forEach(([n, t]) =>
+    assert(symHtml(n).includes("<text") && symHtml(n).includes(t) && symHtml(n).includes('fill="var(--bg-panel)"'), "badge symbol i-" + n + " keeps its circled letter"));
+  assert(symHtml("filter-plus").includes("var(--bg-panel)") && symHtml("filter-plus").includes("#i-filter"), "filter-plus is the funnel plus a circled + badge");
+  assert(symHtml("bookmark-filled").includes('fill="currentColor"'), "bookmark-filled is a filled glyph");
+  // Distinct glyphs stay distinct symbols (caret vs panel chevron, load vs save, before/after arrows).
+  assert(use("ICON_CARET_LEFT") !== use("ICON_CHEVRON_LEFT") && use("ICON_SAVE") !== use("ICON_LOAD") && use("ICON_TIME_BEFORE") !== use("ICON_TIME_AFTER"), "distinct glyphs keep distinct symbols");
+  assert(use("ICON_FILE_PATH_LINKS") === "link", "ICON_FILE_PATH_LINKS reuses the link symbol (identical glyph)");
 });
 
 /* ============================================================
@@ -31650,8 +31671,9 @@ await withApp(async (w, d, T) => {
   section("277. Select buttons + context-menu item share the idset node's checkmark");
   const f = await w.addFile("sel.log", makeLog(0, 5), () => {});
   const idsetNode = w.createFilterNode(f.id, "idset", [f.entries[1].id]);
-  const treePath = (w.nodeIconHTML(idsetNode).match(/<path d="([^"]+)"/) || [])[1];
-  assert(treePath, "sanity: the idset node icon has a path");
+  const treeSym = (w.nodeIconHTML(idsetNode).match(/href="#(i-[a-z-]+)"/) || [])[1];
+  const treePath = treeSym && d.querySelector("#" + treeSym + " path").getAttribute("d");
+  assert(treePath, "sanity: the idset node icon references a sprite symbol with a path");
   const pathOf = el => el && el.querySelector("svg path") && el.querySelector("svg path").getAttribute("d");
   const btns = [...d.querySelectorAll('[data-row-action="addToSelection"]')];
   assert(btns.length > 0, "sanity: Select buttons are rendered");
@@ -35333,7 +35355,7 @@ await withApp(async (w, d, T) => {
   assert(dirLabels().join(",") === "sub", "one collapsed folder row, got " + dirLabels().join(","));
   assert(fileLabels().join(",") === "Root.log", "files inside a collapsed subfolder aren't listed, got " + fileLabels().join(","));
   const subRow = box().querySelector(".tree-dir-row");
-  assert(subRow.querySelector(".tree-icon path").getAttribute("d").startsWith("M1.7 3.7"), "folder row has the folder icon");
+  assert(subRow.querySelector(".tree-icon use").getAttribute("href") === "#i-folder", "folder row has the folder icon");
   assert(!subRow.querySelector(".tree-chevron").classList.contains("expanded"), "its chevron shows the collapsed state");
 
   fireClick(subRow, w);
@@ -40246,6 +40268,10 @@ process.exitCode = failed ? 1 : 0;
       instead of omitted, "Apply from library…" removed from it, built once)
       and added 220j (render toggles disabled only). Dropped: the per-selection
       button-set/separator assertions of the retired dynamic toolbar.
+      Group 318 also (2026-09-29, FEATURE_BACKLOG #93): every remaining
+      inline-SVG ICON_* constant moved into the sprite; asserts all ICON_*
+      go through icon() with existing symbols, badge/filled symbols intact;
+      updated 91, 12048-pin, time-icon, idset-check tests to `#i-…` refs.
    Group 319 — 2026-09-28 (person-requested, filter-actions Phase B): N-ary
       AND/OR (createAndOrNode(ids, mode), node.baked[] replacing bakedA/bakedB
       for and/or; link keeps bakedA/bakedB) through every persistence carrier;

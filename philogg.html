@@ -851,7 +851,7 @@
      are tinted by kind (an active row's accent still wins). */
   .icon{width:var(--icon-md); height:var(--icon-md); flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
   .icon.icon-xs{width:10px; height:10px;}
-  .tree-icon, .ctx-item{--icon-md:var(--icon-sm);}
+  .tree-icon, .ctx-item, .ctx-run-cap, .ctx-gap-icon{--icon-md:var(--icon-sm);}
   .tree-row.filter-and:not(.active) .tree-icon{color:var(--level-info);}
   .tree-row.filter-or:not(.active) .tree-icon{color:var(--level-warn);}
   /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
@@ -4368,6 +4368,53 @@
     <symbol id="i-import" viewBox="0 0 16 16"><path d="M2.5 9v3.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M8 2.5V10M5.25 7.25 8 10l2.75-2.75"/></symbol>
     <symbol id="i-export" viewBox="0 0 16 16"><path d="M2.5 9v3.5a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1V9M8 10V2.5M5.25 5.25 8 2.5l2.75 2.75"/></symbol>
     <symbol id="i-trash" viewBox="0 0 16 16"><path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.75 9h6l.75-9"/></symbol>
+    <symbol id="i-file-auto" viewBox="0 0 16 16"><use href="#i-file"/><circle cx="12" cy="12" r="3.5" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.4" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></symbol>
+    <symbol id="i-file-partial" viewBox="0 0 16 16"><use href="#i-file"/><circle cx="12" cy="12" r="3.5" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.4" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">P</text></symbol>
+    <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2 4a1 1 0 0 1 1-1h3l1.25 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z"/></symbol>
+    <symbol id="i-zip" viewBox="0 0 16 16"><rect x="2" y="2.25" width="12" height="11.5" rx="1.25"/><path d="M8 2.25v1.5M8 5.25v1.5M8 8.25v1"/><rect x="6.75" y="9.5" width="2.5" height="2.5" rx=".5"/></symbol>
+    <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.25" y="7.25" width="9.5" height="6.25" rx="1.25"/><path d="M5.25 7.25V5a2.75 2.75 0 0 1 5.5 0v2.25"/></symbol>
+    <symbol id="i-message-extract" viewBox="0 0 16 16"><path d="M2.5 3.25h11v7.5H7.25L4.5 13v-2.25h-2Z"/><path d="M6 6.5l-1.25 1 1.25 1M10 6.5l1.25 1-1.25 1"/></symbol>
+    <symbol id="i-filter-plus" viewBox="0 0 16 16"><use href="#i-filter"/><circle cx="12.25" cy="4" r="2.75" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.25 2.75v2.5M11 4h2.5" stroke-width="1"/></symbol>
+    <symbol id="i-bookmark-filled" viewBox="0 0 16 16"><path d="M4 2.5h8v11l-4-2.6-4 2.6Z" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-table" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5"/><path d="M2.25 6h11.5M2.25 10h11.5M6 2.25v11.5M10 2.25v11.5"/></symbol>
+    <symbol id="i-time-before" viewBox="0 0 16 16"><path d="M8 13V3M5 6l3-3 3 3"/></symbol>
+    <symbol id="i-time-after" viewBox="0 0 16 16"><path d="M8 3v10M5 10l3 3 3-3"/></symbol>
+    <symbol id="i-time-range" viewBox="0 0 16 16"><path d="M8 3v4M5 4l3 3 3-3M8 13V9M5 12l3-3 3 3"/></symbol>
+    <symbol id="i-checklist" viewBox="0 0 16 16"><path d="M2.5 3.75 3.75 5 6 2.75M2.5 8.25 3.75 9.5 6 7.25M2.5 12.75 3.75 14 6 11.75M8.5 4h5M8.5 8.5h5M8.5 13h5"/></symbol>
+    <symbol id="i-check" viewBox="0 0 16 16"><path d="M3 8.5l3.3 3.5L13 4.5"/></symbol>
+    <symbol id="i-files-separate" viewBox="0 0 16 16"><path d="M3 1.75h5l2 2V12H3ZM8 1.75v2h2"/><path d="M7.5 6.25h4.75l2 1.75v5.75h-5V12M12.25 6.25v2h2"/></symbol>
+    <symbol id="i-merge-window" viewBox="0 0 16 16"><use href="#i-merge"/><circle cx="12.5" cy="3.5" r="3" fill="var(--bg-panel)" stroke-width="1"/><text x="12.5" y="4.85" font-size="4.2" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">W</text></symbol>
+    <symbol id="i-context" viewBox="0 0 16 16"><path d="M6 2.75H4a1 1 0 0 0-1 1v8.5a1 1 0 0 0 1 1h2M10 2.75h2a1 1 0 0 1 1 1v8.5a1 1 0 0 1-1 1h-2"/></symbol>
+    <symbol id="i-copy" viewBox="0 0 16 16"><rect x="2.25" y="5.25" width="7.5" height="8.5" rx="1"/><path d="M5.25 5.25v-2.5a1 1 0 0 1 1-1h6.5a1 1 0 0 1 1 1v6.5a1 1 0 0 1-1 1h-2.5"/></symbol>
+    <symbol id="i-cut" viewBox="0 0 16 16"><circle cx="4.25" cy="4" r="1.75"/><circle cx="4.25" cy="12" r="1.75"/><path d="M5.5 5.5 13 13M5.5 10.5 13 3"/></symbol>
+    <symbol id="i-paste" viewBox="0 0 16 16"><rect x="3.25" y="2.75" width="9.5" height="11.5" rx="1.25"/><path d="M6 2.75V2a.75.75 0 0 1 .75-.75h2.5A.75.75 0 0 1 10 2v.75M6 8h4M6 11h4"/></symbol>
+    <symbol id="i-save" viewBox="0 0 16 16"><path d="M8 2.5V10M5.25 7.25 8 10l2.75-2.75M3 13.25h10"/></symbol>
+    <symbol id="i-load" viewBox="0 0 16 16"><path d="M8 10V2.5M5.25 5.25 8 2.5l2.75 2.75M3 13.25h10"/></symbol>
+    <symbol id="i-fullscreen" viewBox="0 0 16 16"><path d="M2.25 6V3.25a1 1 0 0 1 1-1H6M13.75 6V3.25a1 1 0 0 0-1-1H10M2.25 10v2.75a1 1 0 0 0 1 1H6M13.75 10v2.75a1 1 0 0 1-1 1H10"/></symbol>
+    <symbol id="i-target" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><circle cx="8" cy="8" r="2"/></symbol>
+    <symbol id="i-undo" viewBox="0 0 16 16"><path d="M4 4v4h4"/><path d="M4.5 8A4.75 4.75 0 1 1 5.75 12.25"/></symbol>
+    <symbol id="i-redo" viewBox="0 0 16 16"><path d="M12 4v4H8"/><path d="M11.5 8A4.75 4.75 0 1 0 10.25 12.25"/></symbol>
+    <symbol id="i-pin" viewBox="0 0 16 16"><circle cx="8" cy="5.25" r="2.75"/><path d="M8 8V14"/></symbol>
+    <symbol id="i-note" viewBox="0 0 16 16"><path d="M3.25 2.25h9.5v11l-2.75-1.75H3.25Z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h2.75"/></symbol>
+    <symbol id="i-multiline" viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></symbol>
+    <symbol id="i-wrap" viewBox="0 0 16 16"><path d="M2.5 3.75h11"/><path d="M2.5 8h9a2.25 2.25 0 0 1 0 4.5H7.5"/><path d="M9.25 10.5 7.25 12.5l2 2"/><path d="M2.5 12.5h2.5"/></symbol>
+    <symbol id="i-columns" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.25"/><path d="M6 2.75v10.5M10 2.75v10.5"/></symbol>
+    <symbol id="i-highlight-pen" viewBox="0 0 16 16"><path d="M9.5 2.5 13.5 6.5 7.25 12.75 3 13.5l.75-4.25Z"/><path d="M2.25 14.5h5"/></symbol>
+    <symbol id="i-highlight-text" viewBox="0 0 16 16"><path d="M4 3.25h8M8 3.25v6M2.5 11.75h11M2.5 14.25h11"/></symbol>
+    <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.25v3.5"/><circle cx="8" cy="5" r=".9" fill="currentColor" stroke="none"/></symbol>
+    <symbol id="i-level" viewBox="0 0 16 16"><path d="M3 12.5v-3M8 12.5v-6M13 12.5v-9"/></symbol>
+    <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="M9.5 4 5.5 8l4 4M12.5 3.5v9"/></symbol>
+    <symbol id="i-chevron-right" viewBox="0 0 16 16"><path d="M6.5 4l4 4-4 4M3.5 3.5v9"/></symbol>
+    <symbol id="i-chevron-down" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4M3.5 3.5h9"/></symbol>
+    <symbol id="i-chevron-up" viewBox="0 0 16 16"><path d="M4 9.5 8 5.5l4 4M3.5 12.5h9"/></symbol>
+    <symbol id="i-caret-left" viewBox="0 0 16 16"><path d="M10 4l-4 4 4 4"/></symbol>
+    <symbol id="i-caret-right" viewBox="0 0 16 16"><path d="M6 4l4 4-4 4"/></symbol>
+    <symbol id="i-caret-up" viewBox="0 0 16 16"><path d="M4 10l4-4 4 4"/></symbol>
+    <symbol id="i-caret-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></symbol>
+    <symbol id="i-expand-around" viewBox="0 0 16 16"><path d="M2.25 8h11.5M5 4.5l3-3 3 3M5 11.5l3 3 3-3"/></symbol>
+    <symbol id="i-expand-all" viewBox="0 0 16 16"><path d="M2.25 1.75h11.5M2.25 14.25h11.5M5 6.5l3-3 3 3M5 9.5l3 3 3-3"/></symbol>
+    <symbol id="i-collapse-all" viewBox="0 0 16 16"><path d="M2.25 1.75h11.5M2.25 14.25h11.5M5 3.5l3 3 3-3M5 12.5l3-3 3 3"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
 </svg>
 <script>(function(){
   // FOUC fix: applies the stored (or system-preferred) theme to <html>
@@ -6699,11 +6746,14 @@ const PHILOGG_BUILD = "dev";
 
 /* ===================== Icons ===================== */
 // Icon sprite: one hidden <svg> at the top of <body> holds <symbol id="i-NAME">
-// drawings on a 16x16 grid; icon(name) references one via <use>. Sized/stroked
-// by the .icon CSS class (md 14px by default; .tree-icon/.ctx-item scope it to
-// sm 12px, .icon-xs is the 10px close glyph). The ICON_* constants below that
-// call icon() are the migrated ones; the rest are still standalone inline SVGs
-// (FEATURE_BACKLOG.md, "Migrate remaining ICON_* constants to the icon sprite").
+// drawings on a 16x16 grid; icon(name) references one via <use>. Every ICON_*
+// constant below is built with icon() (none carries its own width/height/
+// stroke), so all icons share one look: sized/stroked by the .icon CSS class
+// (md 14px by default; containers such as .tree-icon/.ctx-item scope
+// --icon-md down to sm 12px, .icon-xs is the 10px close glyph). Badge symbols
+// (file-auto/-partial, filter-plus, merge-window) and filled glyphs
+// (bookmark-filled, info's dot) carry their own fill/stroke attributes inside
+// the symbol.
 function icon(name, cls = "") {
   return '<svg class="icon' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
 }
@@ -6711,53 +6761,53 @@ const ICON_FILE = icon("file");
 // Same file glyph, plus a small circled "A" badge (Auto-Open, person-
 // requested — see renderNode's autoOpened opt) — marks a folder-watch file
 // that was opened automatically by a rule, not by hand.
-const ICON_FILE_AUTO = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></svg>';
+const ICON_FILE_AUTO = icon("file-auto");
 // Same file glyph, plus a small circled "P" badge (Partial — a windowed
 // load, see loadFolderFileWindowed/node.partial) — same visual idiom as
 // ICON_FILE_AUTO's circled "A" right above.
-const ICON_FILE_PARTIAL = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><circle cx="12" cy="12" r="3.6" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.3" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">P</text></svg>';
-const ICON_FOLDER = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.7 3.7a1 1 0 0 1 1-1h3.3l1.3 1.6h5.6a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H2.7a1 1 0 0 1-1-1z"/></svg>';
+const ICON_FILE_PARTIAL = icon("file-partial");
+const ICON_FOLDER = icon("folder");
 // ZIP source header icon (renderZipSection) — same viewBox/stroke
 // conventions as ICON_FOLDER above (its container's own icon, which this
 // replaces): an archive box with a "zipper" strip down the middle, so a ZIP
 // source reads as visually distinct from a watched folder at a glance.
-const ICON_ZIP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.2" width="12.4" height="11.6" rx="1.2"/><path d="M8 2.2v1.6M8 5.4v1.6M8 8.6v1.6"/><rect x="6.9" y="9.6" width="2.2" height="2.2" rx="0.4"/></svg>';
+const ICON_ZIP = icon("zip");
 const ICON_GEAR = icon("gear");
-const ICON_LOCK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.3" y="7.2" width="9.4" height="6.3" rx="1.3"/><path d="M5.2 7.2V5a2.8 2.8 0 0 1 5.6 0v2.2"/></svg>';
+const ICON_LOCK = icon("lock");
 const ICON_FILTER = icon("filter");
 // "Filter for this message" row-action's own icon (distinct from the plain
 // funnel ICON_FILTER used by every other filter-creation button) — a
 // speech-bubble outline (this action's input is always the message column)
 // with two small bracket-like accents standing in for the "extract the
 // numbers out of this text" behavior the action actually performs.
-const ICON_MESSAGE_EXTRACT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.2h11v7.6h-6.2L4.5 13V10.8h-2z"/><path d="M6 6.6l-1.2 1 1.2 1M10 6.6l1.2 1-1.2 1"/></svg>';
+const ICON_MESSAGE_EXTRACT = icon("message-extract");
 // "New filter" row-action's icon: the same funnel as ICON_FILTER with a
 // small "+" badge overlaid in the corner, same badge-overlay technique as
 // ICON_FILE_AUTO's circled "A" (the circle's fill hides the funnel path
 // behind it so the "+" reads cleanly instead of visually merging).
-const ICON_FILTER_PLUS = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/><circle cx="12.3" cy="3.9" r="2.7" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.3 2.7v2.4M11.1 3.9h2.4" stroke-width="1"/></svg>';
+const ICON_FILTER_PLUS = icon("filter-plus");
 const ICON_CLOCK = icon("clock");
 // Recovered from the old per-row bookmark marker (removed in the "Bookmarks
 // rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
 // own icon (nodeIconHTML/ghostIconFor) so it no longer falls through to
 // ICON_CLOCK, which stays exclusively for time-range filter nodes.
-const ICON_BOOKMARK_FILLED = '<svg viewBox="0 0 16 16" width="10" height="10" fill="currentColor"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>';
+const ICON_BOOKMARK_FILLED = icon("bookmark-filled");
 const ICON_CLOSE = icon("x", "icon-xs");
-const ICON_TABLE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>';
+const ICON_TABLE = icon("table");
 // Filter-tree icons for time-range nodes (nodeIconHTML/timeFilterIcon),
 // matching the "Before"/"After"/"Time range" row-action buttons' own icons
 // (VIEWBAR_ROW_ACTIONS) so a node's icon in the tree always looks like the
 // button that created it.
-const ICON_TIME_BEFORE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>';
-const ICON_TIME_AFTER = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 13V3M8 13l-3-3M8 13l3-3"/></svg>';
-const ICON_TIME_RANGE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3v4M5 4l3 3 3-3M8 13v-4M5 12l3-3 3 3"/></svg>';
+const ICON_TIME_BEFORE = icon("time-before");
+const ICON_TIME_AFTER = icon("time-after");
+const ICON_TIME_RANGE = icon("time-range");
 // "idset" filter-tree node icon (three checked list rows) — idset used to
 // fall through nodeIconHTML's switch into ICON_CLOCK despite not being a
 // time filter; this gives it its own identity like every other filter type.
-const ICON_CHECKLIST = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4.5l1.3 1.3L7 3M3 9.5l1.3 1.3L7 7M3 14.5l1.3-1.3L4.3 12M9 4.5h4M9 9.5h4M9 14.5h4"/></svg>';
+const ICON_CHECKLIST = icon("checklist");
 // Single checkmark — used for the selection-filter (idset) tree node icon
 // (person-requested: a plain "selected" tick instead of the multi-line list).
-const ICON_CHECK = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.3 3.5L13 4.5"/></svg>';
+const ICON_CHECK = icon("check");
 // Floppy-disk "save" — the Files & Filters sidebar toolbar's "Add to
 // library…" action (a disk, distinct from ICON_SAVE's download-to-tray
 // arrow used by "Save filter…").
@@ -6771,52 +6821,52 @@ const ICON_MERGE = icon("merge");
 // merge), and ICON_MERGE with a small circled "W" badge (same idiom as
 // ICON_FILE_AUTO/ICON_FILE_PARTIAL's own circled letter) for "merge only
 // the dragged Window".
-const ICON_FILES_SEPARATE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h5l2 2v8H3z"/><path d="M8 2v2h2"/><path d="M7.4 6.2h5L14.4 8v6H9.4v-2.2"/><path d="M12.4 6.2v2h2"/></svg>';
-const ICON_MERGE_WINDOW = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><path d="M3.6 2v4c0 1.8 1.6 2.7 3.2 2.7M11.6 2v4c0 1.8-1.6 2.7-3.2 2.7v3"/><circle cx="3.6" cy="2" r="1.1"/><circle cx="11.6" cy="2" r="1.1"/><circle cx="8.4" cy="13" r="1.1"/><circle cx="13" cy="3.4" r="2.6" fill="var(--bg-panel)" stroke-width="0.9"/><text x="13" y="4.5" font-size="3.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">W</text></svg>';
+const ICON_FILES_SEPARATE = icon("files-separate");
+const ICON_MERGE_WINDOW = icon("merge-window");
 const ICON_AND = icon("and");
 const ICON_OR = icon("or");
 const ICON_LINK = icon("link");
-const ICON_CONTEXT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M6 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h2"/><path d="M10 3h2a1 1 0 0 1 1 1v8a1 1 0 0 1-1 1h-2"/></svg>';
-const ICON_COPY = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>';
-const ICON_CUT = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="4" cy="4" r="1.8"/><circle cx="4" cy="12" r="1.8"/><path d="M5.3 5.3 13 13M5.3 10.7 13 3"/></svg>';
-const ICON_PASTE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="3" width="10" height="12" rx="1.3"/><path d="M6 3V2a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v1"/><path d="M6 8h4M6 11h4"/></svg>';
-const ICON_SAVE = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 2v8M8 10 5 7M8 10l3-3"/><path d="M3 13h10"/></svg>';
-const ICON_FULLSCREEN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 6V3a1 1 0 0 1 1-1h3M14 6V3a1 1 0 0 0-1-1h-3M2 10v3a1 1 0 0 0 1 1h3M14 10v3a1 1 0 0 1-1 1h-3"/></svg>';
-const ICON_LOAD = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 10V2M8 2 5 5M8 2l3 3"/><path d="M3 13h10"/></svg>';
+const ICON_CONTEXT = icon("context");
+const ICON_COPY = icon("copy");
+const ICON_CUT = icon("cut");
+const ICON_PASTE = icon("paste");
+const ICON_SAVE = icon("save");
+const ICON_FULLSCREEN = icon("fullscreen");
+const ICON_LOAD = icon("load");
 const ICON_INVERT = icon("not");
-const ICON_TARGET = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2.2"/></svg>';
-const ICON_UNDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4v4h4"/><path d="M4.4 8A5 5 0 1 1 5.6 12.4"/></svg>';
-const ICON_REDO = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v4H8"/><path d="M11.6 8A5 5 0 1 0 10.4 12.4"/></svg>';
-const ICON_PIN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="5.3" r="2.6"/><path d="M8 7.9V14"/></svg>';
+const ICON_TARGET = icon("target");
+const ICON_UNDO = icon("undo");
+const ICON_REDO = icon("redo");
+const ICON_PIN = icon("pin");
 // Show/Hide Notes toggle (#btnNotes) — a small note card with lines of text.
-const ICON_NOTE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 2.2h9.6v11l-2.8-1.9H3.2z"/><path d="M5.4 5.4h5.2M5.4 8h5.2M5.4 10.6h3"/></svg>';
+const ICON_NOTE = icon("note");
 // Multiline message toggle (#btnMultilineMsg) — three stacked lines, standing
 // in for "multi-line text" the same way ICON_PIN's thumbtack stands in for
 // "pin". See PROJECT.md "Multiline message display toggle".
-const ICON_MULTILINE = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></svg>';
+const ICON_MULTILINE = icon("multiline");
 // Word-wrap toggle (.toggle-wrap in the log toolbars, #itvWrapBtn in the
 // Text-View toolbar — FEATURE_BACKLOG.md #68): a line that runs right, then
 // curls back down and left to a return arrowhead, standing in for "this line
 // wraps back". Distinct from ICON_MULTILINE's plain stacked lines.
-const ICON_WRAP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.7h11"/><path d="M2.5 8h9a2.3 2.3 0 0 1 0 4.6H7.5"/><path d="M9.3 10.6 7.2 12.3l2.1 1.7"/><path d="M2.5 12.6h2.6"/></svg>';
-const ICON_COLUMNS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.7" y="2.7" width="12.6" height="10.6" rx="1.3"/><path d="M6 2.7v10.6M10.3 2.7v10.6"/></svg>';
+const ICON_WRAP = icon("wrap");
+const ICON_COLUMNS = icon("columns");
 // Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
 // underline stroke, standing in for "mark/highlight" the same way
 // ICON_MULTILINE's stacked lines stand in for "multi-line text".
-const ICON_TEXT_MATCH_HIGHLIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 2.6 13.4 6.4 7.2 12.6 3 13.4l0.8-4.2z"/><path d="M2 14.5h5"/></svg>';
+const ICON_TEXT_MATCH_HIGHLIGHT = icon("highlight-pen");
 // #btnHighlightMatchText (FEATURE_BACKLOG.md #20) — a word over two stacked
 // underline strokes, standing in for exactly what the feature draws: several
 // highlight rules underlining the same text, one stripe each (see
 // markCombinedHtml). Deliberately NOT another pen glyph — it has to read as
 // a different thing from ICON_TEXT_MATCH_HIGHLIGHT sitting right next to it.
-const ICON_HIGHLIGHT_MATCH_TEXT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3.2h8"/><path d="M8 3.2v6.4"/><path d="M2.5 12h11"/><path d="M2.5 14.3h11"/></svg>';
+const ICON_HIGHLIGHT_MATCH_TEXT = icon("highlight-text");
 // #btnFilePathLinks — a simple link/chain glyph, toggling the clickable
 // local-file-path feature (linkifyPaths) on/off (person-requested).
-const ICON_FILE_PATH_LINKS = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.8 9.2 9.2 6.8"/><path d="M7.3 4.3 8.6 3a2.2 2.2 0 0 1 3.1 3.1l-1.3 1.3"/><path d="M8.7 11.7 7.4 13a2.2 2.2 0 0 1-3.1-3.1l1.3-1.3"/></svg>';
+const ICON_FILE_PATH_LINKS = icon("link");
 // Pencil icon for the tree context menu's "Edit filter…" action (Ctrl+E or
 // right-click a text/extract filter node — see openEditFilterPopup).
 const ICON_EDIT = icon("edit");
-const ICON_INFO = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6"/><path d="M8 7.3v4"/><circle cx="8" cy="5" r="0.15" fill="currentColor" stroke-width="1"/></svg>';
+const ICON_INFO = icon("info");
 // Price-tag glyph for the tree context menu's "Rename…" action (FEATURE_BACKLOG.md
 // #12 — F2 or right-click any filter node, see startRenameNode). Distinct from
 // ICON_EDIT: this sets a display label, not the filter's actual value.
@@ -6824,7 +6874,7 @@ const ICON_RENAME = icon("rename");
 // Ascending-bars icon for a "level" filter node (FEATURE_BACKLOG.md #10) —
 // used both in the tree (nodeIconHTML) and on the level bar's "Add to
 // tree" button (explicit mode, see initLevelFilterTreeModeSettings).
-const ICON_LEVEL = '<svg viewBox="0 0 16 16" width="11" height="11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3 12V9"/><path d="M8 12V6"/><path d="M13 12V3"/></svg>';
+const ICON_LEVEL = icon("level");
 
 /* ===================== Theme ===================== */
 // Settings page -> Appearance: a single dropdown (#settingsThemeSelect)
@@ -23814,37 +23864,37 @@ const detailViewTabBtns = [...document.querySelectorAll("#detailViewTabs .view-t
 let sidebarLastWidth = 270;
 let detailLastHeight = 190;
 
-const ICON_CHEVRON_LEFT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/><path d="M12.5 3.5v9"/></svg>';
-const ICON_CHEVRON_RIGHT = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 4l4 4-4 4"/><path d="M3.5 3.5v9"/></svg>';
+const ICON_CHEVRON_LEFT = icon("chevron-left");
+const ICON_CHEVRON_RIGHT = icon("chevron-right");
 // ICON_PIN reused from the bookmarks-pin feature above (same glyph).
 // Both paths were copied from the design file as-is, but the two constant
 // names described the OPPOSITE of what each path actually draws (the design
 // file names its variants by open/closed state, not by visual direction) —
 // swapped here so ICON_CHEVRON_DOWN really is a downward chevron and
 // ICON_CHEVRON_UP really is an upward one, matching their usage below.
-const ICON_CHEVRON_DOWN = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>';
-const ICON_CHEVRON_UP = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 8 5.5l4 4"/><path d="M3.5 12.5h9"/></svg>';
+const ICON_CHEVRON_DOWN = icon("chevron-down");
+const ICON_CHEVRON_UP = icon("chevron-up");
 
 // Plain carets (no rail/bar, unlike ICON_CHEVRON_* above — those specifically
 // mean "collapse this panel toward that edge of the screen"): used for the
 // Context view's match-to-match nav and its gap fold buttons, neither of
 // which is a panel-collapse action.
-const ICON_CARET_LEFT = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 4l-4 4 4 4"/></svg>';
-const ICON_CARET_RIGHT = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4l4 4-4 4"/></svg>';
-const ICON_CARET_UP = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 10l4-4 4 4"/></svg>';
-const ICON_CARET_DOWN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+const ICON_CARET_LEFT = icon("caret-left");
+const ICON_CARET_RIGHT = icon("caret-right");
+const ICON_CARET_UP = icon("caret-up");
+const ICON_CARET_DOWN = icon("caret-down");
 // Three dots — the Context view's collapsed-gap placeholder row uses this as
 // its "there's real content folded here" affordance.
 // The two whole-view fold controls in #contextToolbar: chevrons pointing away
 // from the centre line (reveal everything) and back towards it (hide it all
 // again), plus the top/bottom rules that make them read as "the whole view",
 // not "this one run".
-const ICON_EXPAND_AROUND = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8h12"/><path d="M5 4.5 8 1.5l3 3"/><path d="M5 11.5l3 3 3-3"/></svg>';
-const ICON_EXPAND_ALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12M2 14h12"/><path d="M5 6.2 8 3.2l3 3"/><path d="M5 9.8l3 3 3-3"/></svg>';
-const ICON_COLLAPSE_ALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2 2h12M2 14h12"/><path d="M5 3.2 8 6.2l3-3"/><path d="M5 12.8l3-3 3 3"/></svg>';
+const ICON_EXPAND_AROUND = icon("expand-around");
+const ICON_EXPAND_ALL = icon("expand-all");
+const ICON_COLLAPSE_ALL = icon("collapse-all");
 // The "Show more (+n)" filler row's own glyph — a plain plus, deliberately
 // different from the ellipsis the "… N lines" row next to it carries.
-const ICON_PLUS_SMALL = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 3.5v9M3.5 8h9"/></svg>';
+const ICON_PLUS_SMALL = icon("plus");
 const ICON_ELLIPSIS = icon("more");
 
 function isSidebarCollapsed() { return sidebarEl.classList.contains("collapsed"); }
