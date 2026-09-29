@@ -535,7 +535,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = fb.id;
   const filterB1 = w.createFilterNode(fb.id, "text", "other");
   const filterA1 = w.createFilterNode(fa.id, "text", "message");
-  const andB = w.createAndOrNode(filterB1.id, filterA1.id, "and");
+  const andB = w.createAndOrNode([filterB1.id, filterA1.id], "and");
   const andChild = w.createFilterNode(andB.id, "text", "1");
   w.invalidateAllCaches();
   [filterA1, filterB1, andB, andChild].forEach(n => w.getEntries(n.id));
@@ -911,7 +911,7 @@ await withApp(async (w, d, T) => {
   // unsupported — see PROJECT.md).
   const refA = w.createFilterNode(fa.id, "text", "message");
   const refA2 = w.createFilterNode(fa.id, "text", "message 1"); // subset of refA's own file
-  const andNode = w.createAndOrNode(refA.id, refA2.id, "and");
+  const andNode = w.createAndOrNode([refA.id, refA2.id], "and");
   w.render();
   const andCountBefore = w.getEntries(andNode.id).length;
   assert(andCountBefore > 0, "sanity: AND of two same-file filters has a non-empty intersection before any delete");
@@ -1149,7 +1149,7 @@ await withApp(async (w, d, T) => {
   // placed directly under extractNode's own root file (fa), not nested
   // under extractNode.
   const fFilterB = w.createFilterNode(fb.id, "text", "other");
-  const andNode = w.createAndOrNode(extractNode.id, fFilterB.id, "and");
+  const andNode = w.createAndOrNode([extractNode.id, fFilterB.id], "and");
   w.render();
   assert(andNode.parentId === fa.id, "sanity: AND node sits directly under file A, not under extractNode");
   const andCountBefore = w.getEntries(andNode.id).length;
@@ -1160,7 +1160,7 @@ await withApp(async (w, d, T) => {
   assert(branchJustThis && branchJustThis.roots.length === 1, "just this filter: exactly one exported root, got " + (branchJustThis && branchJustThis.roots.length));
   const bareRoot = branchJustThis.roots[0];
   assert(bareRoot.attach === "target" && bareRoot.children.length === 0, "the single exported node is tagged attach:target with no children");
-  assert(bareRoot.bakedA && bareRoot.bakedA.filterType === "text" && bareRoot.bakedB && bareRoot.bakedB.filterType === "text",
+  assert(bareRoot.baked[0] && bareRoot.baked[0].filterType === "text" && bareRoot.baked[1] && bareRoot.baked[1].filterType === "text",
     "bakedA/bakedB (each side's own flat condition) travel with the export even for 'just this filter'");
 
   // --- "Include ancestor chain" (includeAncestors=true): today's original
@@ -1190,9 +1190,9 @@ await withApp(async (w, d, T) => {
   // Assertions are a column-stat/highlight annotation, not part of what
   // determines matching — bakeNodeCondition intentionally only copies
   // fields that define the match itself, so they don't travel into bakedA.
-  assert(loadedAnd.bakedA && loadedAnd.bakedA.filterType === "text" && loadedAnd.bakedA.value === "message [*:int]",
+  assert(loadedAnd.baked[0] && loadedAnd.baked[0].filterType === "text" && loadedAnd.baked[0].value === "message [*:int]",
     "bakedA (extractNode's own matching condition) round-trips intact");
-  assert(loadedAnd.bakedB && loadedAnd.bakedB.filterType === "text" && loadedAnd.bakedB.value === "other",
+  assert(loadedAnd.baked[1] && loadedAnd.baked[1].filterType === "text" && loadedAnd.baked[1].value === "other",
     "bakedB (fFilterB's own condition) round-trips intact");
   assert(w.getEntries(loadedAnd.id).length >= 0, "reloaded AND node's getEntries() resolves without throwing (re-evaluated fresh against the new file's own data)");
 
@@ -1206,7 +1206,7 @@ await withApp(async (w, d, T) => {
   w.importFilterJson(jsonJustThis);
   const loadedBareAnd = T.state.nodes[fdAnchor.children[fdAnchor.children.length - 1]];
   assert(loadedBareAnd && loadedBareAnd.filterType === "and", "the AND node is created directly under the clicked target, no ancestor chain brought along");
-  assert(loadedBareAnd.bakedA && loadedBareAnd.bakedB, "its bakedA/bakedB are still intact — 'just this filter' never depended on the ancestor chain to begin with");
+  assert(loadedBareAnd.baked[0] && loadedBareAnd.baked[1], "its bakedA/bakedB are still intact — 'just this filter' never depended on the ancestor chain to begin with");
   assert(w.getEntries(loadedBareAnd.id).length >= 0, "getEntries() resolves without throwing, fully self-contained");
 
   function W_setLoadTarget(w, targetId) {
@@ -1540,9 +1540,9 @@ await withApp(async (w, d, T) => {
   // of where the second input lives.
   const fFilterA = w.createFilterNode(fa.id, "text", "message");
   const fFilterB = w.createFilterNode(fb.id, "text", "other");
-  const andNode = w.createAndOrNode(fFilterA.id, fFilterB.id, "and");
+  const andNode = w.createAndOrNode([fFilterA.id, fFilterB.id], "and");
   w.render();
-  assert(andNode.bakedA.filterType === "text" && andNode.bakedA.value === "message" && andNode.bakedB.value === "other",
+  assert(andNode.baked[0].filterType === "text" && andNode.baked[0].value === "message" && andNode.baked[1].value === "other",
     "AND node stores a flat baked condition snapshot of each side's own condition");
   assert(andNode.parentId === fa.id, "AND node is placed directly under file A (fFilterA's root), not nested under fFilterA");
 
@@ -1553,7 +1553,7 @@ await withApp(async (w, d, T) => {
   w.pasteClipboard();
   assert(fFilterA.children.length === beforePaste + 1, "AND node can be copy/pasted");
   const pastedAndId = fFilterA.children[fFilterA.children.length - 1];
-  assert(T.state.nodes[pastedAndId].bakedA.value === "message" && T.state.nodes[pastedAndId].bakedB.value === "other",
+  assert(T.state.nodes[pastedAndId].baked[0].value === "message" && T.state.nodes[pastedAndId].baked[1].value === "other",
     "pasted AND node's bakedA/bakedB carry the same flat condition data (cloneSubtree deep-copies them)");
 
   // Moving the AND node into what would have been a cyclic position under
@@ -1565,7 +1565,7 @@ await withApp(async (w, d, T) => {
   const movedOk1 = w.moveNode(andNode.id, childOfB.id);
   assert(movedOk1 === true, "moving the AND node under fFilterB's subtree now succeeds (no cycle risk any more)");
   assert(andNode.parentId === childOfB.id, "AND node's parentId updated to the new position");
-  assert(andNode.bakedA.value === "message" && andNode.bakedB.value === "other", "...but bakedA/bakedB are completely untouched by the move");
+  assert(andNode.baked[0].value === "message" && andNode.baked[1].value === "other", "...but bakedA/bakedB are completely untouched by the move");
   assert(w.getEntries(andNode.id), "getEntries still resolves correctly (no infinite recursion) after the move");
 
   // Cross-file cut/paste is now an ordinary paste too — no reconstruction,
@@ -1577,18 +1577,18 @@ await withApp(async (w, d, T) => {
   assert(T.state.clipboard === null, "cross-file cut succeeds as a plain move");
   assert(T.state.nodes[andNode.id], "the SAME node id survives a cross-file cut/paste — no reconstruction any more");
   assert(andNode.parentId === fb.id, "the AND node now sits under file B");
-  assert(andNode.bakedA.value === "message" && andNode.bakedB.value === "other", "bakedA/bakedB are unaffected by crossing a file boundary");
+  assert(andNode.baked[0].value === "message" && andNode.baked[1].value === "other", "bakedA/bakedB are unaffected by crossing a file boundary");
 
   // Legit same-file move still works
   const gA = w.createFilterNode(fa.id, "text", "g");
   const gB = w.createFilterNode(fa.id, "text", "h");
-  const gAnd = w.createAndOrNode(gA.id, gB.id, "and");
+  const gAnd = w.createAndOrNode([gA.id, gB.id], "and");
   const otherFilterA = w.createFilterNode(fa.id, "text", "y");
   T.state.activeId = otherFilterA.id;
   const movedOk = w.moveNode(gAnd.id, otherFilterA.id);
   assert(movedOk === true, "moveNode allows a non-cyclic reparent");
   assert(gAnd.parentId === otherFilterA.id, "AND node's parentId updated after a legit move");
-  assert(gAnd.bakedA.value === "g" && gAnd.bakedB.value === "h", "bakedA/bakedB survive a legit move untouched");
+  assert(gAnd.baked[0].value === "g" && gAnd.baked[1].value === "h", "bakedA/bakedB survive a legit move untouched");
 
   // Real drag-and-drop DOM path + isFileDrag() overlay gate
   w.render();
@@ -1916,7 +1916,7 @@ section("20. Session cache: persist in one window, restore in the next");
     const t1 = w.createFilterNode(f.id, "text", "message 1");
     const t2 = w.createFilterNode(f.id, "text", "ERROR");
     t2.highlightColor = "#ff0000";
-    const combo = w.createAndOrNode(t1.id, t2.id, "and");
+    const combo = w.createAndOrNode([t1.id, t2.id], "and");
 
     const bEntry = f.entries[5];
     savedEntryRaw = bEntry.raw;
@@ -1973,7 +1973,7 @@ section("20. Session cache: persist in one window, restore in the next");
     assert(r1, "restore: first filter type/value");
     assert(r2 && r2.highlightColor === "#ff0000", "restore: highlight colour preserved");
     const combo = childNodes.find(n => n.filterType === "and");
-    assert(combo && combo.bakedA && combo.bakedA.value === "message 1" && combo.bakedB && combo.bakedB.value === "ERROR",
+    assert(combo && combo.baked[0] && combo.baked[0].value === "message 1" && combo.baked[1] && combo.baked[1].value === "ERROR",
       "restore: AND node's bakedA/bakedB round-tripped as plain data, no ref-remapping needed");
     // "message 1" matches entries 1, 10..19; ERROR matches 0,5,10,15,20,25 —
     // intersection is exactly {10, 15}.
@@ -2056,7 +2056,7 @@ group(21);
     const t1 = w.createFilterNode(f.id, "text", "message 1");
     const t2 = w.createFilterNode(f.id, "text", "ERROR");
     t2.highlightColor = "#ff0000";
-    const combo = w.createAndOrNode(t1.id, t2.id, "and");
+    const combo = w.createAndOrNode([t1.id, t2.id], "and");
 
     // Bookmarks on entries 5 and 15 (15 will be missing in the tier-3 fixture).
     savedRaw5 = f.entries[5].raw;
@@ -2160,7 +2160,7 @@ group(21);
     assert(r1 && r2 && r2.highlightColor === "#ff0000",
       "tier1: filter values + highlight colour round-trip");
     const combo = childNodes.find(n => n.filterType === "and");
-    assert(combo && combo.bakedA && combo.bakedA.value === "message 1" && combo.bakedB && combo.bakedB.value === "ERROR",
+    assert(combo && combo.baked[0] && combo.baked[0].value === "message 1" && combo.baked[1] && combo.baked[1].value === "ERROR",
       "tier1: AND node's bakedA/bakedB round-tripped as plain data");
     assert(w.getEntries(combo.id).length === 2, "tier1: AND node re-evaluates correctly (msgs 10,15)");
     assert(T.state.bookmarks.size === 2 && T.state.bookmarks.has(f.entries[5].id),
@@ -2472,8 +2472,8 @@ group(22);
 
     T.state.multiSelect = new Set([first.id, second.id, third.id]);
     const { actions } = w.describeBulkActions([first, second, third]);
-    assert(actions.some(a => a.action === "link" && /3-way/.test(a.label)),
-      "multi-hop dialog: 3-filter selection offers a labeled N-way Link… bulk action");
+    assert(actions.some(a => a.action === "link" && a.label === "Link…"),
+      "multi-hop dialog: 3-filter selection offers a plain Link… bulk action (no N-way suffix)");
 
     w.openLinkDialog([first.id, second.id, third.id]);
     assert(!d.querySelector("#linkDialog").classList.contains("hidden"), "multi-hop dialog: opens for 3 filters");
@@ -7152,7 +7152,7 @@ await withApp(async (w, d, T) => {
   assert(records[0].showInToolbar === false && records[0].icon === null,
     "new records default to showInToolbar:false / icon:null (unpinned, no icon)");
 
-  // "Add to library…" is OMITTED (not just disabled) when the selected node
+  // "Add to library…" is DISABLED (the toolbar is static) when the selected node
   // is a plain file, not a filter — a file/folder has nothing to serialize
   // into a preset, same guard openFilterLibrarySaveDialog's own caller
   // (saveFilterToLibrary) applies.
@@ -7160,7 +7160,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   ({ actions } = w.describeSidebarToolbarActions());
-  assert(!actions.some(a => a.action === "addToLibrary"), "'Add to library…' is not offered for a plain file selection");
+  assert(actions.find(a => a.action === "addToLibrary").disabled === true, "'Add to library…' is disabled for a plain file selection");
 
   // Blank name is a no-op (dialog stays open, nothing saved)
   T.state.multiSelect = new Set([textNode.id]);
@@ -7189,25 +7189,21 @@ await withApp(async (w, d, T) => {
   const fb = await w.addFile("b.log", makeLog(0, 20, { msgPrefix: "message" }), () => {});
   w.render();
 
-  // Right-click the SECOND file (never touched by the save above) -> "Apply from library…"
-  const fileRow = d.querySelector('.tree-row[data-node-id="' + fb.id + '"]');
-  fireContextMenu(fileRow, w);
-  const applyItem = [...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "applyFromLibrary");
-  assert(applyItem, "'Apply from library…' appears on a plain FILE node's context menu too, not just filter nodes");
-  fireClick(applyItem, w);
-
-  const dialog = d.querySelector("#filterLibraryDialog");
-  assert(!dialog.classList.contains("hidden"), "the apply dialog opens");
-  // renderFilterLibraryDialog's listFilterLibrary() read is async — wait for
-  // the row it produces, not for a fixed 20ms (see 59a).
-  await waitFor(() => d.querySelectorAll("#filterLibraryList .filter-library-row").length === 1);
-  const rows = [...d.querySelectorAll("#filterLibraryList .filter-library-row")];
-  assert(rows.length === 1 && rows[0].querySelector(".filter-library-row-name").textContent === "reusable text filter",
-    "the saved preset is listed");
+  // Select the SECOND file (never touched by the save above) and apply through the Library ▾ menu.
+  T.state.activeId = fb.id; T.state.multiSelect = new Set([fb.id]); w.render();
+  fireContextMenu(d.querySelector('.tree-row[data-node-id="' + fb.id + '"]'), w);
+  assert(![...d.querySelectorAll("#treeContextMenu [data-action]")].some(el => el.dataset.action === "applyFromLibrary"),
+    "the old 'Apply from library…' context-menu entry is gone (the Library ▾ menu replaced it)");
+  w.closeTreeContextMenu();
+  fireClick(d.querySelector("#btnLibrary"), w);
+  assert(!d.querySelector("#libraryMenu").classList.contains("hidden"), "the Library ▾ menu opens");
+  await waitFor(() => d.querySelectorAll("#libraryMenuList .lib-it").length === 1);
+  const rows = [...d.querySelectorAll("#libraryMenuList .lib-it")];
+  assert(rows[0].querySelector(".n").textContent === "reusable text filter", "the saved preset is listed");
 
   const before = fb.children.length;
-  fireClick(rows[0].querySelector("button.btn-mini"), w); // "Apply"
-  assert(dialog.classList.contains("hidden"), "clicking Apply closes the dialog");
+  fireClick(rows[0], w);
+  assert(d.querySelector("#libraryMenu").classList.contains("hidden"), "clicking a preset row closes the menu");
   assert(fb.children.length === before + 1, "a fresh copy of the filter is created directly under the target file");
   const appliedNode = T.state.nodes[fb.children[fb.children.length - 1]];
   assert(appliedNode.filterType === "text" && appliedNode.value === "message 1", "applied node carries the same filter definition");
@@ -7216,11 +7212,11 @@ await withApp(async (w, d, T) => {
   // against ITS entries, not a replayed result from file a).
   assert(w.getEntries(appliedNode.id).length === 11, "re-evaluates against the target file's OWN data, got " + w.getEntries(appliedNode.id).length);
 
-  // --- Delete from the library ---
-  fireContextMenu(fileRow, w);
-  fireClick([...d.querySelectorAll("#treeContextMenu [data-action]")].find(el => el.dataset.action === "applyFromLibrary"), w);
-  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-row-del"));
-  const delBtn = d.querySelector("#filterLibraryList .filter-library-row-del");
+  // --- Delete from the library (manage dialog; immediate, Undo in the toast) ---
+  fireClick(d.querySelector("#btnLibrary"), w);
+  fireClick(d.querySelector("#libraryMenuManage"), w);
+  await waitFor(() => !!d.querySelector("#filterLibraryList .lib-del"));
+  const delBtn = d.querySelector("#filterLibraryList .lib-del");
   fireClick(delBtn, w);
   await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-empty"));
   assert(d.querySelector("#filterLibraryList .filter-library-empty"), "list re-renders empty after deleting the only entry");
@@ -7314,10 +7310,10 @@ await withApp(async (w, d, T) => {
   assert(seps >= 4, "a filter node's context menu has at least 4 separators (meta + 3 group boundaries among edit/clipboard/library/danger), got " + seps);
 
   // Group order: edit (edit/invert) before clipboard (copy/cut) before
-  // library (saveFilter/applyFromLibrary) before danger (delete)
+  // library (saveFilter) before danger (delete)
   // — verify relative order via each action's index.
   // ("Save to library…" moved out of this menu onto the sidebar toolbar's
-  // "Add to library…" action; "Apply from library…" stays here. "Time
+  // "Add to library…" action; "Apply from library…" moved to the Library ▾ menu. "Time
   // context…"/"Count context…" were REMOVED from this menu entirely, this
   // session — FEATURE_BACKLOG.md #79 — so the edit group is now just
   // edit/invert; see the regression guard right below for their absence.)
@@ -7326,11 +7322,12 @@ await withApp(async (w, d, T) => {
     "'Time context…'/'Count context…' no longer appear on a filter node's context menu — there is no user-facing way left to create a fresh one (FEATURE_BACKLOG.md #79)");
   assert(indexOf("edit") < indexOf("invert"), "edit group stays together and in order: edit, invert");
   assert(indexOf("invert") < indexOf("copy") && indexOf("copy") < indexOf("cut"), "clipboard group (copy, cut) comes after the edit group");
-  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("applyFromLibrary"),
-    "library group (save filter, apply from library) comes after clipboard, in order");
+  assert(indexOf("cut") < indexOf("saveFilter") && indexOf("saveFilter") < indexOf("delete"),
+    "library group (save filter) comes after clipboard, before the danger group");
+  assert(indexOf("applyFromLibrary") === -1, "'Apply from library…' is gone from the context menu (Library ▾ menu in #viewBar — GROUP 320)");
   assert(indexOf("loadFilter") === -1, "'Load filter…' is gone from the context menu (the central Open → Import…/drop replaces it — GROUP 294)");
   assert(indexOf("saveToLibrary") === -1, "'Save to library…' is no longer a context-menu action (moved to the sidebar toolbar's 'Add to library…')");
-  assert(indexOf("applyFromLibrary") < indexOf("delete"), "danger group (remove filter) comes last");
+  assert(indexOf("saveFilter") < indexOf("delete"), "danger group (remove filter) comes last");
 
   // A .ctx-sep must actually separate the edit and clipboard groups (not
   // just "somewhere in the menu") — the item right after "invert" (edit
@@ -7365,12 +7362,11 @@ await withApp(async (w, d, T) => {
   fireContextMenu(d.querySelector('.tree-row[data-node-id="' + f.id + '"]'), w);
   const fileChildren = [...d.querySelector("#treeContextMenu").children];
   const fileIndexOf = action => fileChildren.findIndex(c => c.dataset && c.dataset.action === action);
-  assert(fileIndexOf("clockOffset") >= 0 && fileIndexOf("clockOffset") < fileIndexOf("applyFromLibrary"),
-    "a file node's context menu offers 'Adjust clock…' in the edit group, before the library items");
-  assert(fileIndexOf("loadFilter") === -1 && fileIndexOf("applyFromLibrary") < fileIndexOf("delete"),
-    "a file node's context menu still groups library items before the danger (remove file) item");
+  assert(fileIndexOf("clockOffset") >= 0 && fileIndexOf("clockOffset") < fileIndexOf("delete"),
+    "a file node's context menu offers 'Adjust clock…' in the edit group, before the danger (remove file) item");
+  assert(fileIndexOf("loadFilter") === -1 && fileIndexOf("applyFromLibrary") === -1, "a file node's menu has no filter-library items any more");
   const libSep = fileChildren.filter(c => c.classList.contains("ctx-sep")).length;
-  assert(libSep === 3, "file node menu has 3 separators (meta, edit->library, library->danger), got " + libSep);
+  assert(libSep === 2, "file node menu has 2 separators (meta, edit->danger; the library group is empty), got " + libSep);
 });
 
 await withApp(async (w, d, T) => {
@@ -14489,10 +14485,10 @@ await withApp(async (w, d, T) => {
   // --- Placement: AND/OR/LINK always land as a new top-level child of the
   // shared root file, regardless of where the two inputs sit in the tree. ---
   const nested = w.createFilterNode(posFilter.id, "text", "pos 1"); // a filter NESTED under posFilter
-  const andNode = w.createAndOrNode(nested.id, valFilter.id, "and");
+  const andNode = w.createAndOrNode([nested.id, valFilter.id], "and");
   assert(andNode.parentId === f.id, "AND node is placed directly under the FILE, not nested under either input");
   assert(f.children.includes(andNode.id), "...and is a real top-level child of the file");
-  assert(andNode.bakedA.filterType === "text" && andNode.bakedA.value === "pos 1" && andNode.bakedB.value === "val",
+  assert(andNode.baked[0].filterType === "text" && andNode.baked[0].value === "pos 1" && andNode.baked[1].value === "val",
     "bakedA/bakedB are flat copies of each side's OWN single condition");
 
   // --- getEntries() evaluates bakedA/bakedB as predicates over its own
@@ -14504,7 +14500,7 @@ await withApp(async (w, d, T) => {
   const movedOk = w.moveNode(andNode.id, unrelatedParent.id);
   assert(movedOk === true, "moving an and/or/link node is always a plain, unguarded reparent now");
   assert(andNode.parentId === unrelatedParent.id, "parentId updated by the move");
-  assert(andNode.bakedA.value === "pos 1" && andNode.bakedB.value === "val", "bakedA/bakedB are untouched by the move");
+  assert(andNode.baked[0].value === "pos 1" && andNode.baked[1].value === "val", "bakedA/bakedB are untouched by the move");
   const after = w.getEntries(andNode.id).map(e => e.id);
   // unrelatedParent ("message") still matches every entry in this log, so
   // the AND's own input pool is unchanged in practice — the move is a
@@ -14531,7 +14527,7 @@ await withApp(async (w, d, T) => {
   // AND's result is UNCHANGED, delete B, verify it's STILL unchanged. ---
   const some = w.createFilterNode(f.id, "text", "message 5"); // "Some"
   const entry = w.createFilterNode(f.id, "text", "message");  // "Entry" (matches every entry)
-  const someAndEntry = w.createAndOrNode(some.id, entry.id, "and");
+  const someAndEntry = w.createAndOrNode([some.id, entry.id], "and");
   const reproCountBefore = w.getEntries(someAndEntry.id).length;
   assert(reproCountBefore === 1, "sanity: 'Some' AND 'Entry' matches exactly the one entry containing 'message 5'");
   w.deleteFilterNodeWithUndo(some.id);
@@ -14547,7 +14543,7 @@ await withApp(async (w, d, T) => {
   const afterTen = w.createFilterNode(f.id, "timerange", { from: f.entries[8].ts, to: null }); // C: "only entries after index 8"
   const aUnderC = w.createFilterNode(afterTen.id, "text", "message 5"); // A, NESTED under C
   const bPlain = w.createFilterNode(f.id, "text", "message");           // B, matches everything
-  const combinedUnderC = w.createAndOrNode(aUnderC.id, bPlain.id, "and");
+  const combinedUnderC = w.createAndOrNode([aUnderC.id, bPlain.id], "and");
   // A's own condition ("message 5") matches ONE entry file-wide (index 5),
   // which sits BEFORE C's "after index 8" restriction — if C's restriction
   // leaked in, the combined result would wrongly be empty.
@@ -14559,7 +14555,7 @@ await withApp(async (w, d, T) => {
   // created, so Unpack never leaves a duplicate of itself behind. ---
   const unpackA = w.createFilterNode(f.id, "text", "pos");
   const unpackB = w.createFilterNode(f.id, "text", "val");
-  const toUnpack = w.createAndOrNode(unpackA.id, unpackB.id, "and");
+  const toUnpack = w.createAndOrNode([unpackA.id, unpackB.id], "and");
   const resultBefore = w.getEntries(toUnpack.id).map(e => e.id);
   const parentBefore = toUnpack.parentId;
   const returnedId = w.unpackAndOrLinkNode(toUnpack.id);
@@ -14574,22 +14570,22 @@ await withApp(async (w, d, T) => {
 
   // --- Persistence carriers thread bakedA/bakedB through as plain data ---
   const clone = w.cloneSubtree(andNode.id, f.id);
-  assert(clone.bakedA.value === andNode.bakedA.value && clone.bakedB.value === andNode.bakedB.value,
+  assert(clone.baked[0].value === andNode.baked[0].value && clone.baked[1].value === andNode.baked[1].value,
     "cloneSubtree deep-copies bakedA/bakedB as plain data");
 
   const snap = w.snapshotSubtree(andNode.id);
   delete T.state.nodes[andNode.id];
   const restored = w.restoreSubtree(snap);
-  assert(restored.id === andNode.id && restored.bakedA.value === "pos 1" && restored.bakedB.value === "val",
+  assert(restored.id === andNode.id && restored.baked[0].value === "pos 1" && restored.baked[1].value === "val",
     "snapshotSubtree/restoreSubtree preserve the ORIGINAL id and bakedA/bakedB (undo/redo)");
 
   const { roots: cacheRoots } = w.serializeFilterTreeForCache(f);
-  const findAnd = list => { for (const n of list) { if (n.filterType === "and" && n.bakedA) return n; const r = findAnd(n.children); if (r) return r; } return null; };
+  const findAnd = list => { for (const n of list) { if (n.filterType === "and" && n.baked) return n; const r = findAnd(n.children); if (r) return r; } return null; };
   const serializedAnd = findAnd(cacheRoots);
   assert(serializedAnd, "serializeFilterTreeForCache emits bakedA/bakedB for an and/or node");
   const f2 = await w.addFile("128b.log", makeLog(0, 10), () => {});
   const refMap2 = w.materializeCachedFilters(f2, cacheRoots);
-  const restoredAndId = Object.values(refMap2).find(id => T.state.nodes[id].filterType === "and" && T.state.nodes[id].bakedA);
+  const restoredAndId = Object.values(refMap2).find(id => T.state.nodes[id].filterType === "and" && T.state.nodes[id].baked);
   assert(restoredAndId, "materializeCachedFilters carries bakedA/bakedB through as plain data, no ref-resolution needed");
 });
 
@@ -14829,7 +14825,7 @@ await withApp(async (w, d, T) => {
   // --- Same placement rule for an and/or/link node, at a non-FILE target ---
   const andA = w.createFilterNode(fb.id, "text", "message 1");
   const andB = w.createFilterNode(fb.id, "text", "message");
-  const andNode = w.createAndOrNode(andA.id, andB.id, "and");
+  const andNode = w.createAndOrNode([andA.id, andB.id], "and");
   const andCount = w.getEntries(andNode.id).length;
   const andBranch = w.serializeFilterBranch(andNode.id, false);
   const beforeChildren3 = nonFileTarget.children.length;
@@ -14837,7 +14833,7 @@ await withApp(async (w, d, T) => {
   w.importFilterJson(JSON.stringify({ format: "philogg-filters", version: 2, activeRef: andBranch.activeRef, roots: andBranch.roots }));
   assert(nonFileTarget.children.length === beforeChildren3 + 1, "an and/or/link node's export also lands under the current non-FILE target, not FILE");
   const loadedAnd = T.state.nodes[nonFileTarget.children[nonFileTarget.children.length - 1]];
-  assert(loadedAnd.filterType === "and" && loadedAnd.bakedA && loadedAnd.bakedB, "the imported and/or/link node is fully self-contained via its own bakedA/bakedB");
+  assert(loadedAnd.filterType === "and" && loadedAnd.baked[0] && loadedAnd.baked[1], "the imported and/or/link node is fully self-contained via its own bakedA/bakedB");
   assert(w.getEntries(loadedAnd.id).length >= 0, "it re-evaluates without throwing");
 
   // --- The export-scope prompt is asked as part of the actual Save filter…
@@ -14912,7 +14908,7 @@ await withApp(async (w, d, T) => {
   w.invalidateAllCaches();
   assert(w.getEntries(legacy.id).length === 0, "a combiner with no baked sides evaluates to nothing rather than throwing");
   let threw = null;
-  try { assert(w.createAndOrNode(legacy.id, plain.id, "and") === null, "combining it is refused (returns null)"); }
+  try { assert(w.createAndOrNode([legacy.id, plain.id], "and") === null, "combining it is refused (returns null)"); }
   catch (e) { threw = e; }
   assert(!threw, "combining a combiner with no baked sides doesn't throw, got " + (threw && threw.message));
   threw = null;
@@ -14928,7 +14924,7 @@ await withApp(async (w, d, T) => {
   // menu: a properly baked combiner in the same harness DOES offer Unpack.
   const okA = w.createFilterNode(f.id, "text", "message 3");
   const okB = w.createFilterNode(f.id, "text", "message 4");
-  const realAnd = w.createAndOrNode(okA.id, okB.id, "and");
+  const realAnd = w.createAndOrNode([okA.id, okB.id], "and");
   T.state.activeId = realAnd.id;
   w.render();
   w.openTreeContextMenu({ clientX: 10, clientY: 10, preventDefault() {}, stopPropagation() {} }, realAnd.id);
@@ -14954,7 +14950,7 @@ await withApp(async (w, d, T) => {
   const link = w.createLinkNode(ref.id, tgt.id, "after", 1);
   w.invalidateAllCaches();
   assert(w.getEntries(link.id).length > 0, "sanity: the link node itself produces pair entries");
-  assert(w.createAndOrNode(link.id, plain.id, "and") === null,
+  assert(w.createAndOrNode([link.id, plain.id], "and") === null,
     "createAndOrNode refuses a link side — pair-entry ids never intersect a plain entry pool");
   const linkActions = w.describeBulkActions([T.state.nodes[link.id], T.state.nodes[plain.id]]).actions.map(a => a.action);
   assert(linkActions.join("/") === "link",
@@ -16916,11 +16912,11 @@ await withApp(async (w, d, T) => {
 
   // --- and/or sides: bakeNodeCondition/getEntriesFromBaked ---------------
   const other = w.createFilterNode(f.id, "text", "active", false, null, false, ["message"]);
-  const andNode = w.createAndOrNode(whole.id, other.id, "and");
+  const andNode = w.createAndOrNode([whole.id, other.id], "and");
   assert(andNode && JSON.stringify(w.getEntries(andNode.id).map(e => f.entries.indexOf(e))) === JSON.stringify([0]),
     "an AND over a whole-word side bakes the flag in: only \"Test is active\" satisfies both, got " +
     JSON.stringify(w.getEntries(andNode.id).map(e => f.entries.indexOf(e))));
-  assert(andNode.bakedA.wholeWord === true, "bakeNodeCondition copies wholeWord into the baked side");
+  assert(andNode.baked[0].wholeWord === true, "bakeNodeCondition copies wholeWord into the baked side");
 
   // --- Match highlighting honours it (textFilterMatchSpec/findMatchRanges) ---
   const spec = w.textFilterMatchSpec(whole);
@@ -21364,17 +21360,18 @@ await withApp(async (w, d, T) => {
 
   // Pin it via the manage dialog's toggle.
   await w.openFilterLibraryDialog(fa.id);
-  await waitFor(() => !!d.querySelector("#filterLibraryList .filter-library-pin input"));
-  const pinCb = d.querySelector("#filterLibraryList .filter-library-pin input");
-  pinCb.checked = true;
-  pinCb.dispatchEvent(new w.Event("change", { bubbles: true }));
+  await waitFor(() => !!d.querySelector("#filterLibraryList .lib-star"));
+  fireClick(d.querySelector("#filterLibraryList .lib-star"), w); // star = pin to the toolbar
 
   await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
   const pill = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
   assert(pill, "pinning the preset adds a pill to #libraryPresetBar");
   assert(pill.querySelector(".row-action-label").textContent === "toolbar preset", "the pill carries the preset name as its label");
-  // No icon assigned yet → ICON_FILTER fallback (funnel path, not a circle).
-  assert(pill.querySelector(".row-action-hit").innerHTML.includes("M2 3h12"), "with no icon assigned the pill shows the ICON_FILTER fallback");
+  T.state.activeId = textNode.id; T.state.multiSelect = new Set();
+  pill.dispatchEvent(new w.MouseEvent("mouseenter"));
+  assert(pill.title === "Apply toolbar preset to " + w.nodeDisplayName(textNode), "pill tooltip names the preset and the target, got " + pill.title);
+  // No icon assigned yet → ICON_FILTER fallback (the sprite's funnel).
+  assert(pill.querySelector(".row-action-hit").innerHTML.includes("#i-filter"), "with no icon assigned the pill shows the ICON_FILTER fallback");
   // Pills live in the "Library Filter" group (#libraryPresetBar) — the old
   // management buttons that used to sit alongside it in #libraryManageBar
   // are gone from #viewBar entirely (see GROUP 220/221's own regression
@@ -21414,7 +21411,7 @@ await withApp(async (w, d, T) => {
   await w.updateFilterLibraryEntry(key, { showInToolbar: true, icon: "clock" });
   await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
   const pill = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
-  assert(pill.querySelector(".row-action-hit").innerHTML.includes("<circle"), "the pill shows the assigned 'clock' icon (a circle), not the funnel fallback");
+  assert(pill.querySelector(".row-action-hit").innerHTML.includes("#i-clock"), "the pill shows the assigned 'clock' icon, not the funnel fallback");
 
   // The icon field actually persisted on the record.
   const rec = (await w.listFilterLibrary())[0];
@@ -21484,8 +21481,8 @@ await withApp(async (w, d, T) => {
   await w.updateFilterLibraryEntry(key, { showInToolbar: false });
   await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0);
   assert(d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0, "unpinning removes the toolbar pill");
-  assert(d.querySelector("#libraryPresetBar").hidden && d.querySelector("#libraryPresetSep").hidden,
-    "the Library Filter group and its leading separator collapse out when nothing is pinned");
+  assert(d.querySelector("#libraryPresetBar").hidden && !d.querySelector("#libraryPresetSep").hidden,
+    "the pill group collapses when nothing is pinned, the separator stays (the Library ▾ button always follows it)");
 }, { indexedDB: new IDBFactory() });
 
 /* ============================================================
@@ -25338,130 +25335,102 @@ await withApp(async (w, d, T) => {
 
 /* ============================================================
    GROUP 220 — Files & Filters sidebar toolbar (FEATURE_BACKLOG.md #77)
-   Origin: this session (rewritten same session, after project-owner review
-   of an initial pass — see the retired GROUP 220 in TEST PROVENANCE for
-   what that first shape looked like). New #sidebarToolbar, same icon+
-   hover-label button concept as #viewBar/the per-view toolbars
-   (buildRowActionsHtml, "rect" shape — the per-view toolbars' own look, not
-   #viewBar's circle — /setupHitExpandGroups), replacing the tree's row
-   icons/right-click-only actions with a selection-dependent toolbar of at
-   most two `|`-separated groups. describeSidebarToolbarActions() decides
-   the button set for every selection shape (0/1/2+ selected, file vs.
-   filter, locked Bookmarks node, same-root vs. different-root/mixed
-   multi-selection); handleSidebarToolbarActionClick(action) dispatches to
-   the pre-existing function/dialog each action already had (zero
-   duplicated business logic). AND/OR/Link… move EXCLUSIVELY here (person-
-   confirmed): removed from the retired #treeActionBar (its Merge case
-   folds into this toolbar's own "2+ files" case) and from
-   openTreeContextMenu's own bulk-action rendering (Merge stays there, see
-   GROUP 221c). `copy`/`cut`/`saveFilter`/`loadFilter`/`context`/
-   `countContext` are removed from the toolbar entirely, for every
-   selection shape (220h is the dedicated absence guard) — the first four
-   stay on the tree's right-click menu unaffected, the last two are removed
-   from there too (FEATURE_BACKLOG.md #79, see GROUP 60b). "Add to
-   library…"/"Apply from library…" replace #viewBar's old dedicated
-   #btnAddToLibrary/#btnOpenLibrary buttons (removal regression-guarded in
-   GROUP 194b), now targeting the specific selected node. Covers every
-   selection shape
-   describeSidebarToolbarActions handles, plus a representative spread of
-   handleSidebarToolbarActionClick's dispatch targets.
+   Origin: #77 (rewritten 2026-09-28 for the static toolbar). #sidebarToolbar
+   uses the same flat icon+hover-label buttons as the per-view toolbars
+   (buildRowActionsHtml, "rect" shape / setupHitExpandGroups) but its button
+   SET is fixed: Rename… | Edit filter… | Invert (NOT) · Adjust clock… ·
+   Add to library…. describeSidebarToolbarActions() returns that list with a
+   `disabled` flag per button (never omitted); renderSidebarToolbar() builds
+   the DOM once and only toggles disabled/label afterwards.
+   handleSidebarToolbarActionClick(action) dispatches to the pre-existing
+   function/dialog each action already had (zero duplicated business logic).
+   With 2+ nodes selected the row is not rendered at all: multi mode shows
+   the bulk actions instead (GROUP 319d/e). "Apply from
+   library…" left this toolbar (it stays on the tree context menu, GROUP 79
+   /194). The retired dynamic-toolbar shape is in TEST PROVENANCE.
    ============================================================ */
 group(220);
 
+const SB_FIXED = "rename,edit,invert,clockOffset,addToLibrary";
+const sbState = actions => actions.filter(a => !a.group).map(a => a.action + (a.disabled ? ":off" : ":on")).join(",");
+
 await withApp(async (w, d, T) => {
-  section("220a. describeSidebarToolbarActions: 0 selected -> Apply from library only, targeting state.activeId, disabled with no active id");
+  section("220a. describeSidebarToolbarActions: nothing selected -> the five fixed buttons, all disabled");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.multiSelect = new Set();
-  T.state.activeId = null;
-  let { actions, note } = w.describeSidebarToolbarActions();
-  assert(actions.length === 1 && actions[0].action === "applyFromLibrary",
-    "0 selected, no active id: only Apply from library…, got " + actions.map(a => a.action).join(","));
-  assert(actions[0].disabled === true, "...disabled with no active id");
-  assert(!note, "no explanatory note needed here");
-
   T.state.activeId = f.id;
-  ({ actions } = w.describeSidebarToolbarActions());
-  assert(actions[0].disabled === false && actions[0].target === f.id, "0 selected but a real active id: Apply from library… enabled, targeting state.activeId");
+  let { actions, note } = w.describeSidebarToolbarActions();
+  assert(actions.map(a => a.action).join(",") === SB_FIXED, "fixed set/order, got " + actions.map(a => a.action).join(","));
+  assert(actions.every(a => a.disabled === true), "nothing selected: every button disabled (not hidden), got " + sbState(actions));
+  assert(!note, "no explanatory note");
+  assert(!actions.some(a => a.action === "applyFromLibrary"), "Apply from library… is no longer on the toolbar");
+  const seps = actions.filter(a => a.separator).map(a => a.action).join(",");
+  assert(seps === "clockOffset,addToLibrary", "separators before Adjust clock… and Add to library…, got " + seps);
 });
 
 await withApp(async (w, d, T) => {
-  section("220b. describeSidebarToolbarActions: 1 file selected -> Adjust clock | Apply from library, Adjust clock excluded for a merged or empty file");
+  section("220b. 1 file selected: only Adjust clock… enabled; disabled for a merged or an empty file");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   T.state.multiSelect = new Set([fa.id]);
   T.state.activeId = fa.id;
   let { actions } = w.describeSidebarToolbarActions();
-  assert(actions.map(a => a.action).join(",") === "clockOffset,applyFromLibrary",
-    "a real, non-merged, non-empty file: exactly Adjust clock… then Apply from library…, got " + actions.map(a => a.action).join(","));
-  assert(actions[0].target === fa.id && actions[1].target === fa.id, "both actions target the selected file itself");
-  assert(!actions[0].separator && actions[1].separator === true, "the `|` separator sits directly before the library group, not before Adjust clock…");
+  assert(sbState(actions) === "rename:off,edit:off,invert:off,clockOffset:on,addToLibrary:off", "got " + sbState(actions));
+  assert(actions.find(a => a.action === "clockOffset").target === fa.id, "Adjust clock… targets the selected file");
 
   const merged = await w.mergeFiles([fa.id, fb.id]);
   T.state.multiSelect = new Set([merged.id]);
   T.state.activeId = merged.id;
   ({ actions } = w.describeSidebarToolbarActions());
-  assert(!actions.some(a => a.action === "clockOffset"), "a merged file has no clock of its own to adjust — Adjust clock… is omitted entirely, not just disabled");
-  assert(actions.length === 1 && actions[0].action === "applyFromLibrary" && !actions[0].separator,
-    "with Adjust clock… omitted, Apply from library… is the only action and carries no leading separator");
+  assert(actions.every(a => a.disabled), "a merged file has no clock of its own: everything disabled (buttons stay), got " + sbState(actions));
+  assert(actions.length === 5, "...and the button set is unchanged");
 
   const emptyFileId = "syntheticEmptyFile";
   T.state.nodes[emptyFileId] = { id: emptyFileId, type: "file", merged: false, entries: [], children: [] };
   T.state.multiSelect = new Set([emptyFileId]);
   T.state.activeId = emptyFileId;
   ({ actions } = w.describeSidebarToolbarActions());
-  assert(!actions.some(a => a.action === "clockOffset"), "an empty file (zero entries) also excludes Adjust clock…");
+  assert(actions.find(a => a.action === "clockOffset").disabled === true, "an empty file (zero entries) disables Adjust clock…");
 });
 
 await withApp(async (w, d, T) => {
-  section("220c. describeSidebarToolbarActions: 2+ files selected -> Merge | Apply from library (state.activeId fallback), no AND/OR/Link");
+  section("220c. 2+ files selected: describeSidebarToolbarActions reports the five fixed buttons all disabled (Merge lives in multi mode)");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   T.state.multiSelect = new Set([fa.id, fb.id]);
   T.state.activeId = fa.id;
   const { actions } = w.describeSidebarToolbarActions();
-  const mergeAction = actions.find(a => a.action === "merge");
-  assert(mergeAction && /Merge 2 files/.test(mergeAction.label), "2 files selected -> a Merge action with the expected label, got " + JSON.stringify(actions.map(a => a.action)));
-  assert(Array.isArray(mergeAction.target) && mergeAction.target.length === 2 &&
-    mergeAction.target.includes(fa.id) && mergeAction.target.includes(fb.id), "merge action's target is the array of selected file ids");
-  assert(!actions.some(a => a.action === "and" || a.action === "or" || a.action === "link"), "no AND/OR/Link for a files-only selection");
-  const applyLib = actions.find(a => a.action === "applyFromLibrary");
-  assert(applyLib && applyLib.separator === true, "Apply from library… is appended after Merge, with a leading separator");
-  assert(applyLib.target === fa.id, "with no single selected node, Apply from library… falls back to state.activeId (fa.id here)");
-  assert(applyLib.disabled === false, "...enabled since state.activeId is a valid, unlocked node");
+  assert(actions.length === 5 && actions.every(a => a.disabled), "all five buttons disabled for 2+ selected");
+  assert(!actions.some(a => a.action === "merge" || a.action === "and" || a.action === "or" || a.action === "link"), "no bulk action on the toolbar");
 });
 
 await withApp(async (w, d, T) => {
-  section("220d. describeSidebarToolbarActions: 1 unlocked filter -> Rename/Edit/Invert | Add to library…/Apply from library…, Edit/Invert conditional per filterType");
+  section("220d. 1 unlocked filter: enable matrix per filter type (text / and-or / link)");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
-  const textNode = w.createFilterNode(f.id, "text", "message 1");
-  T.state.multiSelect = new Set([textNode.id]);
-  T.state.activeId = textNode.id;
-  const { actions } = w.describeSidebarToolbarActions();
-  const names = actions.map(a => a.action);
-  assert(names.join(",") === "rename,edit,invert,addToLibrary,applyFromLibrary",
-    "a plain text filter offers exactly rename, edit, invert | addToLibrary, applyFromLibrary, in order, got " + names.join(","));
-  assert(actions.every(a => a.target === textNode.id), "every action targets the selected filter node specifically");
-  const addLib = actions.find(a => a.action === "addToLibrary");
-  assert(addLib.separator === true, "the `|` separator sits directly before 'Add to library…', marking the group boundary");
-  assert(!actions.slice(0, 3).some(a => a.separator), "no separator inside the first group (rename/edit/invert)");
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const pick = id => { T.state.multiSelect = new Set([id]); T.state.activeId = id; return w.describeSidebarToolbarActions().actions; };
+  let actions = pick(t1.id);
+  assert(sbState(actions) === "rename:on,edit:on,invert:on,clockOffset:off,addToLibrary:on", "text filter, got " + sbState(actions));
+  assert(actions.filter(a => a.target !== t1.id).length === 0, "every action targets the selected filter");
 
-  // Edit/Invert excluded for a filterType that doesn't support them (same
-  // guards openTreeContextMenu's own single-node branch applies) — a link
-  // node, via createLinkNode.
+  const andNode = w.createAndOrNode([t1.id, t2.id], "and");
+  actions = pick(andNode.id);
+  assert(sbState(actions) === "rename:on,edit:off,invert:on,clockOffset:off,addToLibrary:on", "AND node: no Edit, got " + sbState(actions));
+
   const f2 = await w.addFile("b.log", makeLog(0, 20), () => {});
-  const t1 = w.createFilterNode(f2.id, "text", "message 1");
-  const t2 = w.createFilterNode(f2.id, "text", "message 2");
-  const linkNode = w.createLinkNode(t1.id, t2.id, "after", 1);
-  T.state.multiSelect = new Set([linkNode.id]);
-  T.state.activeId = linkNode.id;
-  const { actions: linkActions } = w.describeSidebarToolbarActions();
-  const linkNames = linkActions.map(a => a.action);
-  assert(linkNames.join(",") === "rename,addToLibrary,applyFromLibrary",
-    "a link filter drops edit/invert but keeps rename | addToLibrary, applyFromLibrary, got " + linkNames.join(","));
+  const l1 = w.createFilterNode(f2.id, "text", "message 1");
+  const l2 = w.createFilterNode(f2.id, "text", "message 2");
+  const linkNode = w.createLinkNode(l1.id, l2.id, "after", 1);
+  actions = pick(linkNode.id);
+  assert(sbState(actions) === "rename:on,edit:off,invert:off,clockOffset:off,addToLibrary:on", "link node: Rename + Add to library only, got " + sbState(actions));
+
+  t1.inverted = true;
+  assert(pick(t1.id).find(a => a.action === "invert").label === "Remove NOT", "an inverted filter's button reads 'Remove NOT'");
 });
 
 await withApp(async (w, d, T) => {
-  section("220e. describeSidebarToolbarActions: the locked 'Bookmarks' node -> Apply from library only, disabled");
+  section("220e. the locked 'Bookmarks' node: everything disabled");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   w.toggleBookmark(f.entries[0].id);
   const bmNode = Object.values(T.state.nodes).find(n => n.filterType === "bookmarks");
@@ -25469,153 +25438,161 @@ await withApp(async (w, d, T) => {
   T.state.multiSelect = new Set([bmNode.id]);
   T.state.activeId = bmNode.id;
   const { actions } = w.describeSidebarToolbarActions();
-  assert(actions.length === 1 && actions[0].action === "applyFromLibrary",
-    "the locked Bookmarks node offers only Apply from library… (Copy was the only thing shown here before this revision; it's gone from the toolbar entirely now), got " + actions.map(a => a.action).join(","));
-  assert(actions[0].disabled === true, "...disabled, same locked gate as always");
-  assert(actions[0].target === bmNode.id, "...still targeting the locked node itself, not falling back to state.activeId");
+  assert(actions.length === 5 && actions.every(a => a.disabled), "locked node: five buttons, all disabled, got " + sbState(actions));
 });
 
 await withApp(async (w, d, T) => {
-  section("220f. describeSidebarToolbarActions: 2+ filters, same root -> AND/OR/Link only, no library group, with the 2-way vs. N-way Link label difference");
+  section("220f. 2+ filters, same root: single-row description all disabled; describeBulkActions offers AND, OR, Link… for 2 and for 3 filters");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   T.state.multiSelect = new Set([t1.id, t2.id]);
   T.state.activeId = t1.id;
-  let { actions } = w.describeSidebarToolbarActions();
-  assert(actions.map(a => a.action).join(",") === "and,or,link",
-    "2 filters, same root -> exactly AND, OR, Link… — no library group for a 2+ FILTER selection, got " + actions.map(a => a.action).join(","));
-  const link2 = actions.find(a => a.action === "link");
-  assert(link2 && !/-way/.test(link2.label), "2-filter Link… label has no N-way suffix, got " + (link2 && link2.label));
-  assert(Array.isArray(link2.target) && link2.target.length === 2, "link target is the 2-id selection array");
-
+  assert(w.describeSidebarToolbarActions().actions.every(a => a.disabled), "toolbar buttons all disabled");
+  let actions = w.describeBulkActions([t1, t2]).actions;
+  assert(actions.map(a => a.action).join(",") === "and,or,link", "AND, OR, Link…, got " + actions.map(a => a.action).join(","));
+  assert(actions.find(a => a.action === "link").label === "Link…", "Link… label has no N-way suffix");
   const t3 = w.createFilterNode(f.id, "text", "message 3");
-  T.state.multiSelect = new Set([t1.id, t2.id, t3.id]);
-  ({ actions } = w.describeSidebarToolbarActions());
-  const link3 = actions.find(a => a.action === "link");
-  assert(link3 && /3-way/.test(link3.label), "3-filter selection labels Link… as 3-way, got " + (link3 && link3.label));
-  assert(!actions.some(a => a.action === "and" || a.action === "or"), "AND/OR stay two-filter-only, same as describeBulkActions");
-  assert(!actions.some(a => a.action === "applyFromLibrary"), "still no library group for a 3-filter selection");
+  actions = w.describeBulkActions([t1, t2, t3]).actions;
+  assert(actions.map(a => a.action).join(",") === "and,or,link", "3 filters: AND, OR, Link… too, got " + actions.map(a => a.action).join(","));
+  assert(actions.find(a => a.action === "link").label === "Link…", "3-filter Link… still has no N-way suffix");
 });
 
 await withApp(async (w, d, T) => {
-  section("220g. describeSidebarToolbarActions: filters from different root files, and a mixed files+filters selection -> explanatory note, zero actions");
+  section("220g. filters from different root files / mixed files+filters -> explanatory note + short message (toolbar multi mode)");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   const ta = w.createFilterNode(fa.id, "text", "message 1");
   const tb = w.createFilterNode(fb.id, "text", "message 1");
   T.state.multiSelect = new Set([ta.id, tb.id]);
   T.state.activeId = ta.id;
-  let { actions, note } = w.describeSidebarToolbarActions();
-  assert(actions.length === 0, "filters from different root files offer zero actions, got " + actions.map(a => a.action).join(","));
-  assert(!!note, "...and an explanatory note instead of a silent no-op");
-
-  T.state.multiSelect = new Set([fa.id, ta.id]);
-  ({ actions, note } = w.describeSidebarToolbarActions());
-  assert(actions.length === 0 && !!note, "a mixed files+filters selection also gets a note, zero actions");
+  assert(w.describeSidebarToolbarActions().actions.length === 5, "different roots: only the disabled fixed set");
+  let bulk = w.describeBulkActions([ta, tb]);
+  assert(bulk.actions.length === 0 && !!bulk.note && bulk.short === "Filters from different files", "different roots: no actions, a note + short text");
+  bulk = w.describeBulkActions([fa, ta]);
+  assert(bulk.actions.length === 0 && !!bulk.note && bulk.short === "Select only files or only filters", "mixed files+filters: note + short text, no actions");
 });
 
 await withApp(async (w, d, T) => {
-  section("220h. describeSidebarToolbarActions: copy/cut/saveFilter/loadFilter/context/countContext never appear, for any selection shape");
-  const REMOVED = ["copy", "cut", "saveFilter", "loadFilter", "context", "countContext"];
-  const assertNoneRemoved = (actions, label) =>
-    REMOVED.forEach(a => assert(!actions.some(x => x.action === a), "'" + a + "' does not appear in " + label + ", got " + actions.map(x => x.action).join(",")));
-
+  section("220h. removed actions never appear (copy/cut/saveFilter/loadFilter/context/countContext/applyFromLibrary)");
+  const REMOVED = ["copy", "cut", "saveFilter", "loadFilter", "context", "countContext", "applyFromLibrary"];
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const fb = await w.addFile("b.log", makeLog(20, 20), () => {});
-  const textNode = w.createFilterNode(f.id, "text", "message 1");
-  const textNode2 = w.createFilterNode(f.id, "text", "message 2");
-  w.toggleBookmark(f.entries[0].id);
-  const bmNode = Object.values(T.state.nodes).find(n => n.filterType === "bookmarks");
-
-  T.state.multiSelect = new Set(); T.state.activeId = textNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "0 selected");
-
-  T.state.multiSelect = new Set([f.id]); T.state.activeId = f.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "1 file selected");
-
-  T.state.multiSelect = new Set([f.id, fb.id]); T.state.activeId = f.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "2+ files selected");
-
-  T.state.multiSelect = new Set([textNode.id]); T.state.activeId = textNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "1 unlocked filter selected");
-
-  T.state.multiSelect = new Set([bmNode.id]); T.state.activeId = bmNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "the locked Bookmarks node selected");
-
-  T.state.multiSelect = new Set([textNode.id, textNode2.id]); T.state.activeId = textNode.id;
-  assertNoneRemoved(w.describeSidebarToolbarActions().actions, "2+ filters, same root, selected");
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const shapes = [[], [f.id], [f.id, fb.id], [t1.id], [t1.id, t2.id]];
+  shapes.forEach(ids => {
+    T.state.multiSelect = new Set(ids); T.state.activeId = f.id;
+    const names = w.describeSidebarToolbarActions().actions.map(a => a.action);
+    REMOVED.forEach(r => assert(!names.includes(r), "'" + r + "' absent for selection of " + ids.length));
+  });
 });
 
 await withApp(async (w, d, T) => {
-  section("220i. handleSidebarToolbarActionClick: dispatches to the correct underlying function/dialog with the correct (per-selection) target");
+  section("220i. handleSidebarToolbarActionClick: dispatches to the underlying function/dialog with the per-selection target; disabled/unknown actions are no-ops");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const textNode = w.createFilterNode(f.id, "text", "message 1");
-
   let calls = [];
-  const spy = name => {
-    const orig = w[name];
-    w[name] = (...args) => { calls.push([name, args]); return orig.apply(w, args); };
-  };
+  const spy = name => { const orig = w[name]; w[name] = (...args) => { calls.push([name, args]); return orig.apply(w, args); }; };
   spy("openClockOffsetDialog"); spy("startRenameNode"); spy("editFilterNode");
-  spy("toggleInvertWithUndo"); spy("openFilterLibrarySaveDialog"); spy("openFilterLibraryDialog");
-  spy("performBulkAction");
+  spy("toggleInvertWithUndo"); spy("openFilterLibrarySaveDialog"); spy("openFilterLibraryDialog"); spy("performBulkAction");
 
   T.state.multiSelect = new Set([textNode.id]);
   T.state.activeId = textNode.id;
-
   w.handleSidebarToolbarActionClick("rename");
   assert(calls.some(c => c[0] === "startRenameNode" && c[1][0] === textNode.id), "rename -> startRenameNode(target)");
-
   w.handleSidebarToolbarActionClick("edit");
   assert(calls.some(c => c[0] === "editFilterNode" && c[1][0] === textNode.id), "edit -> editFilterNode(target)");
-
   w.handleSidebarToolbarActionClick("invert");
   assert(calls.some(c => c[0] === "toggleInvertWithUndo" && c[1][0] === textNode.id), "invert -> toggleInvertWithUndo(target)");
-
   w.handleSidebarToolbarActionClick("addToLibrary");
   assert(calls.some(c => c[0] === "openFilterLibrarySaveDialog" && c[1][0] === textNode.id), "addToLibrary -> openFilterLibrarySaveDialog(target)");
 
-  w.handleSidebarToolbarActionClick("applyFromLibrary");
-  assert(calls.some(c => c[0] === "openFilterLibraryDialog" && c[1][0] === textNode.id), "applyFromLibrary -> openFilterLibraryDialog(target), targeting the specific selected node");
-
-  // These six no longer have a corresponding action entry at all — clicking
-  // them (e.g. a stale/cached button reference) is a silent no-op, same as
-  // any other disabled/nonexistent entry.
   calls = [];
-  ["context", "countContext", "copy", "cut", "saveFilter", "loadFilter"].forEach(a => w.handleSidebarToolbarActionClick(a));
-  assert(calls.length === 0, "clicking a removed action name is a no-op — no underlying function is ever called");
-  assert(!T.state.clipboard, "...and Copy/Cut in particular do not fall through to setting state.clipboard any more");
+  ["applyFromLibrary", "context", "countContext", "copy", "cut", "saveFilter", "loadFilter"].forEach(a => w.handleSidebarToolbarActionClick(a));
+  assert(calls.length === 0, "removed action names are no-ops");
+  assert(!T.state.clipboard, "...Copy/Cut in particular do not set state.clipboard");
 
-  // clockOffset needs a real file selected.
   T.state.multiSelect = new Set([f.id]);
   T.state.activeId = f.id;
   w.handleSidebarToolbarActionClick("clockOffset");
   assert(calls.some(c => c[0] === "openClockOffsetDialog" && c[1][0] === f.id), "clockOffset -> openClockOffsetDialog(target)");
 
-  // 0 selected -> applyFromLibrary falls back to state.activeId.
-  calls = [];
-  T.state.multiSelect = new Set();
-  T.state.activeId = textNode.id;
-  w.handleSidebarToolbarActionClick("applyFromLibrary");
-  assert(calls.some(c => c[0] === "openFilterLibraryDialog" && c[1][0] === textNode.id), "applyFromLibrary with 0 selected -> openFilterLibraryDialog(state.activeId)");
-
-  // Bulk action (merge) over a 2+ file selection.
   const fb = await w.addFile("b.log", makeLog(30, 5), () => {});
   T.state.multiSelect = new Set([f.id, fb.id]);
   T.state.activeId = f.id;
+  calls = [];
   w.handleSidebarToolbarActionClick("merge");
-  const mergeCall = calls.find(c => c[0] === "performBulkAction");
-  assert(mergeCall && mergeCall[1][0] === "merge" && Array.isArray(mergeCall[1][1]) &&
-    mergeCall[1][1].includes(f.id) && mergeCall[1][1].includes(fb.id),
-    "merge -> performBulkAction('merge', [selected file ids])");
+  assert(calls.length === 0, "bulk actions are no longer handled by the toolbar (selection bar owns them)");
 
-  // A disabled entry is a no-op — the underlying function is never called.
   calls = [];
   T.state.multiSelect = new Set();
-  T.state.activeId = null;
-  w.handleSidebarToolbarActionClick("applyFromLibrary");
-  assert(!calls.some(c => c[0] === "openFilterLibraryDialog"), "a disabled action (no active id) is a no-op — the underlying function is never called");
+  w.handleSidebarToolbarActionClick("rename");
+  assert(calls.length === 0, "a disabled action (nothing selected) is a no-op");
+});
+
+await withApp(async (w, d, T) => {
+  section("220j. rendered toolbar: built once, fixed buttons in the DOM, only disabled/label toggle; 2+ selected swaps the row for multi mode and back");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const btns = () => [...d.querySelectorAll('#sidebarToolbar > [data-row-action]')];
+  T.state.multiSelect = new Set(); w.render();
+  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED, "five fixed buttons rendered, got " + btns().map(b => b.dataset.rowAction).join(","));
+  assert(btns().every(b => b.disabled), "all disabled with nothing selected");
+  assert(btns().every(b => b.querySelector("svg.icon use")), "every button draws a sprite icon");
+  const before = btns();
+  T.state.multiSelect = new Set([t1.id]); T.state.activeId = t1.id; w.render();
+  const after = btns();
+  assert(before.every((b, i) => b === after[i]), "the same button elements survive a render (no rebuild)");
+  assert(after.map(b => b.disabled ? "0" : "1").join("") === "11101", "text filter: Adjust clock… disabled, rest enabled");
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  const tbEl = d.querySelector("#sidebarToolbar");
+  assert(btns().length === 0 && tbEl.classList.contains("multi"), "2 filters selected: the single-node buttons are not rendered, toolbar is in multi mode");
+  T.state.multiSelect = new Set([t1.id]); w.render();
+  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED && !tbEl.classList.contains("multi"), "back to one node: the five buttons return, multi class gone");
+  assert(tbEl.querySelector('[data-multi-action]') === null, "...and no multi-mode content is left");
+});
+
+/* ============================================================
+   GROUP 318 — Icon sprite (icon(), ICON_* re-pointing, AND/OR tree icons)
+   Origin: 2026-09-28. One hidden <svg> sprite at the top of <body> holds the
+   approved <symbol id="i-…"> drawings; icon(name) references one via <use>.
+   ICON_FILE/FILTER/RENAME/EDIT/INVERT/LINK/MERGE/CLOCK/BOOK/DISK/GEAR/CLOSE/
+   ELLIPSIS now call it; ICON_COMBINE is split into ICON_AND / ICON_OR.
+   ============================================================ */
+group(318);
+await withApp(async (w, d, T) => {
+  section("318. sprite has every symbol; icon() markup; ICON_* migrated; AND/OR nodes get their own icon + tint class");
+  const NAMES = "file filter rename edit not and or link merge clock book bookplus gear x more star starf search chev import export trash".split(" ");
+  const sprite = d.querySelector("body > svg#iconSprite");
+  assert(sprite, "a sprite <svg> sits at the top of <body>");
+  // jsdom has no layout, so this asserts the inline style that takes the sprite out of flow. `hidden` does NOT hide an <svg> in Chromium
+  // (it left a 15px line box that pushed #main down and made the whole app overflow the viewport); display:none would break <use> gradients.
+  const sst = sprite.getAttribute("style") || "";
+  assert(/position:\s*absolute/.test(sst) && /width:\s*0/.test(sst) && /height:\s*0/.test(sst) && /overflow:\s*hidden/.test(sst), "sprite is out of layout flow (position:absolute, 0x0, overflow:hidden), got " + sst);
+  assert(!/display:\s*none/.test(sst), "sprite is not display:none");
+  NAMES.forEach(n => { const s = sprite.querySelector("symbol#i-" + n); assert(s && s.getAttribute("viewBox") === "0 0 16 16", "symbol i-" + n + " present on a 16x16 grid"); });
+  assert(w.icon("and") === '<svg class="icon" aria-hidden="true"><use href="#i-and"/></svg>', "icon(name) markup");
+  assert(w.icon("x", "icon-xs").includes('class="icon icon-xs"'), "icon(name, cls) appends the class");
+  const use = n => (w.eval(n).match(/href="#i-([a-z]+)"/) || [])[1];
+  const expect = { ICON_FILE: "file", ICON_FILTER: "filter", ICON_RENAME: "rename", ICON_EDIT: "edit", ICON_INVERT: "not", ICON_LINK: "link",
+    ICON_MERGE: "merge", ICON_CLOCK: "clock", ICON_BOOK: "book", ICON_DISK: "bookplus", ICON_GEAR: "gear", ICON_CLOSE: "x",
+    ICON_ELLIPSIS: "more", ICON_AND: "and", ICON_OR: "or" };
+  Object.keys(expect).forEach(k => assert(use(k) === expect[k], k + " -> #i-" + expect[k] + ", got " + use(k)));
+  assert(w.eval("typeof ICON_COMBINE") === "undefined", "ICON_COMBINE is gone (split into ICON_AND / ICON_OR)");
+
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const andN = w.createAndOrNode([t1.id, t2.id], "and");
+  const orN = w.createAndOrNode([t1.id, t2.id], "or");
+  assert(w.nodeIconHTML(andN).includes("#i-and") && w.nodeIconHTML(orN).includes("#i-or"), "nodeIconHTML: AND -> and icon, OR -> or icon");
+  w.render();
+  const rows = [...d.querySelectorAll("#tree .tree-row")];
+  assert(rows.some(r => r.classList.contains("filter-and")) && rows.some(r => r.classList.contains("filter-or")), "AND/OR tree rows carry filter-and / filter-or (icon tint hook)");
+  const bulk = w.describeBulkActions([t1, t2]).actions;
+  assert(bulk.find(a => a.action === "and").icon === w.eval("ICON_AND") && bulk.find(a => a.action === "or").icon === w.eval("ICON_OR"), "describeBulkActions uses ICON_AND / ICON_OR");
 });
 
 /* ============================================================
@@ -25703,13 +25680,13 @@ await withApp(async (w, d, T) => {
   const items2 = [...d.querySelectorAll("#treeContextMenu [data-action]")].map(n => n.dataset.action);
   assert(items2.includes("merge"), "Merge stays offered for a 2+ file bulk selection — not part of the AND/OR/Link exclusion");
 
-  // The sidebar toolbar, meanwhile, is still the one place offering the full
-  // set including AND/OR/Link for the same 2-filter selection.
+  // The toolbar's multi mode (GROUP 319) is the one place offering
+  // AND/OR/Link for the same 2-filter selection.
   T.state.multiSelect = new Set([t1.id, t2.id]);
-  const { actions } = w.describeSidebarToolbarActions();
-  const toolbarNames = actions.map(a => a.action);
-  assert(toolbarNames.includes("and") && toolbarNames.includes("or") && toolbarNames.includes("link"),
-    "the sidebar toolbar is the sole remaining place AND/OR/Link are offered for a 2+ filter selection");
+  w.render();
+  const barNames = [...d.querySelectorAll("#sidebarToolbar [data-multi-action]")].map(b => b.dataset.multiAction);
+  assert(barNames.includes("and") && barNames.includes("or") && barNames.includes("link"),
+    "the toolbar's multi mode is the sole place AND/OR/Link are offered for a 2+ filter selection");
 });
 
 await withApp(async (w, d, T) => {
@@ -30845,7 +30822,7 @@ group(270);
     const f = await w.addFile("a.log", lines.join("\n") + "\n", () => {});
     const a = w.createFilterNode(f.id, "text", "message 1");
     const b = w.createFilterNode(f.id, "level", ["ERROR"]);
-    const or = w.createAndOrNode(a.id, b.id, "or");
+    const or = w.createAndOrNode([a.id, b.id], "or");
     T.state.activeId = or.id;
     w.applyFhView("highlight");
     w.render();
@@ -32657,7 +32634,7 @@ group(289);
     w.toggleInvertWithUndo(gapNode.id);
 
     // Baked as an AND side: evaluated by getEntriesFromBaked.
-    const andNode = w.createAndOrNode(gapNode.id, hb.id, "and");
+    const andNode = w.createAndOrNode([gapNode.id, hb.id], "and");
     assert(msgs(w, andNode.id).join("|") === "Heartbeat 11", "AND(gap per thread, 'Heartbeat') evaluates the baked gap condition");
   });
 
@@ -33374,7 +33351,7 @@ await withApp(async (w, d, T) => {
   w.downloadJsonFallback = (json, name) => captured.push({ json, name });
   await w.openFilterLibraryDialog(f.id);
   const libRow = d.querySelector("#filterLibraryList .filter-library-row");
-  fireClick([...libRow.querySelectorAll("button")].find(b => b.textContent === "Export"), w);
+  fireClick(libRow.querySelector(".lib-export"), w);
   await waitFor(() => captured.length === 1);
   const file = JSON.parse(captured[0].json);
   assert(file.format === "philogg-filter-library" && file.name === "Hot" && file.icon === "emoji:🔥" && file.roots.length === 1, "Export writes a philogg-filter-library file");
@@ -35188,12 +35165,12 @@ await withApp(async (w, d, T) => {
   const inLogOrder = list => list.every((e, i) => i === 0 || pos.get(list[i - 1].id) < pos.get(e.id));
   const step2 = w.createFilterNode(f.id, "text", "step 2/");
   const step1 = w.createFilterNode(f.id, "text", "step 1/");
-  const or = w.createAndOrNode(step2.id, step1.id, "or"); // A = step 2, B = step 1: collected in the "wrong" order
+  const or = w.createAndOrNode([step2.id, step1.id], "or"); // A = step 2, B = step 1: collected in the "wrong" order
   const orEntries = w.getEntries(or.id);
   assert(orEntries.length === f.entries.filter(e => /step [12]\//.test(e.message)).length && inLogOrder(orEntries),
     "an OR union lists step 1 before step 2 of each tick (same timestamp), as in the file");
   const step3 = w.createFilterNode(f.id, "text", "step 3/");
-  const nested = w.createAndOrNode(step3.id, or.id, "or"); // the inner OR is evaluated from its baked snapshot
+  const nested = w.createAndOrNode([step3.id, or.id], "or"); // the inner OR is evaluated from its baked snapshot
   const nestedEntries = w.getEntries(nested.id);
   assert(nestedEntries.some(e => e.message.includes("step 3/")) && inLogOrder(nestedEntries), "a nested (baked) OR keeps log order too");
 
@@ -35414,6 +35391,441 @@ await withApp(async (w, d, T) => {
   assert(dirs.join(",") === "other,x,y", "unrelated subfolders stay collapsed, got " + dirs.join(","));
   assert(!d.querySelector("#folderWatchList .folder-watch-file-name") || ![...d.querySelectorAll("#folderWatchList .folder-watch-file-name")].some(l => l.textContent === "o.log"), "o.log stays hidden in its collapsed folder");
 });
+
+/* ============================================================
+   GROUP 319 — N-ary AND/OR (node.baked[]) + #sidebarToolbar multi mode
+   Origin: 2026-09-28 (filter-actions Phase B), multi mode 2026-09-29.
+   createAndOrNode(ids, mode) takes 2+ filters; the node carries baked:
+   [cond, cond, ...] (link keeps bakedA/bakedB). With 2+ nodes selected
+   #sidebarToolbar swaps its single-node row for describeBulkActions' actions
+   or a short message (full note as tooltip) on the accent-soft highlight.
+   ============================================================ */
+group(319);
+
+await withApp(async (w, d, T) => {
+  section("319a. createAndOrNode(ids, mode): 3-way AND/OR evaluation, name, baked[] shape, guards");
+  const f = await w.addFile("a.log", makeLog(0, 40), () => {});
+  const a = w.createFilterNode(f.id, "text", "message 1");
+  const b = w.createFilterNode(f.id, "text", "message 3");
+  const c = w.createFilterNode(f.id, "text", "ge 1");
+  const idsOf = n => new Set(w.getEntries(n.id).map(e => e.id));
+  const A = idsOf(a), B = idsOf(b), C = idsOf(c);
+  const and3 = w.createAndOrNode([a.id, b.id, c.id], "and");
+  assert(Array.isArray(and3.baked) && and3.baked.length === 3 && and3.bakedA === undefined && and3.bakedB === undefined, "baked is a 3-element array, no bakedA/bakedB");
+  assert(and3.baked.map(x => x.value).join("|") === "message 1|message 3|ge 1", "baked keeps selection order");
+  assert(and3.name === "“message 1” ∧ “message 3” ∧ “ge 1”", "name joins all display names with ∧, got " + and3.name);
+  const expAnd = [...A].filter(id => B.has(id) && C.has(id));
+  const gotAnd = w.getEntries(and3.id).map(e => e.id);
+  assert(gotAnd.length === expAnd.length && gotAnd.every(id => expAnd.includes(id)), "AND = entries matching all three (" + expAnd.length + ")");
+  const or3 = w.createAndOrNode([a.id, b.id, c.id], "or");
+  assert(or3.name === "“message 1” ∨ “message 3” ∨ “ge 1”", "OR name uses ∨");
+  const expOr = new Set([...A, ...B, ...C]);
+  const gotOr = w.getEntries(or3.id).map(e => e.id);
+  assert(gotOr.length === expOr.size && gotOr.every(id => expOr.has(id)), "OR = union of all three (" + expOr.size + ")");
+  const ts = w.getEntries(or3.id).map(e => e.ts);
+  assert(ts.every((t, i) => i === 0 || ts[i - 1] <= t), "OR result is chronological");
+  assert(w.createAndOrNode([a.id], "and") === null && w.createAndOrNode([], "or") === null, "fewer than 2 ids -> null");
+  assert(w.createAndOrNode([a.id, b.id], "xor") === null, "unknown mode -> null");
+  // nested: an AND node as one of 3 sides of an OR
+  const d1 = w.createFilterNode(f.id, "text", "message 2");
+  const nested = w.createAndOrNode([and3.id, d1.id, a.id], "or");
+  assert(nested && nested.baked[0].filterType === "and" && Array.isArray(nested.baked[0].baked) && nested.baked[0].baked.length === 3, "nested combiner bakes its own baked[]");
+  const expNested = new Set([...gotAnd, ...idsOf(d1), ...A]);
+  assert(w.getEntries(nested.id).length === expNested.size, "nested N-ary evaluation, expected " + expNested.size);
+  w.render();
+  const row = [...d.querySelectorAll("#tree .tree-row")].find(r => r.classList.contains("filter-and"));
+  assert(row && row.querySelector(".tree-label").title.includes("“message 1” ∧ “message 3” ∧ “ge 1”"), "row label carries the full name as tooltip");
+});
+
+await withApp(async (w, d, T) => {
+  section("319b. baked[] through every persistence carrier + undo/redo + Unpack + legacy import");
+  const f = await w.addFile("a.log", makeLog(0, 40), () => {});
+  const a = w.createFilterNode(f.id, "text", "message 1");
+  const b = w.createFilterNode(f.id, "text", "message 3");
+  const c = w.createFilterNode(f.id, "text", "message 2");
+  const node = w.createAndOrNode([a.id, b.id, c.id], "or");
+  const vals = n => (n.baked || []).map(x => x.value).join("|");
+  const V = "message 1|message 3|message 2";
+  assert(vals(node) === V, "sanity");
+  const cl = w.cloneSubtree(node.id, f.id);
+  assert(vals(cl) === V && cl.baked !== node.baked && cl.baked[0] !== node.baked[0], "cloneSubtree deep-copies baked[]");
+  const snap = w.snapshotSubtree(node.id);
+  assert(vals(snap) === V && snap.baked !== node.baked, "snapshotSubtree copies baked[]");
+  delete T.state.nodes[node.id];
+  const restored = w.restoreSubtree(snap);
+  assert(restored.id === node.id && vals(restored) === V, "restoreSubtree keeps id and baked[]");
+  T.state.nodes[restored.id] = restored;
+
+  const json = JSON.stringify({ format: "philogg-filters", version: 2, ...(() => { const br = w.serializeFilterBranch(node.id, false); return { activeRef: br.activeRef, roots: br.roots }; })() });
+  assert(JSON.parse(json).roots[0].baked.length === 3, "serializeFilterBranch emits baked[]");
+  const f2 = await w.addFile("b.log", makeLog(0, 40), () => {});
+  const s = d.createElement("script"); s.textContent = `loadFilterTargetId = ${JSON.stringify(f2.id)};`; d.body.appendChild(s);
+  w.importFilterJson(json);
+  const imported = f2.children.map(id => T.state.nodes[id]).find(n => n.filterType === "or");
+  assert(imported && vals(imported) === V, "importFilterJson restores baked[]");
+  assert(w.getEntries(imported.id).length === w.getEntries(node.id).length, "imported node evaluates like the original");
+
+  const { roots } = w.serializeFilterTreeForCache(f);
+  const f3 = await w.addFile("c.log", makeLog(0, 40), () => {});
+  const refMap = w.materializeCachedFilters(f3, roots);
+  const cached = Object.values(refMap).map(id => T.state.nodes[id]).find(n => n.filterType === "or");
+  assert(cached && vals(cached) === V, "session cache round trip keeps baked[]");
+
+  // legacy shape (and/or with bakedA/bakedB) is rejected cleanly
+  const legacy = JSON.stringify({ format: "philogg-filters", version: 2, roots: [{ ref: 1, attach: "target", filterType: "and", name: "old", bakedA: { filterType: "text", value: "x" }, bakedB: { filterType: "text", value: "y" }, children: [] }] });
+  const before = f2.children.length;
+  let threw = null;
+  try { w.importFilterJson(legacy); } catch (e) { threw = e; }
+  assert(!threw && f2.children.length === before, "importing a legacy bakedA/bakedB and/or does not crash and creates nothing");
+  const oneSided = JSON.stringify({ format: "philogg-filters", version: 2, roots: [{ ref: 1, attach: "target", filterType: "or", name: "x", baked: [{ filterType: "text", value: "x" }], children: [] }] });
+  w.importFilterJson(oneSided);
+  assert(f2.children.length === before, "a baked[] with a single condition is rejected");
+
+  // Unpack -> one sibling per condition
+  const count = f.children.length;
+  w.unpackAndOrLinkNode(node.id);
+  assert(f.children.length === count + 3, "Unpack materializes all 3 conditions");
+  assert(w.hasBakedSides(node) && !w.hasBakedSides({ filterType: "and", baked: [{}] }), "hasBakedSides: and/or need 2+ baked conditions");
+});
+
+await withApp(async (w, d, T) => {
+  section("319c. undo/redo of creating a 3-way AND");
+  const f = await w.addFile("a.log", makeLog(0, 40), () => {});
+  const ids = ["message 1", "message 3", "message 2"].map(v => w.createFilterNode(f.id, "text", v).id);
+  T.state.multiSelect = new Set(ids);
+  w.performBulkAction("and", ids);
+  const made = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "and");
+  assert(made && made.baked.length === 3, "performBulkAction('and') over 3 ids creates a 3-way AND");
+  assert(T.state.multiSelect.size === 0, "selection cleared");
+  const madeId = made.id;
+  w.undo();
+  assert(!T.state.nodes[madeId], "undo removes the node");
+  w.redo();
+  const again = T.state.nodes[madeId];
+  assert(again && again.baked.length === 3 && again.baked[2].value === "message 2", "redo restores it with baked[]");
+});
+
+await withApp(async (w, d, T) => {
+  section("319d. sidebar toolbar multi mode: one content per selection shape");
+  const bar = d.querySelector("#sidebarToolbar");
+  const acts = () => [...bar.querySelectorAll("[data-multi-action]")].map(b => b.dataset.multiAction).join(",");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const fb = await w.addFile("b.log", makeLog(30, 10), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  const t3 = w.createFilterNode(f.id, "text", "message 3");
+  const tb = w.createFilterNode(fb.id, "text", "message 3");
+  T.state.multiSelect = new Set(); w.render();
+  assert(!bar.classList.contains("multi") && acts() === "" && bar.querySelectorAll("[data-row-action]").length === 5, "no selection: normal row, no multi mode");
+  T.state.multiSelect = new Set([t1.id]); w.render();
+  assert(!bar.classList.contains("multi") && acts() === "", "single node: normal row");
+  assert(d.querySelector("#selectionBar") === null && !d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "the floating #selectionBar is gone");
+
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  assert(bar.classList.contains("multi"), "2 filters: multi class (accent-soft background)");
+  assert(bar.querySelectorAll("[data-row-action]").length === 0, "2 filters: single-node buttons not rendered");
+  assert(bar.querySelector(".stb-cnt").textContent === "2 filters", "count label '2 filters'");
+  assert(acts() === "and,or,link,close", "2 filters: AND, OR, Link…, close, got " + acts());
+  assert(bar.querySelector('[data-multi-action="link"]').textContent.trim() === "Link…", "Link… label");
+  assert(bar.querySelector('[data-multi-action="and"] svg.icon use') && bar.querySelector('[data-multi-action="close"]').getAttribute("aria-label") === "Clear selection", "text+icon buttons, close has an aria-label");
+  assert(/--accent-soft/.test(d.documentElement.innerHTML.match(/#sidebarToolbar\.multi\{[^}]*\}/)[0]), "#sidebarToolbar.multi paints --accent-soft");
+  T.state.multiSelect = new Set([t1.id, t2.id, t3.id]); w.render();
+  assert(bar.querySelector(".stb-cnt").textContent === "3 filters" && acts() === "and,or,link,close", "3 filters: same actions, got " + acts());
+
+  // AND/OR hidden when a node fails canBeCombined (link node)
+  const link = w.createLinkNode(t1.id, t2.id, "after", 1);
+  T.state.multiSelect = new Set([link.id, t3.id]); w.render();
+  assert(acts() === "link,close", "AND/OR hidden when a link node is selected, got " + acts());
+
+  T.state.multiSelect = new Set([f.id, fb.id]); w.render();
+  assert(bar.querySelector(".stb-cnt").textContent === "2 files" && acts() === "merge,close", "2 files: Merge only, got " + acts());
+  assert(bar.querySelector('[data-multi-action="merge"]').textContent.trim() === "Merge 2 files", "Merge label");
+
+  const msg = () => bar.querySelector(".stb-msg");
+  T.state.multiSelect = new Set([t1.id, tb.id]); w.render();
+  assert(acts() === "close" && msg().textContent === "Filters from different files" && msg().title.includes("Merge the files first") && bar.classList.contains("multi"), "different roots: short message, full text as tooltip, close only");
+  T.state.multiSelect = new Set([f.id, t1.id]); w.render();
+  assert(acts() === "close" && msg().textContent === "Select only files or only filters" && msg().title.includes("not both"), "mixed files+filters: short message + tooltip");
+  assert(bar.querySelector(".stb-cnt") === null, "mixed: no count label");
+  T.state.multiSelect = new Set(); w.render();
+  assert(!bar.classList.contains("multi") && bar.querySelectorAll("[data-row-action]").length === 5 && !msg(), "back to the normal row, message gone");
+});
+
+await withApp(async (w, d, T) => {
+  section("319e. toolbar multi mode: plain-text message, clicks (AND, close), Esc handling, DOM identity");
+  const bar = d.querySelector("#sidebarToolbar");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  const first = bar.querySelector('[data-multi-action="and"]');
+  w.render();
+  assert(bar.querySelector('[data-multi-action="and"]') === first, "a re-render with the same selection keeps the same buttons");
+  let bubbled = false;
+  d.body.addEventListener("click", () => { bubbled = true; });
+  first.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(!bubbled, "multi-mode clicks do not bubble to document handlers");
+  const and = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "and");
+  assert(and && and.baked.length === 2 && T.state.multiSelect.size === 0 && !bar.classList.contains("multi"), "AND click creates the node and multi mode ends");
+
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  bar.querySelector('[data-multi-action="close"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(T.state.multiSelect.size === 0 && !bar.classList.contains("multi"), "close button clears the selection");
+
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  const esc = () => d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  const inp = d.createElement("input"); d.body.appendChild(inp); inp.focus();
+  inp.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(T.state.multiSelect.size === 2, "Esc while an input has focus leaves the selection alone");
+  inp.blur(); inp.remove();
+  esc();
+  assert(T.state.multiSelect.size === 0 && !bar.classList.contains("multi"), "Esc clears the selection and leaves multi mode");
+
+  const fb = await w.addFile("b.log", makeLog(30, 10), () => {});
+  T.state.multiSelect = new Set([f.id, fb.id]); w.render();
+  bar.querySelector('[data-multi-action="merge"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(Object.values(T.state.nodes).some(n => n.type === "file" && n.merged), "Merge N files button merges");
+  assert(T.state.multiSelect.size === 0, "selection cleared after merge");
+
+  const pa = await w.addFile("p1.log", makeLog(0, 5), () => {});
+  const pb = await w.addFile("p2.log", makeLog(10, 5), () => {});
+  pa.formatId = pb.formatId = w.eval("PLAINTEXT_FORMAT_ID");
+  T.state.multiSelect = new Set([pa.id, pb.id]); w.render();
+  const m = bar.querySelector(".stb-msg");
+  assert(m && m.textContent === "Plain-text files can't be merged" && m.title.includes("line numbers") && bar.querySelectorAll("[data-multi-action]").length === 1, "plain-text files: short message + full tooltip, close only");
+});
+
+/* ============================================================
+   GROUP 320 — "Library ▾" split button + menu in #viewBar, and the "Manage
+   filter library" dialog
+   Origin: 2026-09-28 (filter-actions Phase C). #btnLibrary (after
+   #libraryPresetBar, before the New group) opens #libraryMenu: search,
+   "Applies to <target>" (single selected node, else the active node; locked
+   or missing = warning + disabled rows), Pinned / More rows (click / Enter
+   applies, star pins), footer "Save "<name>" to library…" + "Manage
+   library…". #filterLibraryDialog lost its Apply mode: rename (double-click),
+   star, export, immediate delete with an Undo toast.
+   ============================================================ */
+group(320);
+
+await withApp(async (w, d, T) => {
+  section("320a. #btnLibrary: placement, always present with a file (zero presets), empty menu, open/close paths");
+  const bar = d.querySelector("#viewBar");
+  const kids = [...bar.children].map(c => c.id);
+  assert(kids.indexOf("btnLibrary") === kids.indexOf("libraryPresetBar") + 1 && kids.indexOf("btnLibrary") < kids.indexOf("viewbarNew"),
+    "#btnLibrary sits directly after #libraryPresetBar and before the New group");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  w.render();
+  const btn = d.querySelector("#btnLibrary"), menu = d.querySelector("#libraryMenu");
+  assert(isVisible(btn, w) && isVisible(d.querySelector("#libraryPresetSep"), w), "the button and its separator are visible with a file loaded and no presets");
+  assert(btn.querySelector("svg use").getAttribute("href") === "#i-book" && btn.textContent.trim() === "" && btn.getAttribute("aria-label") === "Filter library" && btn.title === "Filter library" && btn.querySelectorAll(":scope > span").length === 2, "icon-only: book segment + chevron segment, no text, aria-label and title 'Filter library'");
+  assert(menu.classList.contains("hidden") && btn.getAttribute("aria-expanded") === "false", "closed at rest");
+  fireClick(btn.querySelectorAll(":scope > span")[1], w); // the chevron segment
+  assert(!menu.classList.contains("hidden") && btn.getAttribute("aria-expanded") === "true", "the chevron segment opens the menu too");
+  assert(d.querySelector("#libraryMenuList .lib-empty").textContent.includes("No presets yet"), "empty library: explanatory text");
+  assert(!isVisible(d.querySelector("#libraryMenuSearchRow"), w), "empty library: no search box");
+  assert(d.querySelector("#libraryMenuSave").classList.contains("dis") && d.querySelector("#libraryMenuManage"), "footer present (Save disabled for a file target, Manage library…)");
+  fireClick(btn, w);
+  assert(menu.classList.contains("hidden"), "clicking the button again closes it");
+  fireClick(btn, w);
+  fireClick(d.querySelector("#tree"), w);
+  assert(menu.classList.contains("hidden"), "an outside click closes it");
+  fireClick(btn, w);
+  assert(d.activeElement === d.querySelector("#libraryMenuSearch") || !d.querySelector("#libraryMenuSearchRow").offsetParent, "the search input takes focus on open (when shown)");
+  fireKeydown(d, w, "Escape");
+  assert(menu.classList.contains("hidden"), "Esc closes it");
+  fireClick(btn, w);
+  fireClick(d.querySelector("#libraryMenuManage"), w);
+  assert(menu.classList.contains("hidden") && !d.querySelector("#filterLibraryDialog").classList.contains("hidden"), "'Manage library…' closes the menu and opens the manage dialog");
+  assert(d.querySelector("#filterLibraryDialog .link-dialog-title").textContent === "Manage filter library" && d.querySelector("#filterLibraryImportBtn"), "manage dialog title + Import… button");
+  assert(w.eval("anyEscapeOverlayOpen()") === true, "the open dialog counts as an Escape overlay");
+  w.closeFilterLibraryDialog();
+  fireClick(btn, w);
+  assert(w.eval("anyEscapeOverlayOpen()") === true, "the open menu counts as an Escape overlay");
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("320b. menu: target resolution (selected / active / none / locked), groups, search, keyboard, apply, star");
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  const g = await w.addFile("b.log", makeLog(0, 30, { msgPrefix: "message" }), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  w.render();
+  async function save(nodeId, name) {
+    const p = w.saveFilterToLibrary(nodeId, name);
+    await new Promise(r => setTimeout(r, 0));
+    fireClick(d.querySelector("#exportScopeJustThis"), w);
+    await p;
+  }
+  await save(t1.id, "Alpha one");
+  await save(t2.id, "Beta two");
+  await new Promise(r => setTimeout(r, 5));
+  await save(t1.id, "Gamma pinned");
+  const recs = await w.listFilterLibrary();
+  await w.updateFilterLibraryEntry(recs.find(r => r.name === "Gamma pinned").key, { showInToolbar: true });
+  const btn = d.querySelector("#btnLibrary"), menu = d.querySelector("#libraryMenu");
+  const tgt = () => d.querySelector("#libraryMenuTarget");
+  const names = () => [...d.querySelectorAll("#libraryMenuList .lib-it .n")].map(n => n.textContent);
+  const open = () => { if (!menu.classList.contains("hidden")) fireClick(btn, w); fireClick(btn, w); };
+
+  // Target: single selected node wins over the active node.
+  T.state.activeId = f.id; T.state.multiSelect = new Set([g.id]); w.render();
+  open();
+  assert(w.resolveLibraryTarget().id === g.id && tgt().textContent === "Applies to b.log", "the single selected node is the target, got " + tgt().textContent);
+  // 2+ selected -> falls back to the active node.
+  T.state.multiSelect = new Set([f.id, g.id]); T.state.activeId = f.id; w.render(); open();
+  assert(w.resolveLibraryTarget().id === f.id && tgt().textContent === "Applies to a.log", "with 2+ selected the active node is the target");
+  // Nothing selected -> the active node.
+  T.state.multiSelect = new Set(); T.state.activeId = t2.id; w.render(); open();
+  assert(w.resolveLibraryTarget().id === t2.id && tgt().textContent.startsWith("Applies to "), "with no selection the active node is the target");
+  // Groups: Pinned first, then More (newest first).
+  const heads = [...d.querySelectorAll("#libraryMenuList .lib-grp")].map(x => x.textContent);
+  assert(heads.join(",") === "Pinned,More", "Pinned then More groups, got " + heads);
+  assert(names().join("|") === "Gamma pinned|Beta two|Alpha one", "pinned first, the rest by savedAt desc, got " + names().join("|"));
+  assert(d.querySelector("#libraryMenuList .lib-it .lib-star.on") && d.querySelectorAll("#libraryMenuList .lib-star").length === 3, "each row has a star, on for the pinned one");
+  assert(!d.querySelector("#libraryMenuSave").classList.contains("dis") && d.querySelector("#libraryMenuSave").textContent.includes("Save " + w.nodeDisplayName(t2) + " to library…"), "footer offers Save \"<target>\" to library… for a filter target");
+
+  // Search: case-insensitive by name.
+  const search = d.querySelector("#libraryMenuSearch");
+  search.value = "BETA"; search.dispatchEvent(new w.Event("input", { bubbles: true }));
+  assert(names().join("|") === "Beta two" && d.querySelectorAll("#libraryMenuList .lib-grp").length === 0, "search filters by name, case-insensitive (no group heading without a pinned match)");
+  search.value = "zzz"; search.dispatchEvent(new w.Event("input", { bubbles: true }));
+  assert(names().length === 0 && d.querySelector("#libraryMenuList .lib-empty").textContent.includes("zzz"), "no match: message");
+  search.value = ""; search.dispatchEvent(new w.Event("input", { bubbles: true }));
+
+  // Keyboard: Down moves the highlight, Enter applies to the target and closes.
+  const kb = () => [...d.querySelectorAll("#libraryMenuList .lib-it")].findIndex(r => r.classList.contains("kb"));
+  assert(kb() === 0, "first row is highlighted by default");
+  search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
+  assert(kb() === 1, "ArrowDown/ArrowUp move the highlight, got " + kb());
+  T.state.multiSelect = new Set([g.id]); T.state.activeId = f.id; w.render(); open();
+  const before = g.children.length;
+  search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
+  search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  assert(menu.classList.contains("hidden") && g.children.length === before + 1, "Enter applies the highlighted preset onto the target and closes the menu");
+  const applied = T.state.nodes[g.children[g.children.length - 1]];
+  assert(applied.filterType === "text" && applied.value === "message 2", "the highlighted (second) row was applied, got " + applied.value);
+
+  // Star toggles the pin, keeps the menu open, moves the row and updates the pill bar.
+  open();
+  fireClick([...d.querySelectorAll("#libraryMenuList .lib-it")].find(r => r.querySelector(".n").textContent === "Alpha one").querySelector(".lib-star"), w);
+  await waitFor(() => names()[0] === "Alpha one" || names().indexOf("Alpha one") < 2);
+  assert(!menu.classList.contains("hidden"), "toggling a star leaves the menu open");
+  await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 2);
+  assert((await w.listFilterLibrary()).filter(r => r.showInToolbar).length === 2, "the pin persisted");
+  assert([...d.querySelectorAll("#libraryMenuList .lib-grp")].map(x => x.textContent).join() === "Pinned,More", "row moved into Pinned");
+
+  // Locked target: warning line, rows disabled, nothing applied.
+  t1.locked = true; T.state.multiSelect = new Set([t1.id]); T.state.activeId = t1.id; w.render(); open();
+  assert(tgt().classList.contains("warn") && tgt().textContent === "Select a file or filter to apply a preset", "locked target: warning line");
+  assert([...d.querySelectorAll("#libraryMenuList .lib-it")].every(r => r.classList.contains("dis")), "...and disabled rows");
+  const n0 = Object.keys(T.state.nodes).length;
+  fireClick(d.querySelector("#libraryMenuList .lib-it"), w);
+  assert(Object.keys(T.state.nodes).length === n0 && !menu.classList.contains("hidden"), "clicking a disabled row applies nothing and keeps the menu open");
+  assert(d.querySelector("#libraryMenuSave").classList.contains("dis"), "Save is disabled for a locked filter");
+  t1.locked = false;
+  // No target at all.
+  T.state.multiSelect = new Set(); T.state.activeId = null; w.render(); open();
+  assert(tgt().classList.contains("warn") && w.resolveLibraryTarget().ok === false, "no target: warning line");
+
+  // Footer Save opens the existing save dialog prefilled with the target's name.
+  T.state.multiSelect = new Set([t2.id]); T.state.activeId = t2.id; w.render(); open();
+  fireClick(d.querySelector("#libraryMenuSave"), w);
+  assert(menu.classList.contains("hidden") && !d.querySelector("#filterLibrarySaveDialog").classList.contains("hidden")
+    && d.querySelector("#filterLibraryNameInput").value === w.nodeDisplayName(t2), "footer Save opens #filterLibrarySaveDialog prefilled");
+  fireClick(d.querySelector("#filterLibrarySaveCancel"), w);
+
+  // Pill: title names preset + target, click applies to the same target.
+  const pill = d.querySelector('#libraryPresetBar .row-action-btn[data-lib-key]');
+  pill.dispatchEvent(new w.MouseEvent("mouseenter"));
+  assert(pill.title.startsWith("Apply ") && pill.title.endsWith(" to " + w.nodeDisplayName(t2)), "pill tooltip: Apply <name> to <target>, got " + pill.title);
+}, { indexedDB: new IDBFactory() });
+
+await withApp(async (w, d, T) => {
+  section("320c. manage dialog: no Apply, meta line, rename (dblclick / Enter / Esc / blur), star, delete + Undo");
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  w.render();
+  for (const [n, name] of [[t1, "First"], [t2, "Second"]]) {
+    const p = w.saveFilterToLibrary(n.id, name);
+    await new Promise(r => setTimeout(r, 0));
+    fireClick(d.querySelector("#exportScopeJustThis"), w);
+    await p;
+    await new Promise(r => setTimeout(r, 5));
+  }
+  await w.openFilterLibraryDialog();
+  await waitFor(() => d.querySelectorAll("#filterLibraryList .filter-library-row").length === 2);
+  const rows = () => [...d.querySelectorAll("#filterLibraryList .filter-library-row")];
+  assert(!d.querySelector("#filterLibraryList .btn-mini") && rows().every(r => !/Apply/.test(r.textContent)), "no Apply button in the manage dialog");
+  assert(rows().every(r => r.querySelectorAll(".lib-star, .lib-export, .lib-del, .filter-library-row-icon").length === 4), "each row: icon, star, export, delete");
+  assert(/ · 1 filter$/.test(rows()[0].querySelector(".filter-library-row-meta").textContent), "meta line: date · N filter(s), got " + rows()[0].querySelector(".filter-library-row-meta").textContent);
+  assert(rows()[0].querySelector(".filter-library-row-name").textContent === "Second", "newest first");
+
+  // Rename: double-click -> input; Enter saves.
+  const startRename = i => rows()[i].querySelector(".filter-library-row-name").dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true }));
+  startRename(0);
+  let input = d.querySelector("#filterLibraryList .filter-library-rename");
+  assert(input && input.value === "Second" && d.activeElement === input, "double-click on the name swaps in a focused input");
+  input.value = "Renamed";
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await waitFor(() => { const n = rows()[0] && rows()[0].querySelector(".filter-library-row-name"); return !d.querySelector("#filterLibraryList .filter-library-rename") && !!n && n.textContent === "Renamed"; });
+  assert((await w.listFilterLibrary()).some(r => r.name === "Renamed") && w.eval("filterLibraryCache").some(r => r.name === "Renamed"), "Enter persisted the new name (and the cache)");
+  // Esc cancels, and does not close the dialog.
+  startRename(0);
+  input = d.querySelector("#filterLibraryList .filter-library-rename");
+  input.value = "Nope";
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+  await waitFor(() => !d.querySelector("#filterLibraryList .filter-library-rename"));
+  assert(rows()[0].querySelector(".filter-library-row-name").textContent === "Renamed" && !(await w.listFilterLibrary()).some(r => r.name === "Nope"), "Esc cancels the rename");
+  assert(!d.querySelector("#filterLibraryDialog").classList.contains("hidden"), "...and leaves the dialog open");
+  // Blur saves; empty name is rejected.
+  startRename(1);
+  input = d.querySelector("#filterLibraryList .filter-library-rename");
+  input.value = "Blurred";
+  input.dispatchEvent(new w.Event("blur"));
+  await waitFor(() => { const n = rows()[1] && rows()[1].querySelector(".filter-library-row-name"); return !!n && n.textContent === "Blurred"; });
+  startRename(1);
+  input = d.querySelector("#filterLibraryList .filter-library-rename");
+  input.value = "   ";
+  input.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+  await waitFor(() => !d.querySelector("#filterLibraryList .filter-library-rename"));
+  assert(rows()[1].querySelector(".filter-library-row-name").textContent === "Blurred", "a blank name keeps the old one");
+
+  // Star = pin.
+  fireClick(rows()[0].querySelector(".lib-star"), w);
+  await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
+  await waitFor(() => rows()[0].querySelector(".lib-star").classList.contains("lib-star-on"));
+  assert(rows()[0].querySelector(".lib-star use").getAttribute("href") === "#i-starf", "a pinned row shows the filled star");
+
+  // Delete is immediate, the toast offers Undo and restores the same key.
+  const gone = (await w.listFilterLibrary()).find(r => r.name === "Renamed");
+  fireClick(rows()[0].querySelector(".lib-del"), w);
+  await waitFor(() => rows().length === 1);
+  assert(!(await w.listFilterLibrary()).some(r => r.key === gone.key), "deleted from IndexedDB with no confirm dialog");
+  const toast = d.querySelector("#copyToast");
+  assert(!toast.classList.contains("hidden") && toast.classList.contains("has-action") && toast.textContent.includes("Renamed"), "toast names the deleted preset");
+  const undo = toast.querySelector(".toast-action");
+  assert(undo && undo.textContent === "Undo", "toast carries an Undo action");
+  assert(d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 0, "the deleted pinned preset's pill is gone");
+  fireClick(undo, w);
+  await waitFor(() => rows().length === 2);
+  const back = (await w.listFilterLibrary()).find(r => r.key === gone.key);
+  assert(back && back.name === "Renamed" && back.showInToolbar === true && JSON.stringify(back.roots) === JSON.stringify(gone.roots), "Undo restores the record under its original key, pin state included");
+  await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
+  await waitFor(() => toast.classList.contains("hidden"));
+  assert(toast.classList.contains("hidden"), "the toast is dismissed after Undo");
+  // A plain toast afterwards is a normal, click-through one again.
+  w.showCopyToast("plain");
+  assert(!toast.classList.contains("has-action") && !toast.querySelector(".toast-action"), "a plain toast has no action button");
+
+  // Import… closes the dialog (the save dialog it leads to sits above it).
+  w.importFromFilePicker = () => { w.__importCalled = true; };
+  fireClick(d.querySelector("#filterLibraryImportBtn"), w);
+  assert(d.querySelector("#filterLibraryDialog").classList.contains("hidden") && w.__importCalled === true, "Import… steps the dialog aside and calls the central import picker");
+}, { indexedDB: new IDBFactory() });
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -39826,4 +40238,32 @@ process.exitCode = failed ? 1 : 0;
       subfolders as collapsible tree rows (collapsed by default, auto-open
       expands the path); retired "Show relative path". Same session updated
       GROUP 164 (setting removed) and rewrote 201e (ZIP subfolder tree).
+   Group 318 — 2026-09-28 (person-requested, filter-actions Phase A): icon
+      sprite + icon() helper, migrated ICON_* constants, ICON_AND/ICON_OR
+      (ICON_COMBINE retired), AND/OR tree-row icons + tint classes. Same
+      session rewrote GROUPs 220a-i to the static sidebar toolbar contract
+      (fixed Rename/Edit/Invert · Adjust clock · Add to library, disabled
+      instead of omitted, "Apply from library…" removed from it, built once)
+      and added 220j (render toggles disabled only). Dropped: the per-selection
+      button-set/separator assertions of the retired dynamic toolbar.
+   Group 319 — 2026-09-28 (person-requested, filter-actions Phase B): N-ary
+      AND/OR (createAndOrNode(ids, mode), node.baked[] replacing bakedA/bakedB
+      for and/or; link keeps bakedA/bakedB) through every persistence carrier;
+      floating #selectionBar (AND/OR/Link… for 2+ same-file filters, Merge N
+      files, note, close, Esc); interim 2+ group removed from #sidebarToolbar.
+      2026-09-29 (person-approved): #selectionBar replaced by #sidebarToolbar's
+      multi mode (319d/e rewritten; short message + tooltip, accent-soft
+      background class, plain-text message), 220c/f/g/j/221c updated.
+      Same session updated 220c/f/g/i/j, 221c and the 3-way Link label
+      assertion (no "(N-way)" suffix any more); and/or bakedA/bakedB
+      assertions now read baked[0]/baked[1].
+   Group 320 — 2026-09-28 (person-requested, filter-actions Phase C): "Library ▾"
+      split button + menu in #viewBar (target = selected/active node, search,
+      Pinned/More, star, keyboard, Save/Manage footer), #filterLibraryDialog
+      reworked into "Manage filter library" (no Apply; rename, star, export,
+      delete + Undo toast, Import…). Same session rewrote GROUP 59b (apply via
+      the menu, delete via the dialog), updated 193a/b (pin by star, pill
+      tooltip, separator stays), 220-era context-menu ordering assertions and
+      the export click in GROUP 296. Dropped: the "Apply from library…"
+      context-menu entry and the dialog's Apply/Toolbar-switch controls.
    ============================================================ */
