@@ -106,6 +106,10 @@ deployments possible:
   turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
   into a real filter node — `Ctrl+F` still opens the filter popup directly.
   Stays fast on views with hundreds of thousands of rows.
+- **Recent-filter suggestions** — the filter popup and the find bar offer a
+  dropdown of recently used filters and searches (with their Regex/Match
+  case/Whole word/NOT settings): pick with the arrow keys or the mouse, remove
+  entries you don't want to see again.
 - **Patterns: a log's message shapes at a glance** — the **Patterns** tab
   (first in the view selector, `Ctrl+1`) groups the current filter result by message *shape*: numbers, GUIDs, IP
   addresses, paths, hex values and quoted strings become placeholders, so

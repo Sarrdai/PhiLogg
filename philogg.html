@@ -3889,6 +3889,33 @@
   .filter-input-wrap:has(#filterInput:focus){border-color:var(--accent);}
   .filter-input-wrap:has(#filterInput.input-error){animation:inputError .5s ease;}
   .filter-input-wrap:has(#filterInput.input-regex-error){border-color:var(--level-error);}
+  /* Recent-filter suggestions (FEATURE_BACKLOG.md #13): one dropdown component
+     shared by #filterInput (hosted in .filter-input-wrap) and #findInput
+     (hosted in #findBar). Absolutely positioned so it overlays what is below
+     the input instead of pushing layout. */
+  .filter-input-wrap{position:relative;}
+  .recent-dd{
+    position:absolute; top:calc(100% + 4px); left:0; right:0; z-index:50;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:6px;
+    padding:4px; box-shadow:0 8px 24px rgba(0,0,0,.45); display:flex; flex-direction:column;
+  }
+  .recent-dd[hidden]{display:none;}
+  .recent-dd .rd-head{font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary); padding:3px 8px;}
+  .recent-dd .rd-row{
+    display:flex; align-items:center; gap:6px; padding:4px 8px; border-radius:4px; cursor:pointer;
+    font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);
+  }
+  .recent-dd .rd-row.sel, .recent-dd .rd-row:hover{background:var(--accent-soft); color:var(--text-primary);}
+  .recent-dd .rd-val{flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .recent-dd .rd-val mark{background:none; color:var(--accent-strong); font-weight:700;}
+  .recent-dd .rd-badge{font-family:var(--font-mono); font-size:10px; font-weight:700; border:1px solid var(--border); border-radius:3px; padding:0 4px; color:var(--text-secondary);}
+  .recent-dd .rd-badge.not{color:var(--level-error); border-color:var(--level-error);}
+  .recent-dd .rd-src{width:11px; height:11px; flex:0 0 auto; color:var(--text-tertiary);}
+  .recent-dd .rd-src-empty{display:inline-block; width:11px; height:11px; flex:0 0 auto;}
+  .recent-dd .rd-x{opacity:0; color:var(--text-tertiary); font-family:var(--font-ui); padding:0 2px;}
+  .recent-dd .rd-row:hover .rd-x{opacity:1;}
+  .recent-dd .rd-x:hover{color:var(--text-primary);}
+  .recent-dd .rd-hint{font-size:10.5px; color:var(--text-tertiary); font-family:var(--font-ui); padding:3px 8px;}
   .filter-scope-hint{
     flex:0 0 auto; white-space:nowrap; font-family:var(--font-mono); font-size:10.5px;
     color:var(--text-tertiary); background:var(--bg-elevated-2); border:1px solid var(--border-soft);
@@ -31364,6 +31391,192 @@ function setFilterRegexMode(on) {
   filterSyntaxTextBtn.setAttribute("aria-pressed", on ? "false" : "true");
 }
 
+/* ===================== Recent-filter suggestions (FEATURE_BACKLOG.md #13) =====================
+   localStorage "philogg.recentFilters": most-recent-first array of
+   { value, isRegex, caseSensitive, wholeWord, inverted, source: "filter"|"find" },
+   deduped on value + the four flags (a re-use moves the entry to the top),
+   capped at RECENT_FILTERS_MAX; at most RECENT_FILTERS_SHOW are listed.
+   Recorded by commitFilter and the find bar (Enter / "Add as filter").
+   createRecentDropdown() is the ONE dropdown both inputs use. See
+   docs/filters.md -> "Recent-filter suggestions". */
+const RECENT_FILTERS_KEY = "philogg.recentFilters";
+const RECENT_FILTERS_MAX = 50;
+const RECENT_FILTERS_SHOW = 8;
+function loadRecentFilters() {
+  try {
+    const arr = JSON.parse(localStorage.getItem(RECENT_FILTERS_KEY) || "[]");
+    return Array.isArray(arr) ? arr.filter(r => r && typeof r.value === "string" && r.value) : [];
+  } catch { return []; }
+}
+function saveRecentFilters(list) {
+  try { localStorage.setItem(RECENT_FILTERS_KEY, JSON.stringify(list)); } catch { /* storage unavailable: history is best-effort */ }
+}
+function recordRecentFilter(rec) {
+  if (!rec || typeof rec.value !== "string" || !rec.value.trim()) return;
+  const entry = {
+    value: rec.value, isRegex: !!rec.isRegex, caseSensitive: !!rec.caseSensitive,
+    wholeWord: !!rec.wholeWord, inverted: !!rec.inverted, source: rec.source === "find" ? "find" : "filter",
+  };
+  const same = r => r.value === entry.value && !!r.isRegex === entry.isRegex && !!r.caseSensitive === entry.caseSensitive &&
+    !!r.wholeWord === entry.wholeWord && !!r.inverted === entry.inverted;
+  const list = loadRecentFilters().filter(r => !same(r));
+  list.unshift(entry);
+  saveRecentFilters(list.slice(0, RECENT_FILTERS_MAX));
+}
+function removeRecentFilter(entry) {
+  saveRecentFilters(loadRecentFilters().filter(r => !(r.value === entry.value && !!r.isRegex === !!entry.isRegex &&
+    !!r.caseSensitive === !!entry.caseSensitive && !!r.wholeWord === !!entry.wholeWord && !!r.inverted === !!entry.inverted)));
+}
+function recentFilterMatches(query) {
+  const q = query.toLowerCase();
+  return loadRecentFilters().filter(r => !q || (r.value.toLowerCase().includes(q) && r.value.toLowerCase() !== q)).slice(0, RECENT_FILTERS_SHOW);
+}
+
+// input: the text input; host: element the list is appended to (must be
+// position:relative/absolute); apply(entry): fills the input + toggles;
+// hideOnBlur: close the list when the input loses focus.
+function createRecentDropdown({ input, host, apply, hideOnBlur }) {
+  const box = document.createElement("div");
+  box.className = "recent-dd";
+  box.hidden = true;
+  host.appendChild(box);
+  let list = [], sel = -1;
+  const isOpen = () => !box.hidden;
+  function hide() { box.hidden = true; sel = -1; }
+  function draw() {
+    const q = input.value;
+    list = recentFilterMatches(q);
+    if (!list.length) { hide(); return; }
+    sel = Math.min(sel, list.length - 1);
+    box.textContent = "";
+    const head = document.createElement("div");
+    head.className = "rd-head";
+    head.textContent = q ? "Matching recent filters" : "Recent filters";
+    box.appendChild(head);
+    list.forEach((r, i) => {
+      const row = document.createElement("div");
+      row.className = "rd-row" + (i === sel ? " sel" : "");
+      row.dataset.i = String(i);
+      if (r.source === "find") {
+        const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+        svg.setAttribute("class", "icon rd-src");
+        svg.setAttribute("aria-hidden", "true");
+        const use = document.createElementNS("http://www.w3.org/2000/svg", "use");
+        use.setAttribute("href", "#i-search");
+        svg.appendChild(use);
+        row.appendChild(svg);
+      } else {
+        const slot = document.createElement("span");
+        slot.className = "rd-src-empty";
+        row.appendChild(slot);
+      }
+      const val = document.createElement("span");
+      val.className = "rd-val";
+      const at = q ? r.value.toLowerCase().indexOf(q.toLowerCase()) : -1;
+      if (at >= 0) {
+        const mark = document.createElement("mark");
+        mark.textContent = r.value.slice(at, at + q.length);
+        val.append(r.value.slice(0, at), mark, r.value.slice(at + q.length));
+      } else val.textContent = r.value;
+      row.appendChild(val);
+      [[r.isRegex, ".*", ""], [r.caseSensitive, "Aa", ""], [r.wholeWord, "W", ""], [r.inverted, "NOT", " not"]].forEach(([on, txt, cls]) => {
+        if (!on) return;
+        const b = document.createElement("span");
+        b.className = "rd-badge" + cls;
+        b.textContent = txt;
+        row.appendChild(b);
+      });
+      const x = document.createElement("span");
+      x.className = "rd-x";
+      x.dataset.del = String(i);
+      x.title = "Remove from history";
+      x.textContent = "\u00d7";
+      row.appendChild(x);
+      box.appendChild(row);
+    });
+    const hint = document.createElement("div");
+    hint.className = "rd-hint";
+    hint.textContent = "\u2191\u2193 select \u00b7 Enter apply \u00b7 Shift+Del remove";
+    box.appendChild(hint);
+    box.hidden = false;
+  }
+  function open() { sel = -1; draw(); }
+  function removeAt(i) {
+    if (!list[i]) return;
+    removeRecentFilter(list[i]);
+    draw();
+  }
+  function applyAt(i) {
+    const r = list[i];
+    if (!r) return;
+    hide(); // hidden, not emptied: the click that follows must still find its target attached
+    apply(r);
+  }
+  // mousedown + preventDefault keeps the input focused; the row's own click
+  // must not reach the document's click-outside handlers (stopPropagation gotcha).
+  box.addEventListener("mousedown", ev => {
+    ev.preventDefault();
+    const row = ev.target.closest(".rd-row");
+    if (!row || ev.target.closest(".rd-x")) return;
+    applyAt(+row.dataset.i);
+  });
+  box.addEventListener("click", ev => {
+    ev.stopPropagation();
+    const x = ev.target.closest(".rd-x");
+    if (x) removeAt(+x.dataset.del);
+  });
+  input.addEventListener("input", () => { sel = -1; draw(); });
+  input.addEventListener("keydown", ev => {
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      if (!isOpen()) {
+        if (ev.key === "ArrowUp") return;
+        draw();
+        if (!isOpen()) return;
+      }
+      sel = ev.key === "ArrowDown" ? Math.min(sel + 1, list.length - 1) : Math.max(sel - 1, -1);
+      draw();
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+    } else if ((ev.key === "Enter" || ev.key === "Tab") && isOpen() && sel >= 0) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      applyAt(sel);
+    } else if (ev.key === "Escape" && isOpen()) {
+      ev.stopPropagation();
+      ev.stopImmediatePropagation();
+      hide();
+    } else if (ev.key === "Delete" && ev.shiftKey && isOpen() && sel >= 0) {
+      ev.preventDefault();
+      ev.stopImmediatePropagation();
+      const i = sel;
+      removeAt(i);
+    }
+  });
+  if (hideOnBlur) input.addEventListener("blur", hide);
+  return { open, hide, isOpen, box };
+}
+
+const recentFilterDropdown = createRecentDropdown({
+  input: filterInput,
+  host: filterInput.closest(".filter-input-wrap"),
+  apply(r) {
+    filterInput.value = r.value;
+    setFilterRegexMode(r.isRegex);
+    pillSet(filterCaseCheckbox, r.caseSensitive);
+    pillSet(filterWholeWordCheckbox, r.wholeWord);
+    pillSet(filterInvertCheckbox, r.inverted);
+    updateRegexModeUI();
+    updateFilterAvailability(); // programmatic writes don't fire "input"
+    evaluateLiveMatch();
+    filterInput.focus();
+  },
+});
+// Clicking anywhere else inside the popup closes the list (the popup's own
+// clicks are outside the dropdown box, whose clicks stop propagating).
+filterPopup.addEventListener("click", ev => {
+  if (ev.target !== filterInput) recentFilterDropdown.hide();
+});
+
 function openFilterPopup() {
   const node = state.nodes[state.activeId];
   if (!node) return;
@@ -31387,6 +31600,7 @@ function openFilterPopup() {
   filterPatternPreview.innerHTML = "";
   filterPopup.classList.remove("hidden");
   filterInput.focus();
+  recentFilterDropdown.open(); // empty input: the recent list (edit mode below stays closed until typing)
 }
 
 // Edit mode for an existing filter node: only "text" filters (extraction-
@@ -31425,6 +31639,7 @@ function openEditFilterPopup(nodeId) {
 
 function closeFilterPopup() {
   filterPopup.classList.add("hidden");
+  recentFilterDropdown.hide();
   clearTimeout(liveMatchTimer);
   editingFilterId = null;
   filterPopupBaseId = null;
@@ -31847,6 +32062,7 @@ function commitFilter() {
   // carrying a flag that does nothing would be a lie in every persistence
   // carrier it travels through.
   const wholeWord = pillGet(filterWholeWordCheckbox) && !isRegex && !isExtractPattern(val);
+  recordRecentFilter({ value: val, isRegex, caseSensitive, wholeWord, inverted: pillGet(filterInvertCheckbox), source: "filter" });
   if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
   else createFilterNode(filterPopupBaseId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
   closeFilterPopup();
@@ -32162,6 +32378,7 @@ function openFindBar() {
   findInput.focus();
   findInput.select();
   if (!wasOpen || prefill) applyFindQuery(false);
+  findRecentDropdown.open();
   return true;
 }
 
@@ -32172,6 +32389,7 @@ function closeFindBar() {
   clearTimeout(findScanTimer);
   findState.gen++;
   findBar.classList.add("hidden");
+  findRecentDropdown.hide();
   // A focused-but-hidden input would keep every later shortcut in the
   // main keydown handler's "inInput" bail-out.
   if (document.activeElement === findInput) findInput.blur();
@@ -32195,6 +32413,8 @@ function addFindAsFilter() {
     applyFindQuery(false);
   }
   if (!findState.spec || !state.nodes[state.activeId]) return null;
+  recordRecentFilter({ value: findState.query, isRegex: findState.isRegex, caseSensitive: findState.caseSensitive,
+    wholeWord: false, inverted: false, source: "find" });
   const node = createFilterNode(state.activeId, "text", findState.query, false, null,
     findState.caseSensitive, null, findState.isRegex, false);
   closeFindBar();
@@ -32231,6 +32451,23 @@ function handleFindShortcut(ev) {
   return true;
 }
 
+// Registered before the input/keydown listeners below: its keydown handler
+// consumes Enter/Tab/Escape/arrows while the list has a selection or is open.
+const findRecentDropdown = createRecentDropdown({
+  input: findInput,
+  host: findBar,
+  hideOnBlur: true,
+  apply(r) {
+    findInput.value = r.value;
+    pressedSet(findCaseBtn, r.caseSensitive);
+    pressedSet(findRegexBtn, r.isRegex);
+    findInput.focus();
+    applyFindQuery(true);
+  },
+});
+findBar.addEventListener("click", ev => {
+  if (ev.target !== findInput) findRecentDropdown.hide();
+});
 findInput.addEventListener("input", () => {
   clearTimeout(findDebounceTimer);
   findDebounceTimer = setTimeout(() => applyFindQuery(true), FIND_DEBOUNCE_MS);
@@ -32239,7 +32476,12 @@ findInput.addEventListener("keydown", ev => {
   if (ev.key !== "Enter") return;
   ev.preventDefault();
   if (ev.ctrlKey || ev.metaKey) { addFindAsFilter(); return; }
-  if (findDebounceTimer) { applyFindQuery(true); return; } // typed, not yet searched: this Enter IS the incremental jump
+  findRecentDropdown.hide();
+  const typedNotSearched = !!findDebounceTimer;
+  if (typedNotSearched) applyFindQuery(true); // this Enter IS the incremental jump
+  if (findState.spec) recordRecentFilter({ value: findState.query, isRegex: findState.isRegex, caseSensitive: findState.caseSensitive,
+    wholeWord: false, inverted: false, source: "find" });
+  if (typedNotSearched) return;
   findStep(ev.shiftKey ? -1 : 1);
 });
 [findCaseBtn, findRegexBtn].forEach(btn => btn.addEventListener("click", () => {

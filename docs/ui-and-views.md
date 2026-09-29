@@ -813,6 +813,8 @@ This is deliberately **not** `captureViewAnchor`/`restoreViewAnchor`, which the 
 
 **Add as filter.** `addFindAsFilter()` calls the same `createFilterNode(state.activeId, "text", query, false, null, caseSensitive, null, isRegex, false)` the Ctrl+F popup's `commitFilter` calls, then closes the bar, `revealFilteredView()` and `render()` — the node has exactly a popup-created node's shape (no new node field, so nothing new to thread through the persistence carriers). The query is used untrimmed so the node keeps the searched rows exactly.
 
+**Recent searches.** `#findInput` shares the filter popup's recent-filter dropdown (`createRecentDropdown`, docs/filters.md -> "Recent-filter suggestions"): opening the bar and typing list matching earlier filters/searches; applying one sets the query plus Aa and `.*` and re-runs the search. Enter and "Add as filter" record the term (source `find`, case/regex only), typing alone does not; Escape closes the list before the bar.
+
 **Placement.** The bar floats over `#fhSplit`'s top-right corner (`position:absolute`, `#fhSplit` is `position:relative`), out of flex flow, so opening/closing it never moves a log row; being inside `#fhSplit` it disappears with it on Table/Plot. It does not close on an outside click (a find bar persists while you work, like a browser's).
 
 ## Level bar: filter-tree mode (`FEATURE_BACKLOG.md` #10)

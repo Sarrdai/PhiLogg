@@ -56,7 +56,6 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 6 | Relative-time display toggle | Show timestamps as offsets from a chosen zero row (selected or bookmarked) instead of absolute time, same reasoning that made extraction's `t(ms)` cumulative-from-first. | klein |  |
 | 7 | Collapse consecutive duplicate messages into one row with an ×N badge | Noise control for spam loops. Open question: what counts as "duplicate" (raw line, message column, or message-with-numbers-normalized — the Patterns tab's `normalizeMessagePattern` already does the latter). | mittel |  |
 | 12 | Dedup check on filter-file / session import | Prevents duplicate branches when the same filter (tree) is loaded/imported again. | klein |  |
-| 13 | Autocomplete suggestions from recently used filter values/search terms | In the filter popup. | klein–mittel |  |
 | 15 | "Why is this row here?" explain popup | For the selected entry, show which node of the active chain matched it; for a context row in the Context view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the "view sometimes doesn't refresh" class of confusion. | mittel |  |
 | 22 | Diff view between two filter results | E.g. comparing two runs of the same log. | groß |  |
 | 28 | Time sync between two open files | Selecting an entry in one file scrolls a second, side-by-side file to the nearest timestamp (device log vs. application log), without the destructive `mergeFiles` step. Would need a second file pane; the Filter/Highlight split is the closest existing precedent. | groß |  |
