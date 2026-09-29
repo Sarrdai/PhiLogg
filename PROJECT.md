@@ -159,7 +159,16 @@ parses on every core**: `splitTextAtHeaderLines` cuts the text into one
 piece per core (`parallelParseWorkerCount`: `navigator.hardwareConcurrency`,
 pieces of at least 1 MB), each cut moved forward to the next header line so
 a stack trace never leaves its entry and each piece parses to exactly the
-whole text's entries in that range. Each worker sends its entries back as
+whole text's entries in that range. **Byte-range mode**: when the source
+is a Blob/File (`readParseFileNode`, gated by `canParseBlobInWorker`: UTF-8,
+not the plain-text format), the main thread neither reads nor copies the
+text — `parseLogTextInWorker` posts the Blob plus a byte range [a, b) per
+worker and each worker reads its own bytes (`parseBlobRangeEntries`,
+`findHeaderLineStartInBlob`): a piece starts at the first header-line start
+>= a and ends at the first one >= b, so neighbours agree and no entry is
+split or duplicated; progress is in bytes. Text sources (`addFile`, session
+restore, meta-format, `?url=` text) and a failed worker keep the text route.
+Each worker sends its entries back as
 **binary batches** (`encodeEntryBatch`) in the native parser's layout
 (`desktop/src-tauri/logparse/src/batch.rs`), read by the same
 `decodeNativeBatch` — except that the string section stays a JS string
