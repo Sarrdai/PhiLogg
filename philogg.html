@@ -29434,11 +29434,33 @@ function openZipEntry(entry, zip) {
   // row to click yet) — clear any currently-shown non-log inline viewer
   // here too, same reasoning as that handler's own comment.
   if (!kbLoadNavIds.has(unloadedNavId("zip", zip.id, entry.name))) state.inlineViewer = null; // a keyboard load keeps the main view (openUnloadedNavId)
+  // Silent preload under the tree cursor (see takePreloadByKey): adopt the
+  // finished/in-flight extraction+parse instead of doing it again.
+  const job = takePreloadByKey("zip:" + zip.id + "|" + entry.name, null);
+  if (job) return openZipEntryFromPreload(entry, zip, job);
   return loadFileDescriptors([{
     name: entry.name,
     zipId: zip.id,
     openFile: async () => new File([await entry.extract()], entry.name),
   }]);
+}
+
+// Adopts a silent-preload job as the ZIP entry's file node — the outcome
+// loadFileDescriptors' single-file path would give (zipId-tagged root node
+// inside the ZIP's section, persisted, one render). A failed job loads the
+// normal way, which reports the error as today.
+async function openZipEntryFromPreload(entry, zip, job) {
+  const node = job.node;
+  activatePreloadNode(node);
+  const out = await trackForegroundLoad(() => job.promise);
+  if (state.nodes[node.id] !== node) { render(); return; } // closed meanwhile
+  if (out.err || !out.res) {
+    deleteNode(node.id);
+    return loadFileDescriptors([{ name: entry.name, zipId: zip.id, openFile: async () => new File([await entry.extract()], entry.name) }]);
+  }
+  finishLoadProgress(node);
+  await finishLoadedFileNode(node, out.res, null);
+  render();
 }
 
 // "Save" now covers session export only (FEATURE_BACKLOG.md #56) — a single
@@ -31666,7 +31688,24 @@ const FM_DRAG_THRESHOLD_PX = 4;
    action takes a matching job out of the map synchronously; a full job
    satisfies every action, a window job only an exact-window merge; anything
    else is aborted and loaded the normal way. The native parser cannot be
-   cancelled: an aborted native job runs to its end and is discarded. */
+   cancelled: an aborted native job runs to its end and is discarded.
+
+   Second source (keyboard cursor): the tree cursor resting on a listed but
+   not loaded log entry (`unloadednav:` id, treeCursorId) preloads that entry
+   too — a watched-folder file (a full job under the same key as a minimap
+   bar) or a ZIP entry (`kind: "zip"`: entry.extract() -> File ->
+   readParseFileNode; the extraction itself can't be cancelled, an aborted job
+   just drops its result). It starts only after the cursor has rested
+   CURSOR_PRELOAD_DWELL_MS on the entry (held arrow keys would otherwise
+   start/abort a read per row), goes to the front of the queue but never
+   aborts a running job, and is aborted the moment the cursor leaves (unless
+   the minimap wants the same file). Entries whose load is running (kbLoadNavIds
+   or any node of that name under the owner) never get a job. Adoption
+   (openZipEntry / loadFolderFile) is the same take-out-of-the-map as above;
+   activatePreloadNode leaves the main view alone for a keyboard load
+   (kbLoadNavIdOf), exactly like createFileNode. */
+const CURSOR_PRELOAD_DWELL_MS = 150;
+let cursorPreloadDwell = null; // { key, ready, timer }
 
 async function trackForegroundLoad(fn) {
   foregroundLoads++;
@@ -31696,28 +31735,73 @@ function desiredFolderPreloads(folder) {
     const fmt = state.logFormats.find(f => f.id === resolveFormatIdForFilename(rec.name));
     if (fmt && fmt.mode === "meta") continue;
     out.set(folder.id + "|" + folderFileKey(rec), {
-      rec, win: fmSelectedWindow && rec._range ? { from: fmSelectedWindow.from, to: fmSelectedWindow.to } : null,
+      kind: "folder", folder, rec, win: fmSelectedWindow && rec._range ? { from: fmSelectedWindow.from, to: fmSelectedWindow.to } : null,
     });
   }
   return out;
 }
 
+// The listed-but-unloaded LOG entry the tree cursor rests on (a watched-folder
+// file or a ZIP entry), as a preload description, or null. Excluded: entries
+// whose load is already running (kbLoadNavIds, or a node of that name under the
+// owner — including an unloaded row that just got loaded), inline-viewable /
+// non-log files, meta-format files, PhiLogg exports.
+function cursorPreloadTarget() {
+  const id = state.treeCursor ? treeCursorId() : null;
+  if (!id || !isUnloadedNavId(id) || kbLoadNavIds.has(id)) return null;
+  const p = parseUnloadedNavId(id);
+  const owner = pathTreeOwnerOf(p.ownerKind, p.ownerId);
+  if (!owner) return null;
+  const isZip = p.ownerKind === "zip";
+  const item = isZip ? owner.entries.find(e => e.name === p.key) : owner.files.find(r => folderFileKey(r) === p.key);
+  if (!item) return null;
+  const name = item.name;
+  if (isZip ? !isLogZipEntry(item) : (item.nodeId && state.nodes[item.nodeId])) return null;
+  if (inlineViewableKind(name) || mightBePhiloggExport(name)) return null;
+  const fmt = state.logFormats.find(f => f.id === resolveFormatIdForFilename(name));
+  if (fmt && fmt.mode === "meta") return null;
+  const owned = n => n && n.type === "file" && !n.preload && n.name === name && (isZip ? n.zipId === owner.id : n.folderId === owner.id);
+  if (Object.values(state.nodes).some(owned)) return null; // loaded, or loading right now
+  return isZip
+    ? { key: "zip:" + owner.id + "|" + item.name, d: { kind: "zip", zip: owner, entry: item, win: null, cursor: true } }
+    : { key: owner.id + "|" + p.key, d: { kind: "folder", folder: owner, rec: item, win: null, cursor: true } };
+}
+
+// Cursor dwell: the cursor target only counts as wanted once it has rested on
+// the same entry for CURSOR_PRELOAD_DWELL_MS.
+function cursorPreloadWanted() {
+  const cur = cursorPreloadTarget();
+  if (!cur) {
+    if (cursorPreloadDwell) { clearTimeout(cursorPreloadDwell.timer); cursorPreloadDwell = null; }
+    return null;
+  }
+  if (!cursorPreloadDwell || cursorPreloadDwell.key !== cur.key) {
+    if (cursorPreloadDwell) clearTimeout(cursorPreloadDwell.timer);
+    const dwell = cursorPreloadDwell = { key: cur.key, ready: false, timer: 0 };
+    dwell.timer = setTimeout(() => { if (cursorPreloadDwell === dwell) { dwell.ready = true; syncFolderPreloads(); } }, CURSOR_PRELOAD_DWELL_MS);
+  }
+  return cursorPreloadDwell.ready ? cur : null;
+}
+
 function syncFolderPreloads() {
   if (fmActionBusy) return;
-  if (!folderPreloads.size && !state.folderView) return; // nothing to abort, nothing to start
+  if (!folderPreloads.size && !state.folderView && !state.treeCursor && !cursorPreloadDwell) return; // nothing to abort, nothing to start
   const folder = state.folderView ? state.folders.find(f => f.id === state.folderView) : null;
   const wanted = folder && fmFolderId === folder.id ? desiredFolderPreloads(folder) : new Map();
+  const cur = cursorPreloadWanted();
+  if (cur && !wanted.has(cur.key)) wanted.set(cur.key, cur.d);
   for (const [key, job] of [...folderPreloads]) {
     const d = wanted.get(key);
     if (!d) { abortFolderPreload(job); continue; }
+    if (!job.started) job.cursor = !!d.cursor;
     if (job.effective === "full" || sameFolderWindow(job.win, d.win)) continue;
     if (!job.started) { job.win = d.win; if (!d.win) job.effective = "full"; continue; } // not running yet: just retarget
     abortFolderPreload(job); // window changed: a slice job restarts
   }
   for (const [key, d] of wanted) {
     if (folderPreloads.has(key)) continue;
-    folderPreloads.set(key, { key, folder, rec: d.rec, win: d.win, effective: d.win ? null : "full",
-      started: false, aborted: false, node: null, promise: null });
+    folderPreloads.set(key, { key, kind: d.kind, folder: d.folder, rec: d.rec, zip: d.zip, entry: d.entry, cursor: !!d.cursor,
+      win: d.win, effective: d.win ? null : "full", started: false, aborted: false, node: null, promise: null });
   }
   pumpFolderPreloads();
 }
@@ -31733,24 +31817,35 @@ function abortFolderPreload(job) {
 // Starts the next queued job (selection order) when nothing else runs.
 function pumpFolderPreloads() {
   if (folderPreloadRunning || foregroundLoads) return;
+  let next = null;
   for (const job of folderPreloads.values()) {
     if (job.started) continue;
-    startFolderPreload(job);
-    return;
+    if (job.cursor) { next = job; break; } // the cursor's entry is the most immediate intent
+    if (!next) next = job;
   }
+  if (next) startFolderPreload(next);
 }
 
 function startFolderPreload(job) {
-  const { rec, folder } = job;
+  const { rec, folder, zip, entry } = job;
+  const isZip = job.kind === "zip";
   job.started = true;
   folderPreloadRunning = job;
   const node = job.node = {
-    id: uid("f"), type: "file", name: rec.name, parentId: null, children: [], entries: [],
-    cacheKey: newCacheKey(), folderId: folder.id, loadFraction: 0, preload: true,
+    id: uid("f"), type: "file", name: isZip ? entry.name : rec.name, parentId: null, children: [], entries: [],
+    cacheKey: newCacheKey(), loadFraction: 0, preload: true,
   };
+  if (isZip) node.zipId = zip.id; else node.folderId = folder.id;
   if (openScrollPosition === "end") node._openScrollToEnd = true;
   state.nodes[node.id] = node; // deliberately NOT in state.rootIds
   const run = async () => {
+    if (isZip) {
+      // Same File openZipEntry builds; extraction can't be cancelled, so an
+      // aborted job just stops before parsing.
+      const file = new File([await entry.extract()], entry.name);
+      if (job.aborted) throw new Error("aborted");
+      return { res: await readParseFileNode(node, entry.name, file, null, folderPreloadParseOptions()) };
+    }
     if (job.win) {
       const file = await getPartialReadFile(rec.handle);
       if (folderWindowEligible(file, rec)) {
@@ -31775,7 +31870,9 @@ function startFolderPreload(job) {
 // the request: `win` null = a full load (needs a full job), else the exact
 // window ({from, to}) — a full job serves that too.
 function takeFolderPreload(folder, rec, win) {
-  const key = folder.id + "|" + folderFileKey(rec);
+  return takePreloadByKey(folder.id + "|" + folderFileKey(rec), win);
+}
+function takePreloadByKey(key, win) {
   const job = folderPreloads.get(key);
   if (!job) return null;
   folderPreloads.delete(key);
@@ -31792,8 +31889,10 @@ function activatePreloadNode(node) {
   delete node.preload;
   if (typeof node.loadFraction !== "number") node.loadFraction = 0;
   state.rootIds.push(node.id);
-  state.folderView = null;
-  if (!sessionRestoreInProgress && !metaFormatSplitInProgress) { state.activeId = node.id; state.multiSelect = new Set(); }
+  // A keyboard load (kbLoadNavIds) leaves the main view alone, like createFileNode.
+  const kbLoad = !!kbLoadNavIdOf(node);
+  if (!kbLoad) state.folderView = null;
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress && !kbLoad) { state.activeId = node.id; state.multiSelect = new Set(); }
   flushLoadRender();
 }
 
