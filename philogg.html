@@ -893,6 +893,18 @@
     flex:0 0 auto; font-size:10.5px; color:var(--text-tertiary);
     font-variant-numeric:tabular-nums; padding:1px 5px;
   }
+  /* Find bar cross-file hit count (FEATURE_BACKLOG #30), before .tree-count. */
+  .tree-hit-badge{
+    flex:0 0 auto; font-size:10.5px; font-weight:650; font-variant-numeric:tabular-nums;
+    padding:0 6px; line-height:17px; border-radius:9px; margin-right:2px; cursor:pointer;
+    background:var(--accent-soft); color:var(--accent-strong);
+    border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);
+  }
+  .tree-hit-badge:hover{background:color-mix(in srgb,var(--accent) 28%,transparent);}
+  .tree-hit-badge.pending{opacity:.7; cursor:default;}
+  .tree-hit-badge.zero{
+    background:transparent; color:var(--text-tertiary); border-color:var(--border); cursor:default;
+  }
   .tree-del{
     flex:0 0 auto; opacity:0; background:none; border:none; cursor:pointer;
     color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
@@ -17648,6 +17660,10 @@ function renderNode(id, depth, opts) {
   // just equal the file's own row right above it.
   const ownCount = sourcesOwnerFile ? (sourcesOwnerFile.sources || []).length : getEntries(id).length;
   count.textContent = ownCount.toLocaleString("de-DE");
+  if (node.type === "file") {
+    const hitBadge = findXBadgeForRender(id);
+    if (hitBadge) row.appendChild(hitBadge);
+  }
   if (node.muted) count.title = "Muted — passes all " + ownCount.toLocaleString("de-DE") + " entries through";
   row.appendChild(count);
 
@@ -17724,6 +17740,9 @@ function renderNode(id, depth, opts) {
       }
     }
     applyTempAnchorOnActiveNodeSwitch(id);
+    // Find bar cross-file counts: switching to another file that has hits
+    // lands on its first hit once the find bar has rescanned the new view.
+    if (node.type === "file" && id !== state.activeId && findXJumpable(id)) findState.jumpFirst = true;
     state.activeId = id;
     // Selecting a real tree row (a log file or a filter) always hides any
     // currently-shown non-log inline viewer (this session, lifecycle
@@ -32693,6 +32712,7 @@ const findState = {
   cur: -1,         // index into `hits` of the last hit stepped to
   pendingDelta: 0, // a next/prev requested before the scan finished
   autoJump: false, // jump to the first hit once the scan finishes (typing)
+  jumpFirst: false, // a cross-file badge/row click switched files: select the new view's first hit once scanned
 };
 let findDebounceTimer = null;
 let findScanTimer = null;
@@ -32732,6 +32752,168 @@ function refreshFindMarks() {
   updateDetailPanel();
 }
 
+/* ---- Cross-file hit counts (FEATURE_BACKLOG #30) ----
+   While the bar is open with a valid query and 2+ file roots are loaded,
+   every file root row shows a .tree-hit-badge: how many entries of the WHOLE
+   file (state.nodes[id].entries, not the active filter chain) match the find
+   query. Read-only: no filter node, nothing persisted, F3/arrows still step
+   only inside the current view. The scan of the other files starts AFTER the
+   current view's scan (onFindScanDone), time-sliced like startFindScan, with
+   its own generation counter. cache: rootId -> { entries (array identity),
+   len (entries counted so far), count, ready }; valid for one query key, a
+   pure tail append (same array, longer) counts only the new tail. Badges are
+   updated in place (never renderTree() from a scan tick — see PROJECT.md
+   "load ticks never rebuild #tree"); renderNode adds them from the cache. */
+const findX = { gen: 0, key: "", cache: new Map(), timer: null, roots: [], rootSet: new Set() };
+
+function findXKey() {
+  return findState.query + "\u0000" + (findState.caseSensitive ? "1" : "0") + (findState.isRegex ? "1" : "0");
+}
+// Recomputes which file roots get a badge (none unless the bar is open with a
+// valid query and at least two real, loaded files) and drops cache entries of
+// roots that are gone (closed files).
+function findXApplyRoots() {
+  let roots = [];
+  if (findBarOpen() && findState.test) {
+    roots = state.rootIds.filter(id => {
+      const n = state.nodes[id];
+      return n && n.type === "file" && !n.queued && !n.mergeSourceHidden;
+    });
+    if (roots.length < 2) roots = [];
+  }
+  findX.roots = roots;
+  findX.rootSet = new Set(roots);
+  for (const id of [...findX.cache.keys()]) if (!findX.rootSet.has(id)) findX.cache.delete(id);
+  return roots;
+}
+function findXCancel() { findX.gen++; clearTimeout(findX.timer); findX.timer = null; }
+function findXPending(id) {
+  const n = state.nodes[id], c = findX.cache.get(id);
+  return !n || !c || !c.ready || c.entries !== n.entries;
+}
+// Fills/updates one badge element for a root (creates it when missing).
+function findXBadgeFor(id, existing) {
+  const c = findX.cache.get(id);
+  let b = existing;
+  if (!b) {
+    b = document.createElement("span");
+    b.addEventListener("click", ev => {
+      const info = findX.cache.get(id);
+      if (!info || !info.ready || !info.count || findXPending(id)) return; // 0 / pending: a plain row click
+      ev.stopPropagation();
+      if (id === state.activeId) { if (findState.done && findState.hits.length) findGoToHit(0); return; }
+      const row = b.closest(".tree-row");
+      if (row) row.click(); // the row handler activates the file and asks for the first hit
+    });
+  }
+  const q = findState.query;
+  if (findXPending(id)) {
+    b.className = "tree-hit-badge pending";
+    b.textContent = "\u2026";
+    b.title = "Counting matches for \"" + q + "\" in the whole file\u2026";
+  } else if (!c.count) {
+    b.className = "tree-hit-badge zero";
+    b.textContent = "0";
+    b.title = "No matches for \"" + q + "\" in this file";
+  } else {
+    b.className = "tree-hit-badge";
+    b.textContent = c.count.toLocaleString("de-DE");
+    b.title = c.count.toLocaleString("de-DE") + (c.count === 1 ? " match" : " matches") + " for \"" + q +
+      "\" in the whole file \u2014 click to jump to the first";
+  }
+  return b;
+}
+// For renderNode: the badge of a file root row, or null.
+function findXBadgeForRender(id) { return findX.rootSet.has(id) ? findXBadgeFor(id, null) : null; }
+// True when a click on this (not yet active) file's row should jump to its first hit.
+function findXJumpable(id) {
+  const c = findX.cache.get(id);
+  return findX.rootSet.has(id) && !!c && !!c.ready && c.count > 0 && !findXPending(id);
+}
+// Updates every rendered badge in place.
+function findXPaint() {
+  document.querySelectorAll(".tree-hit-badge").forEach(b => {
+    const row = b.closest(".tree-row");
+    if (!row || !findX.rootSet.has(row.dataset.nodeId)) b.remove();
+  });
+  findX.roots.forEach(id => {
+    document.querySelectorAll('.tree-row[data-node-id="' + id + '"]').forEach(row => {
+      const cur = row.querySelector(":scope > .tree-hit-badge");
+      const b = findXBadgeFor(id, cur);
+      if (!cur) row.insertBefore(b, row.querySelector(":scope > .tree-count"));
+    });
+  });
+  updateFindCounter();
+}
+// Tooltip of the find counter (sidebar-collapsed fallback): one line per file.
+function findXCounterTitle() {
+  const live = findX.roots.filter(id => state.nodes[id]); // a closed file may not be pruned yet
+  if (!live.length) return "";
+  return live.map(id => {
+    const c = findX.cache.get(id);
+    return nodeDisplayName(state.nodes[id]) + ": " + (findXPending(id) ? "\u2026" : c.count.toLocaleString("de-DE"));
+  }).join("\n");
+}
+// True when a (re)scan would change something: key/roots/array changed or grew.
+function findXNeedsWork() {
+  const roots = findX.roots;
+  const now = findBarOpen() && findState.test ? state.rootIds.filter(id => {
+    const n = state.nodes[id];
+    return n && n.type === "file" && !n.queued && !n.mergeSourceHidden;
+  }) : [];
+  const want = now.length >= 2 ? now : [];
+  if (want.length !== roots.length || want.some((id, i) => id !== roots[i])) return true;
+  if (findX.key !== findXKey()) return want.length > 0 || findX.cache.size > 0;
+  return want.some(id => {
+    const c = findX.cache.get(id), n = state.nodes[id];
+    return !c || c.entries !== n.entries || c.len !== n.entries.length || !c.ready;
+  });
+}
+function findXStart() {
+  findXCancel();
+  const gen = findX.gen;
+  const key = findXKey();
+  if (findX.key !== key) { findX.cache.clear(); findX.key = key; }
+  const roots = findXApplyRoots();
+  const test = findState.test;
+  // Drop stale entries (replaced array or shrunk) — a longer same array keeps its count.
+  roots.forEach(id => {
+    const n = state.nodes[id], c = findX.cache.get(id);
+    if (!c || c.entries !== n.entries || c.len > n.entries.length) findX.cache.set(id, { entries: n.entries, len: 0, count: 0, ready: false });
+  });
+  findXPaint();
+  const work = roots.filter(id => { const c = findX.cache.get(id); return c.len < c.entries.length || !c.ready; });
+  if (!work.length) return;
+  const slice = () => {
+    if (gen !== findX.gen) return; // superseded by a newer query / closed bar
+    const t0 = performance.now();
+    while (work.length) {
+      const c = findX.cache.get(work[0]);
+      if (!c) { work.shift(); continue; }
+      // Grow the target to the current length: a tail may have been appended mid-scan.
+      const entries = c.entries;
+      while (c.len < entries.length) {
+        const end = Math.min(entries.length, c.len + 2048);
+        let i = c.len, add = 0;
+        for (; i < end; i++) if (test(entries[i])) add++;
+        c.count += add;
+        c.len = end;
+        if (performance.now() - t0 >= FIND_SCAN_SLICE_MS) break;
+      }
+      if (c.len >= entries.length) { c.ready = true; work.shift(); }
+      if (performance.now() - t0 >= FIND_SCAN_SLICE_MS) break;
+    }
+    findXPaint();
+    if (work.length) findX.timer = setTimeout(slice, 0);
+  };
+  slice();
+}
+// Cheap check after any render: restart only when something actually changed.
+function findXSync() {
+  if (!findState.done) return; // the current view's scan will start it
+  if (findXNeedsWork()) findXStart();
+}
+
 // Recompiles the query from the input/toggles and restarts the scan.
 // autoJump: incremental "find as you type" — once the scan finishes, select
 // the first hit at or after the current selection (or the top visible row).
@@ -32753,12 +32935,20 @@ function applyFindQuery(autoJump) {
   findInput.classList.toggle("input-regex-error", findState.invalid);
   findState.pendingDelta = 0;
   findState.autoJump = !!autoJump && !!spec;
+  findState.jumpFirst = false;
+  // Cross-file badges: the old counts belong to the old query — drop them now
+  // (rows show "…"), the new counts are scanned once the current view is done.
+  findXCancel();
+  if (findX.key !== findXKey()) { findX.cache.clear(); findX.key = findXKey(); }
+  findXApplyRoots();
+  findXPaint();
   refreshFindMarks();
   startFindScan();
 }
 
 function startFindScan() {
   clearTimeout(findScanTimer);
+  findXCancel(); // restarted by onFindScanDone, after the current view is counted
   const gen = ++findState.gen;
   const view = findTargetView();
   findState.kind = view ? view.kind : null;
@@ -32774,7 +32964,9 @@ function startFindScan() {
     const t0 = performance.now();
     while (i < entries.length) {
       const end = Math.min(entries.length, i + 2048);
-      for (; i < end; i++) if (test(entries[i])) hits.push(i);
+      // A temp-anchor row (the selection carried over from another file) is
+      // spliced into the list but is not a member of the view: never a hit.
+      for (; i < end; i++) { const e = entries[i]; if (!e._tempAnchor && test(e)) hits.push(i); }
       if (performance.now() - t0 >= FIND_SCAN_SLICE_MS) break;
     }
     if (i < entries.length) { updateFindCounter(); findScanTimer = setTimeout(slice, 0); return; }
@@ -32787,6 +32979,15 @@ function startFindScan() {
 function onFindScanDone() {
   const delta = findState.pendingDelta;
   findState.pendingDelta = 0;
+  if (findState.jumpFirst) {
+    // A cross-file click switched files: land on the new view's first hit.
+    findState.jumpFirst = false;
+    findState.autoJump = false;
+    if (findState.hits.length) findGoToHit(0);
+    findXStart();
+    updateFindCounter();
+    return;
+  }
   // Typing's own jump first, THEN any step pressed while the scan was still
   // running — typing then F3 lands on the second hit, as it would have with
   // an instant scan.
@@ -32796,6 +32997,7 @@ function onFindScanDone() {
   }
   if (delta) findGoFrom(delta, false);
   updateFindCounter();
+  findXStart();
 }
 
 // Called after anything that may have rebuilt the current view's list (see
@@ -32806,6 +33008,7 @@ function findRefresh() {
   if (!findState.test) { updateFindCounter(); return; }
   const view = findTargetView();
   if ((view ? view.entries : null) !== findState.entries) { startFindScan(); return; }
+  findXSync(); // file opened/closed or a file's entries grew
   // Same array, other view: on a file node the Context and Filtered views
   // share the file's own entries array, so the hits stay valid — only which
   // view a step selects in changes.
@@ -32909,6 +33112,8 @@ function updateFindCounter() {
   }
   findCountEl.textContent = text;
   findCountEl.className = cls;
+  const xTitle = findXCounterTitle();
+  if (xTitle) findCountEl.title = xTitle; else findCountEl.removeAttribute("title");
   const canStep = !!(findState.test && view && (!findState.done || hits.length));
   findPrevBtn.disabled = !canStep;
   findNextBtn.disabled = !canStep;
@@ -32937,7 +33142,15 @@ function closeFindBar() {
   findDebounceTimer = null;
   clearTimeout(findScanTimer);
   findState.gen++;
+  findState.jumpFirst = false;
   findBar.classList.add("hidden");
+  findXCancel();
+  findX.cache.clear();
+  findX.key = "";
+  findX.roots = [];
+  findX.rootSet = new Set();
+  findXPaint(); // removes every badge
+  findCountEl.removeAttribute("title");
   findRecentDropdown.hide();
   // A focused-but-hidden input would keep every later shortcut in the
   // main keydown handler's "inInput" bail-out.
