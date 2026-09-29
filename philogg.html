@@ -719,6 +719,20 @@
      see near .tree-row above) which this is meant to match. */
   .zip-source-file.zip-entry-opened{opacity:1; color:var(--text-secondary);}
   .zip-source-file.zip-entry-active{background:var(--accent-soft); color:var(--text-primary);}
+  /* Tree cursor on a cursor-only row (moveTreeSelection: an unloaded ZIP/folder
+     entry, a subfolder row, or an entry being loaded from the keyboard): a
+     dashed accent outline instead of the filled .active look, which stays
+     reserved for what the main view actually shows. A dimmed unloaded row is
+     raised to normal readability while it holds the cursor and shows a small
+     "→ load" badge (Right loads it). */
+  .tree-cursor{outline:1px dashed var(--accent); outline-offset:-1px;}
+  .folder-watch-file.tree-cursor, .tree-row-queued.tree-cursor{opacity:1; color:var(--text-secondary);}
+  .tree-load-badge{
+    display:none; flex:0 0 auto; margin-left:auto; padding:0 5px;
+    font-size:10px; line-height:14px; color:var(--accent);
+    border:1px solid var(--accent); border-radius:3px;
+  }
+  .tree-cursor > .tree-load-badge{display:inline-block;}
   /* Files & Filters sidebar toolbar (FEATURE_BACKLOG.md #77) — same icon+
      hover-label button concept as #viewBar/the per-view toolbars
      (.row-action-btn/.row-action-hit/.row-action-label, see their own CSS
@@ -8819,12 +8833,13 @@ const state = {
   nodes: {},      // id -> node
   rootIds: [],    // file node ids, in load order
   activeId: null,
-  // Tree cursor resting on a subfolder row of a watched folder / ZIP (a virtual
-  // "dirnav:" id, see dirNavId) — { id, activeId, inlineViewer, folderView }
-  // or null. Only meaningful while activeId/inlineViewer/folderView are still
-  // the values it was set under (dirCursorId), so any other selection
+  // Tree cursor resting on a cursor-only row of a watched folder / ZIP: a
+  // subfolder row (virtual "dirnav:" id, see dirNavId) or a listed-but-not-loaded
+  // entry (virtual "unloadednav:" id, see unloadedNavId) — { id, activeId,
+  // inlineViewer, folderView } or null. Only meaningful while activeId/inlineViewer/folderView are still
+  // the values it was set under (treeCursorId), so any other selection
   // invalidates it without every setter having to clear it.
-  treeCursorDir: null,
+  treeCursor: null,
   focusRegion: "entries", // "entries" | "tree" — which pane the arrow keys act on;
                           // "tree" is set by clicking a tree row or
                           // dropping a drag onto a new parent, "entries" by any entry
@@ -10990,7 +11005,11 @@ function createFileNode(name, folderId) {
   // A freshly created file node is a real node's log view — same rule as
   // any other real-node activation: leave the folder-minimap special view
   // (see state.folderView) if it was showing.
-  state.folderView = null;
+  // A keyboard-initiated load (kbLoadNavIds) leaves the main view alone: the
+  // tree cursor is still on its row, and openUnloadedNavId shows the result only
+  // if it still is when the load ends.
+  const kbLoad = !!kbLoadNavIdOf(node);
+  if (!kbLoad) state.folderView = null;
   // NOT during a session/cache restore (see restoreSessionFromCache): that
   // function calls addFile()/createFileNode() once per restored file in a
   // loop, and every call used to hijack state.activeId — the tree's
@@ -11019,7 +11038,7 @@ function createFileNode(name, folderId) {
   // row would. Skipped during session restore for the same reason
   // state.activeId is: restoreSessionFromCache's own final correction is
   // the single source of truth for both once every file is back.
-  if (!sessionRestoreInProgress && !metaFormatSplitInProgress) { state.activeId = node.id; state.multiSelect = new Set(); }
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress && !kbLoad) { state.activeId = node.id; state.multiSelect = new Set(); }
   flushLoadRender();
   return node;
 }
@@ -11056,7 +11075,7 @@ function activateQueuedFileNode(node) {
   // fix, just through a new call path. state.activeId is left untouched;
   // restoreSessionFromCache's own final correction (`s.active`/its
   // fallback) remains the single source of truth once every file is back.
-  if (!sessionRestoreInProgress && !metaFormatSplitInProgress) {
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress && !kbLoadNavIdOf(node)) {
     // See createFileNode's own comment on this same pairing: a stale
     // state.multiSelect entry from an earlier plain tree-row click must not
     // outlive the row it pointed at becoming inactive.
@@ -16838,19 +16857,50 @@ function parseDirNavId(id) {
   const sep2 = rest2.indexOf(":");
   return { ownerKind: rest.slice(0, sep1), ownerId: rest2.slice(0, sep2), path: rest2.slice(sep2 + 1) };
 }
+// Virtual nav-id for a listed entry that is not loaded (a grayed ZIP entry /
+// watched-folder file row, or the same entry while a keyboard-initiated load is
+// still running — kbLoadNavIds). `key` is the ZIP entry name / folderFileKey(rec).
+function unloadedNavId(ownerKind, ownerId, key) { return "unloadednav:" + ownerKind + ":" + ownerId + ":" + key; }
+function isUnloadedNavId(id) { return typeof id === "string" && id.startsWith("unloadednav:"); }
+function parseUnloadedNavId(id) {
+  const rest = id.slice("unloadednav:".length);
+  const sep1 = rest.indexOf(":");
+  const rest2 = rest.slice(sep1 + 1);
+  const sep2 = rest2.indexOf(":");
+  return { ownerKind: rest.slice(0, sep1), ownerId: rest2.slice(0, sep2), key: rest2.slice(sep2 + 1) };
+}
+// Rows the tree cursor can rest on without selecting anything (main view unchanged).
+function isCursorOnlyNavId(id) { return isDirNavId(id) || isUnloadedNavId(id); }
+// Nav ids of unloaded entries whose load was started with Alt+Right / Right (see
+// openUnloadedNavId): while listed here the loading node stays a cursor-only stop
+// and its load does not activate itself — finishing decides that (only if the
+// cursor is still there).
+const kbLoadNavIds = new Set();
+function kbLoadNavIdOf(node) {
+  if (!kbLoadNavIds.size || !node || node.type !== "file") return null;
+  let id = null;
+  if (node.zipId) id = unloadedNavId("zip", node.zipId, node.name);
+  else if (node.folderId) {
+    const folder = state.folders.find(f => f.id === node.folderId);
+    const rec = folder && folder.files.find(r => r.name === node.name && kbLoadNavIds.has(unloadedNavId("folder", folder.id, folderFileKey(r))));
+    id = rec ? unloadedNavId("folder", folder.id, folderFileKey(rec)) : null;
+  }
+  return id && kbLoadNavIds.has(id) ? id : null;
+}
 function pathTreeOwnerKind(owner) { return state.zips.includes(owner) ? "zip" : "folder"; }
 function pathTreeOwnerOf(ownerKind, ownerId) {
   return ownerKind === "zip" ? state.zips.find(z => z.id === ownerId) : state.folders.find(f => f.id === ownerId);
 }
-// The dir row the tree cursor rests on, or null once anything else was selected.
-function dirCursorId() {
-  const c = state.treeCursorDir;
+// The cursor-only row (dir row / unloaded entry) the tree cursor rests on, or
+// null once anything else was selected.
+function treeCursorId() {
+  const c = state.treeCursor;
   if (!c) return null;
   if (c.activeId !== state.activeId || c.inlineViewer !== state.inlineViewer || c.folderView !== state.folderView) return null;
   return c.id;
 }
-function setDirCursor(id) {
-  state.treeCursorDir = id ? { id, activeId: state.activeId, inlineViewer: state.inlineViewer, folderView: state.folderView } : null;
+function setTreeCursor(id) {
+  state.treeCursor = id ? { id, activeId: state.activeId, inlineViewer: state.inlineViewer, folderView: state.folderView } : null;
 }
 // The dir nav id a file/viewer at relative path `relPath` sits directly under
 // (null at the container's top level).
@@ -16861,6 +16911,7 @@ function parentDirNavId(ownerKind, ownerId, relPath) {
 // Left-key parent of a nav id: a dir row's parent dir, a viewer's or an opened
 // file's containing dir row (null at top level), else the filter node's parent.
 function navParentId(id) {
+  if (isUnloadedNavId(id)) { const p = parseUnloadedNavId(id); return parentDirNavId(p.ownerKind, p.ownerId, p.key); }
   if (isDirNavId(id)) { const p = parseDirNavId(id); return parentDirNavId(p.ownerKind, p.ownerId, p.path); }
   if (isViewerNavId(id)) {
     const p = parseViewerNavId(id);
@@ -16928,8 +16979,11 @@ function flattenTreeIds() {
       const nodeId = (rec.nodeId && state.nodes[rec.nodeId]) ? rec.nodeId : rootByName.get(rec.name);
       if (nodeId) {
         const n = state.nodes[nodeId];
-        if (!(n.mergeOwnerId && n.mergeSourceHidden)) walk([nodeId]);
+        const kbId = kbLoadNavIdOf(n);
+        if (kbId) ids.push(kbId); // being loaded from the keyboard: still the cursor's stop
+        else if (!(n.mergeOwnerId && n.mergeSourceHidden)) walk([nodeId]);
       } else if (folder.inlineViewers.has(folderFileKey(rec))) pushViewer("folder", folder.id, folderFileKey(rec));
+      else ids.push(unloadedNavId("folder", folder.id, folderFileKey(rec))); // listed, not loaded: a cursor-only stop
     });
   });
   // ZIP sections (bugfix, person-reported: nav order didn't match the
@@ -16944,8 +16998,8 @@ function flattenTreeIds() {
   // real open tree node — found the same way renderZipSection looks it up,
   // by node.zipId + node.name — and its children, or (for a non-log entry
   // with no real node) the virtual stand-in id, but only once it's actually
-  // been opened (an unopened placeholder row has nothing to select/copy and
-  // stays unreachable by design, same as before this fix).
+  // been opened; an unopened placeholder row is a cursor-only stop
+  // (unloadedNavId), nothing to select until Right loads it.
   state.zips.forEach(zip => {
     const rootByName = new Map(); // same one-pass lookup as renderFolderSection's
     state.rootIds.forEach(id => {
@@ -16954,8 +17008,11 @@ function flattenTreeIds() {
     });
     walkPathTreeNav(zip, "zip", buildPathTree(zip.entries, e => e.name), entry => {
       const openId = rootByName.get(entry.name);
-      if (openId) walk([openId]);
-      else if (zip.inlineViewers.has(entry.name)) pushViewer("zip", zip.id, entry.name);
+      if (openId) {
+        const kbId = kbLoadNavIdOf(state.nodes[openId]);
+        if (kbId) ids.push(kbId); else walk([openId]);
+      } else if (zip.inlineViewers.has(entry.name)) pushViewer("zip", zip.id, entry.name);
+      else ids.push(unloadedNavId("zip", zip.id, entry.name)); // listed, not loaded: a cursor-only stop
     });
   });
   // Main tree (#tree): zip/folder files are listed in their containers above;
@@ -17023,7 +17080,10 @@ function applyTempAnchorOnActiveNodeSwitch(nodeId) {
   if (state.tempAnchor && tempAnchorMode === "fade") scheduleTempAnchorFade();
 }
 
-function moveTreeSelection(key) {
+// opts.skipUnloaded (Shift held): Up/Down step over unloaded entries (and the
+// entries being loaded from the keyboard); dir rows stay stops.
+function moveTreeSelection(key, opts) {
+  const skipUnloaded = !!(opts && opts.skipUnloaded);
   const ids = flattenTreeIds();
   if (ids.length === 0) return;
   const node = state.nodes[state.activeId];
@@ -17031,7 +17091,7 @@ function moveTreeSelection(key) {
   // (bugfix, person-reported) the entry's own virtual id while a non-log
   // entry's inline viewer is shown — state.activeId doesn't identify it, so
   // Up/Down step relative to the viewer, not a stale node — else activeId.
-  const cursorDir = dirCursorId();
+  const cursorDir = treeCursorId();
   const currentId = cursorDir
     ? cursorDir
     : (state.inlineViewer && state.inlineViewer.ownerKind)
@@ -17042,7 +17102,11 @@ function moveTreeSelection(key) {
   if (key === "ArrowDown" || key === "ArrowUp") {
     const idx = ids.indexOf(currentId);
     const delta = key === "ArrowDown" ? 1 : -1;
-    const nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
+    let nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
+    if (skipUnloaded) {
+      while (nextIdx >= 0 && nextIdx < ids.length && isUnloadedNavId(ids[nextIdx]) && nextIdx !== idx) nextIdx += delta;
+      if (nextIdx < 0 || nextIdx >= ids.length) nextIdx = idx; // only unloaded entries left in that direction: stay
+    }
     targetId = ids[nextIdx];
   } else if (key === "ArrowLeft" || key === "ArrowRight") {
     // Explorer/VS Code model. Right: collapsed -> expand, expanded -> first
@@ -17050,6 +17114,16 @@ function moveTreeSelection(key) {
     // parent (a dir row for anything inside a subfolder); selection stays put
     // when only expanding/collapsing.
     if (state.folderView && !cursorDir) return; // activeId is stale while the folder view is shown
+    // An unloaded entry: Right loads/opens it (like its double-click), Left goes
+    // to its dir row (nothing at the container's top level).
+    if (isUnloadedNavId(currentId)) {
+      if (key === "ArrowRight") { openUnloadedNavId(currentId); return; }
+      targetId = navParentId(currentId);
+      if (!targetId) return;
+      setTreeCursor(targetId);
+      render();
+      return;
+    }
     let collapsible = false, collapsed = false, toggle = null, firstChild = null;
     if (isDirNavId(currentId)) {
       const p = parseDirNavId(currentId);
@@ -17089,14 +17163,14 @@ function moveTreeSelection(key) {
   }
   if (!targetId) return;
 
-  // A dir row is a cursor position only — the main view (activeId, viewer)
-  // stays as it is.
-  if (isDirNavId(targetId)) {
-    setDirCursor(targetId);
+  // A dir row / unloaded entry is a cursor position only — the main view
+  // (activeId, viewer) stays as it is.
+  if (isCursorOnlyNavId(targetId)) {
+    setTreeCursor(targetId);
     render();
     return;
   }
-  state.treeCursorDir = null;
+  state.treeCursor = null;
 
   if (isViewerNavId(targetId)) {
     const { ownerKind, ownerId, mapKey } = parseViewerNavId(targetId);
@@ -17116,6 +17190,48 @@ function moveTreeSelection(key) {
   applyTempAnchorOnActiveNodeSwitch(targetId);
   state.multiSelect = new Set([targetId]);
   state.activeId = targetId;
+  render();
+}
+
+// Right on an unloaded entry (moveTreeSelection): opens it exactly like its
+// double-click (ZIP: openZipEntry, folder: loadFolderFile), then shows the result
+// — activates the node / inline viewer — only if the tree cursor is still on that
+// entry and nothing else was selected meanwhile. While it loads the main view is
+// untouched (kbLoadNavIds keeps createFileNode/activateQueuedFileNode/
+// openInlineViewer from activating) and the loading row remains the cursor's stop.
+async function openUnloadedNavId(navId) {
+  if (kbLoadNavIds.has(navId)) return; // already loading
+  const p = parseUnloadedNavId(navId);
+  const owner = pathTreeOwnerOf(p.ownerKind, p.ownerId);
+  if (!owner) return;
+  const isZip = p.ownerKind === "zip";
+  const item = isZip ? owner.entries.find(e => e.name === p.key) : owner.files.find(r => folderFileKey(r) === p.key);
+  if (!item) return;
+  const before = { activeId: state.activeId, inlineViewer: state.inlineViewer, folderView: state.folderView };
+  kbLoadNavIds.add(navId);
+  try {
+    await (isZip ? openZipEntry(item, owner) : loadFolderFile(owner, item));
+  } finally {
+    kbLoadNavIds.delete(navId);
+  }
+  const stillThere = treeCursorId() === navId && state.activeId === before.activeId &&
+    state.inlineViewer === before.inlineViewer && state.folderView === before.folderView;
+  if (!stillThere) { render(); return; }
+  const viewer = owner.inlineViewers.get(p.key);
+  if (viewer) {
+    activateInlineViewer(viewer);
+  } else {
+    const nodeId = isZip
+      ? state.rootIds.find(id => { const n = state.nodes[id]; return n && n.zipId === owner.id && n.name === item.name; })
+      : (item.nodeId && state.nodes[item.nodeId] ? item.nodeId : null);
+    if (!nodeId) { render(); return; } // opened externally / failed: the cursor stays on the row
+    state.treeCursor = null;
+    state.inlineViewer = null;
+    state.folderView = null;
+    applyTempAnchorOnActiveNodeSwitch(nodeId);
+    state.multiSelect = new Set([nodeId]);
+    state.activeId = nodeId;
+  }
   render();
 }
 
@@ -17410,7 +17526,8 @@ function renderQueuedFileRow(node, depth) {
   const wrap = document.createElement("div");
   wrap.dataset.type = "file";
   const row = document.createElement("div");
-  row.className = "tree-row-queued";
+  const kbLoadId = kbLoadNavIdOf(node);
+  row.className = "tree-row-queued" + (kbLoadId && treeCursorId() === kbLoadId ? " tree-cursor" : "");
   row.style.paddingLeft = (8 + depth * TREE_INDENT_STEP) + "px"; // matches renderNode's own real-row indentation
   const icon = document.createElement("span");
   icon.className = "tree-icon";
@@ -17493,7 +17610,8 @@ function renderNode(id, depth, opts) {
   const multiClass = state.multiSelect.has(id) ? " multi-selected" : "";
   const invertClass = node.inverted ? " inverted" : "";
   const muteClass = node.muted ? " muted" : "";
-  row.className = "tree-row" + (id === state.activeId ? " active" : "") + clipClass + multiClass + invertClass + muteClass +
+  const kbLoadId = kbLoadNavIdOf(node); // being loaded from the keyboard: the cursor's row while it loads
+  row.className = "tree-row" + (id === state.activeId ? " active" : "") + (kbLoadId && treeCursorId() === kbLoadId ? " tree-cursor" : "") + clipClass + multiClass + invertClass + muteClass +
     (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
@@ -17732,7 +17850,7 @@ function renderNode(id, depth, opts) {
     // when nothing was open.
     state.inlineViewer = null;
     state.folderView = null;
-    state.treeCursorDir = null; // a subfolder-row cursor gives way to this selection
+    state.treeCursor = null; // a subfolder-row cursor gives way to this selection
     // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
     // a mouse click on a filter switches the active filter but should not
     // steal arrow-key focus away from the log — leave focusRegion as
@@ -17915,10 +18033,10 @@ function renderPathTree(owner, tree, renderItem, list) {
 function renderPathTreeDirRow(owner, dir, depth, expanded) {
   const count = countPathTreeItems(dir);
   const navId = dirNavId(pathTreeOwnerKind(owner), owner.id, dir.path);
-  const active = dirCursorId() === navId; // the tree cursor rests here (moveTreeSelection)
+  const active = treeCursorId() === navId; // the tree cursor rests here (moveTreeSelection)
   return cachedInactiveRow(owner, "\0dir:" + dir.path, depth + "|" + expanded + "|" + count + "|" + active, () => {
     const row = document.createElement("div");
-    row.className = "tree-row tree-dir-row" + (active ? " active" : "");
+    row.className = "tree-row tree-dir-row" + (active ? " tree-cursor" : ""); // cursor-only: dashed outline, not the filled .active
     row.style.paddingLeft = (8 + depth * TREE_INDENT_STEP) + "px";
     row.title = dir.path;
     const slot = document.createElement("span");
@@ -17946,7 +18064,7 @@ function renderPathTreeDirRow(owner, dir, depth, expanded) {
     row.addEventListener("click", () => {
       const set = expandedDirsOf(owner);
       if (set.has(dir.path)) set.delete(dir.path); else set.add(dir.path);
-      setDirCursor(navId);
+      setTreeCursor(navId);
       state.focusRegion = "tree";
       render();
     });
@@ -28091,6 +28209,20 @@ function renderZipSection(zip) {
 // listing was thousands of fresh elements each time; keeping the element
 // also keeps a double-click on it working through such a render (the
 // DOM-identity gotcha in PROJECT.md).
+// Cursor look of an unloaded entry's row: the class (dashed outline, normal text
+// color) and the "→ load" badge (always in the row, shown by CSS only with the
+// class). Toggled in place on the CACHED row — never part of its cache sig — so
+// the element survives the click's own render() and a native dblclick still
+// lands on it (the DOM-identity gotcha).
+function buildLoadBadge() {
+  const badge = document.createElement("span");
+  badge.className = "tree-load-badge";
+  badge.textContent = "→ load";
+  return badge;
+}
+function setUnloadedCursorLook(row, navId) {
+  row.classList.toggle("tree-cursor", treeCursorId() === navId);
+}
 const inactiveRowCache = new WeakMap(); // viewersMap -> Map(key -> { sig, row })
 function cachedInactiveRow(owner, key, sig, build) {
   let m = inactiveRowCache.get(owner);
@@ -28113,6 +28245,7 @@ function renderInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, disp
   // close over its viewer and active state, and there are only a few.
   if (!cachedViewer) {
     const row = cachedInactiveRow(viewersMap, mapKey, displayLabel + "|" + depth, () => buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, null, false, null));
+    setUnloadedCursorLook(row, unloadedNavId(ownerKind, ownerId, mapKey));
     return depth == null ? row : pathTreeItemWrap(row, depth);
   }
   return buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive, depth);
@@ -28171,12 +28304,19 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
     });
   }
 
+  if (!cachedViewer) row.appendChild(buildLoadBadge());
   row.addEventListener("click", () => {
     // Only an already-opened entry responds to a plain click (matching a
     // real tree row's click-to-select) — opening for the first time is
-    // still a double-click, same convention every such row already uses
-    // (see the row's own title above).
-    if (!cachedViewer) return;
+    // still a double-click (or Right on the cursor), same convention every
+    // such row already uses (see the row's own title above). A click on the
+    // unopened row just puts the tree cursor there.
+    if (!cachedViewer) {
+      setTreeCursor(unloadedNavId(ownerKind, ownerId, mapKey));
+      state.focusRegion = "tree";
+      render();
+      return;
+    }
     activateInlineViewer(cachedViewer);
     render();
   });
@@ -28379,7 +28519,7 @@ itvWrapBtn.addEventListener("click", () => {
 function activateInlineViewer(viewer) {
   state.activeId = null;
   state.inlineViewer = viewer;
-  state.treeCursorDir = null;
+  state.treeCursor = null;
   state.folderView = null; // mutually exclusive "special content area" views — see its own comment
 }
 
@@ -28401,6 +28541,9 @@ async function openInlineViewer(name, bytes, kind, owner) {
   if (owner) {
     registerInlineViewer(viewer, owner);
     if (owner.persist) persistViewer(viewer, owner.persist, bytes);
+    // Opened from the keyboard on an unloaded row: shown by openUnloadedNavId,
+    // and only if the cursor is still there.
+    if (kbLoadNavIds.has(unloadedNavId(owner.ownerKind, owner.ownerId, owner.mapKey))) { render(); return; }
   }
   activateInlineViewer(viewer);
   render();
@@ -29106,8 +29249,8 @@ function openZipEntry(entry, zip) {
   // through the plain tree-row click handler above (it doesn't have a real
   // row to click yet) — clear any currently-shown non-log inline viewer
   // here too, same reasoning as that handler's own comment.
-  state.inlineViewer = null;
-  loadFileDescriptors([{
+  if (!kbLoadNavIds.has(unloadedNavId("zip", zip.id, entry.name))) state.inlineViewer = null; // a keyboard load keeps the main view (openUnloadedNavId)
+  return loadFileDescriptors([{
     name: entry.name,
     zipId: zip.id,
     openFile: async () => new File([await entry.extract()], entry.name),
@@ -31094,6 +31237,7 @@ function renderInactiveFileRow(folder, rec, depth) {
   // on the rec itself, whose identity mergeScannedFiles preserves.
   const sig = String(depth);
   if (!rec._inactiveRow || rec._inactiveRow.sig !== sig) rec._inactiveRow = { sig, row: buildInactiveFileRow(folder, rec, rec.name) };
+  setUnloadedCursorLook(rec._inactiveRow.row, unloadedNavId("folder", folder.id, folderFileKey(rec)));
   return rec._inactiveRow.row;
 }
 function buildInactiveFileRow(folder, rec, text) {
@@ -31108,6 +31252,12 @@ function buildInactiveFileRow(folder, rec, text) {
   label.className = "folder-watch-file-name";
   label.textContent = text;
   row.appendChild(label);
+  row.appendChild(buildLoadBadge());
+  row.addEventListener("click", () => {
+    setTreeCursor(unloadedNavId("folder", folder.id, folderFileKey(rec)));
+    state.focusRegion = "tree";
+    render();
+  });
   row.addEventListener("dblclick", () => loadFolderFile(folder, rec));
   row.addEventListener("contextmenu", ev => {
     ev.preventDefault();
@@ -40321,7 +40471,7 @@ document.addEventListener("keydown", ev => {
   if (ev.altKey &&
       (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
     ev.preventDefault();
-    moveTreeSelection(ev.key);
+    moveTreeSelection(ev.key, { skipUnloaded: ev.shiftKey });
     return;
   }
 
@@ -40354,7 +40504,7 @@ document.addEventListener("keydown", ev => {
   if (state.focusRegion === "tree" &&
       (ev.key === "ArrowDown" || ev.key === "ArrowUp" || ev.key === "ArrowLeft" || ev.key === "ArrowRight")) {
     ev.preventDefault();
-    moveTreeSelection(ev.key);
+    moveTreeSelection(ev.key, { skipUnloaded: ev.shiftKey });
     return;
   }
 
@@ -40385,7 +40535,7 @@ document.addEventListener("keydown", ev => {
   }
 
   if (ev.key === "Delete") {
-    if (dirCursorId()) return; // never delete the (unhighlighted) active node from a subfolder row
+    if (treeCursorId()) return; // never delete the (unhighlighted) active node from a subfolder row
     const node = state.nodes[state.activeId];
     if (node && node.type === "filter") {
       ev.preventDefault();
@@ -40472,7 +40622,7 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "viewTab4")) { ev.preventDefault(); jumpToViewTab(4); return; }
   if (matchesShortcut(ev, "viewTab5")) { ev.preventDefault(); jumpToViewTab(5); return; }
   if (ev.key === "Enter" && state.focusRegion === "tree") {
-    if (dirCursorId()) return; // the cursor is on a subfolder row, not on the active node
+    if (treeCursorId()) return; // the cursor is on a subfolder row, not on the active node
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") {
       ev.preventDefault();
