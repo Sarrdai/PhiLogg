@@ -547,30 +547,6 @@
   }
   #sidebarNormalContent{display:flex; flex-direction:column; min-height:0; height:100%; position:relative;}
   #sidebarScroll{flex:1 1 auto; overflow-y:auto; min-height:0;}
-  #sidebarScroll.has-selbar{padding-bottom:56px;}
-  /* Floating selection bar (2+ nodes selected): dark pill in light themes,
-     light pill in dark ones (text-primary as background, bg-panel as text). */
-  #selectionBar{
-    position:absolute; left:10px; right:10px; bottom:10px; z-index:5;
-    background:var(--text-primary); color:var(--bg-panel); border-radius:9px;
-    padding:4px 4px 4px 10px; display:flex; align-items:center; flex-wrap:nowrap; gap:1px;
-    box-shadow:0 6px 18px rgba(0,0,0,.35); font-size:11.5px;
-    animation:selbar-in .18s ease;
-  }
-  #selectionBar[hidden]{display:none;}
-  @keyframes selbar-in{from{opacity:0; transform:translateY(12px);} to{opacity:1; transform:none;}}
-  @media (prefers-reduced-motion:reduce){#selectionBar{animation:none; transition:none;}}
-  #selectionBar.has-note{flex-wrap:wrap;}
-  #selectionBar .selbar-count{font-weight:600; white-space:nowrap; margin-right:auto; padding-right:6px;}
-  #selectionBar .selbar-msg{flex:1 1 100%; order:5; font-size:11px; opacity:.85; line-height:1.35; padding:3px 0;}
-  #selectionBar button{
-    display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 6px;
-    border-radius:6px; border:0; background:transparent; color:inherit;
-    font:inherit; font-weight:500; cursor:pointer; white-space:nowrap;
-  }
-  #selectionBar button:hover{background:rgba(127,127,127,.3);}
-  #selectionBar .selbar-x{padding:0 5px; opacity:.75;}
-  #selectionBar .selbar-x:hover{opacity:1;}
   #sidebarRail{
     display:none; width:40px; height:100%; flex-direction:column; align-items:center;
     padding:6px 0 10px; gap:10px;
@@ -773,6 +749,26 @@
   #sidebarToolbar .toolbar-icon-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   #sidebarToolbar .toolbar-icon-btn:disabled{color:var(--text-tertiary);}
   #sidebarToolbar .toolbar-icon-btn:disabled .row-action-hit{opacity:.45;}
+  /* Multi mode (2+ nodes selected): the single-node row is replaced by the bulk
+     actions (count · AND · OR · Link… / Merge N files / a short message · ×) and
+     the bar takes the same highlight as selected tree rows, so the mode switch
+     is visible. Same height as the normal row (28px buttons + 2x4px padding). */
+  #sidebarToolbar{transition:background .15s ease;}
+  #sidebarToolbar.multi{background:var(--accent-soft); flex-wrap:nowrap;}
+  @media (prefers-reduced-motion:reduce){#sidebarToolbar{transition:none;}}
+  #sidebarToolbar .stb-cnt{font-size:12px; font-weight:600; color:var(--accent-strong); padding:0 6px 0 2px; white-space:nowrap;}
+  #sidebarToolbar .stb-msg{font-size:11.5px; color:var(--text-secondary); flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:2px; cursor:default;}
+  #sidebarToolbar .stb-sp{flex:1 1 auto;}
+  #sidebarToolbar .stb-btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:5px; height:28px; min-width:28px; padding:0 6px;
+    border:0; border-radius:6px; background:none; color:var(--text-secondary);
+    font:inherit; font-size:12px; font-weight:500; white-space:nowrap; cursor:pointer;
+  }
+  #sidebarToolbar .stb-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #sidebarToolbar .stb-btn:focus-visible{outline:2px solid var(--accent-strong); outline-offset:-2px;}
+  #sidebarToolbar .stb-btn .icon{width:14px; height:14px; flex:0 0 auto;}
+  #sidebarToolbar .stb-btn.stb-and .icon{color:var(--info);}
+  #sidebarToolbar .stb-btn.stb-or .icon{color:var(--warn);}
 
   /* tree rows */
   .tree-row{
@@ -2964,14 +2960,14 @@
   .filter-library-pin.active{color:var(--accent-strong);}
 
   /* ---------- Library ▾ split button (#btnLibrary in #viewBar) + its menu
-     (#libraryMenu) + the manage dialog rows. Accent outline pill: book icon +
-     "Library" segment and a chevron segment, both open the menu. ---------- */
+     (#libraryMenu) + the manage dialog rows. Accent outline pill,
+     icon-only: a book segment and a chevron segment, both open the menu. ---------- */
   #btnLibrary{
     float:left; display:inline-flex; align-items:stretch; height:26px; margin:1px 4px; padding:0;
     border:1px solid var(--accent); border-radius:99px; overflow:hidden; background:transparent;
     color:var(--accent-strong); font:inherit; cursor:pointer;
   }
-  #btnLibrary > span{display:flex; align-items:center; gap:5px; padding:0 9px; font-size:11.5px; font-weight:500; background:var(--accent-soft);}
+  #btnLibrary > span{display:flex; align-items:center; gap:5px; padding:0 8px; background:var(--accent-soft);}
   #btnLibrary > span + span{border-left:1px solid var(--accent); padding:0 6px;}
   #btnLibrary:hover > span, #btnLibrary[aria-expanded="true"] > span{background:var(--accent); color:var(--bg-panel);}
   #btnLibrary:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
@@ -4474,7 +4470,6 @@
           <div id="zipList"></div>
           <div id="tree"></div>
         </div>
-        <div id="selectionBar" role="toolbar" aria-label="Selection actions" hidden></div>
       </div>
       <div id="sidebarRail"></div>
     </aside>
@@ -4626,7 +4621,7 @@
         <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
         <!-- "Library ▾" split button: always present while files are loaded
              (also with zero presets); both segments open #libraryMenu. -->
-        <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library — apply, pin and manage presets"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg>Library</span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
+        <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library" aria-label="Filter library"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
         <!-- Group 3: "New" on its own (person-requested), always divided from
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
@@ -33440,11 +33435,12 @@ async function openFpPathHere(path) {
 }
 
 // Figures out which bulk actions the current multi-selection supports.
-// Shared by the right-click context menu and the floating selection bar at
-// the bottom of the sidebar (#selectionBar), so both surfaces offer exactly
-// the same logic/wording.
-// Returns { actions: [{action, label, icon}], note } — note is set instead
-// of actions when the selection doesn't support any bulk action yet.
+// Shared by the right-click context menu and #sidebarToolbar's multi mode
+// (describeSidebarToolbarMultiActions), so both surfaces offer exactly the
+// same logic/wording.
+// Returns { actions: [{action, label, icon}], note, short } — note (full
+// explanation) and short (one-line form for the toolbar) are set instead of
+// actions when the selection doesn't support any bulk action yet.
 // Link and AND/OR all accept 2+ filters of one file (Link: reference + N
 // ordered hops, see openLinkDialog; AND/OR: N-ary intersection/union, see
 // createAndOrNode).
@@ -33456,7 +33452,7 @@ function describeBulkActions(nodes) {
     // A plain-text file's ts are line numbers, not times — interleaving it
     // with anything by ts would be meaningless.
     if (nodes.some(n => isPlainTextFormat(n.formatId))) {
-      return { actions: [], note: "Plain-text files have line numbers instead of timestamps and can't be merged." };
+      return { actions: [], short: "Plain-text files can't be merged", note: "Plain-text files have line numbers instead of timestamps and can't be merged." };
     }
     return { actions: [{ action: "merge", label:"Merge " + nodes.length + " files", icon: ICON_MERGE }] };
   }
@@ -33464,7 +33460,7 @@ function describeBulkActions(nodes) {
     const roots = nodes.map(n => getRootFileId(n.id));
     const sameRoot = roots.every(r => r && r === roots[0]);
     if (!sameRoot) {
-      return { actions: [], note: "These filters belong to different files. Merge the files first, or pick filters from the same file." };
+      return { actions: [], short: "Filters from different files", note: "These filters belong to different files. Merge the files first, or pick filters from the same file." };
     }
     const actions = [];
     // AND/OR are withheld when any node fails canBeCombined() (a link node's
@@ -33478,7 +33474,7 @@ function describeBulkActions(nodes) {
     actions.push({ action: "link", label: "Link…", icon: ICON_LINK });
     return { actions };
   }
-  return { actions: [], note: "Select either files (to merge) or filters (to combine) — not both at once." };
+  return { actions: [], short: "Select only files or only filters", note: "Select either files (to merge) or filters (to combine) — not both at once." };
 }
 
 // Runs a bulk action (shared by the context menu and the sidebar toolbar —
@@ -33522,11 +33518,13 @@ function performBulkAction(action, ids) {
 //    applies).
 //  - 1 file: Adjust clock… only when it isn't merged and has entries (same
 //    guard openClockOffsetDialog itself enforces).
-//  - the locked "Bookmarks" node, nothing selected, or 2+ selected: all off.
+//  - the locked "Bookmarks" node, nothing selected, or 2+ selected: all off
+//    (with 2+ selected the row is not rendered at all, see multi mode below).
 //
-// The 2+ selection actions (AND/OR/Link…/Merge) live in the floating
-// selection bar (#selectionBar, renderSelectionBar) — this toolbar stays
-// static and fully disabled while 2+ nodes are selected.
+// With 2+ nodes selected the toolbar switches to a different content
+// (multi mode, describeSidebarToolbarMultiActions / renderSidebarToolbar):
+// the single-node row above is not rendered at all and the bulk actions
+// (AND/OR/Link…/Merge N files) or a short message take its place.
 //
 // Applying a library preset is not on this toolbar: it is in the Library ▾
 // menu of #viewBar (openLibraryMenu). copy/cut/saveFilter/loadFilter stay on
@@ -33575,19 +33573,21 @@ function handleSidebarToolbarActionClick(action) {
   }
 }
 
-// Describes the floating selection bar for the current multi-selection, or
-// null when fewer than 2 nodes are selected. { label, actions, note } —
-// label is the count ("3 filters" / "2 files" / "3 selected"), actions/note
-// come straight from describeBulkActions (the single source of truth).
-function describeSelectionBar() {
+// Describes #sidebarToolbar's multi mode for the current multi-selection, or
+// null when fewer than 2 nodes are selected. { ids, label, actions, short,
+// note } — label is the count ("3 filters" / "2 files", null when the
+// selection is mixed), actions/short/note come straight from
+// describeBulkActions (the single source of truth); short is the one-line
+// message, note the full explanation shown as its tooltip.
+function describeSidebarToolbarMultiActions() {
   const ids = [...state.multiSelect].filter(id => state.nodes[id]);
   if (ids.length < 2) return null;
   const nodes = ids.map(id => state.nodes[id]);
   const bulk = describeBulkActions(nodes);
   const allFiles = nodes.every(n => n.type === "file");
   const allFilters = nodes.every(n => n.type === "filter");
-  const label = ids.length + (allFiles ? " files" : allFilters ? " filters" : " selected");
-  return { ids, label, actions: bulk.actions, note: bulk.note };
+  const label = bulk.actions.length ? ids.length + (allFiles ? " files" : allFilters ? " filters" : " selected") : null;
+  return { ids, label, actions: bulk.actions, short: bulk.short, note: bulk.note };
 }
 
 // The node the single-node context menu (copy/cut/paste/delete) was opened
@@ -33911,8 +33911,13 @@ treeContextMenu.addEventListener("click", ev => {
 
 const sidebarToolbarEl = el("#sidebarToolbar");
 
-// The buttons are built once (first render with a file loaded); after that
-// a render only toggles each button's disabled state/label.
+// Single mode: the buttons are built once (on entering the mode); after that
+// a render only toggles each button's disabled state/label. Multi mode (2+
+// selected): the row is replaced by the bulk actions (describeSidebarToolbarMultiActions)
+// and rebuilt only when its content changes, so a click never lands on a
+// button that a same-tick render replaced. #sidebarToolbar.multi paints the
+// selected-row highlight.
+let sidebarToolbarMultiKey = null;
 function renderSidebarToolbar() {
   const hasFiles = state.rootIds.length > 0;
   // "" restores the CSS class's own display:flex rather than hardcoding a
@@ -33920,13 +33925,28 @@ function renderSidebarToolbar() {
   sidebarToolbarEl.style.display = hasFiles ? "" : "none";
   if (!hasFiles) return;
 
-  const { actions } = describeSidebarToolbarActions();
-  if (!sidebarToolbarEl.querySelector("[data-row-action]")) {
-    sidebarToolbarEl.innerHTML = buildRowActionsHtml(actions, "rect", "sidebar-toolbar-hit");
+  const info = describeSidebarToolbarMultiActions();
+  sidebarToolbarEl.classList.toggle("multi", !!info);
+  if (info) {
+    const key = [info.label, info.short, info.actions.map(a => a.action + ":" + a.label).join(",")].join("|");
+    if (key !== sidebarToolbarMultiKey) {
+      sidebarToolbarMultiKey = key;
+      const closeBtn = '<button type="button" class="stb-btn stb-x" data-multi-action="close" title="Clear selection (Esc)" aria-label="Clear selection">' + ICON_CLOSE + "</button>";
+      sidebarToolbarEl.innerHTML = info.actions.length
+        ? '<span class="stb-cnt">' + escapeHtml(info.label) + "</span>" +
+          info.actions.map(a => '<button type="button" class="stb-btn stb-' + a.action + '" data-multi-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' + a.icon + escapeHtml(a.label) + "</button>").join("") +
+          '<span class="stb-sp"></span>' + closeBtn
+        : '<span class="stb-msg" title="' + escapeHtml(info.note || info.short) + '">' + escapeHtml(info.short) + "</span>" + closeBtn;
+    }
+    return;
+  }
+  if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]")) {
+    sidebarToolbarMultiKey = null;
+    sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "rect", "sidebar-toolbar-hit");
     // Idempotent (per-container guard), so calling it again never stacks listeners.
     setupHitExpandGroups(".sidebar-toolbar-hit");
   }
-  actions.forEach(a => {
+  describeSidebarToolbarActions().actions.forEach(a => {
     const btn = sidebarToolbarEl.querySelector('[data-row-action="' + a.action + '"]');
     if (!btn) return;
     btn.disabled = !!a.disabled;
@@ -33934,50 +33954,22 @@ function renderSidebarToolbar() {
     const lbl = btn.querySelector(".row-action-label");
     if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
   });
-  renderSelectionBar();
 }
-
-// Floating selection bar (#selectionBar, bottom of the sidebar): shown while
-// 2+ nodes are selected, content from describeSelectionBar. Rebuilt only
-// when its content changes so a click on a button never lands on a node
-// that a same-tick render replaced.
-const selectionBarEl = el("#selectionBar");
-let selectionBarKey = null;
-function renderSelectionBar() {
-  const info = state.rootIds.length ? describeSelectionBar() : null;
-  const scrollEl = el("#sidebarScroll");
-  selectionBarEl.hidden = !info;
-  selectionBarEl.classList.toggle("has-note", !!(info && info.note));
-  scrollEl.classList.toggle("has-selbar", !!info);
-  if (!info) { selectionBarKey = null; scrollEl.style.paddingBottom = ""; return; }
-  const key = info.label + "|" + info.actions.map(a => a.action + ":" + a.label).join(",") + "|" + (info.note || "");
-  if (key !== selectionBarKey) {
-    selectionBarKey = key;
-    selectionBarEl.innerHTML =
-      '<span class="selbar-count">' + escapeHtml(info.label) + "</span>" +
-      (info.note ? '<span class="selbar-msg">' + escapeHtml(info.note) + "</span>" : "") +
-      info.actions.map(a => '<button type="button" data-selbar-action="' + a.action + '" title="' + escapeHtml(a.label) + '">' + a.icon + escapeHtml(a.label) + "</button>").join("") +
-      '<button type="button" class="selbar-x" data-selbar-action="close" title="Clear selection (Esc)" aria-label="Clear selection">' + ICON_CLOSE + "</button>";
-  }
-  // Keep the last tree row reachable above the bar.
-  scrollEl.style.paddingBottom = (selectionBarEl.offsetHeight + 18) + "px";
-}
-
-selectionBarEl.addEventListener("click", ev => {
-  const btn = ev.target.closest("[data-selbar-action]");
-  if (!btn) return;
-  // Same stopPropagation rule as every click that may open a popup (Link…
-  // opens a dialog): the document-level outside-click closers must not see it.
-  ev.stopPropagation();
-  const action = btn.dataset.selbarAction;
-  if (action === "close") { state.multiSelect = new Set(); render(); return; }
-  // Re-derive rather than trust anything cached on the button.
-  const info = describeSelectionBar();
-  if (!info || !info.actions.some(a => a.action === action)) return;
-  performBulkAction(action, info.ids);
-});
 
 sidebarToolbarEl.addEventListener("click", ev => {
+  const multiBtn = ev.target.closest("[data-multi-action]");
+  if (multiBtn) {
+    // Same stopPropagation rule as every click that may open a popup (Link…
+    // opens a dialog): the document-level outside-click closers must not see it.
+    ev.stopPropagation();
+    const action = multiBtn.dataset.multiAction;
+    if (action === "close") { state.multiSelect = new Set(); render(); return; }
+    // Re-derive rather than trust anything cached on the button.
+    const info = describeSidebarToolbarMultiActions();
+    if (!info || !info.actions.some(a => a.action === action)) return;
+    performBulkAction(action, info.ids);
+    return;
+  }
   const btn = ev.target.closest("[data-row-action]");
   if (!btn || btn.disabled) return;
   // Same CLAUDE.md "stopPropagation on any click handler that opens a
@@ -39330,7 +39322,7 @@ document.addEventListener("keydown", ev => {
     if (state.clipboard) { state.clipboard = null; needsRender = true; }
     if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); updateTableAssertButton(); }
     if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
-    // Esc clears the selection (and its bar) — but not while typing in an input.
+    // Esc clears the selection (and with it the toolbar's multi mode) — but not while typing in an input.
     if (state.multiSelect.size && !inInput) { state.multiSelect = new Set(); needsRender = true; }
     if (needsRender) render();
     if (escExitsFocus) toggleFocusMode(false);

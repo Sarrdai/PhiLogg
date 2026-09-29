@@ -25344,8 +25344,8 @@ await withApp(async (w, d, T) => {
    the DOM once and only toggles disabled/label afterwards.
    handleSidebarToolbarActionClick(action) dispatches to the pre-existing
    function/dialog each action already had (zero duplicated business logic).
-   A 2+ selection disables every button (the bulk actions live in the
-   floating selection bar, GROUP 319). "Apply from
+   With 2+ nodes selected the row is not rendered at all: multi mode shows
+   the bulk actions instead (GROUP 319d/e). "Apply from
    library…" left this toolbar (it stays on the tree context menu, GROUP 79
    /194). The retired dynamic-toolbar shape is in TEST PROVENANCE.
    ============================================================ */
@@ -25394,7 +25394,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220c. 2+ files selected: the toolbar is exactly the five fixed buttons, all disabled (Merge lives in the selection bar)");
+  section("220c. 2+ files selected: describeSidebarToolbarActions reports the five fixed buttons all disabled (Merge lives in multi mode)");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   T.state.multiSelect = new Set([fa.id, fb.id]);
@@ -25442,7 +25442,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220f. 2+ filters, same root: toolbar all disabled; describeBulkActions offers AND, OR, Link… for 2 and for 3 filters");
+  section("220f. 2+ filters, same root: single-row description all disabled; describeBulkActions offers AND, OR, Link… for 2 and for 3 filters");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
@@ -25459,7 +25459,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220g. filters from different root files / mixed files+filters -> explanatory note (selection bar), toolbar stays the disabled five");
+  section("220g. filters from different root files / mixed files+filters -> explanatory note + short message (toolbar multi mode)");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   const ta = w.createFilterNode(fa.id, "text", "message 1");
@@ -25468,9 +25468,9 @@ await withApp(async (w, d, T) => {
   T.state.activeId = ta.id;
   assert(w.describeSidebarToolbarActions().actions.length === 5, "different roots: only the disabled fixed set");
   let bulk = w.describeBulkActions([ta, tb]);
-  assert(bulk.actions.length === 0 && !!bulk.note, "different roots: no actions, a note");
+  assert(bulk.actions.length === 0 && !!bulk.note && bulk.short === "Filters from different files", "different roots: no actions, a note + short text");
   bulk = w.describeBulkActions([fa, ta]);
-  assert(bulk.actions.length === 0 && !!bulk.note, "mixed files+filters: note, no actions");
+  assert(bulk.actions.length === 0 && !!bulk.note && bulk.short === "Select only files or only filters", "mixed files+filters: note + short text, no actions");
 });
 
 await withApp(async (w, d, T) => {
@@ -25532,7 +25532,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220j. rendered toolbar: built once, fixed buttons always in the DOM, only disabled/label toggle, all disabled for 2+");
+  section("220j. rendered toolbar: built once, fixed buttons in the DOM, only disabled/label toggle; 2+ selected swaps the row for multi mode and back");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
@@ -25547,8 +25547,11 @@ await withApp(async (w, d, T) => {
   assert(before.every((b, i) => b === after[i]), "the same button elements survive a render (no rebuild)");
   assert(after.map(b => b.disabled ? "0" : "1").join("") === "11101", "text filter: Adjust clock… disabled, rest enabled");
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
-  assert(btns().length === 5 && btns().every(b => b.disabled), "2 filters selected: still the five buttons, all disabled (no NOT over several nodes)");
-  assert(btns().every((b, i) => b === before[i]), "...and they are still the same elements");
+  const tbEl = d.querySelector("#sidebarToolbar");
+  assert(btns().length === 0 && tbEl.classList.contains("multi"), "2 filters selected: the single-node buttons are not rendered, toolbar is in multi mode");
+  T.state.multiSelect = new Set([t1.id]); w.render();
+  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED && !tbEl.classList.contains("multi"), "back to one node: the five buttons return, multi class gone");
+  assert(tbEl.querySelector('[data-multi-action]') === null, "...and no multi-mode content is left");
 });
 
 /* ============================================================
@@ -25677,13 +25680,13 @@ await withApp(async (w, d, T) => {
   const items2 = [...d.querySelectorAll("#treeContextMenu [data-action]")].map(n => n.dataset.action);
   assert(items2.includes("merge"), "Merge stays offered for a 2+ file bulk selection — not part of the AND/OR/Link exclusion");
 
-  // The floating selection bar (GROUP 319) is the one place offering
+  // The toolbar's multi mode (GROUP 319) is the one place offering
   // AND/OR/Link for the same 2-filter selection.
   T.state.multiSelect = new Set([t1.id, t2.id]);
   w.render();
-  const barNames = [...d.querySelectorAll("#selectionBar [data-selbar-action]")].map(b => b.dataset.selbarAction);
+  const barNames = [...d.querySelectorAll("#sidebarToolbar [data-multi-action]")].map(b => b.dataset.multiAction);
   assert(barNames.includes("and") && barNames.includes("or") && barNames.includes("link"),
-    "the selection bar is the sole place AND/OR/Link are offered for a 2+ filter selection");
+    "the toolbar's multi mode is the sole place AND/OR/Link are offered for a 2+ filter selection");
 });
 
 await withApp(async (w, d, T) => {
@@ -35390,11 +35393,12 @@ await withApp(async (w, d, T) => {
 });
 
 /* ============================================================
-   GROUP 319 — N-ary AND/OR (node.baked[]) + floating selection bar
-   Origin: 2026-09-28 (filter-actions Phase B). createAndOrNode(ids, mode)
-   takes 2+ filters; the node carries baked: [cond, cond, ...] (link keeps
-   bakedA/bakedB). #selectionBar (bottom of the sidebar) shows for 2+
-   selected nodes with describeBulkActions' actions or note.
+   GROUP 319 — N-ary AND/OR (node.baked[]) + #sidebarToolbar multi mode
+   Origin: 2026-09-28 (filter-actions Phase B), multi mode 2026-09-29.
+   createAndOrNode(ids, mode) takes 2+ filters; the node carries baked:
+   [cond, cond, ...] (link keeps bakedA/bakedB). With 2+ nodes selected
+   #sidebarToolbar swaps its single-node row for describeBulkActions' actions
+   or a short message (full note as tooltip) on the accent-soft highlight.
    ============================================================ */
 group(319);
 
@@ -35502,9 +35506,9 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("319d. selection bar: one per selection shape");
-  const bar = d.querySelector("#selectionBar");
-  const acts = () => [...bar.querySelectorAll("[data-selbar-action]")].map(b => b.dataset.selbarAction).join(",");
+  section("319d. sidebar toolbar multi mode: one content per selection shape");
+  const bar = d.querySelector("#sidebarToolbar");
+  const acts = () => [...bar.querySelectorAll("[data-multi-action]")].map(b => b.dataset.multiAction).join(",");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const fb = await w.addFile("b.log", makeLog(30, 10), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
@@ -35512,59 +35516,61 @@ await withApp(async (w, d, T) => {
   const t3 = w.createFilterNode(f.id, "text", "message 3");
   const tb = w.createFilterNode(fb.id, "text", "message 3");
   T.state.multiSelect = new Set(); w.render();
-  assert(!isVisible(bar, w), "hidden with no selection");
+  assert(!bar.classList.contains("multi") && acts() === "" && bar.querySelectorAll("[data-row-action]").length === 5, "no selection: normal row, no multi mode");
   T.state.multiSelect = new Set([t1.id]); w.render();
-  assert(!isVisible(bar, w), "hidden with a single node");
+  assert(!bar.classList.contains("multi") && acts() === "", "single node: normal row");
+  assert(d.querySelector("#selectionBar") === null && !d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "the floating #selectionBar is gone");
 
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
-  assert(isVisible(bar, w), "visible for 2 filters");
-  assert(bar.querySelector(".selbar-count").textContent === "2 filters", "count label '2 filters'");
+  assert(bar.classList.contains("multi"), "2 filters: multi class (accent-soft background)");
+  assert(bar.querySelectorAll("[data-row-action]").length === 0, "2 filters: single-node buttons not rendered");
+  assert(bar.querySelector(".stb-cnt").textContent === "2 filters", "count label '2 filters'");
   assert(acts() === "and,or,link,close", "2 filters: AND, OR, Link…, close, got " + acts());
-  assert(bar.querySelector('[data-selbar-action="link"]').textContent.trim() === "Link…", "Link… label");
+  assert(bar.querySelector('[data-multi-action="link"]').textContent.trim() === "Link…", "Link… label");
+  assert(bar.querySelector('[data-multi-action="and"] svg.icon use') && bar.querySelector('[data-multi-action="close"]').getAttribute("aria-label") === "Clear selection", "text+icon buttons, close has an aria-label");
+  assert(/--accent-soft/.test(d.documentElement.innerHTML.match(/#sidebarToolbar\.multi\{[^}]*\}/)[0]), "#sidebarToolbar.multi paints --accent-soft");
   T.state.multiSelect = new Set([t1.id, t2.id, t3.id]); w.render();
-  assert(bar.querySelector(".selbar-count").textContent === "3 filters" && acts() === "and,or,link,close", "3 filters: same actions, no N-way, got " + acts());
-  assert(d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "tree gets bottom padding while the bar shows");
+  assert(bar.querySelector(".stb-cnt").textContent === "3 filters" && acts() === "and,or,link,close", "3 filters: same actions, got " + acts());
 
   // AND/OR hidden when a node fails canBeCombined (link node)
   const link = w.createLinkNode(t1.id, t2.id, "after", 1);
   T.state.multiSelect = new Set([link.id, t3.id]); w.render();
   assert(acts() === "link,close", "AND/OR hidden when a link node is selected, got " + acts());
 
-  const bfile = [f.id, fb.id];
-  T.state.multiSelect = new Set(bfile); w.render();
-  assert(bar.querySelector(".selbar-count").textContent === "2 files" && acts() === "merge,close", "2 files: Merge only, got " + acts());
-  assert(bar.querySelector('[data-selbar-action="merge"]').textContent.trim() === "Merge 2 files", "Merge label");
+  T.state.multiSelect = new Set([f.id, fb.id]); w.render();
+  assert(bar.querySelector(".stb-cnt").textContent === "2 files" && acts() === "merge,close", "2 files: Merge only, got " + acts());
+  assert(bar.querySelector('[data-multi-action="merge"]').textContent.trim() === "Merge 2 files", "Merge label");
 
+  const msg = () => bar.querySelector(".stb-msg");
   T.state.multiSelect = new Set([t1.id, tb.id]); w.render();
-  assert(acts() === "close" && bar.querySelector(".selbar-msg").textContent.includes("different files"), "different roots: note, no actions");
+  assert(acts() === "close" && msg().textContent === "Filters from different files" && msg().title.includes("Merge the files first") && bar.classList.contains("multi"), "different roots: short message, full text as tooltip, close only");
   T.state.multiSelect = new Set([f.id, t1.id]); w.render();
-  assert(acts() === "close" && bar.querySelector(".selbar-msg").textContent.includes("not both"), "mixed files+filters: note");
-  assert(bar.querySelector(".selbar-count").textContent === "2 selected", "mixed count label");
+  assert(acts() === "close" && msg().textContent === "Select only files or only filters" && msg().title.includes("not both"), "mixed files+filters: short message + tooltip");
+  assert(bar.querySelector(".stb-cnt") === null, "mixed: no count label");
   T.state.multiSelect = new Set(); w.render();
-  assert(!isVisible(bar, w) && !d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "hides again, padding class removed");
+  assert(!bar.classList.contains("multi") && bar.querySelectorAll("[data-row-action]").length === 5 && !msg(), "back to the normal row, message gone");
 });
 
 await withApp(async (w, d, T) => {
-  section("319e. selection bar: clicks (AND, close), Esc handling, DOM identity, toolbar stays disabled");
-  const bar = d.querySelector("#selectionBar");
+  section("319e. toolbar multi mode: plain-text message, clicks (AND, close), Esc handling, DOM identity");
+  const bar = d.querySelector("#sidebarToolbar");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
-  assert([...d.querySelectorAll("#sidebarToolbar [data-row-action]")].every(b => b.disabled), "toolbar buttons all disabled while 2+ selected");
-  const first = bar.querySelector('[data-selbar-action="and"]');
+  const first = bar.querySelector('[data-multi-action="and"]');
   w.render();
-  assert(bar.querySelector('[data-selbar-action="and"]') === first, "a re-render with the same selection keeps the same bar buttons");
+  assert(bar.querySelector('[data-multi-action="and"]') === first, "a re-render with the same selection keeps the same buttons");
   let bubbled = false;
   d.body.addEventListener("click", () => { bubbled = true; });
   first.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-  assert(!bubbled, "bar clicks do not bubble to document handlers");
+  assert(!bubbled, "multi-mode clicks do not bubble to document handlers");
   const and = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "and");
-  assert(and && and.baked.length === 2 && T.state.multiSelect.size === 0 && !isVisible(bar, w), "AND click creates the node and the bar goes away");
+  assert(and && and.baked.length === 2 && T.state.multiSelect.size === 0 && !bar.classList.contains("multi"), "AND click creates the node and multi mode ends");
 
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
-  bar.querySelector('[data-selbar-action="close"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-  assert(T.state.multiSelect.size === 0 && !isVisible(bar, w), "close button clears the selection");
+  bar.querySelector('[data-multi-action="close"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(T.state.multiSelect.size === 0 && !bar.classList.contains("multi"), "close button clears the selection");
 
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
   const esc = () => d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -35573,13 +35579,20 @@ await withApp(async (w, d, T) => {
   assert(T.state.multiSelect.size === 2, "Esc while an input has focus leaves the selection alone");
   inp.blur(); inp.remove();
   esc();
-  assert(T.state.multiSelect.size === 0 && !isVisible(bar, w), "Esc clears the selection and hides the bar");
+  assert(T.state.multiSelect.size === 0 && !bar.classList.contains("multi"), "Esc clears the selection and leaves multi mode");
 
   const fb = await w.addFile("b.log", makeLog(30, 10), () => {});
   T.state.multiSelect = new Set([f.id, fb.id]); w.render();
-  bar.querySelector('[data-selbar-action="merge"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  bar.querySelector('[data-multi-action="merge"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
   assert(Object.values(T.state.nodes).some(n => n.type === "file" && n.merged), "Merge N files button merges");
   assert(T.state.multiSelect.size === 0, "selection cleared after merge");
+
+  const pa = await w.addFile("p1.log", makeLog(0, 5), () => {});
+  const pb = await w.addFile("p2.log", makeLog(10, 5), () => {});
+  pa.formatId = pb.formatId = w.eval("PLAINTEXT_FORMAT_ID");
+  T.state.multiSelect = new Set([pa.id, pb.id]); w.render();
+  const m = bar.querySelector(".stb-msg");
+  assert(m && m.textContent === "Plain-text files can't be merged" && m.title.includes("line numbers") && bar.querySelectorAll("[data-multi-action]").length === 1, "plain-text files: short message + full tooltip, close only");
 });
 
 /* ============================================================
@@ -35605,7 +35618,7 @@ await withApp(async (w, d, T) => {
   w.render();
   const btn = d.querySelector("#btnLibrary"), menu = d.querySelector("#libraryMenu");
   assert(isVisible(btn, w) && isVisible(d.querySelector("#libraryPresetSep"), w), "the button and its separator are visible with a file loaded and no presets");
-  assert(btn.querySelector("svg use").getAttribute("href") === "#i-book" && btn.textContent.includes("Library") && btn.querySelectorAll(":scope > span").length === 2, "book icon + Library label + chevron segment");
+  assert(btn.querySelector("svg use").getAttribute("href") === "#i-book" && btn.textContent.trim() === "" && btn.getAttribute("aria-label") === "Filter library" && btn.title === "Filter library" && btn.querySelectorAll(":scope > span").length === 2, "icon-only: book segment + chevron segment, no text, aria-label and title 'Filter library'");
   assert(menu.classList.contains("hidden") && btn.getAttribute("aria-expanded") === "false", "closed at rest");
   fireClick(btn.querySelectorAll(":scope > span")[1], w); // the chevron segment
   assert(!menu.classList.contains("hidden") && btn.getAttribute("aria-expanded") === "true", "the chevron segment opens the menu too");
@@ -40238,6 +40251,9 @@ process.exitCode = failed ? 1 : 0;
       for and/or; link keeps bakedA/bakedB) through every persistence carrier;
       floating #selectionBar (AND/OR/Link… for 2+ same-file filters, Merge N
       files, note, close, Esc); interim 2+ group removed from #sidebarToolbar.
+      2026-09-29 (person-approved): #selectionBar replaced by #sidebarToolbar's
+      multi mode (319d/e rewritten; short message + tooltip, accent-soft
+      background class, plain-text message), 220c/f/g/j/221c updated.
       Same session updated 220c/f/g/i/j, 221c and the 3-way Link label
       assertion (no "(N-way)" suffix any more); and/or bakedA/bakedB
       assertions now read baked[0]/baked[1].
