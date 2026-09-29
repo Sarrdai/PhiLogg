@@ -10501,6 +10501,101 @@ async function loadFolderFileWindowedImpl(folder, rec, from, to) {
    Function.prototype.toString() into a Blob, so the worker runs the exact
    same source. Falls back to the plain main-thread loop (parseLogTextAsync)
    whenever Worker itself, or building this blob, is unavailable. */
+/* ---- Byte-range parsing of a Blob (the workers read the file themselves) ----
+   Instead of reading the whole file into a string on the main thread and
+   posting text pieces to the workers (readAsText + splitTextAtHeaderLines +
+   postMessage of ~25MB strings: one ~250ms main-thread task per file), each
+   worker gets the Blob (a cheap reference) and a byte range [a, b) and reads
+   its own bytes. Both functions below are pure (no page globals besides the
+   worker-scope ones): they are serialized into the worker like the parser
+   functions, and the tests call them directly.
+
+   Boundary rule, identical for neighbours: a piece starts at the first
+   header-line start at byte >= a and ends at the first header-line start
+   >= b (a line start is offset 0 or the byte after a 0x0A — safe in UTF-8),
+   so with a_i = b_(i-1) no entry is split or duplicated. Piece 0 starts at 0
+   (lines before the first header are dropped by the parse loop as ever). */
+async function findHeaderLineStartInBlob(blob, size, pos, isHeaderLine) {
+  if (pos <= 0) return 0;
+  if (pos >= size) return size;
+  const CH = 1 << 20, MAX_LINES = 100000;
+  const dec = new TextDecoder("utf-8", { ignoreBOM: true });
+  const cat = (x, y) => { if (!x.length) return y; const r = new Uint8Array(x.length + y.length); r.set(x); r.set(y, x.length); return r; };
+  let p = pos - 1;      // include the byte before pos: it tells whether pos itself is a line start
+  let s = -1;           // start of the line being collected, -1 until the first newline is seen
+  let carry = new Uint8Array(0);
+  let scanned = 0;
+  while (p < size) {
+    const chunk = new Uint8Array(await blob.slice(p, Math.min(size, p + CH)).arrayBuffer());
+    let i = 0;
+    if (s < 0) {
+      const nl = chunk.indexOf(10);
+      if (nl < 0) { p += chunk.length; continue; }
+      s = p + nl + 1; i = nl + 1;
+    }
+    for (;;) {
+      const nl = chunk.indexOf(10, i);
+      if (nl < 0) { carry = cat(carry, chunk.subarray(i)); break; }
+      const line = dec.decode(cat(carry, chunk.subarray(i, nl))).replace(/\r$/, "");
+      carry = new Uint8Array(0);
+      if (isHeaderLine(line)) return s;
+      if (++scanned > MAX_LINES) return size; // no header in sight: the previous piece takes the rest
+      s = p + nl + 1; i = nl + 1;
+    }
+    p += chunk.length;
+  }
+  if (s >= 0 && s < size && isHeaderLine(dec.decode(carry).replace(/\r$/, ""))) return s; // last line, no terminator
+  return size;
+}
+
+// Parses the bytes [a, b) of blob (size bytes in total) into entries, handing
+// them to emit(entries[]) every PARSE_CHUNK_LINES lines and reporting
+// onProgress(bytesDone, bytesTotal). Same per-line header/continuation loop as
+// the worker's text mode. Resolves with the number of lines walked. Not for the
+// plain-text format (every line an entry, numbered) nor UTF-16 files.
+async function parseBlobRangeEntries(blob, size, a, b, compiled, formatId, emit, onProgress) {
+  const CH = 4 << 20;
+  const isHeader = compiled.isHeaderLine;
+  const start = a <= 0 ? 0 : await findHeaderLineStartInBlob(blob, size, a, isHeader);
+  const end = b >= size ? size : await findHeaderLineStartInBlob(blob, size, b, isHeader);
+  const dec = new TextDecoder("utf-8", { ignoreBOM: true });
+  let pos = start, carry = null, atStart = start === 0;
+  let current = null, pending = [], lineNo = 0;
+  while (pos < end) {
+    const cend = Math.min(end, pos + CH);
+    let bytes = new Uint8Array(await blob.slice(pos, cend).arrayBuffer());
+    if (carry) { const r = new Uint8Array(carry.length + bytes.length); r.set(carry); r.set(bytes, carry.length); bytes = r; carry = null; }
+    pos = cend;
+    let cut = bytes.length;
+    if (cend < end) { // interior chunk: decode only up to the last complete line
+      cut = bytes.lastIndexOf(10) + 1;
+      if (cut === 0) { carry = bytes; continue; }
+      if (cut < bytes.length) carry = bytes.slice(cut);
+    }
+    let text = dec.decode(cut === bytes.length ? bytes : bytes.subarray(0, cut));
+    if (atStart) { atStart = false; if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); } // UTF-8 BOM, like readAsText
+    const lines = text.split(/\r\n|\n/);
+    if (lines[lines.length - 1] === "") lines.pop();
+    for (const line of lines) {
+      if (isHeader(line)) {
+        if (current) pending.push(current);
+        current = compiled.parseHeader(line);
+        current.formatId = formatId;
+      } else if (current && line !== "") {
+        appendContinuationLine(current, line);
+      }
+      if (++lineNo % PARSE_CHUNK_LINES === 0) {
+        if (pending.length) { emit(pending); pending = []; }
+        if (onProgress) onProgress(pos - start, Math.max(1, end - start));
+      }
+    }
+  }
+  if (current) pending.push(current);
+  if (pending.length) emit(pending);
+  if (onProgress) onProgress(end - start, Math.max(1, end - start));
+  return lineNo;
+}
+
 function buildLogParseWorkerSrc() {
   const constDefs = [
     ["DATE_TOKEN_RE", DATE_TOKEN_RE],
@@ -10520,7 +10615,7 @@ function buildLogParseWorkerSrc() {
     compileFormatPattern, validateFormatRegex, escapeRegExp, stripQuotes,
     applyFormatMatch, parseTimestamp, parseHeaderLine,
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
-    compileFormatRegex, encodeEntryBatch,
+    compileFormatRegex, encodeEntryBatch, findHeaderLineStartInBlob, parseBlobRangeEntries,
     parseJsonPath, resolveJsonPath, jsonValueText, parseJsonTimestamp, compileJsonFormat,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
@@ -10539,6 +10634,14 @@ function buildLogParseWorkerSrc() {
     '  postMessage({ type: "batch", buf: batch.buf, strings: batch.strings }, [batch.buf]);',
     '}',
     'self.onmessage = (ev) => {',
+    '  if (ev.data.blob) {', // byte-range mode: read + parse [a, b) of the Blob here
+    '    const { blob, size, a, b, fmt } = ev.data;',
+    '    parseBlobRangeEntries(blob, size, a, b, compileOneFormat(fmt), fmt.id, postEntries,',
+    '      (done, total) => postMessage({ type: "progress", done, total }))',
+    '      .then(total => postMessage({ type: "done", total }),',
+    '        err => postMessage({ type: "error", message: String(err && err.message || err) }));',
+    '    return;',
+    '  }',
     '  const { text, fmt } = ev.data;',
     '  const compiled = compileOneFormat(fmt);',
     '  const lines = text.split(/\\r\\n|\\n/);',
@@ -10640,10 +10743,19 @@ function parallelParseWorkerCount(textLength, maxWorkers) {
 // (makeNaiveTsLocalizer). Rejects on any worker failure with node.entries/
 // entryIndex rolled back, so parseLogTextAsync can fall back to the plain
 // loop cleanly.
+//
+// `text` may also be a Blob/File (byte-range mode, see findHeaderLineStartInBlob):
+// then the workers read their own byte ranges and the main thread never holds
+// or copies the file's text. Not for the plain-text format.
 function parseLogTextInWorker(text, formatId, node, onProgress, parseOpts) {
   const fmt = findLogFormat(formatId) || DEFAULT_LOG_FORMAT;
   const plainText = isPlainTextFormat(formatId);
-  const pieces = splitTextAtHeaderLines(text, getCompiledFormat(formatId).isHeaderLine, parallelParseWorkerCount(text.length, parseOpts && parseOpts.maxWorkers));
+  const blobMode = typeof text !== "string";
+  const totalLen = blobMode ? text.size : text.length;
+  const workerCount = parallelParseWorkerCount(totalLen, parseOpts && parseOpts.maxWorkers);
+  const pieces = blobMode
+    ? Array.from({ length: workerCount }, (_, i) => [Math.floor(totalLen * i / workerCount), Math.floor(totalLen * (i + 1) / workerCount)])
+    : splitTextAtHeaderLines(text, getCompiledFormat(formatId).isHeaderLine, workerCount);
   const start = node.entries.length;
   return new Promise((resolve, reject) => {
     const workers = [];
@@ -10696,14 +10808,14 @@ function parseLogTextInWorker(text, formatId, node, onProgress, parseOpts) {
         next++;
       }
       stop();
-      if (onProgress) onProgress(text.length, text.length);
+      if (onProgress) onProgress(totalLen, totalLen);
       resolve();
     };
     const reportProgress = () => {
       if (!onProgress) return;
       let done = 0;
       pieces.forEach(([a, b], i) => { done += progress[i] * (b - a); });
-      onProgress(done, text.length);
+      onProgress(done, totalLen);
     };
     pieces.forEach(([a, b], i) => {
       if (settled) return;
@@ -10731,6 +10843,8 @@ function parseLogTextInWorker(text, formatId, node, onProgress, parseOpts) {
         } else if (msg.type === "progress") {
           progress[i] = msg.total ? msg.done / msg.total : 1;
           reportProgress();
+        } else if (msg.type === "error") {
+          fail(new Error(msg.message));
         } else if (msg.type === "done") {
           progress[i] = 1;
           finished[i] = true;
@@ -10738,7 +10852,9 @@ function parseLogTextInWorker(text, formatId, node, onProgress, parseOpts) {
           if (i === next) drain();
         }
       };
-      worker.postMessage({ text: pieces.length === 1 ? text : text.slice(a, b), fmt });
+      worker.postMessage(blobMode
+        ? { blob: text, size: totalLen, a, b, fmt }
+        : { text: pieces.length === 1 ? text : text.slice(a, b), fmt });
     });
   });
 }
@@ -29397,6 +29513,19 @@ async function readParseFileNode(node, name, file, handle, parseOpts) {
   }
   if (file) {
     await inflate();
+    // Byte-range route: the workers read the Blob themselves, so the main
+    // thread neither reads nor copies the text. Any failure (rolled back by
+    // parseLogTextInWorker) falls through to the text route below.
+    if (await canParseBlobInWorker(file, node.formatId)) {
+      try {
+        await parseLogTextInWorker(file, node.formatId || DEFAULT_FORMAT_ID, node, (done, total) => {
+          const f = total ? done / total : 1;
+          node.loadFraction = gzip ? READ_WEIGHT + PARSE_WEIGHT * f : f; // gzip: the inflate drove the first share
+          scheduleLoadRender(node.id);
+        }, parseOpts);
+        return { file, size, gzip };
+      } catch (err) { /* fall back to the text route */ }
+    }
     const text = await readFileWithProgress(file, (loaded, total) => {
       if (gzip) return; // the inflate above already drove the read share of the bar
       node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
@@ -29408,6 +29537,22 @@ async function readParseFileNode(node, name, file, handle, parseOpts) {
     }, parseOpts);
   }
   return { file, size, gzip };
+}
+
+// Whether readParseFileNode may hand `file` to the workers as a Blob: needs a
+// real Worker, a Blob with slice().arrayBuffer(), a non-empty file, a format
+// whose lines are independent of position (not plain text: numbered lines,
+// blank lines are entries) and UTF-8 bytes (readAsText also sniffs a UTF-16
+// BOM, which the byte-range route doesn't decode).
+async function canParseBlobInWorker(file, formatId) {
+  if (typeof Worker === "undefined" || isPlainTextFormat(formatId || DEFAULT_FORMAT_ID)) return false;
+  if (!file || !(file.size > 0) || typeof file.slice !== "function") return false;
+  try {
+    const head = file.slice(0, 2);
+    if (typeof head.arrayBuffer !== "function") return false;
+    const b = new Uint8Array(await head.arrayBuffer());
+    return !((b[0] === 0xFF && b[1] === 0xFE) || (b[0] === 0xFE && b[1] === 0xFF));
+  } catch (err) { return false; }
 }
 
 // End of a load's progress: drops loadFraction and invalidates the node's
