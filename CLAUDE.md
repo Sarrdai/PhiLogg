@@ -20,6 +20,16 @@ regression suite, see `tests/README.md` for conventions). Optional
 and a frameless window around the unmodified `philogg.html` — see
 `desktop/README.md`.
 
+## Session workflow
+
+Feature/fix sessions follow the `orchestrate` skill
+(`.claude/skills/orchestrate/`): the main session scopes the task with
+the user, builds a concept mockup first for UI changes and waits for the
+decision, delegates implementation to `implementer` subagents (Sonnet,
+`.claude/agents/implementer.md`) via a brief or a written plan, verifies
+each round itself (full tests + real-app screenshots), and presents the
+result with screenshots. Pure questions and doc-only sessions don't need it.
+
 ## Non-negotiables
 
 - **Diagnose before implementing.** For bug reports or ambiguous behavior,
