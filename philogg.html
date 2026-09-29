@@ -8794,6 +8794,12 @@ const state = {
   nodes: {},      // id -> node
   rootIds: [],    // file node ids, in load order
   activeId: null,
+  // Tree cursor resting on a subfolder row of a watched folder / ZIP (a virtual
+  // "dirnav:" id, see dirNavId) — { id, activeId, inlineViewer, folderView }
+  // or null. Only meaningful while activeId/inlineViewer/folderView are still
+  // the values it was set under (dirCursorId), so any other selection
+  // invalidates it without every setter having to clear it.
+  treeCursorDir: null,
   focusRegion: "entries", // "entries" | "tree" — which pane the arrow keys act on;
                           // "tree" is set by clicking a tree row or
                           // dropping a drag onto a new parent, "entries" by any entry
@@ -16650,12 +16656,56 @@ function viewerMapForOwner(ownerKind, ownerId) {
   return null;
 }
 
-// A folder-watch file hidden inside a collapsed subfolder row (renderPathTree).
-function isInCollapsedFolderDir(node) {
-  if (!node || !node.folderId) return false;
-  const folder = state.folders.find(f => f.id === node.folderId);
-  const rec = folder && folder.files.find(f => f.nodeId === node.id);
-  return !!rec && !isPathTreeVisible(folder, folderFileKey(rec));
+// Virtual nav-id for a subfolder row of a watched folder / ZIP (renderPathTree),
+// same idea as viewerNavId: dir rows are not state.nodes entries. `path` is the
+// directory's relative path (owner.expandedDirs key); ownerKind "zip"|"folder".
+function dirNavId(ownerKind, ownerId, path) { return "dirnav:" + ownerKind + ":" + ownerId + ":" + path; }
+function isDirNavId(id) { return typeof id === "string" && id.startsWith("dirnav:"); }
+function parseDirNavId(id) {
+  const rest = id.slice("dirnav:".length);
+  const sep1 = rest.indexOf(":");
+  const rest2 = rest.slice(sep1 + 1);
+  const sep2 = rest2.indexOf(":");
+  return { ownerKind: rest.slice(0, sep1), ownerId: rest2.slice(0, sep2), path: rest2.slice(sep2 + 1) };
+}
+function pathTreeOwnerKind(owner) { return state.zips.includes(owner) ? "zip" : "folder"; }
+function pathTreeOwnerOf(ownerKind, ownerId) {
+  return ownerKind === "zip" ? state.zips.find(z => z.id === ownerId) : state.folders.find(f => f.id === ownerId);
+}
+// The dir row the tree cursor rests on, or null once anything else was selected.
+function dirCursorId() {
+  const c = state.treeCursorDir;
+  if (!c) return null;
+  if (c.activeId !== state.activeId || c.inlineViewer !== state.inlineViewer || c.folderView !== state.folderView) return null;
+  return c.id;
+}
+function setDirCursor(id) {
+  state.treeCursorDir = id ? { id, activeId: state.activeId, inlineViewer: state.inlineViewer, folderView: state.folderView } : null;
+}
+// The dir nav id a file/viewer at relative path `relPath` sits directly under
+// (null at the container's top level).
+function parentDirNavId(ownerKind, ownerId, relPath) {
+  const i = relPath.lastIndexOf("/");
+  return i > 0 ? dirNavId(ownerKind, ownerId, relPath.slice(0, i)) : null;
+}
+// Left-key parent of a nav id: a dir row's parent dir, a viewer's or an opened
+// file's containing dir row (null at top level), else the filter node's parent.
+function navParentId(id) {
+  if (isDirNavId(id)) { const p = parseDirNavId(id); return parentDirNavId(p.ownerKind, p.ownerId, p.path); }
+  if (isViewerNavId(id)) {
+    const p = parseViewerNavId(id);
+    return p.ownerKind === "loose" ? null : parentDirNavId(p.ownerKind, p.ownerId, p.mapKey);
+  }
+  const node = state.nodes[id];
+  if (!node) return null;
+  if (node.parentId) return node.parentId;
+  if (node.zipId) return parentDirNavId("zip", node.zipId, node.name);
+  if (node.folderId) {
+    const folder = state.folders.find(f => f.id === node.folderId);
+    const rec = folder && (folder.files.find(f => f.nodeId === id) || folder.files.find(f => f.name === node.name));
+    return folder ? parentDirNavId("folder", folder.id, rec ? folderFileKey(rec) : node.name) : null;
+  }
+  return null;
 }
 
 function flattenTreeIds() {
@@ -16674,26 +16724,44 @@ function flattenTreeIds() {
       if (node && !node.collapsed) walk(node.children);
     });
   }
-  // Main tree: a node with node.zipId never renders here (renderTree skips
-  // it — it nests inside its own zip's renderZipSection container instead),
-  // so it's excluded from this top-level walk too and picked up below, in
-  // its actual visual position within its zip's entry list. A source
-  // hidden under its merge's "Sources" node (mergeOwnerId + mergeSourceHidden)
-  // is excluded the same way, but — unlike zip entries — deliberately has
-  // no re-insertion-at-its-visual-position walk below: it's simply not
-  // nav-reachable by arrow keys, mouse click only (same precedent as the
-  // .queued exclusion above; correct rather than a gap when Sources itself
-  // is toggled off, since no DOM row exists there to navigate to anyway).
-  walk(state.rootIds.filter(id => {
-    const node = state.nodes[id];
-    return !(node && (node.zipId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node) || isInCollapsedFolderDir(node)));
-  }));
+  // Subfolder rows of a watched folder / ZIP (renderPathTree): each is a nav
+  // target of its own, listed before its children, which follow only while it
+  // is expanded — a level's dirs first, then its files, as rendered.
+  const walkPathTreeNav = (owner, kind, tree, onItem) => {
+    (function lvl(level) {
+      level.dirs.forEach(dir => {
+        ids.push(dirNavId(kind, owner.id, dir.path));
+        if (expandedDirsOf(owner).has(dir.path)) lvl(dir);
+      });
+      level.items.forEach(onItem);
+    })(tree);
+  };
   // A viewer entry's virtual id, followed by its nested "Filter lines" text
   // versions (see viewerTextLogIds) — their visual position.
   const pushViewer = (kind, ownerId, mapKey) => {
     ids.push(viewerNavId(kind, ownerId, mapKey));
     walk(viewerTextLogIds(kind, ownerId, mapKey));
   };
+  // Section order = the sidebar's own: #folderWatchList, #zipList, then #tree
+  // (main tree, then loose viewers).
+  // Folder-watch files: opened log files (real nodes, skipped in the main walk
+  // above) and non-log inline viewers, at their visual position in the
+  // folder's own listing — under their subfolder row when it is expanded.
+  // Per folder in state.folders order.
+  state.folders.forEach(folder => {
+    const rootByName = new Map(); // same lookup renderFolderSection uses for a still-loading file
+    state.rootIds.forEach(id => {
+      const n = state.nodes[id];
+      if (n && n.folderId === folder.id && !rootByName.has(n.name)) rootByName.set(n.name, id);
+    });
+    walkPathTreeNav(folder, "folder", buildPathTree(folder.files, folderFileKey), rec => {
+      const nodeId = (rec.nodeId && state.nodes[rec.nodeId]) ? rec.nodeId : rootByName.get(rec.name);
+      if (nodeId) {
+        const n = state.nodes[nodeId];
+        if (!(n.mergeOwnerId && n.mergeSourceHidden)) walk([nodeId]);
+      } else if (folder.inlineViewers.has(folderFileKey(rec))) pushViewer("folder", folder.id, folderFileKey(rec));
+    });
+  });
   // ZIP sections (bugfix, person-reported: nav order didn't match the
   // visual order — every opened non-log entry was being tacked on as one
   // block AFTER the whole main tree, regardless of where its zip container
@@ -16714,25 +16782,20 @@ function flattenTreeIds() {
       const n = state.nodes[id];
       if (n && n.zipId === zip.id && !rootByName.has(n.name)) rootByName.set(n.name, id);
     });
-    // Only entries shown under expanded subfolders, in rendered order.
-    forEachVisiblePathTreeItem(zip, buildPathTree(zip.entries, e => e.name), entry => {
+    walkPathTreeNav(zip, "zip", buildPathTree(zip.entries, e => e.name), entry => {
       const openId = rootByName.get(entry.name);
       if (openId) walk([openId]);
       else if (zip.inlineViewers.has(entry.name)) pushViewer("zip", zip.id, entry.name);
     });
   });
-  // Folder-watch inline-viewer entries (generalized this session, same
-  // pattern as ZIP above): unlike a folder-watched LOG file (which becomes a
-  // real node already covered by the main walk above, not repositioned into
-  // its folder's visual slot here either — a pre-existing quirk, left alone),
-  // a non-log entry never gets a real node, so it needs the same virtual-id
-  // treatment. Appended per folder in state.folders order, not interleaved
-  // with each folder's real files — matches how folder-tagged real nodes
-  // ALSO aren't repositioned into their folder's slot above, so this is at
-  // least internally consistent rather than a regression for this case.
-  state.folders.forEach(folder => {
-    folder.inlineViewers.forEach((viewer, mapKey) => { if (isPathTreeVisible(folder, mapKey)) pushViewer("folder", folder.id, mapKey); });
-  });
+  // Main tree (#tree): zip/folder files are listed in their containers above;
+  // a source hidden under its merge's "Sources" node (mergeOwnerId +
+  // mergeSourceHidden) is not nav-reachable at all — no row of its own here,
+  // mouse click only under Sources (same precedent as the .queued skip).
+  walk(state.rootIds.filter(id => {
+    const node = state.nodes[id];
+    return !(node && (node.zipId || node.folderId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node)));
+  }));
   // Directly opened/dropped non-log files (this session): no owning
   // container at all, so each gets a top-level virtual id, in the same
   // insertion order they render in (see renderTree's own loose-viewer loop).
@@ -16743,9 +16806,25 @@ function flattenTreeIds() {
 // Moves state.activeId with the arrow keys once the tree has keyboard focus
 // (state.focusRegion === "tree" — set by clicking a tree row
 // or dropping a drag onto a new parent; cleared back to "entries" by any
-// entry-table selection, see applySelection). Up/Down step through the
-// flattened visual order; Left/Right jump to the parent/first child —
-// there's no collapse state to toggle here, every node is always expanded.
+// entry-table selection, see applySelection), or from anywhere via Alt+Arrow.
+// Up/Down step through the flattened visual order. Right expands a collapsed
+// node with children, else steps to its first visible child; Left collapses an
+// expanded node, else collapses its parent and selects it (one keystroke from
+// a child). node.collapsed is display-only, never persisted.
+
+// Whether a node has children the chevron can collapse — the single rule
+// renderNode's chevron and moveTreeSelection's Left/Right both follow. A merge's
+// "Sources" node keeps node.children empty by design: its nested rows are the
+// owning merged file's `sources` array instead.
+function nodeHasCollapsibleChildren(node) {
+  if (!node) return false;
+  if (node.type === "filter" && node.filterType === "sources") {
+    const owner = state.nodes[node.parentId];
+    return !!(owner && Array.isArray(owner.sources) && owner.sources.length);
+  }
+  return node.children.length > 0;
+}
+
 // Whether `entry` is actually a member of `nodeId`'s own filtered result —
 // returns a ready-to-assign state.tempAnchor value (null if it IS a member,
 // no anchor needed). Shared by applyTempAnchorOnActiveNodeSwitch below,
@@ -16778,16 +16857,16 @@ function moveTreeSelection(key) {
   const ids = flattenTreeIds();
   if (ids.length === 0) return;
   const node = state.nodes[state.activeId];
-  // Bugfix (person-reported): when a non-log entry's inline viewer is the
-  // thing currently shown, "where we are" in the nav list isn't
-  // state.activeId (that still points at whatever real tree node was
-  // active before the viewer opened) — it's the entry's own virtual id,
-  // so Up/Down steps relative to IT instead of jumping back to the stale
-  // real-node position. Generalized this session beyond ZIP entries to
-  // folder-watch/direct-open ones too (see openInlineViewer's ownerKind).
-  const currentId = (state.inlineViewer && state.inlineViewer.ownerKind)
-    ? viewerNavId(state.inlineViewer.ownerKind, state.inlineViewer.ownerId, state.inlineViewer.mapKey)
-    : state.activeId;
+  // "Where we are" in the nav list: the dir row the tree cursor rests on, else
+  // (bugfix, person-reported) the entry's own virtual id while a non-log
+  // entry's inline viewer is shown — state.activeId doesn't identify it, so
+  // Up/Down step relative to the viewer, not a stale node — else activeId.
+  const cursorDir = dirCursorId();
+  const currentId = cursorDir
+    ? cursorDir
+    : (state.inlineViewer && state.inlineViewer.ownerKind)
+      ? viewerNavId(state.inlineViewer.ownerKind, state.inlineViewer.ownerId, state.inlineViewer.mapKey)
+      : state.activeId;
 
   let targetId = null;
   if (key === "ArrowDown" || key === "ArrowUp") {
@@ -16795,12 +16874,59 @@ function moveTreeSelection(key) {
     const delta = key === "ArrowDown" ? 1 : -1;
     const nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
     targetId = ids[nextIdx];
-  } else if (key === "ArrowLeft") {
-    targetId = node && node.parentId ? node.parentId : null;
-  } else if (key === "ArrowRight") {
-    targetId = node && node.children.length ? node.children[0] : null;
+  } else if (key === "ArrowLeft" || key === "ArrowRight") {
+    // Explorer/VS Code model. Right: collapsed -> expand, expanded -> first
+    // listed child, leaf -> nothing. Left: expanded -> collapse, else -> the
+    // parent (a dir row for anything inside a subfolder); selection stays put
+    // when only expanding/collapsing.
+    if (state.folderView && !cursorDir) return; // activeId is stale while the folder view is shown
+    let collapsible = false, collapsed = false, toggle = null, firstChild = null;
+    if (isDirNavId(currentId)) {
+      const p = parseDirNavId(currentId);
+      const owner = pathTreeOwnerOf(p.ownerKind, p.ownerId);
+      if (!owner) return;
+      const set = expandedDirsOf(owner);
+      collapsible = true; collapsed = !set.has(p.path);
+      toggle = () => { if (collapsed) set.add(p.path); else set.delete(p.path); };
+      const next = ids[ids.indexOf(currentId) + 1];
+      firstChild = next && navParentId(next) === currentId ? next : null;
+    } else if (isViewerNavId(currentId)) {
+      const p = parseViewerNavId(currentId);
+      const listed = new Set(ids);
+      firstChild = viewerTextLogIds(p.ownerKind, p.ownerId, p.mapKey).find(id => listed.has(id)) || null;
+    } else {
+      if (!node) return;
+      const isSources = node.type === "filter" && node.filterType === "sources";
+      collapsible = !(isSources && !showSourcesSetting) && nodeHasCollapsibleChildren(node);
+      collapsed = !!node.collapsed;
+      toggle = () => { node.collapsed = !node.collapsed; };
+      if (isSources) {
+        const owner = state.nodes[node.parentId];
+        const first = owner && (owner.sources || []).find(src => state.nodes[src.id] && !state.nodes[src.id].queued);
+        firstChild = first ? first.id : null;
+      } else {
+        const listed = new Set(ids);
+        firstChild = node.children.find(cid => listed.has(cid)) || null;
+      }
+    }
+    if (key === "ArrowRight") {
+      if (collapsible && collapsed) { toggle(); render(); return; }
+      targetId = firstChild;
+    } else {
+      if (collapsible && !collapsed) { toggle(); render(); return; }
+      targetId = navParentId(currentId);
+    }
   }
   if (!targetId) return;
+
+  // A dir row is a cursor position only — the main view (activeId, viewer)
+  // stays as it is.
+  if (isDirNavId(targetId)) {
+    setDirCursor(targetId);
+    render();
+    return;
+  }
+  state.treeCursorDir = null;
 
   if (isViewerNavId(targetId)) {
     const { ownerKind, ownerId, mapKey } = parseViewerNavId(targetId);
@@ -17226,9 +17352,7 @@ function renderNode(id, depth, opts) {
   // real children.
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
-  const hasRealChildren = sourcesOwnerFile
-    ? !!(Array.isArray(sourcesOwnerFile.sources) && sourcesOwnerFile.sources.length)
-    : node.children.length > 0;
+  const hasRealChildren = nodeHasCollapsibleChildren(node);
   if (hasRealChildren) {
     const chevron = document.createElement("button");
     chevron.type = "button";
@@ -17438,6 +17562,7 @@ function renderNode(id, depth, opts) {
     // when nothing was open.
     state.inlineViewer = null;
     state.folderView = null;
+    state.treeCursorDir = null; // a subfolder-row cursor gives way to this selection
     // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
     // a mouse click on a filter switches the active filter but should not
     // steal arrow-key focus away from the log — leave focusRegion as
@@ -17594,11 +17719,6 @@ function isPathTreeVisible(owner, relPath) {
   for (let i = 1; i < parts.length; i++) if (!expandedDirsOf(owner).has(parts.slice(0, i).join("/"))) return false;
   return true;
 }
-// Rendered order: a level's directories first, then its files.
-function forEachVisiblePathTreeItem(owner, level, fn) {
-  level.dirs.forEach(dir => { if (expandedDirsOf(owner).has(dir.path)) forEachVisiblePathTreeItem(owner, dir, fn); });
-  level.items.forEach(fn);
-}
 function countPathTreeItems(level) {
   let n = level.items.length;
   level.dirs.forEach(dir => { n += countPathTreeItems(dir); });
@@ -17624,9 +17744,11 @@ function renderPathTree(owner, tree, renderItem, list) {
 // the sidebar every tick, which would otherwise swallow a click on it.
 function renderPathTreeDirRow(owner, dir, depth, expanded) {
   const count = countPathTreeItems(dir);
-  return cachedInactiveRow(owner, "\0dir:" + dir.path, depth + "|" + expanded + "|" + count, () => {
+  const navId = dirNavId(pathTreeOwnerKind(owner), owner.id, dir.path);
+  const active = dirCursorId() === navId; // the tree cursor rests here (moveTreeSelection)
+  return cachedInactiveRow(owner, "\0dir:" + dir.path, depth + "|" + expanded + "|" + count + "|" + active, () => {
     const row = document.createElement("div");
-    row.className = "tree-row tree-dir-row";
+    row.className = "tree-row tree-dir-row" + (active ? " active" : "");
     row.style.paddingLeft = (8 + depth * TREE_INDENT_STEP) + "px";
     row.title = dir.path;
     const slot = document.createElement("span");
@@ -17654,6 +17776,8 @@ function renderPathTreeDirRow(owner, dir, depth, expanded) {
     row.addEventListener("click", () => {
       const set = expandedDirsOf(owner);
       if (set.has(dir.path)) set.delete(dir.path); else set.add(dir.path);
+      setDirCursor(navId);
+      state.focusRegion = "tree";
       render();
     });
     return row;
@@ -27831,6 +27955,7 @@ itvWrapBtn.addEventListener("click", () => {
 function activateInlineViewer(viewer) {
   state.activeId = null;
   state.inlineViewer = viewer;
+  state.treeCursorDir = null;
   state.folderView = null; // mutually exclusive "special content area" views — see its own comment
 }
 
@@ -36813,7 +36938,14 @@ if (typeof IntersectionObserver !== "undefined") {
    context-dependent (Ctrl+C/X/V, Del, Enter, arrows — see the fixed
    reference list in the HTML) and stay fixed. The main keydown handler below
    checks matchesShortcut(ev, id) for each of these instead of a hardcoded
-   key comparison, so a rebind here takes effect immediately. */
+   key comparison, so a rebind here takes effect immediately.
+
+   `browserDefault` (optional, per action): the default used in the plain
+   browser build (no window.philogg) instead of `default`. Only closeFile has
+   one: Chrome/Edge/Firefox reserve Ctrl+W (close tab) and ignore
+   preventDefault on it, so the browser build defaults to Alt+W while the
+   desktop build keeps Ctrl+W. See docs/ui-and-views.md -> "OS / browser
+   shortcut collisions". */
 const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
 
 const SHORTCUT_ACTIONS = [
@@ -36828,7 +36960,7 @@ const SHORTCUT_ACTIONS = [
   { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
   { id: "muteFilter",    label: "Mute/unmute a filter",                default: { key: "m" } },
   { id: "editFilter",    label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
-  { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" } },
+  { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" }, browserDefault: { alt: true, key: "w" } },
   { id: "toggleSidebar", label: "Collapse/expand Files & Filters",     default: { ctrl: true, key: "b" } },
   { id: "toggleDetail",  label: "Collapse/expand Entry Detail",        default: { ctrl: true, key: "j" } },
   { id: "undo",          label: "Undo",                                default: { ctrl: true, key: "z" } },
@@ -36870,7 +37002,7 @@ const FIXED_SHORTCUTS = [
   { label: "Click a row — select it",                 display: null },
   { label: "Multi-select rows",                       display: ["Ctrl", "click"] },
   { label: "Move selection up/down",                  display: ["↑", "↓"] },
-  { label: "Navigate the tree (row focused)", display: ["↑", "↓", "←", "→"] },
+  { label: "Navigate the tree (row focused); ←/→ collapse/expand", display: ["↑", "↓", "←", "→"] },
   { label: "Jump to Filtered view (filter selected in tree)", display: ["Enter"] },
   { label: "Same as double-click (row selected in Filtered/Stacked)", display: ["Enter"] },
   { label: "Right-click a row — filter before/after",  display: null },
@@ -36884,14 +37016,27 @@ catch { shortcutBindingOverrides = {}; } // corrupt value, fall through to {}
 function saveShortcutBindingOverrides() {
   localStorage.setItem(SHORTCUT_BINDINGS_STORAGE_KEY, JSON.stringify(shortcutBindingOverrides));
 }
+// Build-appropriate default combo; window.philogg is read at call time (the
+// desktop wrapper's inject script may define it after this script starts).
+function defaultShortcutBinding(actionOrId) {
+  const action = typeof actionOrId === "string" ? SHORTCUT_ACTIONS.find(a => a.id === actionOrId) : actionOrId;
+  return (!window.philogg && action.browserDefault) || action.default;
+}
 function getShortcutBinding(actionId) {
-  return shortcutBindingOverrides[actionId] || SHORTCUT_ACTIONS.find(a => a.id === actionId).default;
+  return shortcutBindingOverrides[actionId] || defaultShortcutBinding(actionId);
 }
 // "=" and "+" are the same physical key on most layouts (Ctrl+= zooms too in
 // every browser) — normalized to "+" so either press satisfies a "+" combo.
 function comboFromEvent(ev) {
   let key = ev.key.toLowerCase();
   if (key === "=") key = "+";
+  // macOS: Option+letter yields a dead key / special char in ev.key, so fall
+  // back to the physical key (ev.code) — only then, since ev.code is the US
+  // position (QWERTZ Z reports KeyY, AZERTY W reports KeyZ).
+  if (ev.altKey && ev.code && !/^[a-z0-9]$/.test(key)) {
+    const m = /^Key([A-Z])$/.exec(ev.code) || /^Digit([0-9])$/.exec(ev.code);
+    if (m) key = m[1].toLowerCase();
+  }
   return { ctrl: !!(ev.ctrlKey || ev.metaKey), shift: !!ev.shiftKey, alt: !!ev.altKey, key };
 }
 function comboEquals(a, b) {
@@ -39816,6 +39961,7 @@ document.addEventListener("keydown", ev => {
   }
 
   if (ev.key === "Delete") {
+    if (dirCursorId()) return; // never delete the (unhighlighted) active node from a subfolder row
     const node = state.nodes[state.activeId];
     if (node && node.type === "filter") {
       ev.preventDefault();
@@ -39902,6 +40048,7 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "viewTab4")) { ev.preventDefault(); jumpToViewTab(4); return; }
   if (matchesShortcut(ev, "viewTab5")) { ev.preventDefault(); jumpToViewTab(5); return; }
   if (ev.key === "Enter" && state.focusRegion === "tree") {
+    if (dirCursorId()) return; // the cursor is on a subfolder row, not on the active node
     const activeNode = state.nodes[state.activeId];
     if (activeNode && activeNode.type === "filter") {
       ev.preventDefault();
