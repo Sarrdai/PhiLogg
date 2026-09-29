@@ -11560,6 +11560,117 @@ function deriveExtractColumnBase(before) {
   const w = ws[j].match(/[A-Za-z_][\w.-]*$/);
   return w && !EXTRACT_NAME_STOP_WORDS.has(w[0].toLowerCase()) ? w[0] : "value";
 }
+// Unit word right after a placeholder ("C", "mm", "%", "m/s"): 1-4 chars, must
+// start with a letter/°/%/µ (so a "/" separator is never a unit), not an
+// English stop word. `after` = the literal text following the token.
+function extractUnitAfter(after) {
+  const u = after.match(/^\s?([A-Za-z°%µ][A-Za-z°%µ/]{0,3})(?=\s|$|[,;)\]}>|])/);
+  return u && !EXTRACT_UNIT_STOP_WORDS.has(u[1].toLowerCase()) ? u[1] : undefined;
+}
+// Tuple-style messages: a NAME LIST paired positionally with a VALUE LIST,
+// e.g. "(xo, yo, zo): (1.4 , 7.98, 9.76)", "[cx; cy] -> [12px; 40px]",
+// "(gx gy gz) = (1 2 3)". `tokens` = [{ start, end, type }] of the pattern's
+// placeholders. Returns an array (one entry per token) of { name, unit } for
+// tokens that belong to a paired list, undefined for the rest (those keep
+// the "word before" rule). Rules:
+//  - value list: >= 2 consecutive tokens whose gaps are only [unit] + ONE
+//    separator kind (, ; / | or whitespace), optionally wrapped in a bracket
+//    pair (the open bracket right before the first token; a closing bracket
+//    after the last, if present, must be its counterpart);
+//  - name list: directly before it (modulo the open bracket and a connector
+//    : = -> =>), >= 2 identifiers with one separator kind, in a bracket pair
+//    of its own; without brackets only , ; / | count (a whitespace-separated
+//    list of words is an ordinary sentence, "Queue depth: [*:int] [*:int]");
+//  - counts must be equal, else no pairing at all;
+//  - units: a token's own unit wins over a group unit (bracketed unit after
+//    the names "(xo, yo) [mm]:", unit after the closing bracket "(...) mm",
+//    or, for an unbracketed list, a unit on the last token only).
+const TUPLE_CLOSE = { "(": ")", "[": "]", "{": "}", "<": ">" };
+function deriveTupleNames(pattern, tokens) {
+  const out = new Array(tokens.length);
+  const numeric = i => tokens[i].type === "float" || tokens[i].type === "int" || tokens[i].type === "hex";
+  const afterOf = i => pattern.slice(tokens[i].end, i + 1 < tokens.length ? tokens[i + 1].start : pattern.length);
+  const beforeOf = i => pattern.slice(i > 0 ? tokens[i - 1].end : 0, tokens[i].start);
+  // Kind of separator in the gap after token i (its own unit allowed), or null.
+  const gapKind = i => {
+    const g = afterOf(i);
+    const pure = /^\s*([,;\/|])\s*$/.exec(g);
+    if (pure) return pure[1];
+    if (/^\s+$/.test(g)) return " ";
+    if (!numeric(i)) return null;
+    const u = /^\s?([A-Za-z°%µ][A-Za-z°%µ/]{0,3})(?=[\s,;|]|$)/.exec(g);
+    if (!u || EXTRACT_UNIT_STOP_WORDS.has(u[1].toLowerCase())) return null;
+    const rest = g.slice(u[0].length);
+    const sm = /^\s*([,;\/|])\s*$/.exec(rest);
+    return sm ? sm[1] : /^\s+$/.test(rest) ? " " : null;
+  };
+  const IDENT = /^[A-Za-z_][\w.]*$/;
+  const parseIdentList = str => {
+    for (const sep of [/\s*,\s*/, /\s*;\s*/, /\s*\/\s*/, /\s*\|\s*/, /\s+/]) {
+      const parts = str.trim().split(sep);
+      if (parts.length >= 2 && parts.every(x => IDENT.test(x))) return parts;
+    }
+    return null;
+  };
+  const parseNames = R => {
+    R = R.replace(/\s+$/, "");
+    const b = /([(\[{<])([^()\[\]{}<>]*)([)\]}>])$/.exec(R);
+    if (b && TUPLE_CLOSE[b[1]] === b[3]) return parseIdentList(b[2]);
+    for (const sep of [",", ";", "/", "|"]) {
+      const e = "\\" + sep;
+      const m = new RegExp("(?:^|[^\\w.])([A-Za-z_][\\w.]*(?:\\s*" + e + "\\s*[A-Za-z_][\\w.]*)+)$").exec(R);
+      if (m) return parseIdentList(m[1]);
+    }
+    return null;
+  };
+  let i = 0;
+  while (i < tokens.length) {
+    let j = i, kind = null, mixed = false;
+    while (j + 1 < tokens.length) {
+      const k = gapKind(j);
+      if (k == null) break;
+      if (kind == null) kind = k; else if (k !== kind) mixed = true;
+      j++;
+    }
+    const n = j - i + 1;
+    const from = i;
+    i = j + 1;
+    if (n < 2 || mixed) continue;
+    const last = from + n - 1;
+    let pre = beforeOf(from);
+    let open = null;
+    const ob = /([(\[{<])\s*$/.exec(pre);
+    if (ob) { open = ob[1]; pre = pre.slice(0, ob.index); }
+    // Own unit of the last token, then an optional closing bracket + group unit.
+    const lastAfter = afterOf(last);
+    const lastOwn = numeric(last) ? extractUnitAfter(lastAfter) : undefined;
+    let groupAfter;
+    if (open) {
+      const rest = lastOwn ? lastAfter.replace(/^\s?[A-Za-z°%µ][A-Za-z°%µ/]{0,3}/, "") : lastAfter;
+      const cb = /^\s*([)\]}>])/.exec(rest);
+      if (cb) {
+        if (TUPLE_CLOSE[open] !== cb[1]) continue;
+        groupAfter = extractUnitAfter(rest.slice(cb[0].length));
+      }
+    }
+    // Name list: try without, then with a bracketed group unit after the names.
+    let R = pre.replace(/\s*(?:=>|->|:|=)\s*$/, "");
+    let names = null, groupNames;
+    const cands = [{ R }];
+    const ub = /\s*([(\[{<])\s*([A-Za-z°%µ][A-Za-z°%µ/]{0,3})\s*([)\]}>])\s*$/.exec(R);
+    if (ub && TUPLE_CLOSE[ub[1]] === ub[3] && !EXTRACT_UNIT_STOP_WORDS.has(ub[2].toLowerCase())) cands.push({ R: R.slice(0, ub.index), unit: ub[2] });
+    for (const c of cands) {
+      const nm = parseNames(c.R);
+      if (nm && nm.length === n) { names = nm; groupNames = c.unit; break; }
+    }
+    if (!names) continue;
+    const own = names.map((_, k) => (numeric(from + k) ? extractUnitAfter(afterOf(from + k)) : undefined));
+    let group = groupNames || groupAfter;
+    if (!group && !open && own[n - 1] && own.slice(0, n - 1).every(u => !u)) group = own[n - 1];
+    names.forEach((name, k) => { out[from + k] = { name, unit: own[k] || (numeric(from + k) ? group : undefined) }; });
+  }
+  return out;
+}
 // Compiles a template into { regex, columns }. columns is the ordered list
 // of { name, type, numberFormat?, conditions? } to extract; duplicate types get suffixed
 // (float, float 2, ...). Returns null if the resulting pattern isn't a
@@ -11568,6 +11679,11 @@ function deriveExtractColumnBase(before) {
 // those — same "invalid pattern" feedback path
 // as any other malformed template.
 function compileExtractPattern(pattern) {
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  const scanned = [];
+  let sm;
+  while ((sm = EXTRACT_TOKEN_RE.exec(pattern)) !== null) scanned.push({ start: sm.index, end: EXTRACT_TOKEN_RE.lastIndex, type: sm[1] || "text" });
+  const tuple = deriveTupleNames(pattern, scanned);
   EXTRACT_TOKEN_RE.lastIndex = 0;
   let lastIndex = 0;
   let regexStr = "";
@@ -11582,7 +11698,8 @@ function compileExtractPattern(pattern) {
     const type = m[1] || "text"; // m[4] matched means it was the bare [*] wildcard
     if ((m[2] || m[3]) && !VALUE_CONDITION_TYPES.has(type)) return null; // formats/conditions only make sense on float/int
     const conditions = parseValueConditions(m[3]);
-    const base = deriveExtractColumnBase(pattern.slice(lastIndex, m.index));
+    const tinfo = tuple[columns.length];
+    const base = tinfo ? tinfo.name : deriveExtractColumnBase(pattern.slice(lastIndex, m.index));
     nameCounts[base] = (nameCounts[base] || 0) + 1;
     const name = nameCounts[base] > 1 ? base + " " + nameCounts[base] : base;
     const col = { name, type };
@@ -11602,8 +11719,8 @@ function compileExtractPattern(pattern) {
   columns.forEach((col, i) => {
     if (col.type !== "float" && col.type !== "int" && col.type !== "hex") return;
     const after = pattern.slice(tokenEnds[i], i + 1 < columns.length ? tokenStarts[i + 1] : pattern.length);
-    const u = after.match(/^\s?([A-Za-z°%µ/]{1,4})(?=\s|$|[,;)\]])/);
-    if (u && !EXTRACT_UNIT_STOP_WORDS.has(u[1].toLowerCase())) col.unit = u[1];
+    const u = tuple[i] ? tuple[i].unit : extractUnitAfter(after);
+    if (u) col.unit = u;
   });
   try {
     // "s" (dotAll): a "text"/word wildcard's `.`/`.*` must also match a

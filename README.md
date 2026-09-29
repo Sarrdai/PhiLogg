@@ -162,7 +162,8 @@ deployments possible:
   into a spreadsheet-style table with per-column stats, value assertions, and
   a Plot tab (line/bar/scatter/3D scatter, zoom/pan/rotate, click a point to
   jump to its log entry). Columns are named after the message
-  (`temperature=[*:float] C` → axis "temperature [C]"), and in the Plot tab
+  (`temperature=[*:float] C` → axis "temperature [C]", also name/value tuples
+  like `(xo, yo): (…)`), and in the Plot tab
   each pattern chip shows its role (X/Y/Z/Color) and assigns one on click. Several columns with different units compare as a
   **Radar** chart (one row against a few selected ones, each spoke on its
   own scale) or as **Parallel coordinates** (every row as one line across

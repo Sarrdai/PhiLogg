@@ -324,6 +324,34 @@
       },
     },
 
+    tuples: {
+      label: "Tuples (name list -> value list)",
+      weight: 6,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Messages that list names first and values after: 'Probe offset (xo, yo, zo): (1.4 , 7.98, 9.76)', '=(1.4mm , ...)', '[cx; cy] -> [12px; 40px]', '{a/b}={3/4}', 'xs, ys: 1.2mu, 3.4mu', '<u, v> = <1.2 m, 3.4 m>', group units '(xo, yo, zo) [mm]: (...)', '(tx, ty) = (...) mm', 'xs, ys, zs: ... µm', space-separated '(gx gy gz) = (1 2 3)'. Speaking column names + units. Filters: Probe offset (xo, yo, zo)=([*:float]mm , [*:float]mm, [*:float]mm) / Gantry (gx gy gz) = ([*:float] [*:float] [*:float])",
+      make(g) {
+        const st = g.state.tuples || (g.state.tuples = Array.from({ length: 11 }, (_, i) => [10 + i, 20 + i, 30 + i]));
+        const shape = g.int(0, 10);
+        const v = st[shape];
+        for (let i = 0; i < 3; i++) v[i] += (g.rnd() - 0.5) * 0.8;
+        const f = (i, d) => v[i].toFixed(d === undefined ? 2 : d);
+        const msgs = [
+          () => "Probe offset (xo, yo, zo): (" + f(0) + " , " + f(1) + ", " + f(2) + ")",
+          () => "Probe offset (xo, yo, zo)=(" + f(0) + "mm , " + f(1) + "mm, " + f(2) + "mm)",
+          () => "Camera center [cx; cy] -> [" + f(0, 1) + "px; " + f(1, 1) + "px]",
+          () => "Stage {a/b}={" + Math.round(v[0]) + "/" + Math.round(v[1]) + "}",
+          () => "Laser xs, ys: " + f(0) + "mu, " + f(1) + "mu",
+          () => "Fiducial <u, v> = <" + f(0) + " m, " + f(1) + " m>",
+          () => "Probe offset (xo, yo, zo) [mm]: (" + f(0) + ", " + f(1) + ", " + f(2) + ")",
+          () => "Tool tip (tx, ty) = (" + f(0) + ", " + f(1) + ") mm",
+          () => "Scan pos xs, ys, zs: " + f(0) + ", " + f(1) + ", " + f(2) + " \u00b5m",
+          () => "Gantry (gx gy gz) = (" + f(0) + " " + f(1) + " " + f(2) + ")",
+          () => "Head (hx hy) [px]: " + f(0, 1) + " " + f(1, 1),
+        ];
+        return { level: "INFO", thread: "tuple-src", cls: "tracker", method: "Report", msg: msgs[shape](), json: { shape, values: v.map(x => +x.toFixed(2)) } };
+      },
+    },
+
     ties: {
       label: "Same-timestamp clusters",
       weight: 1,
