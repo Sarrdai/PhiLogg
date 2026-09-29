@@ -25,8 +25,10 @@ async function main() {
     else files.push(path.resolve(args[i]));
   }
   const formats = files.filter(f => f.endsWith(".logformat.json"));
-  const logs = files.filter(f => !f.endsWith(".logformat.json"));
-  if (!logs.length) throw new Error("no log files given");
+  // *.zip files open as archive containers (#zipInput), not as logs.
+  const zips = files.filter(f => /\.zip$/i.test(f));
+  const logs = files.filter(f => !f.endsWith(".logformat.json") && !/\.zip$/i.test(f));
+  if (!logs.length && !zips.length) throw new Error("no log files given");
   const [width, height] = opt.size.split("x").map(Number);
 
   const browser = await chromium.launch(process.env.PLAYWRIGHT_BROWSERS_PATH ? {} : { executablePath: "/opt/pw-browsers/chromium" });
@@ -47,7 +49,11 @@ async function main() {
       }, text);
     }
     if (opt.theme) await page.evaluate(t => applyTheme(t), opt.theme);
-    await page.setInputFiles("#fileInput", logs);
+    for (let i = 0; i < zips.length; i++) {
+      await page.setInputFiles("#zipInput", zips[i]);
+      await page.waitForFunction(n => state.zips.length >= n, i + 1, { timeout: 60000 });
+    }
+    if (logs.length) await page.setInputFiles("#fileInput", logs);
     // A file is parsed once its row's progress bar is gone (loadFraction is
     // deleted at the end of the load) and it is no longer a queued placeholder.
     await page.waitForFunction(n => state.rootIds.map(id => state.nodes[id])
