@@ -220,8 +220,9 @@ deployments possible:
   load-time win, as long as the file's own entries are in chronological
   order), with a matching time filter already applied to the result.
   Files start loading in the background as soon as you select them (and
-  while the merge-on-load dialog is still open for a multi-file drop), so
-  the action often finishes almost instantly.
+  while the merge-on-load dialog is still open for a multi-file drop, or
+  when the keyboard cursor rests on an unloaded file), so the action often
+  finishes almost instantly.
 - **Open a `.zip` file as a log source** — pick or drop a `.zip` and get a
   read-only listing of what's inside, subfolders as collapsible folder rows
   in the tree (only the archive's central directory is read, nothing is
