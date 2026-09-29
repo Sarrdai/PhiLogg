@@ -60,6 +60,14 @@ between default and syslog lines. For same-timestamp log order
 and `Batch imported 12,345 records` (en integer, ambiguous without
 `[*:int@en]`). For extraction number formats (`-s grouped`).
 
+`tuples` is opt-in as well: messages that list names first and values after —
+`Probe offset (xo, yo, zo): (1.4 , 7.98, 9.76)`, `=(1.4mm , ...)`,
+`[cx; cy] -> [12px; 40px]`, `{a/b}={3/4}`, `xs, ys: 1.2mu, 3.4mu`,
+`<u, v> = <1.2 m, 3.4 m>`, group units (`(xo, yo, zo) [mm]: (...)`,
+`(tx, ty) = (...) mm`, `xs, ys, zs: ... µm`) and space-separated
+`(gx gy gz) = (1 2 3)`; 11 fixed shapes with drifting values. For speaking
+column names from a name list (`-s tuples,basic`).
+
 ## Amount and files
 
 - `-n 5000` entries or `--size 20MB` per file.

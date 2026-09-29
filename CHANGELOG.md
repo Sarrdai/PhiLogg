@@ -2,6 +2,19 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: tuple-style name lists for extraction column names (2026-09-29, person-requested)**
+  - A name list directly before an equally long value list is paired by position (`deriveTupleNames`): `(xo, yo, zo): ([*:float] , [*:float], [*:float])` → `xo`, `yo`, `zo`. Brackets `()` `[]` `{}` `<>` or none, separators `, ; / |` or (bracketed name list only) plain spaces, connectors `:` `=` `->` `=>`. Count mismatch or mixed separators → the word-before rule as before.
+  - Units per value (`[*:float]mm ,`) and group units (`(xo, yo) [mm]: (…)`, `(…) mm`, only-last-token unit on an unbracketed list) — a value's own unit wins. `extractUnitAfter` is now the single unit rule.
+  - Simulator: new opt-in scenario `tuples` (11 fixed shapes); default output unchanged.
+  - **Tests**: new **Group 327**; GROUP 300 extended.
+
+- **feat: column names from the message + role chips in the Plot tab (2026-09-29, person-requested, concept mockup proposals 1+2)**
+  - Extraction columns are named after the word before their placeholder (`temperature=[*:float]` → `temperature`, stop words skipped, fallback `value`), a short unit word after it becomes `col.unit`; plot axis titles read `temperature [C]` (`columnAxisLabel`). Chips show name + unit/type, the sidebar Y list shows the name in normal case with its unit.
+  - Plot tab: pattern chips show their plot role (X/Y/Z/C, column-group position, V) and open a role menu (`#plotRoleMenu`, `setPlotColumnRole`); a `Row` group adds Index/t (ms)/Δt; 2D axis titles are clickable column menus. Ignore moved into the menu there; the Table tab is unchanged.
+  - Fixed on the way: `renderPlotControls`' unchanged-HTML cache ignored role fields, leaving sidebar selects stale after an outside `plotConfig` change.
+  - Backlog #74 reduced to drag & drop only.
+  - **Tests**: new **Group 325** and **Group 326**; column-name expectations in existing copy/CSV/stats/assistant assertions updated to the derived names.
+
 - **feat: Left/Right expand and collapse tree nodes (2026-09-29, person-requested)**
   - In `moveTreeSelection` (plain arrows with tree focus and Alt+Arrow from anywhere), Explorer/VS Code model: **Right** on a collapsed node with children expands it, on an expanded one moves to its first listed child, on a leaf does nothing; **Left** on an expanded node collapses it (selection stays), otherwise moves to the parent without collapsing it (no-op at top level). The chevron's "has collapsible children" rule (incl. the merge "Sources" node) is the shared `nodeHasCollapsibleChildren`. `node.collapsed` remains display-only.
   - Subfolder rows of watched folders and ZIPs (`renderPathTree`) are navigation targets too: virtual `dirnav:<folder|zip>:<ownerId>:<path>` ids in `flattenTreeIds`, at their visual position (dirs first, then files, children only while expanded; opened folder files now sit under their dir row). A selected dir row is a cursor (`state.treeCursorDir`, valid only while activeId/viewer/folderView are unchanged) drawn with the active row style; it does not change the main view. Right/Left expand/collapse it via `expandedDirs`; Left on an opened file, viewer or dir inside a subfolder goes to its dir row (`navParentId`); a click on a dir row toggles it and puts the cursor there (`focusRegion = "tree"`). Enter/Delete are ignored while the cursor is on a dir row. Unopened listed rows stay non-navigable. `isInCollapsedFolderDir` and `forEachVisiblePathTreeItem` are gone (the walk covers them).
