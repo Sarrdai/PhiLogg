@@ -2,6 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: tree navigation stops on unloaded ZIP / folder entries (2026-09-29, person-requested, mockup variant B)**
+  - `flattenTreeIds` lists every listed-but-not-loaded ZIP entry and watched-folder file as a cursor-only stop (virtual `unloadednav:` ids, like dir rows), so Alt+Arrow / tree-focus arrows no longer skip grayed entries. **Right** loads/opens it exactly like its double-click (`openUnloadedNavId`), **Left** goes to its dir row, Enter/Delete do nothing. **Shift** (Shift+Alt+Up/Down, Shift+Up/Down with tree focus) skips unloaded entries as before.
+  - After a keyboard-started load the result is shown only if the cursor is still on that entry (`kbLoadNavIds`; the loading node stays a cursor stop meanwhile); navigating away means it finishes without taking over. Double-click behavior unchanged.
+  - Cursor look: `state.treeCursorDir` → `state.treeCursor` (`treeCursorId`/`setTreeCursor`); cursor-only rows (dir rows too) get a dashed accent outline (`.tree-cursor`) instead of the filled `.active` style; unloaded rows show a `→ load` badge while they hold the cursor. A click on an unloaded row puts the cursor there.
+  - **Tests**: new **Group 329**; GROUP 324's dir-row / ZIP expectations updated.
+
 - **feat: find bar shows per-file hit counts (2026-09-29, person-requested, FEATURE_BACKLOG #30, mockup variant A)**
   - With the find bar open, a valid query and 2+ loaded files, every file root row shows a `.tree-hit-badge` (before `.tree-count`) with the number of entries of the whole file matching the query (same test as the bar itself; `…` while counting, dimmed `0`). Click a badge (or the row of a file with hits) to activate that file and select its first hit; F3/arrows stay inside the current view. Read-only: no filter node, nothing persisted. Sidebar-collapsed fallback: `#findCount`'s tooltip lists `file: count` per line.
   - Counted after the current-view scan, time-sliced with its own generation counter, cached per file (array identity + scanned length, tail appends count only the tail); badges updated in place, never via `renderTree()` from a scan tick. Details in `docs/ui-and-views.md` → "Cross-file hit counts".
