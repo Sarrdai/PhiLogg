@@ -9441,7 +9441,18 @@ function parseHeaderLine(line) {
 // onProgress(linesDone, linesTotal) is called after each chunk.
 const PARSE_CHUNK_LINES = 4000;
 
-async function parseLogTextAsync(text, node, onProgress) {
+// Silent-preload bookkeeping (see "Silent preload (folder minimap)" further below);
+// declared this early because render()/the load wrappers can run before that section.
+const folderPreloads = new Map();
+let foregroundLoads = 0;      // running foreground loads (speculative jobs wait for 0)
+let folderPreloadRunning = null;
+let fmActionBusy = 0;         // a minimap action is in flight — syncFolderPreloads stands still
+
+// parseOpts (optional, speculative preloads only — see "Silent preload" in
+// docs/persistence-and-sync.md): { maxWorkers, drainBatches } cap the worker
+// count and the main-thread drain budget so a background parse never hinders
+// the foreground app. Normal loads pass nothing and keep the full values.
+async function parseLogTextAsync(text, node, onProgress, parseOpts) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
   const plainText = isPlainTextFormat(formatId);
   // Plain text keeps blank lines as entries, so a file's final line
@@ -9451,7 +9462,7 @@ async function parseLogTextAsync(text, node, onProgress) {
   if (plainText && text === "") { updateFileAggregate(node); if (onProgress) onProgress(1, 1); return; }
   if (typeof Worker !== "undefined") {
     try {
-      await parseLogTextInWorker(text, formatId, node, onProgress);
+      await parseLogTextInWorker(text, formatId, node, onProgress, parseOpts);
       return;
     } catch (err) {
       // Worker unavailable, or building/running its blob failed (blocked
@@ -10393,10 +10404,57 @@ async function parseFileWindow(file, node, from, to, onProgress) {
 // partial-node badge, and the "partial" field threaded through
 // persistFileNode/restoreSessionFromCache and snapshotSubtree/
 // restoreSubtree the same way node.merged/node.formatId already are.
-async function loadFolderFileWindowed(folder, rec, from, to) {
+// Shared by the real windowed load and the folder-minimap silent preload
+// (see "Silent preload" below): a windowed read is only worth it for a big
+// enough file whose time range is known.
+function folderWindowEligible(file, rec) {
+  return file.size >= WINDOWED_LOAD_MIN_FILE_SIZE && !!rec._range;
+}
+
+// Reads+parses rec's [from, to] slice into `node` (already in state.nodes),
+// progress into node.loadFraction. Resolves true on success, false when
+// parseFileWindow gave up (unsorted timestamps), threw, or the node was
+// deleted mid-load. Shared by loadFolderFileWindowed and the preload job.
+async function parseFolderWindowInto(node, file, from, to) {
+  node.formatId = resolveFormatIdForFilename(node.name);
+  try {
+    return await parseFileWindow(file, node, from, to, (done, total) => {
+      node.loadFraction = Math.min(0.98, done / total);
+      scheduleLoadRender(node.id);
+    });
+  } catch (err) { return false; }
+}
+
+// Success tail of a windowed load: the node is complete for [from, to].
+function completeWindowedFolderNode(node, rec, from, to) {
+  delete node.loadFraction;
+  node.partial = { from, to };
+  rec.nodeId = node.id;
+  flushLoadRender(node.id);
+  persistFileNode(node); // fire-and-forget, same first persist loadOneFileIntoTree's own path does
+  if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
+}
+
+function loadFolderFileWindowed(...args) { return trackForegroundLoad(() => loadFolderFileWindowedImpl(...args)); }
+async function loadFolderFileWindowedImpl(folder, rec, from, to) {
   if (rec.nodeId && state.nodes[rec.nodeId]) {
     state.activeId = rec.nodeId;
     return;
+  }
+  // Silent preload from the folder minimap (see takeFolderPreload): an exact
+  // window job, or a full job (which simply yields a complete node).
+  const job = takeFolderPreload(folder, rec, { from, to });
+  if (job) {
+    if (job.effective === "full") {
+      if (await loadFolderFileFromPreload(folder, rec, job, false, false)) return;
+    } else {
+      const node = job.node;
+      activatePreloadNode(node);
+      const out = await trackForegroundLoad(() => job.promise);
+      if (state.nodes[node.id] !== node) return; // closed meanwhile
+      if (out.ok) { completeWindowedFolderNode(node, rec, from, to); return; }
+      deleteNode(node.id); // fall back to the normal route below
+    }
   }
   let file;
   try { file = await getPartialReadFile(rec.handle); }
@@ -10404,21 +10462,13 @@ async function loadFolderFileWindowed(folder, rec, from, to) {
     showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
     return;
   }
-  if (file.size < WINDOWED_LOAD_MIN_FILE_SIZE || !rec._range) {
+  if (!folderWindowEligible(file, rec)) {
     await loadFolderFile(folder, rec);
     return;
   }
 
   const node = createFileNode(rec.name, folder.id);
-  node.formatId = resolveFormatIdForFilename(rec.name);
-
-  let ok = false;
-  try {
-    ok = await parseFileWindow(file, node, from, to, (done, total) => {
-      node.loadFraction = Math.min(0.98, done / total);
-      scheduleLoadRender(node.id);
-    });
-  } catch (err) { ok = false; }
+  const ok = await parseFolderWindowInto(node, file, from, to);
 
   if (!ok) {
     // parseFileWindow also returns false when the node was deleted
@@ -10432,13 +10482,7 @@ async function loadFolderFileWindowed(folder, rec, from, to) {
     await loadFolderFile(folder, rec);
     return;
   }
-
-  delete node.loadFraction;
-  node.partial = { from, to };
-  rec.nodeId = node.id;
-  flushLoadRender(node.id);
-  persistFileNode(node); // fire-and-forget, same first persist loadOneFileIntoTree's own path does
-  if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
+  completeWindowedFolderNode(node, rec, from, to);
 }
 
 /* ===================== Off-main-thread parsing =====================
@@ -10580,9 +10624,9 @@ function queueTask(fn) {
 const PARALLEL_PARSE_DRAIN_BATCHES = 8;
 // Pieces smaller than this aren't worth a worker of their own.
 const PARALLEL_PARSE_MIN_CHARS = 1 << 20;
-function parallelParseWorkerCount(textLength) {
+function parallelParseWorkerCount(textLength, maxWorkers) {
   const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 1;
-  return Math.max(1, Math.min(cores, 16, Math.floor(textLength / PARALLEL_PARSE_MIN_CHARS)));
+  return Math.max(1, Math.min(cores, 16, maxWorkers || 16, Math.floor(textLength / PARALLEL_PARSE_MIN_CHARS)));
 }
 
 // Parses on every core: the text is cut at header lines
@@ -10596,10 +10640,10 @@ function parallelParseWorkerCount(textLength) {
 // (makeNaiveTsLocalizer). Rejects on any worker failure with node.entries/
 // entryIndex rolled back, so parseLogTextAsync can fall back to the plain
 // loop cleanly.
-function parseLogTextInWorker(text, formatId, node, onProgress) {
+function parseLogTextInWorker(text, formatId, node, onProgress, parseOpts) {
   const fmt = findLogFormat(formatId) || DEFAULT_LOG_FORMAT;
   const plainText = isPlainTextFormat(formatId);
-  const pieces = splitTextAtHeaderLines(text, getCompiledFormat(formatId).isHeaderLine, parallelParseWorkerCount(text.length));
+  const pieces = splitTextAtHeaderLines(text, getCompiledFormat(formatId).isHeaderLine, parallelParseWorkerCount(text.length, parseOpts && parseOpts.maxWorkers));
   const start = node.entries.length;
   return new Promise((resolve, reject) => {
     const workers = [];
@@ -10638,7 +10682,7 @@ function parseLogTextInWorker(text, formatId, node, onProgress) {
     const drain = () => {
       if (drainScheduled || settled) return;
       if (state.nodes[node.id] !== node) { stop(); resolve(); return; } // deleted mid-load, see onmessage
-      let budget = PARALLEL_PARSE_DRAIN_BATCHES;
+      let budget = (parseOpts && parseOpts.drainBatches) || PARALLEL_PARSE_DRAIN_BATCHES;
       while (next < pieces.length) {
         while (queued[next].length) {
           if (budget-- === 0) {
@@ -12234,7 +12278,8 @@ function createMergeShell(name, formatId) {
 // physical file's line order. The final sort is stable, so copying in that
 // order is what keeps same-timestamp entries from different streams in log
 // order; without it (independent files, no shared order) ties keep file order.
-async function fillMergedEntries(node, files, logOrder) {
+function fillMergedEntries(node, files, logOrder) { return trackForegroundLoad(() => fillMergedEntriesImpl(...arguments)); }
+async function fillMergedEntriesImpl(node, files, logOrder) {
   node.sources = files.map(f => ({ id: f.id, name: f.name, color: null, count: f.entries.length }));
   const total = files.reduce((sum, f) => sum + f.entries.length, 0);
 
@@ -16449,6 +16494,7 @@ function renderInner() {
 // see "Entscheidungen bei der Umsetzung" in docs/ui-implementation-plan.md
 // for why).
 function renderMainView() {
+  syncFolderPreloads(); // leaving the folder minimap aborts its silent preloads
   const hasFiles = state.rootIds.length > 0;
   if (state.inlineViewer) {
     // Bug 3 fix (person-reported): the minimap is a log-view-only concept
@@ -29268,7 +29314,8 @@ function loadFiles(fileList) {
 // file may be null when canParseNatively(handle): the desktop wrapper then
 // reads and parses the file itself (parseLocalFileNatively), and only a
 // fallback ever fetches it here, through handle.getFile().
-async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
+function loadOneFileIntoTree(name, file, handle, folderId, existingNode) { return trackForegroundLoad(() => loadOneFileIntoTreeImpl(...arguments)); }
+async function loadOneFileIntoTreeImpl(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
@@ -29310,7 +29357,7 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
 // finishLoadedFileNode: the (possibly inflated) File, the bytes consumed and
 // whether the source was gzip. `file` may be null when canParseNatively(handle)
 // (see loadOneFileIntoTree). Not for meta-format files (the caller checks).
-async function readParseFileNode(node, name, file, handle) {
+async function readParseFileNode(node, name, file, handle, parseOpts) {
   node.formatId = resolveFormatIdForFilename(name);
   // gzip (see "gzip-compressed logs" above): inflated right before the text
   // read, as the read phase's own progress — the text read of the in-memory
@@ -29358,7 +29405,7 @@ async function readParseFileNode(node, name, file, handle) {
     await parseLogTextAsync(text, node, (done, total) => {
       node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
       scheduleLoadRender(node.id);
-    });
+    }, parseOpts);
   }
   return { file, size, gzip };
 }
@@ -29453,7 +29500,8 @@ el("#mergeLoadDialogNo").addEventListener("click", () => closeMergeLoadDialog(fa
 // now actually parse on separate cores at once instead of taking turns on
 // the main thread. loadedIds is still collected in the original desc order
 // (not completion order), so a merge afterward stays deterministic.
-async function loadFileDescriptors(descs) {
+function loadFileDescriptors(descs) { return trackForegroundLoad(() => loadFileDescriptorsImpl(...arguments)); }
+async function loadFileDescriptorsImpl(descs) {
   if (descs.length === 0) return;
 
   // A PhiLogg export (session, filter, preset, log format, theme, syntax
@@ -29834,7 +29882,8 @@ function applyFolderFileLocation(node, handle) {
   if (path) node.localPath = path;
   return changed;
 }
-async function loadUrlIntoTree(url) {
+function loadUrlIntoTree(url) { return trackForegroundLoad(() => loadUrlIntoTreeImpl(...arguments)); }
+async function loadUrlIntoTreeImpl(url) {
   if (location.protocol === "file:") {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
     return;
@@ -30860,6 +30909,11 @@ async function loadFolderFile(folder, rec, auto, quiet) {
     if (!quiet) render();
     return;
   }
+  // Silent preload from the folder minimap (see takeFolderPreload): a full
+  // job is adopted instead of reading the file again; anything else (no job,
+  // a window job, a failed job) takes the normal route below.
+  const preJob = takeFolderPreload(folder, rec, null);
+  if (preJob && await loadFolderFileFromPreload(folder, rec, preJob, auto, quiet)) return;
   // Non-log, inline-viewable file (this session's generalization — see
   // openInlineViewer's own comment): never becomes a real node/rec.nodeId,
   // same as a ZIP entry of one of these types. `auto` is never true here in
@@ -30897,18 +30951,47 @@ async function loadFolderFile(folder, rec, auto, quiet) {
       showCopyToast(`Couldn't open "${rec.name}" — it may have been moved or deleted.`);
       return;
     }
-    rec.nodeId = node.id;
-    rec.openedByAuto = !!auto;
-    if (auto) {
-      rec.autoOpenFired = true;
-      await applyFolderStartFilter(folder, rec, node);
-    }
-    // Under a wrapper that listed the folder natively the file's real path
-    // and its philogg://local/… URL are both known, so a folder file gets
-    // "Open File Location"/"Copy Path" like every other route there. Set
-    // after the load rather than threaded through loadOneFileIntoTree,
-    // which already has enough parameters and no other caller needing them.
-    if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
+    await finishFolderFileNode(folder, rec, node, auto);
+  } finally {
+    if (!quiet) render();
+  }
+}
+
+// Post-load bookkeeping of a folder file, shared by the normal load and an
+// adopted silent preload.
+async function finishFolderFileNode(folder, rec, node, auto) {
+  rec.nodeId = node.id;
+  rec.openedByAuto = !!auto;
+  if (auto) {
+    rec.autoOpenFired = true;
+    await applyFolderStartFilter(folder, rec, node);
+  }
+  // Under a wrapper that listed the folder natively the file's real path
+  // and its philogg://local/… URL are both known, so a folder file gets
+  // "Open File Location"/"Copy Path" like every other route there. Set
+  // after the load rather than threaded through loadOneFileIntoTree,
+  // which already has enough parameters and no other caller needing them.
+  if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
+}
+
+// Adopts a FULL silent-preload job (see "Silent preload" near the folder
+// minimap) as rec's file node: it joins the tree now, the normal progress bar
+// continues from the job's current fraction, and once the job's read+parse is
+// done the usual finish phase runs. Resolves true when the file is handled
+// (loaded, or closed by the person meanwhile), false when the job failed — the
+// caller then loads the normal way, which reports errors like today.
+async function loadFolderFileFromPreload(folder, rec, job, auto, quiet) {
+  const node = job.node;
+  try {
+    if (auto) expandPathTreeTo(folder, folderFileKey(rec));
+    activatePreloadNode(node);
+    const out = await trackForegroundLoad(() => job.promise);
+    if (state.nodes[node.id] !== node) return true; // closed meanwhile
+    if (out.err || !out.res) { deleteNode(node.id); return false; }
+    finishLoadProgress(node);
+    await finishLoadedFileNode(node, out.res, rec.handle);
+    await finishFolderFileNode(folder, rec, node, auto);
+    return true;
   } finally {
     if (!quiet) render();
   }
@@ -31248,6 +31331,158 @@ const FM_LABEL_WIDTH = 150;
 const FM_AXIS_HEIGHT = 20;
 const FM_DRAG_THRESHOLD_PX = 4;
 
+/* ===================== Silent preload (folder minimap) =====================
+   While files are selected in the folder minimap (bars, or a dragged window),
+   PhiLogg already reads+parses them in the background, invisibly, so the
+   later "load / merge" click finds them (partly) done. A job's node is a
+   normal file node that lives in state.nodes ONLY (not in rootIds, never
+   persisted or rendered, state.activeId/folderView untouched), so every
+   parser guard (`state.nodes[node.id] === node`) works unchanged and
+   deleteNode() is the abort. folderPreloads: "<folderId>|<fileKey>" -> job.
+
+   Diff rules (syncFolderPreloads): only the difference to the selection is
+   acted on — jobs of dropped files are aborted (result discarded, nothing is
+   cached), new ones queued, unchanged ones keep running. A "window" job
+   (large file with a known range, selection = dragged window) is keyed by
+   its from/to and restarts when the window changes; a full job stays.
+   Priority: at most ONE job runs at a time, none starts while a foreground
+   load is running (trackForegroundLoad), and the parse is throttled
+   (maxWorkers = half the cores, small main-thread drain budget) — only
+   speculative jobs, never normal loads. Adoption (takeFolderPreload): an
+   action takes a matching job out of the map synchronously; a full job
+   satisfies every action, a window job only an exact-window merge; anything
+   else is aborted and loaded the normal way. The native parser cannot be
+   cancelled: an aborted native job runs to its end and is discarded. */
+
+async function trackForegroundLoad(fn) {
+  foregroundLoads++;
+  try { return await fn(); }
+  finally { foregroundLoads--; if (!foregroundLoads) pumpFolderPreloads(); }
+}
+async function runFolderMinimapAction(fn) {
+  fmActionBusy++;
+  try { return await fn(); }
+  finally { fmActionBusy--; syncFolderPreloads(); }
+}
+function folderPreloadParseOptions() {
+  const cores = (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 2;
+  return { maxWorkers: Math.max(1, Math.floor(cores / 2)), drainBatches: 2 };
+}
+function sameFolderWindow(a, b) {
+  return (!a && !b) || (!!a && !!b && a.from === b.from && a.to === b.to);
+}
+
+// Which recs of the shown folder should be preloading, with the window (or
+// null = full file) each wants.
+function desiredFolderPreloads(folder) {
+  const out = new Map();
+  for (const rec of resolveFolderMinimapTargets(folder)) {
+    if (rec.nodeId && state.nodes[rec.nodeId]) continue;
+    if (inlineViewableKind(rec.name)) continue;
+    const fmt = state.logFormats.find(f => f.id === resolveFormatIdForFilename(rec.name));
+    if (fmt && fmt.mode === "meta") continue;
+    out.set(folder.id + "|" + folderFileKey(rec), {
+      rec, win: fmSelectedWindow && rec._range ? { from: fmSelectedWindow.from, to: fmSelectedWindow.to } : null,
+    });
+  }
+  return out;
+}
+
+function syncFolderPreloads() {
+  if (fmActionBusy) return;
+  if (!folderPreloads.size && !state.folderView) return; // nothing to abort, nothing to start
+  const folder = state.folderView ? state.folders.find(f => f.id === state.folderView) : null;
+  const wanted = folder && fmFolderId === folder.id ? desiredFolderPreloads(folder) : new Map();
+  for (const [key, job] of [...folderPreloads]) {
+    const d = wanted.get(key);
+    if (!d) { abortFolderPreload(job); continue; }
+    if (job.effective === "full" || sameFolderWindow(job.win, d.win)) continue;
+    if (!job.started) { job.win = d.win; if (!d.win) job.effective = "full"; continue; } // not running yet: just retarget
+    abortFolderPreload(job); // window changed: a slice job restarts
+  }
+  for (const [key, d] of wanted) {
+    if (folderPreloads.has(key)) continue;
+    folderPreloads.set(key, { key, folder, rec: d.rec, win: d.win, effective: d.win ? null : "full",
+      started: false, aborted: false, node: null, promise: null });
+  }
+  pumpFolderPreloads();
+}
+
+function abortFolderPreload(job) {
+  job.aborted = true;
+  if (folderPreloads.get(job.key) === job) folderPreloads.delete(job.key);
+  if (job.node) deleteNode(job.node.id);
+  if (folderPreloadRunning === job) folderPreloadRunning = null;
+  pumpFolderPreloads();
+}
+
+// Starts the next queued job (selection order) when nothing else runs.
+function pumpFolderPreloads() {
+  if (folderPreloadRunning || foregroundLoads) return;
+  for (const job of folderPreloads.values()) {
+    if (job.started) continue;
+    startFolderPreload(job);
+    return;
+  }
+}
+
+function startFolderPreload(job) {
+  const { rec, folder } = job;
+  job.started = true;
+  folderPreloadRunning = job;
+  const node = job.node = {
+    id: uid("f"), type: "file", name: rec.name, parentId: null, children: [], entries: [],
+    cacheKey: newCacheKey(), folderId: folder.id, loadFraction: 0, preload: true,
+  };
+  if (openScrollPosition === "end") node._openScrollToEnd = true;
+  state.nodes[node.id] = node; // deliberately NOT in state.rootIds
+  const run = async () => {
+    if (job.win) {
+      const file = await getPartialReadFile(rec.handle);
+      if (folderWindowEligible(file, rec)) {
+        job.effective = "window";
+        return { ok: await parseFolderWindowInto(node, file, job.win.from, job.win.to) };
+      }
+      job.effective = "full";
+      return { res: await readParseFileNode(node, rec.name, canParseNatively(rec.handle) ? null : file, rec.handle, folderPreloadParseOptions()) };
+    }
+    const file = canParseNatively(rec.handle) ? null : await rec.handle.getFile();
+    return { res: await readParseFileNode(node, rec.name, file, rec.handle, folderPreloadParseOptions()) };
+  };
+  job.promise = run().catch(err => ({ err })).then(out => {
+    if (folderPreloadRunning === job) folderPreloadRunning = null;
+    pumpFolderPreloads();
+    return out;
+  });
+}
+
+// An action asks for rec's job. Always removes it from the map (synchronously,
+// before any await — no double adoption); returns it only when it can serve
+// the request: `win` null = a full load (needs a full job), else the exact
+// window ({from, to}) — a full job serves that too.
+function takeFolderPreload(folder, rec, win) {
+  const key = folder.id + "|" + folderFileKey(rec);
+  const job = folderPreloads.get(key);
+  if (!job) return null;
+  folderPreloads.delete(key);
+  const ok = job.started && !job.aborted && (job.effective === "full" ||
+    (job.effective === "window" && win && sameFolderWindow(job.win, win)));
+  if (!ok) { abortFolderPreload(job); return null; }
+  if (folderPreloadRunning === job) folderPreloadRunning = null;
+  return job;
+}
+
+// Makes an adopted job's hidden node a real, actively-loading tree row — what
+// createFileNode does at load start, but keeping the fraction reached so far.
+function activatePreloadNode(node) {
+  delete node.preload;
+  if (typeof node.loadFraction !== "number") node.loadFraction = 0;
+  state.rootIds.push(node.id);
+  state.folderView = null;
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress) { state.activeId = node.id; state.multiSelect = new Set(); }
+  flushLoadRender();
+}
+
 // Selection state for the currently-shown folder minimap — module-local,
 // like the log minimap's own drag state (minimapDragging etc.), reset
 // whenever a different folder is selected (see renderFolderMinimap).
@@ -31362,6 +31597,7 @@ function renderFolderMinimap(folder) {
 
   renderFolderMinimapSvg(folder, rows);
   updateFolderMinimapToolbar(rows);
+  syncFolderPreloads();
 }
 
 function renderFolderMinimapSvg(folder, rows) {
@@ -31564,7 +31800,8 @@ function finishFolderMinimapAction() {
 // Load each target file individually — no merge, no filter. The last one
 // loaded ends up active (same as opening several folder files by hand in
 // sequence — see loadFolderFile/createFileNode).
-async function folderMinimapLoadIndividually(folder) {
+function folderMinimapLoadIndividually(folder) { return runFolderMinimapAction(() => folderMinimapLoadIndividuallyImpl(folder)); }
+async function folderMinimapLoadIndividuallyImpl(folder) {
   const targets = resolveFolderMinimapTargets(folder);
   for (const rec of targets) await loadFolderFile(folder, rec);
   finishFolderMinimapAction();
@@ -31597,7 +31834,8 @@ async function loadFolderMergeSources(targets, mergeShell, load) {
 // drawn: this button means "everything, unfiltered". A dragged window here
 // only ever decided WHICH files are relevant, same as
 // resolveFolderMinimapTargets does for the other two actions.
-async function folderMinimapMergeFull(folder) {
+function folderMinimapMergeFull(folder) { return runFolderMinimapAction(() => folderMinimapMergeFullImpl(folder)); }
+async function folderMinimapMergeFullImpl(folder) {
   const targets = resolveFolderMinimapTargets(folder);
   // Merge shell created FIRST (person-requested this session), before any
   // target is even read — each source is tagged hidden the moment its own
@@ -31636,7 +31874,8 @@ async function folderMinimapMergeFull(folder) {
 // createTimeRangeFilterFromDrag makes for the log minimap's own drag-
 // select) — so the merge lands already filtered to what was drawn. Only
 // reachable when a window was actually drawn (see updateFolderMinimapToolbar).
-async function folderMinimapMergeWindow(folder) {
+function folderMinimapMergeWindow(folder) { return runFolderMinimapAction(() => folderMinimapMergeWindowImpl(folder)); }
+async function folderMinimapMergeWindowImpl(folder) {
   const win = fmSelectedWindow;
   if (!win) return;
   const targets = resolveFolderMinimapTargets(folder);

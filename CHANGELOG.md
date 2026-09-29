@@ -2,11 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
-- **feat: silent preload while the merge-on-load dialog is open (2026-09-29, person-requested)**
+- **feat: silent preload while the merge-on-load dialog is open and for the folder-minimap selection (2026-09-29, person-requested)**
   - Dropping/opening 2+ files now starts reading and parsing immediately, invisibly, while the "merge these files?" dialog is open (placeholders stay grayed, no render, no active-file change); the answer only decides merged vs. individual. After the answer the progress bar continues from the fraction reached.
   - `loadOneFileIntoTree` split into `readParseFileNode` + `finishLoadedFileNode` (+ `finishLoadProgress`), reusable by the planned folder-minimap preload. Errors, one-render-per-file and single-file/meta-format behavior unchanged.
+  - Folder minimap: the selection (bars, or a dragged window on mouse-up) is read+parsed in the background too, as hidden nodes (`state.nodes` only): only the selection diff is acted on (dropped files aborted and discarded, a slice job restarts on a window change), one job at a time, waiting for foreground loads, with fewer workers and a smaller main-thread drain budget (`parseOpts`, speculative parses only). Load/merge actions adopt matching jobs (a full job serves any action, a slice job an exact-window merge) and the progress bar continues from the job's fraction. `loadFolderFileWindowed` now shares its windowed read with the job (`parseFolderWindowInto`, `folderWindowEligible`, `completeWindowedFolderNode`).
   - Test runner fix: the summary/exit-code block sat mid-file so groups 325+ were not counted; moved to the end.
-  - **Tests**: new **Group 328**.
+  - **Tests**: new **Group 328** and **Group 329**.
 
 - **feat: tuple-style name lists for extraction column names (2026-09-29, person-requested)**
   - A name list directly before an equally long value list is paired by position (`deriveTupleNames`): `(xo, yo, zo): ([*:float] , [*:float], [*:float])` → `xo`, `yo`, `zo`. Brackets `()` `[]` `{}` `<>` or none, separators `, ; / |` or (bracketed name list only) plain spaces, connectors `:` `=` `->` `=>`. Count mismatch or mixed separators → the word-before rule as before.
