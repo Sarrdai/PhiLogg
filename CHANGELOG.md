@@ -2,6 +2,11 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: tree navigation reaches the rows under a merge's "Sources" node (2026-09-29, person-reported)**
+  - Alt+Arrow (and tree-focus arrows) could not step into an expanded "Sources" node: `flattenTreeIds` walked only `node.children`, which stays empty for Sources, so its source rows (hidden create-first sources and the nested copies of a manual merge's sources) were never nav stops. They are now listed right after Sources, with their own subtrees. A source listed twice keeps its occurrence (`lastTreeNav`), ← from a nested source goes back to Sources.
+  - Also fixed: with "Show Sources" off, the (not rendered) Sources node was still an invisible nav stop.
+  - **Tests**: new **Group 335**.
+
 - **feat: tree navigation stops on unloaded ZIP / folder entries (2026-09-29, person-requested, mockup variant B)**
   - `flattenTreeIds` lists every listed-but-not-loaded ZIP entry and watched-folder file as a cursor-only stop (virtual `unloadednav:` ids, like dir rows), so Alt+Arrow / tree-focus arrows no longer skip grayed entries. **Right** loads/opens it exactly like its double-click (`openUnloadedNavId`), **Left** goes to its dir row, Enter/Delete do nothing. **Shift** (Shift+Alt+Up/Down, Shift+Up/Down with tree focus) skips unloaded entries as before.
   - After a keyboard-started load the result is shown only if the cursor is still on that entry (`kbLoadNavIds`; the loading node stays a cursor stop meanwhile); navigating away means it finishes without taking over. Double-click behavior unchanged.
