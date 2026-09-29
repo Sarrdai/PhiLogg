@@ -2,6 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: find bar shows per-file hit counts (2026-09-29, person-requested, FEATURE_BACKLOG #30, mockup variant A)**
+  - With the find bar open, a valid query and 2+ loaded files, every file root row shows a `.tree-hit-badge` (before `.tree-count`) with the number of entries of the whole file matching the query (same test as the bar itself; `…` while counting, dimmed `0`). Click a badge (or the row of a file with hits) to activate that file and select its first hit; F3/arrows stay inside the current view. Read-only: no filter node, nothing persisted. Sidebar-collapsed fallback: `#findCount`'s tooltip lists `file: count` per line.
+  - Counted after the current-view scan, time-sliced with its own generation counter, cached per file (array identity + scanned length, tail appends count only the tail); badges updated in place, never via `renderTree()` from a scan tick. Details in `docs/ui-and-views.md` → "Cross-file hit counts".
+  - Fixed on the way: the find scan counted a temp-anchor row (selection carried over from another file, `_tempAnchor`) as a hit, so the counter could read one more than the real matches; such rows are now skipped.
+  - **Tests**: new **Group 328**.
+
 - **feat: tuple-style name lists for extraction column names (2026-09-29, person-requested)**
   - A name list directly before an equally long value list is paired by position (`deriveTupleNames`): `(xo, yo, zo): ([*:float] , [*:float], [*:float])` → `xo`, `yo`, `zo`. Brackets `()` `[]` `{}` `<>` or none, separators `, ; / |` or (bracketed name list only) plain spaces, connectors `:` `=` `->` `=>`. Count mismatch or mixed separators → the word-before rule as before.
   - Units per value (`[*:float]mm ,`) and group units (`(xo, yo) [mm]: (…)`, `(…) mm`, only-last-token unit on an unbracketed list) — a value's own unit wins. `extractUnitAfter` is now the single unit rule.
