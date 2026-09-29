@@ -2741,7 +2741,7 @@ await withApp(async (w, d, T) => {
   const copiedLines = copied.split("\n");
   // Leads with Index/t(ms) (t(ms)=0 on the first row — elapsed since itself),
   // then the two visible pattern columns; "name" (ignored) stays excluded.
-  assert(copiedLines[0] === "Index\tt (ms)\tvalue\tvalue 3", "copy-whole-table header includes only the visible columns' names, got " + JSON.stringify(copiedLines[0]));
+  assert(copiedLines[0] === "Index\tt (ms)\tid\tscore", "copy-whole-table header includes only the visible columns' names, got " + JSON.stringify(copiedLines[0]));
   assert(copiedLines[1] === "0\t0\t0\t0.5", "copy-whole-table body row includes only the visible columns' values (ignored 'name' column dropped), got " + JSON.stringify(copiedLines[1]));
 
   /* ---------- Edit mode pre-populates the preview from node.ignoredColumns ---------- */
@@ -2770,7 +2770,7 @@ await withApp(async (w, d, T) => {
   w.applyFhView("table");
   assert(w.computeColumnStats(0) === null, "computeColumnStats returns null for a currently-ignored column");
   const statsText = d.querySelector("#statsPanel").textContent;
-  assert(statsText.includes("value 3") && !statsText.includes("value:"), "stats bar shows the visible numeric column ('value 3'/score) but omits the ignored one ('value'/id), got " + JSON.stringify(statsText));
+  assert(statsText.includes("score:") && !statsText.includes("id:"), "stats bar shows the visible numeric column (score) but omits the ignored one (id), got " + JSON.stringify(statsText));
   // 3, not 1: the synthetic Index/t(ms) columns are always visible/plottable
   // too, alongside the one visible pattern column ("score") — "id" stays
   // excluded, ignored. Select every column and check how many of them the
@@ -4999,7 +4999,7 @@ await withApp(async (w, d, T) => {
   w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
   w.copyWholeExtractTable();
   const lines = copied.split("\n");
-  assert(lines[0] === "Index\tt (ms)\tvalue", "copy-whole-table header includes Index/t(ms) ahead of the pattern column, got " + JSON.stringify(lines[0]));
+  assert(lines[0] === "Index\tt (ms)\tn", "copy-whole-table header includes Index/t(ms) ahead of the pattern column, got " + JSON.stringify(lines[0]));
   assert(lines.includes("2\t3500\t9"), "copy-whole-table body includes a cumulative (not per-step) t(ms) value, got " + JSON.stringify(lines));
 
   /* ---------- Plot tab: Index is the default X axis on every extraction, a real column defaults for Y ---------- */
@@ -7398,7 +7398,7 @@ await withApp(async (w, d, T) => {
   let copied = null;
   w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
   w.copyWholeExtractTable();
-  assert(copied && copied.startsWith("Index\tt (ms)\tvalue") && copied.split("\n").length === 6,
+  assert(copied && copied.startsWith("Index\tt (ms)\tmessage") && copied.split("\n").length === 6,
     "copyWholeExtractTable still works when called directly (header + 5 data rows), got " + JSON.stringify(copied && copied.split("\n")[0]));
 });
 
@@ -17498,7 +17498,7 @@ await withApp(async (w, d, T) => {
   assert(dialog.classList.contains("hidden"), "Export closes the dialog");
   assert(saved !== null, "Export triggers a file save (fallback download, since jsdom has no showSaveFilePicker)");
   const lines = saved.text.split("\r\n");
-  assert(lines[0].split(";").includes("value") && lines[0].split(";").includes("value 2"), "exported CSV includes the header row with the configured ';' delimiter, got " + JSON.stringify(lines[0]));
+  assert(lines[0].split(";").includes("id") && lines[0].split(";").includes("score"), "exported CSV includes the header row with the configured ';' delimiter, got " + JSON.stringify(lines[0]));
   assert(lines.some(l => l.includes("0,5")) && lines.some(l => l.includes("1,5")), "exported CSV floats use the configured ',' decimal separator, got " + JSON.stringify(lines));
   assert(saved.name.endsWith(".csv"), "suggested filename ends in .csv");
 
@@ -17606,7 +17606,7 @@ await withApp(async (w, d, T) => {
   written = null;
   w.copyWholeExtractTable();
   const wholeHtml = await written["text/html"].text();
-  assert(wholeHtml.includes('x:num="27.7120"') && wholeHtml.includes("<td><b>value</b></td>"),
+  assert(wholeHtml.includes('x:num="27.7120"') && wholeHtml.includes("<td><b>score</b></td>"),
     "copyWholeExtractTable's HTML flavor also carries x:num on the numeric cell and a header row, got " + wholeHtml);
 
   // Falls back to the old writeText-only path when ClipboardItem is unavailable.
@@ -18427,7 +18427,7 @@ await withApp(async (w, d, T) => {
 
   const statsPanel = d.querySelector("#statsPanel");
   assert(statsPanel.style.display === "flex", "shown while on Table");
-  assert(d.querySelector("#extractStatsContent").textContent.includes("value"), "the chip content is rendered");
+  assert(d.querySelector("#extractStatsContent").textContent.includes("score"), "the chip content is rendered");
   assert(!d.querySelector("#tableToolbar").querySelector("#statsToggleTable"), "sanity: the old per-tab toggle button is gone from Table's toolbar");
 
   w.applyFhView("plot");
@@ -19625,7 +19625,7 @@ await withApp(async (w, d, T) => {
   const narrowedEntries = w.getEntries(timeNode.id);
   assert(narrowedEntries.length === 2, "sanity: the timerange filter narrowed to entries 1 and 2, got " + narrowedEntries.length);
   assert(T.extractRowsData.length === 2, "the extraction table built exactly the CHILD's own (narrowed) 2 rows, not the ancestor's 3");
-  assert(T.extractColumns.some(c => c.name === "value"), "the table's columns come from the ANCESTOR's pattern ([*:int]/[*:float])");
+  assert(T.extractColumns.some(c => c.name === "id"), "the table's columns come from the ANCESTOR's pattern ([*:int]/[*:float])");
   assert(T.extractRowsData[0].values[0] === "1", "row values are the ancestor's pattern applied to the child's own first (narrowed) entry, got " + JSON.stringify(T.extractRowsData.map(r => r.values[0])));
 
   section("173b. a filter under a LINK node does not inherit Table/Plot from further up, even past a real extraction node");
@@ -29662,7 +29662,7 @@ await withApp(async (w, d, T) => {
   input.value = "message [*:int]";
   fireInput(input, w);
   await sleep(200);
-  assert(d.querySelector(".filter-live-captures").textContent === "captures: value (int)", "a wildcard pattern lists its captures, got " + (d.querySelector(".filter-live-captures") || {}).textContent);
+  assert(d.querySelector(".filter-live-captures").textContent === "captures: message (int)", "a wildcard pattern lists its captures, got " + (d.querySelector(".filter-live-captures") || {}).textContent);
 
   // Highest level wins per bin: INFO, WARN and DEBUG hits sharing one
   // timestamp land in one bucket, which is drawn WARN.
@@ -34059,7 +34059,7 @@ await withApp(async (w, d, T) => {
   assert(vals.matches === l.pairs && vals.columns.length === 1, "an extraction under the link tabulates the paired temperature");
   const st = llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "1" }).result;
   assert(st.n === l.pairs && st.min <= st.p10 && st.p10 <= st.median && st.median <= st.p90 && st.p90 <= st.max, "value stats: ordered percentiles, got " + JSON.stringify(st));
-  assert(llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "value" }).result.n === st.n, "column by name");
+  assert(llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "temperature" }).result.n === st.n, "column by name");
   const unknownCol = llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "7" });
   assert(unknownCol.error && unknownCol.result.columns.length === 1, "unknown column → error + the column list");
   assert(llmRun(w, "get_value_stats", { nodeId: reached.nodeId }).error.includes("no extraction pattern"), "stats need an extraction");
@@ -36702,6 +36702,190 @@ if (SHARD) console.log("##SHARD " + JSON.stringify({ shard: SHARD[0], passed, fa
 // 2273 instead of 2915, no failure listed anywhere). Setting the code and
 // letting the event loop drain naturally cannot truncate.
 process.exitCode = failed ? 1 : 0;
+/* GROUP 325 — speaking extraction column names + units: the word before a
+   placeholder names the column, a short unit word after a float/int/hex
+   placeholder becomes col.unit, plot axis titles read "name [unit]". */
+group(325);
+await withApp(async (w, d, T) => {
+  section("325a. compileExtractPattern: derived names, stop words, dedupe, fallback, units");
+  const cols = pat => w.compileExtractPattern(pat).columns;
+  const sensors = cols("Sensor [*:word] temperature=[*:float] C pressure=[*:float] bar voltage=[*:float] V");
+  assert(sensors.map(c => c.name).join("|") === "Sensor|temperature|pressure|voltage", "sensors names, got " + sensors.map(c => c.name));
+  assert(sensors.map(c => c.unit || "").join("|") === "|C|bar|V", "sensors units, got " + sensors.map(c => c.unit));
+  const timing = cols("completed in [*:int]ms");
+  assert(timing[0].name === "completed" && timing[0].unit === "ms", "'in' is a stop word; unit glued to the token, got " + JSON.stringify(timing[0]));
+  assert(cols("Position update x=[*:float] y=[*:float] z=[*:float]").map(c => c.name).join() === "x,y,z", "x/y/z");
+  assert(cols("x=[*:float] x=[*:float]").map(c => c.name).join() === "x,x 2", "dedupe uses the derived base");
+  assert(cols("([*:int])")[0].name === "value" && cols("[*:int] items")[0].name === "value", "no word before -> value");
+  assert(cols("a ([*:int]) b=[*:int]").map(c => c.name).join() === "value,b", "'(' before a token -> value; later token still named");
+  assert(cols("[*] [*]").map(c => c.name).join() === "value,value 2", "fallback dedupes as before");
+  assert(cols("in [*:int]")[0].name === "value", "only stop words -> value");
+  assert(cols("took [*:time]")[0].unit === undefined && !("unit" in cols("took [*:time] s")[0]), "time gets no unit");
+  assert(!("unit" in cols("name=[*:word] abc")[0]), "word gets no unit");
+  assert(!("unit" in cols("v=[*:float] items")[0]), "a word longer than 4 chars is no unit");
+  assert(!("unit" in cols("v=[*:float] and more")[0]) && !("unit" in cols("v=[*:float] Not")[0]), "unit stop words (and, not, ...) are no unit, case-insensitive");
+  assert(cols("v=[*:float]%")[0].unit === "%" && cols("v=[*:float], next")[0].unit === undefined, "% unit; punctuation right after -> none");
+
+  section("325b. simulator sensors: chips, axis title, rename keeps the unit");
+  const [file] = LOGSIM.generateToStrings({ format: "default", scenarios: ["sensors"], entries: 60, seed: 3 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  const node = w.createFilterNode(f.id, "text", "Sensor [*:word] temperature=[*:float] C pressure=[*:float] bar voltage=[*:float] V");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  const chips = [...d.querySelectorAll("#extractPatternView .pattern-chip")];
+  assert(chips.length === 4 && chips[1].textContent.replace(/\s+/g, " ").includes("temperature C") && chips[0].textContent.includes("Sensor word"), "chips show name + unit/type, got " + chips.map(c => c.textContent));
+  assert(chips[1].title.includes("temperature") && chips[1].title.includes("float"), "tooltip keeps name + type");
+  w.applyFhView("plot");
+  const sel = (id, v) => { const e = d.querySelector(id); e.value = String(v); e.dispatchEvent(new w.Event("change", { bubbles: true })); };
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  sel("#plotXSelect", -1);
+  sel("#plotYSelectSingle", 1);
+  const titles = () => [...d.querySelectorAll("#plotSvg .plot-axis-title")].map(t => t.textContent.replace(/ \u25be$/, ""));
+  fireClick(d.querySelector('.plot-type-btn[data-type="line"]'), w);
+  const yItem = d.querySelector("#plotYList .plot-y-item input[data-col=\"1\"]").closest("label");
+  assert(yItem.textContent.trim() === "temperature C" && yItem.querySelector(".plot-y-unit").textContent === "C", "Y list: plain name + dim unit span, got " + yItem.textContent);
+  assert(w.getComputedStyle(yItem).textTransform === "none", "Y list label is not uppercased");
+  fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
+  assert(titles().includes("temperature [C]"), "Y axis title 'temperature [C]', got " + JSON.stringify(titles()));
+  assert(T.extractColumns.find(c => c.colIndex === 1).name === "temperature", "table/legend name stays plain");
+  w.renameColumn(node, 1, "Temp");
+  w.applyFhView("table"); w.applyFhView("plot");
+  assert(titles().includes("Temp [C]"), "rename changes the name only, unit stays, got " + JSON.stringify(titles()));
+});
+
+/* GROUP 326 — Plot tab role chips: badges per chart type, role menu
+   (setPlotColumnRole), sidebar sync, Table tab unchanged, menu survives a
+   re-render, clickable 2D axis titles. */
+group(326);
+await withApp(async (w, d, T) => {
+  const [file] = LOGSIM.generateToStrings({ format: "default", scenarios: ["sensors"], entries: 60, seed: 3 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  const node = w.createFilterNode(f.id, "text", "Sensor [*:word] temperature=[*:float] C pressure=[*:float] bar voltage=[*:float] V");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  const chip = ci => d.querySelector('#extractPatternView .pattern-chip[data-col="' + ci + '"]');
+  const badges = ci => [...chip(ci).querySelectorAll(".pattern-role")].map(b => b.textContent).join("");
+  const menu = () => d.querySelector("#plotRoleMenu");
+  const menuOpen = () => !!menu() && !menu().classList.contains("hidden");
+  const item = label => [...menu().querySelectorAll(".ctx-item")].find(i => i.textContent.replace(/^\u2713/, "").startsWith(label));
+  const pick = label => { const it = item(label); assert(it, "menu item '" + label + "' exists"); fireClick(it, w); };
+  const sel = (id, v) => { const e = d.querySelector(id); e.value = String(v); e.dispatchEvent(new w.Event("change", { bubbles: true })); };
+  const type = t => fireClick(d.querySelector('.plot-type-btn[data-type="' + t + '"]'), w);
+
+  section("326a. Table tab: no badges, no Row group, click still toggles ignore");
+  assert(!d.querySelector(".pattern-role") && !d.querySelector(".pattern-grp"), "no badges / Row group on the Table tab");
+  fireClick(chip(3), w);
+  assert(w.isColumnIgnored(node, 3), "click ignores the column in the Table tab");
+  fireClick(chip(3), w);
+  assert(!w.isColumnIgnored(node, 3), "click includes it again");
+  assert(!menuOpen(), "no role menu on the Table tab");
+
+  section("326b. Plot tab, line: Row group, badges, menu items");
+  w.applyFhView("plot");
+  type("line");
+  assert([...d.querySelectorAll(".pattern-grp")].map(g => g.textContent).join() === "Row,Message", "Row and Message labels");
+  assert(chip(-2) && chip(-1) && d.querySelector(".pattern-sep"), "Row chips for Index and t (ms) plus a separator");
+  assert(chip(-2).querySelector(".pattern-chip-num").textContent === "#" && chip(-1).querySelector(".pattern-chip-num").textContent === "t", "glyphs # and t");
+  assert(badges(-2) === "X" && badges(1) === "Y", "line default: Index = X, temperature = Y, got " + badges(-2) + "/" + badges(1));
+  assert(chip(2).querySelector(".pattern-role.empty").textContent === "+", "a plottable chip without role shows the dashed +");
+  assert(!chip(0).querySelector(".pattern-role"), "the word chip has no badge");
+  fireClick(chip(2), w);
+  assert(menuOpen() && menu().textContent.includes("pressure [bar]"), "click opens the role menu with the column header, got " + (menu() && menu().textContent));
+  assert(item("Color by").classList.contains("disabled"), "Color by is disabled on line");
+  assert(item("Z axis").classList.contains("disabled"), "Z axis is disabled on line");
+  assert(item("Not plotted").classList.contains("disabled"), "Not plotted disabled without a role");
+  pick("Y axis");
+  assert(!menuOpen(), "menu closed after choosing");
+  assert(T.plotConfig.yCols.includes(1) && T.plotConfig.yCols.includes(2), "Y (add/remove) adds pressure, got " + JSON.stringify(T.plotConfig.yCols));
+  assert(badges(2) === "Y", "badge follows");
+  assert(d.querySelector('#plotYList input[data-col="2"]').checked, "the sidebar Y list shows it too");
+  fireClick(chip(2), w);
+  assert(item("Y axis").textContent.includes("\u2713"), "Y axis has a check when active");
+  pick("Not plotted");
+  assert(!T.plotConfig.yCols.includes(2) && badges(2) === "+", "Not plotted removes it from Y");
+  fireClick(chip(-2), w);
+  assert(item("Not plotted").classList.contains("disabled"), "Not plotted disabled when X is the only role");
+  fireKeydown(d, w, "Escape");
+  assert(!menuOpen(), "Escape closes the menu");
+
+  section("326c. Plot tab, scatter: X / Color by via the menu, sidebar select follows, outside click closes");
+  type("scatter");
+  fireClick(chip(3), w);
+  pick("X axis");
+  assert(T.plotConfig.xCol === 3 && d.querySelector("#plotXSelect").value === "3", "X axis pick sets xCol and the sidebar select, got " + T.plotConfig.xCol + "/" + d.querySelector("#plotXSelect").value);
+  assert(badges(3) === "X", "badge X on voltage");
+  fireClick(chip(2), w);
+  pick("Color by");
+  assert(T.plotConfig.colorCol === 2 && badges(2) === "C", "Color by sets colorCol, badge C");
+  fireClick(chip(2), w);
+  assert(item("Color by").textContent.includes("\u2713"), "Color by is checked");
+  fireClick(d.body, w);
+  assert(!menuOpen(), "outside click closes the menu");
+  fireClick(chip(2), w);
+  pick("Y axis");
+  assert(T.plotConfig.yCols[0] === 2 && badges(2) === "YC" && !badges(1).includes("Y"), "scatter Y moves to the front (yCols[0]), got " + JSON.stringify(T.plotConfig.yCols));
+  // a sidebar change is reflected in the badges
+  sel("#plotYSelectSingle", 1);
+  assert(badges(1) === "Y" && badges(2) === "C", "sidebar Y select updates the badges, got " + badges(1) + "/" + badges(2));
+
+  section("326d. 3D and radar");
+  type("3d");
+  fireClick(chip(1), w);
+  pick("Z axis");
+  assert(T.plotConfig.zCol === 1 && badges(1).includes("Z"), "Z axis on 3d");
+  assert([-2, -1, 0, 1, 2, 3].map(badges).join("|").includes("X") , "3d has an X badge");
+  type("radar");
+  const cols = T.plotConfig.multiCols;
+  assert(cols.length >= 1 && badges(cols[0]) === "1", "radar: badge is the 1-based position in multiCols, got " + JSON.stringify(cols));
+  fireClick(chip(3), w);
+  assert(item("X axis").classList.contains("disabled"), "X axis disabled on radar");
+  const had = T.plotConfig.multiCols.includes(3);
+  pick(had ? "Remove from columns" : "Add to columns");
+  assert(T.plotConfig.multiCols.includes(3) === !had, "Add/Remove toggles multiCols");
+  assert(had ? badges(3) === "+" : /^\d+$/.test(badges(3)), "badge follows multiCols");
+  type("parallel");
+  fireClick(chip(3), w);
+  pick("Color by");
+  assert(T.plotConfig.colorCol === 3 && badges(3).includes("C"), "parallel supports Color by, got " + T.plotConfig.colorCol + " " + badges(2));
+
+  section("326e. Ignore column from the menu; menu survives a re-render (tail tick stand-in)");
+  type("line");
+  fireClick(chip(3), w);
+  pick("Ignore column");
+  assert(w.isColumnIgnored(node, 3) && !chip(3).querySelector(".pattern-role"), "ignored via menu, no badge on the ignored chip");
+  fireClick(chip(3), w);
+  assert(item("Include column") && menu().querySelectorAll(".ctx-item").length === 1, "ignored chip's menu holds only Include column");
+  pick("Include column");
+  assert(!w.isColumnIgnored(node, 3), "included again");
+  fireClick(chip(-1), w);
+  assert(!item("Ignore column") && !item("Include column"), "Row chips have no ignore item");
+  w.renderExtractTable(node);
+  assert(menuOpen(), "an open menu survives a renderExtractTable re-render");
+  assert(chip(-1) && badges(-2) === "X", "chips were rebuilt with badges");
+  w.applyFhView("table");
+  assert(!menuOpen(), "switching to the Table tab closes the menu");
+  assert(!d.querySelector(".pattern-role") && !d.querySelector(".pattern-grp"), "Table tab: badges and Row group gone again");
+
+  section("326f. 2D axis titles are clickable");
+  w.applyFhView("plot");
+  type("scatter");
+  sel("#plotXSelect", -1);
+  const xTitle = d.querySelector('#plotSvg .plot-axis-clickable[data-axis="x"]');
+  assert(xTitle && xTitle.textContent.includes("\u25be"), "the X title is clickable and carries a caret");
+  fireClick(xTitle, w);
+  assert(menuOpen() && menu().textContent.includes("temperature [C]"), "axis menu lists the columns with units");
+  pick("voltage");
+  assert(T.plotConfig.xCol === 3 && d.querySelector("#plotXSelect").value === "3", "axis menu pick changes xCol and the sidebar, got " + T.plotConfig.xCol + "/" + d.querySelector("#plotXSelect").value);
+  sel("#plotColorSelect", 2);
+  const cTitle = d.querySelector('#plotSvg .plot-axis-clickable[data-axis="color"]');
+  assert(cTitle, "the color-bar title is clickable");
+  fireClick(cTitle, w);
+  pick("None");
+  assert(T.plotConfig.colorCol === null, "None clears the color column");
+});
+
 })().catch(err => { console.error(err); process.exitCode = 1; });
 
 /* ============================================================
@@ -41154,4 +41338,12 @@ process.exitCode = failed ? 1 : 0;
       collapsing), first listed child, Sources node, Alt+Arrow variant, and
       watched-folder / ZIP subfolder rows as nav targets (dirnav ids, cursor,
       active style, click). Same session updated GROUP 36's arrow test.
+   Group 325 — 2026-09-29 (person-requested): speaking extraction column names
+      (word before the placeholder) + unit after float/int/hex, columnAxisLabel
+      in plot axis titles, chip text = name + unit/type. Same session updated the
+      tests that asserted `value`/`value N` names (GROUP 2/5/… copy/CSV/stats).
+   Group 326 — 2026-09-29 (person-requested): Plot tab role chips — Row group,
+      role badges per chart type, role menu + setPlotColumnRole, sidebar sync,
+      Table tab unchanged, menu survives re-render, clickable 2D axis titles.
+      Same session GROUP 325 strips the axis-title caret before comparing.
    ============================================================ */
