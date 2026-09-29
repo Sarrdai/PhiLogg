@@ -10959,7 +10959,7 @@ function updateMergeLoadFraction(mergeId) {
   let totalWeight = 0, doneWeight = 0;
   merge.loadSources.forEach(({ id, weight }) => {
     const src = state.nodes[id];
-    const frac = !src ? 1 : src.queued ? 0 : (typeof src.loadFraction === "number" ? src.loadFraction : 1);
+    const frac = !src ? 1 : src.queued ? (typeof src.loadFraction === "number" ? src.loadFraction : 0) : (typeof src.loadFraction === "number" ? src.loadFraction : 1);
     totalWeight += weight;
     doneWeight += weight * frac;
   });
@@ -11047,7 +11047,10 @@ function createQueuedFileNode(name) {
 // counterpart to createQueuedFileNode's "insert but don't activate".
 function activateQueuedFileNode(node) {
   delete node.queued;
-  node.loadFraction = 0;
+  // A placeholder whose read+parse already started silently (silent preload
+  // while the merge-on-load dialog was open) keeps its current fraction —
+  // the bar continues from there instead of jumping back to 0.
+  if (typeof node.loadFraction !== "number") node.loadFraction = 0;
   // NOT during a session/cache restore — same reasoning, and same guard, as
   // createFileNode's own (see its comment): restoreSessionFromCache now
   // routes every restored file through this same queued-placeholder path
@@ -29270,6 +29273,45 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
   if (existingNode) activateQueuedFileNode(node);
   node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
 
+  const fmt0 = state.logFormats.find(f => f.id === node.formatId);
+  if (fmt0 && fmt0.mode === "meta") {
+    // A meta-format file is fanned out into per-target virtual files and
+    // auto-merged instead of being parsed in place (loadMetaFormatText) —
+    // this placeholder node isn't the result, so it's discarded here. No
+    // live tail/localPath is wired for a meta-format file in v1 (see
+    // loadMetaFormatText's own comment).
+    deleteNode(node.id);
+    if (!file) file = await handle.getFile();
+    ({ file } = await gunzipFileIfCompressed(file, () => {}));
+    const text = await readFileWithProgress(file, () => {});
+    return await loadMetaFormatText(name, text, fmt0);
+  }
+  let res;
+  try {
+    res = await readParseFileNode(node, name, file, handle);
+  } catch (err) {
+    deleteNode(node.id); // reading/parsing failed — don't leave a permanently empty file behind
+    throw err;
+  } finally {
+    finishLoadProgress(node);
+  }
+  return await finishLoadedFileNode(node, res, handle);
+}
+
+// Read+parse phase of a file load, split out of loadOneFileIntoTree so it can
+// run on a node that is NOT (yet) the active, rendered file: the queued
+// placeholders of a multi-file batch parse while the merge-on-load dialog is
+// still open (see loadFileDescriptors). Everything here is guarded by
+// `state.nodes[node.id] === node`, so deleteNode(node.id) is a correct abort.
+// Progress goes into node.loadFraction (+ scheduleLoadRender) and is left in
+// place on success — the caller decides when it is finished
+// (finishLoadProgress) and owns the node's fate on failure (this function
+// never deletes it; it just rethrows). Returns { file, size, gzip } for
+// finishLoadedFileNode: the (possibly inflated) File, the bytes consumed and
+// whether the source was gzip. `file` may be null when canParseNatively(handle)
+// (see loadOneFileIntoTree). Not for meta-format files (the caller checks).
+async function readParseFileNode(node, name, file, handle) {
+  node.formatId = resolveFormatIdForFilename(name);
   // gzip (see "gzip-compressed logs" above): inflated right before the text
   // read, as the read phase's own progress — the text read of the in-memory
   // result is then near-instant. A gzip file never tails (see below). The
@@ -29282,20 +29324,6 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
       scheduleLoadRender(node.id);
     }));
   };
-
-  const fmt0 = state.logFormats.find(f => f.id === node.formatId);
-  if (fmt0 && fmt0.mode === "meta") {
-    // A meta-format file is fanned out into per-target virtual files and
-    // auto-merged instead of being parsed in place (loadMetaFormatText) —
-    // this placeholder node isn't the result, so it's discarded here. No
-    // live tail/localPath is wired for a meta-format file in v1 (see
-    // loadMetaFormatText's own comment).
-    deleteNode(node.id);
-    if (!file) file = await handle.getFile();
-    await inflate();
-    const text = await readFileWithProgress(file, () => {});
-    return await loadMetaFormatText(name, text, fmt0);
-  }
   // FEATURE_BACKLOG.md #52 ("Open File Location"): only resolvable at all
   // when a desktop wrapper exposes getPathForFile (window.philogg) — a
   // plain browser never exposes a File's real OS path (that's the whole
@@ -29308,42 +29336,48 @@ async function loadOneFileIntoTree(name, file, handle, folderId, existingNode) {
     if (resolvedPath) node.localPath = resolvedPath;
   }
   let size = file ? file.size : 0; // bytes consumed — where tailing picks up
-  try {
-    if (!file) {
-      try {
-        size = (await parseLocalFileNatively(handle[URL_TAIL_HANDLE], node, fraction => {
-          node.loadFraction = fraction;
-          scheduleLoadRender(node.id);
-        })).size;
-      } catch (err) {
-        // Not natively parseable (see parseLocalFileNatively) — the ordinary route.
-        file = await handle.getFile();
-        size = file.size;
-      }
-    }
-    if (file) {
-      await inflate();
-      const text = await readFileWithProgress(file, (loaded, total) => {
-        if (gzip) return; // the inflate above already drove the read share of the bar
-        node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
+  if (!file) {
+    try {
+      size = (await parseLocalFileNatively(handle[URL_TAIL_HANDLE], node, fraction => {
+        node.loadFraction = fraction;
         scheduleLoadRender(node.id);
-      });
-      await parseLogTextAsync(text, node, (done, total) => {
-        node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
-        scheduleLoadRender(node.id);
-      });
+      })).size;
+    } catch (err) {
+      // Not natively parseable (see parseLocalFileNatively) — the ordinary route.
+      file = await handle.getFile();
+      size = file.size;
     }
-  } catch (err) {
-    deleteNode(node.id); // reading/parsing failed — don't leave a permanently empty file behind
-    throw err;
-  } finally {
-    delete node.loadFraction;
-    // No render here: the caller renders once, after the history match and
-    // the tail below are in place too. It used to flushLoadRender() here AND
-    // the caller rendered again right after — two full renders per loaded
-    // file, each hundreds of ms on a large one.
-    if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
   }
+  if (file) {
+    await inflate();
+    const text = await readFileWithProgress(file, (loaded, total) => {
+      if (gzip) return; // the inflate above already drove the read share of the bar
+      node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
+      scheduleLoadRender(node.id);
+    });
+    await parseLogTextAsync(text, node, (done, total) => {
+      node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
+      scheduleLoadRender(node.id);
+    });
+  }
+  return { file, size, gzip };
+}
+
+// End of a load's progress: drops loadFraction and invalidates the node's
+// caches. No render here: the caller renders once, after the history match and
+// the tail (finishLoadedFileNode) are in place too. It used to flushLoadRender()
+// here AND the caller rendered again right after — two full renders per loaded
+// file, each hundreds of ms on a large one.
+function finishLoadProgress(node) {
+  delete node.loadFraction;
+  if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
+}
+
+// Finish phase after readParseFileNode succeeded, for a node that is really in
+// the tree: persistence, filter-history ghost, live tail. `res` is
+// readParseFileNode's result, `handle` the file handle (enables tailing).
+async function finishLoadedFileNode(node, res, handle) {
+  const { file, size, gzip } = res;
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
   // The session cache stores the File itself rather than rebuilding its text
   // (see fileCacheSource) — except for a ZIP entry, whose File is only an
@@ -29475,6 +29509,32 @@ async function loadFileDescriptors(descs) {
   });
   render();
 
+  // Silent preload (2+ files only — a single file has no dialog to overlap):
+  // read+parse starts NOW on the still-grayed placeholders, while the merge
+  // dialog is open. Nothing renders and state.activeId is untouched (the
+  // parsers only need the node to be in state.nodes); the answer merely
+  // decides presentation. A meta-format file fans out into per-target files
+  // instead of parsing in place, so it never preloads (null) and loads the
+  // normal way after the answer. Each entry settles to { res, handle } or
+  // { err } so a failure during the dialog is reported after the answer.
+  descs.forEach((d, i) => {
+    if (d.localPath) queuedNodes[i].localPath = d.localPath;
+    if (d.sourceUrl) queuedNodes[i].sourceUrl = d.sourceUrl;
+  });
+  const preloads = descs.map((desc, i) => {
+    if (descs.length < 2) return null;
+    const node = queuedNodes[i];
+    const fmt = state.logFormats.find(f => f.id === resolveFormatIdForFilename(node.name));
+    if (fmt && fmt.mode === "meta") return null;
+    return (async () => {
+      const { handle } = desc;
+      // A lazy descriptor (desc.openFile) is fetched here; a natively
+      // parseable one needs no fetch at all (see canParseNatively).
+      const file = desc.file || (canParseNatively(handle) ? null : await desc.openFile());
+      return { res: await readParseFileNode(node, file ? file.name : desc.name, file, handle) };
+    })().catch(err => ({ err }));
+  });
+
   const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;
 
   // Create the merge FIRST (person-requested this session), before any
@@ -29503,22 +29563,28 @@ async function loadFileDescriptors(descs) {
     const results = await Promise.all(descs.map(async (desc, i) => {
       const { handle } = desc;
       try {
-        // localPath/sourceUrl are set on the queued placeholder rather than
-        // passed down, because loadOneFileIntoTree reuses that very object
-        // (activateQueuedFileNode only clears .queued) — so they're already
-        // in place by the time it persists the node, with no extra
-        // parameter threaded through. Only a desktop wrapper that opened
-        // the file itself supplies them; see loadDesktopLocalFiles.
-        if (desc.localPath) queuedNodes[i].localPath = desc.localPath;
-        if (desc.sourceUrl) queuedNodes[i].sourceUrl = desc.sourceUrl;
+        // (localPath/sourceUrl were already set on the queued placeholder
+        // above, before the preload started — the node is reused as-is.)
         // A lazy descriptor (name + openFile) lets every queued placeholder
         // be rendered before the first byte is read — used by the desktop
         // route, where "reading" is a fetch of the wrapper's philogg://local
         // URL rather than an already-open File object.
         // ...unless the wrapper parses it natively, which needs no fetch at
         // all (see canParseNatively).
-        const file = desc.file || (canParseNatively(handle) ? null : await desc.openFile());
-        const node = await loadOneFileIntoTree(file ? file.name : desc.name, file, handle, null, queuedNodes[i]);
+        let node;
+        if (preloads[i]) {
+          // Adopt the silent preload: activate (keeps the fraction reached so
+          // far), wait for its read+parse, then the usual finish phase.
+          const qn = queuedNodes[i];
+          activateQueuedFileNode(qn);
+          const out = await preloads[i];
+          finishLoadProgress(qn);
+          if (out.err) throw out.err; // -> the catch below removes the placeholder and toasts
+          node = await finishLoadedFileNode(qn, out.res, handle);
+        } else {
+          const file = desc.file || (canParseNatively(handle) ? null : await desc.openFile());
+          node = await loadOneFileIntoTree(file ? file.name : desc.name, file, handle, null, queuedNodes[i]);
+        }
         render();
         needsFinalRender = false;
         return node.id;
