@@ -105,7 +105,9 @@ deployments possible:
   regex toggles use the same query language as a text filter. When a search
   turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
   into a real filter node — `Ctrl+F` still opens the filter popup directly.
-  Stays fast on views with hundreds of thousands of rows.
+  With two or more files open, every file in the tree also shows how many
+  entries of the whole file match; click a count to jump to that file's
+  first hit. Stays fast on views with hundreds of thousands of rows.
 - **Recent-filter suggestions** — the filter popup and the find bar offer a
   dropdown of recently used filters and searches (with their Regex/Match
   case/Whole word/NOT settings): pick with the arrow keys or the mouse, remove
