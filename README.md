@@ -53,8 +53,11 @@ deployments possible:
   parent, and the path down to the selected filter is highlighted, so the
   active chain reads straight off the tree. The Files & Filters sidebar has its own icon
   toolbar (same icon+hover-label style as the log view's own toolbars) with a
-  fixed set of buttons — Rename, Edit filter, Invert (NOT), Adjust clock and
-  Add to library — that enable or disable with the current selection. Selecting 2+
+  fixed set of buttons — Rename, Edit filter, Invert (NOT), Mute, Adjust clock and
+  Add to library — that enable or disable with the current selection.
+  **Mute** (eye button on the row, toolbar, right-click, or `M`) switches a filter
+  off without deleting it: it passes its parent's entries through unchanged, its
+  children keep working, and it stays in the tree struck through. Selecting 2+
   nodes swaps that row for the bulk actions on a highlighted bar: AND / OR /
   Link… over any number of filters of one file, or Merge N files (or a short
   hint when the selection can't be combined). It sits alongside the
@@ -103,6 +106,10 @@ deployments possible:
   turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
   into a real filter node — `Ctrl+F` still opens the filter popup directly.
   Stays fast on views with hundreds of thousands of rows.
+- **Recent-filter suggestions** — the filter popup and the find bar offer a
+  dropdown of recently used filters and searches (with their Regex/Match
+  case/Whole word/NOT settings): pick with the arrow keys or the mouse, remove
+  entries you don't want to see again.
 - **Patterns: a log's message shapes at a glance** — the **Patterns** tab
   (first in the view selector, `Ctrl+1`) groups the current filter result by message *shape*: numbers, GUIDs, IP
   addresses, paths, hex values and quoted strings become placeholders, so
