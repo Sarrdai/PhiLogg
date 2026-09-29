@@ -2580,7 +2580,7 @@
   .pattern-sep{display:inline-block; width:1px; height:14px; background:var(--border); margin:0 8px; vertical-align:middle;}
   .plot-axis-clickable{cursor:pointer;}
   .plot-axis-clickable:hover{fill:var(--accent-strong);}
-  .plot-axis-caret{opacity:.6;}
+  .plot-axis-caret{opacity:.6; font-size:9px; fill:var(--text-secondary);}
   #plotRoleMenu .ctx-item.disabled{color:var(--text-tertiary); cursor:not-allowed;}
   #plotRoleMenu .ctx-item.disabled:hover{background:none; color:var(--text-tertiary);}
   #plotRoleMenu .role-ck{width:14px; color:var(--accent); font-weight:800; flex:0 0 auto;}
@@ -20761,7 +20761,14 @@ function plotTypeIcon(type) {
 }
 
 // Trailing hint on a clickable 2D axis title (opens openPlotAxisMenu).
-const PLOT_AXIS_CARET = '<tspan class="plot-axis-caret"> \u25be</tspan>';
+// A separate <text> (not part of the title's own text) so the title's
+// textContent stays the plain axis label; the width is estimated.
+function plotAxisCaret(axis, x, y, label, anchor, transform) {
+  const w = label.length * 6;
+  const cx = anchor === "middle" ? x + w / 2 + 6 : x + w + 4;
+  return '<text class="plot-axis-clickable plot-axis-caret" data-axis="' + axis + '" x="' + cx.toFixed(1) + '" y="' + y + '" text-anchor="start"' +
+    (transform ? ' transform="' + transform + '"' : "") + ">\u25be</text>";
+}
 const PLOT_MARGIN = { left: 72, right: 20, top: 16, bottom: 52 };
 // How far zooming OUT / panning may go past the home view's own bounds, as a
 // fraction of the home span on EACH side (person-reported: a mark sitting
@@ -21038,10 +21045,12 @@ function renderPlotChart() {
   // one Y series — with several, the per-series legend below already names
   // each one by its own color, and one shared Y title couldn't describe
   // them all anyway.
-  parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="x" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.xCol))) + PLOT_AXIS_CARET + "</text>");
+  parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="x" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.xCol))) + "</text>");
+  parts.push(plotAxisCaret("x", left + plotW / 2, top + plotH + 34, columnAxisLabel(findExtractColumn(plotConfig.xCol)), "middle", ""));
   if (series.length === 1) {
     const yTitleX = 14, yTitleY = top + plotH / 2;
-    parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="y" x="' + yTitleX + '" y="' + yTitleY + '" text-anchor="middle" transform="rotate(-90 ' + yTitleX + ' ' + yTitleY + ')">' + escapeHtml(columnAxisLabel(findExtractColumn(series[0].col))) + PLOT_AXIS_CARET + "</text>");
+    parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="y" x="' + yTitleX + '" y="' + yTitleY + '" text-anchor="middle" transform="rotate(-90 ' + yTitleX + ' ' + yTitleY + ')">' + escapeHtml(columnAxisLabel(findExtractColumn(series[0].col))) + "</text>");
+    parts.push(plotAxisCaret("y", yTitleX, yTitleY, columnAxisLabel(findExtractColumn(series[0].col)), "middle", "rotate(-90 " + yTitleX + " " + yTitleY + ")"));
   }
 
   // Marks. A point/bar whose axis value fails its column's assertion (see
@@ -21113,7 +21122,8 @@ function renderPlotChart() {
     }
     parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + 4) + '">' + formatAxisNumber(scatterColorMax) + "</text>");
     parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH) + '">' + formatAxisNumber(scatterColorMin) + "</text>");
-    parts.push('<text class="plot-tick-label plot-axis-clickable" data-axis="color" x="' + (legendX + 16) + '" y="' + (legendTop + legendH / 2) + '" transform="rotate(0 0 0)">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.colorCol))) + PLOT_AXIS_CARET + "</text>");
+    parts.push('<text class="plot-tick-label plot-axis-clickable" data-axis="color" x="' + (legendX + 16) + '" y="' + (legendTop + legendH / 2) + '" transform="rotate(0 0 0)">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.colorCol))) + "</text>");
+    parts.push(plotAxisCaret("color", legendX + 16, legendTop + legendH / 2, columnAxisLabel(findExtractColumn(plotConfig.colorCol)), "start", ""));
   }
 
   // Legend for multi-series line/bar
