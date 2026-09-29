@@ -17108,6 +17108,9 @@ function navParentId(id) {
 
 function flattenTreeIds() {
   const ids = [];
+  // Index -> nav parent for rows whose Left target isn't navParentId(id): a
+  // source file nested under its merge's "Sources" node (see walk below).
+  ids.navParentAt = new Map();
   function walk(list) {
     list.forEach(id => {
       const node = state.nodes[id];
@@ -17116,6 +17119,24 @@ function flattenTreeIds() {
       // handler at all, so arrow-key nav must skip it too, or it could
       // land on a row with no visible "active" state and no real content.
       if (node && node.queued) return;
+      if (node && node.type === "filter" && node.filterType === "sources") {
+        // Not rendered at all while "Show Sources" is off (renderNode).
+        if (!showSourcesSetting) return;
+        ids.push(id);
+        // Its nested rows are the owning merged file's `sources` (node.children
+        // stays empty) — each a real file node with its own subtree, rendered
+        // here even when it also has a top-level row (a manual merge's still
+        // visible sources), so such a node is listed twice: moveTreeSelection
+        // tracks which occurrence the cursor is on (lastTreeNav).
+        const owner = state.nodes[node.parentId];
+        if (!node.collapsed && owner) (owner.sources || []).forEach(src => {
+          const sn = state.nodes[src.id];
+          if (!sn || sn.queued) return;
+          ids.navParentAt.set(ids.length, id);
+          walk([src.id]);
+        });
+        return;
+      }
       ids.push(id);
       // node.collapsed hides real children the normal way — same rule
       // renderNode's own row-recursion follows.
@@ -17194,8 +17215,8 @@ function flattenTreeIds() {
   });
   // Main tree (#tree): zip/folder files are listed in their containers above;
   // a source hidden under its merge's "Sources" node (mergeOwnerId +
-  // mergeSourceHidden) is not nav-reachable at all — no row of its own here,
-  // mouse click only under Sources (same precedent as the .queued skip).
+  // mergeSourceHidden) has no top-level row — it is listed only nested under
+  // that Sources node (see walk above).
   walk(state.rootIds.filter(id => {
     const node = state.nodes[id];
     return !(node && (node.zipId || node.folderId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node)));
@@ -17257,6 +17278,22 @@ function applyTempAnchorOnActiveNodeSwitch(nodeId) {
   if (state.tempAnchor && tempAnchorMode === "fade") scheduleTempAnchorFade();
 }
 
+// Which occurrence (nth) of its id the last keyboard move landed on. A merge's
+// visible source is listed twice (top level + under "Sources"), so the id
+// alone doesn't say which of its rows the cursor is on. An ordinal, not an
+// index: expanding/collapsing rows above shifts indexes.
+let lastTreeNav = null;
+function navOccurrenceIndex(ids, id, nth) {
+  for (let i = 0; i < ids.length; i++) if (ids[i] === id && nth-- === 0) return i;
+  return -1;
+}
+// Occurrence of `id` in `ids` nearest to `from`, looking only forward (dir 1)
+// or backward (dir -1); -1 if none.
+function nearestNavIndex(ids, id, from, dir) {
+  for (let i = from + dir; i >= 0 && i < ids.length; i += dir) if (ids[i] === id) return i;
+  return -1;
+}
+
 // opts.skipUnloaded (Shift held): Up/Down step over unloaded entries (and the
 // entries being loaded from the keyboard); dir rows stay stops.
 function moveTreeSelection(key, opts) {
@@ -17275,9 +17312,10 @@ function moveTreeSelection(key, opts) {
       ? viewerNavId(state.inlineViewer.ownerKind, state.inlineViewer.ownerId, state.inlineViewer.mapKey)
       : state.activeId;
 
-  let targetId = null;
+  const hinted = lastTreeNav && lastTreeNav.id === currentId ? navOccurrenceIndex(ids, currentId, lastTreeNav.nth) : -1;
+  const idx = hinted >= 0 ? hinted : ids.indexOf(currentId);
+  let targetId = null, targetIdx = -1;
   if (key === "ArrowDown" || key === "ArrowUp") {
-    const idx = ids.indexOf(currentId);
     const delta = key === "ArrowDown" ? 1 : -1;
     let nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
     if (skipUnloaded) {
@@ -17285,6 +17323,7 @@ function moveTreeSelection(key, opts) {
       if (nextIdx < 0 || nextIdx >= ids.length) nextIdx = idx; // only unloaded entries left in that direction: stay
     }
     targetId = ids[nextIdx];
+    targetIdx = nextIdx;
   } else if (key === "ArrowLeft" || key === "ArrowRight") {
     // Explorer/VS Code model. Right: collapsed -> expand, expanded -> first
     // listed child, leaf -> nothing. Left: expanded -> collapse, else -> the
@@ -17309,7 +17348,7 @@ function moveTreeSelection(key, opts) {
       const set = expandedDirsOf(owner);
       collapsible = true; collapsed = !set.has(p.path);
       toggle = () => { if (collapsed) set.add(p.path); else set.delete(p.path); };
-      const next = ids[ids.indexOf(currentId) + 1];
+      const next = ids[idx + 1];
       firstChild = next && navParentId(next) === currentId ? next : null;
     } else if (isViewerNavId(currentId)) {
       const p = parseViewerNavId(currentId);
@@ -17322,9 +17361,8 @@ function moveTreeSelection(key, opts) {
       collapsed = !!node.collapsed;
       toggle = () => { node.collapsed = !node.collapsed; };
       if (isSources) {
-        const owner = state.nodes[node.parentId];
-        const first = owner && (owner.sources || []).find(src => state.nodes[src.id] && !state.nodes[src.id].queued);
-        firstChild = first ? first.id : null;
+        // flattenTreeIds lists an expanded Sources node's sources right after it.
+        firstChild = idx >= 0 && ids.navParentAt.get(idx + 1) === currentId ? ids[idx + 1] : null;
       } else {
         const listed = new Set(ids);
         firstChild = node.children.find(cid => listed.has(cid)) || null;
@@ -17333,12 +17371,18 @@ function moveTreeSelection(key, opts) {
     if (key === "ArrowRight") {
       if (collapsible && collapsed) { toggle(); render(); return; }
       targetId = firstChild;
+      if (targetId) targetIdx = nearestNavIndex(ids, targetId, idx, 1);
     } else {
       if (collapsible && !collapsed) { toggle(); render(); return; }
-      targetId = navParentId(currentId);
+      // A source nested under "Sources" goes back to that Sources node, not to
+      // its own (top-level) parent.
+      targetId = (idx >= 0 && ids.navParentAt.get(idx)) || navParentId(currentId);
+      if (targetId) targetIdx = nearestNavIndex(ids, targetId, idx, -1);
     }
   }
   if (!targetId) return;
+  if (targetIdx < 0) targetIdx = ids.indexOf(targetId);
+  lastTreeNav = { id: targetId, nth: ids.slice(0, targetIdx).filter(x => x === targetId).length };
 
   // A dir row / unloaded entry is a cursor position only — the main view
   // (activeId, viewer) stays as it is.
