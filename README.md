@@ -141,7 +141,9 @@ deployments possible:
   filter, whether with `Alt+Arrow` or a plain mouse click in "Files &
   Filters", never takes keyboard focus off the log view you're reading, so
   arrow keys keep navigating log rows right afterward; `Alt+Arrow` also
-  peeks a collapsed panel open (`Ctrl+0` does the same peek). `Alt+Enter`
+  peeks a collapsed panel open (`Ctrl+0` does the same peek). The arrows
+  also stop on not-yet-loaded (grayed) ZIP entries and watched-folder files —
+  `Right` loads one, `Shift` skips them. `Alt+Enter`
   opens "Filter for this message" for the selected row directly. Switching
   filters while the selected row doesn't match the new one shows it at its
   would-be position as a temporary anchor instead of losing it — Settings →
