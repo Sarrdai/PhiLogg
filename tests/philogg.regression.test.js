@@ -36495,7 +36495,7 @@ await withApp(async (w, d, T) => {
    parent WITHOUT collapsing it, top level no-op. Also for every collapsible
    element: the "Sources" node (nodeHasCollapsibleChildren, shared with the
    chevron) and the subfolder rows of watched folders / ZIPs (virtual
-   "dirnav:" ids in flattenTreeIds, state.treeCursorDir cursor with the
+   "dirnav:" ids in flattenTreeIds, state.treeCursor cursor with the
    active row style, click toggles + puts the cursor there).
    ============================================================ */
 group(324);
@@ -36589,8 +36589,8 @@ await withApp(async (w, d, T) => {
   T.state.activeId = other.id; T.state.focusRegion = "tree"; w.render();
   const key = k => fireKeydown(d, w, k);
   const subId = w.dirNavId("folder", folder.id, "sub"), deeperId = w.dirNavId("folder", folder.id, "sub/deeper");
-  const cursor = () => w.dirCursorId();
-  const activeDirLabels = () => [...d.querySelectorAll("#folderWatchList .tree-dir-row.active .tree-label")].map(l => l.textContent).join(",");
+  const cursor = () => w.treeCursorId();
+  const activeDirLabels = () => [...d.querySelectorAll("#folderWatchList .tree-dir-row.tree-cursor .tree-label")].map(l => l.textContent).join(",");
 
   let ids = w.flattenTreeIds();
   assert(ids.includes(subId) && !ids.includes(deeperId), "collapsed: the top dir row is listed, its child dir is not");
@@ -36616,9 +36616,12 @@ await withApp(async (w, d, T) => {
   key("ArrowLeft");
   assert(cursor() === subId, "Left on a collapsed top-level dir is a no-op");
   const afterSub = w.flattenTreeIds()[w.flattenTreeIds().indexOf(subId) + 1];
+  assert(w.isUnloadedNavId(afterSub), "the entry after the collapsed dir is the unloaded Root.log stop (GROUP 329)");
   key("ArrowDown");
-  assert(cursor() === null && T.state.activeId === afterSub, "Down leaves the dir row for the next node, which clears the cursor");
+  assert(cursor() === afterSub, "Down leaves the dir row for the next stop (the unloaded entry keeps the cursor)");
   assert(activeDirLabels() === "", "no dir row is highlighted any more");
+  key("ArrowDown");
+  assert(cursor() === null && T.state.activeId === w.flattenTreeIds()[w.flattenTreeIds().indexOf(afterSub) + 1], "Down onto a real node clears the cursor");
 
   // Open a nested file; it must sit under its dir in the nav order.
   folder.expandedDirs.add("sub"); folder.expandedDirs.add("sub/deeper"); w.render();
@@ -36627,8 +36630,8 @@ await withApp(async (w, d, T) => {
   w.render();
   ids = w.flattenTreeIds();
   const i = id => ids.indexOf(id);
-  assert(i(subId) > -1 && i(deeperId) === i(subId) + 1 && i(nestedRec.nodeId) === i(deeperId) + 1,
-    "order under an expanded dir: dir row, nested dir row, then its files (the opened Nested.log)");
+  assert(i(subId) > -1 && i(deeperId) === i(subId) + 1 && i(nestedRec.nodeId) === i(deeperId) + 2,
+    "order under an expanded dir: dir row, nested dir row (+ its unloaded Deep.log), then the opened Nested.log");
   assert(w.navParentId(nestedRec.nodeId) === subId && w.navParentId(deeperId) === subId, "the opened file's and the nested dir's parent is the dir row");
   T.state.activeId = nestedRec.nodeId; T.state.focusRegion = "tree"; w.render();
   key("ArrowLeft");
@@ -36636,6 +36639,8 @@ await withApp(async (w, d, T) => {
   assert(activeDirLabels() === "sub", "dir row highlighted");
   key("ArrowDown");
   assert(cursor() === deeperId, "Down from a dir row steps to the next nav entry");
+  key("ArrowDown");
+  assert(w.isUnloadedNavId(cursor()), "Down from the nested dir row lands on its unloaded Deep.log (cursor-only)");
   key("ArrowDown");
   assert(cursor() === null && T.state.activeId === nestedRec.nodeId, "Down onto a real node makes it the selection again (cursor cleared)");
 
@@ -36684,22 +36689,376 @@ await withApp(async (w, d, T) => {
   const key = k => fireKeydown(d, w, k);
   T.state.focusRegion = "tree";
   let ids = w.flattenTreeIds();
-  assert(ids.join("|") === subId, "only the collapsed top dir row is listed (unopened rows are not navigable), got " + ids.join("|"));
+  const topId = w.unloadedNavId("zip", zip.id, "top.log"), appId = w.unloadedNavId("zip", zip.id, "sub/app.log");
+  assert(ids.join("|") === subId + "|" + topId, "the collapsed top dir row, then the unloaded top.log stop (GROUP 329), got " + ids.join("|"));
   key("ArrowDown");
-  assert(w.dirCursorId() === subId, "Down reaches the ZIP dir row when nothing else is in the list");
+  assert(w.treeCursorId() === subId, "Down reaches the ZIP dir row when nothing else is in the list");
   key("ArrowRight");
   assert(zip.expandedDirs.has("sub"), "Right expands the ZIP dir");
   ids = w.flattenTreeIds();
-  assert(ids.join("|") === subId + "|" + innerId, "expanded: the nested dir row follows, got " + ids.join("|"));
+  assert(ids.join("|") === subId + "|" + innerId + "|" + appId + "|" + topId, "expanded: the nested dir row, then the dir's unloaded entries follow, got " + ids.join("|"));
   key("ArrowRight");
-  assert(w.dirCursorId() === innerId, "Right enters the nested dir row (first listed child)");
+  assert(w.treeCursorId() === innerId, "Right enters the nested dir row (first listed child)");
   key("ArrowRight");
-  assert(w.dirCursorId() === innerId && zip.expandedDirs.has("sub/inner"), "Right on the collapsed nested dir expands it");
+  assert(w.treeCursorId() === innerId && zip.expandedDirs.has("sub/inner"), "Right on the collapsed nested dir expands it");
   key("ArrowRight");
-  assert(w.dirCursorId() === innerId, "Right on an expanded dir with no listed children (only unopened rows) is a no-op");
+  assert(w.isUnloadedNavId(w.treeCursorId()) && w.navParentId(w.treeCursorId()) === innerId, "Right on an expanded dir steps to its first listed child (its unloaded deep.log)");
+  key("ArrowLeft");
+  assert(w.treeCursorId() === innerId && zip.expandedDirs.has("sub/inner"), "Left on the unloaded entry goes to its dir row (no collapsing)");
   key("ArrowLeft"); key("ArrowLeft");
-  assert(w.dirCursorId() === subId, "Left, Left: collapse the nested dir, then go to the parent dir row");
+  assert(w.treeCursorId() === subId, "Left, Left: collapse the nested dir, then go to the parent dir row");
 });
+
+/* GROUP 328 — Find bar: cross-file hit counts (FEATURE_BACKLOG #30)
+   With the find bar open, a valid query and 2+ loaded files, every file root
+   row shows a .tree-hit-badge with the WHOLE file's match count (same test as
+   the bar's own counter); clicking it jumps to that file's first hit.
+   Data: log-sim "basic" scenario, two seeds. */
+group(328);
+await withApp(async (w, d, T) => {
+  const gen = seed => LOGSIM.generateToStrings({ format: "default", scenarios: ["basic"], entries: 400, seed })[0];
+  const A = gen(21), B = gen(22);
+  const cnt = (text, pred) => text.split("\n").filter(Boolean).filter(pred).length;
+  const ci = word => text => cnt(text, l => l.toLowerCase().includes(word.toLowerCase()));
+  const cs = word => text => cnt(text, l => l.includes(word));
+  const fa = await w.addFile("a.log", A.text, () => {});
+  const fb = await w.addFile("b.log", B.text, () => {});
+  const fbs = d.createElement("script");
+  fbs.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fbs);
+  const bar = d.getElementById("findBar"), input = d.getElementById("findInput"), count = d.getElementById("findCount");
+  const badge = id => d.querySelector('#tree .tree-row[data-node-id="' + id + '"] > .tree-hit-badge');
+  const allBadges = () => d.querySelectorAll("#tree .tree-hit-badge").length;
+  const type = async q => { input.value = q; fireInput(input, w); await sleep(250); };
+  const settle = async () => { for (let i = 0; i < 40; i++) { await sleep(20); if ([fa, fb].every(f => { const b = badge(f.id); return !b || !b.classList.contains("pending"); })) break; } };
+  T.state.activeId = fa.id;
+  w.render();
+
+  section("328a. Badges on every file root, whole-file counts (even under a narrowing filter)");
+  fireKeydown(d, w, "g", { ctrlKey: true });
+  await type("heartbeat");
+  await settle();
+  assert(badge(fa.id) && badge(fb.id), "both file roots show a badge");
+  assert(badge(fa.id).textContent === String(ci("heartbeat")(A.text)) && badge(fb.id).textContent === String(ci("heartbeat")(B.text)),
+    "counts are the whole files' matches: " + badge(fa.id).textContent + "/" + badge(fb.id).textContent);
+  assert(badge(fa.id).nextElementSibling.classList.contains("tree-count"), "the badge sits directly before .tree-count");
+  assert(/matches for "heartbeat" in the whole file/.test(badge(fa.id).title), "title text, got " + badge(fa.id).title);
+  assert(count.title === "a.log: " + ci("heartbeat")(A.text) + "\nb.log: " + ci("heartbeat")(B.text), "#findCount title lists per-file counts, got " + JSON.stringify(count.title));
+  const nodes0 = Object.keys(T.state.nodes).length;
+  const warn = w.createFilterNode(fa.id, "text", "WARN");
+  T.state.activeId = warn.id;
+  w.render();
+  await settle();
+  assert(count.textContent !== "" && badge(fa.id).textContent === String(ci("heartbeat")(A.text)),
+    "with a narrowing filter active, the file badge still counts the whole file");
+  assert(Object.keys(T.state.nodes).length === nodes0 + 1, "the find created no node (only the test's own filter)");
+
+  section("328b. Aa changes counts; 0 is dimmed; no badge cases");
+  fireClick(d.getElementById("findCaseBtn"), w);
+  await settle();
+  input.value = "HEARTBEAT"; fireInput(input, w); await sleep(250); await settle();
+  assert(badge(fa.id).classList.contains("zero") && badge(fa.id).textContent === "0" && /No matches for "HEARTBEAT" in this file/.test(badge(fa.id).title),
+    "case-sensitive 'HEARTBEAT': 0, class zero");
+  input.value = "Heartbeat"; fireInput(input, w); await sleep(250); await settle();
+  assert(badge(fa.id).textContent === String(cs("Heartbeat")(A.text)) && !badge(fa.id).classList.contains("zero"), "Aa on: 'Heartbeat' matches exactly the capitalized lines");
+  fireClick(d.getElementById("findCaseBtn"), w);
+  await settle();
+  input.value = "("; fireInput(input, w); await sleep(250);
+  fireClick(d.getElementById("findRegexBtn"), w);
+  await sleep(50);
+  assert(allBadges() === 0 && !count.hasAttribute("title"), "invalid regex: no badges, no counter title");
+  fireClick(d.getElementById("findRegexBtn"), w);
+  input.value = ""; fireInput(input, w); await sleep(250);
+  assert(allBadges() === 0, "empty query: no badges");
+
+  section("328c. Click a badge: activates that file and selects its first hit");
+  input.value = "retry"; fireInput(input, w); await sleep(250); await settle();
+  T.state.activeId = fa.id; w.render(); await settle();
+  const b0 = badge(fb.id);
+  assert(b0 && !b0.classList.contains("zero"), "file b has hits for 'retry'");
+  fireClick(b0, w);
+  await sleep(60);
+  assert(T.state.activeId === fb.id, "the click activated file b");
+  const firstHit = fb.entries.find(e => /retry/i.test(e.message || "")) ;
+  assert(firstHit && T.state.selectedId === firstHit.id, "…and selected its first hit");
+  assert(/^1 \/ /.test(count.textContent), "counter reads 1 / m, got " + count.textContent);
+  fireClick(badge(fb.id), w); // active file: no re-activation, jumps to the first hit again
+  assert(T.state.selectedId === firstHit.id, "badge click on the active file selects the first hit");
+  T.state.activeId = fa.id; w.render(); await settle();
+  const row = d.querySelector('#tree .tree-row[data-node-id="' + fb.id + '"]');
+  fireClick(row.querySelector(".tree-label"), w);
+  await sleep(60);
+  assert(T.state.activeId === fb.id && T.state.selectedId === firstHit.id, "a click on the file row itself also lands on the first hit");
+
+  section("328c2. A temp-anchor row (selection from another file) is never counted as a hit");
+  // Selection is on a 'retry' hit in file b; switching to file a splices it into a's view.
+  assert(T.state.activeId === fb.id && /retry/i.test(fb.entries.find(e => e.id === T.state.selectedId).message || ""), "sanity: selection is a matching hit of file b");
+  const aBadgeN = Number(badge(fa.id).textContent);
+  fireClick(badge(fa.id), w);
+  await sleep(60);
+  assert(T.state.activeId === fa.id && T.currentViewEntries.some(e => e._tempAnchor), "sanity: b's selected entry is spliced into a's view as a temp anchor");
+  assert(count.textContent === "1 / " + aBadgeN, "counter total equals a's badge count (" + aBadgeN + "), got " + count.textContent);
+  assert(!T.currentViewEntries.some((e, i) => e._tempAnchor && w.__find.state.hits.includes(i)), "no hit index points at the _tempAnchor row");
+  // Same file: a matching anchor row (excluded by the active filter) isn't counted either.
+  const inA = fa.entries.find(e => /retry/i.test(e.message || ""));
+  const narrow = w.createFilterNode(fa.id, "text", "Queue depth");
+  w.render();
+  w.selectEntry(inA.id);
+  fireClick(d.querySelector('#tree .tree-row[data-node-id="' + narrow.id + '"]'), w);
+  await sleep(60);
+  assert(T.currentViewEntries.some(e => e._tempAnchor && e.id === inA.id), "sanity: the matching entry is spliced in as a temp anchor");
+  assert(w.__find.state.hits.length === 0 && count.textContent === "No results", "the anchor row is not counted, got " + count.textContent);
+  w.deleteFilterNodeWithUndo(narrow.id);
+  T.state.activeId = fa.id; w.render(); await settle();
+
+  section("328d. renderTree keeps badges; tail append updates; closing a file removes; single file: none");
+  w.renderTree();
+  assert(badge(fa.id) && badge(fb.id), "renderTree() keeps the badges");
+  const before = Number(badge(fa.id).textContent);
+  fa.tail = { pending: "" };
+  const extra = LOGSIM.generateToStrings({ format: "default", scenarios: ["basic"], entries: 100, seed: 23 })[0].text;
+  const oldLen = fa.entries.length;
+  w.appendTailText(fa, extra);
+  delete fa.tail; // only borrowed for appendTailText; no real tail to poll
+  w.render();
+  await settle();
+  await sleep(50);
+  assert(fa.entries.length > oldLen && Number(badge(fa.id).textContent) === before + cnt(extra, l => l.toLowerCase().includes("retry")),
+    "a tail append counts the new tail, got " + badge(fa.id).textContent);
+  w.deleteFilterNodeWithUndo(fb.id);
+  w.render();
+  await sleep(50);
+  assert(allBadges() === 0, "one file left: no badge at all");
+  assert(!count.hasAttribute("title"), "…and no counter title");
+
+  section("328e. Closing the bar removes badges");
+  await w.addFile("c.log", gen(24).text, () => {});
+  w.render(); await settle();
+  assert(allBadges() === 2, "two files again: badges back");
+  fireKeydown(d, w, "Escape");
+  assert(!isVisible(bar, w) && allBadges() === 0, "Esc closes the bar and drops every badge");
+});
+
+/* ============================================================
+   GROUP 329 — tree navigation stops on unloaded (grayed) ZIP / folder entries
+   Origin: 2026-09-29 (person-requested). flattenTreeIds lists every listed,
+   not-yet-loaded entry as a cursor-only "unloadednav:" stop (like a dir row):
+   Up/Down/Alt+Up/Down land on it without touching the main view; Shift (Alt+
+   Shift+Up/Down, Shift+Up/Down with tree focus) skips them; Right loads/opens
+   it exactly like its double-click and shows the result only if the cursor is
+   still there; Left goes to the dir row; cursor look = dashed .tree-cursor
+   (also for dir rows) + "→ load" badge; a click puts the cursor there.
+   ============================================================ */
+group(329);
+{
+  // Hand-built stored ZIP (fixture tooling only, like GROUP 199 / 324f).
+  const storedZip = (entries) => {
+    let offset = 0; const local = [], central = [];
+    for (const e of entries) {
+      const nameBuf = Buffer.from(e.name, "utf8"), data = Buffer.from(e.data, "utf8");
+      const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4);
+      lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+      const rec = Buffer.concat([lh, nameBuf, data]);
+      const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+      ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+      local.push(rec); central.push(Buffer.concat([ch, nameBuf])); offset += rec.length;
+    }
+    const L = Buffer.concat(local), C = Buffer.concat(central), eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+    eocd.writeUInt32LE(C.length, 12); eocd.writeUInt32LE(L.length, 16);
+    return Buffer.concat([L, C, eocd]);
+  };
+  const zipFixture = () => storedZip([
+    { name: "sub/deep.log", data: makeLog(0, 3) },
+    { name: "a.log", data: makeLog(0, 4) },
+    { name: "c.log", data: makeLog(1, 4) },
+    { name: "notes.txt", data: "hello notes" },
+  ]);
+
+  await withApp(async (w, d, T) => {
+    section("329a. ZIP: Alt+Up/Down stops on unloaded entries (cursor-only), main view unchanged, cursor look");
+    const zip = await w.openZipSource(new w.File([zipFixture()], "logs.zip"), "logs.zip");
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "entries"; w.render();
+    const subId = w.dirNavId("zip", zip.id, "sub");
+    const U = n => w.unloadedNavId("zip", zip.id, n);
+    assert(w.flattenTreeIds().join("|") === [subId, U("a.log"), U("c.log"), U("notes.txt"), plain.id].join("|"),
+      "flatten: dir row, the unloaded entries in listing order, then the main tree, got " + w.flattenTreeIds().join("|"));
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    key("ArrowUp", { altKey: true });
+    assert(w.treeCursorId() === U("notes.txt"), "Alt+Up from a loaded node lands on the unloaded entry above");
+    assert(T.state.activeId === plain.id && !T.state.inlineViewer, "...without changing activeId / the main view");
+    assert(T.state.focusRegion === "entries", "Alt+Arrow leaves focusRegion alone");
+    const cur = [...d.querySelectorAll("#zipList .tree-cursor")];
+    assert(cur.length === 1 && cur[0].classList.contains("zip-source-file") && !cur[0].classList.contains("active"), "exactly one cursor row (dashed class, not .active)");
+    const badge = cur[0].querySelector(".tree-load-badge");
+    assert(badge && badge.textContent === "→ load", "the cursor row carries the '→ load' badge");
+    assert(cur[0].parentElement.querySelector(".tree-cursor") === cur[0] && d.querySelectorAll("#zipList .zip-source-file:not(.tree-cursor)").length >= 2, "other unloaded rows are not marked");
+    key("ArrowUp", { altKey: true });
+    assert(w.treeCursorId() === U("c.log"), "Alt+Up again -> the next unloaded entry");
+    key("ArrowDown", { altKey: true });
+    assert(w.treeCursorId() === U("notes.txt"), "Alt+Down goes back down");
+    key("ArrowDown", { altKey: true });
+    assert(w.treeCursorId() === null && T.state.activeId === plain.id, "Alt+Down onto the loaded node selects it again (cursor cleared)");
+    key("ArrowUp", { altKey: true }); key("ArrowUp", { altKey: true }); key("ArrowUp", { altKey: true }); key("ArrowUp", { altKey: true });
+    assert(w.treeCursorId() === subId, "Up walks on to the dir row");
+    const dirRow = d.querySelector("#zipList .tree-dir-row");
+    assert(dirRow.classList.contains("tree-cursor") && !dirRow.classList.contains("active"), "the dir row cursor uses the dashed class, not .active");
+    assert(T.state.activeId === plain.id, "main view still untouched");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("329b. Shift skips unloaded entries (dir rows stay stops); Shift+Left/Right = plain");
+    const zip = await w.openZipSource(new w.File([zipFixture()], "logs.zip"), "logs.zip");
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "entries"; w.render();
+    const subId = w.dirNavId("zip", zip.id, "sub");
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    key("ArrowUp", { altKey: true, shiftKey: true });
+    assert(w.treeCursorId() === subId, "Shift+Alt+Up from the node above skips all unloaded entries, stops on the dir row");
+    key("ArrowDown", { altKey: true, shiftKey: true });
+    assert(w.treeCursorId() === null && T.state.activeId === plain.id, "Shift+Alt+Down steps over them back to the node");
+    // tree focus, plain arrows with Shift
+    T.state.focusRegion = "tree"; T.state.activeId = plain.id; w.render();
+    key("ArrowUp", { shiftKey: true });
+    assert(w.treeCursorId() === subId, "Shift+Up with tree focus skips unloaded entries too");
+    key("ArrowDown");
+    assert(w.isUnloadedNavId(w.treeCursorId()), "plain Down from the dir row stops on the first unloaded entry");
+    key("ArrowDown", { shiftKey: true });
+    assert(T.state.activeId === plain.id && w.treeCursorId() === null, "Shift+Down from an unloaded stop continues past the remaining unloaded entries");
+    // Shift+Right on an unloaded entry behaves like Right
+    T.state.focusRegion = "tree";
+    w.setTreeCursor(w.unloadedNavId("zip", zip.id, "notes.txt")); w.render();
+    key("ArrowRight", { shiftKey: true });
+    await waitFor(() => T.state.inlineViewer);
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.txt", "Shift+Right opens the entry like Right");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("329c. Right loads a log entry and activates it when the cursor stayed; Left goes to the parent dir row; Enter/Delete do nothing");
+    const zip = await w.openZipSource(new w.File([zipFixture()], "logs.zip"), "logs.zip");
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    const flt = w.createFilterNode(plain.id, "text", "e");
+    T.state.activeId = flt.id; T.state.focusRegion = "tree"; w.render();
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    const U = n => w.unloadedNavId("zip", zip.id, n);
+    w.setTreeCursor(U("a.log")); w.render();
+    const nodeCount = Object.keys(T.state.nodes).length;
+    key("Delete"); key("Enter");
+    assert(Object.keys(T.state.nodes).length === nodeCount && T.state.activeId === flt.id, "Delete/Enter with the cursor on an unloaded entry do nothing");
+    key("ArrowRight", { altKey: true });
+    await waitFor(() => T.state.activeId !== flt.id);
+    const node = T.state.nodes[T.state.activeId];
+    assert(node && node.zipId === zip.id && node.name === "a.log", "the loaded a.log became the active node");
+    await waitFor(() => typeof node.loadFraction !== "number");
+    assert(node.entries.length === 4 && w.treeCursorId() === null, "fully loaded, cursor cleared");
+    assert(!T.state.inlineViewer && !T.state.folderView, "main view shows the log");
+
+    // Left on an unloaded entry inside a dir -> the dir row; top level -> nothing
+    zip.expandedDirs = new Set(["sub"]); w.render();
+    const deepId = U("sub/deep.log"), subId = w.dirNavId("zip", zip.id, "sub");
+    w.setTreeCursor(deepId); w.render();
+    key("ArrowLeft", { altKey: true });
+    assert(w.treeCursorId() === subId, "Alt+Left on an unloaded entry inside a dir goes to its dir row");
+    w.setTreeCursor(U("c.log")); w.render();
+    key("ArrowLeft", { altKey: true });
+    assert(w.treeCursorId() === U("c.log"), "Alt+Left on a top-level unloaded entry is a no-op");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("329d. navigating away during the load: it finishes without jumping back; while loading the row stays a cursor stop");
+    const zip = await w.openZipSource(new w.File([zipFixture()], "logs.zip"), "logs.zip");
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "tree"; w.render();
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    const cEntry = zip.entries.find(e => e.name === "c.log");
+    let release; const gate = new Promise(r => { release = r; });
+    const realExtract = cEntry.extract;
+    cEntry.extract = async () => { await gate; return realExtract.call(cEntry); };
+    const cId = w.unloadedNavId("zip", zip.id, "c.log");
+    w.setTreeCursor(cId); w.render();
+    key("ArrowRight");
+    await waitFor(() => Object.values(T.state.nodes).some(n => n.zipId === zip.id && n.name === "c.log"));
+    assert(T.state.activeId === plain.id && w.treeCursorId() === cId, "loading: main view unchanged, cursor still on the entry");
+    assert(w.flattenTreeIds().includes(cId), "the loading entry is still a cursor-only stop in the nav list");
+    assert(d.querySelectorAll("#zipList .tree-cursor").length === 1, "and its (loading) row still shows the cursor");
+    key("ArrowRight"); // second Right while loading: no second load
+    assert(Object.values(T.state.nodes).filter(n => n.zipId === zip.id && n.name === "c.log").length === 1, "Right while loading does not start a second load");
+    key("ArrowDown");
+    assert(w.isUnloadedNavId(w.treeCursorId()) && w.treeCursorId() !== cId, "Down from the loading entry works (next stop)");
+    key("ArrowDown"); key("ArrowDown");
+    assert(T.state.activeId === plain.id && w.treeCursorId() === null, "navigated on to the loaded node");
+    release();
+    const node = await waitFor(() => Object.values(T.state.nodes).find(n => n.zipId === zip.id && n.name === "c.log" && !n.queued && typeof n.loadFraction !== "number" && n.entries.length));
+    assert(node, "the load finished");
+    await sleep(20);
+    assert(T.state.activeId === plain.id, "finishing the load did NOT change the selection");
+    assert(w.flattenTreeIds().includes(node.id) && !w.flattenTreeIds().includes(w.unloadedNavId("zip", zip.id, "c.log")), "the loaded entry is now a normal node in the nav list");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("329e. Right on a non-log entry opens its inline viewer (cursor still there); gone cursor -> viewer registered, not shown");
+    const zip = await w.openZipSource(new w.File([zipFixture()], "logs.zip"), "logs.zip");
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "tree"; w.render();
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    w.setTreeCursor(w.unloadedNavId("zip", zip.id, "notes.txt")); w.render();
+    key("ArrowRight", { altKey: true });
+    await waitFor(() => T.state.inlineViewer);
+    assert(T.state.inlineViewer.name === "notes.txt" && T.state.activeId === null && w.treeCursorId() === null, "inline viewer shown, cursor cleared");
+    assert(zip.inlineViewers.has("notes.txt"), "viewer registered under the entry name (row is now an opened row)");
+    assert(w.flattenTreeIds().includes(w.viewerNavId("zip", zip.id, "notes.txt")) && !w.flattenTreeIds().includes(w.unloadedNavId("zip", zip.id, "notes.txt")), "nav list now has the viewer id instead of the unloaded stop");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("329f. watched folder: unloaded files are stops; Alt+Right loads + activates; Shift skips; click sets cursor + keeps the row for dblclick");
+    function fakeDir(name, entries) {
+      return {
+        kind: "directory", name,
+        async *values() {
+          for (const [key, val] of Object.entries(entries)) {
+            yield { kind: "file", name: key, async getFile() { const b = new w.Blob([val]); b.text = async () => val; return b; } };
+          }
+        },
+      };
+    }
+    await w.addWatchedFolder(fakeDir("flogs", { "One.log": makeLog(0, 2), "Two.log": makeLog(1, 3) }));
+    const folder = T.state.folders[0];
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "entries"; w.render();
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    const F = n => w.unloadedNavId("folder", folder.id, n);
+    assert(w.flattenTreeIds().join("|") === [F("One.log"), F("Two.log"), plain.id].join("|"), "flatten lists the unloaded folder files before the main tree, got " + w.flattenTreeIds().join("|"));
+    key("ArrowUp", { altKey: true });
+    assert(w.treeCursorId() === F("Two.log") && T.state.activeId === plain.id, "Alt+Up lands on an unloaded folder file, activeId unchanged");
+    const row = d.querySelector("#folderWatchList .folder-watch-file.tree-cursor");
+    assert(row && row.querySelector(".tree-load-badge").textContent === "→ load", "cursor row + badge in the folder listing");
+    key("ArrowUp", { altKey: true, shiftKey: true });
+    assert(w.treeCursorId() === F("Two.log") && T.state.activeId === plain.id, "Shift+Alt+Up from the stop: nothing but unloaded entries above -> stays");
+    T.state.activeId = plain.id; w.setTreeCursor(null); w.render();
+    key("ArrowUp", { altKey: true, shiftKey: true });
+    assert(w.treeCursorId() === null && T.state.activeId === plain.id, "Shift+Alt+Up from the node skips every unloaded folder file (nothing else above: stays)");
+    key("ArrowUp", { altKey: true });
+    key("ArrowUp", { altKey: true });
+    assert(w.treeCursorId() === F("One.log"), "Alt+Up twice reaches the first file");
+    key("ArrowRight", { altKey: true });
+    const rec = folder.files.find(f => f.name === "One.log");
+    await waitFor(() => rec.nodeId && T.state.nodes[rec.nodeId] && typeof T.state.nodes[rec.nodeId].loadFraction !== "number" && T.state.activeId === rec.nodeId);
+    assert(T.state.activeId === rec.nodeId && w.treeCursorId() === null, "Alt+Right loaded One.log and made it active");
+
+    // mouse: click puts the cursor there (focus -> tree) and keeps the row element, so a native dblclick still lands
+    T.state.focusRegion = "entries"; w.render();
+    const before = [...d.querySelectorAll("#folderWatchList .folder-watch-file")].find(r => r.textContent.includes("Two.log"));
+    fireClick(before, w);
+    assert(w.treeCursorId() === F("Two.log") && T.state.focusRegion === "tree", "click on an unloaded row sets the cursor and tree focus");
+    const after = [...d.querySelectorAll("#folderWatchList .folder-watch-file")].find(r => r.textContent.includes("Two.log"));
+    assert(after === before && after.classList.contains("tree-cursor"), "the row element survives the click's render (dblclick keeps working)");
+    before.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true }));
+    const rec2 = folder.files.find(f => f.name === "Two.log");
+    await waitFor(() => rec2.nodeId && T.state.nodes[rec2.nodeId]);
+    assert(T.state.activeId === rec2.nodeId, "double-click behavior is unchanged (activates on load start)");
+  });
+}
 
 /* GROUP 325 — speaking extraction column names + units: the word before a
    placeholder names the column, a short unit word after a float/int/hex
@@ -36947,17 +37306,17 @@ await withApp(async (w, d, T) => {
   assert(titles.includes("xo [mm]") && titles.includes("yo [mm]"), "plot axis titles 'xo [mm]' / 'yo [mm]', got " + JSON.stringify(titles));
 });
 
-/* GROUP 328 — silent preload: a multi-file drop/open batch reads + parses
+/* GROUP 331 — silent preload: a multi-file drop/open batch reads + parses
    while the merge-on-load dialog is still open (invisibly — placeholders stay
    grayed, no activeId change); the answer only decides presentation.
    Data: log-sim default-format files. */
-group(328);
+group(331);
 {
   const sims = seed => LOGSIM.generateToStrings({ format: "default", entries: 120, seed })[0];
   const mkFile = (w, sim, name) => new w.File([sim.text], name, { type: "text/plain" });
 
   await withApp(async (w, d, T) => {
-    section("328a. parse runs during the dialog, invisibly; Merge reuses it (no second parse)");
+    section("331a. parse runs during the dialog, invisibly; Merge reuses it (no second parse)");
     const sa = sims(11), sb = sims(12);
     const parseCalls = [];
     const origParse = w.parseLogTextAsync;
@@ -36986,7 +37345,7 @@ group(328);
   });
 
   await withApp(async (w, d, T) => {
-    section("328b. answering No: both files become normal rows with their preloaded entries");
+    section("331b. answering No: both files become normal rows with their preloaded entries");
     const sa = sims(21), sb = sims(22);
     const p = w.loadFileDescriptors([
       { file: mkFile(w, sa, "na.log"), handle: null }, { file: mkFile(w, sb, "nb.log"), handle: null },
@@ -37002,7 +37361,7 @@ group(328);
   });
 
   await withApp(async (w, d, T) => {
-    section("328c. a file failing during the dialog: reported after the answer, good one loads");
+    section("331c. a file failing during the dialog: reported after the answer, good one loads");
     const good = mkFile(w, sims(31), "good.log");
     const toasts = [];
     const origToast = w.showCopyToast;
@@ -37024,7 +37383,7 @@ group(328);
   });
 
   await withApp(async (w, d, T) => {
-    section("328d. Merge with the bar continuing: merge fraction counts a queued source's preload progress");
+    section("331d. Merge with the bar continuing: merge fraction counts a queued source's preload progress");
     const a = { id: "qa", type: "file", name: "qa", queued: true, entries: [], loadFraction: 0.5 };
     const b = { id: "qb", type: "file", name: "qb", queued: true, entries: [] };
     T.state.nodes.qa = a; T.state.nodes.qb = b;
@@ -37042,11 +37401,11 @@ group(328);
   });
 }
 
-/* GROUP 329 — folder-minimap silent preload: files selected in the minimap
+/* GROUP 332 — folder-minimap silent preload: files selected in the minimap
    (bars, or a dragged window) are read+parsed in the background as hidden
    nodes (state.nodes only); the diff rules, the priority rules and the
    adoption by the load/merge actions. */
-group(329);
+group(332);
 {
   function preloadHandle(w, text, counter) {
     return {
@@ -37078,7 +37437,7 @@ group(329);
   const clickBar = (w, d, name) => fireClick(d.querySelector('.fm-bar[data-key="' + name + '"]'), w);
 
   await withApp(async (w, d, T) => {
-    section("329a. Selected bars preload hidden, one at a time; nothing visible changes");
+    section("332a. Selected bars preload hidden, one at a time; nothing visible changes");
     const { folder, recs } = setup(w, T, [
       { name: "a.log", text: makeLog(0, 3), range: { first: t10(0), last: t10(2) } },
       { name: "b.log", text: makeLog(2, 3, { msgPrefix: "b" }), range: { first: t10(2), last: t10(4) } },
@@ -37099,18 +37458,18 @@ group(329);
     assert(d.querySelectorAll(".tree-row").length === 0, "no row rendered for a preload");
     assert(!recs[0].nodeId && !recs[1].nodeId, "the recs are not opened");
 
-    section("329b. Deselecting a bar aborts only its job; the other job keeps running (same object)");
+    section("332b. Deselecting a bar aborts only its job; the other job keeps running (same object)");
     clickBar(w, d, "a.log");
     assert(!job(T, folder, recs[0]) && T.state.nodes[ja.node.id] === undefined, "job A gone, its node deleted");
     assert(job(T, folder, recs[1]) === jb && T.state.nodes[jb.node.id] === jb.node, "job B untouched");
 
-    section("329f. Leaving the minimap aborts every job");
+    section("332f. Leaving the minimap aborts every job");
     await w.addFile("other.log", makeLog(0, 1), () => {});
     assert(T.folderPreloads.size === 0 && T.state.nodes[jb.node.id] === undefined, "opening a real file discards the remaining preloads");
   });
 
   await withApp(async (w, d, T) => {
-    section("329c. A dragged window preloads a slice of a big file; a new window restarts only that job");
+    section("332c. A dragged window preloads a slice of a big file; a new window restarts only that job");
     const big = bigLog(600);
     const { folder, recs } = setup(w, T, [
       { name: "big.log", text: big, range: { first: t10(0), last: t10(599) } },
@@ -37136,7 +37495,7 @@ group(329);
   });
 
   await withApp(async (w, d, T) => {
-    section("329d. Merge (full) adopts finished preloads: no second read, same result");
+    section("332d. Merge (full) adopts finished preloads: no second read, same result");
     const { folder, recs, counters } = setup(w, T, [
       { name: "a.log", text: makeLog(0, 3), range: { first: t10(0), last: t10(2) } },
       { name: "b.log", text: makeLog(2, 3, { msgPrefix: "b" }), range: { first: t10(2), last: t10(4) } },
@@ -37154,7 +37513,7 @@ group(329);
   });
 
   await withApp(async (w, d, T) => {
-    section("329d2. An in-flight job is adopted with its current fraction (progress bar continues)");
+    section("332d2. An in-flight job is adopted with its current fraction (progress bar continues)");
     const { folder, recs, counters } = setup(w, T, [
       { name: "a.log", text: makeLog(0, 300), range: { first: t10(0), last: t10(2) } },
     ], "pre-d2");
@@ -37172,7 +37531,7 @@ group(329);
   });
 
   await withApp(async (w, d, T) => {
-    section("329e. Merge (window) adopts exact-window slice jobs; the slice node is partial");
+    section("332e. Merge (window) adopts exact-window slice jobs; the slice node is partial");
     const big = bigLog(600);
     const { folder, recs, counters } = setup(w, T, [
       { name: "big.log", text: big, range: { first: t10(0), last: t10(599) } },
@@ -37192,7 +37551,7 @@ group(329);
   });
 
   await withApp(async (w, d, T) => {
-    section("329g. Priority: waits for foreground loads; the throttle only touches speculative parses");
+    section("332g. Priority: waits for foreground loads; the throttle only touches speculative parses");
     const calls = [];
     const orig = w.parseLogTextAsync;
     w.parseLogTextAsync = function (text, node, cb, opts) { calls.push({ preload: !!node.preload, opts }); return orig.apply(this, arguments); };
@@ -37217,7 +37576,7 @@ group(329);
   });
 
   await withApp(async (w, d, T) => {
-    section("329h. Already-open files, inline-viewable files and meta-format files get no job");
+    section("332h. Already-open files, inline-viewable files and meta-format files get no job");
     await waitForFormatConfig(T);
     T.state.logFormats.push({ id: "t1", name: "t1", mode: "regex", regex: "^(?<ts>\\d+) (?<message>.*)$", tsFormat: "" },
       { id: "meta1", name: "meta", mode: "meta", targetFormatIds: ["t1"] });
@@ -37239,13 +37598,13 @@ group(329);
   });
 }
 
-/* GROUP 330 — byte-range parsing: the workers read the Blob themselves
+/* GROUP 333 — byte-range parsing: the workers read the Blob themselves
    (findHeaderLineStartInBlob / parseBlobRangeEntries) instead of receiving
    text pieces, so the main thread never reads or copies the file text. The
    pieces must parse to exactly the plain loop's entries (stack traces,
    CRLF, BOM, multi-byte characters at a boundary, no header, preamble).
    Data: log-sim default format (stacktrace, basic, embedded scenarios). */
-group(330);
+group(333);
 {
   const noId = entries => JSON.stringify(entries.map(e => { const { id, ...rest } = e; return rest; }));
   const bytesOf = text => new Uint8Array(Buffer.from(text, "utf8"));
@@ -37273,7 +37632,7 @@ group(330);
   const sim = (entries, seed) => LOGSIM.generateToStrings({ format: "default", scenarios: ["stacktrace", "basic", "embedded"], entries, seed })[0].text;
 
   await withApp(async (w, d, T) => {
-    section("330a. Pieces parse to exactly the plain loop's entries: LF, CRLF, BOM, multi-byte at a boundary, preamble");
+    section("333a. Pieces parse to exactly the plain loop's entries: LF, CRLF, BOM, multi-byte at a boundary, preamble");
     const base = sim(150, 3);
     assert(/\n\s+at /.test(base) || base.split("\n").length > 160, "sanity: the sample has continuation lines");
     // Multi-byte characters (2, 3 and 4 byte) inside messages, preamble lines before the first header.
@@ -37306,7 +37665,7 @@ group(330);
   });
 
   await withApp(async (w, d, T) => {
-    section("330b. Ranges without a header line; neighbours agree on the boundary");
+    section("333b. Ranges without a header line; neighbours agree on the boundary");
     const none = "just\nsome\ncontinuation\nlines\n".repeat(50);
     const u8n = bytesOf(none);
     assert((await rangeParse(w, u8n, evenRanges(u8n.length, 4))).length === 0, "no header anywhere: no entries, no crash");
@@ -37327,7 +37686,7 @@ group(330);
   });
 
   await withApp(async (w, d, T) => {
-    section("330c. End to end with workers: the main thread posts the Blob, never reads the text; a worker failure falls back to the text route");
+    section("333c. End to end with workers: the main thread posts the Blob, never reads the text; a worker failure falls back to the text route");
     Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 4, configurable: true });
     const src = w.buildLogParseWorkerSrc();
     const made = [];
@@ -37384,7 +37743,7 @@ group(330);
   });
 
   await withApp(async (w, d, T) => {
-    section("330d. Eligibility: UTF-16 and non-Blob sources keep the text route");
+    section("333d. Eligibility: UTF-16 and non-Blob sources keep the text route");
     w.Worker = class {};
     const u16 = new w.File([new Uint8Array([0xFF, 0xFE, 0x41, 0x00])], "u16.log");
     assert(await w.canParseBlobInWorker(mkBlob(bytesOf("2024\n")), "fmt-default") === true, "a UTF-8 blob qualifies");
@@ -41870,14 +42229,23 @@ process.exitCode = failed ? 1 : 0;
       list paired with a value list names the columns (deriveTupleNames), group
       units, whitespace-separated lists in brackets; log-sim opt-in "tuples"
       scenario (also asserted in GROUP 300c).
-   Group 328 — 2026-09-29 (person-requested): silent preload — a multi-file
+   Group 328 — 2026-09-29 (person-requested, FEATURE_BACKLOG #30): find bar
+      cross-file hit counts — .tree-hit-badge on every file root (whole-file
+      count, Aa/regex, 0/pending states, click = activate + first hit, tail
+      append, close file, renderTree, counter title, bar close).
+   Group 329 — 2026-09-29 (person-requested): tree navigation stops on unloaded
+      (grayed) ZIP / folder entries (unloadednav ids, cursor-only, dashed
+      .tree-cursor + "→ load" badge, dir rows too), Shift skips them, Right loads
+      and shows the result only if the cursor stayed, Left -> dir row, click sets
+      the cursor. Same session updated GROUP 324's dir-row / ZIP expectations.
+   Group 331 — 2026-09-29 (person-requested): silent preload — a multi-file
       batch reads + parses while the merge-on-load dialog is open (readParse-
       FileNode / finishLoadedFileNode split); the answer only decides
       presentation. Groups 68/265 unchanged.
-   Group 329 — 2026-09-29 (person-requested): folder-minimap silent preload —
+   Group 332 — 2026-09-29 (person-requested): folder-minimap silent preload —
       hidden preload nodes for the selected bars / dragged window, diff rules,
       one-at-a-time + foreground priority + throttle, adoption by the actions.
-   Group 330 — 2026-09-29 (person-requested): byte-range worker parsing — the
+   Group 333 — 2026-09-29 (person-requested): byte-range worker parsing — the
       workers read the Blob themselves; boundary rule, decoding edge cases,
       no main-thread text read, fallback on worker failure.
    ============================================================ */

@@ -105,7 +105,9 @@ deployments possible:
   regex toggles use the same query language as a text filter. When a search
   turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
   into a real filter node — `Ctrl+F` still opens the filter popup directly.
-  Stays fast on views with hundreds of thousands of rows.
+  With two or more files open, every file in the tree also shows how many
+  entries of the whole file match; click a count to jump to that file's
+  first hit. Stays fast on views with hundreds of thousands of rows.
 - **Recent-filter suggestions** — the filter popup and the find bar offer a
   dropdown of recently used filters and searches (with their Regex/Match
   case/Whole word/NOT settings): pick with the arrow keys or the mouse, remove
@@ -141,7 +143,9 @@ deployments possible:
   filter, whether with `Alt+Arrow` or a plain mouse click in "Files &
   Filters", never takes keyboard focus off the log view you're reading, so
   arrow keys keep navigating log rows right afterward; `Alt+Arrow` also
-  peeks a collapsed panel open (`Ctrl+0` does the same peek). `Alt+Enter`
+  peeks a collapsed panel open (`Ctrl+0` does the same peek). The arrows
+  also stop on not-yet-loaded (grayed) ZIP entries and watched-folder files —
+  `Right` loads one, `Shift` skips them. `Alt+Enter`
   opens "Filter for this message" for the selected row directly. Switching
   filters while the selected row doesn't match the new one shows it at its
   would-be position as a temporary anchor instead of losing it — Settings →
