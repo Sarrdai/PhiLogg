@@ -4252,8 +4252,11 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "ArrowLeft");
   assert(T.state.activeId === f.id, "ArrowLeft on a root file (no parent) is a no-op");
 
+  // Left from a child also collapsed each parent (GROUP 324); Right expands the collapsed file first.
   fireKeydown(d, w, "ArrowRight");
-  assert(T.state.activeId === filterA.id, "ArrowRight from the file descends to its first child");
+  assert(T.state.activeId === f.id && !f.collapsed, "ArrowRight on the collapsed file expands it, selection stays");
+  fireKeydown(d, w, "ArrowRight");
+  assert(T.state.activeId === filterA.id, "ArrowRight from the expanded file descends to its first child");
   assert(T.state.multiSelect.has(filterA.id) && T.state.multiSelect.size === 1, "tree arrow navigation also collapses multiSelect to just the newly-active node, same as a plain row click");
 
   // Selecting a table entry hands focus back to "entries" — subsequent
@@ -9063,7 +9066,8 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(75);
 await withApp(async (w, d, T) => {
-  section("75. Ctrl+W closes the currently open file");
+  section("75. Ctrl+W closes the currently open file (desktop build; the browser build uses Alt+W, GROUP 323)");
+  w.philogg = {}; // desktop build: Ctrl+W is the closeFile default (evaluated at call time)
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const filterA = w.createFilterNode(f.id, "text", "message");
@@ -9103,6 +9107,7 @@ group(76);
 await withApp(async (w, d, T) => {
   section("76. Settings: \"Closing the last log file quits the app\" (default off)");
 
+  w.philogg = {}; // desktop build: Ctrl+W is the closeFile default (browser build: Alt+W, GROUP 323)
   const checkbox = d.getElementById("settingsQuitOnLastClose");
   assert(pillChecked(checkbox) === false, "off by default");
 
@@ -36390,6 +36395,159 @@ await withApp(async (w, d, T) => {
   assert(d.getElementById("filterInput").value === "Need.e" && w.isFilterRegexMode(), "applying a find entry in the popup sets value + Regex");
 });
 
+/* ============================================================
+   GROUP 323 — OS / browser shortcut collisions (FEATURE_BACKLOG #49)
+   Origin: 2026-09-29. closeFile defaults to Alt+W in the plain browser
+   build (Ctrl+W is reserved by browsers) via SHORTCUT_ACTIONS.browserDefault
+   + defaultShortcutBinding(), Ctrl+W on desktop (window.philogg, read at
+   call time); comboFromEvent uses ev.code for Alt+letter/digit (macOS
+   Option dead keys); no browser-build default is a reserved combo.
+   ============================================================ */
+group(323);
+await withApp(async (w, d, T) => {
+  section("323a. browser build: closeFile default is Alt+W; Ctrl+W does not close, Alt+W does");
+  assert(!w.philogg, "sanity: no window.philogg");
+  const b = w.getShortcutBinding("closeFile");
+  assert(b.alt === true && !b.ctrl && b.key === "w", "closeFile default is Alt+W in the browser build");
+  const f = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f.id; w.render();
+  fireKeydown(d, w, "w", { ctrlKey: true });
+  assert(T.state.nodes[f.id], "Ctrl+W does not close the file in the browser build");
+  fireKeydown(d, w, "w", { altKey: true });
+  assert(!T.state.nodes[f.id], "Alt+W closes the file");
+
+  section("323b. Shortcut Manager row shows the build default; Reset restores it");
+  const rowKbds = () => [...d.querySelectorAll("[data-action-id='closeFile'] .shortcut-combo kbd")].map(k => k.textContent).join("+");
+  w.renderShortcutBindingsList();
+  assert(rowKbds() === "Alt+W", "row shows Alt+W in the browser build, got " + rowKbds());
+  fireClick(d.querySelector("[data-action-id='closeFile'] .shortcut-rebind-btn"), w);
+  fireKeydown(d, w, "q", { ctrlKey: true });
+  assert(rowKbds() === "Ctrl+Q", "rebind applied");
+  fireClick(d.querySelector("[data-action-id='closeFile'] .shortcut-reset-btn"), w);
+  assert(rowKbds() === "Alt+W", "Reset restores the browser default");
+
+  section("323c. desktop build (window.philogg set): Ctrl+W is the default");
+  w.philogg = {};
+  const dk = w.getShortcutBinding("closeFile");
+  assert(dk.ctrl === true && !dk.alt && dk.key === "w", "closeFile default is Ctrl+W with window.philogg");
+  w.renderShortcutBindingsList();
+  assert(rowKbds() === "Ctrl+W", "row shows Ctrl+W on desktop");
+  const f2 = await w.addFile("b.log", makeLog(0, 5), () => {});
+  T.state.activeId = f2.id; w.render();
+  fireKeydown(d, w, "w", { altKey: true });
+  assert(T.state.nodes[f2.id], "Alt+W does not close on desktop");
+  fireKeydown(d, w, "w", { ctrlKey: true });
+  assert(!T.state.nodes[f2.id], "Ctrl+W closes on desktop");
+  delete w.philogg;
+
+  section("323d. macOS Option+letter: dead-key ev.key with ev.code KeyN still matches Alt+N");
+  const f3 = await w.addFile("c.log", makeLog(0, 5), () => {});
+  T.state.activeId = f3.id; w.render();
+  w.selectEntry(f3.entries[1].id);
+  d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Dead", code: "KeyN", altKey: true, bubbles: true, cancelable: true }));
+  assert(!d.querySelector("#noteDialog").classList.contains("hidden"), "Alt+N (key Dead, code KeyN) opens the note dialog");
+  fireClick(d.querySelector("#noteDialogCancel"), w);
+  d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "\u02dc", code: "KeyN", altKey: true, bubbles: true, cancelable: true }));
+  assert(!d.querySelector("#noteDialog").classList.contains("hidden"), "Alt+N (key U+02DC) opens the note dialog too");
+  fireClick(d.querySelector("#noteDialogCancel"), w);
+  const c = w.comboFromEvent(new w.KeyboardEvent("keydown", { key: "\u00e5", code: "Digit5", altKey: true }));
+  assert(c.key === "5" && c.alt, "Alt+Digit uses the digit");
+  const c2 = w.comboFromEvent(new w.KeyboardEvent("keydown", { key: "ArrowUp", code: "ArrowUp", altKey: true }));
+  assert(c2.key === "arrowup", "Alt+Arrow unaffected");
+  const c3 = w.comboFromEvent(new w.KeyboardEvent("keydown", { key: "=", code: "Equal", ctrlKey: true }));
+  assert(c3.key === "+", "= still normalized to +");
+  const c4 = w.comboFromEvent(new w.KeyboardEvent("keydown", { key: "n", code: "KeyN", ctrlKey: true }));
+  assert(c4.key === "n", "without Alt, ev.key is used");
+  const c5 = w.comboFromEvent(new w.KeyboardEvent("keydown", { key: "z", code: "KeyY", altKey: true }));
+  assert(c5.key === "z", "QWERTZ Alt+Z: a plain-letter ev.key wins over the US-position ev.code");
+
+  section("323e. no browser-build default is a browser-reserved combo");
+  const reserved = [
+    { ctrl: true, key: "w" }, { ctrl: true, key: "t" }, { ctrl: true, key: "n" },
+    { ctrl: true, shift: true, key: "w" }, { ctrl: true, shift: true, key: "t" }, { ctrl: true, shift: true, key: "n" },
+    { ctrl: true, key: "tab" }, { ctrl: true, shift: true, key: "tab" },
+  ];
+  const actions = T.SHORTCUT_ACTIONS || w.eval("SHORTCUT_ACTIONS");
+  const offenders = actions.filter(a => { const c = w.defaultShortcutBinding(a); return reserved.some(r => w.comboEquals(c, r)); }).map(a => a.id);
+  assert(offenders.length === 0, "no browser-build default equals a reserved combo, offenders: " + offenders.join(","));
+});
+
+/* ============================================================
+   GROUP 324 — Left/Right expand/collapse in tree navigation
+   Origin: 2026-09-29 (person-requested). moveTreeSelection (plain arrows
+   with tree focus AND Alt+Arrow): Right expands a collapsed node with
+   children, else moves to the first listed child, leaf no-op; Left
+   collapses an expanded node, else collapses its parent and selects it,
+   top-level leaf/collapsed no-op; the "Sources" node follows the same rule
+   via nodeHasCollapsibleChildren (shared with the chevron).
+   ============================================================ */
+group(324);
+await withApp(async (w, d, T) => {
+  section("324a. Right/Left expand, move, collapse, collapse-parent-from-child, leaf no-op");
+  const f = await w.addFile("a.log", makeLog(0, 8), () => {});
+  const fa = w.createFilterNode(f.id, "text", "a");
+  const fb = w.createFilterNode(fa.id, "text", "b");
+  const fc = w.createFilterNode(f.id, "text", "c");
+  T.state.activeId = f.id; T.state.focusRegion = "tree"; w.render();
+  const key = k => fireKeydown(d, w, k);
+  assert(w.nodeHasCollapsibleChildren(f) && !w.nodeHasCollapsibleChildren(fc), "helper: file has collapsible children, leaf does not");
+
+  f.collapsed = true; w.render();
+  key("ArrowRight");
+  assert(f.collapsed === false && T.state.activeId === f.id, "Right on a collapsed node expands it, selection stays");
+  key("ArrowRight");
+  assert(T.state.activeId === fa.id, "Right on an expanded node moves to its first child");
+  key("ArrowLeft");
+  assert(fa.collapsed === true && T.state.activeId === fa.id, "Left on an expanded node collapses it, selection stays");
+  key("ArrowRight");
+  assert(fa.collapsed === false && T.state.activeId === fa.id, "Right re-expands");
+  key("ArrowRight");
+  assert(T.state.activeId === fb.id, "Right -> first child fb");
+  key("ArrowRight");
+  assert(T.state.activeId === fb.id, "Right on a leaf is a no-op");
+  key("ArrowLeft");
+  assert(T.state.activeId === fa.id && fa.collapsed === true, "Left on a leaf collapses its parent and selects it");
+  key("ArrowLeft");
+  assert(T.state.activeId === f.id && f.collapsed === true, "Left on a collapsed child collapses ITS parent and selects it");
+  key("ArrowLeft");
+  assert(T.state.activeId === f.id, "Left on a collapsed top-level node is a no-op");
+
+  section("324b. Right skips a first child that flattenTreeIds does not list (queued placeholder)");
+  f.collapsed = false;
+  fa.queued = true; w.render();
+  T.state.activeId = f.id;
+  key("ArrowRight");
+  assert(T.state.activeId === fc.id, "first listed child (fc) is chosen, queued fa is skipped");
+  delete fa.queued;
+
+  section("324c. Alt+Arrow from entries focus does the same");
+  f.collapsed = true; T.state.focusRegion = "entries"; T.state.activeId = f.id; w.render();
+  fireKeydown(d, w, "ArrowRight", { altKey: true });
+  assert(f.collapsed === false && T.state.activeId === f.id, "Alt+Right expands");
+  fireKeydown(d, w, "ArrowRight", { altKey: true });
+  assert(T.state.activeId !== f.id && T.state.focusRegion === "entries", "Alt+Right steps to the first child, focus stays on entries");
+  fireKeydown(d, w, "ArrowLeft", { altKey: true });
+  assert(T.state.activeId === f.id && f.collapsed === true, "Alt+Left from a child collapses the parent and selects it");
+
+  section("324d. Sources node: expand, first source, collapse");
+  const fs1 = await w.addFile("s1.log", makeLog(0, 2), () => {});
+  const fs2 = await w.addFile("s2.log", makeLog(100, 2, { msgPrefix: "later" }), () => {});
+  const merged = await w.mergeFiles([fs1.id, fs2.id]);
+  const srcNode = T.state.nodes[merged.children[0]];
+  assert(srcNode.filterType === "sources" && w.nodeHasCollapsibleChildren(srcNode), "sources node counts as collapsible via the owner's sources array");
+  merged.collapsed = false; srcNode.collapsed = true;
+  T.state.activeId = srcNode.id; T.state.focusRegion = "tree"; w.render();
+  key("ArrowRight");
+  assert(srcNode.collapsed === false && T.state.activeId === srcNode.id, "Right expands the collapsed Sources node");
+  key("ArrowRight");
+  assert(T.state.activeId === merged.sources[0].id, "Right on the expanded Sources node moves to the first source");
+  T.state.activeId = srcNode.id; w.render();
+  key("ArrowLeft");
+  assert(srcNode.collapsed === true && T.state.activeId === srcNode.id, "Left collapses the expanded Sources node");
+  key("ArrowLeft");
+  assert(T.state.activeId === merged.id && merged.collapsed === true, "Left on the collapsed Sources node collapses the merge and selects it");
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -40844,4 +41002,11 @@ process.exitCode = failed ? 1 : 0;
       filter suggestions dropdown under #filterInput and #findInput
       (philogg.recentFilters, record on commit / find Enter / Add as filter,
       keyboard + mouse, edit mode, storage failure).
+   Group 323 — 2026-09-29 (person-requested, FEATURE_BACKLOG #49): OS/browser
+      shortcut collisions — closeFile browserDefault Alt+W (browser build) vs
+      Ctrl+W (window.philogg), macOS Alt+letter via ev.code, no reserved
+      browser-build default. Same session: GROUP 75 now runs as desktop build.
+   Group 324 — 2026-09-29 (person-requested): Left/Right in moveTreeSelection
+      expand/collapse (collapse-parent-from-child, first listed child, Sources
+      node, Alt+Arrow variant). Same session updated GROUP 36's arrow test.
    ============================================================ */

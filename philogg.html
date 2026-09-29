@@ -16743,9 +16743,25 @@ function flattenTreeIds() {
 // Moves state.activeId with the arrow keys once the tree has keyboard focus
 // (state.focusRegion === "tree" — set by clicking a tree row
 // or dropping a drag onto a new parent; cleared back to "entries" by any
-// entry-table selection, see applySelection). Up/Down step through the
-// flattened visual order; Left/Right jump to the parent/first child —
-// there's no collapse state to toggle here, every node is always expanded.
+// entry-table selection, see applySelection), or from anywhere via Alt+Arrow.
+// Up/Down step through the flattened visual order. Right expands a collapsed
+// node with children, else steps to its first visible child; Left collapses an
+// expanded node, else collapses its parent and selects it (one keystroke from
+// a child). node.collapsed is display-only, never persisted.
+
+// Whether a node has children the chevron can collapse — the single rule
+// renderNode's chevron and moveTreeSelection's Left/Right both follow. A merge's
+// "Sources" node keeps node.children empty by design: its nested rows are the
+// owning merged file's `sources` array instead.
+function nodeHasCollapsibleChildren(node) {
+  if (!node) return false;
+  if (node.type === "filter" && node.filterType === "sources") {
+    const owner = state.nodes[node.parentId];
+    return !!(owner && Array.isArray(owner.sources) && owner.sources.length);
+  }
+  return node.children.length > 0;
+}
+
 // Whether `entry` is actually a member of `nodeId`'s own filtered result —
 // returns a ready-to-assign state.tempAnchor value (null if it IS a member,
 // no anchor needed). Shared by applyTempAnchorOnActiveNodeSwitch below,
@@ -16795,10 +16811,32 @@ function moveTreeSelection(key) {
     const delta = key === "ArrowDown" ? 1 : -1;
     const nextIdx = idx === -1 ? (delta > 0 ? 0 : ids.length - 1) : Math.min(ids.length - 1, Math.max(0, idx + delta));
     targetId = ids[nextIdx];
-  } else if (key === "ArrowLeft") {
-    targetId = node && node.parentId ? node.parentId : null;
-  } else if (key === "ArrowRight") {
-    targetId = node && node.children.length ? node.children[0] : null;
+  } else if (key === "ArrowLeft" || key === "ArrowRight") {
+    // While an inline viewer / folder view is what's shown, state.activeId is
+    // a stale node, so Left/Right keep the plain parent/first-child jump.
+    const stale = currentId !== state.activeId || !!state.folderView;
+    const isSources = !!node && node.type === "filter" && node.filterType === "sources";
+    const collapsible = !stale && !(isSources && !showSourcesSetting) && nodeHasCollapsibleChildren(node);
+    if (stale) {
+      if (key === "ArrowLeft") targetId = node && node.parentId ? node.parentId : null;
+      else targetId = node && node.children.length ? node.children[0] : null;
+    } else if (key === "ArrowRight") {
+      if (!collapsible) return;
+      if (node.collapsed) { node.collapsed = false; render(); return; }
+      if (isSources) {
+        const owner = state.nodes[node.parentId];
+        const first = (owner.sources || []).find(src => state.nodes[src.id] && !state.nodes[src.id].queued);
+        targetId = first ? first.id : null;
+      } else {
+        const listed = new Set(ids);
+        targetId = node.children.find(cid => listed.has(cid)) || null;
+      }
+    } else {
+      if (collapsible && !node.collapsed) { node.collapsed = true; render(); return; }
+      const parent = node && node.parentId ? state.nodes[node.parentId] : null;
+      if (parent) parent.collapsed = true;
+      targetId = parent ? parent.id : null;
+    }
   }
   if (!targetId) return;
 
@@ -17226,9 +17264,7 @@ function renderNode(id, depth, opts) {
   // real children.
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
-  const hasRealChildren = sourcesOwnerFile
-    ? !!(Array.isArray(sourcesOwnerFile.sources) && sourcesOwnerFile.sources.length)
-    : node.children.length > 0;
+  const hasRealChildren = nodeHasCollapsibleChildren(node);
   if (hasRealChildren) {
     const chevron = document.createElement("button");
     chevron.type = "button";
@@ -36813,7 +36849,14 @@ if (typeof IntersectionObserver !== "undefined") {
    context-dependent (Ctrl+C/X/V, Del, Enter, arrows — see the fixed
    reference list in the HTML) and stay fixed. The main keydown handler below
    checks matchesShortcut(ev, id) for each of these instead of a hardcoded
-   key comparison, so a rebind here takes effect immediately. */
+   key comparison, so a rebind here takes effect immediately.
+
+   `browserDefault` (optional, per action): the default used in the plain
+   browser build (no window.philogg) instead of `default`. Only closeFile has
+   one: Chrome/Edge/Firefox reserve Ctrl+W (close tab) and ignore
+   preventDefault on it, so the browser build defaults to Alt+W while the
+   desktop build keeps Ctrl+W. See docs/ui-and-views.md -> "OS / browser
+   shortcut collisions". */
 const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
 
 const SHORTCUT_ACTIONS = [
@@ -36828,7 +36871,7 @@ const SHORTCUT_ACTIONS = [
   { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
   { id: "muteFilter",    label: "Mute/unmute a filter",                default: { key: "m" } },
   { id: "editFilter",    label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
-  { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" } },
+  { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" }, browserDefault: { alt: true, key: "w" } },
   { id: "toggleSidebar", label: "Collapse/expand Files & Filters",     default: { ctrl: true, key: "b" } },
   { id: "toggleDetail",  label: "Collapse/expand Entry Detail",        default: { ctrl: true, key: "j" } },
   { id: "undo",          label: "Undo",                                default: { ctrl: true, key: "z" } },
@@ -36870,7 +36913,7 @@ const FIXED_SHORTCUTS = [
   { label: "Click a row — select it",                 display: null },
   { label: "Multi-select rows",                       display: ["Ctrl", "click"] },
   { label: "Move selection up/down",                  display: ["↑", "↓"] },
-  { label: "Navigate the tree (row focused)", display: ["↑", "↓", "←", "→"] },
+  { label: "Navigate the tree (row focused); ←/→ collapse/expand", display: ["↑", "↓", "←", "→"] },
   { label: "Jump to Filtered view (filter selected in tree)", display: ["Enter"] },
   { label: "Same as double-click (row selected in Filtered/Stacked)", display: ["Enter"] },
   { label: "Right-click a row — filter before/after",  display: null },
@@ -36884,14 +36927,27 @@ catch { shortcutBindingOverrides = {}; } // corrupt value, fall through to {}
 function saveShortcutBindingOverrides() {
   localStorage.setItem(SHORTCUT_BINDINGS_STORAGE_KEY, JSON.stringify(shortcutBindingOverrides));
 }
+// Build-appropriate default combo; window.philogg is read at call time (the
+// desktop wrapper's inject script may define it after this script starts).
+function defaultShortcutBinding(actionOrId) {
+  const action = typeof actionOrId === "string" ? SHORTCUT_ACTIONS.find(a => a.id === actionOrId) : actionOrId;
+  return (!window.philogg && action.browserDefault) || action.default;
+}
 function getShortcutBinding(actionId) {
-  return shortcutBindingOverrides[actionId] || SHORTCUT_ACTIONS.find(a => a.id === actionId).default;
+  return shortcutBindingOverrides[actionId] || defaultShortcutBinding(actionId);
 }
 // "=" and "+" are the same physical key on most layouts (Ctrl+= zooms too in
 // every browser) — normalized to "+" so either press satisfies a "+" combo.
 function comboFromEvent(ev) {
   let key = ev.key.toLowerCase();
   if (key === "=") key = "+";
+  // macOS: Option+letter yields a dead key / special char in ev.key, so fall
+  // back to the physical key (ev.code) — only then, since ev.code is the US
+  // position (QWERTZ Z reports KeyY, AZERTY W reports KeyZ).
+  if (ev.altKey && ev.code && !/^[a-z0-9]$/.test(key)) {
+    const m = /^Key([A-Z])$/.exec(ev.code) || /^Digit([0-9])$/.exec(ev.code);
+    if (m) key = m[1].toLowerCase();
+  }
   return { ctrl: !!(ev.ctrlKey || ev.metaKey), shift: !!ev.shiftKey, alt: !!ev.altKey, key };
 }
 function comboEquals(a, b) {
