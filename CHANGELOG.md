@@ -2,13 +2,25 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: tree navigation stops on unloaded ZIP / folder entries (2026-09-29, person-requested, mockup variant B)**
+  - `flattenTreeIds` lists every listed-but-not-loaded ZIP entry and watched-folder file as a cursor-only stop (virtual `unloadednav:` ids, like dir rows), so Alt+Arrow / tree-focus arrows no longer skip grayed entries. **Right** loads/opens it exactly like its double-click (`openUnloadedNavId`), **Left** goes to its dir row, Enter/Delete do nothing. **Shift** (Shift+Alt+Up/Down, Shift+Up/Down with tree focus) skips unloaded entries as before.
+  - After a keyboard-started load the result is shown only if the cursor is still on that entry (`kbLoadNavIds`; the loading node stays a cursor stop meanwhile); navigating away means it finishes without taking over. Double-click behavior unchanged.
+  - Cursor look: `state.treeCursorDir` → `state.treeCursor` (`treeCursorId`/`setTreeCursor`); cursor-only rows (dir rows too) get a dashed accent outline (`.tree-cursor`) instead of the filled `.active` style; unloaded rows show a `→ load` badge while they hold the cursor. A click on an unloaded row puts the cursor there.
+  - **Tests**: new **Group 329**; GROUP 324's dir-row / ZIP expectations updated.
+
+- **feat: find bar shows per-file hit counts (2026-09-29, person-requested, FEATURE_BACKLOG #30, mockup variant A)**
+  - With the find bar open, a valid query and 2+ loaded files, every file root row shows a `.tree-hit-badge` (before `.tree-count`) with the number of entries of the whole file matching the query (same test as the bar itself; `…` while counting, dimmed `0`). Click a badge (or the row of a file with hits) to activate that file and select its first hit; F3/arrows stay inside the current view. Read-only: no filter node, nothing persisted. Sidebar-collapsed fallback: `#findCount`'s tooltip lists `file: count` per line.
+  - Counted after the current-view scan, time-sliced with its own generation counter, cached per file (array identity + scanned length, tail appends count only the tail); badges updated in place, never via `renderTree()` from a scan tick. Details in `docs/ui-and-views.md` → "Cross-file hit counts".
+  - Fixed on the way: the find scan counted a temp-anchor row (selection carried over from another file, `_tempAnchor`) as a hit, so the counter could read one more than the real matches; such rows are now skipped.
+  - **Tests**: new **Group 328**.
+
 - **feat: silent preload while the merge-on-load dialog is open and for the folder-minimap selection (2026-09-29, person-requested)**
   - Dropping/opening 2+ files now starts reading and parsing immediately, invisibly, while the "merge these files?" dialog is open (placeholders stay grayed, no render, no active-file change); the answer only decides merged vs. individual. After the answer the progress bar continues from the fraction reached.
   - `loadOneFileIntoTree` split into `readParseFileNode` + `finishLoadedFileNode` (+ `finishLoadProgress`), reusable by the planned folder-minimap preload. Errors, one-render-per-file and single-file/meta-format behavior unchanged.
   - Folder minimap: the selection (bars, or a dragged window on mouse-up) is read+parsed in the background too, as hidden nodes (`state.nodes` only): only the selection diff is acted on (dropped files aborted and discarded, a slice job restarts on a window change), one job at a time, waiting for foreground loads, with fewer workers and a smaller main-thread drain budget (`parseOpts`, speculative parses only). Load/merge actions adopt matching jobs (a full job serves any action, a slice job an exact-window merge) and the progress bar continues from the job's fraction. `loadFolderFileWindowed` now shares its windowed read with the job (`parseFolderWindowInto`, `folderWindowEligible`, `completeWindowedFolderNode`).
   - Workers read the file themselves (byte-range mode): for a Blob/File source `parseLogTextInWorker` posts the Blob and a byte range per worker instead of ~25MB text pieces; `parseBlobRangeEntries`/`findHeaderLineStartInBlob` (pure, serialized into the worker) find identical header-line boundaries for neighbours. The main thread no longer runs `readAsText`, `splitTextAtHeaderLines` or the piece `postMessage` copies: max main-thread stall during a preload think time 226ms -> ~60ms, single-file load stall 230ms -> ~80ms, load time unchanged. Plain-text format, UTF-16 files, text sources and worker failures keep the text route. Tests: **Group 330**.
-  - Test runner fix: the summary/exit-code block sat mid-file so groups 325+ were not counted; moved to the end.
-  - **Tests**: new **Group 328** and **Group 329**.
+  - Test runner fix: the summary/exit-code block sat mid-file so groups after it were not counted; moved to the end.
+  - **Tests**: new **Groups 331, 332 and 333**.
 
 - **feat: tuple-style name lists for extraction column names (2026-09-29, person-requested)**
   - A name list directly before an equally long value list is paired by position (`deriveTupleNames`): `(xo, yo, zo): ([*:float] , [*:float], [*:float])` → `xo`, `yo`, `zo`. Brackets `()` `[]` `{}` `<>` or none, separators `, ; / |` or (bracketed name list only) plain spaces, connectors `:` `=` `->` `=>`. Count mismatch or mixed separators → the word-before rule as before.
