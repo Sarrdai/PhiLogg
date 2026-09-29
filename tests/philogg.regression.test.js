@@ -36741,7 +36741,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector('.plot-type-btn[data-type="scatter"]'), w);
   sel("#plotXSelect", -1);
   sel("#plotYSelectSingle", 1);
-  const titles = () => [...d.querySelectorAll("#plotSvg .plot-axis-title")].map(t => t.textContent.replace(/ \u25be$/, ""));
+  const titles = () => [...d.querySelectorAll("#plotSvg .plot-axis-title")].map(t => t.textContent);
   fireClick(d.querySelector('.plot-type-btn[data-type="line"]'), w);
   const yItem = d.querySelector("#plotYList .plot-y-item input[data-col=\"1\"]").closest("label");
   assert(yItem.textContent.trim() === "temperature C" && yItem.querySelector(".plot-y-unit").textContent === "C", "Y list: plain name + dim unit span, got " + yItem.textContent);
@@ -36873,7 +36873,7 @@ await withApp(async (w, d, T) => {
   type("scatter");
   sel("#plotXSelect", -1);
   const xTitle = d.querySelector('#plotSvg .plot-axis-clickable[data-axis="x"]');
-  assert(xTitle && xTitle.textContent.includes("\u25be"), "the X title is clickable and carries a caret");
+  assert(xTitle && d.querySelector("#plotSvg .plot-axis-caret[data-axis=\"x\"]").textContent === "\u25be" && xTitle.textContent === "t (ms)", "the X title is clickable, keeps its plain text, and has a caret");
   fireClick(xTitle, w);
   assert(menuOpen() && menu().textContent.includes("temperature [C]"), "axis menu lists the columns with units");
   pick("voltage");
@@ -41345,5 +41345,5 @@ await withApp(async (w, d, T) => {
    Group 326 — 2026-09-29 (person-requested): Plot tab role chips — Row group,
       role badges per chart type, role menu + setPlotColumnRole, sidebar sync,
       Table tab unchanged, menu survives re-render, clickable 2D axis titles.
-      Same session GROUP 325 strips the axis-title caret before comparing.
+      The caret is a separate element, titles keep their plain text.
    ============================================================ */
