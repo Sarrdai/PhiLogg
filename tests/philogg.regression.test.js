@@ -333,6 +333,10 @@ async function withApp(run, opts = {}) {
       set fmSelectedWindow(v) { fmSelectedWindow = v; },
       get fmFolderId() { return fmFolderId; },
       set fmFolderId(v) { fmFolderId = v; },
+      // Folder-minimap silent preload (GROUP 329).
+      get folderPreloads() { return folderPreloads; },
+      get foregroundLoads() { return foregroundLoads; },
+      set foregroundLoads(v) { foregroundLoads = v; },
       // Format setup wizard (GROUP 261).
       get fwz() { return fwz; },
       // LLM assistant (GROUP 302+).
@@ -37056,17 +37060,6 @@ group(329);
   });
 }
 
-console.log("\n" + "=".repeat(60));
-console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
-// run.js parses this to sum the shards up into one total.
-if (SHARD) console.log("##SHARD " + JSON.stringify({ shard: SHARD[0], passed, failed, failures }));
-// process.exitCode, NOT process.exit(): under run.js this process writes to a
-// PIPE, where stdout is asynchronous — process.exit() drops whatever is still
-// buffered, which intermittently swallowed the ##SHARD line above and made
-// run.js report a total short by one whole shard (seen twice in one session:
-// 2273 instead of 2915, no failure listed anywhere). Setting the code and
-// letting the event loop drain naturally cannot truncate.
-process.exitCode = failed ? 1 : 0;
 /* GROUP 325 — speaking extraction column names + units: the word before a
    placeholder names the column, a short unit word after a float/int/hex
    placeholder becomes col.unit, plot axis titles read "name [unit]". */
@@ -37313,6 +37306,637 @@ await withApp(async (w, d, T) => {
   assert(titles.includes("xo [mm]") && titles.includes("yo [mm]"), "plot axis titles 'xo [mm]' / 'yo [mm]', got " + JSON.stringify(titles));
 });
 
+/* GROUP 331 — silent preload: a multi-file drop/open batch reads + parses
+   while the merge-on-load dialog is still open (invisibly — placeholders stay
+   grayed, no activeId change); the answer only decides presentation.
+   Data: log-sim default-format files. */
+group(331);
+{
+  const sims = seed => LOGSIM.generateToStrings({ format: "default", entries: 120, seed })[0];
+  const mkFile = (w, sim, name) => new w.File([sim.text], name, { type: "text/plain" });
+
+  await withApp(async (w, d, T) => {
+    section("331a. parse runs during the dialog, invisibly; Merge reuses it (no second parse)");
+    const sa = sims(11), sb = sims(12);
+    const parseCalls = [];
+    const origParse = w.parseLogTextAsync;
+    w.parseLogTextAsync = function (text, node) { parseCalls.push(node.id); return origParse.apply(this, arguments); };
+    const activeBefore = T.state.activeId;
+    const p = w.loadFileDescriptors([
+      { file: mkFile(w, sa, "pa.log"), handle: null }, { file: mkFile(w, sb, "pb.log"), handle: null },
+    ]);
+    const queued = T.state.rootIds.map(id => T.state.nodes[id]);
+    assert(queued.length === 2 && queued.every(n => n.queued), "two queued placeholders");
+    await waitFor(() => queued.every(n => n.entries.length > 0));
+    await new Promise(r => setTimeout(r, 30));
+    assert(!d.querySelector("#mergeLoadDialog").classList.contains("hidden"), "dialog still open");
+    assert(queued.every(n => n.queued && n.entries.length > 0), "both files already parsed while still queued");
+    assert(T.state.activeId === activeBefore, "state.activeId untouched during the dialog");
+    assert(d.querySelectorAll(".tree-row").length === 0 && d.querySelectorAll(".tree-row-queued").length === 2, "still two grayed rows, no real row");
+    const before = parseCalls.length;
+    fireClick(d.querySelector("#mergeLoadDialogYes"), w);
+    await p;
+    w.parseLogTextAsync = origParse;
+    assert(parseCalls.length === before && before === 2, "each file parsed exactly once, got " + parseCalls.length);
+    const merged = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.merged);
+    assert(merged && merged.entries.length === queued[0].entries.length + queued[1].entries.length, "merged node holds both files' entries");
+    assert(queued.every(n => !n.queued && n.loadFraction === undefined), "sources activated and finished");
+    for (let i = 1; i < merged.entries.length; i++) if (merged.entries[i].ts < merged.entries[i - 1].ts) { assert(false, "merged entries sorted by time"); break; }
+  });
+
+  await withApp(async (w, d, T) => {
+    section("331b. answering No: both files become normal rows with their preloaded entries");
+    const sa = sims(21), sb = sims(22);
+    const p = w.loadFileDescriptors([
+      { file: mkFile(w, sa, "na.log"), handle: null }, { file: mkFile(w, sb, "nb.log"), handle: null },
+    ]);
+    const nodes = T.state.rootIds.map(id => T.state.nodes[id]);
+    await waitFor(() => nodes.every(n => n.entries.length > 0));
+    fireClick(d.querySelector("#mergeLoadDialogNo"), w);
+    await p;
+    assert(T.state.rootIds.length === 2 && nodes.every(n => T.state.nodes[n.id] === n && !n.queued), "two ordinary loaded files, same node objects");
+    assert(nodes.every(n => n.entries.length > 100), "entries complete");
+    assert(d.querySelectorAll(".tree-row").length === 2 && d.querySelectorAll(".tree-row-queued").length === 0, "two real rows");
+    assert(!T.state.rootIds.some(id => T.state.nodes[id].merged), "no merge");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("331c. a file failing during the dialog: reported after the answer, good one loads");
+    const good = mkFile(w, sims(31), "good.log");
+    const toasts = [];
+    const origToast = w.showCopyToast;
+    w.showCopyToast = function (m) { toasts.push(m); return origToast.apply(this, arguments); };
+    const p = w.loadFileDescriptors([
+      { name: "broken.log", openFile: async () => { throw new Error("gone"); }, handle: null },
+      { file: good, handle: null },
+    ]);
+    await new Promise(r => setTimeout(r, 50));
+    assert(toasts.length === 0, "no toast while the dialog is open");
+    assert(T.state.rootIds.length === 2, "placeholder still there during the dialog");
+    fireClick(d.querySelector("#mergeLoadDialogNo"), w);
+    await p;
+    w.showCopyToast = origToast;
+    const names = T.state.rootIds.map(id => T.state.nodes[id].name);
+    assert(names.join() === "good.log", "only the good file remains, got " + names.join());
+    assert(toasts.length === 1 && toasts[0] === 'Couldn\'t load "broken.log" (gone)', "same toast text, got " + JSON.stringify(toasts));
+    assert(T.state.nodes[T.state.rootIds[0]].entries.length > 100, "good file fully loaded");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("331d. Merge with the bar continuing: merge fraction counts a queued source's preload progress");
+    const a = { id: "qa", type: "file", name: "qa", queued: true, entries: [], loadFraction: 0.5 };
+    const b = { id: "qb", type: "file", name: "qb", queued: true, entries: [] };
+    T.state.nodes.qa = a; T.state.nodes.qb = b;
+    const m = { id: "qm", type: "file", name: "qm", entries: [], loadSources: [{ id: "qa", weight: 1 }, { id: "qb", weight: 1 }] };
+    T.state.nodes.qm = m;
+    w.updateMergeLoadFraction("qm");
+    const half = m.loadFraction;
+    assert(half > 0, "queued source with a fraction counts, got " + half);
+    b.loadFraction = 0.5;
+    w.updateMergeLoadFraction("qm");
+    assert(Math.abs(m.loadFraction - 2 * half) < 1e-9, "a queued source without a fraction counted 0 before");
+    w.activateQueuedFileNode(a);
+    assert(a.loadFraction === 0.5, "activation keeps the fraction reached during the preload");
+    delete T.state.nodes.qa; delete T.state.nodes.qb; delete T.state.nodes.qm;
+  });
+}
+
+/* GROUP 332 — folder-minimap silent preload: files selected in the minimap
+   (bars, or a dragged window) are read+parsed in the background as hidden
+   nodes (state.nodes only); the diff rules, the priority rules and the
+   adoption by the load/merge actions. */
+group(332);
+{
+  function preloadHandle(w, text, counter) {
+    return {
+      async getFile() {
+        counter.n++;
+        const blob = new w.Blob([text]);
+        Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+        blob.text = async () => text;
+        blob.slice = (start, end) => { const sl = text.slice(start, end === undefined ? text.length : end); const b = new w.Blob([sl]); b.text = async () => sl; return b; };
+        return blob;
+      },
+    };
+  }
+  const t10 = (s) => new Date(2024, 0, 15, 10, 0, s, 0).getTime();
+  function bigLog(n) { // > WINDOWED_LOAD_MIN_FILE_SIZE, one entry per second from 10:00:00
+    const filler = "X".repeat(14000), lines = [];
+    for (let i = 0; i < n; i++) lines.push(`2024-01-15 10:${String(Math.floor(i / 60)).padStart(2, "0")}:${String(i % 60).padStart(2, "0")},000\tINFO\t"main"\tC:\\src\\Foo.cs\tline ${i}\t[DoWork]\t"message ${i} ${filler}"`);
+    return lines.join("\n") + "\n";
+  }
+  function setup(w, T, files, id) {
+    const counters = files.map(() => ({ n: 0 }));
+    const recs = files.map((f, i) => ({ name: f.name, relPath: f.name, nodeId: null, handle: preloadHandle(w, f.text, counters[i]), _range: f.range }));
+    const folder = { id, name: id, files: recs, inlineViewers: new Map() };
+    T.state.folders.push(folder);
+    w.selectFolderContainer(folder.id);
+    return { folder, recs, counters };
+  }
+  const job = (T, folder, rec) => T.folderPreloads.get(folder.id + "|" + rec.relPath);
+  const clickBar = (w, d, name) => fireClick(d.querySelector('.fm-bar[data-key="' + name + '"]'), w);
+
+  await withApp(async (w, d, T) => {
+    section("332a. Selected bars preload hidden, one at a time; nothing visible changes");
+    const { folder, recs } = setup(w, T, [
+      { name: "a.log", text: makeLog(0, 3), range: { first: t10(0), last: t10(2) } },
+      { name: "b.log", text: makeLog(2, 3, { msgPrefix: "b" }), range: { first: t10(2), last: t10(4) } },
+    ], "pre-a");
+    const activeBefore = T.state.activeId, rootsBefore = T.state.rootIds.slice();
+    w.renderFolderMinimap(folder);
+    clickBar(w, d, "a.log"); clickBar(w, d, "b.log");
+    assert(T.folderPreloads.size === 2, "two jobs after clicking two bars, got " + T.folderPreloads.size);
+    const ja = job(T, folder, recs[0]), jb = job(T, folder, recs[1]);
+    assert(ja.started && !jb.started, "one speculative job at a time: the first runs, the second waits");
+    assert(T.state.nodes[ja.node.id] === ja.node && !T.state.rootIds.includes(ja.node.id) && ja.node.preload, "a job's node lives in state.nodes only");
+    await ja.promise;
+    await waitFor(() => jb.started);
+    await jb.promise;
+    assert(ja.node.entries.length === 3 && jb.node.entries.length === 3, "both parsed fully in the background");
+    assert(T.state.activeId === activeBefore && T.state.rootIds.join() === rootsBefore.join(), "activeId and the tree are untouched");
+    assert(T.state.folderView === folder.id, "the minimap stays shown");
+    assert(d.querySelectorAll(".tree-row").length === 0, "no row rendered for a preload");
+    assert(!recs[0].nodeId && !recs[1].nodeId, "the recs are not opened");
+
+    section("332b. Deselecting a bar aborts only its job; the other job keeps running (same object)");
+    clickBar(w, d, "a.log");
+    assert(!job(T, folder, recs[0]) && T.state.nodes[ja.node.id] === undefined, "job A gone, its node deleted");
+    assert(job(T, folder, recs[1]) === jb && T.state.nodes[jb.node.id] === jb.node, "job B untouched");
+
+    section("332f. Leaving the minimap aborts every job");
+    await w.addFile("other.log", makeLog(0, 1), () => {});
+    assert(T.folderPreloads.size === 0 && T.state.nodes[jb.node.id] === undefined, "opening a real file discards the remaining preloads");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("332c. A dragged window preloads a slice of a big file; a new window restarts only that job");
+    const big = bigLog(600);
+    const { folder, recs } = setup(w, T, [
+      { name: "big.log", text: big, range: { first: t10(0), last: t10(599) } },
+      { name: "s.log", text: makeLog(0, 3), range: { first: t10(0), last: t10(2) } },
+    ], "pre-c");
+    w.renderFolderMinimap(folder);
+    T.fmSelectedRecKeys = new Set(); T.fmSelectedWindow = { from: t10(0), to: t10(9) };
+    w.renderFolderMinimap(folder);
+    const jbig = job(T, folder, recs[0]);
+    assert(jbig && jbig.started, "the big file's job runs");
+    const out = await jbig.promise;
+    assert(jbig.effective === "window" && out.ok && jbig.node.entries.length > 0 && jbig.node.entries.length < 100, "a slice job: only the window was parsed, got " + jbig.node.entries.length);
+    await waitFor(() => job(T, folder, recs[1]) && job(T, folder, recs[1]).started);
+    const jsmall = job(T, folder, recs[1]);
+    await jsmall.promise;
+    assert(jsmall.effective === "full" && jsmall.node.entries.length === 3, "a small file is preloaded in full even under a window");
+    T.fmSelectedWindow = { from: t10(0), to: t10(20) };
+    w.renderFolderMinimap(folder);
+    const jbig2 = job(T, folder, recs[0]);
+    assert(jbig2 !== jbig && T.state.nodes[jbig.node.id] === undefined, "changing the window restarts the slice job");
+    assert(job(T, folder, recs[1]) === jsmall, "the full job of the small file stays");
+    await jbig2.promise;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("332d. Merge (full) adopts finished preloads: no second read, same result");
+    const { folder, recs, counters } = setup(w, T, [
+      { name: "a.log", text: makeLog(0, 3), range: { first: t10(0), last: t10(2) } },
+      { name: "b.log", text: makeLog(2, 3, { msgPrefix: "b" }), range: { first: t10(2), last: t10(4) } },
+    ], "pre-d");
+    w.renderFolderMinimap(folder);
+    clickBar(w, d, "a.log"); clickBar(w, d, "b.log");
+    const ja = job(T, folder, recs[0]), jb = job(T, folder, recs[1]);
+    await ja.promise; await waitFor(() => jb.started); await jb.promise;
+    await w.folderMinimapMergeFull(folder);
+    assert(counters[0].n === 1 && counters[1].n === 1, "each file was read exactly once, got " + counters.map(c => c.n));
+    const merged = T.state.nodes[T.state.activeId];
+    assert(merged && merged.merged && merged.entries.length === 6, "merged node with both files' entries");
+    assert(T.state.nodes[ja.node.id] === ja.node && recs[0].nodeId === ja.node.id && !ja.node.preload, "the preloaded node itself became the file");
+    assert(T.folderPreloads.size === 0, "no jobs left");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("332d2. An in-flight job is adopted with its current fraction (progress bar continues)");
+    const { folder, recs, counters } = setup(w, T, [
+      { name: "a.log", text: makeLog(0, 300), range: { first: t10(0), last: t10(2) } },
+    ], "pre-d2");
+    w.renderFolderMinimap(folder);
+    clickBar(w, d, "a.log");
+    const ja = job(T, folder, recs[0]);
+    assert(ja.started, "job started");
+    ja.node.loadFraction = 0.6; // pretend mid-way
+    const p = w.folderMinimapLoadIndividually(folder);
+    assert(T.state.rootIds.includes(ja.node.id) && !ja.node.preload && ja.node.loadFraction === 0.6, "adopted at once as a real row, keeping fraction 0.6");
+    assert(d.querySelector('.tree-row[data-node-id="' + ja.node.id + '"]'), "row rendered");
+    await p;
+    assert(recs[0].nodeId === ja.node.id && ja.node.entries.length === 300 && ja.node.loadFraction === undefined, "finished normally");
+    assert(counters[0].n === 1, "read once");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("332e. Merge (window) adopts exact-window slice jobs; the slice node is partial");
+    const big = bigLog(600);
+    const { folder, recs, counters } = setup(w, T, [
+      { name: "big.log", text: big, range: { first: t10(0), last: t10(599) } },
+      { name: "s.log", text: makeLog(0, 3), range: { first: t10(0), last: t10(2) } },
+    ], "pre-e");
+    w.renderFolderMinimap(folder);
+    T.fmSelectedRecKeys = new Set(); T.fmSelectedWindow = { from: t10(0), to: t10(9) };
+    w.renderFolderMinimap(folder);
+    const jbig = job(T, folder, recs[0]);
+    await jbig.promise; await waitFor(() => job(T, folder, recs[1]).started);
+    await job(T, folder, recs[1]).promise;
+    await w.folderMinimapMergeWindow(folder);
+    assert(counters[0].n === 1 && counters[1].n === 1, "no second read, got " + counters.map(c => c.n));
+    assert(T.state.nodes[jbig.node.id] === jbig.node && jbig.node.partial && jbig.node.partial.from === t10(0) && jbig.node.partial.to === t10(9), "the slice node became the partial file");
+    const merged = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.merged);
+    assert(merged && merged.partial, "the merge carries the partial flag");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("332g. Priority: waits for foreground loads; the throttle only touches speculative parses");
+    const calls = [];
+    const orig = w.parseLogTextAsync;
+    w.parseLogTextAsync = function (text, node, cb, opts) { calls.push({ preload: !!node.preload, opts }); return orig.apply(this, arguments); };
+    const { folder, recs } = setup(w, T, [
+      { name: "a.log", text: makeLog(0, 3), range: { first: t10(0), last: t10(2) } },
+      { name: "b.log", text: makeLog(2, 3, { msgPrefix: "b" }), range: { first: t10(2), last: t10(4) } },
+    ], "pre-g");
+    T.foregroundLoads = 1; // a foreground load is "running"
+    w.renderFolderMinimap(folder);
+    clickBar(w, d, "a.log"); clickBar(w, d, "b.log");
+    assert(T.folderPreloads.size === 2 && [...T.folderPreloads.values()].every(j => !j.started), "no job starts while a foreground load runs");
+    T.foregroundLoads = 0;
+    w.syncFolderPreloads();
+    assert(job(T, folder, recs[0]).started && !job(T, folder, recs[1]).started, "released: exactly one job starts");
+    await job(T, folder, recs[0]).promise;
+    await w.loadFiles([new w.File([makeLog(0, 3)], "n.log")]);
+    w.parseLogTextAsync = orig;
+    const pre = calls.filter(c => c.preload), normal = calls.filter(c => !c.preload);
+    assert(pre.length >= 1 && pre.every(c => c.opts && c.opts.maxWorkers >= 1 && c.opts.drainBatches), "speculative parses get maxWorkers + drainBatches");
+    assert(normal.length >= 1 && normal.every(c => c.opts === undefined), "normal loads pass no throttle");
+    assert(w.parallelParseWorkerCount(64 << 20) >= w.parallelParseWorkerCount(64 << 20, 1) && w.parallelParseWorkerCount(64 << 20, 1) === 1, "parallelParseWorkerCount only caps when asked");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("332h. Already-open files, inline-viewable files and meta-format files get no job");
+    await waitForFormatConfig(T);
+    T.state.logFormats.push({ id: "t1", name: "t1", mode: "regex", regex: "^(?<ts>\\d+) (?<message>.*)$", tsFormat: "" },
+      { id: "meta1", name: "meta", mode: "meta", targetFormatIds: ["t1"] });
+    T.state.formatRules.push({ glob: "*.meta.log", formatId: "meta1", order: -1 });
+    w.invalidateFormatCompileCache(); w.invalidateGlobCompileCache();
+    const open = await w.addFile("open.log", makeLog(0, 2), () => {});
+    const { folder, recs } = setup(w, T, [
+      { name: "open.log", text: makeLog(0, 2), range: { first: t10(0), last: t10(1) } },
+      { name: "pic.png", text: "x", range: { first: t10(0), last: t10(1) } },
+      { name: "m.meta.log", text: "1 a\n", range: { first: t10(0), last: t10(1) } },
+      { name: "ok.log", text: makeLog(0, 2), range: { first: t10(0), last: t10(1) } },
+    ], "pre-h");
+    recs[0].nodeId = open.id;
+    w.selectFolderContainer(folder.id);
+    w.renderFolderMinimap(folder);
+    T.fmSelectedRecKeys = new Set(recs.map(r => r.relPath)); T.fmSelectedWindow = null;
+    w.renderFolderMinimap(folder);
+    assert([...T.folderPreloads.keys()].join() === folder.id + "|ok.log", "only the plain closed log file preloads, got " + [...T.folderPreloads.keys()]);
+  });
+}
+
+/* GROUP 333 — byte-range parsing: the workers read the Blob themselves
+   (findHeaderLineStartInBlob / parseBlobRangeEntries) instead of receiving
+   text pieces, so the main thread never reads or copies the file text. The
+   pieces must parse to exactly the plain loop's entries (stack traces,
+   CRLF, BOM, multi-byte characters at a boundary, no header, preamble).
+   Data: log-sim default format (stacktrace, basic, embedded scenarios). */
+group(333);
+{
+  const noId = entries => JSON.stringify(entries.map(e => { const { id, ...rest } = e; return rest; }));
+  const bytesOf = text => new Uint8Array(Buffer.from(text, "utf8"));
+  const mkBlob = u8 => ({
+    size: u8.length,
+    slice(a, b) {
+      const part = u8.slice(a, b);
+      return { size: part.length, slice: (x, y) => mkBlob(part).slice(x, y), arrayBuffer: async () => part.buffer.slice(part.byteOffset, part.byteOffset + part.byteLength) };
+    },
+  });
+  async function reference(w, text) {
+    const node = w.createFileNode("ref.log");
+    node.formatId = "fmt-default";
+    await w.parseLogTextAsync(text, node, () => {}); // jsdom: no Worker, the plain loop
+    const entries = node.entries.slice();
+    w.deleteNode(node.id);
+    return entries;
+  }
+  async function rangeParse(w, u8, ranges) {
+    const compiled = w.getCompiledFormat("fmt-default"), blob = mkBlob(u8), out = [];
+    for (const [a, b] of ranges) await w.parseBlobRangeEntries(blob, u8.length, a, b, compiled, "fmt-default", es => out.push(...es), () => {});
+    return out;
+  }
+  const evenRanges = (size, n) => Array.from({ length: n }, (_, i) => [Math.floor(size * i / n), Math.floor(size * (i + 1) / n)]);
+  const sim = (entries, seed) => LOGSIM.generateToStrings({ format: "default", scenarios: ["stacktrace", "basic", "embedded"], entries, seed })[0].text;
+
+  await withApp(async (w, d, T) => {
+    section("333a. Pieces parse to exactly the plain loop's entries: LF, CRLF, BOM, multi-byte at a boundary, preamble");
+    const base = sim(150, 3);
+    assert(/\n\s+at /.test(base) || base.split("\n").length > 160, "sanity: the sample has continuation lines");
+    // Multi-byte characters (2, 3 and 4 byte) inside messages, preamble lines before the first header.
+    const multi = "preamble line one\n\npreamble two\n" + base.replace(/\bINFO\b/g, "INFO").replace(/(\t")([A-Za-z])/g, (m, q, c, off) => off % 3 === 0 ? q + "é€\u{1F600}" + c : m);
+    const variants = {
+      "LF": base,
+      "CRLF": base.replace(/\n/g, "\r\n"),
+      "BOM": "﻿" + base,
+      "multi-byte + preamble": multi,
+      "no trailing newline": base.replace(/\n$/, ""),
+    };
+    for (const [name, text] of Object.entries(variants)) {
+      const u8 = bytesOf(text);
+      const ref = await reference(w, text.replace(/^﻿/, ""));
+      assert(ref.length > 50, name + ": sanity, reference has entries (" + ref.length + ")");
+      for (const n of [1, 2, 3, 5, 9]) {
+        const got = await rangeParse(w, u8, evenRanges(u8.length, n));
+        assert(got.length === ref.length && noId(got) === noId(ref), name + ": " + n + " pieces == plain loop (" + got.length + " vs " + ref.length + ")");
+      }
+    }
+    // Every byte position as the single cut, including inside multi-byte characters and between \r and \n.
+    const u8 = bytesOf(multi.replace(/\n/g, "\r\n"));
+    const ref = await reference(w, multi.replace(/\n/g, "\r\n"));
+    let bad = 0;
+    for (let k = 0; k <= u8.length; k += 5) {
+      const got = await rangeParse(w, u8, [[0, k], [k, u8.length]]);
+      if (noId(got) !== noId(ref)) { bad++; if (bad < 3) console.log("  cut at", k); }
+    }
+    assert(bad === 0, "a cut at every 5th byte (mid multi-byte, mid CRLF) never splits or duplicates an entry, bad: " + bad);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("333b. Ranges without a header line; neighbours agree on the boundary");
+    const none = "just\nsome\ncontinuation\nlines\n".repeat(50);
+    const u8n = bytesOf(none);
+    assert((await rangeParse(w, u8n, evenRanges(u8n.length, 4))).length === 0, "no header anywhere: no entries, no crash");
+    const base = sim(60, 5);
+    const one = base.split("\n").filter(l => /^\d{4}-/.test(l))[0];
+    const text = one + "\n" + "  continuation of the only header\n".repeat(400);
+    const u8 = bytesOf(text);
+    const got = await rangeParse(w, u8, evenRanges(u8.length, 5));
+    const ref = await reference(w, text);
+    assert(got.length === 1 && noId(got) === noId(ref), "one header, long continuation: the single entry is neither split nor duplicated");
+    const isHeader = w.getCompiledFormat("fmt-default").isHeaderLine, u8b = bytesOf(base), blob = mkBlob(u8b);
+    for (const pos of [1, 17, 500, 1234, u8b.length - 3]) {
+      const s1 = await w.findHeaderLineStartInBlob(blob, u8b.length, pos, isHeader);
+      assert(s1 >= pos && (s1 === u8b.length || (u8b[s1 - 1] === 10 && isHeader(Buffer.from(u8b.slice(s1, u8b.indexOf(10, s1) < 0 ? undefined : u8b.indexOf(10, s1))).toString("utf8").replace(/\r$/, "")))),
+        "boundary for " + pos + " is a header-line start at or after it, got " + s1);
+    }
+    assert(await w.findHeaderLineStartInBlob(blob, u8b.length, 0, isHeader) === 0 && await w.findHeaderLineStartInBlob(blob, u8b.length, u8b.length + 5, isHeader) === u8b.length, "0 stays 0, past the end is the end");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("333c. End to end with workers: the main thread posts the Blob, never reads the text; a worker failure falls back to the text route");
+    Object.defineProperty(w.navigator, "hardwareConcurrency", { value: 4, configurable: true });
+    const src = w.buildLogParseWorkerSrc();
+    const made = [];
+    let failing = false;
+    w.URL.createObjectURL = () => "blob:fake-worker";
+    w.Worker = class {
+      constructor() {
+        made.push(this);
+        this.terminated = false;
+        this.out = [];
+        this.self = {};
+        vm.runInContext(src, vm.createContext({ self: this.self, postMessage: m => this.out.push(m), TextDecoder: w.TextDecoder }));
+      }
+      postMessage(data) {
+        this.received = data;
+        setTimeout(async () => {
+          this.self.onmessage({ data });
+          for (let i = 0; i < 4000 && !this.out.some(m => m.type === "done" || m.type === "error"); i++) await sleep(1);
+          if (failing) { this.onerror(new Error("worker crashed")); return; }
+          for (const m of this.out) { if (this.terminated) return; this.onmessage({ data: m }); await Promise.resolve(); }
+        }, 0);
+      }
+      terminate() { this.terminated = true; }
+    };
+    let text = "";
+    for (let seed = 1; text.length < 4.5e6; seed++) text += sim(6000, seed);
+    const u8 = bytesOf(text);
+    const file = new w.File([u8], "big.log");
+    const ref = await reference(w, text);
+    let textReads = 0;
+    const origRead = w.readFileWithProgress;
+    w.readFileWithProgress = function () { textReads++; return origRead.apply(this, arguments); };
+
+    made.length = 0; // the reference parse above used the fake workers in text mode
+    let node = w.createFileNode("blob.log");
+    const res = await w.readParseFileNode(node, "blob.log", file, null);
+    assert(made.length === 4, "4 workers on 4 cores, got " + made.length);
+    assert(made.every(wk => wk.received && wk.received.blob && wk.received.text === undefined && typeof wk.received.a === "number"), "every worker got the Blob and a byte range, no text");
+    assert(textReads === 0, "the main thread never read the text");
+    assert(node.entries.length === ref.length && noId(node.entries) === noId(ref), "entries identical to the plain loop, in order (" + node.entries.length + ")");
+    assert(res.size === file.size && res.file === file, "result carries the file and its size");
+    const nums = node.entries.map(e => +e.id.replace(/\D/g, ""));
+    assert(nums.every((v, i) => i === 0 || v > nums[i - 1]) && node.entries.every(e => T.entryIndex[e.id] === e), "ids ascend, entries registered");
+    w.deleteNode(node.id);
+
+    made.length = 0; failing = true;
+    node = w.createFileNode("fail.log");
+    await w.readParseFileNode(node, "fail.log", file, null);
+    assert(textReads === 1, "a failing worker falls back to the text route (one read), got " + textReads);
+    assert(node.entries.length === ref.length && noId(node.entries) === noId(ref), "...with identical entries and no leftovers from the failed attempt");
+    failing = false; w.deleteNode(node.id);
+
+    w.readFileWithProgress = origRead;
+  });
+
+  await withApp(async (w, d, T) => {
+    section("333d. Eligibility: UTF-16 and non-Blob sources keep the text route");
+    w.Worker = class {};
+    const u16 = new w.File([new Uint8Array([0xFF, 0xFE, 0x41, 0x00])], "u16.log");
+    assert(await w.canParseBlobInWorker(mkBlob(bytesOf("2024\n")), "fmt-default") === true, "a UTF-8 blob qualifies");
+    assert(await w.canParseBlobInWorker(mkBlob(new Uint8Array([0xFF, 0xFE, 0x41, 0x00])), "fmt-default") === false, "a UTF-16 BOM does not");
+    assert(await w.canParseBlobInWorker(mkBlob(new Uint8Array(0)), "fmt-default") === false, "an empty file does not");
+    assert(await w.canParseBlobInWorker({ size: 5 }, "fmt-default") === false, "a non-Blob does not");
+    delete w.Worker;
+  });
+}
+
+/* GROUP 334 — silent preload under the tree cursor: the cursor resting
+   (CURSOR_PRELOAD_DWELL_MS) on a listed-but-unloaded log entry (watched-folder
+   file, ZIP entry) preloads it as a hidden job; leaving aborts it, Alt+Right /
+   double-click adopt it (kb semantics kept). Data: log-sim default format. */
+group(334);
+{
+  const storedZip = (entries) => {
+    let offset = 0; const local = [], central = [];
+    for (const e of entries) {
+      const nameBuf = Buffer.from(e.name, "utf8"), data = Buffer.from(e.data, "utf8");
+      const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4);
+      lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+      const rec = Buffer.concat([lh, nameBuf, data]);
+      const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+      ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+      local.push(rec); central.push(Buffer.concat([ch, nameBuf])); offset += rec.length;
+    }
+    const L = Buffer.concat(local), C = Buffer.concat(central), eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+    eocd.writeUInt32LE(C.length, 12); eocd.writeUInt32LE(L.length, 16);
+    return Buffer.concat([L, C, eocd]);
+  };
+  const sim = seed => LOGSIM.generateToStrings({ format: "default", entries: 120, seed })[0].text;
+  const DWELL = 150;
+  function fakeDir(w, name, files, counters, gates) {
+    return {
+      kind: "directory", name,
+      async *values() {
+        for (const [key, val] of Object.entries(files)) {
+          yield { kind: "file", name: key, async getFile() {
+            counters[key] = (counters[key] || 0) + 1;
+            if (gates && gates[key]) await gates[key];
+            const b = new w.Blob([val]); b.text = async () => val; return b;
+          } };
+        }
+      },
+    };
+  }
+  const cursorJobs = T => [...T.folderPreloads.values()];
+
+  await withApp(async (w, d, T) => {
+    section("334a. folder file: hidden job after the dwell; moving on aborts it and starts one for the new entry");
+    await waitForFormatConfig(T);
+    const counters = {};
+    await w.addWatchedFolder(fakeDir(w, "flogs", { "One.log": sim(1), "Two.log": sim(2), "Three.log": sim(3), "Four.log": sim(4) }, counters));
+    const folder = T.state.folders[0];
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "tree"; w.render();
+    const F = n => w.unloadedNavId("folder", folder.id, n);
+    const rootsBefore = T.state.rootIds.slice(), rowsBefore = d.querySelectorAll(".tree-row").length;
+    w.setTreeCursor(F("One.log")); w.render();
+    assert(T.folderPreloads.size === 0, "no job before the dwell has passed");
+    await waitFor(() => T.folderPreloads.size === 1);
+    const j1 = cursorJobs(T)[0];
+    assert(j1.cursor && j1.started && T.state.nodes[j1.node.id] === j1.node && !T.state.rootIds.includes(j1.node.id), "job for One.log, hidden node in state.nodes only");
+    await j1.promise;
+    assert(j1.node.entries.length > 100 && T.state.activeId === plain.id && T.state.rootIds.join() === rootsBefore.join() && d.querySelectorAll(".tree-row").length === rowsBefore, "parsed invisibly: activeId, tree and rows unchanged");
+    assert(w.treeCursorId() === F("One.log"), "cursor untouched");
+
+    w.setTreeCursor(F("Two.log")); w.render();
+    assert(T.folderPreloads.size === 0 && T.state.nodes[j1.node.id] === undefined, "the cursor left One.log: job aborted at once, node gone");
+    await waitFor(() => T.folderPreloads.size === 1);
+    const j2 = cursorJobs(T)[0];
+    assert(j2 !== j1 && j2.rec.name === "Two.log", "a job for the new entry starts after its dwell");
+    await j2.promise;
+
+    section("334c. held-key churn: moves faster than the dwell start no job");
+    for (const n of ["One.log", "Three.log", "Four.log", "Two.log", "Three.log"]) { w.setTreeCursor(F(n)); w.render(); await sleep(10); }
+    assert(T.folderPreloads.size === 0, "no job while the cursor keeps moving " + cursorJobs(T).map(j => j.rec.name + j.started));
+    await waitFor(() => T.folderPreloads.size === 1);
+    assert(cursorJobs(T)[0].rec.name === "Three.log", "only the entry it finally rests on gets one");
+    w.setTreeCursor(null); w.render();
+    assert(T.folderPreloads.size === 0, "cursor gone: job aborted");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("334d. Alt+Right adopts the finished job: no second read, activated when the cursor stayed; moved away meanwhile -> not activated");
+    await waitForFormatConfig(T);
+    const counters = {};
+    await w.addWatchedFolder(fakeDir(w, "flogs", { "One.log": sim(1), "Two.log": sim(2) }, counters));
+    const folder = T.state.folders[0];
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "tree"; w.render();
+    const F = n => w.unloadedNavId("folder", folder.id, n);
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    w.setTreeCursor(F("One.log")); w.render();
+    await waitFor(() => T.folderPreloads.size === 1);
+    const j = cursorJobs(T)[0]; await j.promise;
+    key("ArrowRight", { altKey: true });
+    const rec = folder.files.find(f => f.name === "One.log");
+    await waitFor(() => T.state.activeId === rec.nodeId && rec.nodeId);
+    assert(T.state.nodes[rec.nodeId] === j.node && !j.node.preload && j.node.entries.length > 100, "the preloaded node itself became the file");
+    assert(T.folderPreloads.size === 0 || cursorJobs(T).every(x => x.rec.name !== "One.log"), "no second job for One.log");
+
+    // in flight + cursor moves away: the load must not steal the selection, and no duplicate job appears meanwhile
+    w.setTreeCursor(F("Two.log")); w.render();
+    await waitFor(() => T.folderPreloads.size === 1);
+    const j2 = cursorJobs(T)[0];
+    key("ArrowRight", { altKey: true });
+    assert(T.folderPreloads.size === 0, "adoption takes the job out of the map");
+    w.render(); await sleep(DWELL + 50);
+    assert(T.folderPreloads.size === 0, "no duplicate job while the keyboard load runs");
+    const before = T.state.activeId;
+    w.setTreeCursor(null); T.state.activeId = plain.id; w.render();
+    await j2.promise; await sleep(50);
+    const rec2 = folder.files.find(f => f.name === "Two.log");
+    assert(T.state.activeId === plain.id, "moved away meanwhile: not activated");
+    assert(rec2.nodeId && T.state.nodes[rec2.nodeId] === j2.node && j2.node.entries.length > 100, "...but the preloaded node became the file (no second read)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("334e. ZIP entry: extract runs once for the preload, Alt+Right adopts (zipId node, activated, no second extract)");
+    await waitForFormatConfig(T);
+    const zip = await w.openZipSource(new w.File([storedZip([
+      { name: "a.log", data: sim(11) }, { name: "b.log", data: sim(12) }, { name: "notes.txt", data: "hello" },
+    ])], "logs.zip"), "logs.zip");
+    const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
+    T.state.activeId = plain.id; T.state.focusRegion = "tree"; w.render();
+    const U = n => w.unloadedNavId("zip", zip.id, n);
+    let extracts = 0;
+    for (const e of zip.entries) { const real = e.extract; e.extract = function () { extracts++; return real.apply(this, arguments); }; }
+    w.setTreeCursor(U("a.log")); w.render();
+    assert(T.folderPreloads.size === 0, "not before the dwell");
+    await waitFor(() => T.folderPreloads.size === 1);
+    const j = cursorJobs(T)[0];
+    assert(j.kind === "zip" && j.node.zipId === zip.id && !T.state.rootIds.includes(j.node.id), "a ZIP job with a hidden zipId node");
+    await j.promise;
+    assert(extracts === 1 && j.node.entries.length > 100 && T.state.activeId === plain.id, "extracted + parsed invisibly");
+    fireKeydown(d, w, "ArrowRight", { altKey: true });
+    await waitFor(() => T.state.activeId === j.node.id);
+    assert(extracts === 1, "adoption: no second extract, got " + extracts);
+    const node = T.state.nodes[j.node.id];
+    assert(node.zipId === zip.id && node.name === "a.log" && T.state.rootIds.includes(node.id) && typeof node.loadFraction !== "number", "a normal, finished zipId file");
+    assert(d.querySelector("#zipList").textContent.includes("a.log") && w.treeCursorId() === null, "listed in the ZIP section, cursor cleared");
+
+    w.setTreeCursor(U("b.log")); w.render();
+    await waitFor(() => T.folderPreloads.size === 1);
+    w.setTreeCursor(U("notes.txt")); w.render();
+    assert(T.folderPreloads.size === 0, "leaving b.log aborts its ZIP job");
+    await sleep(DWELL + 50);
+    assert(T.folderPreloads.size === 0, "a non-log entry (inline viewer) never gets a job");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("334f. meta-format and open entries get no job; the minimap and the cursor share one job per file");
+    await waitForFormatConfig(T);
+    T.state.logFormats.push({ id: "t1", name: "t1", mode: "regex", regex: "^(?<ts>\\d+) (?<message>.*)$", tsFormat: "" },
+      { id: "meta1", name: "meta", mode: "meta", targetFormatIds: ["t1"] });
+    T.state.formatRules.push({ glob: "*.meta.log", formatId: "meta1", order: -1 });
+    w.invalidateFormatCompileCache(); w.invalidateGlobCompileCache();
+    const counters = {};
+    await w.addWatchedFolder(fakeDir(w, "flogs", { "m.meta.log": "1 a\n", "One.log": sim(1) }, counters));
+    const folder = T.state.folders[0];
+    const F = n => w.unloadedNavId("folder", folder.id, n);
+    w.setTreeCursor(F("m.meta.log")); w.render();
+    await sleep(DWELL + 60);
+    assert(T.folderPreloads.size === 0, "meta-format file: no job");
+    const rec = folder.files.find(f => f.name === "One.log");
+    // the minimap selects One.log first (the cursor is only valid within the same view)
+    w.selectFolderContainer(folder.id);
+    T.fmFolderId = folder.id; T.fmSelectedRecKeys = new Set(["One.log"]); T.fmSelectedWindow = null;
+    w.renderFolderMinimap(folder);
+    assert(T.folderPreloads.size === 1 && !cursorJobs(T)[0].cursor, "the minimap's job for One.log");
+    const j = cursorJobs(T)[0];
+    w.setTreeCursor(F("One.log")); w.render();
+    await sleep(DWELL + 60);
+    assert(T.folderPreloads.size === 1 && cursorJobs(T)[0] === j, "cursor and minimap on the same file: one shared job");
+    w.setTreeCursor(null); w.render();
+    assert(T.folderPreloads.get(folder.id + "|One.log") === j, "the minimap selection keeps the job when the cursor leaves");
+  });
+}
+
+console.log("\n" + "=".repeat(60));
+console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
+// run.js parses this to sum the shards up into one total.
+if (SHARD) console.log("##SHARD " + JSON.stringify({ shard: SHARD[0], passed, failed, failures }));
+// process.exitCode, NOT process.exit(): under run.js this process writes to a
+// PIPE, where stdout is asynchronous — process.exit() drops whatever is still
+// buffered, which intermittently swallowed the ##SHARD line above and made
+// run.js report a total short by one whole shard (seen twice in one session:
+// 2273 instead of 2915, no failure listed anywhere). Setting the code and
+// letting the event loop drain naturally cannot truncate.
+process.exitCode = failed ? 1 : 0;
 })().catch(err => { console.error(err); process.exitCode = 1; });
 
 /* ============================================================
@@ -41786,4 +42410,17 @@ await withApp(async (w, d, T) => {
       .tree-cursor + "→ load" badge, dir rows too), Shift skips them, Right loads
       and shows the result only if the cursor stayed, Left -> dir row, click sets
       the cursor. Same session updated GROUP 324's dir-row / ZIP expectations.
+   Group 331 — 2026-09-29 (person-requested): silent preload — a multi-file
+      batch reads + parses while the merge-on-load dialog is open (readParse-
+      FileNode / finishLoadedFileNode split); the answer only decides
+      presentation. Groups 68/265 unchanged.
+   Group 332 — 2026-09-29 (person-requested): folder-minimap silent preload —
+      hidden preload nodes for the selected bars / dragged window, diff rules,
+      one-at-a-time + foreground priority + throttle, adoption by the actions.
+   Group 333 — 2026-09-29 (person-requested): byte-range worker parsing — the
+      workers read the Blob themselves; boundary rule, decoding edge cases,
+      no main-thread text read, fallback on worker failure.
+   Group 334 — 2026-09-29 (person-requested): silent preload under the tree
+      cursor — dwell, abort on leave, folder file + ZIP entry jobs, adoption by
+      Alt+Right with kb semantics, no duplicate job during a kb load.
    ============================================================ */
