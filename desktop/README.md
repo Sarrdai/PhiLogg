@@ -45,23 +45,23 @@ cd desktop/src-tauri
 cargo test -p philogg-logparse
 ```
 
-Builds are produced by two manual workflows sharing the same per-OS
-checkboxes and build steps: `.github/workflows/build-tester-files.yml`
-(uploads installers as workflow run artifacts named `PhiLogg-<sha>.<ext>`,
-no release) and `.github/workflows/build-release.yml` (same artifacts,
-also published together under one GitHub Release tagged `build-<sha>`).
+CI builds (Windows installer + portable zip, named `PhiLogg-<version>.exe`
+and `PhiLogg-<version>_portable.zip`) come only from the stable and beta
+release workflows, which share `.github/workflows/build-release-assets.yml`
+— see `docs/desktop.md` → "Release". macOS and Linux build locally only.
 
 ## Version stamp and release-only comment stripping
 
-Same scheme as the HTML build: the desktop build job rewrites
-`PHILOGG_VERSION` in the checked-out `philogg.html` to the commit
-short-SHA before bundling (never committed back), and the installer
-filename carries the same SHA.
+The release build runs `scripts/release-version.js stamp`, which writes the
+release version (e.g. `0.2.0` or `0.2.0-beta.3`) into the checked-out
+`philogg.html`, `package.json`, `tauri.conf.json` and `Cargo.toml` and the
+commit short-SHA into `PHILOGG_BUILD` before bundling (never committed
+back); the installer and portable zip filenames carry the same version.
 
 The same job also runs `node scripts/strip-comments.js philogg.html`,
 so the copy packaged into the installer carries no source comments — the
 tracked `philogg.html` in the repo keeps every one of them. A local
-`npm run build` does neither: it leaves the version at `dev` and the
+`npm run build` does neither: it keeps the committed version, `PHILOGG_BUILD` at `dev` and the
 comments in place, which is what you want while developing.
 
 ## What it does
@@ -109,7 +109,7 @@ or move the exe away from them.
 Building it locally: `npm run build` already produces the raw
 `src-tauri/target/release/philogg-desktop.exe`, which needs no install
 (WebView2 ships with Windows). Drop `philogg.html`, `desktop/chat.html`, `LICENSE.md`,
-`THIRD_PARTY_NOTICES.md` and an empty `philogg-portable` file next to it to
+`THIRD_PARTY_NOTICES.md` and a `philogg-portable` file (any content) next to it to
 get the same portable layout by hand.
 
 ## License and third-party notices

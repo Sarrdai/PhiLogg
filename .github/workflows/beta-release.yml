@@ -1,0 +1,87 @@
+name: Beta Release
+
+# Manual only (Actions tab -> "Beta Release" -> Run workflow, branch main).
+# Builds the current main as the next beta of the upcoming stable version and
+# publishes it as a GitHub pre-release tagged e.g. v0.2.0-beta.3:
+#
+#  - version: the version the next stable release will get (same
+#    conventional-commit rule release-please uses) plus "-beta.N", N counting
+#    up per target version. Computed by scripts/release-version.js and only
+#    stamped into the build's checkout — nothing is committed, the manifest
+#    is untouched, so release-please's stable versioning is unaffected.
+#  - build: the same reusable build as stable releases
+#    (build-release-assets.yml).
+#  - publish: tag + pre-release are created only after every variant built,
+#    with GitHub's generated notes (commits since the previous release).
+#
+# See PROJECT.md -> "Release builds".
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+# Two runs at once would compute the same beta number.
+concurrency:
+  group: beta-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - name: Betas come from main only
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "::error::Beta releases are built from main only (this run: ${{ github.ref }})"
+          exit 1
+
+      # Full history + tags: the version is derived from the commits since
+      # the last stable tag and from the existing beta tags.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Compute beta version
+        id: version
+        run: |
+          VERSION=$(node scripts/release-version.js next-beta)
+          echo "Beta version: $VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    uses: ./.github/workflows/build-release-assets.yml
+    with:
+      ref: ${{ needs.prepare.outputs.sha }}
+      version: ${{ needs.prepare.outputs.version }}
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Create pre-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.prepare.outputs.version }}
+          SHA: ${{ needs.prepare.outputs.sha }}
+        run: |
+          gh release create "$TAG" dist/* \
+            --target "$SHA" \
+            --title "$TAG" \
+            --prerelease \
+            --generate-notes

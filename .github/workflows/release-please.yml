@@ -12,12 +12,14 @@ name: Release Please
 #     that is the release PR's own merge — skip-github-pull-request means
 #     it never opens/updates a PR here, it only looks for a just-merged
 #     release branch to tag; an ordinary feature-PR merge is a fast no-op.
-#     Once a release is actually cut, build_html/build_desktop build every
-#     variant (HTML, Windows, Windows portable) and upload them to that
-#     same GitHub Release. See PROJECT.md -> "Release builds".
+#     Once a release is actually cut, `build` (build-release-assets.yml)
+#     builds every variant (HTML, Windows, Windows portable) and `publish`
+#     uploads them to that same GitHub Release. See PROJECT.md ->
+#     "Release builds".
 #
-# "Build Tester Files" (build-tester-files.yml) is unchanged and separate:
-# unversioned, ad-hoc tester drops on demand, no GitHub Release involved.
+# Beta pre-releases (v0.2.0-beta.N) are a separate, manual workflow:
+# beta-release.yml. It never touches the manifest, so release-please keeps
+# computing the next stable version from the last stable release.
 on:
   workflow_dispatch: {}
   push:
@@ -44,6 +46,7 @@ jobs:
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: googleapis/release-please-action@v4
         id: release
@@ -52,148 +55,46 @@ jobs:
           manifest-file: .release-please-manifest.json
           skip-github-pull-request: true
 
-  build_html:
+      - name: Version from tag
+        id: version
+        if: steps.release.outputs.release_created == 'true'
+        env:
+          TAG: ${{ steps.release.outputs.tag_name }}
+        run: echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+
+  build:
     needs: cut-release
     if: needs.cut-release.outputs.release_created == 'true'
+    uses: ./.github/workflows/build-release-assets.yml
+    with:
+      ref: ${{ needs.cut-release.outputs.tag_name }}
+      version: ${{ needs.cut-release.outputs.version }}
+
+  publish:
+    needs: [cut-release, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
         with:
-          ref: ${{ needs.cut-release.outputs.tag_name }}
+          path: dist
+          merge-multiple: true
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-
-      - name: Stamp build hash, strip comments and upload
+      # This has failed a `gh release upload` before with a clean build and
+      # no error output, which matches a transient upload hiccup rather
+      # than a script bug — so retry with backoff instead of failing the
+      # whole job on the first blip.
+      - name: Upload assets to the release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.cut-release.outputs.tag_name }}
         run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          COMMIT_DATE=$(git show -s --format=%cd --date=format:%Y-%m-%d HEAD)
-          sed -i "s/const PHILOGG_BUILD = \"dev\";/const PHILOGG_BUILD = \"${SHORT_SHA}\";/" philogg.html
-          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" philogg.html
-          ASSET_NAME="philogg-${COMMIT_DATE}-${SHORT_SHA}.html"
-          cp philogg.html "${ASSET_NAME}"
-          node scripts/strip-comments.js "${ASSET_NAME}"
-          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" "${ASSET_NAME}"
-          gh release upload "${{ needs.cut-release.outputs.tag_name }}" "${ASSET_NAME}" LICENSE.md --clobber
-
-  build_desktop:
-    needs: cut-release
-    if: needs.cut-release.outputs.release_created == 'true'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          ref: ${{ needs.cut-release.outputs.tag_name }}
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: desktop/src-tauri
-
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 22
-
-      - name: Install dependencies
-        working-directory: desktop
-        run: npm install
-
-      # THIRD_PARTY_NOTICES.md (license texts of every bundled Rust crate)
-      # is committed for local builds, but regenerated here so a release
-      # never ships a stale one. See desktop/README.md "Third-party notices".
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-about
-
-      - name: Regenerate third-party notices
-        working-directory: desktop
-        run: cargo about generate -m src-tauri/Cargo.toml about.hbs -o THIRD_PARTY_NOTICES.md
-
-      # Same short-SHA stamp + comment strip build_html uses, applied to the
-      # checked-out copy the Tauri bundler embeds as a resource a moment
-      # later, so the packaged philogg.html matches the standalone HTML
-      # build.
-      - name: Stamp build hash and strip comments
-        shell: bash
-        run: |
-          SHORT_SHA=$(git rev-parse --short HEAD)
-          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
-          sed -i "s/const PHILOGG_BUILD = \"dev\";/const PHILOGG_BUILD = \"${SHORT_SHA}\";/" philogg.html
-          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" philogg.html
-          node scripts/strip-comments.js philogg.html
-          grep -q "const PHILOGG_BUILD = \"${SHORT_SHA}\";" philogg.html
-
-      - name: Build installer
-        working-directory: desktop
-        run: npm run build
-
-      # Guard against shipping a console-subsystem (debug-style) exe: the
-      # release binary must be PE subsystem 2 (Windows GUI), which main.rs's
-      # `windows_subsystem = "windows"` gives every non-debug build.
-      - name: Verify release exe is a GUI (no-console) build
-        shell: bash
-        run: |
-          EXE=desktop/src-tauri/target/release/philogg-desktop.exe
-          PE_OFF=$(od -An -tu4 -j 60 -N4 "$EXE" | tr -d ' ')
-          SUBSYSTEM=$(od -An -tu2 -j $((PE_OFF + 92)) -N2 "$EXE" | tr -d ' ')
-          echo "PE subsystem: $SUBSYSTEM"
-          [ "$SUBSYSTEM" = "2" ] || { echo "::error::$EXE is not a GUI-subsystem build (subsystem $SUBSYSTEM)"; exit 1; }
-
-      # `npm run build` already produced the raw, unbundled
-      # `cargo build --release` binary alongside the NSIS installer — that
-      # binary needs nothing installed to run (WebView2 ships with Windows
-      # itself), so it's already "portable" once it carries its own copy of
-      # philogg.html and a marker file telling settings.rs/windows.rs to keep
-      # settings.json and the webview's storage in a data/ folder beside the
-      # exe instead of the OS's per-user directories. See
-      # desktop/README.md "Portable build".
-      - name: Package Windows portable build
-        shell: bash
-        run: |
-          STAGE="PhiLogg-${SHORT_SHA}_portable"
-          mkdir -p "$STAGE"
-          cp desktop/src-tauri/target/release/philogg-desktop.exe "$STAGE/PhiLogg.exe"
-          cp philogg.html "$STAGE/philogg.html"
-          cp desktop/chat.html "$STAGE/chat.html"
-          cp LICENSE.md desktop/THIRD_PARTY_NOTICES.md "$STAGE/"
-          touch "$STAGE/philogg-portable"
-          (cd "$STAGE" && 7z a -tzip "../${STAGE}.zip" .)
-
-      - name: Upload installer(s)
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        # This has failed a `gh release upload` before with a clean build and
-        # no error output, which matches a transient upload hiccup rather
-        # than a script bug — so retry with backoff instead of failing the
-        # whole job on the first blip. `-e` won't abort the loop early: the
-        # failing `gh` call sits inside an `if`, which is exempt from
-        # errexit.
-        run: |
-          upload_with_retry() {
-            local f="$1" attempt
-            for attempt in 1 2 3 4 5; do
-              if gh release upload "${{ needs.cut-release.outputs.tag_name }}" "$f" --clobber; then
-                return 0
-              fi
-              echo "::warning::upload of $f failed (attempt $attempt/5), retrying in $((attempt * 5))s"
-              sleep $((attempt * 5))
-            done
-            echo "::error::giving up uploading $f after 5 attempts"
-            return 1
-          }
-          BUNDLE=desktop/src-tauri/target/release/bundle
-          shopt -s nullglob
-          for f in "$BUNDLE"/nsis/*.exe; do
-            renamed="$(dirname "$f")/PhiLogg-${SHORT_SHA}.${f##*.}"
-            mv "$f" "$renamed"
-            upload_with_retry "$renamed"
+          for attempt in 1 2 3 4 5; do
+            if gh release upload "$TAG" dist/* --clobber; then
+              exit 0
+            fi
+            echo "::warning::upload failed (attempt $attempt/5), retrying in $((attempt * 5))s"
+            sleep $((attempt * 5))
           done
-          PORTABLE="PhiLogg-${SHORT_SHA}_portable.zip"
-          if [ -f "$PORTABLE" ]; then
-            upload_with_retry "$PORTABLE"
-          fi
+          echo "::error::giving up uploading release assets after 5 attempts"
+          exit 1
