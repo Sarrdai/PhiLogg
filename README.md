@@ -506,8 +506,8 @@ scripts/
   install_pkgs.sh                       helper for installing test dependencies
   strip-comments.js                     release-only: strips every comment out of a copy of philogg.html
   release-version.js                    release-only: computes the next beta version and stamps a version into the build's checkout
-.github/workflows/release-please.yml      two-stage stable release: proposes the version bump on demand, then tags + publishes HTML/Windows/Windows portable when that release PR merges
-.github/workflows/beta-release.yml        manual beta pre-release from main (e.g. v0.2.0-beta.3), same build variants
+.github/workflows/release-please.yml      two-stage stable release: proposes the version bump on demand, then tags + publishes all variants (HTML/Windows/Windows portable/macOS/Linux) when that release PR merges
+.github/workflows/beta-release.yml        manual beta pre-release from main (e.g. v0.2.0-beta.3), variants picked per run
 .github/workflows/build-release-assets.yml  the build both release workflows share
 release-please-config.json              release-please configuration (+ .release-please-manifest.json, the current version)
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
@@ -576,11 +576,12 @@ history via [release-please](https://github.com/googleapis/release-please)
 — a new feature bumps the minor number, a bugfix bumps the patch number),
 reviews the proposed release PR, and merges it when ready. That merge
 automatically tags the release, publishes a GitHub Release, and builds
-the HTML, Windows installer and Windows portable variants onto it.
+the HTML, Windows installer, Windows portable, macOS and Linux variants
+onto it.
 
 Between stable releases, **beta releases** go out to testers: running the
-**"Beta Release"** action on `main` publishes the same variants as a GitHub
-pre-release named after the upcoming version, e.g. `v0.2.0-beta.3`. The app
+**"Beta Release"** action on `main` (with a checkbox per variant) publishes
+them as a GitHub pre-release named after the upcoming version, e.g. `v0.2.0-beta.3`. The app
 shows that version (`0.2.0-beta.3`), so feedback can always be matched to
 an exact build.
 

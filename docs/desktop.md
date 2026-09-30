@@ -1140,26 +1140,33 @@ render pipeline, same real nodes — and only changes its appearance.
 Desktop builds come only from the two release workflows, which share one reusable build,
 `.github/workflows/build-release-assets.yml` (`workflow_call`, inputs `ref` and
 `version`): `release-please.yml` for stable releases and `beta-release.yml` for beta
-pre-releases (see PROJECT.md → "Release builds" for the versioning and triggers). Only
-Windows is built (installer + portable); there is no macOS/Linux CI build — both still
-build locally with `npm run build`.
+pre-releases (see PROJECT.md → "Release builds" for the versioning and triggers). Its
+boolean inputs `html`, `windows`, `windows_portable`, `mac`, `linux` (all default `true`;
+stable passes none, the beta dialog passes its checkboxes) select the variants. A
+`prepare` job turns them into `build_desktop`'s OS matrix (`windows-latest` if either
+Windows box is ticked, `macos-latest`, `ubuntu-22.04`) — not a job-level `if:` on
+`matrix.os`, which GitHub rejects at parse time. Linux builds on 22.04 because an
+AppImage links against its build machine's glibc, after installing the WebKitGTK/GTK/
+appindicator dev packages. `fail-fast: false` lets the other platforms finish.
 
-Its `build_windows` job regenerates `THIRD_PARTY_NOTICES.md` with cargo-about, runs
+Each `build_desktop` job regenerates `THIRD_PARTY_NOTICES.md` with cargo-about, runs
 `node scripts/release-version.js stamp <version> <short-sha>` (writes the version into
 `philogg.html`, `desktop/package.json`, `tauri.conf.json` and `Cargo.toml`, the SHA into
 `PHILOGG_BUILD`), strips `philogg.html`'s comments (`scripts/strip-comments.js`), runs
-`npm run build`, and checks the exe is a GUI-subsystem build. All of that happens on the
+`npm run build` (NSIS on Windows, DMG on macOS, AppImage on Linux — `tauri.conf.json`'s
+targets), and on Windows checks the exe is a GUI-subsystem build. All of that happens on the
 checkout only, nothing is committed back. A beta version like `0.2.0-beta.3` is fine for
 NSIS: Tauri writes the numeric `0.2.0.0` into the installer's `VIProductVersion` and
 keeps the full string everywhere else (MSI would reject it, but no MSI is built).
 
-It then packages `dist/PhiLogg-<version>.exe` (the NSIS installer) and
+It then copies the bundle into `dist/PhiLogg-<version>.<exe|dmg|AppImage>` (Windows only
+if the installer was selected; exactly one bundle expected) and, if selected, packages
 `dist/PhiLogg-<version>_portable.zip`: the raw, unbundled `philogg-desktop.exe` from the
 same `cargo build --release` (needs no install — WebView2 ships with Windows) as
 `PhiLogg.exe`, the stamped/stripped `philogg.html`, `chat.html`, `LICENSE.md`,
 `THIRD_PARTY_NOTICES.md` and a `philogg-portable` marker file (see "Persistent data"
 above; it carries one line of text, only its existence matters), zipped with 7z. `dist/`
-is uploaded as the workflow artifact `release-windows` (`build_html` does the same with
+is uploaded as the workflow artifact `release-<runner.os>` (`build_html` does the same with
 `philogg-<version>.html` + `LICENSE.md` as `release-html`). The caller's `publish` job
 downloads both artifacts — which unzips the artifact, not the portable zip inside it —
 and only then attaches them to the GitHub Release (`gh release upload`, retried up to 5×)
