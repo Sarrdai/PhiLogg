@@ -626,13 +626,14 @@
 
   /* Folder watch (FEATURE_BACKLOG.md "Folder watch + lazy loading"): a
      watched folder's section sits above #tree, showing its name with a
-     "scanning" ping animation while actively watched, and its files IN
+     calm status dot while actively watched (plus a one-shot ping when a
+     rescan finds a NEW file), and its files IN
      FOLDER ORDER — opened ones as real .tree-row entries (via renderNode),
      not-yet-opened ones as grayed .folder-watch-file rows — so where a file
      sits in the folder stays visible either way. A folder that survived a
      reload but hasn't reconfirmed read permission yet (see "Folder watch
      (lazy loading)" near the Tailing section) shows a lock icon and a
-     Reconnect button instead of the scanning ping. See
+     Reconnect button instead of the dot. See
      renderFolderWatchList/renderFolderSection/renderInactiveFileRow. */
   #folderWatchList{flex:0 0 auto;}
   .folder-watch{
@@ -646,11 +647,26 @@
   .folder-watch-icon{
     flex:0 0 auto; position:relative; display:flex; color:var(--text-tertiary);
   }
-  .folder-watch-icon.scanning{color:var(--accent);}
-  .folder-watch-icon.scanning::after{
+  .folder-watch-icon.live{color:var(--text-secondary);}
+  /* Status dot at the icon's bottom-right: accent = watching, error = the
+     folder is unreachable. The ring (box-shadow) separates it from the glyph. */
+  .folder-watch-dot{
+    position:absolute; right:-2px; bottom:-1px; width:6px; height:6px;
+    border-radius:50%; background:var(--accent);
+    box-shadow:0 0 0 1.5px var(--bg-elevated);
+  }
+  .folder-watch-icon.failed .folder-watch-dot{background:var(--level-error);}
+  /* One-shot ping while folder._pingAt is fresh (a rescan found a new file).
+     --ping-delay is a negative elapsed time so a re-rendered section
+     continues the animation instead of restarting it. */
+  .folder-watch-icon.ping-once::after{
     content:""; position:absolute; inset:-4px; border-radius:50%;
-    border:1.5px solid var(--accent); opacity:0;
-    animation:folder-scan-ping 1.8s ease-out infinite;
+    border:1.5px solid var(--accent); opacity:0; pointer-events:none;
+    animation:folder-scan-ping 1.8s ease-out 1 both;
+    animation-delay:var(--ping-delay,0ms);
+  }
+  @media (prefers-reduced-motion: reduce){
+    .folder-watch-icon.ping-once::after{animation:none; display:none;}
   }
   @keyframes folder-scan-ping{
     0%{transform:scale(.5); opacity:.85;}
@@ -697,8 +713,8 @@
   }
   /* ZIP source sections (renderZipSection, near renderFolderSection): same
      box-per-source look as folder watch (.folder-watch, .folder-watch-file,
-     .folder-watch-file-name reused directly), but with no scanning-ping
-     indicator and no settings gear — a ZIP is a one-shot listing, nothing is
+     .folder-watch-file-name reused directly), but with no status dot/ping
+     indicator and no settings cog — a ZIP is a one-shot listing, nothing is
      polled and there are no auto-load rules to configure. See #zipList. */
   #zipList{flex:0 0 auto;}
   .zip-source-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
@@ -909,8 +925,10 @@
   }
   /* Find bar cross-file hit count (FEATURE_BACKLOG #30), before .tree-count. */
   .tree-hit-badge{
-    flex:0 0 auto; font-size:10.5px; font-weight:650; font-variant-numeric:tabular-nums;
-    padding:0 6px; line-height:17px; border-radius:9px; margin-right:2px; cursor:pointer;
+    /* 14px line + 2px border = 16px = the .tree-row content height, so a
+       badge never makes its row taller than a badge-less one. */
+    flex:0 0 auto; font-size:10px; font-weight:650; font-variant-numeric:tabular-nums;
+    padding:0 6px; line-height:14px; border-radius:9px; margin-right:2px; cursor:pointer;
     background:var(--accent-soft); color:var(--accent-strong);
     border:1px solid color-mix(in srgb,var(--accent) 55%,transparent);
   }
@@ -4451,6 +4469,7 @@
     <symbol id="i-clock" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 4.75V8l2.25 1.5"/></symbol>
     <symbol id="i-book" viewBox="0 0 16 16"><path d="M2.5 3.5c2-.75 3.75-.5 5.5.75 1.75-1.25 3.5-1.5 5.5-.75v9c-2-.75-3.75-.5-5.5.75-1.75-1.25-3.5-1.5-5.5-.75ZM8 4.25v9"/></symbol>
     <symbol id="i-bookplus" viewBox="0 0 16 16"><path d="M2.5 3.5c2-.75 3.75-.5 5.5.75v9c-1.75-1.25-3.5-1.5-5.5-.75ZM8 4.25c1.75-1.25 3.5-1.5 5.5-.75v3.75M12 9.75v4.5M9.75 12h4.5"/></symbol>
+    <symbol id="i-cog" viewBox="0 0 24 24" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
     <symbol id="i-gear" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.25"/><path d="M8 1.75v2M8 12.25v2M1.75 8h2M12.25 8h2M3.6 3.6 5 5M11 11l1.4 1.4M3.6 12.4 5 11M11 5l1.4-1.4"/></symbol>
     <symbol id="i-x" viewBox="0 0 16 16"><path d="m4.25 4.25 7.5 7.5M11.75 4.25l-7.5 7.5"/></symbol>
     <symbol id="i-more" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></symbol>
@@ -6866,6 +6885,9 @@ const ICON_FOLDER = icon("folder");
 // source reads as visually distinct from a watched folder at a glance.
 const ICON_ZIP = icon("zip");
 const ICON_GEAR = icon("gear");
+// Folder-watch settings button: the app Settings button's cog glyph (24-unit
+// viewBox, stroke-width 2 set on the symbol in the sprite).
+const ICON_COG = icon("cog");
 const ICON_LOCK = icon("lock");
 const ICON_FILTER = icon("filter");
 // "Filter for this message" row-action's own icon (distinct from the plain
@@ -28344,8 +28366,8 @@ function renderZipList() {
 // Visually a folder-watch box (reuses .folder-watch/-header/-name/-close/
 // -files/-file/-file-name/-note directly), but WITHOUT the two pieces of
 // chrome that only make sense for something being actively watched: no
-// scanning-ping indicator (.folder-watch-icon.scanning — nothing here is
-// polled) and no settings gear (no auto-open/auto-close rules apply to an
+// status dot/ping indicator (.folder-watch-dot — nothing here is
+// polled) and no settings cog (no auto-open/auto-close rules apply to an
 // immutable ZIP). Rows are inert until double-clicked.
 function renderZipSection(zip) {
   const box = document.createElement("div");
@@ -30873,9 +30895,9 @@ setInterval(tailTick, TAIL_POLL_MS);
 
    The folder itself is polled every FOLDER_SCAN_MS (same handle-based
    approach as TAIL_POLL_MS above) to pick up files that show up in the
-   folder after it was opened — the pulsing ring on the folder icon
-   (.folder-watch-icon.scanning, CSS) visualizes that this polling is
-   active.
+   folder after it was opened — the folder icon shows a static status
+   dot while watching, and a one-shot ping ring (.folder-watch-icon.ping-once)
+   plays when a poll finds a NEW file.
 
    Closing a folder-loaded file (✕, or "Remove file" in its context menu)
    does NOT fully remove it the way a normal file does — see
@@ -31436,6 +31458,7 @@ async function folderScanTick() {
       // known entry missing from this scan also triggers the merge (which
       // is what actually drops/closes it — see mergeScannedFiles).
       const hasRemoved = [...known].some(k => !scannedKeys.has(k));
+      if (hasNew) folder._pingAt = Date.now(); // transient, one-shot ping (renderFolderSection)
       if (hasNew || hasRemoved) { await mergeScannedFiles(folder, scanned); render(); }
     } catch (err) {
       folder.failed = true;
@@ -31492,6 +31515,7 @@ function renderFolderWatchList() {
 // visible once it's active, per the person's explicit request) with grayed
 // placeholder rows (renderInactiveFileRow) for everything not yet opened —
 // instead of the two kinds living in visually separate places.
+const FOLDER_PING_MS = 1800; // matches @keyframes folder-scan-ping duration
 function renderFolderSection(folder) {
   const box = document.createElement("div");
   box.className = "folder-watch";
@@ -31500,8 +31524,21 @@ function renderFolderSection(folder) {
   header.className = "folder-watch-header";
   const icon = document.createElement("span");
   const isLive = !folder.needsPermission && !folder.failed;
-  icon.className = "folder-watch-icon" + (isLive ? " scanning" : "");
+  icon.className = "folder-watch-icon" + (isLive ? " live" : "") + (folder.failed ? " failed" : "");
   icon.innerHTML = folder.needsPermission ? ICON_LOCK : ICON_FOLDER;
+  if (!folder.needsPermission) {
+    const dot = document.createElement("span");
+    dot.className = "folder-watch-dot";
+    icon.appendChild(dot);
+  }
+  // One-shot ping (folderScanTick stamps folder._pingAt when a NEW file
+  // appears): render() rebuilds this section often, so the class is derived
+  // from the stamp's age and the negative delay resumes the animation.
+  const pingAge = folder._pingAt ? Date.now() - folder._pingAt : Infinity;
+  if (isLive && pingAge >= 0 && pingAge < FOLDER_PING_MS) {
+    icon.classList.add("ping-once");
+    icon.style.setProperty("--ping-delay", "-" + Math.round(pingAge) + "ms");
+  }
   icon.title = folder.failed ? "Folder no longer reachable"
     : folder.needsPermission ? "Permission needed to resume watching"
     : "Watching for new " + FOLDER_WATCH_EXTENSIONS.join(", ") + " files";
@@ -31529,7 +31566,7 @@ function renderFolderSection(folder) {
   const settingsBtn = document.createElement("button");
   settingsBtn.type = "button";
   settingsBtn.className = "folder-watch-settings";
-  settingsBtn.innerHTML = ICON_GEAR;
+  settingsBtn.innerHTML = ICON_COG;
   settingsBtn.title = "Folder watch settings";
   settingsBtn.addEventListener("click", () => openFolderWatchSettingsDialog(folder));
   header.appendChild(settingsBtn);

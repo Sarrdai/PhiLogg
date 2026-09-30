@@ -203,7 +203,7 @@ deployments possible:
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
   Filtered views auto-following the newest entry; a watched folder picks up
-  new files automatically. Each folder's own gear-icon settings dialog
+  new files automatically. Each folder's own cog-icon settings dialog
   configures filename patterns (e.g. `App*.log`, `Input*.log`, each with its
   own auto-open-newest-file / auto-close-keep-N-open / show-M-newest-files
   rules), plus include-subfolders — subfolders then show up as collapsible
