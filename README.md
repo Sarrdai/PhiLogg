@@ -504,9 +504,11 @@ examples/
   bracket-format.log                    a sample log file in a different format, for trying the Format Manager
 scripts/
   install_pkgs.sh                       helper for installing test dependencies
-  strip-comments.js                     release-only: strips every comment out of a copy of philogg.html (both build workflows run it)
-.github/workflows/build-tester-files.yml  manual workflow: builds the selected variants (HTML/Windows/Windows portable/macOS/Linux) as downloadable run artifacts, no release created
-.github/workflows/release-please.yml      two-stage release: proposes the version bump on demand, then tags + builds HTML/Windows/Windows portable when that release PR merges
+  strip-comments.js                     release-only: strips every comment out of a copy of philogg.html
+  release-version.js                    release-only: computes the next beta version and stamps a version into the build's checkout
+.github/workflows/release-please.yml      two-stage stable release: proposes the version bump on demand, then tags + publishes HTML/Windows/Windows portable when that release PR merges
+.github/workflows/beta-release.yml        manual beta pre-release from main (e.g. v0.2.0-beta.3), same build variants
+.github/workflows/build-release-assets.yml  the build both release workflows share
 release-please-config.json              release-please configuration (+ .release-please-manifest.json, the current version)
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
 docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing, performance)
@@ -574,14 +576,13 @@ history via [release-please](https://github.com/googleapis/release-please)
 — a new feature bumps the minor number, a bugfix bumps the patch number),
 reviews the proposed release PR, and merges it when ready. That merge
 automatically tags the release, publishes a GitHub Release, and builds
-the HTML, Windows installer and Windows portable variants onto it (macOS
-and Linux builds are available only through the tester workflow below).
+the HTML, Windows installer and Windows portable variants onto it.
 
-Separately, **"Build Tester Files"**
-(`.github/workflows/build-tester-files.yml`) is a manual, unversioned path
-for handing testers an ad-hoc build (with its own checkboxes for which
-variants to build, macOS and Linux included) without cutting a real release — it uploads downloadable
-workflow run artifacts, no GitHub Release involved.
+Between stable releases, **beta releases** go out to testers: running the
+**"Beta Release"** action on `main` publishes the same variants as a GitHub
+pre-release named after the upcoming version, e.g. `v0.2.0-beta.3`. The app
+shows that version (`0.2.0-beta.3`), so feedback can always be matched to
+an exact build.
 
 ## License
 

@@ -4,8 +4,8 @@
 // The tracked philogg.html keeps every comment — they are most of what makes
 // a 20k-line single file navigable. The copies that leave the repo as a
 // release asset or packaged into a desktop installer do not need them, so
-// both build-tester-files.yml and build-release.yml run this over their
-// checked-out copy right after the PHILOGG_VERSION stamp and before
+// the release build (.github/workflows/build-release-assets.yml) runs this
+// over its checked-out copy right after the version stamp and before
 // publishing. Nothing is ever committed back.
 //
 //   node scripts/strip-comments.js <input.html> [output.html]
