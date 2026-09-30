@@ -10,13 +10,35 @@ name: Beta Release
 #    stamped into the build's checkout — nothing is committed, the manifest
 #    is untouched, so release-please's stable versioning is unaffected.
 #  - build: the same reusable build as stable releases
-#    (build-release-assets.yml).
+#    (build-release-assets.yml), limited to the variants ticked in the run
+#    dialog (HTML + Windows + Windows portable by default).
 #  - publish: tag + pre-release are created only after every variant built,
 #    with GitHub's generated notes (commits since the previous release).
 #
 # See PROJECT.md -> "Release builds".
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      html:
+        description: HTML (philogg.html)
+        type: boolean
+        default: true
+      windows:
+        description: Windows installer (.exe)
+        type: boolean
+        default: true
+      windows_portable:
+        description: Windows portable (.zip)
+        type: boolean
+        default: true
+      mac:
+        description: macOS (.dmg)
+        type: boolean
+        default: false
+      linux:
+        description: Linux (.AppImage)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -37,6 +59,12 @@ jobs:
         if: github.ref != 'refs/heads/main'
         run: |
           echo "::error::Beta releases are built from main only (this run: ${{ github.ref }})"
+          exit 1
+
+      - name: At least one variant selected
+        if: ${{ !(inputs.html || inputs.windows || inputs.windows_portable || inputs.mac || inputs.linux) }}
+        run: |
+          echo "::error::Select at least one variant to build"
           exit 1
 
       # Full history + tags: the version is derived from the commits since
@@ -63,6 +91,11 @@ jobs:
     with:
       ref: ${{ needs.prepare.outputs.sha }}
       version: ${{ needs.prepare.outputs.version }}
+      html: ${{ inputs.html }}
+      windows: ${{ inputs.windows }}
+      windows_portable: ${{ inputs.windows_portable }}
+      mac: ${{ inputs.mac }}
+      linux: ${{ inputs.linux }}
 
   publish:
     needs: [prepare, build]

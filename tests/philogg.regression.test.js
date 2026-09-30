@@ -38509,8 +38509,21 @@ if (groupSelected()) {
   }
   const build = wf("build-release-assets.yml");
   assert((build.match(/release-version\.js stamp "\$VERSION"/g) || []).length === 2, "both build jobs stamp the version");
-  assert(/7z a -tzip "\.\.\/dist\/\$\{STAGE\}\.zip" \./.test(build) && /name: release-windows\n\s+path: dist\//.test(build),
+  assert(/7z a -tzip "\.\.\/dist\/\$\{STAGE\}\.zip" \./.test(build) && /name: release-\$\{\{ runner\.os \}\}\n\s+path: dist\//.test(build),
     "portable zip is a file inside the artifact, unzipped again by the publish job's download");
+
+  section("340c. Variant selection: checkboxes on beta, everything on stable");
+  const variants = ["html", "windows", "windows_portable", "mac", "linux"];
+  for (const v of variants) {
+    assert(new RegExp("\\n      " + v + ":\\n        type: boolean\\n        default: true").test(build), "shared build: input " + v + " defaults to true");
+    assert(new RegExp("\\n      " + v + ":\\n        description: [^\\n]+\\n        type: boolean").test(beta), "beta: checkbox " + v);
+    assert(beta.includes(v + ": ${{ inputs." + v + " }}"), "beta passes " + v + " to the build");
+  }
+  const rp = wf("release-please.yml");
+  assert(!variants.some(v => rp.includes(v + ": ${{")), "stable passes no selection, so the build's defaults (all variants) apply");
+  assert(/if: inputs\.html/.test(build) && /WINDOWS: \$\{\{ inputs\.windows \|\| inputs\.windows_portable \}\}/.test(build),
+    "HTML job and the Windows runner follow the selection (portable alone still needs the Windows runner)");
+  assert(/"macos-latest"/.test(build) && /"ubuntu-22\.04"/.test(build), "macOS and Linux runners are part of the matrix");
 }
 
 console.log("\n" + "=".repeat(60));
@@ -43029,7 +43042,8 @@ process.exitCode = failed ? 1 : 0;
       dropped; "Bookmarks & notes" list and footer no longer exist in the snippet).
    Group 340 — 2026-09-30 (person-requested): beta releases — next-beta version
       rule and version stamp (scripts/release-version.js), beta-release.yml /
-      shared build-release-assets.yml wiring, tester workflow removed. Updated
+      shared build-release-assets.yml wiring, tester workflow removed; 340c
+      variant checkboxes on beta, all five variants on stable. Updated
       GROUP 271e (LICENSE/notices now asserted on the shared build) and 218's
       message.
    Group 336 — 2026-09-29 (person-requested): folder-watch header static status
