@@ -14858,6 +14858,7 @@ function snapshotSubtree(nodeId) {
     // shouldn't be the thing that makes that true).
     if (node.formatId) copy.formatId = node.formatId;
     if (node.folderId) copy.folderId = node.folderId;
+    if (node.folderRelPath) copy.folderRelPath = node.folderRelPath;
     // A "Filter lines" text version keeps its viewer nesting and syntax.
     if (node.viewerSource) copy.viewerSource = node.viewerSource;
     if (node.textSyntax !== undefined) copy.textSyntax = node.textSyntax;
@@ -14941,6 +14942,7 @@ function restoreSubtree(snap) {
     if (snap.tail) node.tail = snap.tail;
     if (snap.formatId) node.formatId = snap.formatId;
     if (snap.folderId) node.folderId = snap.folderId;
+    if (snap.folderRelPath) node.folderRelPath = snap.folderRelPath;
     if (snap.viewerSource) node.viewerSource = snap.viewerSource;
     if (snap.textSyntax !== undefined) node.textSyntax = snap.textSyntax;
     if (snap.partial) node.partial = snap.partial;
@@ -29154,6 +29156,16 @@ async function restoreViewersFromCache(meta) {
     viewer.cacheKey = v.key;
     viewer.localPath = rec.localPath || null;
     registerInlineViewer(viewer, { ownerKind: v.ownerKind, ownerId: v.ownerId, map, mapKey: v.mapKey });
+    if (v.ownerKind === "folder") {
+      // A restored folder still waiting for permission has no scan yet: seed
+      // the viewer's listing entry (same shape as restoreWatchedFolders) so it
+      // stays listed and its text versions stay nested inside the folder.
+      const folder = state.folders.find(f => f.id === v.ownerId);
+      if (folder && !folder.files.some(r => folderFileKey(r) === v.mapKey)) {
+        folder.files.push({ name: v.name, relPath: v.mapKey, handle: null, nodeId: null });
+        folder.files.sort((a, b) => folderFileKey(a).localeCompare(folderFileKey(b)));
+      }
+    }
     keep.add(v.key);
     if (meta.activeViewer === v.key) active = viewer;
   }
@@ -29250,8 +29262,8 @@ function isNestedUnderViewer(node) {
   if (!src) return false;
   const map = viewerMapForOwner(src.ownerKind, src.ownerId);
   if (!map || !map.has(src.mapKey)) return false;
-  // A folder lists (and so renders) an entry only once scanned — e.g. not
-  // while a restored folder still waits for permission.
+  // A folder renders an entry only while it is listed; restoreViewersFromCache
+  // seeds that listing for a restored folder still waiting for permission.
   if (src.ownerKind === "folder") {
     const folder = state.folders.find(f => f.id === src.ownerId);
     return !!folder && folder.files.some(r => folderFileKey(r) === src.mapKey);
@@ -31726,7 +31738,12 @@ async function finishFolderFileNode(folder, rec, node, auto) {
   // "Open File Location"/"Copy Path" like every other route there. Set
   // after the load rather than threaded through loadOneFileIntoTree,
   // which already has enough parameters and no other caller needing them.
-  if (applyFolderFileLocation(node, rec.handle)) persistFileNode(node);
+  // Remember the folder-relative path (subfolder files) so the pre-reconnect
+  // listing restored on the next boot matches what the scan reports.
+  const relPath = folderFileKey(rec);
+  const relChanged = node.folderRelPath !== relPath;
+  node.folderRelPath = relPath;
+  if (applyFolderFileLocation(node, rec.handle) || relChanged) persistFileNode(node);
 }
 
 // Adopts a FULL silent-preload job (see "Silent preload" near the folder
@@ -42464,6 +42481,7 @@ async function persistFileNode(node, immediate, noSnapshot) {
     name: node.name,
     merged: !!node.merged,
     folderId: node.folderId || null, // see "Folder watch" — re-links this node to its folder on restore
+    folderRelPath: node.folderRelPath || null, // its path inside the folder (subfolder files), seeds the pre-reconnect listing
     // A real FileSystemFileHandle survives IndexedDB's structured clone (same
     // fact persistFolder already relies on) — stashing it here is what lets
     // restoreSessionFromCache silently resume tailing after a reload instead
@@ -43002,6 +43020,7 @@ async function restoreSessionFromCache(metaIn) {
       // folder record itself (including its handle) comes back separately
       // via restoreWatchedFolders, called right after this function returns.
       if (rec.folderId) node.folderId = rec.folderId;
+      if (rec.folderRelPath) node.folderRelPath = rec.folderRelPath;
       if (rec.viewerSource) node.viewerSource = rec.viewerSource;
       if (rec.textSyntax) node.textSyntax = rec.textSyntax;
       if (rec.localPath) node.localPath = rec.localPath;
@@ -43144,7 +43163,7 @@ async function restoreWatchedFolders() {
     };
     state.rootIds.forEach(rid => {
       const n = state.nodes[rid];
-      if (n && n.folderId === folder.id) folder.files.push({ name: n.name, relPath: n.name, handle: null, nodeId: n.id });
+      if (n && n.folderId === folder.id) folder.files.push({ name: n.name, relPath: n.folderRelPath || n.name, handle: null, nodeId: n.id });
     });
     state.folders.push(folder);
     await tryReconnectFolder(folder);
