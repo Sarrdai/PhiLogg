@@ -103,6 +103,13 @@ NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js --out "$SCRATCH/shot
 # --eval runs page JS before the shot (the app's own functions, e.g. createFilterNode / render / applyFhView), --theme dark
 ```
 
+`--theme light|dark` sets the theme **mode** (Catppuccin Latte / Mocha, the
+default pair; without it the app is in mode System and follows headless
+Chromium's light default). Any other `--theme` value is an explicit theme id
+(`--theme catppuccin-frappe`, a custom theme's id). The Classic themes have
+the ids `dark`/`light`, which clash with the mode names, so pick them with
+`--eval "setTheme('dark')"`.
+
 `docs/screenshots/generate.sh` + `docs/screenshots/scenes/` (the README's
 screenshots) is the worked example of everything below.
 

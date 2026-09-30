@@ -6,8 +6,15 @@
 // rules), skipping the import wizard.
 //
 //   node tools/log-sim/screenshot.js [--out shot.png] [--size 1440x900]
-//        [--theme dark|light] [--eval "<js run in the page before the shot>"]
+//        [--theme <mode|theme id>] [--eval "<js run in the page before the shot>"]
 //        [--wait <ms>] <log files and *.logformat.json files...>
+//
+// --theme light|dark sets the theme MODE (setThemeMode), i.e. the default
+// pair: Catppuccin Latte / Mocha. Any other value is an explicit theme id
+// (setTheme), e.g. --theme catppuccin-frappe. Without --theme the app is in
+// mode "system" and follows headless Chromium's default (light -> Latte).
+// The Classic themes have the ids "dark"/"light", which clash with the mode
+// names, so pick them through --eval "setTheme('dark')" instead.
 //
 // Needs Playwright (preinstalled globally in the cloud container: run with
 // NODE_PATH="$(npm root -g)").
@@ -48,7 +55,7 @@ async function main() {
         parsed.fileNamePatterns.forEach(glob => state.formatRules.unshift({ id: "rule-" + id + "-" + glob, glob, formatId: id, order: -1, createdAt: 0 }));
       }, text);
     }
-    if (opt.theme) await page.evaluate(t => applyTheme(t), opt.theme);
+    if (opt.theme) await page.evaluate(t => (t === "light" || t === "dark") ? setThemeMode(t) : setTheme(t), opt.theme);
     for (let i = 0; i < zips.length; i++) {
       await page.setInputFiles("#zipInput", zips[i]);
       await page.waitForFunction(n => state.zips.length >= n, i + 1, { timeout: 60000 });
