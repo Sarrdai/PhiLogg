@@ -109,7 +109,7 @@ or move the exe away from them.
 Building it locally: `npm run build` already produces the raw
 `src-tauri/target/release/philogg-desktop.exe`, which needs no install
 (WebView2 ships with Windows). Drop `philogg.html`, `desktop/chat.html`, `LICENSE.md`,
-`THIRD_PARTY_NOTICES.md` and an empty `philogg-portable` file next to it to
+`THIRD_PARTY_NOTICES.md` and a `philogg-portable` file (any content) next to it to
 get the same portable layout by hand.
 
 ## License and third-party notices

@@ -2,6 +2,10 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **fix: Windows portable tester build no longer comes out double-zipped (2026-09-30, person-reported)**
+  - `build-tester-files.yml` 7z-zipped the portable folder and then uploaded that `.zip` via `actions/upload-artifact`, which zips every artifact again on download — a zip inside a zip. It now uploads the staging folder `PhiLogg-<sha>_portable/` directly (artifact name `PhiLogg-<sha>_portable`), so the download is one zip with the files at top level. The release workflow already uploaded a single 7z zip via `gh release upload` and is unchanged apart from the marker below.
+  - The `philogg-portable` marker is now written with one line of text instead of `touch` (both workflows) so it can't be dropped as a zero-byte file; `settings.rs` only checks that it exists.
+
 - **feat: "Copy for ticket" reworked — line picks, gap markers, inline notes, rich text, direct copy (2026-09-30, person-requested, FEATURE_BACKLOG #91 + #92)**
   - The snippet is now compact: a one-or-two-line header (file, entry count, time span of the quoted entries, filter chain + "x of y"), then ONE block of raw lines with notes inline (`  ↳ Note: …`) and a gap marker (`··· 45 lines · +2s ···`) wherever two quoted entries aren't adjacent in the file. The old five-block header, "Bookmarks & notes" list and "Exported with PhiLogg" footer are gone. A selection filter ("story") gets its name as heading and "N hand-picked entries"; the level quick filter is ignored for selection views (files included).
   - New **Lines** choice in the Export / Share dialog: Marked rows (2+ marked log rows) / All / First N / Bookmarked; defaults on open: selection filter → All, 2+ marked rows → Marked rows, else the remembered All/First/Bookmarked. New **Rich text** format (`text/html` with inline styles + `text/plain`), toggles for gaps and header (`philogg-export-lines/-gaps/-header`), and a `Save file ▾` menu replacing the attachment section.

@@ -189,8 +189,10 @@ jobs:
           cp philogg.html "$STAGE/philogg.html"
           cp desktop/chat.html "$STAGE/chat.html"
           cp LICENSE.md desktop/THIRD_PARTY_NOTICES.md "$STAGE/"
-          touch "$STAGE/philogg-portable"
-          (cd "$STAGE" && 7z a -tzip "../${STAGE}.zip" .)
+          # Non-empty on purpose: settings.rs only checks that the file
+          # exists, and a zero-byte file is the one case worth not trusting
+          # the artifact zipper with.
+          echo "PhiLogg portable mode marker" > "$STAGE/philogg-portable"
 
       - name: Rename installer(s)
         shell: bash
@@ -210,12 +212,16 @@ jobs:
           name: PhiLogg-${{ needs.prepare.outputs.short_sha }}-windows-installer
           path: desktop/src-tauri/target/release/bundle/nsis/*.exe
 
+      # Upload the staging folder itself, not a pre-built zip: upload-artifact
+      # always zips an artifact on download, so a .zip inside it would come
+      # out double-zipped. The download is PhiLogg-<sha>_portable.zip with
+      # the files at its top level.
       - name: Upload Windows portable build
         if: runner.os == 'Windows' && inputs.build_windows_portable
         uses: actions/upload-artifact@v4
         with:
-          name: PhiLogg-${{ needs.prepare.outputs.short_sha }}-windows-portable
-          path: PhiLogg-${{ needs.prepare.outputs.short_sha }}_portable.zip
+          name: PhiLogg-${{ needs.prepare.outputs.short_sha }}_portable
+          path: PhiLogg-${{ needs.prepare.outputs.short_sha }}_portable/
 
       - name: Upload macOS installer
         if: runner.os == 'macOS'
