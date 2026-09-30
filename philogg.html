@@ -144,7 +144,8 @@
   }
 
   /* Theme overrides, selected via [data-theme="..."] on <html> — see the
-     Theme dropdown in Settings -> Appearance (#settingsThemeSelect). Each
+     Theme controls in Settings -> Appearance (#settingsThemeModeRow and the
+     two slot dropdowns #settingsThemeLightSelect/#settingsThemeDarkSelect). Each
      block below overrides the same set of vars declared in :root above
      (THEME_COLOR_KEYS in the Theme script section); imported/custom themes
      apply the identical vars inline via JS instead of a CSS block, see
@@ -3248,7 +3249,7 @@
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
   }
-  #settingsThemeSelect{min-width:190px;}
+  #settingsThemeLightSelect, #settingsThemeDarkSelect{min-width:190px;}
   /* IDE Integration (Settings) — a plain text input inside a settings-row,
      styled to match the adjacent .settings-row-control select above; and the
      two rows (Visual Studio connection, instance picker) that need more than
@@ -3319,6 +3320,9 @@
     padding:16px 18px; border-bottom:1px solid var(--border-soft);
   }
   .settings-card > .settings-row:last-of-type{border-bottom:none;}
+  /* Indented sub-row under its parent row (Settings -> Appearance: the
+     Light/Dark theme slot pickers under the Theme mode row). */
+  .settings-row.settings-row-sub{padding-left:34px;}
   .settings-row-text{display:flex; flex-direction:column; gap:3px; min-width:0;}
   .settings-row-label{font-size:13.5px; font-weight:550; color:var(--text-primary);}
   .settings-row-hint{font-size:12px; color:var(--text-tertiary); font-weight:400; line-height:1.5;}
@@ -4556,20 +4560,29 @@
     <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
 </svg>
 <script>(function(){
-  // FOUC fix: applies the stored (or system-preferred) theme to <html>
+  // FOUC fix: applies the theme the person would see (theme mode + the
+  // light/dark slot, see "Theme" in the main <script>) to <html>
   // synchronously, before the rest of the page parses/paints, so the app
-  // never flashes the default dark :root values first. initTheme() (near
-  // the end of the main <script>) still runs later and is the source of
-  // truth — it re-applies via resolveThemeId(), which can fall back to
-  // "dark" for a theme id that no longer resolves (e.g. a deleted custom
-  // theme). That resolution isn't duplicated here on purpose: this script
-  // only needs to be right in the common case fast enough to beat first
-  // paint; an occasional stale custom-theme id gets silently corrected by
-  // initTheme() a moment later, which is an acceptable trade for keeping
-  // this inline script trivial and free of the themes-array dependency.
-  var t = localStorage.getItem("philogg-theme");
-  if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  document.documentElement.setAttribute("data-theme", t);
+  // never flashes the default :root values first. Mode "system" (the
+  // default, also for a missing/unknown value) follows the OS light/dark
+  // preference; "light"/"dark" pin it. The slot holds a theme id, defaulting
+  // to Catppuccin Latte (light) / Mocha (dark). initTheme() (near the end of
+  // the main <script>) still runs later and is the source of truth — it
+  // re-applies via resolveThemeId(), which falls back to the slot's default
+  // for a theme id that no longer resolves (e.g. a deleted custom theme).
+  // That resolution isn't duplicated here on purpose: this script only needs
+  // to be right in the common case fast enough to beat first paint; an
+  // occasional stale custom-theme id gets silently corrected by initTheme() a
+  // moment later, which is an acceptable trade for keeping this inline
+  // script trivial and free of the themes-array dependency.
+  var scheme = "dark", id = null;
+  try {
+    var mode = localStorage.getItem("philogg-theme-mode");
+    if (mode === "light" || mode === "dark") scheme = mode;
+    else if (matchMedia("(prefers-color-scheme: light)").matches) scheme = "light";
+    id = localStorage.getItem("philogg-theme-" + scheme);
+  } catch (e) { /* no storage / no matchMedia: the defaults below */ }
+  document.documentElement.setAttribute("data-theme", id || (scheme === "light" ? "catppuccin-latte" : "catppuccin-mocha"));
 })();</script>
 <div id="app">
 
@@ -5887,10 +5900,30 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Theme</div>
-                <div class="settings-row-hint">Dark is the default.</div>
+                <div class="settings-row-hint">System follows your OS light/dark setting.</div>
+              </div>
+              <div class="settings-row-control assert-mode-row" id="settingsThemeModeRow" role="group" aria-label="Theme mode">
+                <button type="button" class="assert-mode-btn" id="settingsThemeModeSystem" data-theme-mode="system">System</button>
+                <button type="button" class="assert-mode-btn" id="settingsThemeModeLight" data-theme-mode="light">Light</button>
+                <button type="button" class="assert-mode-btn" id="settingsThemeModeDark" data-theme-mode="dark">Dark</button>
+              </div>
+            </div>
+            <div class="settings-row settings-row-sub">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Light theme</div>
+                <div class="settings-row-hint">Used in light mode.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsThemeSelect"></select>
+                <select id="settingsThemeLightSelect"></select>
+              </div>
+            </div>
+            <div class="settings-row settings-row-sub">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Dark theme</div>
+                <div class="settings-row-hint">Used in dark mode.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsThemeDarkSelect"></select>
               </div>
             </div>
             <div class="settings-row">
@@ -7036,16 +7069,26 @@ const ICON_RENAME = icon("rename");
 const ICON_LEVEL = icon("level");
 
 /* ===================== Theme ===================== */
-// Settings page -> Appearance: a single dropdown (#settingsThemeSelect)
-// listing the built-in themes (dark/light/four Catppuccin flavors, see the
-// CSS `:root[data-theme=...]` blocks near the top of the stylesheet) plus
-// any imported custom ones. Built-ins apply purely via the `data-theme`
-// attribute + CSS cascade; custom themes have no CSS block, so applyTheme()
-// sets the same var set inline on <html> instead — one variable surface,
-// two application paths. Custom themes (JSON, user-imported) persist to
-// localStorage like the theme choice itself — same tier as font-scale/
-// collapse-state, see THEME_STORAGE_KEY.
-const THEME_STORAGE_KEY = "philogg-theme";
+// Settings page -> Appearance: a theme MODE (System / Light / Dark, a
+// segmented control) plus two SLOTS, "Light theme" and "Dark theme"
+// (#settingsThemeLightSelect / #settingsThemeDarkSelect), each a dropdown
+// listing all built-in themes (the four Catppuccin flavors and Classic
+// Light/Dark, see the CSS `:root[data-theme=...]` blocks near the top of
+// the stylesheet) plus any imported custom ones. The theme on screen is the
+// slot of the EFFECTIVE scheme: mode "system" (the default) follows the OS
+// light/dark preference live via prefers-color-scheme (see
+// effectiveScheme() and the change listener below), "light"/"dark" pin it.
+// Defaults: Catppuccin Latte in the light slot, Mocha in the dark slot.
+// Built-ins apply purely via the `data-theme` attribute + CSS cascade;
+// custom themes have no CSS block, so applyTheme() sets the same var set
+// inline on <html> instead — one variable surface, two application paths.
+// Custom themes (JSON, user-imported) persist to localStorage like the
+// mode/slot choices themselves — same tier as font-scale/collapse-state,
+// see THEME_MODE_STORAGE_KEY.
+const THEME_MODE_STORAGE_KEY = "philogg-theme-mode";                                // "system" | "light" | "dark"
+const THEME_SLOT_STORAGE_KEYS = { light: "philogg-theme-light", dark: "philogg-theme-dark" }; // theme id per scheme
+const DEFAULT_THEME_SLOTS = { light: "catppuccin-latte", dark: "catppuccin-mocha" };
+const THEME_MODES = ["system", "light", "dark"];
 const CUSTOM_THEMES_STORAGE_KEY = "philogg-custom-themes";
 const THEME_FILE_FORMAT = "philogg-theme";
 const THEME_FILE_VERSION = 1;
@@ -7098,12 +7141,11 @@ const SYNTAX_COLOR_KEYS = [
 // choices in the highlight-color picker's "Theme" mode (see
 // getActiveHighlightPalette/setColorPickerMode) — the 14 named Catppuccin
 // "accent colors" (https://catppuccin.com/palette/) for each flavor.
-// Dark/Light have none: the picker falls back to the generic
-// HIGHLIGHT_PRESETS for them, same swatches "Theme" mode always showed
-// before this option existed.
+// Classic Light/Dark (ids "light"/"dark") have none: the picker falls back
+// to the generic HIGHLIGHT_PRESETS for them, same swatches "Theme" mode
+// always showed before this option existed. Order = the order of the theme
+// dropdowns: the four Catppuccin flavors first, the Classic pair last.
 const BUILTIN_THEMES = [
-  { id: "dark", name: "Dark" },
-  { id: "light", name: "Light" },
   {
     id: "catppuccin-latte", name: "Catppuccin Latte",
     highlightPalette: ["#dc8a78", "#dd7878", "#ea76cb", "#8839ef", "#d20f39", "#e64553", "#fe640b", "#df8e1d", "#40a02b", "#179299", "#04a5e5", "#209fb5", "#1e66f5", "#7287fd"],
@@ -7120,6 +7162,8 @@ const BUILTIN_THEMES = [
     id: "catppuccin-mocha", name: "Catppuccin Mocha",
     highlightPalette: ["#f5e0dc", "#f2cdcd", "#f5c2e7", "#cba6f7", "#f38ba8", "#eba0ac", "#fab387", "#f9e2af", "#a6e3a1", "#94e2d5", "#89dceb", "#74c7ec", "#89b4fa", "#b4befe"],
   },
+  { id: "light", name: "Classic Light" },
+  { id: "dark", name: "Classic Dark" },
 ];
 
 /* ---- Syntax highlight scheme (FEATURE_BACKLOG.md #67) ----
@@ -7153,12 +7197,6 @@ const FOLLOW_THEME_SYNTAX_ID = "follow-theme";
 // attr-name=Yellow, attr-value/string=Green, number=Peach,
 // boolean-null=Mauve, punct=Subtext0. Every scheme defines all eight keys.
 const BUILTIN_SYNTAX_SCHEMES = [
-  { id: "dark", name: "Dark", colors: {
-    "syntax-tag": "#e8a94a", "syntax-attr-name": "#8bd17c", "syntax-attr-value": "#6fa8ff", "syntax-string": "#6fa8ff",
-    "syntax-number": "#c792ea", "syntax-key": "#4fc7c3", "syntax-boolean-null": "#c792ea", "syntax-punct": "#8a92a8" } },
-  { id: "light", name: "Light", colors: {
-    "syntax-tag": "#a06a1c", "syntax-attr-name": "#4a8f3c", "syntax-attr-value": "#1f5fbf", "syntax-string": "#1f5fbf",
-    "syntax-number": "#8e44ad", "syntax-key": "#1b8f8a", "syntax-boolean-null": "#8e44ad", "syntax-punct": "#5b6474" } },
   { id: "catppuccin-latte", name: "Catppuccin Latte", colors: {
     "syntax-tag": "#1e66f5", "syntax-attr-name": "#df8e1d", "syntax-attr-value": "#40a02b", "syntax-string": "#40a02b",
     "syntax-number": "#fe640b", "syntax-key": "#1e66f5", "syntax-boolean-null": "#8839ef", "syntax-punct": "#6c6f85" } },
@@ -7171,11 +7209,19 @@ const BUILTIN_SYNTAX_SCHEMES = [
   { id: "catppuccin-mocha", name: "Catppuccin Mocha", colors: {
     "syntax-tag": "#89b4fa", "syntax-attr-name": "#f9e2af", "syntax-attr-value": "#a6e3a1", "syntax-string": "#a6e3a1",
     "syntax-number": "#fab387", "syntax-key": "#89b4fa", "syntax-boolean-null": "#cba6f7", "syntax-punct": "#a6adc8" } },
+  { id: "light", name: "Classic Light", colors: {
+    "syntax-tag": "#a06a1c", "syntax-attr-name": "#4a8f3c", "syntax-attr-value": "#1f5fbf", "syntax-string": "#1f5fbf",
+    "syntax-number": "#8e44ad", "syntax-key": "#1b8f8a", "syntax-boolean-null": "#8e44ad", "syntax-punct": "#5b6474" } },
+  { id: "dark", name: "Classic Dark", colors: {
+    "syntax-tag": "#e8a94a", "syntax-attr-name": "#8bd17c", "syntax-attr-value": "#6fa8ff", "syntax-string": "#6fa8ff",
+    "syntax-number": "#c792ea", "syntax-key": "#4fc7c3", "syntax-boolean-null": "#c792ea", "syntax-punct": "#8a92a8" } },
 ];
 
 let customThemes = [];
 let customSyntaxSchemes = [];              // user-imported syntax schemes: {id, name, colors:{...SYNTAX_COLOR_KEYS}}
 let syntaxSchemeChoice = FOLLOW_THEME_SYNTAX_ID; // "follow-theme" | a built-in/custom scheme id
+let themeModeChoice = "system";                  // "system" | "light" | "dark" (see THEME_MODES)
+const themeSlotChoice = Object.assign({}, DEFAULT_THEME_SLOTS); // scheme -> theme id, loaded from localStorage by initTheme()
 
 function loadCustomThemes() {
   let stored = null;
@@ -7188,7 +7234,80 @@ function saveCustomThemes() {
 }
 
 function currentThemeId() {
-  return document.documentElement.getAttribute("data-theme") || "dark";
+  return document.documentElement.getAttribute("data-theme") || DEFAULT_THEME_SLOTS.dark;
+}
+
+// The OS light/dark preference; false (= dark) when it can't be asked, so an
+// unknown OS preference resolves to the dark slot.
+function osPrefersLight() {
+  try { return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches); } catch { return false; }
+}
+
+// "light" | "dark": which slot is on screen right now. Mode "system" follows
+// the OS, "light"/"dark" pin it.
+function effectiveScheme() {
+  if (themeModeChoice === "light" || themeModeChoice === "dark") return themeModeChoice;
+  return osPrefersLight() ? "light" : "dark";
+}
+
+function themeMode() { return themeModeChoice; }
+
+// The theme id held by a slot ("light" | "dark"); a stale id (its custom
+// theme is gone) reads as that slot's default.
+function themeSlot(kind) {
+  return resolveThemeId(themeSlotChoice[kind], DEFAULT_THEME_SLOTS[kind]);
+}
+
+// The theme that should be on screen: the slot of the effective scheme.
+function activeThemeId() {
+  return themeSlot(effectiveScheme());
+}
+
+function applyActiveTheme() {
+  applyTheme(activeThemeId());
+}
+
+// Reads mode + slots from localStorage (no keys = the defaults: system,
+// Latte, Mocha). The old single "philogg-theme" key is deliberately not read.
+function loadThemeChoice() {
+  const mode = localStorage.getItem(THEME_MODE_STORAGE_KEY);
+  themeModeChoice = THEME_MODES.includes(mode) ? mode : "system";
+  Object.keys(THEME_SLOT_STORAGE_KEYS).forEach(kind => {
+    themeSlotChoice[kind] = localStorage.getItem(THEME_SLOT_STORAGE_KEYS[kind]) || DEFAULT_THEME_SLOTS[kind];
+  });
+}
+
+function setThemeMode(mode) {
+  if (!THEME_MODES.includes(mode)) return;
+  themeModeChoice = mode;
+  localStorage.setItem(THEME_MODE_STORAGE_KEY, mode);
+  applyActiveTheme();
+}
+
+// Stores a slot's theme id; only re-applies when that slot is the one on
+// screen (the other slot's change is invisible until the scheme flips).
+function setThemeSlot(kind, themeId) {
+  if (!THEME_SLOT_STORAGE_KEYS[kind]) return;
+  storeThemeSlot(kind, resolveThemeId(themeId, DEFAULT_THEME_SLOTS[kind]));
+  if (kind === effectiveScheme()) applyActiveTheme(); else syncThemeSettingsUI();
+}
+
+function storeThemeSlot(kind, themeId) {
+  themeSlotChoice[kind] = themeId;
+  localStorage.setItem(THEME_SLOT_STORAGE_KEYS[kind], themeId);
+}
+
+// Settings -> Appearance: the mode buttons' .active state and both slot
+// dropdowns' values mirror the current mode/slots.
+function syncThemeSettingsUI() {
+  document.querySelectorAll("#settingsThemeModeRow [data-theme-mode]").forEach(btn => {
+    btn.classList.toggle("active", btn.dataset.themeMode === themeModeChoice);
+  });
+  Object.keys(THEME_SLOT_STORAGE_KEYS).forEach(kind => {
+    const select = document.getElementById(kind === "light" ? "settingsThemeLightSelect" : "settingsThemeDarkSelect");
+    const id = themeSlot(kind);
+    if (select && select.value !== id) select.value = id;
+  });
 }
 
 function applyTheme(themeId) {
@@ -7203,8 +7322,7 @@ function applyTheme(themeId) {
   }
   applySyntaxScheme(); // a chosen syntax scheme (or "Follow app theme"'s own built-in pendant) overrides the --syntax-* vars set above (see #67)
   applyAccentChoice(themeId); // re-picked --accent (if any) for THIS theme, on top of its defaults above
-  const select = document.getElementById("settingsThemeSelect");
-  if (select && select.value !== themeId) select.value = themeId;
+  syncThemeSettingsUI();
   renderAccentPicker();
 }
 
@@ -7329,56 +7447,78 @@ function renderAccentPicker() {
 }
 
 // A stored/imported theme id can go stale (its custom theme got deleted
-// elsewhere, e.g. localStorage edited by hand) — fall back to dark rather
-// than leaving data-theme pointing at nothing.
-function resolveThemeId(id) {
+// elsewhere, e.g. localStorage edited by hand) — fall back to the given
+// fallback (the default of the slot the id was meant for) rather than
+// leaving data-theme pointing at nothing.
+function resolveThemeId(id, fallback) {
   if (BUILTIN_THEMES.some(t => t.id === id) || customThemes.some(t => t.id === id)) return id;
-  return "dark";
+  return fallback;
 }
 
+// Fills BOTH slot dropdowns (Light theme / Dark theme) with every theme:
+// a Built-in group and, if there are any, a Custom group.
 function populateThemeSelect() {
-  const select = document.getElementById("settingsThemeSelect");
-  if (!select) return;
-  const active = currentThemeId();
-  select.innerHTML = "";
-  const builtinGroup = document.createElement("optgroup");
-  builtinGroup.label = "Built-in";
-  BUILTIN_THEMES.forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = t.id; opt.textContent = t.name;
-    builtinGroup.appendChild(opt);
-  });
-  select.appendChild(builtinGroup);
-  if (customThemes.length) {
-    const customGroup = document.createElement("optgroup");
-    customGroup.label = "Custom";
-    customThemes.forEach(t => {
+  ["settingsThemeLightSelect", "settingsThemeDarkSelect"].forEach(selectId => {
+    const select = document.getElementById(selectId);
+    if (!select) return;
+    select.innerHTML = "";
+    const builtinGroup = document.createElement("optgroup");
+    builtinGroup.label = "Built-in";
+    BUILTIN_THEMES.forEach(t => {
       const opt = document.createElement("option");
       opt.value = t.id; opt.textContent = t.name;
-      customGroup.appendChild(opt);
+      builtinGroup.appendChild(opt);
     });
-    select.appendChild(customGroup);
-  }
-  select.value = active;
+    select.appendChild(builtinGroup);
+    if (customThemes.length) {
+      const customGroup = document.createElement("optgroup");
+      customGroup.label = "Custom";
+      customThemes.forEach(t => {
+        const opt = document.createElement("option");
+        opt.value = t.id; opt.textContent = t.name;
+        customGroup.appendChild(opt);
+      });
+      select.appendChild(customGroup);
+    }
+  });
+  syncThemeSettingsUI();
 }
 
 function initTheme() {
   loadCustomThemes();
   loadAccentChoices();
+  loadThemeChoice();
   initSyntaxScheme(); // before the first applyTheme() below, which reads syntaxSchemeChoice/customSyntaxSchemes
   populateThemeSelect();
   renderCustomThemeList();
-  const stored = localStorage.getItem(THEME_STORAGE_KEY);
-  if (stored) { applyTheme(resolveThemeId(stored)); return; }
-  const prefersLight = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches;
-  applyTheme(prefersLight ? "light" : "dark");
+  applyActiveTheme();
 }
 
+// "Show this theme now": puts the theme into the slot of the scheme that is
+// on screen and applies it (custom-theme list click, theme editor save).
+// Never changes the mode.
 function setTheme(themeId) {
-  applyTheme(themeId);
-  localStorage.setItem(THEME_STORAGE_KEY, themeId);
+  setThemeSlot(effectiveScheme(), themeId);
 }
-document.getElementById("settingsThemeSelect").addEventListener("change", ev => setTheme(ev.target.value));
+document.getElementById("settingsThemeModeRow").addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-theme-mode]");
+  if (btn) setThemeMode(btn.dataset.themeMode);
+});
+document.getElementById("settingsThemeLightSelect").addEventListener("change", ev => setThemeSlot("light", ev.target.value));
+document.getElementById("settingsThemeDarkSelect").addEventListener("change", ev => setThemeSlot("dark", ev.target.value));
+
+// Live OS following: in mode "system" the app re-applies the active theme
+// whenever the OS light/dark preference flips (time-of-day auto switching
+// included), no reload. Modes "light"/"dark" ignore OS changes. Skipped
+// silently where there is no matchMedia.
+(function watchOsColorScheme() {
+  let mql = null;
+  try { mql = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)"); } catch { mql = null; }
+  if (!mql) return;
+  const onChange = () => { if (themeModeChoice === "system") applyActiveTheme(); };
+  if (typeof mql.addEventListener === "function") mql.addEventListener("change", onChange);
+  else if (typeof mql.addListener === "function") mql.addListener(onChange);
+})();
 
 /* ===================== UI font family (FEATURE_BACKLOG.md #46) =====================
    Curated list of common system-installed font stacks — no @font-face, no
@@ -7564,9 +7704,13 @@ function removeCustomTheme(id) {
   customThemes = customThemes.filter(t => t.id !== id);
   saveCustomThemes();
   if (accentChoices[id]) { delete accentChoices[id]; saveAccentChoices(); } // no dangling accent pick for a theme that no longer exists
+  // Every slot that held the deleted theme (not only the one on screen) goes back to its default.
+  Object.keys(THEME_SLOT_STORAGE_KEYS).forEach(kind => {
+    if (themeSlotChoice[kind] === id) storeThemeSlot(kind, DEFAULT_THEME_SLOTS[kind]);
+  });
   populateThemeSelect();
   renderCustomThemeList();
-  if (currentThemeId() === id) setTheme("dark"); // the deleted theme was active — fall back
+  if (currentThemeId() === id) applyActiveTheme(); // the deleted theme was active — its slot's default takes over
 }
 
 // ---- Theme export/import (JSON, format "philogg-theme") ----
@@ -24901,7 +25045,7 @@ window.addEventListener("mouseup", () => {
    Both panels get the same affordance: a header with a chevron toggle,
    double-click on their resizer, and a keyboard shortcut (Ctrl+B / Ctrl+J).
    Collapse state is a display preference (same tier as theme/font-scale, see
-   THEME_STORAGE_KEY above) so it's persisted to localStorage; the width/
+   THEME_MODE_STORAGE_KEY above) so it's persisted to localStorage; the width/
    height to restore on re-expand is session-only, matching the existing
    sidebar/detail resizers themselves (PROJECT.md: "session-only (not
    persisted to localStorage)").
