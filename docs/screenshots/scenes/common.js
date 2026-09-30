@@ -3,6 +3,9 @@
 // app.log (log simulator, seed 7) has loaded. Scene files are appended to
 // this one and pick what is active/visible; `S` holds the created nodes.
 const S = {};
+// Every picture is light (Catppuccin Latte) unless its scene says otherwise —
+// pinned here so it doesn't depend on the headless browser's OS preference.
+setThemeMode("light");
 S.file = state.rootIds[0];
 S.errors = createFilterNode(S.file, "level", ["ERROR"]);
 S.errors.highlightColor = "#d9534f";

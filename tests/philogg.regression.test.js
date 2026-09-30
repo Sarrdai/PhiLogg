@@ -38893,8 +38893,10 @@ if (groupSelected()) {
         "the Classic themes keep their ids dark/light");
       assert(T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "dark").name === "Classic Dark" && T.BUILTIN_SYNTAX_SCHEMES.find(s => s.id === "light").name === "Classic Light",
         "the syntax schemes are renamed too");
-      const syntaxNames = [...d.querySelectorAll("#settingsSyntaxSchemeSelect option")].map(o => o.textContent);
-      assert(syntaxNames.includes("Classic Dark") && syntaxNames.includes("Classic Light"), "...and offered under the new names");
+      const syntaxNames = [...d.querySelectorAll("#settingsSyntaxSchemeSelect optgroup[label='Built-in'] option")].map(o => o.textContent);
+      assert(syntaxNames.join("|") === "Catppuccin Latte|Catppuccin Frappé|Catppuccin Macchiato|Catppuccin Mocha|Classic Light|Classic Dark",
+        "...and offered under the new names, in the same order as the theme dropdowns, got " + syntaxNames.join("|"));
+      assert(T.BUILTIN_SYNTAX_SCHEMES.map(s => s.id).join() === T.BUILTIN_THEMES.map(t => t.id).join(), "BUILTIN_SYNTAX_SCHEMES follows BUILTIN_THEMES' order");
 
       // Slot themes other than the default must survive syntax/accent re-applies.
       w.setTheme("catppuccin-macchiato");
