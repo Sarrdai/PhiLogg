@@ -5314,6 +5314,10 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>
       Copy
     </div>
+    <div class="ctx-item" id="ctxCopyTicket">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/><path d="M11.5 6.5v3M10 8h3"/></svg>
+      Copy for ticket
+    </div>
   </div>
 
   <div id="addToSelectionMenu" class="hidden"></div>
@@ -34218,6 +34222,14 @@ el("#ctxCopy").addEventListener("click", () => {
   showCopyToast("Line copied");
 });
 
+// "Copy for ticket": the marked rows when 2+ are marked, else the right-clicked row.
+el("#ctxCopyTicket").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  if (entry) copyMarkedRowsForTicket(entry);
+});
+
 // Scans a column's text for numbers and replaces each with a typed
 // placeholder, producing a ready-to-use wildcard pattern (e.g. "moved to
 // [*:float] after [*:int] tries"). Clock times / durations are
@@ -35689,6 +35701,9 @@ function openTreeContextMenu(ev, clickedId) {
       // now unreferenced by any menu item is expected, not dead code to clean
       // up — see FEATURE_BACKLOG.md #79 for the planned replacement.
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
+      if (node.filterType === "idset" && node.selectionFilter) {
+        buckets.clipboard.push({ action: "copyTicket", label: "Copy for ticket", icon: ICON_COPY });
+      }
       buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       // "Save to library…" moved out of the context menu (person-requested):
@@ -35772,6 +35787,12 @@ treeContextMenu.addEventListener("click", ev => {
 
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
+  if (action === "copyTicket") {
+    // Story export of a selection filter, even when it isn't the active node.
+    const ctx = treeCtxId && collectExportContext(treeCtxId);
+    if (ctx) copyEntriesForTicket(ctx, pickTicketEntries(ctx, "all"));
+    return;
+  }
   if (action === "revealLocation") {
     const n = treeCtxId && state.nodes[treeCtxId];
     if (n && window.philogg) {
@@ -36453,8 +36474,10 @@ function describeExportStep(node) {
 // once: the entries, the chain narrative with per-step counts, sources,
 // time span, and the root file's bookmarked/annotated entries (findings).
 // null when there's nothing to export (no active node).
-function collectExportContext() {
-  const active = state.activeId && state.nodes[state.activeId];
+// nodeId (optional): export that node's view instead of the active node's
+// (the tree menu's "Copy for ticket" on a selection filter that isn't active).
+function collectExportContext(nodeId) {
+  const active = nodeId ? state.nodes[nodeId] : state.activeId && state.nodes[state.activeId];
   if (!active) return null;
   const rootId = getRootFileId(active.id);
   const root = rootId && state.nodes[rootId];
@@ -36719,7 +36742,7 @@ function buildTicketSnippetHtml(ctx, opts) {
       const e = it.entry;
       const bm = state.bookmarks.has(e.id);
       const bucket = levelBucket(e.level, e.formatId);
-      html += "<div style=\"padding:1px 8px;white-space:pre-wrap;word-break:break-all;" + (bm ? "background:#fff7d6;" : "") +
+      html += "<div style=\"padding:1px 8px;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4;" + (bm ? "background:#fff7d6;" : "") +
         (bucket === "ERROR" ? "color:#ae2e24;" : bucket === "WARN" ? "color:#9a6700;" : "") + "\">" + (bm ? "★ " : "") + esc(it.raw) + "</div>";
       if (it.note) {
         html += "<div style=\"margin:2px 8px 4px 24px;padding:2px 8px;border-left:3px solid #1f8f8b;color:#172b4d;font:italic 13px -apple-system,'Segoe UI',sans-serif\">Note: " + esc(it.note) + "</div>";
@@ -36940,6 +36963,24 @@ function copyTicketSnippet() {
   const text = buildTicketSnippet(ctx, exportFormat, opts);
   copyTextToClipboard(text, exportFormat === "rich" ? buildTicketSnippetHtml(ctx, opts) : undefined);
   showCopyToast("Copied for ticket (" + opts.entries.length + " entries)");
+}
+// The direct-copy paths (row context menu, shortcut, tree menu on a selection
+// filter) — no dialog: gaps always on, header per the remembered checkbox,
+// flavor per the remembered format (rich -> text/html + text/plain).
+// Returns the number of entries quoted (0 = nothing copied).
+function copyEntriesForTicket(ctx, entries) {
+  if (!ctx || !entries || !entries.length) { showCopyToast("Nothing to copy"); return 0; }
+  const opts = { entries, gaps: true, header: exportHeader };
+  copyTextToClipboard(buildTicketSnippet(ctx, exportFormat, opts), exportFormat === "rich" ? buildTicketSnippetHtml(ctx, opts) : undefined);
+  showCopyToast("Copied for ticket (" + entries.length + " entries)");
+  return entries.length;
+}
+// Marked rows (2+ in the active root file), else `fallback` (one entry or null).
+function copyMarkedRowsForTicket(fallback) {
+  const ctx = collectExportContext();
+  if (!ctx) { showCopyToast("Nothing to copy"); return 0; }
+  const marked = pickTicketEntries(ctx, "marked");
+  return copyEntriesForTicket(ctx, marked.length >= 2 ? marked : (fallback ? [fallback] : []));
 }
 async function exportViewFile(kind) {
   const ctx = exportDialogCtx || collectExportContext();
@@ -38629,6 +38670,7 @@ const SHORTCUT_ACTIONS = [
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
   { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
   { id: "exportView",    label: "Export / Share the current view",     default: { ctrl: true, shift: true, key: "e" } },
+  { id: "copyForTicket", label: "Copy selected rows for ticket",       default: { ctrl: true, shift: true, key: "c" } },
 ];
 
 // Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)
@@ -41646,6 +41688,14 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "exportView")) {
     ev.preventDefault();
     openExportDialog();
+    return;
+  }
+
+  // Direct "Copy for ticket" (docs/export.md): marked rows, else the selected row.
+  // Must sit before the plain Ctrl+C handler below, which also matches Ctrl+Shift+C.
+  if (matchesShortcut(ev, "copyForTicket")) {
+    ev.preventDefault();
+    copyMarkedRowsForTicket(state.selectedId ? entryIndex[state.selectedId] : null);
     return;
   }
 

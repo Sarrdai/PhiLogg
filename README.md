@@ -325,12 +325,18 @@ deployments possible:
 - **Session export/import** — package an analysis (files, filters,
   bookmarks, notes) to share with a colleague.
 - **Export / Share for tickets** (toolbar button or `Ctrl+Shift+E`) —
-  "Copy for ticket" puts a compact findings summary on the clipboard, ready
-  to paste into Jira, GitHub, GitLab or Azure DevOps: source file, time
-  range, the filter chain as a readable step-by-step narrative with counts,
-  "x of y entries matched", your bookmarks and notes, and a bounded excerpt
-  of the matching lines — as Markdown, Jira wiki markup or plain text
-  (remembered). The full current view saves as a ticket attachment:
+  "Copy for ticket" puts a compact excerpt on the clipboard, ready to paste
+  into Jira, GitHub, GitLab, Azure DevOps or an e-mail: one short header
+  (file, time span, the filter that produced the view), then the log lines
+  you choose in one block — your notes right under their lines, and a
+  `··· 45 lines · +2s ···` marker wherever quoted lines aren't neighbours in
+  the file. Choose the lines: the rows you marked, all of the view, the first
+  N, or your bookmarks. A named selection filter exports as a small "story"
+  with its name as heading. Formats: Markdown, Jira wiki markup, plain text
+  or **Rich text** (formatted HTML for Outlook, Confluence, Teams, Word) —
+  remembered. Skip the dialog with **Copy for ticket** in a row's right-click
+  menu, `Ctrl+Shift+C`, or a selection filter's context menu. The full
+  current view saves as a ticket attachment via **Save file**:
   `.log` (raw lines), `.csv`, `.tsv`, or a standalone HTML report anyone can
   open without PhiLogg. Nothing leaves your machine unless you copy or save
   it.
