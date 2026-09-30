@@ -40,10 +40,10 @@ result with screenshots. Pure questions and doc-only sessions don't need it.
   needs it, see `tests/README.md` — one line in TEST PROVENANCE,
   update/remove superseded groups instead of leaving a green check on dead
   code).
-- **Run the full suite (`cd tests && npm test`, ~30s) only when code
-  changed** — i.e. `philogg.html`, `tests/philogg.regression.test.js`,
-  `scripts/`, or a change to the `window.philogg` / `nativeDirHandle`
-  contract that `philogg.html` consumes. Report the pass count when you do.
+- **Run the full suite (`cd tests && npm test`, ~2¼ min on 4 cores) only
+  when code changed** — i.e. `philogg.html`, `tests/*.js`, `scripts/`, or a
+  change to the `window.philogg` / `nativeDirHandle` contract that
+  `philogg.html` consumes. Report the pass count when you do.
   While iterating, `GROUP=58 npm test` re-runs a single group in ~2s; the
   full suite is what settles the session.
   Two things the suite does **not** cover, so don't run it for them: a change

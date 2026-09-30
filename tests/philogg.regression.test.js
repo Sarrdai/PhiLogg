@@ -44459,6 +44459,12 @@ process.exitCode = failed ? 1 : 0;
       variant checkboxes on beta, all five variants on stable. Updated
       GROUP 271e (LICENSE/notices now asserted on the shared build) and 218's
       message.
+   Group 346 — 2026-09-30 (person-requested, suite speed-up): the harness's own
+      speed-ups stay exact — tests/jsdom-fast-selectors.js against jsdom's
+      selector engine (page-wide, edge cases, odd-shaped data-* names handed
+      back, index invalidation on every mutation kind), the stylesheet put back
+      in full after the parse, both background polls caught by name. Same
+      session: 266b, 332d/e, 334c made load-proof, 343h lost a fixed sleep.
    Group 344 — 2026-09-30 (person-reported): a restored folder awaiting Reconnect
       keeps its files inside the container — folder inline viewers are listed
       (restoreViewersFromCache seed) so their Filter-lines text versions stay
