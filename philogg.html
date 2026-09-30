@@ -9134,7 +9134,9 @@ const state = {
   // { id, name, handle: FileSystemDirectoryHandle | nativeDirHandle, files:
   //   [{ name, handle: FileSystemFileHandle | urlTailHandle,
   //   nodeId: string|null }], busy: boolean,
-  //   failed: boolean, needsPermission: boolean }. `id` is also the
+  //   failed: boolean (the LISTING failed; retried every poll),
+  //   failedMessage: string|null (transient, for the dot's tooltip),
+  //   needsPermission: boolean }. `id` is also the
   //   persistent IndexedDB key for this folder (see persistFolder) — reused
   //   directly as `node.folderId` on any file opened from it, so restoring
   //   the folder later can re-link already-restored file nodes by id. A
@@ -16535,6 +16537,11 @@ function isSameNavPlace(a, b) {
 // without enough travel to count as a new place.
 function commitCurrentNavPosition() {
   if (navigatingHistory || navHistoryIndex < 0) return;
+  // Nothing to read the positions from while the main area shows a
+  // placeholder (nothing selected), an inline viewer or the folder minimap: a
+  // hidden view's scroll offsets read as 0 and would overwrite the waypoint's
+  // last good ones (walking Alt+Arrow over a closed entry and back).
+  if (fhSplit.style.display === "none" && extractWrap.style.display === "none" && patternsWrap.style.display === "none") return;
   navHistory[navHistoryIndex] = captureNavWaypoint(navHistory[navHistoryIndex].nodeId);
 }
 
@@ -16850,6 +16857,35 @@ function renderInner() {
 // DOM locations rather than being reparented into a new shared slot row —
 // see "Entscheidungen bei der Umsetzung" in docs/ui-implementation-plan.md
 // for why).
+// #emptyState is one element with three texts, all built here: the original
+// markup (no files at all), "No file selected" (files are open, none is
+// selected — the tree cursor left a file for an unloaded entry, or an
+// automatic close took the shown viewer), and the "<name> is not loaded" /
+// "is loading" hint while the tree cursor rests on a listed-but-unloaded
+// entry. The markup's own text is kept and restored whenever it applies.
+const emptyStateHeadingEl = emptyState.querySelector("h2");
+const emptyStateBodyEl = emptyState.querySelector("p");
+const EMPTY_STATE_DEFAULT = { heading: emptyStateHeadingEl.textContent, bodyHtml: emptyStateBodyEl.innerHTML };
+function showEmptyStateText(heading, body) {
+  if (heading == null) {
+    emptyStateHeadingEl.textContent = EMPTY_STATE_DEFAULT.heading;
+    emptyStateBodyEl.innerHTML = EMPTY_STATE_DEFAULT.bodyHtml;
+  } else {
+    emptyStateHeadingEl.textContent = heading;
+    emptyStateBodyEl.textContent = body;
+  }
+}
+// The unloaded entry the tree cursor rests on (display name as the tree row
+// shows it: the basename), or null.
+function unloadedCursorEntryName() {
+  const id = treeCursorId();
+  if (!id || !isUnloadedNavId(id)) return null;
+  const p = parseUnloadedNavId(id);
+  const owner = pathTreeOwnerOf(p.ownerKind, p.ownerId);
+  const listed = owner && (p.ownerKind === "zip" ? owner.entries.some(e => e.name === p.key) : owner.files.some(r => folderFileKey(r) === p.key));
+  return listed ? { name: basenameOf(p.key), loading: kbLoadNavIds.has(id) } : null;
+}
+
 function renderMainView() {
   syncFolderPreloads(); // leaving the folder minimap aborts its silent preloads
   const hasFiles = state.rootIds.length > 0;
@@ -16920,12 +16956,39 @@ function renderMainView() {
   }
   folderMinimapWrap.style.display = "none";
 
-  emptyState.style.display = hasFiles ? "none" : "flex";
+  // Nothing selected: no inline viewer, no folder view and no live active
+  // node. With files open that is the placeholder below; the texts follow the
+  // tree cursor (see showEmptyStateText).
+  const noSelection = !state.nodes[state.activeId];
+  const showPlaceholder = !hasFiles || noSelection;
+  if (showPlaceholder) {
+    const cursorEntry = unloadedCursorEntryName();
+    if (cursorEntry && cursorEntry.loading) showEmptyStateText(`"${cursorEntry.name}" is loading…`, "It opens here as soon as it is ready.");
+    else if (cursorEntry) showEmptyStateText(`"${cursorEntry.name}" is not loaded`, "Press → or Alt+→ to load it, or double-click it.");
+    else if (hasFiles) showEmptyStateText("No file selected", "Select a file on the left.");
+    else showEmptyStateText(null);
+  }
+  emptyState.style.display = showPlaceholder ? "flex" : "none";
   // #viewBar has nothing meaningful to show with zero files loaded —
   // person-requested (predates this rework): only #emptyState's centered
   // hint should be visible then. "" (not a hardcoded display value) restores
   // #viewBar's own CSS display:flow-root once files are back.
-  viewBarEl.style.display = hasFiles ? "" : "none";
+  viewBarEl.style.display = showPlaceholder ? "none" : "";
+  if (hasFiles && noSelection) {
+    // Same surfaces as the inline-viewer branch above hides — but nothing is
+    // cleared: the open files (and their view state) stay as they are.
+    timelineMinimapEl.classList.add("hidden");
+    tableWrap.style.display = "none";
+    extractWrap.style.display = "none";
+    patternsWrap.style.display = "none";
+    facetPanel.classList.add("hidden");
+    linkWrap.style.display = "none";
+    fhTabs.style.display = "none";
+    fhSplit.style.display = "none";
+    detailPanel.style.display = "none";
+    detailResizer.style.display = "none";
+    return;
+  }
   if (!hasFiles) {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
@@ -17289,6 +17352,20 @@ function treeCursorId() {
 function setTreeCursor(id) {
   state.treeCursor = id ? { id, activeId: state.activeId, inlineViewer: state.inlineViewer, folderView: state.folderView } : null;
 }
+// The tree cursor arrives on a listed-but-not-loaded entry (Alt+Arrow, or a
+// plain click on its grayed row): the previously selected file is no longer
+// selected and its content no longer shown — leaving it selected made it look
+// as if the row under the cursor were open (renderMainView then shows the
+// "<name> is not loaded" placeholder). Order matters: setTreeCursor snapshots
+// activeId/inlineViewer/folderView, which treeCursorId() later compares against.
+// A dir row keeps plain setTreeCursor (cursor only, the main view stays).
+function placeCursorOnUnloaded(navId) {
+  state.activeId = null;
+  state.inlineViewer = null;
+  state.folderView = null;
+  state.multiSelect = new Set();
+  setTreeCursor(navId);
+}
 // The dir nav id a file/viewer at relative path `relPath` sits directly under
 // (null at the container's top level).
 function parentDirNavId(ownerKind, ownerId, relPath) {
@@ -17594,10 +17671,10 @@ function moveTreeSelection(key, opts) {
   if (targetIdx < 0) targetIdx = ids.indexOf(targetId);
   lastTreeNav = { id: targetId, nth: ids.slice(0, targetIdx).filter(x => x === targetId).length };
 
-  // A dir row / unloaded entry is a cursor position only — the main view
-  // (activeId, viewer) stays as it is.
+  // An unloaded entry deselects whatever was shown (placeCursorOnUnloaded); a
+  // dir row is a cursor position only — the main view stays as it is.
   if (isCursorOnlyNavId(targetId)) {
-    setTreeCursor(targetId);
+    if (isUnloadedNavId(targetId)) placeCursorOnUnloaded(targetId); else setTreeCursor(targetId);
     render();
     return;
   }
@@ -28525,8 +28602,14 @@ async function openZipSource(source, name) {
   return zip;
 }
 
+// The ZIP's ✕: closes every entry opened from it (log nodes, inline viewers,
+// their "Filter lines" text versions — closeContainerFiles, no undo) — an
+// opened entry's row only ever renders inside its ZIP's section, so one left
+// in state.rootIds would be an invisible orphan that could still be the
+// displayed active file.
 function removeZipSource(zipId) {
-  if (state.inlineViewer && state.inlineViewer.ownerKind === "zip" && state.inlineViewer.ownerId === zipId) state.inlineViewer = null;
+  const zip = state.zips.find(z => z.id === zipId);
+  if (zip) closeContainerFiles("zip", zip);
   state.zips = state.zips.filter(z => z.id !== zipId);
   render();
 }
@@ -28674,7 +28757,10 @@ function cachedInactiveRow(owner, key, sig, build) {
 
 // `depth` (optional): the row sits in a subfolder tree (renderPathTree) at
 // that depth and comes back as a tree-item wrap instead of a bare row.
-function renderInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, depth) {
+// `opts.autoOpened` (folder rows only): the entry was opened by a folder-watch
+// auto rule (rec.openedByAuto) — its icon carries the same circled "A" badge
+// and tooltip an auto-opened log row gets (renderNode's autoOpened opt).
+function renderInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, depth, opts) {
   const cachedViewer = viewersMap.get(mapKey);
   const isActive = !!cachedViewer && state.inlineViewer &&
     state.inlineViewer.ownerKind === ownerKind && state.inlineViewer.ownerId === ownerId &&
@@ -28686,9 +28772,9 @@ function renderInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, disp
     setUnloadedCursorLook(row, unloadedNavId(ownerKind, ownerId, mapKey));
     return depth == null ? row : pathTreeItemWrap(row, depth);
   }
-  return buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive, depth);
+  return buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive, depth, opts);
 }
-function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive, depth) {
+function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displayLabel, openFn, cachedViewer, isActive, depth, opts) {
 
   const row = document.createElement("div");
   row.className = "folder-watch-file zip-source-file" +
@@ -28696,7 +28782,12 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
   row.title = cachedViewer ? `Click to view "${displayLabel}"` : `Double-click to open "${displayLabel}"`;
   const icon = document.createElement("span");
   icon.className = "tree-icon";
-  icon.innerHTML = ICON_FILE;
+  if (cachedViewer && opts && opts.autoOpened) {
+    icon.innerHTML = ICON_FILE_AUTO;
+    icon.title = "Opened automatically by a folder watch rule";
+  } else {
+    icon.innerHTML = ICON_FILE;
+  }
   row.appendChild(icon);
   const label = document.createElement("span");
   label.className = "folder-watch-file-name";
@@ -28704,18 +28795,8 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
   row.appendChild(label);
 
   function closeThisEntry() {
-    // Its "Filter lines" text versions are its children — they close with it
-    // (undoable like any closed file; not deleteFilterNodeWithUndo, whose
-    // quit-on-last-file-closed check would fire while the viewer is open).
-    viewerTextLogIds(ownerKind, ownerId, mapKey).forEach(id => {
-      const index = state.rootIds.indexOf(id);
-      const snapshot = snapshotSubtree(id);
-      deleteNode(id);
-      pushUndo({ kind: "deleteFile", snapshot, index });
-    });
-    if (cachedViewer && cachedViewer.cacheKey) cacheDeleteFile(cachedViewer.cacheKey);
-    viewersMap.delete(mapKey);
-    if (isActive) state.inlineViewer = null;
+    // By hand: its "Filter lines" text versions close with it, undoable.
+    closeInlineViewerEntry(ownerKind, ownerId, mapKey, { undo: true });
     render();
   }
 
@@ -28750,7 +28831,7 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
     // such row already uses (see the row's own title above). A click on the
     // unopened row just puts the tree cursor there.
     if (!cachedViewer) {
-      setTreeCursor(unloadedNavId(ownerKind, ownerId, mapKey));
+      placeCursorOnUnloaded(unloadedNavId(ownerKind, ownerId, mapKey));
       state.focusRegion = "tree";
       render();
       return;
@@ -29138,8 +29219,32 @@ function viewerTextLogIds(ownerKind, ownerId, mapKey) {
     return !!src && src.ownerKind === ownerKind && src.ownerId === ownerId && src.mapKey === mapKey;
   });
 }
-// Only while its source entry is still open: a text version whose viewer
-// is gone (its ZIP/folder removed) falls back to an ordinary top-level row.
+// Closes one listed ZIP/folder entry that is open as an inline viewer: its
+// "Filter lines" text versions (its children), its persisted viewer record,
+// the cached viewer itself and — if it is the one shown — the main view's
+// inlineViewer. The ONE implementation behind the row's ✕/middle-click (with
+// `undo`: the text versions become undo entries like any closed file — not
+// deleteFilterNodeWithUndo, whose quit-on-last-file-closed check would fire
+// while the viewer is open) and behind every automatic close (folder
+// auto-close/deleted on disk, folder/ZIP ✕ — no undo). Does not render.
+function closeInlineViewerEntry(ownerKind, ownerId, mapKey, opts) {
+  const undo = !!(opts && opts.undo);
+  viewerTextLogIds(ownerKind, ownerId, mapKey).forEach(id => {
+    const index = state.rootIds.indexOf(id);
+    const snapshot = undo ? snapshotSubtree(id) : null;
+    deleteNode(id);
+    if (undo) pushUndo({ kind: "deleteFile", snapshot, index });
+  });
+  const map = viewerMapForOwner(ownerKind, ownerId);
+  const viewer = map && map.get(mapKey);
+  if (viewer && viewer.cacheKey) cacheDeleteFile(viewer.cacheKey);
+  if (map) map.delete(mapKey);
+  const shown = state.inlineViewer;
+  if (shown && (shown === viewer || (shown.ownerKind === ownerKind && shown.ownerId === ownerId && shown.mapKey === mapKey))) state.inlineViewer = null;
+}
+// Only while its source entry is still open: a text version whose viewer is
+// gone (only a restored leftover — a closing entry, folder or ZIP takes its
+// text versions with it) falls back to an ordinary top-level row.
 function isNestedUnderViewer(node) {
   const src = node && node.viewerSource;
   if (!src) return false;
@@ -31227,12 +31332,12 @@ async function scanFolderHandle(dirHandle, settings) {
         }
         continue;
       }
-      // Widened this session: a log file (isCompatibleFolderFile) OR a
-      // non-log inline-viewable one (inlineViewableKind — .txt/.xml/.json,
-      // .jpg/.png/... — see openInlineViewer) gets listed; isCompatibleFolderFile
-      // itself is left meaning "is a log file" (isLogZipEntry and the
-      // per-folder auto-open/auto-close/show-newest rules below still key
-      // off it alone — those stay log-only).
+      // A log file (isCompatibleFolderFile) OR a non-log inline-viewable one
+      // (inlineViewableKind — .txt/.xml/.json, .jpg/.png/... — see
+      // openInlineViewer) gets listed; isCompatibleFolderFile itself is left
+      // meaning "is a log file" (isLogZipEntry and the start filters key off
+      // it). The per-folder auto-open/auto-close/show-newest rules apply to
+      // EVERY listed file, whichever of the two it is (applyFolderAutoRules).
       if (entryHandle.kind !== "file" || !(isCompatibleFolderFile(entryHandle.name) || inlineViewableKind(entryHandle.name))) continue;
       if (!patterns.some(p => fileNameGlobTest(p.pattern || "*", entryHandle.name))) continue;
       const relPath = relDir ? relDir + "/" + entryHandle.name : entryHandle.name;
@@ -31324,21 +31429,40 @@ async function mergeScannedFiles(folder, scanned) {
   // after a settings change — is dropped from the listing entirely
   // (person-reported: a file deleted outside the app used to linger
   // forever once it had been opened, since it was never scanned again to
-  // notice its removal). An OPEN one is closed first, exactly like the
-  // person closing it by hand (closeFolderFile's own node teardown), so
-  // its entries/tail/filters are released instead of leaking a node no
-  // listing entry points at anymore.
+  // notice its removal). An OPEN one is closed first (closeFolderRec: a log
+  // node's teardown, or an inline viewer with its "Filter lines" text
+  // versions and, if shown, the main view — no undo entries for this
+  // automatic close), so nothing is left behind that no listing entry
+  // points at anymore (a leaked node, an orphan top-level text version).
   for (const [key, rec] of known) {
     if (folder._lastScanKeys.has(key)) continue;
-    if (rec.nodeId && state.nodes[rec.nodeId]) closeFolderFile(rec.nodeId);
+    closeFolderRec(folder, rec);
   }
   merged.sort((a, b) => folderFileKey(a).localeCompare(folderFileKey(b)));
   folder.files = merged;
   await applyFolderAutoRules(folder);
 }
 
+// Whether a listed file is open: a log's node is alive, or (a non-log
+// inline-viewable file — .txt/.xml/.json/images) its viewer is registered in
+// folder.inlineViewers. The one "is it open" question the auto rules and the
+// merge ask, so both kinds of file are treated alike.
+function isFolderRecOpen(folder, rec) {
+  return !!(rec.nodeId && state.nodes[rec.nodeId]) || folder.inlineViewers.has(folderFileKey(rec));
+}
+// Counterpart of the above: closes a listed file whichever kind it is — a
+// node via closeFolderFile (back to a grayed listing entry), a viewer via
+// closeInlineViewerEntry (same, plus its text versions). No undo, no render.
+function closeFolderRec(folder, rec) {
+  if (rec.nodeId && state.nodes[rec.nodeId]) closeFolderFile(rec.nodeId);
+  const key = folderFileKey(rec);
+  if (folder.inlineViewers.has(key)) closeInlineViewerEntry("folder", folder.id, key);
+}
+
 // Per-pattern auto rules, applied after every merge (initial scan, poll
-// tick, reconnect). "Newest" = last in sortFolderRecsByRecency's order
+// tick, reconnect) to EVERY file the folder lists — logs and inline-viewable
+// txt/xml/json/images alike (never restricted to *.log; "open" is
+// isFolderRecOpen, closing is closeFolderRec). "Newest" = last in sortFolderRecsByRecency's order
 // within the pattern's own matching files — real file mtime when available
 // (scanFolderHandle), falling back to name order otherwise (see that
 // function's own comment for why mtime isn't always available).
@@ -31358,14 +31482,14 @@ async function applyFolderAutoRules(folder) {
   const settings = folder.settings;
   if (!settings || !settings.patterns || !settings.patterns.length) return;
   const groupOf = rec => matchFolderPattern(settings, rec);
+  // One file that fails to open must not abort the remaining rules/patterns.
+  const autoOpen = async rec => {
+    try { await loadFolderFile(folder, rec, true); }
+    catch (err) { console.error(`Folder watch: auto-opening "${rec.name}" failed`, err); }
+  };
   const groupBy = () => {
     const map = new Map();
     folder.files.forEach(rec => {
-      // Auto-open/auto-close/show-newest rules stay log-only (this
-      // session's inline-viewer generalization widened the SCAN to also
-      // list non-log viewable files, but never applies these rules to
-      // them — a .json/.png has no sensible "newest N" tailing behavior).
-      if (!isCompatibleFolderFile(rec.name)) return;
       const p = groupOf(rec);
       if (p) { if (!map.has(p)) map.set(p, []); map.get(p).push(rec); }
     });
@@ -31377,7 +31501,7 @@ async function applyFolderAutoRules(folder) {
   for (const [p, recs] of groupBy()) {
     if (!p.showNewest) continue;
     const keep = new Set(recs.slice(-p.showNewest).map(folderFileKey));
-    folder.files = folder.files.filter(rec => rec.nodeId || groupOf(rec) !== p || keep.has(folderFileKey(rec)));
+    folder.files = folder.files.filter(rec => isFolderRecOpen(folder, rec) || groupOf(rec) !== p || keep.has(folderFileKey(rec)));
   }
 
   // 2) Auto-close — keep only the N newest open, per pattern. Opens the
@@ -31390,11 +31514,11 @@ async function applyFolderAutoRules(folder) {
     if (!p.autoCloseKeep) continue;
     const target = recs.slice(-p.autoCloseKeep);
     for (const rec of target) {
-      if ((!rec.nodeId || !state.nodes[rec.nodeId]) && !rec.autoOpenFired) await loadFolderFile(folder, rec, true);
+      if (!isFolderRecOpen(folder, rec) && !rec.autoOpenFired) await autoOpen(rec);
     }
     const targetKeys = new Set(target.map(folderFileKey));
-    const toClose = recs.filter(rec => rec.nodeId && state.nodes[rec.nodeId] && rec.openedByAuto && !targetKeys.has(folderFileKey(rec)));
-    toClose.forEach(rec => closeFolderFile(rec.nodeId));
+    const toClose = recs.filter(rec => isFolderRecOpen(folder, rec) && rec.openedByAuto && !targetKeys.has(folderFileKey(rec)));
+    toClose.forEach(rec => closeFolderRec(folder, rec));
   }
 
   // 3) Auto-open newest, per pattern — only for a pattern not already
@@ -31405,18 +31529,43 @@ async function applyFolderAutoRules(folder) {
   for (const [p, recs] of groupBy()) {
     if (!p.autoOpenNewest || p.autoCloseKeep || !recs.length) continue;
     const newest = recs[recs.length - 1];
-    if ((!newest.nodeId || !state.nodes[newest.nodeId]) && !newest.autoOpenFired) await loadFolderFile(folder, newest, true);
+    if (!isFolderRecOpen(folder, newest) && !newest.autoOpenFired) await autoOpen(newest);
   }
+}
+
+// Only a failing LISTING (scanFolderHandle — folder moved/deleted, permission
+// revoked, a native list_folder error) marks a folder `failed` (the red dot,
+// whose tooltip carries folder.failedMessage — transient, never persisted).
+// An error while merging the result, applying the auto rules, opening a file
+// or rendering is a bug or a bad file, not an unreachable folder: it is
+// console.error'ed and never flags the folder. `failed` is not sticky either —
+// every folderScanTick re-lists a failed folder and a success clears it.
+// Returns the scan result, or null (folder flagged) when the listing failed.
+async function scanFolderOrFail(folder) {
+  try {
+    return await scanFolderHandle(folder.handle, folder.settings);
+  } catch (err) {
+    folder.failed = true;
+    folder.failedMessage = (err && err.message) || String(err);
+    return null;
+  }
+}
+function clearFolderFailed(folder) {
+  folder.failed = false;
+  folder.failedMessage = null;
 }
 
 async function rescanFolder(folder) {
   folder.busy = true;
   try {
-    const scanned = await scanFolderHandle(folder.handle, folder.settings);
-    await mergeScannedFiles(folder, scanned);
-    folder.failed = false;
-  } catch (err) {
-    folder.failed = true; // folder moved/deleted or permission revoked
+    const scanned = await scanFolderOrFail(folder);
+    if (!scanned || !state.folders.includes(folder)) return; // listing failed / folder removed meanwhile
+    clearFolderFailed(folder);
+    try {
+      await mergeScannedFiles(folder, scanned);
+    } catch (err) {
+      console.error(`Folder watch: merging the listing of "${folder.name}" failed`, err);
+    }
   } finally {
     folder.busy = false;
     render();
@@ -31425,7 +31574,7 @@ async function rescanFolder(folder) {
 
 async function addWatchedFolder(handle) {
   const folder = {
-    id: newCacheKey(), name: handle.name, handle, files: [], busy: false, failed: false, needsPermission: false,
+    id: newCacheKey(), name: handle.name, handle, files: [], busy: false, failed: false, failedMessage: null, needsPermission: false,
     settings: defaultFolderSettings(),
     // Non-log, inline-viewable files (this session's generalization — see
     // openInlineViewer's own comment): name/relPath -> cached viewer
@@ -31455,19 +31604,37 @@ function closeFolderFile(nodeId) {
   }
 }
 
+// The folder's ✕: stops watching AND closes every file opened from it (log
+// nodes, inline viewers, their "Filter lines" text versions) — no undo, and
+// nothing of the folder is left behind as a plain top-level file (the old
+// behavior detached them, which left rows with no container to explain them).
 function removeWatchedFolder(folderId) {
   const folder = state.folders.find(f => f.id === folderId);
   if (!folder) return;
-  // Files already opened from this folder keep working as plain independent
-  // files — only the "close returns to a grayed listing" behavior (which
-  // needs the folder record to return to) goes away.
-  folder.files.forEach(rec => {
-    const node = rec.nodeId && state.nodes[rec.nodeId];
-    if (node) delete node.folderId;
-  });
+  closeContainerFiles("folder", folder);
   state.folders = state.folders.filter(f => f.id !== folderId);
   cacheDeleteFolder(folderId);
   render();
+}
+
+// Closes everything a container (watched folder / ZIP source, `ownerKind`
+// "folder"|"zip") has open, for its ✕: silent preload jobs, every file node
+// opened from it (node.folderId / node.zipId — also one still loading or a
+// hidden merge source), every inline viewer with its persisted record, and any
+// text version ("Filter lines") of those viewers. Clears the main view if it
+// showed the container's viewer or (folder) its minimap. No undo, no render.
+function closeContainerFiles(ownerKind, owner) {
+  const isZip = ownerKind === "zip";
+  for (const job of [...folderPreloads.values()]) {
+    if (isZip ? job.zip === owner : job.folder === owner) abortFolderPreload(job);
+  }
+  const opened = n => isZip ? n.zipId === owner.id : n.folderId === owner.id;
+  const textVersion = n => !!n.viewerSource && n.viewerSource.ownerKind === ownerKind && n.viewerSource.ownerId === owner.id;
+  Object.values(state.nodes).filter(n => n.type === "file" && (opened(n) || textVersion(n))).forEach(n => deleteNode(n.id));
+  [...owner.inlineViewers.keys()].forEach(key => closeInlineViewerEntry(ownerKind, owner.id, key));
+  const shown = state.inlineViewer;
+  if (shown && shown.ownerKind === ownerKind && shown.ownerId === owner.id) state.inlineViewer = null;
+  if (!isZip && state.folderView === owner.id) state.folderView = null;
 }
 
 // Reads+parses one listed-but-not-yet-opened file, turning it into a normal
@@ -31497,11 +31664,10 @@ async function loadFolderFile(folder, rec, auto, quiet) {
   // a window job, a failed job) takes the normal route below.
   const preJob = takeFolderPreload(folder, rec, null);
   if (preJob && await loadFolderFileFromPreload(folder, rec, preJob, auto, quiet)) return;
-  // Non-log, inline-viewable file (this session's generalization — see
-  // openInlineViewer's own comment): never becomes a real node/rec.nodeId,
-  // same as a ZIP entry of one of these types. `auto` is never true here in
-  // practice (applyFolderAutoRules' groupBy already excludes non-log recs),
-  // but the check is unconditional regardless of caller.
+  // Non-log, inline-viewable file (see openInlineViewer's own comment): never
+  // becomes a real node/rec.nodeId, same as a ZIP entry of one of these
+  // types — its open state is folder.inlineViewers (isFolderRecOpen). The
+  // auto rules apply to it like to a log (`auto` is true when one opens it).
   const viewKind = inlineViewableKind(rec.name);
   // A log file the desktop wrapper parses natively is never fetched here
   // (see canParseNatively) — loadOneFileIntoTree takes it from the handle.
@@ -31517,6 +31683,12 @@ async function loadFolderFile(folder, rec, auto, quiet) {
   if (viewKind) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const mapKey = folderFileKey(rec);
+    // Same bookkeeping as finishFolderFileNode does for a node (set before
+    // the open, whose render shows the auto badge) — except the start
+    // filters: those are filter-library records for a LOG node, a viewer has
+    // no filter tree, so they stay log-only.
+    rec.openedByAuto = !!auto;
+    if (auto) rec.autoOpenFired = true;
     await openInlineViewer(rec.name, bytes, viewKind, { ownerKind: "folder", ownerId: folder.id, map: folder.inlineViewers, mapKey,
       persist: { localPath: (rec.handle && rec.handle.localPath) || null, blob: file } });
     return;
@@ -31609,52 +31781,80 @@ async function applyFolderStartFilter(folder, rec, node) {
 }
 
 // Polls every actively-watched folder for newly appeared OR since-removed
-// compatible files — mirrors tailTick's shape/guards (skip while busy,
-// catch handle errors) one level up (folder entries, not file bytes).
+// listed files — mirrors tailTick's shape/guards (skip while busy, catch
+// handle errors) one level up (folder entries, not file bytes).
 // Skipped for a folder still awaiting reconnect (see restoreWatchedFolders)
-// — nothing to scan without permission.
+// — nothing to scan without permission. A folder whose listing failed is
+// NOT skipped: it is re-listed on every tick (one listing per poll, the cost
+// of a healthy poll) and heals on the first success — a failure must not end
+// new-file detection, deletion detection and every auto rule for the rest of
+// the session. Only that listing can flag a folder failed (scanFolderOrFail);
+// a merge/rule/open error is console.error'ed (see there).
 async function folderScanTick() {
   for (const folder of state.folders) {
-    if (!folder.handle || folder.busy || folder.needsPermission || folder.failed) continue;
+    if (!folder.handle || folder.busy || folder.needsPermission) continue;
     folder.busy = true;
+    let changed = false;
     try {
-      const scanned = await scanFolderHandle(folder.handle, folder.settings);
-      const scannedKeys = new Set(scanned.map(s => s.relPath));
-      // Compared against the KEYS OF THE LAST ACTUAL SCAN, not folder.files —
-      // bugfix, person-reported ("Show M newest files" made scrolling feel
-      // laggy and repeatedly disturbed elsewhere). "Show newest M" (rule 1 of
-      // applyFolderAutoRules) drops closed listing entries beyond the newest
-      // M straight out of folder.files, so a file it hid was still on disk
-      // and reappeared in every later scan — looking "new" against
-      // folder.files forever, since the entry that would have marked it
-      // "known" had just been removed. That triggered mergeScannedFiles
-      // (which puts it back) then applyFolderAutoRules (which drops it
-      // again) on EVERY poll, an unbounded merge+render loop every
-      // FOLDER_SCAN_MS for as long as a folder had more matching files than
-      // its "Show newest M" setting — not just wasted work, but a `render()`
-      // every poll that could yank a scrolled-away selection back into view
-      // (see renderTable/renderHighlightView's captureViewAnchor/
-      // restoreViewAnchor). folder._lastScanKeys is updated to the raw scan
-      // result inside mergeScannedFiles itself (the one shared merge funnel),
-      // so it always reflects "what's actually on disk", never what the auto
-      // rules decided to hide from the listing afterward.
-      const known = folder._lastScanKeys || new Set(folder.files.map(folderFileKey));
-      const hasNew = scanned.some(s => !known.has(s.relPath));
-      // Person-reported: a file deleted outside the app used to stay
-      // listed forever, since a merge only ever ran when something NEW
-      // showed up — a poll that only lost a file changed nothing. Now any
-      // known entry missing from this scan also triggers the merge (which
-      // is what actually drops/closes it — see mergeScannedFiles).
-      const hasRemoved = [...known].some(k => !scannedKeys.has(k));
-      if (hasNew) folder._pingAt = Date.now(); // transient, one-shot ping (renderFolderSection)
-      if (hasNew || hasRemoved) { await mergeScannedFiles(folder, scanned); render(); }
+      changed = await pollFolder(folder);
     } catch (err) {
-      folder.failed = true;
-      render();
+      console.error(`Folder watch: polling "${folder.name}" failed`, err);
     } finally {
       folder.busy = false;
     }
+    // Outside the try above: a render error never flags the folder.
+    if (changed) {
+      try { render(); } catch (err) { console.error("Folder watch: render after a poll failed", err); }
+    }
   }
+}
+// One folder's poll. Resolves true when something visible changed (a new
+// failure state, a heal, a merge) and the caller should render; a stable
+// poll changes nothing and renders nothing (Group 195).
+async function pollFolder(folder) {
+  const wasFailed = folder.failed;
+  const prevMessage = folder.failedMessage;
+  const scanned = await scanFolderOrFail(folder);
+  if (!state.folders.includes(folder)) return false; // removed (its ✕) while listing
+  if (!scanned) return !wasFailed || folder.failedMessage !== prevMessage; // a repeated identical failure renders nothing
+  if (wasFailed) clearFolderFailed(folder);
+  const scannedKeys = new Set(scanned.map(s => s.relPath));
+  // Compared against the KEYS OF THE LAST ACTUAL SCAN, not folder.files —
+  // bugfix, person-reported ("Show M newest files" made scrolling feel
+  // laggy and repeatedly disturbed elsewhere). "Show newest M" (rule 1 of
+  // applyFolderAutoRules) drops closed listing entries beyond the newest
+  // M straight out of folder.files, so a file it hid was still on disk
+  // and reappeared in every later scan — looking "new" against
+  // folder.files forever, since the entry that would have marked it
+  // "known" had just been removed. That triggered mergeScannedFiles
+  // (which puts it back) then applyFolderAutoRules (which drops it
+  // again) on EVERY poll, an unbounded merge+render loop every
+  // FOLDER_SCAN_MS for as long as a folder had more matching files than
+  // its "Show newest M" setting — not just wasted work, but a `render()`
+  // every poll that could yank a scrolled-away selection back into view
+  // (see renderTable/renderHighlightView's captureViewAnchor/
+  // restoreViewAnchor). folder._lastScanKeys is updated to the raw scan
+  // result inside mergeScannedFiles itself (the one shared merge funnel),
+  // so it always reflects "what's actually on disk", never what the auto
+  // rules decided to hide from the listing afterward.
+  const known = folder._lastScanKeys || new Set(folder.files.map(folderFileKey));
+  const hasNew = scanned.some(s => !known.has(s.relPath));
+  // Person-reported: a file deleted outside the app used to stay
+  // listed forever, since a merge only ever ran when something NEW
+  // showed up — a poll that only lost a file changed nothing. Now any
+  // known entry missing from this scan also triggers the merge (which
+  // is what actually drops/closes it — see mergeScannedFiles).
+  const hasRemoved = [...known].some(k => !scannedKeys.has(k));
+  if (hasNew) folder._pingAt = Date.now(); // transient, one-shot ping (renderFolderSection)
+  // A folder that just healed is merged even when the key set looks
+  // unchanged: nothing was merged while it was failed.
+  if (!(hasNew || hasRemoved || wasFailed)) return false;
+  try {
+    await mergeScannedFiles(folder, scanned);
+  } catch (err) {
+    console.error(`Folder watch: merging the listing of "${folder.name}" failed`, err);
+  }
+  return true;
 }
 setInterval(folderScanTick, FOLDER_SCAN_MS);
 
@@ -31727,9 +31927,10 @@ function renderFolderSection(folder) {
     icon.classList.add("ping-once");
     icon.style.setProperty("--ping-delay", "-" + Math.round(pingAge) + "ms");
   }
-  icon.title = folder.failed ? "Folder no longer reachable"
+  icon.title = folder.failed
+    ? "Folder can't be read" + (folder.failedMessage ? " — " + folder.failedMessage : "") + ". Retrying every " + FOLDER_SCAN_MS / 1000 + " s."
     : folder.needsPermission ? "Permission needed to resume watching"
-    : "Watching for new " + FOLDER_WATCH_EXTENSIONS.join(", ") + " files";
+    : "Watching for new files";
   header.appendChild(icon);
   const name = document.createElement("span");
   name.className = "folder-watch-name";
@@ -31817,7 +32018,7 @@ function renderFolderSection(folder) {
       if (inlineViewableKind(rec.name)) {
         return renderInlineViewerEntryRow(
           "folder", folder.id, folder.inlineViewers, folderFileKey(rec), rec.name,
-          () => loadFolderFile(folder, rec), depth
+          () => loadFolderFile(folder, rec), depth, { autoOpened: !!rec.openedByAuto }
         );
       }
       const row = renderInactiveFileRow(folder, rec, depth);
@@ -31858,7 +32059,7 @@ function buildInactiveFileRow(folder, rec, text) {
   row.appendChild(label);
   row.appendChild(buildLoadBadge());
   row.addEventListener("click", () => {
-    setTreeCursor(unloadedNavId("folder", folder.id, folderFileKey(rec)));
+    placeCursorOnUnloaded(unloadedNavId("folder", folder.id, folderFileKey(rec)));
     state.focusRegion = "tree";
     render();
   });
@@ -41877,7 +42078,9 @@ document.addEventListener("keydown", ev => {
   // as a fast back-and-forth pair either way.
   if (matchesShortcut(ev, "focusTree")) {
     ev.preventDefault();
-    if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
+    // (Not while the cursor rests on an unloaded entry: nothing is selected on
+    // purpose then, and picking the first file would pull the cursor away.)
+    if (!state.nodes[state.activeId] && state.rootIds.length && !treeCursorId()) state.activeId = state.rootIds[0];
     state.focusRegion = "tree";
     // FEATURE_BACKLOG.md #18, person-requested: jumping focus into a
     // COLLAPSED tree would otherwise be invisible — force-peek it open
@@ -42935,7 +43138,7 @@ async function restoreWatchedFolders() {
     const handle = rec.handle || (rec.path ? nativeDirHandle(rec.path, rec.name) : null);
     if (!handle) continue;
     const folder = {
-      id: rec.key, name: rec.name, handle, files: [], busy: false, failed: false, needsPermission: true,
+      id: rec.key, name: rec.name, handle, files: [], busy: false, failed: false, failedMessage: null, needsPermission: true,
       settings: rec.settings || defaultFolderSettings(),
       inlineViewers: new Map(), // see addWatchedFolder's own comment
     };
