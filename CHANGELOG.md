@@ -2,6 +2,13 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: "Copy for ticket" reworked — line picks, gap markers, inline notes, rich text, direct copy (2026-09-30, person-requested, FEATURE_BACKLOG #91 + #92)**
+  - The snippet is now compact: a one-or-two-line header (file, entry count, time span of the quoted entries, filter chain + "x of y"), then ONE block of raw lines with notes inline (`  ↳ Note: …`) and a gap marker (`··· 45 lines · +2s ···`) wherever two quoted entries aren't adjacent in the file. The old five-block header, "Bookmarks & notes" list and "Exported with PhiLogg" footer are gone. A selection filter ("story") gets its name as heading and "N hand-picked entries"; the level quick filter is ignored for selection views (files included).
+  - New **Lines** choice in the Export / Share dialog: Marked rows (2+ marked log rows) / All / First N / Bookmarked; defaults on open: selection filter → All, 2+ marked rows → Marked rows, else the remembered All/First/Bookmarked. New **Rich text** format (`text/html` with inline styles + `text/plain`), toggles for gaps and header (`philogg-export-lines/-gaps/-header`), and a `Save file ▾` menu replacing the attachment section.
+  - Direct copy without the dialog: row context menu **Copy for ticket** (`#ctxCopyTicket`), rebindable shortcut **Ctrl+Shift+C** (`copyForTicket`; it used to fall through to the plain row copy), and **Copy for ticket** on a selection filter's tree menu (story export, also for a non-active node). Gaps are always on there.
+  - Logic in `pickTicketEntries` / `buildTicketSnippet` / `buildTicketSnippetHtml` / `copyEntriesForTicket`; `collectExportContext(nodeId)`. FEATURE_BACKLOG #91 and #92 implemented.
+  - **Tests**: new **Groups 337, 338, 339**; groups 223, 281 and 283 updated.
+
 - **feat: calm folder-watch status dot + cog icon; fix: find-bar hit badges made rows taller (2026-09-29, person-requested)**
   - The folder-watch header no longer runs an endless "scanning" ping: a live folder shows a neutral icon with a static 6px accent dot (error-colored when unreachable, none for lock/ZIP), and a single one-shot ping plays only when a rescan finds a NEW file (`folder._pingAt`, transient; `prefers-reduced-motion` skips the ring). Settings button now uses a new `i-cog` symbol (the app Settings glyph); `i-gear` stays for the library menu.
   - Fix: `.tree-hit-badge` was 19px tall inside the 16px row content, growing badge rows from 28px to 31px and shifting the tree; it is now 14px line + 2px border = 16px.

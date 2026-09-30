@@ -1,108 +1,172 @@
 # Export / Share — ticket-oriented export and findings report
 
 How an analysis leaves PhiLogg so it can be communicated through a ticket
-system (Jira Cloud / Server / Data Center, GitHub, GitLab, Azure DevOps, …).
-Implements FEATURE_BACKLOG.md #31 (export the current view as
-`.log`/`.csv`/`.tsv`) and #32 (standalone findings report) in one combined,
-ticket-shaped design. Code: `philogg.html`, section "Export / Share
-(ticket-oriented)", right after the extraction table's CSV export dialog.
-Tests: `tests/philogg.regression.test.js` GROUPS 281–283.
+system (Jira Cloud / Server / Data Center, GitHub, GitLab, Azure DevOps, …)
+or an e-mail. Implements FEATURE_BACKLOG.md #31 (export the current view as
+`.log`/`.csv`/`.tsv`), #32 (standalone findings report), #91 (line picks,
+gap markers, inline notes) and #92 (rich-text clipboard). Code:
+`philogg.html`, section "Export / Share (ticket-oriented)", right after the
+extraction table's CSV export dialog. Tests:
+`tests/philogg.regression.test.js` GROUPS 281–283 (context, snippet, files,
+dialog) and 337–339 (snippet logic, dialog rework, direct copy).
 
 ## Concept
 
-### Who reads it, and what they need
+The reader of a ticket has neither PhiLogg nor the log file. What they need,
+in reading order: what was looked at (file, entry count), when (time span),
+how the result was obtained (the filter), and the evidence — a few raw lines
+with the analyst's remarks. Two outputs, because tickets have two channels:
 
-The reader of a ticket has neither PhiLogg nor the log file. What they need
-from the person who did the analysis, in reading order:
+- **"Copy for ticket"** — a bounded clipboard snippet for the description or
+  a comment (Jira: 32,767 characters per field).
+- **Save file** — the *full* current view as an attachment (`.log`, `.csv`,
+  `.tsv`, standalone `.html` report).
 
-1. **What was looked at** — source file name(s) and total entry count.
-2. **When** — the time span the matching entries cover.
-3. **How the result was obtained** — the filter chain as a human-readable
-   narrative, one step per line, each with the entry count it left over
-   ("File: app.log — 12000", "Text contains: “timeout” — 120",
-   "Level: ERROR — 42"). The chain *is* the explanation of the analysis:
-   anyone can reproduce it with any tool.
-4. **How much** — "x of y entries matched".
-5. **What mattered** — the entries the analyst bookmarked or annotated,
-   with their notes. These are the findings in the narrow sense.
-6. **The evidence** — a bounded excerpt of the matching raw lines, and the
-   full data as an attachment.
+### The snippet (all text flavors)
 
-### Two outputs, because tickets have two channels
+```
+**app.log** (800 entries) · 2026-01-15 08:00:03.326 → 08:00:15.801
+**Filter:** Text contains: “timeout” → 47 of 800
 
-Ticket fields have size limits (Jira: 32,767 characters per description or
-comment) and render markup; attachments don't. So Export / Share produces:
+```
+<raw line>
+  ↳ Note: <note, one line>
+··· 45 lines · +2s ···
+<raw line>
+```
+```
 
-- **(a) "Copy for ticket"** — a compact clipboard snippet to paste into the
-  ticket description or a comment. Always bounded: at most
-  `TICKET_SNIPPET_MAX_CHARS` (30,000) characters, an adjustable number of
-  excerpt lines (default 20, 0 = none), each excerpt entry capped at
-  `TICKET_ENTRY_MAX_CHARS` (1,000; a huge stack trace can't eat the whole
-  budget), at most `TICKET_FINDINGS_MAX` (25) bookmark/note lines. Whatever
-  is cut says so explicitly ("… 380 more matching entries — see the attached
-  export"), so a reader never mistakes an excerpt for the whole result.
-- **(b) "Save as attachment"** — files carrying the *full* current view:
-  - **`.log`** — the raw lines, exactly as in the source file (multi-line
-    entries keep their continuation lines). The lightest attachment and the
-    one any log tool re-opens.
-  - **`.csv`** — RFC 4180 (comma, `"`-quoting, CRLF rows, header row); one
-    column per visible log column (Time, Level, the loaded formats' middle
-    columns incl. custom columns, Message). Multi-line messages stay intact
-    inside quotes.
-  - **`.tsv`** — same columns, tab-separated, for pasting into a spreadsheet
-    in any locale. A TSV field can't carry tabs or line breaks, so a tab
-    becomes a space and a line break becomes the two characters `\n`.
-  - **Report (`.html`)** — a standalone, self-contained findings report: the
-    snippet's header, the full filter chain, *all* bookmarks/notes, and
-    *every* matching entry (bookmarked ones marked ★ with their note inline).
-    Opens in any browser, no PhiLogg needed. Inline CSS only, no script, no
-    external resource; every piece of log/user text goes through
-    `escapeHtml`, so a log line containing markup can't execute when the
-    report is opened.
+- **Header** (checkbox "Source & filter header", remembered): line 1 =
+  source file name(s) in bold (a merge: comma-joined), total entries, then
+  the time span of the *quoted* entries (one time for a single entry; the end
+  shows time only when it's the same day). Line 2 = `Filter:` + the chain
+  steps after the file step (`describeExportStep`) joined by " → ", then
+  " → <view count> of <total>"; the level quick filter is an extra step. No
+  Filter line when the active node is the file itself and no level filter is
+  set. Free text is escaped per flavor.
+- **One block** of raw lines (Markdown fence that grows past the longest
+  backtick run, `{noformat}`, or four-space indent). Each entry is capped at
+  `TICKET_ENTRY_MAX_CHARS` (1,000), the whole snippet at
+  `TICKET_SNIPPET_MAX_CHARS` (30,000). Entries cut by the budget are announced
+  by an italic line after the block: "… N more entries not quoted — see the
+  attached export." Picking fewer entries (First N, Marked rows) is not a cut
+  and announces nothing. Nothing quoted → header + "(no lines selected —
+  nothing quoted)".
+- **Notes inline**: `  ↳ Note: ` + the note collapsed to one line
+  (`TICKET_TEXT_MAX_CHARS`, 300), directly under its entry, only for quoted
+  entries. Bookmarks aren't marked in the text flavors. There is no separate
+  "Bookmarks & notes" list and no "Exported with PhiLogg" footer.
+- **Gap marker** (checkbox "Show gaps between lines", remembered, default
+  on): between two consecutive quoted entries whose positions in the root
+  file differ by more than one — `··· N lines · +Δ ···` (N = skipped lines,
+  "1 line" singular; Δ = `formatDuration` of the timestamp difference,
+  omitted when either timestamp isn't finite). Never before the first or
+  after the last entry; entries without a position in the root file (Link
+  pair entries, rows of another file) get none.
+- **Selection filter = "story"**: when the active node is a person-built
+  selection filter (`idset` with `selectionFilter`, see `docs/filters.md` →
+  "Add to selection"), the header becomes a heading with the node's name,
+  a blank line, then `file (800 entries) · N hand-picked entries · span`;
+  there is no Filter line. The level quick filter does **not** apply to a
+  selection view — neither to the snippet nor to the attachment files.
+
+### Lines — which entries are quoted
+
+Segmented control `Marked rows (k)` | `All (n)` | `First [N]` | `Bookmarked (b)`
+(`pickTicketEntries(ctx, mode, n)`, always in log order):
+
+| Mode | Entries |
+|---|---|
+| Marked rows | the log's multi-selection (`state.logMultiSelect`) limited to the active root file; enabled only with 2+ such rows; never remembered |
+| All | every entry of the view (walked only until the character budget is used up) |
+| First N | the first N of the view, N = 0..500 (number input inside the button; remembered, default 20) |
+| Bookmarked | the root file's bookmarked or annotated entries (independent of the filter) |
+
+Default on open: selection filter → All; else 2+ marked rows → Marked rows;
+else the remembered choice (All / First / Bookmarked, default First). Choosing
+All / First / Bookmarked saves it (`philogg-export-lines`).
 
 ### Format flavors — one choice, remembered
 
-The same snippet in three markups, picked with one segmented control and
-remembered (`localStorage["philogg-export-format"]`, mirrored into the
-desktop build's `settings.json` like every `philogg-*` key):
+Picked with a segmented control, remembered
+(`localStorage["philogg-export-format"]`, mirrored into the desktop build's
+`settings.json` like every `philogg-*` key; so are `philogg-export-lines`,
+`philogg-export-excerpt-lines`, `philogg-export-gaps` and
+`philogg-export-header`):
 
 | Flavor | For | Markup used |
 |---|---|---|
-| **Markdown** (default) | Jira Cloud (its editor converts pasted Markdown), GitHub, GitLab, Azure DevOps, Slack/Teams | `###` heading, `**bold**`, `` `code` ``, numbered/bullet lists, fenced code block (fence grows past the longest backtick run in the lines) |
-| **Jira wiki** | Jira Server / Data Center (wiki renderer), Confluence wiki markup | `h3.`, `*bold*`, `{{mono}}`, `#`/`*` lists, `{noformat}` block (no language highlighting, no markup interpretation inside) |
-| **Plain text** | e-mail, chat, any other tracker | no markup; excerpt indented by four spaces |
+| **Markdown** (default) | Jira Cloud, GitHub, GitLab, Azure DevOps, Slack/Teams | `###` heading (story), `**bold**`, fenced block |
+| **Jira wiki** | Jira Server / Data Center, Confluence wiki markup | `h3.`, `*bold*`, `{noformat}` block |
+| **Plain text** | e-mail, chat, any other tracker | no markup; block indented by four spaces |
+| **Rich text** | Outlook, Confluence Cloud, Teams, Word | HTML clipboard, see below |
 
-Free text that isn't inside a code block (filter names, notes, messages in
-the bookmark list) is escaped per flavor so a `*` or `_` in a log message
-doesn't turn the rest of the ticket bold.
+**Rich text** writes `text/html` plus `text/plain` (= the Plain-text output)
+through `copyTextToClipboard(text, html)`; the other flavors write text only
+so Jira Cloud/GitHub keep their Markdown behavior. The HTML
+(`buildTicketSnippetHtml`) uses **inline styles only** (Outlook, Confluence,
+Teams and Word drop `<style>`), no script, links or images, and every log or
+user string goes through `escapeHtml`. Look: header as two divs (a heading
+div for a story), then a bordered monospace container with one div per entry
+(`white-space:pre-wrap; overflow-wrap:anywhere; tab-size:4` — no mid-word
+breaks); ERROR-bucket entries red, WARN amber, bookmarked entries with a
+light-yellow background and "★ "; gap lines grey, italic, centered; notes as
+an italic sans-serif div with a teal left border; the budget-cut line in
+grey italics.
 
 ### What "the current view" is
 
 The active tree node's result with the level quick-filter applied —
-`applyLevelFilter(getEntries(state.activeId))`, the same set the Filtered
-view shows, in log order. Deliberately **not** included: the display-only
-table sort, and entries pinned in only by "pin bookmarks into the Filtered
-view" (bookmarks have their own section instead). A Link node exports its
-pair entries (the two raw lines joined by ` ⟶ `, as the Link view shows
-them). The level quick-filter, when set, appears as its own last step in the
-filter chain.
-
-Bookmarks and notes listed are those of the active node's **root file**
-(every bookmarked or annotated entry of that file, in log order) — they are
-the analyst's findings regardless of which filter happens to be active.
+`applyLevelFilter(getEntries(node.id))` — the same set the Filtered view
+shows, in log order (for a selection filter: the selection as is, see
+above). Not included: the display-only table sort, and entries pinned in only
+by "pin bookmarks into the Filtered view". A Link node exports its pair
+entries. `collectExportContext(nodeId)` builds the context for any node (the
+default is the active node); the context carries the entries, chain steps
+with counts, sources, time span, the root file's bookmarked/annotated entries
+(`findings`) and `selection`.
 
 ### Where it lives
 
-One entry point: the **Export / Share** button in the top toolbar (left of
-Settings), plus a rebindable shortcut (**Ctrl+Shift+E**, Shortcut Manager
-id `exportView`). It opens `#exportDialog`: a one-line summary of the view,
-the flavor switch, the excerpt-lines number, a read-only live preview of
-the snippet, the four attachment buttons, and **Copy for ticket** as the
-dialog's primary action. With nothing loaded (no active node) the shortcut
-and button just toast "Nothing to export". The existing, narrower paths stay
-as they were: Ctrl+C on selected log rows (`copyLogSelectionToClipboard`),
-and the extraction table's own "Export as CSV…" (extracted columns rather
-than log columns).
+- **Dialog** — the **Export / Share** toolbar button (left of Settings) or
+  the rebindable **Ctrl+Shift+E** (`exportView`) opens `#exportDialog`:
+  summary line, Lines row, Format row, the two toggles (pill toggles), a live
+  preview (read-only textarea; for Rich text a white div rendering the HTML),
+  and the footer — `Save file ▾` on the left (menu: Log / CSV / TSV / Report,
+  "Saves the full view"; closes on outside click, Escape, item choice, dialog
+  close), Close and the primary **Copy** on the right. Copy writes what the
+  preview shows (rich: html + plain) and toasts "Copied for ticket (N
+  entries)". The dialog stays open after copying.
+- **Direct copy, no dialog** (`copyEntriesForTicket`; gaps always on, header
+  per the remembered toggle, remembered format; toast "Copied for ticket (N
+  entries)", "Nothing to copy" when there is nothing):
+  - row context menu item **Copy for ticket** (`#ctxCopyTicket`, right after
+    Copy): the marked rows when 2+ are marked in the active root file, else
+    the right-clicked row;
+  - rebindable shortcut **Ctrl+Shift+C** (`copyForTicket`): the marked rows,
+    else the selected row (it sits before the plain Ctrl+C handler, which
+    used to also catch Ctrl+Shift+C);
+  - tree context menu of a selection filter: **Copy for ticket** — the whole
+    selection as a story (All), built against that node even when it isn't
+    active.
+
+With nothing loaded the dialog just toasts "Nothing to export". The existing
+narrower paths stay: Ctrl+C on selected log rows and the extraction table's
+"Export as CSV…".
+
+### Attachment files
+
+`buildExportFileParts(kind, ctx)` on the full view (never limited by Lines):
+
+- **`.log`** — the raw lines as in the source file (continuation lines kept).
+- **`.csv`** — RFC 4180 (comma, `"`-quoting, CRLF, header row); one column per
+  visible log column incl. custom columns.
+- **`.tsv`** — same columns, tab-separated; a tab becomes a space and a line
+  break the two characters `\n`.
+- **Report (`.html`)** — standalone findings report: header, full filter
+  chain, *all* bookmarks/notes, *every* entry (bookmarked ones ★ with note
+  inline). Inline CSS only, no script/external resource, everything
+  `escapeHtml`ed. Unchanged by the snippet rework.
 
 ### Saving files — browser and desktop
 
@@ -119,8 +183,8 @@ Nothing is collected from the DOM — every builder walks the entry array
 directly. Files are built as an array of string chunks
 (`EXPORT_CHUNK_ENTRIES` = 5,000 entries per chunk) handed to one `Blob`, so
 a million-entry export never builds one giant string or one part per line.
-The snippet only ever touches the first N entries plus one O(n) pass for
-the time range. The chain's per-step counts come from `getEntries`, which
+The snippet walks the picked entries only until the character budget is
+used up (plus one O(n) pass for the time range). The chain's per-step counts come from `getEntries`, which
 is memoized per node (`node._cache`), so they're cache hits.
 
 ### Privacy
@@ -132,18 +196,13 @@ paths.
 
 ### Consciously left out (candidates for the backlog)
 
-- **Context lines around excerpt entries** ("±N lines" in the snippet) —
-  the excerpt is the first N matching entries only.
-- **Excerpt selection other than "first N"** (e.g. bookmarked-first, or the
-  last N / around the selected row).
-- **Rich-text clipboard** (`text/html` alongside the Markdown) for editors
-  that don't convert pasted Markdown (Confluence Cloud, Outlook).
-- **Direct ticket-system integration** (create/comment via REST API) —
-  would need credentials and network access, contradicting the offline,
+- **±N context lines around each quoted entry** — the gap marker plus the
+  Context view cover that.
+- **Direct ticket-system integration** (create/comment via REST API) — would
+  need credentials and network access, contradicting the offline,
   nothing-leaves-the-machine design.
 - **Markdown report file** (`.md` attachment) — the HTML report covers the
-  "readable without PhiLogg" need; a `.md` variant would be a thin wrapper
-  over the snippet builder without limits.
+  "readable without PhiLogg" need.
 - **Screenshot/Plot image in the report** (the Plot tab's PNG save exists
   separately).
 - **Timezone annotation** of timestamps — they're shown as parsed, local
