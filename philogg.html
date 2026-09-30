@@ -16537,6 +16537,11 @@ function isSameNavPlace(a, b) {
 // without enough travel to count as a new place.
 function commitCurrentNavPosition() {
   if (navigatingHistory || navHistoryIndex < 0) return;
+  // Nothing to read the positions from while the main area shows a
+  // placeholder (nothing selected), an inline viewer or the folder minimap: a
+  // hidden view's scroll offsets read as 0 and would overwrite the waypoint's
+  // last good ones (walking Alt+Arrow over a closed entry and back).
+  if (fhSplit.style.display === "none" && extractWrap.style.display === "none" && patternsWrap.style.display === "none") return;
   navHistory[navHistoryIndex] = captureNavWaypoint(navHistory[navHistoryIndex].nodeId);
 }
 
@@ -16852,6 +16857,35 @@ function renderInner() {
 // DOM locations rather than being reparented into a new shared slot row —
 // see "Entscheidungen bei der Umsetzung" in docs/ui-implementation-plan.md
 // for why).
+// #emptyState is one element with three texts, all built here: the original
+// markup (no files at all), "No file selected" (files are open, none is
+// selected — the tree cursor left a file for an unloaded entry, or an
+// automatic close took the shown viewer), and the "<name> is not loaded" /
+// "is loading" hint while the tree cursor rests on a listed-but-unloaded
+// entry. The markup's own text is kept and restored whenever it applies.
+const emptyStateHeadingEl = emptyState.querySelector("h2");
+const emptyStateBodyEl = emptyState.querySelector("p");
+const EMPTY_STATE_DEFAULT = { heading: emptyStateHeadingEl.textContent, bodyHtml: emptyStateBodyEl.innerHTML };
+function showEmptyStateText(heading, body) {
+  if (heading == null) {
+    emptyStateHeadingEl.textContent = EMPTY_STATE_DEFAULT.heading;
+    emptyStateBodyEl.innerHTML = EMPTY_STATE_DEFAULT.bodyHtml;
+  } else {
+    emptyStateHeadingEl.textContent = heading;
+    emptyStateBodyEl.textContent = body;
+  }
+}
+// The unloaded entry the tree cursor rests on (display name as the tree row
+// shows it: the basename), or null.
+function unloadedCursorEntryName() {
+  const id = treeCursorId();
+  if (!id || !isUnloadedNavId(id)) return null;
+  const p = parseUnloadedNavId(id);
+  const owner = pathTreeOwnerOf(p.ownerKind, p.ownerId);
+  const listed = owner && (p.ownerKind === "zip" ? owner.entries.some(e => e.name === p.key) : owner.files.some(r => folderFileKey(r) === p.key));
+  return listed ? { name: basenameOf(p.key), loading: kbLoadNavIds.has(id) } : null;
+}
+
 function renderMainView() {
   syncFolderPreloads(); // leaving the folder minimap aborts its silent preloads
   const hasFiles = state.rootIds.length > 0;
@@ -16922,12 +16956,39 @@ function renderMainView() {
   }
   folderMinimapWrap.style.display = "none";
 
-  emptyState.style.display = hasFiles ? "none" : "flex";
+  // Nothing selected: no inline viewer, no folder view and no live active
+  // node. With files open that is the placeholder below; the texts follow the
+  // tree cursor (see showEmptyStateText).
+  const noSelection = !state.nodes[state.activeId];
+  const showPlaceholder = !hasFiles || noSelection;
+  if (showPlaceholder) {
+    const cursorEntry = unloadedCursorEntryName();
+    if (cursorEntry && cursorEntry.loading) showEmptyStateText(`"${cursorEntry.name}" is loading…`, "It opens here as soon as it is ready.");
+    else if (cursorEntry) showEmptyStateText(`"${cursorEntry.name}" is not loaded`, "Press → or Alt+→ to load it, or double-click it.");
+    else if (hasFiles) showEmptyStateText("No file selected", "Select a file on the left.");
+    else showEmptyStateText(null);
+  }
+  emptyState.style.display = showPlaceholder ? "flex" : "none";
   // #viewBar has nothing meaningful to show with zero files loaded —
   // person-requested (predates this rework): only #emptyState's centered
   // hint should be visible then. "" (not a hardcoded display value) restores
   // #viewBar's own CSS display:flow-root once files are back.
-  viewBarEl.style.display = hasFiles ? "" : "none";
+  viewBarEl.style.display = showPlaceholder ? "none" : "";
+  if (hasFiles && noSelection) {
+    // Same surfaces as the inline-viewer branch above hides — but nothing is
+    // cleared: the open files (and their view state) stay as they are.
+    timelineMinimapEl.classList.add("hidden");
+    tableWrap.style.display = "none";
+    extractWrap.style.display = "none";
+    patternsWrap.style.display = "none";
+    facetPanel.classList.add("hidden");
+    linkWrap.style.display = "none";
+    fhTabs.style.display = "none";
+    fhSplit.style.display = "none";
+    detailPanel.style.display = "none";
+    detailResizer.style.display = "none";
+    return;
+  }
   if (!hasFiles) {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
@@ -17291,6 +17352,20 @@ function treeCursorId() {
 function setTreeCursor(id) {
   state.treeCursor = id ? { id, activeId: state.activeId, inlineViewer: state.inlineViewer, folderView: state.folderView } : null;
 }
+// The tree cursor arrives on a listed-but-not-loaded entry (Alt+Arrow, or a
+// plain click on its grayed row): the previously selected file is no longer
+// selected and its content no longer shown — leaving it selected made it look
+// as if the row under the cursor were open (renderMainView then shows the
+// "<name> is not loaded" placeholder). Order matters: setTreeCursor snapshots
+// activeId/inlineViewer/folderView, which treeCursorId() later compares against.
+// A dir row keeps plain setTreeCursor (cursor only, the main view stays).
+function placeCursorOnUnloaded(navId) {
+  state.activeId = null;
+  state.inlineViewer = null;
+  state.folderView = null;
+  state.multiSelect = new Set();
+  setTreeCursor(navId);
+}
 // The dir nav id a file/viewer at relative path `relPath` sits directly under
 // (null at the container's top level).
 function parentDirNavId(ownerKind, ownerId, relPath) {
@@ -17596,10 +17671,10 @@ function moveTreeSelection(key, opts) {
   if (targetIdx < 0) targetIdx = ids.indexOf(targetId);
   lastTreeNav = { id: targetId, nth: ids.slice(0, targetIdx).filter(x => x === targetId).length };
 
-  // A dir row / unloaded entry is a cursor position only — the main view
-  // (activeId, viewer) stays as it is.
+  // An unloaded entry deselects whatever was shown (placeCursorOnUnloaded); a
+  // dir row is a cursor position only — the main view stays as it is.
   if (isCursorOnlyNavId(targetId)) {
-    setTreeCursor(targetId);
+    if (isUnloadedNavId(targetId)) placeCursorOnUnloaded(targetId); else setTreeCursor(targetId);
     render();
     return;
   }
@@ -28756,7 +28831,7 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
     // such row already uses (see the row's own title above). A click on the
     // unopened row just puts the tree cursor there.
     if (!cachedViewer) {
-      setTreeCursor(unloadedNavId(ownerKind, ownerId, mapKey));
+      placeCursorOnUnloaded(unloadedNavId(ownerKind, ownerId, mapKey));
       state.focusRegion = "tree";
       render();
       return;
@@ -31984,7 +32059,7 @@ function buildInactiveFileRow(folder, rec, text) {
   row.appendChild(label);
   row.appendChild(buildLoadBadge());
   row.addEventListener("click", () => {
-    setTreeCursor(unloadedNavId("folder", folder.id, folderFileKey(rec)));
+    placeCursorOnUnloaded(unloadedNavId("folder", folder.id, folderFileKey(rec)));
     state.focusRegion = "tree";
     render();
   });
@@ -42003,7 +42078,9 @@ document.addEventListener("keydown", ev => {
   // as a fast back-and-forth pair either way.
   if (matchesShortcut(ev, "focusTree")) {
     ev.preventDefault();
-    if (!state.nodes[state.activeId] && state.rootIds.length) state.activeId = state.rootIds[0];
+    // (Not while the cursor rests on an unloaded entry: nothing is selected on
+    // purpose then, and picking the first file would pull the cursor away.)
+    if (!state.nodes[state.activeId] && state.rootIds.length && !treeCursorId()) state.activeId = state.rootIds[0];
     state.focusRegion = "tree";
     // FEATURE_BACKLOG.md #18, person-requested: jumping focus into a
     // COLLAPSED tree would otherwise be invisible — force-peek it open
