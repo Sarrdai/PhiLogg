@@ -48,6 +48,10 @@ const { IDBFactory, IDBKeyRange } = require("fake-indexeddb");
   };
 }
 
+// jsdom's selector engine is ~1000x slower than a browser's on the
+// document-wide `[data-*="..."]` queries render() runs; see the module.
+const FAST_SELECTORS = require("./jsdom-fast-selectors.js");
+
 // Default assumes this file lives in a `tests/` (or similarly named) folder
 // directly at the project root, sibling to philogg.html — e.g.:
 //   project-root/
@@ -80,7 +84,17 @@ const html = fs.readFileSync(HTML_PATH, "utf8");
 // left inline in PAGE_SHELL for jsdom to run normally as before.
 const PAGE_SCRIPT_MATCHES = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
 const PAGE_SCRIPT_MATCH = PAGE_SCRIPT_MATCHES[PAGE_SCRIPT_MATCHES.length - 1];
-const PAGE_SHELL = html.replace(PAGE_SCRIPT_MATCH[0], "<script></script>");
+// The app's stylesheet (the one <style> in <head>, ~280 KB) is cut out of the
+// shell as well and put back as ONE text node right after the parse (see
+// withApp). Parsed in place, parse5 feeds it through its RAWTEXT tokenizer as
+// tens of thousands of character tokens, each appended to the growing text
+// node with its own replaceData + mutation record — ~40% of every window's
+// HTML parse, for the same text. Nothing runs in between that could notice:
+// the only script in the parse is the FOUC one, which reads localStorage and
+// matchMedia, never styles.
+const PAGE_CSS_MATCH = /<style>([\s\S]*?)<\/style>/.exec(html);
+const PAGE_CSS = PAGE_CSS_MATCH[1];
+const PAGE_SHELL = html.replace(PAGE_SCRIPT_MATCH[0], "<script></script>").replace(PAGE_CSS_MATCH[0], "<style></style>");
 const PAGE_SCRIPT = new vm.Script(PAGE_SCRIPT_MATCH[1], { filename: "philogg-inline.js" });
 
 let passed = 0, failed = 0;
@@ -97,7 +111,16 @@ function assert(cond, label) {
 // `node philogg.regression.test.js` keeps working unchanged:
 //
 //   SHARD=<index>/<total>  run only the groups whose number ≡ index (mod
-//                          total). run.js spawns one child per shard.
+//                          total) — a fixed split, for reproducing one
+//                          shard's run by hand.
+//   SHARD_CLAIMS=<dir>     what run.js uses instead: every child walks the
+//                          whole file, and whichever reaches a group first
+//                          claims it (an atomic mkdir of <dir>/<N>) and runs
+//                          it; the others skip it. A child stuck in a slow
+//                          group simply claims fewer, so the shards finish
+//                          together however the group costs are spread —
+//                          the fixed modulo split left the slowest shard ~15%
+//                          behind the fastest.
 //   GROUP=58,127           run only those groups — the dev loop's "re-run just
 //                          the thing I broke", ~1-2s instead of the full suite.
 //
@@ -110,12 +133,23 @@ function assert(cond, label) {
 // helpers and fixtures (nativeFolderBridge/dirsA/bridgeA, ...) that later
 // groups close over.
 const SHARD = process.env.SHARD ? process.env.SHARD.split("/").map(Number) : null;
+const SHARD_CLAIMS = process.env.SHARD_CLAIMS || null;
 const ONLY = process.env.GROUP ? new Set(process.env.GROUP.split(",").map(g => g.trim())) : null;
 let currentGroup = null;
+const claimed = new Map(); // group -> this child's claim decision, made once
 function group(n) { currentGroup = String(n); }
 function groupSelected() {
   if (currentGroup === null) return true; // not inside any group yet
   if (ONLY) return ONLY.has(currentGroup);
+  if (SHARD_CLAIMS) {
+    if (!claimed.has(currentGroup)) {
+      let mine = true;
+      try { fs.mkdirSync(path.join(SHARD_CLAIMS, currentGroup)); }
+      catch (err) { if (err.code !== "EEXIST") throw err; mine = false; }
+      claimed.set(currentGroup, mine);
+    }
+    return claimed.get(currentGroup);
+  }
   if (SHARD) return Number(currentGroup) % SHARD[1] === SHARD[0];
   return true;
 }
@@ -182,6 +216,23 @@ async function withApp(run, opts = {}) {
       if (opts.philogg) {
         Object.defineProperty(window, "philogg", { value: opts.philogg, configurable: true });
       }
+      // The app's two background polls, setInterval(tailTick, TAIL_POLL_MS)
+      // and setInterval(folderScanTick, FOLDER_SCAN_MS), are never scheduled
+      // here: a group that needs a tick calls w.tailTick()/w.folderScanTick()
+      // itself, at the moment it asserts on. Left running, they fired in any
+      // group that happened to outlive 1.5s — only under full-suite load — and
+      // re-read files, re-rendered and rescanned folders in the middle of
+      // assertions (GROUP 332's "each file was read exactly once" counted the
+      // tail poll's read). GROUP 346 checks both are still caught by name.
+      window.__pausedBackgroundPolls = [];
+      const realSetInterval = window.setInterval;
+      window.setInterval = function (fn, ...rest) {
+        if (typeof fn === "function" && (fn.name === "tailTick" || fn.name === "folderScanTick")) {
+          window.__pausedBackgroundPolls.push(fn.name);
+          return 0;
+        }
+        return realSetInterval.call(this, fn, ...rest);
+      };
       // opts.beforeParse(window): anything else a group needs in place before
       // the page's script runs (a global jsdom lacks, say).
       if (opts.beforeParse) opts.beforeParse(window);
@@ -199,9 +250,10 @@ async function withApp(run, opts = {}) {
   // The page's own script, pre-compiled once (see PAGE_SCRIPT above). It runs
   // in the same VM context the injected bridge <script>s below land in, so
   // their shared lexical scope works exactly as two inline <script>s would.
-  PAGE_SCRIPT.runInContext(dom.getInternalVMContext());
   const { window } = dom;
   const { document } = window;
+  document.head.querySelector("style").textContent = PAGE_CSS; // see PAGE_CSS above
+  PAGE_SCRIPT.runInContext(dom.getInternalVMContext());
 
   // Top-level let/const inside the inline <script> (state, fhLayout,
   // minimapBgCache, undoStack, ...) are NOT window properties — only function
@@ -403,6 +455,138 @@ function mkDataTransfer(w, extraTypes = []) {
 function fireDrag(el, w, type, dt) { el.dispatchEvent(Object.assign(new w.Event(type, { bubbles: true, cancelable: true }), { dataTransfer: dt })); }
 
 (async () => {
+
+/* ============================================================
+   GROUP 346 — Test harness: the jsdom speed-ups stay exact
+   Origin: 2026-09-30 test-suite speed-up session. jsdom-fast-selectors.js
+   answers `[data-*]` selector lists itself (jsdom's own engine made them ~45%
+   of the suite's CPU time): its answers are held against jsdom's engine on
+   the real page, across scopes, edge cases and every kind of mutation its
+   document index must notice. Also pins what withApp changes about the page
+   itself: the stylesheet put back after the parse, the background polls
+   caught by name.
+   ============================================================ */
+group(346);
+await withApp(async (w, d, T) => {
+  section("346a. data-* fast path == jsdom's engine for every data-* name/value on the loaded page, in document, element and fragment scope");
+  const FS = FAST_SELECTORS;
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const sameNodes = (a, b) => a.length === b.length && a.every((n, i) => n === b[i]);
+  const mismatches = [];
+  let checked = 0;
+  const check = (scope, sel, label) => {
+    checked++;
+    const fast = [...scope.querySelectorAll(sel)], slow = FS.jsdomQuerySelectorAll(scope, sel);
+    if (!sameNodes(fast, slow)) mismatches.push(label + " " + sel + ": " + fast.length + " vs " + slow.length);
+    if (scope.querySelector(sel) !== FS.jsdomQuerySelector(scope, sel)) mismatches.push(label + " " + sel + ": querySelector differs");
+  };
+  const pairs = new Map();
+  for (const el of d.querySelectorAll("*")) {
+    for (const a of el.attributes) {
+      if (!a.name.startsWith("data-")) continue;
+      if (!pairs.has(a.name)) pairs.set(a.name, new Set());
+      pairs.get(a.name).add(a.value);
+    }
+  }
+  const selectors = ['[data-row-action="filterForMessage"], [data-row-action="extractMessage"]', "[data-row-action], [data-row-actions]", "[data-nope]", '[data-row-action="nope"]'];
+  for (const [name, values] of pairs) {
+    selectors.push("[" + name + "]");
+    for (const v of [...values].slice(0, 4)) if (!/["'\\]/.test(v)) selectors.push("[" + name + '="' + v + '"]', "[ " + name + " = '" + v + "' ]");
+  }
+  const frag = d.createDocumentFragment();
+  frag.appendChild(d.querySelector("#tree").cloneNode(true));
+  const scopes = [[d, "document"], [d.querySelector("#app"), "#app"], [d.querySelector("#tree"), "#tree"], [d.body.lastElementChild, "last body child"], [frag, "fragment"]];
+  for (const sel of selectors) for (const [scope, label] of scopes) check(scope, sel, label);
+  assert(pairs.size >= 10 && selectors.length > 40, "sanity: the page carries plenty of data-* to check, got " + pairs.size + " names, " + selectors.length + " selectors");
+  assert(FS.mode === "off" || selectors.every(FS.eligible), "every selector built here is one the fast path answers");
+  assert(FS.mode === "off" || !["div[data-x]", "[data-x i]", "[DATA-X]", "[data-x=a]", "[data-x~=\"a\"]", "[data-x=\"a\\\"b\"]", ".a, [data-x]", "[aria-label]"].some(FS.eligible),
+    "anything but plain [data-*] lists stays with jsdom's engine");
+  assert(mismatches.length === 0, "querySelector(All) matches jsdom's engine on all " + checked + " selector/scope pairs: " + mismatches.slice(0, 4));
+
+  section("346b. edge cases: scope itself excluded, template contents, detached trees; odd-shaped data-* names go back to jsdom's engine");
+  mismatches.length = 0;
+  const fallbacksBefore = FS.stats.fallbacks;
+  const box = d.createElement("div");
+  box.setAttribute("data-k", "a"); // the scope itself: never in box.querySelectorAll
+  box.innerHTML = '<p data-k="a"></p><span data-k="b" data-o=""><i data-k="a"></i></span><template><b data-k="a"></b></template><svg><g data-k="a"></g><g></g></svg><em></em>';
+  d.body.appendChild(box);
+  const [, , svgPlain] = box.querySelectorAll("g");
+  // Shapes dom-selector reads its own way (see the module header): the fast
+  // path must hand these queries back, not guess.
+  const [g1, em, pEl, spanEl] = [box.querySelectorAll("g")[1], box.querySelector("em"), box.querySelector("p"), box.querySelector("span")];
+  const exotic = [ // [element, namespace, local name]
+    [g1, null, "data-K"], // non-HTML element keeps the uppercase name
+    [em, null, "DATA-K"], // setAttributeNS skips the HTML lowercasing
+    [em, "urn:x", "data-k"], // prefixed + namespaced (x:data-k)
+    [pEl, "urn:x2", "data-k"], // namespaced, unprefixed, value "zz"
+    [spanEl, null, "x:data-k"], // a colon in a null-namespace name
+  ];
+  g1.setAttribute("data-K", "a");
+  em.setAttributeNS(null, "DATA-K", "a");
+  em.setAttributeNS("urn:x", "x:data-k", "a");
+  pEl.setAttributeNS("urn:x2", "data-k", "zz");
+  spanEl.setAttribute("x:data-k", "a");
+  assert(exotic.every(([el, ns, local]) => el.hasAttributeNS(ns, local)), "sanity: every odd-shaped attribute is in place");
+  const detached = d.createElement("div");
+  detached.innerHTML = '<a data-k="a"><b data-k="c"></b></a>';
+  const edgeSelectors = ["[data-k]", '[data-k="a"]', "[data-k='b']", '[data-k="zz"]', "[data-o]", '[data-o=""]', "[data-k], [data-o]", '[data-k="b"], [data-k="a"]'];
+  for (const sel of edgeSelectors) {
+    for (const [scope, label] of [[d, "document"], [box, "box"], [box.querySelector("template").content, "template content"], [detached, "detached"], [box.querySelector("svg"), "svg"]]) check(scope, sel, label);
+  }
+  assert(svgPlain === undefined && ![...box.querySelectorAll("[data-k]")].includes(box), "the scope element itself is never part of its own result");
+  assert(![...d.querySelectorAll("[data-k]")].some(e => e.localName === "b"), "template contents are not part of the document's tree");
+  assert(mismatches.length === 0, "edge cases match jsdom's engine: " + mismatches.slice(0, 4));
+  assert(FS.mode === "off" || FS.stats.fallbacks > fallbacksBefore, "the odd-shaped names sent queries back to jsdom's engine");
+
+  section("346c. the document index notices every kind of mutation");
+  mismatches.length = 0;
+  for (const [el, ns, local] of exotic) el.removeAttributeNS(ns, local); // the index only answers while none are left
+  const fallbacksPlain = FS.stats.fallbacks;
+  const probe = label => { for (const sel of ["[data-k]", '[data-k="a"]', '[data-k="z"]', '[data-k="b"], [data-k="z"]', "[data-flag]"]) check(d, sel, label); };
+  probe("warm"); probe("warm again");
+  const p = box.querySelector("p"), span = box.querySelector("span");
+  const steps = [
+    ["appendChild", () => { const x = d.createElement("u"); x.dataset.k = "z"; box.appendChild(x); }],
+    ["remove", () => span.remove()],
+    ["setAttribute value", () => p.setAttribute("data-k", "z")],
+    ["removeAttribute", () => p.removeAttribute("data-k")],
+    ["dataset", () => { p.dataset.k = "b"; }],
+    ["Attr.value", () => { p.getAttributeNode("data-k").value = "a"; }],
+    ["setAttributeNode", () => { const at = d.createAttribute("data-k"); at.value = "z"; box.querySelector("em").setAttributeNode(at); }],
+    ["toggleAttribute", () => p.toggleAttribute("data-flag")],
+    ["className only", () => { p.className = "changed"; }],
+    ["insertBefore (move)", () => box.insertBefore(box.lastElementChild, box.firstChild)],
+    ["innerHTML", () => { p.innerHTML = '<q data-k="z"></q>'; }],
+    ["insertAdjacentHTML", () => box.insertAdjacentHTML("beforeend", '<s data-k="b"></s>')],
+    ["textContent clears", () => { p.textContent = ""; }],
+    ["adopt from another document", () => { const other = d.implementation.createHTMLDocument(""); const x = other.createElement("div"); x.setAttribute("data-k", "a"); box.appendChild(x); }],
+    ["replaceChildren", () => detached.replaceChildren()],
+    ["box removed", () => box.remove()],
+  ];
+  for (const [label, run] of steps) { run(); probe(label); }
+  assert(mismatches.length === 0, "after each mutation the fast path matches jsdom's engine: " + mismatches.slice(0, 4));
+  assert(FS.stats.fallbacks === fallbacksPlain, "...answered by the index itself, not handed back to jsdom's engine");
+  const late = d.createElement("i");
+  d.body.appendChild(late);
+  probe("before an odd-shaped name");
+  late.setAttribute("x:data-k", "a"); // no "data-" prefix, still has to drop the index
+  probe("odd-shaped name added");
+  late.remove();
+  assert(mismatches.length === 0, "an odd-shaped data-* name added later drops the index too: " + mismatches.slice(0, 4));
+
+  section("346d. withApp: the stylesheet is back in <style> in full, the background polls are caught");
+  const styleEl = d.head.querySelector("style");
+  assert(styleEl && styleEl.textContent === PAGE_CSS && styleEl.sheet && d.styleSheets.length >= 1, "the app's stylesheet is in its <style> element and parsed");
+  const inline = new JSDOM("<!DOCTYPE html><style>" + PAGE_CSS + "</style>");
+  assert(styleEl.sheet.cssRules.length === inline.window.document.styleSheets[0].cssRules.length && styleEl.sheet.cssRules.length > 500,
+    "same rules as parsing it inline: " + styleEl.sheet.cssRules.length);
+  inline.window.close();
+  assert(w.__pausedBackgroundPolls.includes("tailTick") && w.__pausedBackgroundPolls.includes("folderScanTick") && w.__pausedBackgroundPolls.length === 2,
+    "both background polls were caught by name (a rename would silently let them run again): " + w.__pausedBackgroundPolls);
+  assert(typeof w.tailTick === "function" && typeof w.folderScanTick === "function", "...and stay callable by the groups that need a tick");
+});
 
 /* ============================================================
    GROUP 1 — Parsing & basic load
@@ -30179,7 +30363,19 @@ group(266);
     const tableBody = d.querySelector("#tableBody");
     const orig = w.renderVisibleRows;
     let calls = 0, lastArg;
-    w.renderVisibleRows = function (reuse) { calls++; lastArg = reuse; return orig.apply(this, arguments); };
+
+    // This half is about CHEAP renders. A real one can still cross
+    // SCROLL_RENDER_BUDGET_MS on a loaded machine and then legitimately
+    // trigger the back-off below, so the render's own time is taken off the
+    // page's clock (performance.now, which the scheduler measures cost with):
+    // it sees a zero-cost render every time, however busy the machine is.
+    const realNow = w.performance.now.bind(w.performance);
+    let hiddenMs = 0;
+    const offClock = fn => function () { const t = realNow(); try { return fn.apply(this, arguments); } finally { hiddenMs += realNow() - t; } };
+    const origMinimapRange = w.updateMinimapRenderedRange;
+    w.performance.now = () => realNow() - hiddenMs;
+    w.updateMinimapRenderedRange = offClock(origMinimapRange);
+    w.renderVisibleRows = offClock(function (reuse) { calls++; lastArg = reuse; return orig.apply(this, arguments); });
 
     // Three scroll events 50ms apart: each renders before the next arrives.
     // The old throttle held the 2nd and 3rd until ~100ms after the 1st.
@@ -30190,6 +30386,8 @@ group(266);
       assert(calls === i, "scroll event " + i + " rendered within 50ms (" + calls + " renders)");
     }
     assert(lastArg === true, "the scroll listener asks renderVisibleRows to reuse rows");
+    delete w.performance.now; // back to the real clock: the back-off half measures real cost
+    w.updateMinimapRenderedRange = origMinimapRange;
 
     // A render costing 30ms (> SCROLL_RENDER_BUDGET_MS) holds the next one
     // off for 3x its cost; per-frame rendering would manage ~8 in 300ms.
@@ -37871,8 +38069,17 @@ group(334);
     await j2.promise;
 
     section("334c. held-key churn: moves faster than the dwell start no job");
-    for (const n of ["One.log", "Three.log", "Four.log", "Two.log", "Three.log"]) { w.setTreeCursor(F(n)); w.render(); await sleep(10); }
-    assert(T.folderPreloads.size === 0, "no job while the cursor keeps moving " + cursorJobs(T).map(j => j.rec.name + j.started));
+    // Checked right after each move, before the event loop runs again: no
+    // timer can have fired since that move restarted the dwell. Checking only
+    // after the final sleep(10) raced the 150ms dwell whenever the loaded
+    // machine stretched that 10ms past it.
+    const jobsRightAfterMove = [];
+    for (const n of ["One.log", "Three.log", "Four.log", "Two.log", "Three.log"]) {
+      w.setTreeCursor(F(n)); w.render();
+      jobsRightAfterMove.push(...cursorJobs(T).map(j => n + ":" + j.rec.name + j.started));
+      await sleep(10);
+    }
+    assert(jobsRightAfterMove.length === 0, "no job while the cursor keeps moving " + jobsRightAfterMove);
     await waitFor(() => T.folderPreloads.size === 1);
     assert(cursorJobs(T)[0].rec.name === "Three.log", "only the entry it finally rests on gets one");
     w.setTreeCursor(null); w.render();
@@ -39630,7 +39837,6 @@ if (groupSelected()) {
     }, { indexedDB: factory });
     await withApp(async (w, d, T) => {
       await T.bootRestore;
-      await sleep(50);
       assert(T.state.rootIds.length === 2, "both files came back, got " + T.state.rootIds.length);
       assert(T.state.activeId && T.state.nodes[T.state.activeId], "a file is selected after the restore (first one), got " + T.state.activeId);
     }, { indexedDB: factory });
@@ -44478,6 +44684,12 @@ process.exitCode = failed ? 1 : 0;
       variant checkboxes on beta, all five variants on stable. Updated
       GROUP 271e (LICENSE/notices now asserted on the shared build) and 218's
       message.
+   Group 346 — 2026-09-30 (person-requested, suite speed-up): the harness's own
+      speed-ups stay exact — tests/jsdom-fast-selectors.js against jsdom's
+      selector engine (page-wide, edge cases, odd-shaped data-* names handed
+      back, index invalidation on every mutation kind), the stylesheet put back
+      in full after the parse, both background polls caught by name. Same
+      session: 266b, 332d/e, 334c made load-proof, 343h lost a fixed sleep.
    Group 345 — 2026-09-30 (person-reported): one tree selection model (the active
       node is always selected; Ctrl+click toggles within it; selected rows look like
       the active one, no frame) + shortcuts scoped to the focused area (tree vs. log
