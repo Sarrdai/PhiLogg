@@ -16,6 +16,7 @@ project-root/
   tests/                              <- this folder
     philogg.regression.test.js
     run.js                            <- shard runner, what `npm test` calls
+    jsdom-fast-selectors.js           <- [data-*] selector fast path (see "How it works")
     package.json
     README.md
 ```
@@ -25,16 +26,18 @@ project-root/
 ```
 cd tests
 npm install
-npm test          # ~30s, sharded across the available cores
+npm test          # ~2¼ min on a 4-core machine, sharded across the available cores
 ```
 
 While iterating on one group, run just that group instead of the whole
-suite — this is the difference between a ~2s and a ~30s edit/run loop:
+suite — this is the difference between a ~2s and a multi-minute edit/run loop:
 
 ```
 GROUP=58 npm test          # one group
 GROUP=58,127 npm test      # several
 SHARDS=1 npm test          # one process, no sharding (same as npm run test:single)
+JSDOM_SELECTORS=verify npm test   # check the selector fast path against jsdom on every query
+JSDOM_SELECTORS=1 npm test        # fast path off: jsdom's own selector engine everywhere
 ```
 
 Or point at a `philogg.html` living elsewhere:
@@ -77,11 +80,58 @@ level and run into each new window's VM context (`PAGE_SCRIPT.runInContext`),
 rather than being left inline for jsdom to re-compile per window. It is the
 same 870 KB of source every time, and re-compiling it for all ~290 windows was
 ~75% of the whole suite's runtime — pre-compiling it took the suite from 176s
-to 78s. This is equivalent to running it inline: `philogg.html` has exactly one
-`<script>`, it is the last element in `<body>`, and the app hooks neither
+to 78s. This is equivalent to running it inline: the app `<script>` is the
+last element in `<body>` (the only other one, the FOUC script in
+`<head>`, stays inline), and the app hooks neither
 `DOMContentLoaded`/`load` nor `readyState`/`document.currentScript`.
 `runScripts` deliberately stays `"dangerously"` so the `<script>` elements the
 tests themselves inject still execute.
+
+**The stylesheet goes in after the parse.** `PAGE_SHELL` also has its
+`<style>` emptied, and `withApp` puts `PAGE_CSS` back into that same element
+right after `new JSDOM(...)`, before the page script runs. Parsed in place,
+parse5 feeds the ~280 KB of CSS through its RAWTEXT tokenizer as tens of
+thousands of character tokens, each appended to the growing text node with its
+own `replaceData` and mutation record: ~40% of every window's HTML parse, for
+the same text every time. The page still ends up with the identical
+stylesheet (1,411 rules) in the identical element, so `getComputedStyle` and
+`styleSheets` behave as before; GROUP 346d pins that. Nothing in the parse
+could notice the gap: the only script that runs there is the FOUC one, which
+reads `localStorage` and `matchMedia`, never styles.
+
+**`[data-*]` selectors skip jsdom's selector engine.**
+`jsdom-fast-selectors.js` patches jsdom's `querySelector(All)` so that a
+selector list made only of `[data-x]` / `[data-x="v"]` items is answered from
+a per-document index (name → value → elements in tree order) that stays
+valid until the next tree or data-* attribute change. jsdom's engine needed
+~8ms for one document-wide `[data-row-action="…"]` on this page, and
+`render()` runs ten of them, so this was ~45% of the suite's CPU time. Every
+other selector, and every query that meets an odd-shaped data-* attribute
+(uppercase, prefixed, namespaced — shapes jsdom's engine reads differently
+from the spec), goes to jsdom's engine untouched, so the answers are jsdom's.
+GROUP 346 holds the fast path against jsdom's engine on the real page and
+through every kind of mutation; `JSDOM_SELECTORS=verify npm test` answers
+every eligible query both ways and throws on any difference (run it after
+touching the module or upgrading jsdom), `JSDOM_SELECTORS=1` turns it off.
+
+**The background polls never run.** `withApp` never schedules the app's
+`setInterval(tailTick, TAIL_POLL_MS)` and `setInterval(folderScanTick,
+FOLDER_SCAN_MS)` (they are caught by function name; GROUP 346d fails if a
+rename lets them through). Left running they fired in whichever group
+outlived 1.5s, which only happened under full-suite load, and re-read files
+or rescanned folders in the middle of assertions. A group that needs a tick
+calls `w.tailTick()` / `w.folderScanTick()` itself at the moment it asserts on.
+
+**Assertions must not depend on how fast the machine is.** Besides the
+proxy-condition rule below, two patterns were flaky under load and must not
+come back:
+- asserting that something has *not happened yet* after a sleep, when an app
+  timer can fire in between (334c used to count jobs after `sleep(10)` next
+  to a 150ms dwell timer; it now checks right after each synchronous step);
+- letting wall-clock cost decide what the app does, like the scroll renderer
+  holding the next frame back after a render that took longer than
+  `SCROLL_RENDER_BUDGET_MS` (266b now hides the render time from
+  `performance.now` while it drives the scroll renderer).
 
 **Waiting for async work: never poll a proxy condition.** The "reload" groups
 used to spin `for (let i = 0; i < 40 && state.rootIds.length === 0; i++)`, but
@@ -101,8 +151,17 @@ compressed — the 150ms live-match debounce, the 450ms double-click window, the
 
 **Sharding.** Every `GROUP` banner is followed by a `group(N);` marker line,
 which is how `run.js` tells the shards apart: `withApp` returns without
-building a window when the current group is not in this shard
-(`SHARD=<index>/<total>`). The unit is the group, never the individual
+building a window when the current group is not in this shard. Shards don't
+split the groups up front: each child claims the next group it reaches by
+creating a directory named after it in a shared `SHARD_CLAIMS` temp dir
+(`mkdir` is atomic, so exactly one child wins), which keeps all shards busy
+until the end however unevenly the groups' costs are spread. Without
+`SHARD_CLAIMS` (a child started by hand) `SHARD=<index>/<total>` falls back
+to a fixed split. `run.js` also caps each child's heap
+(`--max-old-space-size`) from the free memory divided by the shard count:
+V8 keeps the finished windows around until memory runs short, so without
+the cap more shards than the machine has memory for were OOM-killed. The
+unit is the group, never the individual
 `withApp` — multi-window groups (GROUP 20 and every other reload group) hand
 one `IDBFactory` and closure state from one window to the next. Sub-lettered
 banners (30a-e, 55a-d, 73b/c, ...) all carry their shared number and so land in
