@@ -28306,37 +28306,37 @@ await withApp(async (w, d, T) => {
   assert(ctx.findings[0].note === "first failure\nsee ticket" && !ctx.findings[0].bookmarked && ctx.findings[1].bookmarked,
     "a finding carries its note and bookmark flag");
 
-  section("281b. buildTicketSnippet: Markdown / Jira wiki / plain flavors");
-  const md = w.buildTicketSnippet(ctx, "markdown", 3);
-  assert(md.startsWith("### Log findings: “message 1”"), "Markdown: ### heading with the view name, got " + md.split("\n")[0]);
-  assert(md.includes("**Source:** `app.log` (50 entries)"), "Markdown: source line with file name and total");
-  assert(md.includes("**Matched:** 11 of 50 entries (22%)"), "Markdown: x of y matched with percentage");
-  assert(md.includes("1. File: app.log — 50") && md.includes("2. Text contains: “message 1” \\[case-sensitive, in Message\\] — 11"),
-    "Markdown: numbered filter chain with counts, brackets escaped");
-  assert(md.includes("**Bookmarks & notes (2):**") && md.includes("— **Note:** first failure / see ticket") && md.includes("- ★ `"),
-    "Markdown: findings list with ★ for bookmarks and the note collapsed onto one line");
-  assert(md.includes("**Excerpt (first 3 of 11 matching entries):**\n```\n" + expected.slice(0, 3).map(e => e.raw).join("\n") + "\n```"),
-    "Markdown: excerpt = the first N raw lines in a fenced block");
-  assert(md.includes("_… 8 more matching entries — see the attached export._"), "Markdown: the cut is announced");
-  assert(/_Exported with PhiLogg .+ on \d{4}-\d\d-\d\d \d\d:\d\d\._$/.test(md), "Markdown: footer with version and date");
+  section("281b. buildTicketSnippet: Markdown / Jira wiki / plain flavors (compact header, one block, gap line)");
+  const first3 = { mode: "first", n: 3 };
+  const q3 = expected.slice(0, 3); // message 1, message 10, message 11
+  const span3 = w.formatTime(q3[0].ts) + " → " + w.formatTime(q3[2].ts).slice(11);
+  const md = w.buildTicketSnippet(ctx, "markdown", first3);
+  const mdLines = md.split("\n");
+  assert(mdLines[0] === "**app.log** (50 entries) · " + span3, "Markdown: line 1 = bold file, entry count, span of the QUOTED entries, got " + mdLines[0]);
+  assert(mdLines[1] === "**Filter:** Text contains: “message 1” \\[case-sensitive, in Message\\] → 11 of 50",
+    "Markdown: line 2 = chain steps after the file step + view count, brackets escaped, got " + mdLines[1]);
+  assert(mdLines[2] === "" && mdLines[3] === "```", "Markdown: blank line, then ONE fenced block");
+  assert(md.includes("```\n" + q3[0].raw + "\n··· 8 lines · +9s ···\n" + q3[1].raw + "\n" + q3[2].raw + "\n```"),
+    "Markdown: the quoted raw lines in one block with a gap line where the file jumps (message 1 -> message 10)");
+  assert(md.endsWith("\n```") && !md.includes("not quoted"), "Markdown: a First-N pick is what was asked for, nothing to announce (only budget cuts are)");
+  assert(!md.includes("Log findings") && !md.includes("Bookmarks & notes") && !md.includes("Exported with PhiLogg") && !md.includes("Matched:"),
+    "Markdown: no old title, findings list, footer or Matched line");
 
-  const jira = w.buildTicketSnippet(ctx, "jira", 3);
-  assert(jira.startsWith("h3. Log findings:") && jira.includes("*Matched:* 11 of 50 entries") && jira.includes("{{app.log}}"),
-    "Jira wiki: h3., *bold*, {{mono}}");
-  assert(jira.includes("# File: app.log — 50") && jira.includes("* ★ {{"), "Jira wiki: # numbered list, * bullets");
-  assert(jira.includes("{noformat}\n" + expected[0].raw) && !jira.includes("```") && !jira.includes("**"), "Jira wiki: {noformat} block, no Markdown");
-  assert(jira.includes("\\[case-sensitive, in Message\\]"), "Jira wiki: brackets escaped (they'd become links)");
+  const jira = w.buildTicketSnippet(ctx, "jira", first3);
+  assert(jira.startsWith("*app.log* (50 entries)") && jira.includes("\n*Filter:* Text contains") && jira.includes("\\[case-sensitive, in Message\\]"),
+    "Jira wiki: *bold* header, brackets escaped (they'd become links)");
+  assert(jira.includes("{noformat}\n" + q3[0].raw + "\n··· 8 lines") && !jira.includes("```") && !jira.includes("**"), "Jira wiki: {noformat} block, no Markdown");
 
-  const plain = w.buildTicketSnippet(ctx, "plain", 3);
-  assert(plain.startsWith("Log findings: “message 1”\n====") && !plain.includes("**") && !plain.includes("{noformat}") && !plain.includes("`"),
-    "plain: underlined title, no markup at all");
-  assert(plain.includes("\n    " + expected[0].raw), "plain: excerpt lines indented by four spaces");
+  const plain = w.buildTicketSnippet(ctx, "plain", first3);
+  assert(plain.startsWith("app.log (50 entries) · ") && !plain.includes("**") && !plain.includes("{noformat}") && !plain.includes("`"),
+    "plain: no markup at all");
+  assert(plain.includes("\n    " + q3[0].raw + "\n    ··· 8 lines · +9s ···\n    " + q3[1].raw), "plain: block lines incl. the gap line indented by four spaces");
   assert(plain.includes("[case-sensitive, in Message]"), "plain: no escaping");
 
-  const none = w.buildTicketSnippet(ctx, "markdown", 0);
-  assert(!none.includes("```") && none.includes("_Matching entries: see the attached export._"), "0 excerpt lines -> no code block, points to the attachment");
-  const all = w.buildTicketSnippet(ctx, "markdown", 500);
-  assert(all.includes("**Matching entries:**") && !all.includes("more matching entries"), "an excerpt covering every entry says so and announces no cut");
+  const none = w.buildTicketSnippet(ctx, "markdown", { mode: "first", n: 0 });
+  assert(!none.includes("```") && none.endsWith("(no lines selected — nothing quoted)"), "no entries picked -> header + a plain 'nothing quoted' line, no code block");
+  const all = w.buildTicketSnippet(ctx, "markdown", { mode: "all" });
+  assert(all.includes(expected[10].raw) && !all.includes("more entries not quoted"), "quoting every entry of the view announces no cut");
 
   section("281c. Bounds and escaping");
   // Code fence grows past the longest backtick run in the quoted lines; a
@@ -28345,10 +28345,10 @@ await withApp(async (w, d, T) => {
   const tf = w.createFilterNode(g.id, "text", "*bold*");
   T.state.activeId = tf.id;
   const tctx = w.collectExportContext();
-  const tmd = w.buildTicketSnippet(tctx, "markdown", 5);
+  const tmd = w.buildTicketSnippet(tctx, "markdown", { mode: "first", n: 5 });
   assert(tmd.includes("\n`````\n") && !tmd.includes("\n```\n"), "Markdown fence is longer than the longest backtick run inside");
-  assert(tmd.includes("Text contains: “\\*bold\\*”"), "filter value markup is escaped in the chain");
-  const tj = w.buildTicketSnippet(tctx, "jira", 5);
+  assert(tmd.includes("Text contains: “\\*bold\\*”"), "filter value markup is escaped in the header's filter line");
+  const tj = w.buildTicketSnippet(tctx, "jira", { mode: "first", n: 5 });
   assert(tj.includes("Text contains: “\\*bold\\*”"), "Jira: filter value markup escaped");
 
   // Per-entry cap + total cap: huge lines never blow the ticket limit.
@@ -28356,12 +28356,11 @@ await withApp(async (w, d, T) => {
   const h = await w.addFile("huge.log", makeLog(0, 200, { suffix: () => huge }), () => {});
   T.state.activeId = h.id;
   const hctx = w.collectExportContext();
-  const hmd = w.buildTicketSnippet(hctx, "markdown", 500);
+  const hmd = w.buildTicketSnippet(hctx, "markdown", { mode: "all" });
   assert(hmd.length <= w.eval("TICKET_SNIPPET_MAX_CHARS"), "the snippet stays within TICKET_SNIPPET_MAX_CHARS, got " + hmd.length);
   assert(hmd.includes(" …[truncated]") && !hmd.includes(huge), "an over-long entry is cut at TICKET_ENTRY_MAX_CHARS and marked");
-  const m = hmd.match(/Excerpt \(first (\d+) of 200 matching entries\)/);
-  assert(m && Number(m[1]) > 5 && Number(m[1]) < 200, "the total budget stops the excerpt early and says how many were shown, got " + (m && m[1]));
-  assert(hmd.includes("more matching entries — see the attached export."), "...and announces the rest");
+  const m = hmd.match(/… (\d+) more entries not quoted — see the attached export\./);
+  assert(m && 200 - Number(m[1]) > 5 && Number(m[1]) < 200, "the total budget stops the quote early and says how many were left out, got " + (m && m[1]));
 });
 
 /* ============================================================
@@ -28457,8 +28456,9 @@ await withApp(async (w, d, T) => {
    Origin: 2026-09-25 session (see GROUP 281). One entry point: #btnExport
    in the top toolbar + rebindable Ctrl+Shift+E (exportView) opening
    #exportDialog — flavor switch (remembered in philogg-export-format),
-   excerpt lines (philogg-export-excerpt-lines), live preview, Copy for
-   ticket (primary), four attachment buttons. Esc closes it.
+   the First-N input (philogg-export-excerpt-lines), live preview, Copy
+   (primary), Save file menu with the four attachment kinds. Esc closes it.
+   (Layout reworked 2026-09-30 — see GROUP 338.)
    ============================================================ */
 group(283);
 await withApp(async (w, d, T) => {
@@ -28478,7 +28478,7 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#exportSummary").textContent === "11 of 30 entries · 2 steps · 0 bookmarks/notes",
     "summary line, got " + d.querySelector("#exportSummary").textContent);
   const ctx = w.collectExportContext();
-  assert(d.querySelector("#exportPreview").value === w.buildTicketSnippet(ctx, "markdown", 20), "preview = the Markdown snippet with the default 20 excerpt lines");
+  assert(d.querySelector("#exportPreview").value === w.buildTicketSnippet(ctx, "markdown", { mode: "first", n: 20 }), "preview = the Markdown snippet with the default 20 excerpt lines");
   assert(d.querySelector('[data-export-format="markdown"]').classList.contains("active"), "Markdown is the default flavor");
   fireKeydown(d, w, "Escape");
   assert(!isVisible(dlg, w), "Esc closes the dialog");
@@ -28488,13 +28488,13 @@ await withApp(async (w, d, T) => {
 
   section("283b. Flavor + excerpt lines: live preview, remembered");
   fireClick(d.querySelector('[data-export-format="jira"]'), w);
-  assert(d.querySelector("#exportPreview").value.startsWith("h3. ") && d.querySelector('[data-export-format="jira"]').classList.contains("active"),
+  assert(d.querySelector("#exportPreview").value.startsWith("*app.log* (30 entries)") && d.querySelector('[data-export-format="jira"]').classList.contains("active"),
     "switching flavor re-renders the preview");
   assert(w.localStorage.getItem("philogg-export-format") === "jira", "the flavor is remembered in localStorage");
-  const inp = d.querySelector("#exportExcerptInput");
+  const inp = d.querySelector("#exportFirstN");
   inp.value = "2";
   inp.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(d.querySelector("#exportPreview").value.includes("Excerpt (first 2 of 11"), "excerpt lines apply to the preview");
+  assert(d.querySelector("#exportPreview").value.split("\n").filter(l => l.includes("\t")).length === 2, "excerpt lines apply to the preview");
   assert(w.localStorage.getItem("philogg-export-excerpt-lines") === "2", "excerpt lines are remembered");
   inp.value = "99999";
   inp.dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -28509,15 +28509,15 @@ await withApp(async (w, d, T) => {
   assert(w.eval("exportFormat") === "plain", "a stored flavor is picked up on load");
   w.closeExportDialog();
   w.openExportDialog();
-  assert(d.querySelector('[data-export-format="plain"]').classList.contains("active") && d.querySelector("#exportExcerptInput").value === "2",
+  assert(d.querySelector('[data-export-format="plain"]').classList.contains("active") && d.querySelector("#exportFirstN").value === "2",
     "reopening shows the remembered flavor and excerpt lines");
 
   section("283c. Copy for ticket + attachment buttons");
   let copied = null;
   w.navigator.clipboard.writeText = t => { copied = t; return Promise.resolve(); };
   fireClick(d.querySelector("#exportCopy"), w);
-  assert(copied === w.buildTicketSnippet(w.collectExportContext(), "plain", 2), "Copy for ticket writes the snippet (current flavor + excerpt) to the clipboard");
-  assert(/^Ticket snippet copied \(\d+ chars\)$/.test(d.querySelector("#copyToast").textContent), "a toast confirms the copy with its length");
+  assert(copied === w.buildTicketSnippet(w.collectExportContext(), "plain", { mode: "first", n: 2 }), "Copy for ticket writes the snippet (current flavor + excerpt) to the clipboard");
+  assert(d.querySelector("#copyToast").textContent === "Copied for ticket (2 entries)", "a toast confirms the copy with the entry count, got " + d.querySelector("#copyToast").textContent);
   assert(isVisible(dlg, w), "the dialog stays open after copying (attachments can follow)");
   const downloads = [];
   w.downloadBlobFallback = (blob, name) => downloads.push(name);
@@ -38055,6 +38055,312 @@ await withApp(async (w, d, T) => {
   assert(!/\.folder-watch-icon\.scanning/.test(css), "no .scanning rule left");
 });
 
+/* ============================================================
+   GROUP 337 — Export / Share: ticket snippet logic (step 1 of the
+   line-picks / gaps / inline-notes / rich-text rework, FEATURE_BACKLOG
+   #91 + #92). pickTicketEntries (all / first / bookmarked / marked),
+   the compact header (two lines; a selection filter becomes a "story"
+   heading), ONE block with gap lines and notes inline, the budget cut
+   line, buildTicketSnippetHtml (inline-style rich text) and the new
+   remembered prefs (lines / gaps / header, format "rich").
+   ============================================================ */
+group(337);
+await withApp(async (w, d, T) => {
+  const levels = ["ERROR", "INFO", "WARN", "INFO", "INFO"];
+  const f = await w.addFile("app.log", makeLog(0, 50, { levels }), () => {});
+  const other = await w.addFile("other.log", makeLog(200, 5), () => {});
+  T.state.activeId = f.id;
+  const E = f.entries;
+  const ctxOf = () => w.collectExportContext();
+  const snip = (flavor, opts) => w.buildTicketSnippet(ctxOf(), flavor, opts);
+  const timeOnly = ts => w.formatTime(ts).slice(11);
+
+  section("337a. header: no-filter view, single entry, filter line, level step, header off");
+  let md = snip("markdown", { entries: [E[1], E[3]] });
+  let lines = md.split("\n");
+  assert(lines[0] === "**app.log** (50 entries) · " + w.formatTime(E[1].ts) + " → " + timeOnly(E[3].ts), "no-filter view: one header line, span of the quoted entries, got " + lines[0]);
+  assert(lines[1] === "" && lines[2] === "```", "no Filter line when the active node is the file itself, got " + JSON.stringify(lines.slice(1, 3)));
+  md = snip("markdown", { entries: [E[4]] });
+  assert(md.split("\n")[0] === "**app.log** (50 entries) · " + w.formatTime(E[4].ts), "a single quoted entry shows just one time");
+  const txt = w.createFilterNode(f.id, "text", "message 1", false);
+  T.state.activeId = txt.id;
+  md = snip("markdown", { mode: "first", n: 1 });
+  assert(md.split("\n")[1] === "**Filter:** Text contains: “message 1” → 11 of 50", "filter line lists the steps after the file + view count, got " + md.split("\n")[1]);
+  T.state.levelFilter.add("ERROR");
+  md = snip("markdown", { mode: "all" });
+  assert(md.split("\n")[1] === "**Filter:** Text contains: “message 1” → Level quick filter: ERROR → 2 of 50", "the level quick filter is a step, got " + md.split("\n")[1]);
+  T.state.levelFilter.clear();
+  T.state.activeId = f.id;
+  T.state.levelFilter.add("ERROR");
+  md = snip("markdown", { mode: "first", n: 1 });
+  assert(md.split("\n")[1] === "**Filter:** Level quick filter: ERROR → 10 of 50", "root file + level filter -> a Filter line with just the level step, got " + md.split("\n")[1]);
+  T.state.levelFilter.clear();
+  md = snip("markdown", { mode: "first", n: 2, header: false });
+  assert(md.startsWith("```\n" + E[0].raw), "header off: the block only");
+  assert(snip("plain", { mode: "first", n: 1, header: false }) === "    " + E[0].raw, "header off, plain: just the indented line");
+
+  section("337b. gap lines");
+  const gapIn = (entries, flavor) => snip(flavor || "markdown", { entries });
+  md = gapIn([E[3], E[4], E[10]]);
+  assert(!/···[^\n]*\n[^\n]*\n[^\n]*···/.test(md) && md.includes(E[3].raw + "\n" + E[4].raw + "\n··· 5 lines · +6s ···\n" + E[10].raw),
+    "adjacent entries: no gap; 4 -> 10 skips 5 lines, +6s");
+  assert(gapIn([E[3], E[5]]).includes("··· 1 line · +2s ···"), "a single skipped line reads '1 line'");
+  md = gapIn([E[3], E[10], E[20]]);
+  assert(md.split("\n").filter(l => l.startsWith("···")).length === 2 && !md.includes("```\n···") && !md.includes("···\n```"), "gaps only between entries, never before the first / after the last");
+  assert(!snip("markdown", { entries: [E[3], E[10]], gaps: false }).includes("···"), "gaps off: no gap line");
+  assert(snip("plain", { entries: [E[3], E[10]] }).includes("\n    ··· 6 lines · +7s ···\n"), "plain: the gap line is indented like the entries");
+  md = gapIn([E[3], other.entries[1], E[10]]);
+  assert(!md.includes("···"), "an entry outside the root file has no order index -> no gap line around it");
+  const nan = { id: E[10].id, ts: NaN, raw: "x" };
+  assert(gapIn([E[3], Object.assign({}, E[10], { ts: NaN })]).includes("··· 6 lines ···"), "a non-finite timestamp drops the +Δ part");
+
+  section("337c. notes inline in all flavors; no bookmark marks in text; only quoted entries");
+  w.setNoteAndRepaint(E[10].id, "first\nsecond");
+  w.setNoteAndRepaint(E[30].id, "not quoted");
+  w.toggleBookmark(E[10].id);
+  for (const [flavor, open] of [["markdown", "```\n"], ["jira", "{noformat}\n"], ["plain", "    "]]) {
+    const t = snip(flavor, { entries: [E[3], E[10], E[11]] });
+    const ind = flavor === "plain" ? "    " : "";
+    assert(t.includes(ind + E[10].raw + "\n" + ind + "  ↳ Note: first / second\n" + ind + E[11].raw), flavor + ": the note sits directly under its entry, multi-line note on one line");
+    assert(!t.includes("not quoted") && !t.includes("★") && !t.includes("Bookmarks & notes"), flavor + ": unquoted entries' notes, ★ and the findings list are absent");
+  }
+
+  section("337d. pickTicketEntries: all / first / bookmarked / marked");
+  T.state.activeId = txt.id;
+  const c = ctxOf();
+  const expected = f.entries.filter(e => e.message.includes("message 1"));
+  assert(w.pickTicketEntries(c, "all") === c.entries, "all = the view's own array (no copy)");
+  assert(w.pickTicketEntries(c, "first", 3).length === 3 && w.pickTicketEntries(c, "first", 3)[2] === expected[2], "first N = the first N of the view");
+  assert(w.pickTicketEntries(c, "first", 0).length === 0 && w.pickTicketEntries(c, "first", 99999).length === 11, "first: 0 -> none, clamped at the view size");
+  const bm = w.pickTicketEntries(c, "bookmarked");
+  assert(bm.length === 2 && bm[0] === E[10] && bm[1] === E[30], "bookmarked = the root file's bookmarked/annotated entries in log order, regardless of the filter");
+  T.state.logMultiSelect.add(E[20].id);
+  T.state.logMultiSelect.add(E[5].id);
+  T.state.logMultiSelect.add(other.entries[2].id);
+  const mk = w.pickTicketEntries(c, "marked");
+  assert(mk.length === 2 && mk[0] === E[5] && mk[1] === E[20], "marked = the multi-selection in log order, other files' rows dropped, got " + mk.length);
+  T.state.logMultiSelect.clear();
+  assert(w.pickTicketEntries(c, "marked").length === 0, "no marked rows -> empty");
+  md = snip("markdown", { mode: "bookmarked" });
+  assert(md.includes(E[10].raw + "\n  ↳ Note: first / second\n··· 19 lines · +20s ···\n" + E[30].raw + "\n  ↳ Note: not quoted"), "a bookmarked pick quotes both entries with gap and notes");
+
+  section("337e. selection filter = story view");
+  const sel = w.createSelectionFilterNode(f.id, [E[3].id, E[10].id, E[11].id, E[30].id]);
+  sel.name = "Pool exhaustion";
+  T.state.activeId = sel.id;
+  T.state.levelFilter.add("ERROR");
+  const sc = ctxOf();
+  assert(sc.selection === true && sc.entries.length === 4 && !sc.steps.some(s => s.text.startsWith("Level quick")), "the level quick filter is ignored for a selection view");
+  md = w.buildTicketSnippet(sc, "markdown", { mode: "all" });
+  lines = md.split("\n");
+  assert(lines[0] === "### Pool exhaustion" && lines[1] === "" && lines[2] === "**app.log** (50 entries) · 4 hand-picked entries · " + w.formatTime(E[3].ts) + " → " + timeOnly(E[30].ts),
+    "story header: heading, blank, file + hand-picked count + span, got " + JSON.stringify(lines.slice(0, 3)));
+  assert(!md.includes("Filter:") && lines[3] === "" && lines[4] === "```", "story header has no Filter line");
+  assert(w.buildTicketSnippet(sc, "plain", { mode: "all" }).startsWith("Pool exhaustion\n===============\n\napp.log"), "plain: underlined heading");
+  T.state.levelFilter.clear();
+  T.state.activeId = f.id;
+
+  section("337f. budget: cut line, All on a big view stops early");
+  const huge = "x".repeat(5000);
+  const h = await w.addFile("huge.log", makeLog(0, 200, { suffix: () => huge }), () => {});
+  T.state.activeId = h.id;
+  const hc = ctxOf();
+  const hmd = w.buildTicketSnippet(hc, "markdown", { mode: "all" });
+  const hm = hmd.match(/^_… (\d+) more entries not quoted — see the attached export\._$/m);
+  assert(hm && hmd.length <= w.eval("TICKET_SNIPPET_MAX_CHARS") && hmd.trimEnd().endsWith("attached export._"), "italic cut line after the block, cap respected");
+  const hh = w.buildTicketSnippetHtml(hc, { mode: "all" });
+  assert(hh.includes("more entries not quoted — see the attached export.") && hh.length < 2 * w.eval("TICKET_SNIPPET_MAX_CHARS"), "rich: same cut line, bounded");
+
+  section("337g. rich text HTML: escaping, ★ + background, note, colors, gap; text/plain = plain flavor");
+  T.state.activeId = f.id;
+  const x = await w.addFile("xss.log", makeLog(0, 6, { levels, msgPrefix: "<script>alert(1)</script> & \"q\"" }), () => {});
+  T.state.activeId = x.id;
+  w.toggleBookmark(x.entries[2].id);
+  w.setNoteAndRepaint(x.entries[2].id, "see <b>this</b>");
+  const xc = ctxOf();
+  const picks = [x.entries[0], x.entries[2], x.entries[4]];
+  const html = w.buildTicketSnippetHtml(xc, { entries: picks });
+  const box = d.createElement("div");
+  box.innerHTML = html;
+  assert(!box.querySelector("script") && !box.querySelector("b > b") && !html.includes("<script") && html.includes("&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;q&quot;"),
+    "log text and notes are escaped, no <script> in the markup");
+  assert(!html.includes("<style") && !html.includes("<a ") && !html.includes("<img"), "inline styles only, no links/images");
+  assert(html.includes("★ ") && html.includes("background:#fff7d6"), "bookmarked entry: ★ prefix and light-yellow background");
+  assert(html.includes("border-left:3px solid #1f8f8b") && html.includes("Note: see &lt;b&gt;this&lt;/b&gt;"), "note div with teal left border, escaped");
+  assert(html.includes("color:#ae2e24") && html.includes("color:#9a6700"), "ERROR entry red, WARN entry amber");
+  assert(!w.buildTicketSnippetHtml(xc, { entries: [x.entries[1]] }).includes("color:#"), "an INFO entry keeps the default color");
+  assert(html.includes("font-style:italic;padding:1px 8px\">··· 1 line") , "grey italic centered gap div");
+  assert(box.firstElementChild.textContent.startsWith("xss.log (50 entries)") === false && box.firstElementChild.textContent.startsWith("xss.log (6 entries)"), "header div comes first");
+  assert(!w.buildTicketSnippetHtml(xc, { entries: picks, gaps: false }).includes("···") && !w.buildTicketSnippetHtml(xc, { entries: picks, header: false }).includes("(6 entries)"), "gaps/header options apply to the HTML too");
+  assert(w.buildTicketSnippet(xc, "rich", { entries: picks }) === w.buildTicketSnippet(xc, "plain", { entries: picks }), "the text/plain half (flavor 'rich') is the Plain-text flavor");
+  assert(w.buildTicketSnippetHtml(xc, { entries: [] }).includes("(no lines selected)"), "empty pick");
+
+  section("337h. copy path writes text/html only for rich; prefs");
+  let written = null, plainCopied = null;
+  w.ClipboardItem = function (items) { this.items = items; };
+  w.navigator.clipboard.write = items => { written = items[0].items; return Promise.resolve(); };
+  w.navigator.clipboard.writeText = t => { plainCopied = t; return Promise.resolve(); };
+  w.eval('exportFormat = "rich"');
+  w.copyTicketSnippet();
+  assert(written && (await written["text/html"].text()).includes("border:1px solid #dcdfe4") && (await written["text/plain"].text()).length > 0, "rich: text/html + text/plain via ClipboardItem");
+  written = null;
+  w.eval('exportFormat = "markdown"');
+  w.copyTicketSnippet();
+  assert(written === null && plainCopied && plainCopied.startsWith("**"), "other flavors: text only");
+  w.localStorage.clear();
+  w.loadExportPrefs();
+  assert(w.eval("exportLinesMode") === "first" && w.eval("exportGaps") === true && w.eval("exportHeader") === true, "defaults: First, gaps on, header on");
+  w.localStorage.setItem("philogg-export-lines", "bookmarked");
+  w.localStorage.setItem("philogg-export-gaps", "0");
+  w.localStorage.setItem("philogg-export-header", "0");
+  w.localStorage.setItem("philogg-export-format", "rich");
+  w.loadExportPrefs();
+  assert(w.eval("exportLinesMode") === "bookmarked" && w.eval("exportGaps") === false && w.eval("exportHeader") === false && w.eval("exportFormat") === "rich", "stored values are picked up, 'rich' is a valid format");
+  w.localStorage.setItem("philogg-export-lines", "marked");
+  w.loadExportPrefs();
+  assert(w.eval("exportLinesMode") === "first", "'marked' is transient and never restored");
+  w.eval('exportLinesMode = "all"; exportGaps = true; exportHeader = true'); w.saveExportPrefs();
+  assert(w.localStorage.getItem("philogg-export-lines") === "all" && w.localStorage.getItem("philogg-export-gaps") === "1" && w.localStorage.getItem("philogg-export-header") === "1", "saveExportPrefs writes the three new keys");
+});
+
+/* ============================================================
+   GROUP 338 — Export / Share dialog rework (step 2): Lines segmented
+   control (Marked rows / All / First N / Bookmarked), Format incl. Rich
+   text, gaps + header toggles, textarea <-> rich div preview, Save file
+   menu, Copy. Defaults on open, remembered prefs.
+   ============================================================ */
+group(338);
+await withApp(async (w, d, T) => {
+  const dlg = d.querySelector("#exportDialog");
+  const f = await w.addFile("app.log", makeLog(0, 40, { levels: ["ERROR", "INFO", "WARN", "INFO", "INFO"] }), () => {});
+  const E = f.entries;
+  T.state.activeId = f.id;
+  const btn = k => d.querySelector('[data-export-lines="' + k + '"]');
+  const active = () => [...d.querySelectorAll("[data-export-lines].active")].map(b => b.dataset.exportLines).join(",");
+  const prev = () => d.querySelector("#exportPreview");
+  const rich = () => d.querySelector("#exportPreviewRich");
+  const open = () => { w.closeExportDialog(); w.openExportDialog(); };
+
+  section("338a. old controls gone, new controls present");
+  open();
+  assert(!d.querySelector("#exportExcerptInput") && !d.querySelector(".export-file-row") && !/Save as attachment/.test(dlg.textContent), "the Excerpt-lines row and the attachment section are gone");
+  assert(d.querySelector("#exportSaveBtn") && d.querySelector("#exportCopy").textContent === "Copy" && d.querySelectorAll("#exportDialog .btn-mini").length === 1, "Save file button + one primary Copy");
+  assert(["markdown", "jira", "plain", "rich"].every(k => d.querySelector('[data-export-format="' + k + '"]')), "four format buttons");
+
+  section("338b. defaults on open: no selection -> remembered (First), Marked rows disabled");
+  assert(active() === "first" && btn("marked").disabled, "no marked rows: First is active, Marked rows disabled, got " + active());
+  assert(d.querySelector("#exportNAll").textContent === "(40)" && d.querySelector("#exportNBookmarked").textContent === "(0)" && d.querySelector("#exportNMarked").textContent === "(0)", "counts on the segments");
+  assert(d.querySelector("#exportFirstN").value === "20", "First N shows the remembered number");
+  T.state.logMultiSelect.add(E[3].id);
+  open();
+  assert(btn("marked").disabled && active() === "first", "a single marked row does not enable Marked rows");
+  T.state.logMultiSelect.add(E[9].id);
+  open();
+  assert(!btn("marked").disabled && active() === "marked" && d.querySelector("#exportNMarked").textContent === "(2)", "two marked rows: Marked rows enabled and the default");
+  assert(prev().value === w.buildTicketSnippet(w.collectExportContext(), "markdown", { mode: "marked" }) && prev().value.includes(E[9].raw), "preview quotes the marked rows");
+  assert(prev().value.includes("··· 5 lines"), "gap line between the two marked rows");
+  T.state.logMultiSelect.clear();
+  open();
+
+  section("338c. Lines choices: remembered except Marked rows; N input");
+  fireClick(btn("all"), w);
+  assert(active() === "all" && w.localStorage.getItem("philogg-export-lines") === "all" && prev().value.includes(E[39].raw), "All quotes everything and is remembered");
+  open();
+  assert(active() === "all", "reopened with the remembered All");
+  w.toggleBookmark(E[7].id);
+  open();
+  fireClick(btn("bookmarked"), w);
+  assert(active() === "bookmarked" && prev().value.includes(E[7].raw) && !prev().value.includes(E[8].raw) && w.localStorage.getItem("philogg-export-lines") === "bookmarked", "Bookmarked quotes the bookmark and is remembered");
+  const n = d.querySelector("#exportFirstN");
+  n.value = "3";
+  n.dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(active() === "first" && prev().value.split("\n").filter(l => l.includes("\t")).length === 3 && w.localStorage.getItem("philogg-export-excerpt-lines") === "3", "typing N selects First and applies it");
+  fireClick(btn("all"), w);
+  n.dispatchEvent(new w.Event("focus"));
+  assert(active() === "first", "focusing the N input selects First");
+  T.state.logMultiSelect.add(E[3].id); T.state.logMultiSelect.add(E[4].id);
+  open();
+  fireClick(btn("first"), w);
+  assert(w.localStorage.getItem("philogg-export-lines") === "first", "picking First stores first");
+  fireClick(btn("marked"), w);
+  assert(active() === "marked" && w.localStorage.getItem("philogg-export-lines") === "first", "Marked rows is never stored");
+  T.state.logMultiSelect.clear();
+  open();
+  assert(active() === "first", "after clearing the selection the stored First is back");
+
+  section("338d. selection filter opens on All");
+  const sel = w.createSelectionFilterNode(f.id, [E[2].id, E[10].id, E[11].id]);
+  sel.name = "Pool exhaustion";
+  T.state.activeId = sel.id;
+  w.localStorage.setItem("philogg-export-lines", "bookmarked"); w.loadExportPrefs();
+  T.state.logMultiSelect.add(E[3].id); T.state.logMultiSelect.add(E[4].id);
+  open();
+  assert(active() === "all" && prev().value.startsWith("### Pool exhaustion"), "story view: All wins over marked rows and the remembered choice");
+  T.state.logMultiSelect.clear();
+  T.state.activeId = f.id;
+  w.localStorage.setItem("philogg-export-lines", "first"); w.loadExportPrefs();
+
+  section("338e. toggles + format: remembered, preview switches textarea <-> rich div");
+  open();
+  const gaps = d.querySelector("#exportGapsToggle"), head = d.querySelector("#exportHeaderToggle");
+  assert(gaps.getAttribute("aria-checked") === "true" && head.getAttribute("aria-checked") === "true", "both toggles start on");
+  fireClick(gaps, w);
+  assert(w.localStorage.getItem("philogg-export-gaps") === "0" && !prev().value.includes("···") && gaps.getAttribute("aria-checked") === "false", "gaps toggle: off, remembered, preview updated");
+  fireClick(head, w);
+  assert(w.localStorage.getItem("philogg-export-header") === "0" && prev().value.startsWith("```"), "header toggle: off, remembered, preview updated");
+  open();
+  assert(d.querySelector("#exportGapsToggle").getAttribute("aria-checked") === "false" && d.querySelector("#exportHeaderToggle").getAttribute("aria-checked") === "false", "reopening shows the remembered toggles");
+  fireClick(gaps, w); fireClick(head, w);
+  assert(isVisible(prev(), w) && !isVisible(rich(), w), "text flavor: textarea visible, rich div hidden");
+  fireClick(d.querySelector('[data-export-format="rich"]'), w);
+  assert(!isVisible(prev(), w) && isVisible(rich(), w) && w.localStorage.getItem("philogg-export-format") === "rich", "Rich text: the rich div replaces the textarea, format remembered");
+  assert(rich().innerHTML === w.buildTicketSnippetHtml(w.collectExportContext(), { mode: "first", n: 3, gaps: true, header: true }) || rich().querySelector("div"), "the rich div renders the snippet HTML");
+  fireClick(d.querySelector('[data-export-format="plain"]'), w);
+  assert(isVisible(prev(), w) && !isVisible(rich(), w), "back to a text flavor");
+
+  section("338f. Copy: html only for rich; toast");
+  let written = null, plain = null;
+  w.ClipboardItem = function (items) { this.items = items; };
+  w.navigator.clipboard.write = items => { written = items[0].items; return Promise.resolve(); };
+  w.navigator.clipboard.writeText = t => { plain = t; return Promise.resolve(); };
+  fireClick(d.querySelector('[data-export-format="markdown"]'), w);
+  fireClick(d.querySelector("#exportCopy"), w);
+  assert(written === null && plain === prev().value, "Markdown: text only, exactly the preview");
+  assert(d.querySelector("#copyToast").textContent === "Copied for ticket (3 entries)", "toast with the entry count, got " + d.querySelector("#copyToast").textContent);
+  fireClick(d.querySelector('[data-export-format="rich"]'), w);
+  fireClick(d.querySelector("#exportCopy"), w);
+  assert(written && (await written["text/html"].text()) === w.buildTicketSnippetHtml(w.collectExportContext(), { mode: "first", n: 3, gaps: true, header: true }) && !(await written["text/plain"].text()).includes("<div"), "Rich: text/html = the builder's HTML, text/plain is plain text");
+  fireClick(btn("all"), w);
+  fireClick(d.querySelector("#exportCopy"), w);
+  assert(d.querySelector("#copyToast").textContent === "Copied for ticket (40 entries)", "Copy uses the dialog's current Lines choice");
+  fireClick(d.querySelector('[data-export-format="markdown"]'), w);
+
+  section("338g. Save file menu");
+  const menu = d.querySelector("#exportSaveMenu");
+  assert(!isVisible(menu, w), "menu starts closed");
+  fireClick(d.querySelector("#exportSaveBtn"), w);
+  assert(isVisible(menu, w), "opener opens the menu");
+  fireClick(d.querySelector("#exportSaveBtn"), w);
+  assert(!isVisible(menu, w), "opener toggles it closed");
+  fireClick(d.querySelector("#exportSaveBtn"), w);
+  fireClick(d.querySelector("#exportDialog .link-dialog-title"), w);
+  assert(!isVisible(menu, w) && isVisible(dlg, w), "a click elsewhere in the dialog closes the menu, the dialog stays");
+  fireClick(d.querySelector("#exportSaveBtn"), w);
+  fireKeydown(d, w, "Escape");
+  assert(!isVisible(dlg, w) && !isVisible(menu, w), "Escape closes the dialog and the menu");
+  open();
+  assert(!isVisible(menu, w), "a reopened dialog has the menu closed");
+  const saved = [];
+  w.downloadBlobFallback = (blob, name) => saved.push(name);
+  for (const kind of ["log", "csv", "tsv", "html"]) {
+    fireClick(d.querySelector("#exportSaveBtn"), w);
+    fireClick(d.querySelector('#exportSaveMenu [data-export-file="' + kind + '"]'), w);
+    assert(!isVisible(menu, w), "choosing " + kind + " closes the menu");
+    await waitFor(() => saved.length && saved[saved.length - 1].endsWith("." + kind));
+  }
+  assert(JSON.stringify(saved) === JSON.stringify(["app.log", "app.csv", "app.tsv", "app.html"]), "each menu item saves its kind, got " + JSON.stringify(saved));
+});
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -42555,6 +42861,16 @@ process.exitCode = failed ? 1 : 0;
    Group 335 — 2026-09-29 (person-reported): tree navigation reaches a merge's
       Sources rows (nested occurrence tracking, Left -> Sources, hidden Sources
       node is no stop).
+   Group 338 — 2026-09-30 (person-requested, #91/#92 step 2): export dialog
+      rework — Lines segmented control + defaults on open, Rich text format and
+      preview div, gaps/header pill toggles, Save file menu, Copy. Updated
+      GROUP 283 (excerpt input -> First N input, attachment buttons -> menu).
+   Group 337 — 2026-09-30 (person-requested, FEATURE_BACKLOG #91/#92 step 1): ticket
+      snippet logic — pickTicketEntries (all/first/bookmarked/marked), compact
+      header (+ selection "story"), one block with inline notes + gap lines,
+      budget cut line, buildTicketSnippetHtml (rich), new export prefs. Updated
+      groups 281/283 (old header / findings list / footer / excerpt asserts
+      dropped; "Bookmarks & notes" list and footer no longer exist in the snippet).
    Group 336 — 2026-09-29 (person-requested): folder-watch header static status
       dot + one-shot new-file ping + i-cog settings icon; find-bar hit badge
       fits the 16px row content (no taller rows). Updated groups 37, 201c and the
