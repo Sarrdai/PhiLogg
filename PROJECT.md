@@ -453,7 +453,10 @@ reproductions — is the log simulator in `tools/log-sim/`:
 2. **Screenshot**: `NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js
    --out <png> [--theme dark] [--size 1440x900] [--eval "<js>"] <dir>/*` —
    headless Chromium with the real `philogg.html`, the files and their
-   formats loaded; `--eval` builds the scene through the app's own
+   formats loaded (`--theme light|dark` = theme mode, i.e. Catppuccin
+   Latte/Mocha; any other value is a theme id, see
+   `tools/log-sim/README.md`);
+   `--eval` builds the scene through the app's own
    functions and buttons (filters, tabs, plot settings — recipes in
    `tools/log-sim/README.md`).
 3. **Record the command** (seed, options, `--eval`) next to where the

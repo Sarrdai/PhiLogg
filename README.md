@@ -40,7 +40,7 @@ deployments possible:
 | ![Log view](docs/screenshots/01-log-view.png) Log view with filter tree and column-restricted text match | ![Extraction table](docs/screenshots/02-extraction-table.png) Extraction table with statistics |
 | ![Plot](docs/screenshots/03-plot.png) Plotting extracted values — XY scatter colored by time, equal axis scale | ![Link view](docs/screenshots/04-link-view.png) Link (nearest-neighbor pairing) view, matched by job id |
 | ![Context view](docs/screenshots/05-context-view.png) Context view — matches plus expandable gaps | ![Bookmarks](docs/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel with a stack trace |
-| ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme | ![Heatmap](docs/screenshots/08-heatmap.png) Heatmap of an array column over time |
+| ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme (Catppuccin Mocha) | ![Heatmap](docs/screenshots/08-heatmap.png) Heatmap of an array column over time |
 | ![Patterns](docs/screenshots/09-patterns.png) Patterns tab — messages grouped by shape | ![Assistant](docs/screenshots/10-assistant.png) Assistant (desktop app): a local LLM builds a link and a plot, chat docked |
 
 ## Key features
@@ -371,9 +371,12 @@ deployments possible:
   **Share formats as JSON**: each format has an **Export** button (the file
   includes its filename patterns); importing it opens the format dialog
   prefilled, where you pick which filename patterns to take over.
-- **Configurable themes** (Settings → Appearance) — Dark, Light, four
-  Catppuccin flavors (Latte/Frappé/Macchiato/Mocha), or your own: a
-  **theme editor** with a color picker per color and a live preview (starts
+- **Configurable themes** (Settings → Appearance) — Catppuccin Latte (light)
+  and Mocha (dark) by default, **following your OS light/dark setting** and
+  switching live when it changes (or pin Light/Dark instead; the light and
+  the dark theme are each freely choosable). Available: the four Catppuccin
+  flavors (Latte/Frappé/Macchiato/Mocha), Classic Light/Dark (the
+  original pair), or your own: a **theme editor** with a color picker per color and a live preview (starts
   from the current colors; the lighter background tints follow their base
   color automatically). Edit, rename and export your themes.
   **Syntax-highlight colors** for embedded XML/JSON in the entry detail are
