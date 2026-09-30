@@ -13,7 +13,8 @@ name: Release Please
 #     it never opens/updates a PR here, it only looks for a just-merged
 #     release branch to tag; an ordinary feature-PR merge is a fast no-op.
 #     Once a release is actually cut, `build` (build-release-assets.yml)
-#     builds every variant (HTML, Windows, Windows portable) and `publish`
+#     builds every variant (HTML, Windows installer, Windows portable,
+#     macOS, Linux — a merge has no run dialog to pick from) and `publish`
 #     uploads them to that same GitHub Release. See PROJECT.md ->
 #     "Release builds".
 #
