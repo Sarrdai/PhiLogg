@@ -39825,7 +39825,6 @@ if (groupSelected()) {
     }, { indexedDB: factory });
     await withApp(async (w, d, T) => {
       await T.bootRestore;
-      await sleep(50);
       assert(T.state.rootIds.length === 2, "both files came back, got " + T.state.rootIds.length);
       assert(T.state.activeId && T.state.nodes[T.state.activeId], "a file is selected after the restore (first one), got " + T.state.activeId);
     }, { indexedDB: factory });
