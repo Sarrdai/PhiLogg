@@ -1137,52 +1137,34 @@ render pipeline, same real nodes — and only changes its appearance.
 
 ## Release
 
-Two manual-only (`workflow_dispatch`) workflows share the same build logic and the same
-five boolean checkboxes (`build_html` default on, `build_windows`/`build_mac`/
-`build_linux`/`build_windows_portable` default off): `.github/workflows/build-tester-files.yml`
-uploads every selected variant as a workflow run artifact and creates no release;
-`.github/workflows/build-release.yml` builds the same variants and additionally
-publishes them together under one GitHub Release tagged `build-<short-sha>`. In
-`build-release.yml`, a `prepare` job creates that release tag up front so the `build_html`
-and `build_desktop` jobs can each just build and upload into it, without racing each
-other to create the same release; `build-tester-files.yml` has no such job since there's
-no shared release to race over. In both workflows, `prepare`'s `os_list` step turns
-the desktop checkboxes into a JSON OS list (plain bash + `jq`) that `build_desktop`'s
-`strategy.matrix.os` reads via `fromJSON(needs.prepare.outputs.os_list)`.
-`build_windows_portable` alone still needs `windows-latest` in that list, so it's OR'd in
-alongside `build_windows` and deduped with `jq`'s `unique` (ticking both doesn't spawn the
-runner twice). **Not** a job-level `if:` comparing `inputs.*`
-against `matrix.os` — GitHub rejects the whole workflow file at parse time for that
-(`0` jobs, `startup_failure`): the `matrix` context isn't available in
-`jobs.<job_id>.if`, only in `runs-on`/`env` and inside steps. An unchecked-everything
-dispatch just produces an empty matrix, so `build_desktop` is skipped via
-`needs.prepare.outputs.os_list != '[]'`, no separate guard needed. `fail-fast: false` so
-one platform's failure doesn't cancel the still-running others, and (in `build-release.yml`)
-`Upload installer(s)` retries `gh release upload` up to 5x with backoff (both added after
-real runs saw exactly those failures — see changelog).
+Desktop builds come only from the two release workflows, which share one reusable build,
+`.github/workflows/build-release-assets.yml` (`workflow_call`, inputs `ref` and
+`version`): `release-please.yml` for stable releases and `beta-release.yml` for beta
+pre-releases (see PROJECT.md → "Release builds" for the versioning and triggers). Only
+Windows is built (installer + portable); there is no macOS/Linux CI build — both still
+build locally with `npm run build`.
 
-Linux builds on `ubuntu-22.04` rather than `-latest` because an AppImage links against
-its build machine's glibc, and the job installs the WebKitGTK/GTK/appindicator dev
-packages first. Tauri's bundler has no `artifactName` template, so the upload step
-renames the bundles to `PhiLogg-<sha>.<ext>`.
+Its `build_windows` job regenerates `THIRD_PARTY_NOTICES.md` with cargo-about, runs
+`node scripts/release-version.js stamp <version> <short-sha>` (writes the version into
+`philogg.html`, `desktop/package.json`, `tauri.conf.json` and `Cargo.toml`, the SHA into
+`PHILOGG_BUILD`), strips `philogg.html`'s comments (`scripts/strip-comments.js`), runs
+`npm run build`, and checks the exe is a GUI-subsystem build. All of that happens on the
+checkout only, nothing is committed back. A beta version like `0.2.0-beta.3` is fine for
+NSIS: Tauri writes the numeric `0.2.0.0` into the installer's `VIProductVersion` and
+keeps the full string everywhere else (MSI would reject it, but no MSI is built).
 
-Each `build_desktop` job stamps `PHILOGG_VERSION` to the commit short-SHA and strips
-`philogg.html`'s comments (`scripts/strip-comments.js`, see PROJECT.md → "Release
-builds") before bundling — never committed back, just the checked-out copy the Tauri
-bundler embeds as a resource a moment later.
-
-On a Windows runner with `build_windows_portable` on, one extra step packages the
-portable build after `npm run build`, from the same `cargo build --release` output the
-NSIS installer step already produced: the raw, unbundled `philogg-desktop.exe` (needs no
-install — WebView2 itself ships with Windows), the just-stamped/stripped `philogg.html`
-copy sitting next to it, and a `philogg-portable` marker file (see "Persistent
-data" above; it carries one line of text because only its existence matters and a
-zero-byte file is not worth trusting to the artifact zipper). The staging folder
-`PhiLogg-<sha>_portable/` is uploaded as-is under the artifact name
-`PhiLogg-<sha>_portable` — `upload-artifact` zips it itself, so the download is one
-`PhiLogg-<sha>_portable.zip` with the files at its top level (pre-zipping it here gave a
-zip inside the artifact zip). The release workflow, which uploads with `gh release
-upload` instead, zips the same folder with 7z into `PhiLogg-<sha>_portable.zip`.
+It then packages `dist/PhiLogg-<version>.exe` (the NSIS installer) and
+`dist/PhiLogg-<version>_portable.zip`: the raw, unbundled `philogg-desktop.exe` from the
+same `cargo build --release` (needs no install — WebView2 ships with Windows) as
+`PhiLogg.exe`, the stamped/stripped `philogg.html`, `chat.html`, `LICENSE.md`,
+`THIRD_PARTY_NOTICES.md` and a `philogg-portable` marker file (see "Persistent data"
+above; it carries one line of text, only its existence matters), zipped with 7z. `dist/`
+is uploaded as the workflow artifact `release-windows` (`build_html` does the same with
+`philogg-<version>.html` + `LICENSE.md` as `release-html`). The caller's `publish` job
+downloads both artifacts — which unzips the artifact, not the portable zip inside it —
+and only then attaches them to the GitHub Release (`gh release upload`, retried up to 5×)
+or creates the beta pre-release (`gh release create --prerelease`). So a failed build
+never leaves a half-filled release, and the portable zip is published as a single zip.
 
 ## Capabilities
 
