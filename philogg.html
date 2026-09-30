@@ -811,14 +811,10 @@
   }
   .tree-row:hover{background:var(--bg-elevated);}
   .tree-row.active{background:var(--accent-soft); color:var(--text-primary); border-left-color:var(--accent);}
-  .tree-row.multi-selected{
-    background:var(--accent-soft);
-    box-shadow:inset 0 0 0 1.5px var(--accent);
-  }
-  /* The active row is marked by its own background/left border; the
-     multi-select outline on top of it cut across the connector lines
-     (person-reported), so it only shows on the OTHER selected rows. */
-  .tree-row.active.multi-selected{box-shadow:none;}
+  /* Selected rows (Ctrl+click multi-selection) look exactly like the active
+     row: one selection style, no frame. The active node is always part of the
+     selection (treeSelectionIds). */
+  .tree-row.multi-selected{background:var(--accent-soft); color:var(--text-primary); border-left-color:var(--accent);}
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
   .tree-row.tree-draggable{cursor:grab;}
@@ -875,7 +871,7 @@
   .tree-chevron.expanded{transform:rotate(0deg);}
   .tree-chevron:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
-  .tree-row.active .tree-icon{color:var(--accent);}
+  .tree-row.active .tree-icon, .tree-row.multi-selected .tree-icon{color:var(--accent);}
   /* Sprite icons (icon() in the script): stroke-drawn on a 16x16 grid. Symbol
      paths that must be filled carry their own fill. Tree rows and context-menu
      items use the small size; .icon-xs is the 10px close glyph. AND/OR nodes
@@ -883,8 +879,8 @@
   .icon{width:var(--icon-md); height:var(--icon-md); flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
   .icon.icon-xs{width:10px; height:10px;}
   .tree-icon, .ctx-item, .ctx-run-cap, .ctx-gap-icon{--icon-md:var(--icon-sm);}
-  .tree-row.filter-and:not(.active) .tree-icon{color:var(--level-info);}
-  .tree-row.filter-or:not(.active) .tree-icon{color:var(--level-warn);}
+  .tree-row.filter-and:not(.active):not(.multi-selected) .tree-icon{color:var(--level-info);}
+  .tree-row.filter-or:not(.active):not(.multi-selected) .tree-icon{color:var(--level-warn);}
   /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
      the icon slot shows TXT/LNK/... text instead of a glyph. Fixed width
      sized to the longest tag typeTagFor() can ever produce ("FILE"/"TIME",
@@ -897,7 +893,7 @@
     background:var(--bg-elevated-2); border:1px solid var(--border-soft); border-radius:4px;
     padding:1px 0; box-sizing:border-box;
   }
-  .tree-row.active .tree-icon-type{color:var(--accent-strong); border-color:var(--accent);}
+  .tree-row.active .tree-icon-type, .tree-row.multi-selected .tree-icon-type{color:var(--accent-strong); border-color:var(--accent);}
   .tree-row.inverted .tree-icon-type{color:var(--level-error); border-color:var(--level-error);}
   .tree-label{
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
@@ -9062,10 +9058,13 @@ const state = {
   // the values it was set under (treeCursorId), so any other selection
   // invalidates it without every setter having to clear it.
   treeCursor: null,
-  focusRegion: "entries", // "entries" | "tree" — which pane the arrow keys act on;
-                          // "tree" is set by clicking a tree row or
-                          // dropping a drag onto a new parent, "entries" by any entry
-                          // selection (see applySelection) — see moveTreeSelection
+  focusRegion: "entries", // "entries" | "tree" — which area keyboard shortcuts act on
+                          // (arrow keys, Ctrl+C/X/V, Delete, F2, Esc, bookmark, ...);
+                          // follows the last pointer interaction (document mousedown:
+                          // #sidebar -> "tree", #content -> "entries"), a tree-row click,
+                          // a drag drop onto a new parent, Ctrl+0 ("tree") / Ctrl+1..5 and
+                          // any entry selection (see applySelection) ("entries");
+                          // Alt+Arrow never changes it — see moveTreeSelection
   entriesView: "filter",  // "filter" | "highlight" — which Log view arrow keys move
                           // through while focusRegion is "entries" (Ctrl+1/2/3 below,
                           // or a plain click/dblclick on a row in either view — see
@@ -12231,6 +12230,14 @@ function timeRangeFilterName(value, nodeId) {
 // uses) simply stayed put. Same pairing createFileNode already does for a
 // freshly loaded file, factored out here because every node-creating action
 // needs it. Returns the node, so creators can `return activateNewNode(node)`.
+// The tree selection: state.multiSelect plus the active node, which is always
+// part of it (creators/file loads leave multiSelect empty while activeId is
+// set). Every reader of the selection goes through this, never multiSelect.
+function treeSelectionIds() {
+  const sel = new Set(state.multiSelect);
+  if (state.activeId && state.nodes[state.activeId]) sel.add(state.activeId);
+  return sel;
+}
 function activateNewNode(node) {
   state.activeId = node.id;
   state.multiSelect = new Set();
@@ -17518,9 +17525,10 @@ function flattenTreeIds() {
 }
 
 // Moves state.activeId with the arrow keys once the tree has keyboard focus
-// (state.focusRegion === "tree" — set by clicking a tree row
-// or dropping a drag onto a new parent; cleared back to "entries" by any
-// entry-table selection, see applySelection), or from anywhere via Alt+Arrow.
+// (state.focusRegion === "tree" — set by clicking/pressing in the sidebar,
+// clicking a tree row or dropping a drag onto a new parent; back to "entries"
+// by a press in #content or any entry-table selection, see applySelection),
+// or from anywhere via Alt+Arrow.
 // Up/Down step through the flattened visual order. Right expands a collapsed
 // node with children, else steps to its first visible child; Left collapses an
 // expanded node, else collapses its parent and selects it (one keystroke from
@@ -18334,10 +18342,24 @@ function renderNode(id, depth, opts) {
   }
 
   row.addEventListener("click", ev => {
+    let activateId = id; // the node this click makes active (differs only when Ctrl+click deselects the active one)
     if (ev.ctrlKey || ev.metaKey) {
-      if (state.multiSelect.has(id)) state.multiSelect.delete(id);
-      else state.multiSelect.add(id);
+      // The active node is part of the selection, so Ctrl+click extends/shrinks
+      // that whole selection (not just multiSelect, which is empty after a create).
+      const sel = treeSelectionIds();
       lastTreeRowClickId = null; // a Ctrl+click is a multi-select gesture, not half of a double-click
+      if (sel.has(id)) {
+        if (sel.size <= 1) return; // something always stays selected
+        sel.delete(id);
+        state.multiSelect = sel;
+        state.focusRegion = "tree";
+        if (id !== state.activeId) { render(); return; }
+        // Deselecting the active node: the most recently added remaining one takes over.
+        activateId = [...sel].pop();
+      } else {
+        sel.add(id);
+        state.multiSelect = sel;
+      }
     } else {
       state.multiSelect = new Set([id]);
       const now = Date.now();
@@ -18355,11 +18377,12 @@ function renderNode(id, depth, opts) {
         lastTreeRowClickTime = now;
       }
     }
-    applyTempAnchorOnActiveNodeSwitch(id);
+    applyTempAnchorOnActiveNodeSwitch(activateId);
     // Find bar cross-file counts: switching to another file that has hits
     // lands on its first hit once the find bar has rescanned the new view.
-    if (node.type === "file" && id !== state.activeId && findXJumpable(id)) findState.jumpFirst = true;
-    state.activeId = id;
+    const activateNode = state.nodes[activateId];
+    if (activateNode && activateNode.type === "file" && activateId !== state.activeId && findXJumpable(activateId)) findState.jumpFirst = true;
+    state.activeId = activateId;
     // Selecting a real tree row (a log file or a filter) always hides any
     // currently-shown non-log inline viewer (this session, lifecycle
     // unification) — matches "only one log's content shows at a time",
@@ -18368,19 +18391,16 @@ function renderNode(id, depth, opts) {
     state.inlineViewer = null;
     state.folderView = null;
     state.treeCursor = null; // a subfolder-row cursor gives way to this selection
-    // Same choice as Alt+Arrow tree nav (see the keydown handler's comment):
-    // a mouse click on a filter switches the active filter but should not
-    // steal arrow-key focus away from the log — leave focusRegion as
-    // "entries" so plain arrow keys keep navigating log rows from here,
-    // continuing from the temp anchor set above when one applies.
-    state.focusRegion = "entries";
+    // Focus follows the click (see the document mousedown listener): arrow
+    // keys and tree shortcuts now act on the tree, not on the log.
+    state.focusRegion = "tree";
     // render()'s own activeId-changed tracking (see lastActiveIdForReveal)
     // only reveals the Filtered view when clicking a filter actually changes
     // the active node — re-clicking the already-active filter (e.g. after a
     // double-click on a row jumped to the Full view) leaves activeId
     // unchanged, so it would otherwise never jump back. Call it explicitly
     // here too; revealFilteredView() itself no-ops when already revealed.
-    if (node.type === "filter") revealFilteredView();
+    if (activateNode && activateNode.type === "filter") revealFilteredView();
     render();
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
@@ -35869,7 +35889,7 @@ function performBulkAction(action, ids) {
 // Returns { actions: [{action, label, icon, target, disabled, separator?}] }.
 // `target` is the node id handleSidebarToolbarActionClick should act on.
 function describeSidebarToolbarActions() {
-  const selectedIds = [...state.multiSelect];
+  const selectedIds = [...treeSelectionIds()];
   const nodes = selectedIds.map(id => state.nodes[id]).filter(Boolean);
   const node = nodes.length === 1 ? nodes[0] : null;
   const filter = node && node.type === "filter" && !node.locked ? node : null;
@@ -35918,7 +35938,7 @@ function handleSidebarToolbarActionClick(action) {
 // describeBulkActions (the single source of truth); short is the one-line
 // message, note the full explanation shown as its tooltip.
 function describeSidebarToolbarMultiActions() {
-  const ids = [...state.multiSelect].filter(id => state.nodes[id]);
+  const ids = [...treeSelectionIds()].filter(id => state.nodes[id]);
   if (ids.length < 2) return null;
   const nodes = ids.map(id => state.nodes[id]);
   const bulk = describeBulkActions(nodes);
@@ -35946,8 +35966,9 @@ function openTreeContextMenu(ev, clickedId) {
   folderCtxTarget = null;
 
   let html;
-  if (state.multiSelect.has(clickedId) && state.multiSelect.size >= 2) {
-    const nodes = [...state.multiSelect].map(id => state.nodes[id]).filter(Boolean);
+  const treeSel = treeSelectionIds();
+  if (treeSel.has(clickedId) && treeSel.size >= 2) {
+    const nodes = [...treeSel].map(id => state.nodes[id]).filter(Boolean);
     const { actions: bulkActions, note } = describeBulkActions(nodes);
     // AND/OR/Link… deliberately excluded here — see the function comment
     // above and describeSidebarToolbarActions, which is now their only
@@ -36232,7 +36253,7 @@ treeContextMenu.addEventListener("click", ev => {
     }
     return;
   }
-  if (action === "mute" && !(state.multiSelect.size >= 2 && state.multiSelect.has(treeCtxId))) {
+  if (action === "mute" && !(treeSelectionIds().size >= 2 && treeSelectionIds().has(treeCtxId))) {
     if (treeCtxId && state.nodes[treeCtxId]) {
       toggleMuteWithUndo([treeCtxId]);
       render();
@@ -36259,7 +36280,7 @@ treeContextMenu.addEventListener("click", ev => {
     return;
   }
   // Everything else (merge/and/or/link) is a bulk action over the multi-selection.
-  performBulkAction(action, [...state.multiSelect]);
+  performBulkAction(action, [...treeSelectionIds()]);
 });
 
 /* ===================== Sidebar toolbar rendering (FEATURE_BACKLOG.md #77) =====================
@@ -38719,7 +38740,8 @@ let libraryMenuKb = 0;
 // else the active one. ok = a real, unlocked node (the Bookmarks node is
 // re-synced on every render, so anything applied onto it would vanish).
 function resolveLibraryTarget() {
-  const sel = state.multiSelect.size === 1 ? [...state.multiSelect][0] : null;
+  const selIds = treeSelectionIds();
+  const sel = selIds.size === 1 ? [...selIds][0] : null;
   const id = sel && state.nodes[sel] ? sel : state.activeId;
   const node = id ? state.nodes[id] : null;
   if (!node) return { id: null, node: null, name: "", ok: false };
@@ -41924,11 +41946,16 @@ document.addEventListener("keydown", ev => {
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
-    if (state.clipboard) { state.clipboard = null; needsRender = true; }
-    if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); updateTableAssertButton(); }
-    if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
-    // Esc clears the selection (and with it the toolbar's multi mode) — but not while typing in an input.
-    if (state.multiSelect.size && !inInput) { state.multiSelect = new Set(); needsRender = true; }
+    // Clearing selections is scoped to the focused area (tree vs. log views);
+    // never while typing in an input.
+    if (state.focusRegion === "tree") {
+      if (state.clipboard) { state.clipboard = null; needsRender = true; }
+      // Back to the active node only (it always stays selected) — also drops the toolbar's multi mode.
+      if (!inInput && (state.multiSelect.size > 1 || (state.multiSelect.size === 1 && !state.multiSelect.has(state.activeId)))) { state.multiSelect = new Set(); needsRender = true; }
+    } else {
+      if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); updateTableAssertButton(); }
+      if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
+    }
     if (needsRender) render();
     if (escExitsFocus) toggleFocusMode(false);
     return;
@@ -41965,7 +41992,7 @@ document.addEventListener("keydown", ev => {
   // matches on ev.key alone with no modifier check and would otherwise swallow
   // Ctrl+Arrow outright.
   if (matchesShortcut(ev, "nextMatch") || matchesShortcut(ev, "prevMatch")) {
-    if (extractWrap.style.display === "none" && fhSplit.style.display !== "none") {
+    if (state.focusRegion === "entries" && extractWrap.style.display === "none" && fhSplit.style.display !== "none") {
       ev.preventDefault();
       moveContextMatchSelection(matchesShortcut(ev, "nextMatch") ? 1 : -1);
       return;
@@ -41976,7 +42003,7 @@ document.addEventListener("keydown", ev => {
   // the note editor: empty (new note) if it has none yet, prefilled (edit)
   // if it already has one — openNoteEditor itself picks which, no separate
   // F2 binding for this (per the backlog's own wording).
-  if (matchesShortcut(ev, "addNote") && state.selectedId && entryIndex[state.selectedId]) {
+  if (matchesShortcut(ev, "addNote") && logKeysActive() && state.selectedId && entryIndex[state.selectedId]) {
     ev.preventDefault();
     openNoteEditor(state.selectedId);
     return;
@@ -42016,6 +42043,7 @@ document.addEventListener("keydown", ev => {
   }
 
   if (ev.key === "Delete") {
+    if (state.focusRegion !== "tree") return; // tree-only: never deletes a filter from the log views
     if (treeCursorId()) return; // never delete the (unhighlighted) active node from a subfolder row
     const node = state.nodes[state.activeId];
     if (node && node.type === "filter") {
@@ -42037,14 +42065,14 @@ document.addEventListener("keydown", ev => {
   // selection only exists while genuinely looking at that extract node's
   // table; falls through to the tree-node rename otherwise.
   if (matchesShortcut(ev, "renameFilter")) {
-    const singleCol = getSingleSelectedColumn();
+    const singleCol = state.focusRegion === "entries" ? getSingleSelectedColumn() : null;
     if (singleCol != null && extractNodeId != null && findExtractColumn(singleCol)) {
       renamingColIndex = singleCol;
       renderExtractTable(state.nodes[extractNodeId]);
       ev.preventDefault();
       return;
     }
-    if (startRenameNode(state.activeId)) ev.preventDefault();
+    if (state.focusRegion === "tree" && startRenameNode(state.activeId)) ev.preventDefault();
     return;
   }
 
@@ -42058,6 +42086,7 @@ document.addEventListener("keydown", ev => {
   // Direct "Copy for ticket" (docs/export.md): marked rows, else the selected row.
   // Must sit before the plain Ctrl+C handler below, which also matches Ctrl+Shift+C.
   if (matchesShortcut(ev, "copyForTicket")) {
+    if (!logKeysActive()) return;
     ev.preventDefault();
     copyMarkedRowsForTicket(state.selectedId ? entryIndex[state.selectedId] : null);
     return;
@@ -42066,9 +42095,11 @@ document.addEventListener("keydown", ev => {
   // FEATURE_BACKLOG #14: mute/unmute the active filter, or every selected
   // filter (2+ multi-selected) as one undo step.
   if (matchesShortcut(ev, "muteFilter")) {
+    if (state.focusRegion !== "tree") return;
     const ae = document.activeElement;
     if (ae && (ae.tagName === "TEXTAREA" || ae.tagName === "SELECT" || ae.isContentEditable)) return;
-    const ids = state.multiSelect.size >= 2 ? [...state.multiSelect] : [state.activeId];
+    const selIds = treeSelectionIds();
+    const ids = selIds.size >= 2 ? [...selIds] : [state.activeId];
     if (ids.some(id => isMutableNode(state.nodes[id]))) {
       ev.preventDefault();
       toggleMuteWithUndo(ids);
@@ -42078,7 +42109,7 @@ document.addEventListener("keydown", ev => {
   }
 
   if (matchesShortcut(ev, "editFilter")) {
-    if (editFilterNode(state.activeId)) ev.preventDefault();
+    if (state.focusRegion === "tree" && editFilterNode(state.activeId)) ev.preventDefault();
     return;
   }
 
@@ -42248,39 +42279,37 @@ document.addEventListener("keydown", ev => {
     return;
   }
 
-  if (matchesShortcut(ev, "bookmark") && state.selectedId) {
+  if (matchesShortcut(ev, "bookmark") && logKeysActive() && state.selectedId) {
     ev.preventDefault();
     toggleBookmark(state.selectedId);
     return;
   }
 
   if ((ev.ctrlKey || ev.metaKey) && key === "c") {
-    if (state.tableSelection) {
-      ev.preventDefault();
-      copyTableSelection();
-      return;
-    }
-    // A log row (Filter/Highlight view) is the last thing the person
-    // interacted with — copy ITS raw text (see copyLogSelectionToClipboard),
-    // in preference to the tree's own filter-node copy/paste clipboard below
-    // (state.clipboard), which only makes sense while focusRegion is "tree".
-    // Exception: if the person has selected text inside the Entry Detail
-    // panel (e.g. to grab a substring of a long message) or inside an open
-    // ZIP inline text viewer (bugfix, person-reported: a background log-row
-    // selection was winning over an actual, active text selection made
-    // inside the viewer — e.g. selecting text within an opened XML — because
-    // this handler fires on keydown and calls copyLogSelectionToClipboard()
-    // directly, pre-empting the native `copy` event entirely, including the
-    // inline viewer's own `copy` listener near inlineTextViewerEl's
-    // definition, which never got a chance to run), let the browser's
-    // native copy handle that selection instead of overriding it with the
-    // full raw line.
-    if (state.focusRegion === "entries" && state.selectedId) {
-      const sel = window.getSelection();
-      if (sel && sel.toString().length &&
-          (detailPanel.contains(sel.anchorNode) || inlineTextViewerEl.contains(sel.anchorNode))) return;
-      ev.preventDefault();
-      copyLogSelectionToClipboard();
+    // Scoped to the focused area: entries focus copies log rows / the extraction
+    // table selection (only of a view that is actually shown), tree focus copies
+    // the active filter node to the tree clipboard. Never the other way round.
+    if (state.focusRegion === "entries") {
+      if (state.tableSelection && extractWrap.style.display !== "none") {
+        ev.preventDefault();
+        copyTableSelection();
+        return;
+      }
+      // A log row (Filter/Highlight view): copy ITS raw text (see
+      // copyLogSelectionToClipboard). Exception: if the person has selected
+      // text inside the Entry Detail panel or an open ZIP inline text viewer
+      // (bugfix, person-reported: a background log-row selection won over an
+      // actual text selection made inside the viewer, because this handler
+      // fires on keydown and pre-empts the native `copy` event, including the
+      // inline viewer's own `copy` listener), let the browser's native copy
+      // handle that selection instead.
+      if (logKeysActive() && state.selectedId) {
+        const sel = window.getSelection();
+        if (sel && sel.toString().length &&
+            (detailPanel.contains(sel.anchorNode) || inlineTextViewerEl.contains(sel.anchorNode))) return;
+        ev.preventDefault();
+        copyLogSelectionToClipboard();
+      }
       return;
     }
     const node = state.nodes[state.activeId];
@@ -42292,6 +42321,7 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "x") {
+    if (state.focusRegion !== "tree") return;
     const node = state.nodes[state.activeId];
     if (node && node.type === "filter") {
       ev.preventDefault();
@@ -42301,13 +42331,32 @@ document.addEventListener("keydown", ev => {
     return;
   }
   if ((ev.ctrlKey || ev.metaKey) && key === "v") {
-    if (state.clipboard && state.activeId) {
+    if (state.focusRegion === "tree" && state.clipboard && state.activeId) {
       ev.preventDefault();
       pasteClipboard();
       render();
     }
   }
 });
+
+// Mouse focus follows the last pointer interaction: a press inside the sidebar
+// (Files & Filters tree) gives the tree keyboard focus, inside #content (log
+// views, detail panel, toolbars) the log views. Other targets (dialogs, popups)
+// leave it alone. Keyboard shortcuts are scoped by state.focusRegion.
+document.addEventListener("mousedown", ev => {
+  const t = ev.target;
+  if (!t || !t.closest) return;
+  if (t.closest("#sidebar")) state.focusRegion = "tree";
+  else if (t.closest("#content")) state.focusRegion = "entries";
+}, true);
+
+// True while log-view shortcuts (bookmark, note, row copy, ...) may act: the
+// log areas have focus and a log view — not the extraction table, an inline
+// viewer or a folder view — is what is actually shown.
+function logKeysActive() {
+  return state.focusRegion === "entries" && extractWrap.style.display === "none" &&
+    !state.inlineViewer && !state.folderView;
+}
 
 
 /* ===================== Session cache (IndexedDB) =====================
