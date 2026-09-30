@@ -206,9 +206,13 @@ deployments possible:
   new files automatically. Each folder's own cog-icon settings dialog
   configures filename patterns (e.g. `App*.log`, `Input*.log`, each with its
   own auto-open-newest-file / auto-close-keep-N-open / show-M-newest-files
-  rules), plus include-subfolders — subfolders then show up as collapsible
+  rules — for every file type the folder lists, so a folder of `.json` or
+  `.txt` files works the same as one of logs), plus include-subfolders — subfolders then show up as collapsible
   folder rows in the tree (collapsed at first, expanded automatically to a
-  file an auto-open rule opens).
+  file an auto-open rule opens). Closing a watched folder (or a ZIP) with its
+  ✕ closes the files opened from it, and a file deleted on disk disappears
+  from the app; a folder that couldn't be listed shows the error in its dot's
+  tooltip and is retried automatically.
 - **Folder-watch minimap** — click a watched folder's own title to see a
   time-range timeline of its files (one bar per file, no files opened yet)
   instead of the normal log view. Hovering shows a time crosshair; dragging
