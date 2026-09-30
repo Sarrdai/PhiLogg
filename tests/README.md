@@ -45,7 +45,7 @@ PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 
 `npm test` goes through `run.js`, which spawns one child per shard and sums
 their results back into the single `N passed, M failed` line the suite has
-always reported. **Always check that number** (6781 at the time of writing):
+always reported. **Always check that number** (8077 at the time of writing):
 a group that silently stopped running shows up as a lower count, not as a
 failure.
 

@@ -1025,7 +1025,13 @@ network-bound.
   `settings.json`), which `create_main` reads for the next launch's initial colour — dark
   `#151924` on a first run. That colour is what shows before the page paints and in the
   strip a resize uncovers before the webview catches up; hard-coded dark, it flashed dark
-  bands around a light theme while resizing the PiP window (person-reported, 2026-09-28). The injected script still reports the page's
+  bands around a light theme while resizing the PiP window (person-reported, 2026-09-28).
+  The window has no fixed theme of its own: PhiLogg's theme mode System (the default,
+  Catppuccin Latte/Mocha) follows the OS light/dark switch through the webview's
+  `prefers-color-scheme` — WebView2 and WKWebView follow the OS app mode live, WebKitGTK
+  follows the GTK prefer-dark setting and, depending on the desktop environment, may need
+  a restart to notice a change — and `setUpWindowBackground` above then repaints the native
+  background for the theme that switch selected. The injected script still reports the page's
   first paint — two nested `requestAnimationFrame`s after `DOMContentLoaded`, deliberately
   not the event itself — via the `app_ready` command; its only job now is
   `windows::flush_pending_local` (a cold-launch `.zip`/folder open that had to wait for the
