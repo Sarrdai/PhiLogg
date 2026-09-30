@@ -319,7 +319,12 @@ Two details that are easy to get wrong:
   `philogg://local/<id>/…` URL, so `mergeScannedFiles` refreshes the
   `sourceUrl`/`localPath` of any already-open file on every scan.
 
-Covered by test **Group 145**.
+A `list_folder` / `list_subfolders` error (whatever the OS reports — an access error, a
+vanished folder) marks the folder failed with the message in its status dot's tooltip;
+the folder is re-listed on every poll and heals on the first success (see
+`docs/persistence-and-sync.md` → "Folder watch + lazy loading").
+
+Covered by test **Group 145** (and **Group 342** for the failed/heal behavior).
 
 ## Native parsing
 

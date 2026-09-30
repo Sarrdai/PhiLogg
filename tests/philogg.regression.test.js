@@ -4381,10 +4381,11 @@ await withApp(async (w, d, T) => {
   // A plain click on an inactive row must NOT select/activate it — there is
   // no node id it could become state.activeId, so Ctrl+F/paste have nothing
   // to target. This is the mechanism behind "no filter can be created or
-  // copied onto an inactive file".
-  const activeBefore = T.state.activeId;
+  // copied onto an inactive file". (Since Group 343 the click also puts the
+  // tree cursor on the row and leaves NOTHING selected: activeId is null.)
   fireClick(inactiveRows[0], w);
-  assert(T.state.activeId === activeBefore, "clicking a grayed inactive file row doesn't change state.activeId");
+  assert(T.state.activeId === null, "clicking a grayed inactive file row selects nothing: state.activeId is null (no file, no node id to target)");
+  assert(w.treeCursorId() === w.unloadedNavId("folder", folder.id, "a.log"), "...the tree cursor rests on the clicked row");
 
   // Double-click lazily loads the file: becomes a real root node, tagged
   // with folderId, rendered as a real tree row IN PLACE inside the folder's
@@ -4453,18 +4454,18 @@ await withApp(async (w, d, T) => {
   assert(folder.files.length === 3, "folderScanTick picked up the newly appeared c.log, got " + folder.files.length);
   assert(folder.files.some(f => f.name === "c.log" && f.nodeId === null), "the newly discovered file starts out as an unopened (grayed) listing entry");
 
-  // removeWatchedFolder: still-open files keep working as plain independent
-  // files (folderId cleared, so a later close is a normal full removal),
-  // and now render as normal top-level #tree rows again.
+  // removeWatchedFolder (the folder's ✕): stops watching AND closes every file
+  // opened from it — nothing stays behind as a plain top-level #tree file
+  // (superseded the earlier "still-open files keep working as plain
+  // independent files"; see GROUP 342 for viewers/text versions/ZIPs).
   const cFolder = folder;
   w.removeWatchedFolder(cFolder.id);
   assert(T.state.folders.length === 0, "the folder record is gone after removeWatchedFolder");
   assert(d.querySelector(".folder-watch") === null, "the folder section is no longer rendered");
-  assert(T.state.rootIds.length === 2, "already-open files loaded from the folder are left in place, not closed");
-  const survivingNode = T.state.nodes[T.state.rootIds[0]];
-  assert(!survivingNode.folderId, "a surviving node's folderId is cleared once its folder is removed");
-  assert([...d.querySelectorAll("#tree .tree-row .tree-label")].some(l => l.textContent === "a.log"),
-    "the surviving file now renders as a plain top-level #tree row, since it no longer belongs to any folder");
+  assert(T.state.rootIds.length === 0, "the files opened from the folder are closed with it, not left behind, got " + T.state.rootIds.length);
+  assert(Object.keys(T.state.nodes).length === 0, "...and fully gone from state.nodes");
+  assert(![...d.querySelectorAll("#tree .tree-row .tree-label")].some(l => l.textContent === "a.log"),
+    "the closed file does not reappear as a plain top-level #tree row");
 });
 
 /* ============================================================
@@ -36924,7 +36925,7 @@ group(329);
     const key = (k, o) => fireKeydown(d, w, k, o);
     key("ArrowUp", { altKey: true });
     assert(w.treeCursorId() === U("notes.txt"), "Alt+Up from a loaded node lands on the unloaded entry above");
-    assert(T.state.activeId === plain.id && !T.state.inlineViewer, "...without changing activeId / the main view");
+    assert(T.state.activeId === null && !T.state.inlineViewer, "...and deselects the previous file (Group 343: activeId null, nothing shown for it)");
     assert(T.state.focusRegion === "entries", "Alt+Arrow leaves focusRegion alone");
     const cur = [...d.querySelectorAll("#zipList .tree-cursor")];
     assert(cur.length === 1 && cur[0].classList.contains("zip-source-file") && !cur[0].classList.contains("active"), "exactly one cursor row (dashed class, not .active)");
@@ -36941,7 +36942,7 @@ group(329);
     assert(w.treeCursorId() === subId, "Up walks on to the dir row");
     const dirRow = d.querySelector("#zipList .tree-dir-row");
     assert(dirRow.classList.contains("tree-cursor") && !dirRow.classList.contains("active"), "the dir row cursor uses the dashed class, not .active");
-    assert(T.state.activeId === plain.id, "main view still untouched");
+    assert(T.state.activeId === null, "a dir row is cursor-only: the walk over unloaded entries left nothing selected, the dir row selects nothing");
   });
 
   await withApp(async (w, d, T) => {
@@ -37067,11 +37068,11 @@ group(329);
     const F = n => w.unloadedNavId("folder", folder.id, n);
     assert(w.flattenTreeIds().join("|") === [F("One.log"), F("Two.log"), plain.id].join("|"), "flatten lists the unloaded folder files before the main tree, got " + w.flattenTreeIds().join("|"));
     key("ArrowUp", { altKey: true });
-    assert(w.treeCursorId() === F("Two.log") && T.state.activeId === plain.id, "Alt+Up lands on an unloaded folder file, activeId unchanged");
+    assert(w.treeCursorId() === F("Two.log") && T.state.activeId === null, "Alt+Up lands on an unloaded folder file, the previous file is deselected (Group 343)");
     const row = d.querySelector("#folderWatchList .folder-watch-file.tree-cursor");
     assert(row && row.querySelector(".tree-load-badge").textContent === "→ load", "cursor row + badge in the folder listing");
     key("ArrowUp", { altKey: true, shiftKey: true });
-    assert(w.treeCursorId() === F("Two.log") && T.state.activeId === plain.id, "Shift+Alt+Up from the stop: nothing but unloaded entries above -> stays");
+    assert(w.treeCursorId() === F("Two.log") && T.state.activeId === null, "Shift+Alt+Up from the stop: nothing but unloaded entries above -> stays");
     T.state.activeId = plain.id; w.setTreeCursor(null); w.render();
     key("ArrowUp", { altKey: true, shiftKey: true });
     assert(w.treeCursorId() === null && T.state.activeId === plain.id, "Shift+Alt+Up from the node skips every unloaded folder file (nothing else above: stays)");
@@ -38929,6 +38930,701 @@ if (groupSelected()) {
   }
 }
 
+/* ============================================================
+   GROUP 342 — Folder watch: auto rules for EVERY listed file type,
+   a self-healing watch, containers close their files
+   Origin: 2026-09-30 (person-reported, Windows desktop build, a dropped
+   folder of .json files): "Show M newest", "Auto-open newest" and "Auto-close
+   — keep only N open" were ignored and the folder's dot was red. Root causes:
+   applyFolderAutoRules skipped every non-log rec (and judged "open" only by
+   rec.nodeId, which an inline viewer never has); `failed` was set by ANY
+   error in scan+merge+rules+render and folderScanTick then skipped a failed
+   folder forever. Also: files deleted on disk / a folder's or ZIP's ✕ left
+   viewers, their "Filter lines" text versions and (ZIP) opened log nodes
+   behind as orphans. Decided by the person: the rules apply to every file
+   type the folder lists (never restricted to *.log); only a failing LISTING
+   marks a folder failed, it is retried every poll and heals, the dot's
+   tooltip names the error; deletions and both ✕ close the files (no undo).
+   Start filters stay log-only (filter-library records for a log node).
+   ============================================================ */
+group(342);
+if (groupSelected()) {
+  const simLog = seed => LOGSIM.generateToStrings({ format: "default", entries: 6, seed })[0].text;
+  const jsonBody = n => JSON.stringify({ n, ok: true });
+  // Native bridge over `dirs` (+ real mtimes, mutable) for the picked folder "/data".
+  const mkBridge = (dirs, mtimes) => {
+    const b = nativeFolderBridge(dirs, 1, mtimes);
+    b.picked = { path: "/data", name: "data" };
+    return b;
+  };
+  const pat = over => Object.assign({ pattern: "*", autoOpenNewest: false, autoCloseKeep: null, showNewest: null, startFilterKeys: [], startPrimaryFilterKey: null }, over);
+  const watch = async (w, T) => { await w.openFolderPickerFlow(); return T.state.folders[0]; };
+  const setPatterns = (folder, list) => { folder.settings.patterns = list.map(pat); };
+  const rowOf = (d, name) => [...d.querySelectorAll(".folder-watch-file")].find(r => r.querySelector(".folder-watch-file-name").textContent === name);
+  const openNames = folder => folder.files.filter(r => r.nodeId || folder.inlineViewers.has(r.relPath || r.name)).map(r => r.name).sort();
+  const countRenders = w => {
+    const real = w.render; const c = { n: 0 };
+    w.render = (...a) => { c.n++; return real.apply(w, a); };
+    c.restore = () => { w.render = real; };
+    return c;
+  };
+
+  section("342a. 25 .json files, \"Show newest 3\" + \"Auto-open newest\": 3 listed, the newest opens as an inline viewer flagged auto");
+  {
+    const dirs = { "/data": {} }, mtimes = {};
+    for (let i = 1; i <= 25; i++) { const n = "evt" + String(i).padStart(2, "0") + ".json"; dirs["/data"][n] = jsonBody(i); mtimes["/data/" + n] = 1000 + i; }
+    const bridge = mkBridge(dirs, mtimes);
+    await withApp(async (w, d, T) => {
+      bridge.installFetch(w);
+      const folder = await watch(w, T);
+      assert(folder.files.length === 25, "sanity: with the default pattern all 25 .json files are listed, got " + folder.files.length);
+      setPatterns(folder, [{ pattern: "*.json", showNewest: 3, autoOpenNewest: true }]);
+      await w.rescanFolder(folder);
+      assert(folder.files.map(r => r.name).join(",") === "evt23.json,evt24.json,evt25.json",
+        "\"Show newest 3\" applies to .json files (by mtime), got " + folder.files.map(r => r.name).join(","));
+      assert(openNames(folder).join(",") === "evt25.json" && folder.inlineViewers.has("evt25.json"),
+        "\"Auto-open newest\" opened the newest .json as an inline viewer, got " + openNames(folder).join(","));
+      assert(T.state.inlineViewer && T.state.inlineViewer.name === "evt25.json" && T.state.rootIds.length === 0,
+        "...it is the shown viewer, and no log node was created");
+      const rec = folder.files.find(r => r.name === "evt25.json");
+      assert(rec.openedByAuto === true && rec.autoOpenFired === true, "the viewer open sets openedByAuto/autoOpenFired like a node does");
+      assert(folder.failed === false, "the folder is not failed");
+      const row = rowOf(d, "evt25.json");
+      assert(row && row.classList.contains("zip-entry-opened"), "its row is the opened look");
+      assert(row.querySelector(".tree-icon use").getAttribute("href") === "#i-file-auto" && /automatically/.test(row.querySelector(".tree-icon").title),
+        "...with the auto badge and tooltip an auto-opened log row has");
+      assert(!rowOf(d, "evt24.json").querySelector(".tree-icon use[href='#i-file-auto']"), "a listed, unopened row has no auto badge");
+
+      const c = countRenders(w);
+      for (let i = 0; i < 3; i++) await w.folderScanTick();
+      assert(c.n === 0 && folder.files.length === 3, "stable polls with rules on .json files trigger zero renders (Group 195), got " + c.n);
+      c.restore();
+    }, { philogg: bridge });
+  }
+
+  section("342b. keep-1 sliding window on .json: a newer file opens and the previous auto-opened viewer closes; a manual open is never auto-closed; a hand-closed one is not reopened");
+  {
+    const dirs = { "/data": { "evt1.json": jsonBody(1), "evt2.json": jsonBody(2), "evt3.json": jsonBody(3) } };
+    const mtimes = { "/data/evt1.json": 1001, "/data/evt2.json": 1002, "/data/evt3.json": 1003 };
+    const bridge = mkBridge(dirs, mtimes);
+    await withApp(async (w, d, T) => {
+      bridge.installFetch(w);
+      const folder = await watch(w, T);
+      setPatterns(folder, [{ pattern: "*.json", autoCloseKeep: 1 }]);
+      await w.rescanFolder(folder);
+      assert(openNames(folder).join(",") === "evt3.json", "keep-1 opened the newest .json, got " + openNames(folder).join(","));
+
+      dirs["/data"]["evt4.json"] = jsonBody(4); mtimes["/data/evt4.json"] = 1004;
+      await w.folderScanTick(); // the real poll
+      assert(openNames(folder).join(",") === "evt4.json", "a newer .json arriving opens, the previous auto-opened viewer closes, got " + openNames(folder).join(","));
+      assert(!folder.inlineViewers.has("evt3.json") && folder.files.some(r => r.name === "evt3.json"), "...the closed one is still listed");
+      assert(rowOf(d, "evt3.json") && !rowOf(d, "evt3.json").classList.contains("zip-entry-opened"), "...as a grayed row (not the opened look)");
+      assert(T.state.inlineViewer && T.state.inlineViewer.name === "evt4.json", "the new viewer is the shown one");
+
+      // A viewer the person opened by hand is never auto-closed.
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "evt1.json"));
+      assert(folder.files.find(r => r.name === "evt1.json").openedByAuto === false, "a manual open is not flagged auto");
+      dirs["/data"]["evt5.json"] = jsonBody(5); mtimes["/data/evt5.json"] = 1005;
+      await w.folderScanTick();
+      assert(openNames(folder).join(",") === "evt1.json,evt5.json", "evt5 opened, auto evt4 closed, the manual evt1 stays open, got " + openNames(folder).join(","));
+
+      // Closed by hand (the row's ✕), an auto-opened newest stays closed on later merges.
+      fireClick(rowOf(d, "evt5.json").querySelector(".tree-del"), w);
+      assert(!folder.inlineViewers.has("evt5.json"), "sanity: the person closed the auto-opened viewer");
+      dirs["/data"]["aaa.json"] = jsonBody(0); mtimes["/data/aaa.json"] = 500; // older: a merge runs, the newest is still evt5
+      await w.folderScanTick();
+      assert(folder.files.some(r => r.name === "aaa.json") && openNames(folder).join(",") === "evt1.json",
+        "a later merge does not reopen a hand-closed auto-opened file (autoOpenFired), got " + openNames(folder).join(","));
+
+      const c = countRenders(w);
+      for (let i = 0; i < 3; i++) await w.folderScanTick();
+      assert(c.n === 0, "stable polls render nothing, got " + c.n);
+      c.restore();
+    }, { philogg: bridge });
+  }
+
+  section("342c. a mixed .log + .json pattern: Show newest / Auto-open newest treat both kinds alike");
+  {
+    const dirs = { "/data": { "a.log": simLog(1), "b.json": jsonBody(2), "c.log": simLog(3), "d.json": jsonBody(4) } };
+    const mtimes = { "/data/a.log": 1000, "/data/b.json": 2000, "/data/c.log": 3000, "/data/d.json": 4000 };
+    const bridge = mkBridge(dirs, mtimes);
+    await withApp(async (w, d, T) => {
+      bridge.installFetch(w);
+      const folder = await watch(w, T);
+      setPatterns(folder, [{ pattern: "*", showNewest: 3, autoOpenNewest: true }]);
+      await w.rescanFolder(folder);
+      assert(folder.files.map(r => r.name).join(",") === "b.json,c.log,d.json", "the 3 newest of BOTH kinds are listed, got " + folder.files.map(r => r.name).join(","));
+      assert(openNames(folder).join(",") === "d.json" && T.state.rootIds.length === 0, "the newest (a .json) auto-opened as a viewer, got " + openNames(folder).join(","));
+
+      dirs["/data"]["e.log"] = simLog(5); mtimes["/data/e.log"] = 5000;
+      await w.folderScanTick();
+      assert(folder.files.map(r => r.name).join(",") === "c.log,d.json,e.log", "the window moved on, got " + folder.files.map(r => r.name).join(","));
+      const e = folder.files.find(r => r.name === "e.log");
+      assert(e.nodeId && T.state.nodes[e.nodeId] && T.state.nodes[e.nodeId].folderId === folder.id, "the newest, a .log, opened as a real node");
+      assert(folder.inlineViewers.has("d.json"), "\"Auto-open newest\" closes nothing: the .json viewer stays open");
+      assert(openNames(folder).join(",") === "d.json,e.log", "both kinds count as open, got " + openNames(folder).join(","));
+    }, { philogg: bridge });
+  }
+
+  section("342d. a failed listing shows its error in the dot's tooltip, is retried every poll, heals, and then the rules run");
+  {
+    const dirs = { "/data": { "one.json": jsonBody(1) } };
+    const mtimes = { "/data/one.json": 1000 };
+    const bridge = mkBridge(dirs, mtimes);
+    const MSG = "os error 5: Access is denied";
+    let failures = 0;
+    const realList = bridge.listFolder;
+    bridge.listFolder = async (...a) => { if (failures > 0) { failures--; throw new Error(MSG); } return realList(...a); };
+    await withApp(async (w, d, T) => {
+      bridge.installFetch(w);
+      failures = 1;
+      const folder = await watch(w, T); // the INITIAL listing fails
+      assert(folder.failed === true && folder.failedMessage === MSG, "a failing listing marks the folder failed and keeps the message, got " + folder.failedMessage);
+      let icon = d.querySelector(".folder-watch-icon");
+      assert(icon.classList.contains("failed") && !icon.classList.contains("live"), "the dot is the failed one");
+      assert(icon.title === "Folder can't be read — " + MSG + ". Retrying every 3 s.", "the tooltip names the error, got " + icon.title);
+
+      // Still failing on the next polls: one state, no render per poll.
+      failures = 2;
+      const c = countRenders(w);
+      await w.folderScanTick(); await w.folderScanTick();
+      assert(folder.failed === true && c.n === 0, "a repeated identical failure renders nothing, got " + c.n);
+      c.restore();
+
+      // The disk recovers and gained a file; a rule is configured meanwhile.
+      dirs["/data"]["two.json"] = jsonBody(2); mtimes["/data/two.json"] = 2000;
+      setPatterns(folder, [{ pattern: "*.json", autoOpenNewest: true }]);
+      let merges = 0;
+      const realMerge = w.mergeScannedFiles;
+      w.mergeScannedFiles = (...a) => { merges++; return realMerge.apply(w, a); };
+      await w.folderScanTick();
+      assert(folder.failed === false && folder.failedMessage === null, "the first successful poll clears failed and the message");
+      assert(folder.files.map(r => r.name).join(",") === "one.json,two.json", "the file added while failed is listed, got " + folder.files.map(r => r.name).join(","));
+      assert(openNames(folder).join(",") === "two.json" && T.state.inlineViewer && T.state.inlineViewer.name === "two.json", "...and the auto rule fired (newest .json opened)");
+      icon = d.querySelector(".folder-watch-icon");
+      assert(icon.classList.contains("live") && !icon.classList.contains("failed") && !/can't be read/.test(icon.title), "the dot is live again");
+      assert(merges === 1, "the healing poll merged, got " + merges);
+
+      // Fails again with NOTHING changed on disk: the heal still merges once, then polls are quiet.
+      failures = 1;
+      await w.folderScanTick();
+      assert(folder.failed === true && folder.failedMessage === MSG, "a later failure is flagged again");
+      await w.folderScanTick();
+      assert(folder.failed === false && merges === 2, "...and heals with a merge even though the key set is unchanged, merges=" + merges);
+      const c2 = countRenders(w);
+      await w.folderScanTick(); await w.folderScanTick();
+      assert(c2.n === 0 && merges === 2, "stable polls after the heal: no render, no merge (renders " + c2.n + ", merges " + merges + ")");
+      c2.restore();
+      w.mergeScannedFiles = realMerge;
+    }, { philogg: bridge });
+  }
+
+  section("342e. only a failing listing flags the folder: an unreadable file, a throwing open, merge or render are logged, never `failed`");
+  {
+    const mk = () => {
+      const dirs = { "/data": { "a.log": simLog(1), "z.json": jsonBody(9) } };
+      const mtimes = { "/data/a.log": 1000, "/data/z.json": 2000 };
+      return { dirs, mtimes, bridge: mkBridge(dirs, mtimes) };
+    };
+    const rules = [{ pattern: "*.json", autoOpenNewest: true }, { pattern: "*.log", autoOpenNewest: true }];
+    {
+      const { bridge } = mk();
+      await withApp(async (w, d, T) => {
+        bridge.installFetch(w);
+        const realFetch = w.fetch;
+        w.fetch = async (url, ...a) => /z\.json$/.test(String(url)) ? { ok: false, status: 404 } : realFetch(url, ...a);
+        const folder = await watch(w, T);
+        setPatterns(folder, rules);
+        await w.rescanFolder(folder);
+        assert(folder.failed === false, "an auto-open whose file answers 404 does not set failed");
+        assert(!folder.inlineViewers.has("z.json") && openNames(folder).join(",") === "a.log",
+          "...and the other pattern's rule still ran (a.log opened), got " + openNames(folder).join(","));
+      }, { philogg: bridge });
+    }
+    {
+      const { bridge } = mk();
+      await withApp(async (w, d, T) => {
+        bridge.installFetch(w);
+        const errs = [];
+        w.console.error = (...a) => errs.push(a.map(String).join(" "));
+        w.openInlineViewer = async () => { throw new Error("viewer boom"); };
+        const folder = await watch(w, T);
+        setPatterns(folder, rules);
+        await w.rescanFolder(folder);
+        assert(folder.failed === false, "an auto-open that throws does not set failed");
+        assert(openNames(folder).join(",") === "a.log", "...the remaining pattern's rule still ran, got " + openNames(folder).join(","));
+        assert(errs.some(e => /auto-opening "z\.json" failed/.test(e) && /viewer boom/.test(e)), "...and it is console.error'ed, got " + JSON.stringify(errs));
+      }, { philogg: bridge });
+    }
+    {
+      const { dirs, mtimes, bridge } = mk();
+      await withApp(async (w, d, T) => {
+        bridge.installFetch(w);
+        const errs = [];
+        w.console.error = (...a) => errs.push(a.map(String).join(" "));
+        const folder = await watch(w, T);
+        const realMerge = w.mergeScannedFiles;
+        w.mergeScannedFiles = async () => { throw new Error("merge boom"); };
+        dirs["/data"]["n.json"] = jsonBody(3); mtimes["/data/n.json"] = 3000;
+        await w.folderScanTick();
+        assert(folder.failed === false && errs.some(e => /merge boom/.test(e)), "a throwing merge in the poll is logged, not failed, got failed=" + folder.failed);
+        assert(folder.busy === false, "...and the folder is not left busy");
+        await w.rescanFolder(folder);
+        assert(folder.failed === false && errs.filter(e => /merge boom/.test(e)).length === 2, "same for rescanFolder");
+        w.mergeScannedFiles = realMerge;
+
+        // A render that throws after a poll does not flag the folder either, nor reject the tick.
+        dirs["/data"]["m.json"] = jsonBody(4); mtimes["/data/m.json"] = 4000;
+        const realRender = w.render;
+        w.render = () => { throw new Error("render boom"); };
+        let rejected = false;
+        try { await w.folderScanTick(); } catch (e) { rejected = true; }
+        w.render = realRender;
+        assert(!rejected && folder.failed === false && folder.busy === false, "a throwing render in the tick: no rejection, not failed, not busy");
+        assert(errs.some(e => /render boom/.test(e)), "...and it is logged");
+        assert(folder.files.some(r => r.name === "m.json"), "the merge itself had already happened");
+      }, { philogg: bridge });
+    }
+  }
+
+  section("342f. deleted on disk: an open viewer (shown) with its \"Filter lines\" text version and an open log all go, without undo entries or orphan rows");
+  {
+    const dirs = { "/data": { "keep.json": jsonBody(1), "gone.json": '{"a":1}', "gone.log": simLog(2) } };
+    const bridge = mkBridge(dirs, {});
+    await withApp(async (w, d, T) => {
+      bridge.installFetch(w);
+      const folder = await watch(w, T);
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "gone.log"));
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "gone.json"));
+      const viewer = folder.inlineViewers.get("gone.json");
+      assert(viewer && T.state.inlineViewer === viewer, "sanity: the viewer is open and shown");
+      const textNode = await w.openInlineViewerAsTextLog(viewer);
+      assert(textNode && w.viewerTextLogIds("folder", folder.id, "gone.json").length === 1, "sanity: its text version is open, nested under the viewer");
+      w.activateInlineViewer(viewer); w.render();
+      assert(d.querySelector(".folder-watch .tree-row"), "sanity: rows of the open files are inside the folder box");
+      const undoBefore = T.undoStack.length;
+
+      delete dirs["/data"]["gone.json"]; delete dirs["/data"]["gone.log"];
+      await w.folderScanTick();
+      assert(folder.files.map(r => r.name).join(",") === "keep.json", "the vanished files left the listing, got " + folder.files.map(r => r.name).join(","));
+      assert(!folder.inlineViewers.has("gone.json") && T.state.inlineViewer === null, "the viewer is closed and no longer shown");
+      assert(T.state.nodes[textNode.id] === undefined, "its text version is gone too");
+      assert(T.state.rootIds.length === 0 && Object.keys(T.state.nodes).length === 0, "no node is left behind (no orphan top-level row)");
+      assert(d.querySelectorAll("#tree .tree-row").length === 0 && d.querySelectorAll(".folder-watch .tree-row").length === 0, "no tree row anywhere");
+      assert(T.undoStack.length === undoBefore, "no undo entries for the automatic close");
+      assert(folder.failed === false, "not failed");
+    }, { philogg: bridge });
+  }
+
+  section("342g. the folder's ✕ closes its open log, viewers and text versions (no undo, nothing left in #tree), drops the viewer records and the folder view");
+  {
+    const dirs = { "/data": { "a.log": simLog(1), "v1.json": jsonBody(1), "v2.json": jsonBody(2) } };
+    const bridge = mkBridge(dirs, {});
+    await withApp(async (w, d, T) => {
+      bridge.installFetch(w);
+      const folder = await watch(w, T);
+      const plain = await w.addFile("plain.log", simLog(7), () => {});
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "a.log"));
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "v1.json"));
+      const v1 = folder.inlineViewers.get("v1.json");
+      const textNode = await w.openInlineViewerAsTextLog(v1);
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "v2.json"));
+      const v2 = folder.inlineViewers.get("v2.json");
+      assert(v1.cacheKey && v2.cacheKey, "sanity: both viewers are persisted (cache on)");
+      assert(T.state.inlineViewer === v2, "sanity: v2 is shown");
+      const folderNodes = Object.values(T.state.nodes).filter(n => n.folderId === folder.id).length;
+      assert(folderNodes === 1 && textNode, "sanity: one log node + one text version belong to the folder");
+      const undoBefore = T.undoStack.length;
+
+      fireClick(d.querySelector(".folder-watch-close"), w);
+      assert(T.state.folders.length === 0 && d.querySelector(".folder-watch") === null, "the folder is gone");
+      assert(T.state.rootIds.join() === plain.id && Object.keys(T.state.nodes).every(id => T.state.nodes[id] === plain || T.state.nodes[id].parentId === plain.id || id === plain.id),
+        "only the unrelated plain file is left; nothing of the folder remained as a top-level file, got " + T.state.rootIds.length + " roots");
+      assert(T.state.nodes[textNode.id] === undefined, "the viewer's text version is closed");
+      assert(T.state.inlineViewer === null && folder.inlineViewers.size === 0, "the viewers are closed, none is shown");
+      assert(d.querySelectorAll("#tree .tree-row").length === 1, "#tree shows just the plain file's row, got " + d.querySelectorAll("#tree .tree-row").length);
+      assert(T.undoStack.length === undoBefore, "no undo entries");
+      const gone = await waitFor(async () => !(await w.cacheStoreOp("files", "readonly", st => st.get(v1.cacheKey))) && !(await w.cacheStoreOp("files", "readonly", st => st.get(v2.cacheKey))));
+      assert(gone, "the viewers' persisted records are deleted");
+      assert(w.persistedViewerList().length === 0, "the session meta no longer lists them");
+
+      // The folder minimap (container view) of a removed folder is not left selected.
+      await w.openFolderPickerFlow();
+      const folder2 = T.state.folders[0];
+      w.selectFolderContainer(folder2.id);
+      assert(T.state.folderView === folder2.id, "sanity: the folder view is showing");
+      fireClick(d.querySelector(".folder-watch-close"), w);
+      assert(T.state.folderView === null, "removing the folder clears its folder view");
+    }, { philogg: bridge, indexedDB: new IDBFactory() });
+  }
+
+  section("342h. the ZIP's ✕ closes its opened entries: a shown log node, a viewer and its text version — no invisible orphan in state.rootIds");
+  {
+    const storedZip = (entries) => {
+      let offset = 0; const local = [], central = [];
+      for (const e of entries) {
+        const nameBuf = Buffer.from(e.name, "utf8"), data = Buffer.from(e.data, "utf8");
+        const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4);
+        lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+        const rec = Buffer.concat([lh, nameBuf, data]);
+        const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+        ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+        local.push(rec); central.push(Buffer.concat([ch, nameBuf])); offset += rec.length;
+      }
+      const L = Buffer.concat(local), C = Buffer.concat(central), eocd = Buffer.alloc(22);
+      eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+      eocd.writeUInt32LE(C.length, 12); eocd.writeUInt32LE(L.length, 16);
+      return Buffer.concat([L, C, eocd]);
+    };
+    const zipBytes = () => storedZip([
+      { name: "a.log", data: simLog(1) }, { name: "b.log", data: simLog(2) }, { name: "notes.json", data: '{"k":1}' },
+    ]);
+    await withApp(async (w, d, T) => {
+      const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+      const plain = await w.addFile("plain.log", simLog(7), () => {});
+      const zipNode = () => Object.values(T.state.nodes).find(n => n.zipId === zip.id && n.name === "a.log");
+      w.openZipEntry(zip.entries.find(e => e.name === "a.log"), zip);
+      await waitFor(() => zipNode() && typeof zipNode().loadFraction !== "number" && zipNode().entries.length > 0);
+      const logNode = zipNode();
+      w.openZipEntry(zip.entries.find(e => e.name === "notes.json"), zip);
+      await waitFor(() => zip.inlineViewers.has("notes.json"));
+      const viewer = zip.inlineViewers.get("notes.json");
+      const textNode = await w.openInlineViewerAsTextLog(viewer);
+      assert(textNode && w.viewerTextLogIds("zip", zip.id, "notes.json").length === 1, "sanity: the viewer's text version is open");
+      T.state.inlineViewer = null; T.state.activeId = logNode.id; w.render();
+      assert(T.state.rootIds.includes(logNode.id) && T.state.activeId === logNode.id, "sanity: the ZIP's log node is open and the active file");
+      const undoBefore = T.undoStack.length;
+
+      fireClick(d.querySelector("#zipList .folder-watch-close"), w);
+      assert(T.state.zips.length === 0 && d.querySelector("#zipList .folder-watch") === null, "the ZIP is gone");
+      assert(T.state.nodes[logNode.id] === undefined && !T.state.rootIds.includes(logNode.id), "its opened log node is closed, not left in state.rootIds");
+      assert(T.state.nodes[textNode.id] === undefined, "the viewer's text version is closed");
+      assert(zip.inlineViewers.size === 0 && T.state.inlineViewer === null, "the viewer is closed");
+      assert(T.state.rootIds.join() === plain.id, "only the unrelated plain file remains, got " + T.state.rootIds.length + " roots");
+      assert(T.state.activeId === plain.id, "state.activeId no longer points at the removed ZIP's node, got " + T.state.activeId);
+      assert(T.undoStack.length === undoBefore, "no undo entries");
+    });
+    // A shown viewer of the ZIP is cleared too.
+    await withApp(async (w, d, T) => {
+      const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+      w.openZipEntry(zip.entries.find(e => e.name === "notes.json"), zip);
+      await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.json");
+      fireClick(d.querySelector("#zipList .folder-watch-close"), w);
+      assert(T.state.inlineViewer === null && T.state.zips.length === 0, "a viewer shown from the removed ZIP is cleared");
+    });
+  }
+}
+
+/* ============================================================
+   GROUP 343 — The tree cursor on an unloaded (grayed) entry deselects, and
+   the main view shows a placeholder
+   Origin: 2026-09-30 (person-reported). Alt+Arrow (or a plain click) onto a
+   listed-but-not-loaded ZIP entry / watched-folder file used to leave the
+   previously selected file highlighted and its content shown — it read as if
+   the row under the cursor were open. Now placeCursorOnUnloaded clears
+   activeId / inlineViewer / folderView / multiSelect (a dir row stays
+   cursor-only), and renderMainView shows #emptyState with texts built in JS:
+   `"<name>" is not loaded` (+ the keys that load it) while the cursor rests
+   on an unloaded entry, `No file selected` when files are open but none is
+   selected, the original "No log file loaded yet" otherwise. Everything that
+   reads state.activeId while it is null must stay a no-op (343f).
+   ============================================================ */
+group(343);
+if (groupSelected()) {
+  const simLog = seed => LOGSIM.generateToStrings({ format: "default", entries: 6, seed })[0].text;
+  // Hand-built stored ZIP (fixture tooling only, like GROUP 199 / 329).
+  const storedZip = (entries) => {
+    let offset = 0; const local = [], central = [];
+    for (const e of entries) {
+      const nameBuf = Buffer.from(e.name, "utf8"), data = Buffer.from(e.data, "utf8");
+      const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4);
+      lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+      const rec = Buffer.concat([lh, nameBuf, data]);
+      const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+      ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+      local.push(rec); central.push(Buffer.concat([ch, nameBuf])); offset += rec.length;
+    }
+    const L = Buffer.concat(local), C = Buffer.concat(central), eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+    eocd.writeUInt32LE(C.length, 12); eocd.writeUInt32LE(L.length, 16);
+    return Buffer.concat([L, C, eocd]);
+  };
+  const zipBytes = () => storedZip([
+    { name: "a.log", data: simLog(1) }, { name: "b.log", data: simLog(2) }, { name: "c.log", data: simLog(3) },
+    { name: "notes.json", data: '{"k":1}' },
+  ]);
+  const ZIP_BODY = "Press → or Alt+→ to load it, or double-click it.";
+  const empty = d => ({ el: d.querySelector("#emptyState"), h: d.querySelector("#emptyState h2").textContent, p: d.querySelector("#emptyState p").textContent });
+  const zipRow = (d, name) => [...d.querySelectorAll("#zipList .folder-watch-file")].find(r => r.querySelector(".folder-watch-file-name").textContent === name);
+  const zipNode = (T, zip, name) => Object.values(T.state.nodes).find(n => n.zipId === zip.id && n.name === name);
+  const openZipLog = async (w, d, T, zip, name) => {
+    fireDblClick(zipRow(d, name), w);
+    const node = await waitFor(() => { const n = zipNode(T, zip, name); return n && typeof n.loadFraction !== "number" && n.entries.length > 0 ? n : null; });
+    return node;
+  };
+  const surfacesHidden = (d, w) => ["#tableWrap", "#fhSplit", "#viewBar", "#detailPanel", "#inlineViewerWrap", "#folderMinimapWrap"].every(sel => !isVisible(d.querySelector(sel), w));
+
+  section("343a. ZIP, Alt+Down onto a closed entry: the open file is deselected, the placeholder names the entry and the keys; Alt+Up selects the file again");
+  await withApp(async (w, d, T) => {
+    const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+    const U = n => w.unloadedNavId("zip", zip.id, n);
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    const a = await openZipLog(w, d, T, zip, "a.log");
+    assert(T.state.activeId === a.id && isVisible(d.querySelector("#tableWrap"), w) && !isVisible(d.querySelector("#emptyState"), w),
+      "sanity: a.log is open and shown, no placeholder");
+    assert(d.querySelector(".tree-row.active"), "sanity: its tree row is active");
+    T.state.focusRegion = "entries";
+
+    key("ArrowDown", { altKey: true });
+    assert(w.treeCursorId() === U("b.log"), "Alt+Down lands on the closed b.log, got " + w.treeCursorId());
+    assert(T.state.activeId === null && T.state.inlineViewer === null && T.state.folderView === null, "nothing is selected: activeId/inlineViewer/folderView are null");
+    assert(T.state.multiSelect.size === 0, "multiSelect is cleared");
+    assert(!d.querySelector(".tree-row.active") && !d.querySelector(".zip-entry-active"), "no row is highlighted as the active file");
+    assert(d.querySelectorAll("#zipList .tree-cursor").length === 1, "exactly the cursor row carries the dashed cursor look");
+    let e = empty(d);
+    assert(isVisible(e.el, w) && e.h === '"b.log" is not loaded', "#emptyState shows the entry's name, got " + JSON.stringify(e.h));
+    assert(e.p === ZIP_BODY, "...and the keys that load it, got " + JSON.stringify(e.p));
+    assert(surfacesHidden(d, w), "the table, view bar, detail panel and the viewers are hidden");
+    assert(T.state.nodes[a.id] && T.state.rootIds.includes(a.id), "a.log itself is still open (only deselected)");
+    assert(T.state.focusRegion === "entries", "Alt+Arrow still leaves focusRegion alone");
+
+    key("ArrowDown", { altKey: true });
+    assert(w.treeCursorId() === U("c.log") && empty(d).h === '"c.log" is not loaded', "Alt+Down on to c.log: the placeholder follows the cursor, got " + empty(d).h);
+    key("ArrowUp", { altKey: true });
+    assert(w.treeCursorId() === U("b.log") && empty(d).h === '"b.log" is not loaded', "Alt+Up continues from the unloaded row");
+    key("ArrowUp", { altKey: true });
+    assert(T.state.activeId === a.id && w.treeCursorId() === null, "Alt+Up onto the open a.log selects it again (cursor cleared)");
+    assert(!isVisible(empty(d).el, w) && isVisible(d.querySelector("#tableWrap"), w) && isVisible(d.querySelector("#fhSplit"), w) && isVisible(d.querySelector("#viewBar"), w),
+      "...the placeholder is gone, the table is back");
+    assert(d.querySelector(".tree-row.active"), "...and its row is active again");
+  });
+
+  section("343b. a plain click on a grayed ZIP row deselects the same way; a double-click after the click still loads it (the row element survives)");
+  await withApp(async (w, d, T) => {
+    const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+    const a = await openZipLog(w, d, T, zip, "a.log");
+    const row = zipRow(d, "b.log");
+    fireClick(row, w);
+    assert(T.state.activeId === null && w.treeCursorId() === w.unloadedNavId("zip", zip.id, "b.log") && T.state.focusRegion === "tree",
+      "the click deselects, puts the cursor on the row and focuses the tree");
+    assert(empty(d).h === '"b.log" is not loaded' && surfacesHidden(d, w) && !d.querySelector(".tree-row.active"), "placeholder shown, a.log no longer highlighted");
+    assert(zipRow(d, "b.log") === row && row.classList.contains("tree-cursor"), "the row element survives the click's render (a native dblclick keeps working)");
+    fireDblClick(row, w); // the very element from before the click
+    const b = await waitFor(() => { const n = zipNode(T, zip, "b.log"); return n && typeof n.loadFraction !== "number" && n.entries.length > 0 ? n : null; });
+    assert(b && T.state.activeId === b.id && w.treeCursorId() === null, "the double-click loaded b.log and selected it");
+    assert(!isVisible(empty(d).el, w) && isVisible(d.querySelector("#tableWrap"), w), "the placeholder is gone once b.log is shown");
+    assert(T.state.nodes[a.id], "a.log is still open");
+  });
+
+  section("343c. a SHOWN inline viewer is deselected the same way (Alt+Up onto a closed entry), and its row stays open");
+  await withApp(async (w, d, T) => {
+    const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    fireDblClick(zipRow(d, "notes.json"), w);
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.json");
+    assert(isVisible(d.querySelector("#inlineViewerWrap"), w) && !isVisible(empty(d).el, w), "sanity: the viewer is shown");
+    key("ArrowUp", { altKey: true });
+    assert(w.treeCursorId() === w.unloadedNavId("zip", zip.id, "c.log"), "Alt+Up from the viewer lands on c.log, got " + w.treeCursorId());
+    assert(T.state.inlineViewer === null && T.state.activeId === null, "the viewer is no longer shown");
+    assert(!isVisible(d.querySelector("#inlineViewerWrap"), w) && empty(d).h === '"c.log" is not loaded' && isVisible(empty(d).el, w), "the placeholder replaces it");
+    assert(zip.inlineViewers.has("notes.json"), "the viewer entry itself is still open");
+    const nr = zipRow(d, "notes.json");
+    assert(nr.classList.contains("zip-entry-opened") && !nr.classList.contains("zip-entry-active"), "...its row is the opened look, not the active one");
+    key("ArrowDown", { altKey: true });
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.json" && !isVisible(empty(d).el, w), "Alt+Down onto the open viewer shows it again");
+  });
+
+  section("343d. Right / Alt+Right loads the entry and selects it when the cursor stayed; while it loads the placeholder says so");
+  await withApp(async (w, d, T) => {
+    const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+    const a = await openZipLog(w, d, T, zip, "a.log");
+    const bEntry = zip.entries.find(e => e.name === "b.log");
+    let release; const gate = new Promise(r => { release = r; });
+    const realExtract = bEntry.extract;
+    bEntry.extract = async () => { await gate; return realExtract.call(bEntry); };
+    fireKeydown(d, w, "ArrowDown", { altKey: true });
+    assert(empty(d).h === '"b.log" is not loaded', "sanity: cursor on b.log");
+    fireKeydown(d, w, "ArrowRight", { altKey: true });
+    await waitFor(() => zipNode(T, zip, "b.log"));
+    assert(T.state.activeId === null && empty(d).h === '"b.log" is loading…' && empty(d).p === "It opens here as soon as it is ready.",
+      "while it loads: still nothing selected, the placeholder says it is loading, got " + JSON.stringify(empty(d).h));
+    release();
+    const b = await waitFor(() => { const n = zipNode(T, zip, "b.log"); return n && typeof n.loadFraction !== "number" && n.entries.length > 0 && T.state.activeId === n.id ? n : null; });
+    assert(b && w.treeCursorId() === null, "Right loaded b.log and selected it (the stillThere check works from a null activeId)");
+    assert(!isVisible(empty(d).el, w) && isVisible(d.querySelector("#tableWrap"), w), "placeholder gone, table shown");
+    assert(T.state.nodes[a.id], "a.log stays open");
+  });
+
+  section("343e. watched folder: Alt+Down and a click on a grayed file deselect; dir rows stay cursor-only; Right loads + selects");
+  await withApp(async (w, d, T) => {
+    function fakeDir(name, entries) {
+      return { kind: "directory", name, async *values() {
+        for (const [k, v] of Object.entries(entries)) yield { kind: "file", name: k, async getFile() { const b = new w.Blob([v]); b.text = async () => v; return b; } };
+      } };
+    }
+    await w.addWatchedFolder(fakeDir("flogs", { "One.log": simLog(4), "Two.log": simLog(5), "Three.log": simLog(6) }));
+    const folder = T.state.folders[0];
+    const F = n => w.unloadedNavId("folder", folder.id, n);
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    const fRow = name => [...d.querySelectorAll("#folderWatchList .folder-watch-file")].find(r => r.querySelector(".folder-watch-file-name").textContent === name);
+    assert(empty(d).h === "No log file loaded yet" && isVisible(empty(d).el, w), "sanity: nothing open, nothing selected -> the original hint");
+    fireDblClick(fRow("One.log"), w);
+    const recOne = folder.files.find(r => r.name === "One.log");
+    await waitFor(() => recOne.nodeId && T.state.nodes[recOne.nodeId] && typeof T.state.nodes[recOne.nodeId].loadFraction !== "number" && T.state.activeId === recOne.nodeId);
+    assert(T.state.activeId === recOne.nodeId && !isVisible(empty(d).el, w), "One.log is open and shown");
+
+    key("ArrowDown", { altKey: true });
+    assert(w.treeCursorId() === F("Three.log") || w.treeCursorId() === F("Two.log"), "Alt+Down lands on an unloaded folder file, got " + w.treeCursorId());
+    const name1 = w.parseUnloadedNavId(w.treeCursorId()).key;
+    assert(T.state.activeId === null && empty(d).h === `"${name1}" is not loaded` && empty(d).p === ZIP_BODY && surfacesHidden(d, w), "deselected + placeholder for " + name1 + ", got " + empty(d).h);
+    assert(!d.querySelector(".tree-row.active"), "One.log's row is no longer active");
+
+    // a click on another grayed row moves the placeholder with it
+    const other = name1 === "Two.log" ? "Three.log" : "Two.log";
+    const row = fRow(other);
+    fireClick(row, w);
+    assert(w.treeCursorId() === F(other) && empty(d).h === `"${other}" is not loaded` && T.state.activeId === null, "a click on " + other + " moves the cursor and the placeholder");
+    assert(fRow(other) === row, "the grayed row element is reused across the render (dblclick keeps working)");
+
+    // Right loads + selects
+    key("ArrowRight", { altKey: true });
+    const rec = folder.files.find(r => r.name === other);
+    await waitFor(() => rec.nodeId && T.state.nodes[rec.nodeId] && typeof T.state.nodes[rec.nodeId].loadFraction !== "number" && T.state.activeId === rec.nodeId);
+    assert(T.state.activeId === rec.nodeId && w.treeCursorId() === null && !isVisible(empty(d).el, w), "Alt+Right loaded " + other + " and selected it");
+  });
+
+  section("343f. texts: 'No file selected' with files open, the original hint restored when nothing is open, no cursor-only text for a dir row");
+  await withApp(async (w, d, T) => {
+    const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    assert(empty(d).h === "No log file loaded yet" && /Drop one or more log files/.test(empty(d).p) && d.querySelector("#emptyState p b"),
+      "sanity: the original hint (with its <b> markup)");
+    key("ArrowDown", { altKey: true });
+    assert(empty(d).h === '"a.log" is not loaded' && empty(d).p === ZIP_BODY && isVisible(empty(d).el, w),
+      "no file open yet, cursor on an unloaded entry -> its placeholder, got " + JSON.stringify(empty(d).h));
+    const a = await openZipLog(w, d, T, zip, "a.log");
+    // files open, none selected, cursor NOT on an unloaded entry (e.g. an automatic close took the shown viewer)
+    T.state.activeId = null; w.setTreeCursor(null); w.render();
+    assert(empty(d).h === "No file selected" && empty(d).p === "Select a file on the left." && isVisible(empty(d).el, w) && surfacesHidden(d, w),
+      "files open, nothing selected -> 'No file selected', got " + JSON.stringify(empty(d).h));
+    assert(!d.querySelector("#emptyState p b"), "...the body is plain text");
+    // closing the last file: back to the original hint
+    T.state.activeId = a.id; w.render();
+    w.deleteFilterNodeWithUndo(a.id); w.render();
+    assert(T.state.rootIds.length === 0 && empty(d).h === "No log file loaded yet" && /Drop one or more log files/.test(empty(d).p) && d.querySelector("#emptyState p b"),
+      "no files at all -> the original heading AND markup are restored, got " + JSON.stringify(empty(d).h));
+    // selecting a file hides it again
+    const f = await w.addFile("plain.log", simLog(9), () => {});
+    T.state.activeId = f.id; w.render();
+    assert(!isVisible(empty(d).el, w) && isVisible(d.querySelector("#tableWrap"), w), "a selected file shows the table, no placeholder");
+  });
+
+  section("343g. nothing breaks while activeId is null: nav history, session meta, find bar, Ctrl+F / Delete / F2 / copy-paste / Ctrl+0 are no-ops");
+  await withApp(async (w, d, T) => {
+    // jsdom reports an exception thrown by an event handler as an "error" event on the window.
+    const errs = [];
+    w.addEventListener("error", ev => { errs.push(ev.message || String(ev.error)); });
+
+    const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+    const a = await openZipLog(w, d, T, zip, "a.log");
+    const c = await openZipLog(w, d, T, zip, "c.log");
+    assert(T.state.activeId === c.id, "sanity: c.log is the active file, a.log was visited before");
+    const key = (k, o) => fireKeydown(d, w, k, o);
+    const navId = w.unloadedNavId("zip", zip.id, "b.log");
+    const toCursor = () => { w.placeCursorOnUnloaded(navId); w.render(); };
+    toCursor();
+    const nodesBefore = Object.keys(T.state.nodes).length, undoBefore = T.undoStack.length;
+
+    // keys
+    const keys = [["f", { ctrlKey: true }], ["g", { ctrlKey: true }], ["F3"], ["F3", { shiftKey: true }], ["F2"], ["Delete"], ["Enter"], ["c", { ctrlKey: true }],
+      ["c", { ctrlKey: true, shiftKey: true }], ["v", { ctrlKey: true }], ["x", { ctrlKey: true }], ["z", { ctrlKey: true }], ["y", { ctrlKey: true }], ["w", { ctrlKey: true }],
+      ["d", { ctrlKey: true }], ["e", { ctrlKey: true }], ["1", { ctrlKey: true }], ["Escape"]];
+    keys.forEach(([k, o]) => { key(k, o); toCursor(); });
+    assert(errs.length === 0, "none of the keys threw, got " + JSON.stringify(errs));
+    assert(d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+F opened no filter popup (nothing to filter)");
+    assert(Object.keys(T.state.nodes).length === nodesBefore && T.undoStack.length === undoBefore, "Delete / Ctrl+W / paste created or removed nothing");
+    assert(T.state.activeId === null && w.treeCursorId() === navId, "still nothing selected, the cursor stays on b.log");
+
+    // focus-tree shortcut keeps the cursor instead of pulling in the first file
+    key("0", { ctrlKey: true });
+    assert(T.state.activeId === null && w.treeCursorId() === navId, "Ctrl+0 (focus tree) does not select the first file while the cursor rests on an unloaded entry");
+
+    // find bar: open, type, step, close
+    const fi = d.querySelector("#findInput");
+    key("g", { ctrlKey: true });
+    fi.value = "INFO"; fi.dispatchEvent(new w.Event("input", { bubbles: true }));
+    key("F3"); key("F3", { shiftKey: true });
+    fi.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    fi.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }));
+    assert(errs.length === 0, "the find bar with no visible log view threw nothing, got " + JSON.stringify(errs));
+    toCursor();
+
+    // nav history: back/forward from the null state
+    d.querySelector("#btnNavBack").click();
+    assert(errs.length === 0, "Back from the null state threw nothing, got " + JSON.stringify(errs));
+    const afterBack = T.state.activeId;
+    assert(afterBack === null || T.state.nodes[afterBack], "Back lands on nothing or on a live node, got " + afterBack);
+    toCursor();
+    d.querySelector("#btnNavForward").click();
+    assert(errs.length === 0, "Forward threw nothing, got " + JSON.stringify(errs));
+    w.navigateBack(); w.navigateForward(); w.navigateBack();
+    assert(errs.length === 0 && (T.state.activeId === null || T.state.nodes[T.state.activeId]), "history stepping stays on live nodes, got " + JSON.stringify(errs));
+
+    // session meta while nothing is selected: builds and persists, records no active node
+    toCursor();
+    const meta = w.buildCacheMeta();
+    assert(meta.settings.active === null && meta.fileOrder.length === 2, "buildCacheMeta: no active node, both files listed, got " + JSON.stringify(meta.settings.active) + " / " + meta.fileOrder.length);
+    await w.persistMetaNow();
+    assert(errs.length === 0, "persisting the meta threw nothing");
+
+    // Alt+Up/Down keeps walking from the unloaded row; a real selection then works normally
+    key("ArrowDown", { altKey: true });
+    assert(w.treeCursorId() === w.unloadedNavId("zip", zip.id, "notes.json") || T.state.inlineViewer || w.treeCursorId() !== navId,
+      "Alt+Down moves on from the unloaded row");
+    assert(errs.length === 0, "no errors anywhere above, got " + JSON.stringify(errs));
+    T.state.activeId = a.id; w.render();
+    assert(isVisible(d.querySelector("#tableWrap"), w) && errs.length === 0, "selecting a file afterwards works");
+  }, { indexedDB: new IDBFactory() });
+
+  section("343g2. nav history: leaving the placeholder (Back) does not re-capture the hidden file view over its waypoint");
+  await withApp(async (w, d, T) => {
+    const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
+    const a = await openZipLog(w, d, T, zip, "a.log");
+    const c = await openZipLog(w, d, T, zip, "c.log");
+    assert(T.state.activeId === c.id, "sanity: a.log then c.log were visited (history [a, c])");
+    fireKeydown(d, w, "ArrowDown", { altKey: true }); // c.log -> the closed notes.json entry below it, nothing selected
+    assert(T.state.activeId === null && isVisible(empty(d).el, w), "sanity: placeholder shown");
+    let captures = 0;
+    const realCapture = w.captureNavWaypoint;
+    w.captureNavWaypoint = (...args) => { captures++; return realCapture.apply(w, args); };
+    w.navigateBack();
+    w.captureNavWaypoint = realCapture;
+    assert(T.state.activeId === a.id, "Back from the placeholder lands on a.log, got " + T.state.activeId);
+    assert(captures === 0, "no waypoint was re-captured from the hidden (placeholder) view, got " + captures + " capture(s)");
+  });
+
+  section("343h. session restore: a meta written while nothing was selected restores the files (falls back to the first one)");
+  {
+    const factory = new IDBFactory();
+    await withApp(async (w, d, T) => {
+      const f1 = await w.addFile("one.log", simLog(1), () => {});
+      await w.addFile("two.log", simLog(2), () => {});
+      T.state.activeId = null; w.render();
+      await w.persistMetaNow();
+      assert(w.buildCacheMeta().settings.active === null, "sanity: the stored meta has no active node");
+      await w.persistFileNode(T.state.nodes[f1.id]);
+      await w.persistFileNode(T.state.nodes[T.state.rootIds[1]]);
+      await w.persistMetaNow();
+    }, { indexedDB: factory });
+    await withApp(async (w, d, T) => {
+      await T.bootRestore;
+      await sleep(50);
+      assert(T.state.rootIds.length === 2, "both files came back, got " + T.state.rootIds.length);
+      assert(T.state.activeId && T.state.nodes[T.state.activeId], "a file is selected after the restore (first one), got " + T.state.activeId);
+    }, { indexedDB: factory });
+  }
+}
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -39374,8 +40070,9 @@ process.exitCode = failed ? 1 : 0;
               instead of vanishing (closeFolderFile) while a plain file's
               close is untouched, reopening reusing the stored handle,
               folderScanTick picking up a file that appears later, and
-              removeWatchedFolder leaving already-open files in place
-              (now rendered back under plain #tree) with folderId cleared.
+              removeWatchedFolder closing every file opened from the folder
+              (2026-09-30: was "leaving them in place as plain #tree files",
+              superseded — see Group 342).
    Group 38  — this session (2026-08-16), person-reported follow-up to
               Group 37's feature, same day: (38a) the two separate "Open
               files…"/"Open folder…" buttons collapsed into one "Open…"
@@ -43450,6 +44147,20 @@ process.exitCode = failed ? 1 : 0;
       variant checkboxes on beta, all five variants on stable. Updated
       GROUP 271e (LICENSE/notices now asserted on the shared build) and 218's
       message.
+   Group 343 — 2026-09-30 (person-reported): the tree cursor on a closed (unloaded)
+      ZIP entry / watched-folder file deselects the open file (placeCursorOnUnloaded)
+      and the main view shows a placeholder ("<name>" is not loaded / is loading…,
+      "No file selected", the original hint); nothing breaks while activeId is null
+      (nav history, session meta/restore, find bar, shortcuts); the nav waypoint is
+      not re-captured from a hidden view. Updated Group 37 (plain click on a grayed
+      row) and Group 329 (keep-active assertions -> activeId null).
+   Group 342 — 2026-09-30 (person-reported, Windows desktop build, a folder of
+      .json files): folder-watch auto rules (show newest / keep-N / auto-open
+      newest) for every listed type via isFolderRecOpen/closeFolderRec; `failed`
+      only for a failing listing (tooltip with the error, retried every poll,
+      heals + merges); deletions, the folder's ✕ and the ZIP's ✕ close open
+      viewers, their text versions and nodes. Updated Group 37 (removeWatchedFolder
+      now closes the open files instead of detaching them).
    Group 341 — 2026-09-30 (person-requested): theme mode (System/Light/Dark) +
       Light/Dark theme slots, Catppuccin Latte/Mocha as defaults, live OS
       following via prefers-color-scheme, FOUC script resolves the same way,
