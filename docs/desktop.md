@@ -1175,9 +1175,14 @@ On a Windows runner with `build_windows_portable` on, one extra step packages th
 portable build after `npm run build`, from the same `cargo build --release` output the
 NSIS installer step already produced: the raw, unbundled `philogg-desktop.exe` (needs no
 install — WebView2 itself ships with Windows), the just-stamped/stripped `philogg.html`
-copy sitting next to it, and an empty `philogg-portable` marker file (see "Persistent
-data" above), all zipped as `PhiLogg-<sha>_portable.zip` and uploaded alongside the other
-artifacts.
+copy sitting next to it, and a `philogg-portable` marker file (see "Persistent
+data" above; it carries one line of text because only its existence matters and a
+zero-byte file is not worth trusting to the artifact zipper). The staging folder
+`PhiLogg-<sha>_portable/` is uploaded as-is under the artifact name
+`PhiLogg-<sha>_portable` — `upload-artifact` zips it itself, so the download is one
+`PhiLogg-<sha>_portable.zip` with the files at its top level (pre-zipping it here gave a
+zip inside the artifact zip). The release workflow, which uploads with `gh release
+upload` instead, zips the same folder with 7z into `PhiLogg-<sha>_portable.zip`.
 
 ## Capabilities
 
