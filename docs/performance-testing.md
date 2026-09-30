@@ -254,8 +254,8 @@ appends 1000 lines and the page times the poll that picks them up; prints
 - **Relative, not absolute.** WebKitGTK (JavaScriptCore) under Xvfb is not
   WebView2 (V8) on Windows — the person's Windows timings have been ~1.5–2×
   faster for the JS path. Use this to compare two builds or two routes;
-  confirm user-facing claims with a Windows tester build
-  (`build-tester-files.yml`).
+  confirm user-facing claims with a Windows beta build
+  (`beta-release.yml`).
 - **Finding where the time goes** takes intermediate timestamps. The
   native-parsing investigation added, temporarily, timestamps at: native
   call resolved, `flushLoadRender` done, first/last batch arrival, and

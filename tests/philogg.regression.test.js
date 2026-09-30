@@ -1444,8 +1444,8 @@ await withApp(async (w, d, T) => {
    short commit hash moved to its own `PHILOGG_BUILD` constant, shown only
    in the License section (never the toolbar) — it still defaults to the
    literal "dev" in source control and is stamped to a real short SHA only
-   by the "Build Tester Files" / "Build Release" GitHub Actions
-   (.github/workflows/build-tester-files.yml, build-release.yml), in a
+   by the release build (.github/workflows/build-release-assets.yml, used
+   by the stable and beta release workflows — see GROUP 340), in a
    build artifact never committed back. This suite runs against the
    literal source file, so PHILOGG_VERSION is whatever real version is
    currently committed and PHILOGG_BUILD always reads "dev".
@@ -25066,7 +25066,7 @@ if (groupSelected()) { // no jsdom window needed, like GROUP 146
   assert(/const PHILOGG_VERSION = "\d+\.\d+\.\d+"; \/\/ x-release-please-version/.test(src),
     "philogg.html contains the exact `const PHILOGG_VERSION = \"X.Y.Z\"; // x-release-please-version` literal, marker TRAILING on the same line — release-please's generic updater only replaces the value on the marker's own line");
   assert(/const PHILOGG_BUILD = "[^"]*";/.test(src),
-    "philogg.html contains the exact `const PHILOGG_BUILD = \"...\";` literal the two manual build workflows' sed step rewrites");
+    "philogg.html contains the exact `const PHILOGG_BUILD = \"...\";` literal scripts/release-version.js stamps");
   assert(!/const PHILOGG_VERSION = "dev";/.test(src),
     "PHILOGG_VERSION is never left at the old placeholder literal — it is always a real, committed semver");
 }
@@ -30959,13 +30959,11 @@ group(271);
     assert(conf.licenseFile === "../../LICENSE.md", "installer license page (bundle.licenseFile)");
     assert(conf.resources["../../LICENSE.md"] === "LICENSE.md" && conf.resources["../THIRD_PARTY_NOTICES.md"] === "THIRD_PARTY_NOTICES.md",
       "both files bundled next to philogg.html");
-    for (const wf of [".github/workflows/build-tester-files.yml", ".github/workflows/release-please.yml"]) {
-      const y = read(wf);
-      assert(/cp LICENSE\.md desktop\/THIRD_PARTY_NOTICES\.md "\$STAGE\/"/.test(y), wf + ": portable zip gets both files");
-      assert(/cargo about generate -m src-tauri\/Cargo\.toml about\.hbs -o THIRD_PARTY_NOTICES\.md/.test(y), wf + ": notices regenerated before bundling");
-    }
-    assert(/\n\s+LICENSE\.md\n/.test(read(".github/workflows/build-tester-files.yml")), "tester HTML artifact includes LICENSE.md");
-    assert(/gh release upload [^\n]*"\$\{ASSET_NAME\}" LICENSE\.md/.test(read(".github/workflows/release-please.yml")), "release HTML upload includes LICENSE.md");
+    // Stable and beta releases share one build (build-release-assets.yml).
+    const wf = read(".github/workflows/build-release-assets.yml");
+    assert(/cp LICENSE\.md desktop\/THIRD_PARTY_NOTICES\.md "\$STAGE\/"/.test(wf), "portable zip gets both files");
+    assert(/cargo about generate -m src-tauri\/Cargo\.toml about\.hbs -o THIRD_PARTY_NOTICES\.md/.test(wf), "notices regenerated before bundling");
+    assert(/cp LICENSE\.md dist\//.test(wf), "HTML release assets include LICENSE.md");
 
     section("271f. THIRD_PARTY_NOTICES.md matches Cargo.lock (regenerate it when dependencies change)");
     const lock = read("desktop/src-tauri/Cargo.lock");
@@ -38450,6 +38448,71 @@ await withApp(async (w, d, T) => {
   assert(w.collectExportContext().active === txt && w.collectExportContext(sel.id).active === sel && w.collectExportContext("nope") === null, "collectExportContext(nodeId) defaults to the active node");
 });
 
+/* ============================================================
+   GROUP 340 — Release versions (scripts/release-version.js): the next beta
+   version follows release-please's bump rule (feat/breaking -> MINOR below
+   1.0.0, else PATCH) plus "-beta.N" counted per target version; the stamp
+   rewrites the version in all four files release-please keeps in sync and
+   the build hash. The workflows wire it up: beta-release.yml is main-only
+   and publishes a pre-release, both release workflows share
+   build-release-assets.yml, and the old tester workflow is gone.
+   ============================================================ */
+group(340);
+if (groupSelected()) {
+  section("340. Release versions: next beta + stamp");
+  const fs = require("fs");
+  const path = require("path");
+  const root = path.join(__dirname, "..");
+  const rv = require("../scripts/release-version.js");
+
+  assert(rv.nextStableVersion("0.1.0", ["fix: a", "docs: b"]) === "0.1.1", "fix only -> patch");
+  assert(rv.nextStableVersion("0.1.0", ["fix: a", "feat(ui): b"]) === "0.2.0", "feat (with scope) -> minor");
+  assert(rv.nextStableVersion("0.1.3", ["refactor!: a"]) === "0.2.0", "breaking below 1.0.0 -> minor (bump-minor-pre-major)");
+  assert(rv.nextStableVersion("0.1.0", ["chore: a\n\nBREAKING CHANGE: b"]) === "0.2.0", "BREAKING CHANGE footer counts");
+  assert(rv.nextStableVersion("1.2.3", ["feat!: a"]) === "2.0.0", "breaking from 1.0.0 on -> major");
+  assert(rv.nextStableVersion("0.1.0", ["Merge feature: x"]) === "0.1.1", "a non-conventional subject never bumps minor");
+
+  assert(rv.nextBetaVersion("0.1.0", ["feat: a"], []) === "0.2.0-beta.1", "first beta of a version is beta.1");
+  assert(rv.nextBetaVersion("0.1.0", ["feat: a"], ["v0.2.0-beta.1", "v0.2.0-beta.2", "v0.1.1-beta.7", "v0.1.0"]) === "0.2.0-beta.3",
+    "counts only the target version's betas");
+  assert(rv.nextBetaVersion("0.1.0", ["feat: a"], ["v0.2.0-beta.1", "v0.2.0-beta.4"]) === "0.2.0-beta.5", "max + 1, a deleted beta never comes back");
+  assert(rv.nextBetaVersion("0.1.0", ["feat: a"], ["v0.2.0-beta.10", "v0.2.0-beta.9"]) === "0.2.0-beta.11", "numeric, not lexical, order");
+
+  const html = fs.readFileSync(path.join(root, "philogg.html"), "utf8");
+  const stamped = rv.STAMPERS["philogg.html"](html, "0.2.0-beta.3", "abc1234");
+  assert(stamped.includes('const PHILOGG_VERSION = "0.2.0-beta.3"; // x-release-please-version') && stamped.includes('const PHILOGG_BUILD = "abc1234";'),
+    "philogg.html: version (marker kept for release-please) and build hash");
+  assert(stamped.length === html.length + "0.2.0-beta.3".length + "abc1234".length - JSON.parse(fs.readFileSync(path.join(root, ".release-please-manifest.json"), "utf8"))["."].length - "dev".length,
+    "nothing else in philogg.html changes");
+  for (const f of ["desktop/package.json", "desktop/src-tauri/tauri.conf.json"]) {
+    const out = rv.STAMPERS[f](fs.readFileSync(path.join(root, f), "utf8"), "0.2.0-beta.3");
+    assert(JSON.parse(out).version === "0.2.0-beta.3", f + ": top-level version stamped");
+  }
+  const cargo = rv.STAMPERS["desktop/src-tauri/Cargo.toml"](fs.readFileSync(path.join(root, "desktop/src-tauri/Cargo.toml"), "utf8"), "0.2.0-beta.3");
+  assert(/^\[package\]\nname = "philogg-desktop"\nversion = "0.2.0-beta.3"$/m.test(cargo), "Cargo.toml: [package] version stamped");
+  const extra = JSON.parse(fs.readFileSync(path.join(root, "release-please-config.json"), "utf8")).packages["."]["extra-files"].map(e => e.path);
+  assert(extra.every(p => rv.STAMPERS[p]) && Object.keys(rv.STAMPERS).every(p => extra.includes(p)),
+    "the stamp covers exactly release-please's extra-files");
+  let threw = false;
+  try { rv.STAMPERS["philogg.html"]("no version here", "1.0.0", "x"); } catch (e) { threw = true; }
+  assert(threw, "a missing target fails the build instead of shipping an unstamped file");
+
+  section("340b. Workflows: beta from main only, shared build, no tester workflow");
+  const wf = f => fs.readFileSync(path.join(root, ".github/workflows", f), "utf8");
+  assert(!fs.existsSync(path.join(root, ".github/workflows/build-tester-files.yml")), "Build Tester Files is gone");
+  const beta = wf("beta-release.yml");
+  assert(/if: github\.ref != 'refs\/heads\/main'/.test(beta), "beta refuses to run outside main");
+  assert(/release-version\.js next-beta/.test(beta) && /--prerelease/.test(beta), "beta computes its version and publishes a pre-release");
+  assert(/fetch-depth: 0/.test(beta), "beta checks out full history + tags for the version");
+  for (const f of ["beta-release.yml", "release-please.yml"]) {
+    assert(/uses: \.\/\.github\/workflows\/build-release-assets\.yml/.test(wf(f)), f + " uses the shared build");
+  }
+  const build = wf("build-release-assets.yml");
+  assert((build.match(/release-version\.js stamp "\$VERSION"/g) || []).length === 2, "both build jobs stamp the version");
+  assert(/7z a -tzip "\.\.\/dist\/\$\{STAGE\}\.zip" \./.test(build) && /name: release-windows\n\s+path: dist\//.test(build),
+    "portable zip is a file inside the artifact, unzipped again by the publish job's download");
+}
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -42964,6 +43027,11 @@ process.exitCode = failed ? 1 : 0;
       budget cut line, buildTicketSnippetHtml (rich), new export prefs. Updated
       groups 281/283 (old header / findings list / footer / excerpt asserts
       dropped; "Bookmarks & notes" list and footer no longer exist in the snippet).
+   Group 340 — 2026-09-30 (person-requested): beta releases — next-beta version
+      rule and version stamp (scripts/release-version.js), beta-release.yml /
+      shared build-release-assets.yml wiring, tester workflow removed. Updated
+      GROUP 271e (LICENSE/notices now asserted on the shared build) and 218's
+      message.
    Group 336 — 2026-09-29 (person-requested): folder-watch header static status
       dot + one-shot new-file ping + i-cog settings icon; find-bar hit badge
       fits the 16px row content (no taller rows). Updated groups 37, 201c and the

@@ -1,0 +1,147 @@
+name: Build Release Assets
+
+# Reusable: the build half shared by release-please.yml (stable releases)
+# and beta-release.yml (beta pre-releases). Builds the HTML, Windows
+# installer and Windows portable variants of one commit, with `version`
+# stamped into the checked-out copy (never committed back), and hands them
+# to the caller as the workflow artifacts `release-html` and
+# `release-windows`. Publishing is the caller's job, so a failed build never
+# leaves a half-filled release behind. See PROJECT.md -> "Release builds".
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: Commit, tag or branch to build
+        type: string
+        required: true
+      version:
+        description: Version to stamp, e.g. 0.2.0 or 0.2.0-beta.3
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  build_html:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Stamp version, strip comments
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          node scripts/release-version.js stamp "$VERSION" "$(git rev-parse --short HEAD)"
+          node scripts/strip-comments.js philogg.html
+          grep -q "const PHILOGG_VERSION = \"${VERSION}\";" philogg.html
+          mkdir dist
+          cp philogg.html "dist/philogg-${VERSION}.html"
+          cp LICENSE.md dist/
+
+      # LICENSE.md travels with every download (the page also shows the full
+      # text under Settings -> License).
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-html
+          path: dist/
+
+  build_windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: npm install
+
+      # THIRD_PARTY_NOTICES.md (license texts of every bundled Rust crate)
+      # is committed for local builds, but regenerated here so a release
+      # never ships a stale one. See desktop/README.md "Third-party notices".
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-about
+
+      - name: Regenerate third-party notices
+        working-directory: desktop
+        run: cargo about generate -m src-tauri/Cargo.toml about.hbs -o THIRD_PARTY_NOTICES.md
+
+      # Same stamp + comment strip as build_html, applied to the checked-out
+      # copy the Tauri bundler embeds as a resource a moment later. The
+      # version also goes into package.json/tauri.conf.json/Cargo.toml, so
+      # the installer and the exe carry it too.
+      - name: Stamp version, strip comments
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          node scripts/release-version.js stamp "$VERSION" "$(git rev-parse --short HEAD)"
+          node scripts/strip-comments.js philogg.html
+          grep -q "const PHILOGG_VERSION = \"${VERSION}\";" philogg.html
+
+      - name: Build installer
+        working-directory: desktop
+        run: npm run build
+
+      # Guard against shipping a console-subsystem (debug-style) exe: the
+      # release binary must be PE subsystem 2 (Windows GUI), which main.rs's
+      # `windows_subsystem = "windows"` gives every non-debug build.
+      - name: Verify release exe is a GUI (no-console) build
+        shell: bash
+        run: |
+          EXE=desktop/src-tauri/target/release/philogg-desktop.exe
+          PE_OFF=$(od -An -tu4 -j 60 -N4 "$EXE" | tr -d ' ')
+          SUBSYSTEM=$(od -An -tu2 -j $((PE_OFF + 92)) -N2 "$EXE" | tr -d ' ')
+          echo "PE subsystem: $SUBSYSTEM"
+          [ "$SUBSYSTEM" = "2" ] || { echo "::error::$EXE is not a GUI-subsystem build (subsystem $SUBSYSTEM)"; exit 1; }
+
+      # `npm run build` already produced the raw, unbundled
+      # `cargo build --release` binary alongside the NSIS installer — that
+      # binary needs nothing installed to run (WebView2 ships with Windows
+      # itself), so it's already "portable" once it carries its own copy of
+      # philogg.html and a marker file telling settings.rs/windows.rs to keep
+      # settings.json and the webview's storage in a data/ folder beside the
+      # exe instead of the OS's per-user directories. See
+      # desktop/README.md "Portable build". The zip is built here and ends up
+      # as a file inside the `release-windows` artifact, which the caller
+      # downloads (unzipping the artifact, not this zip) before publishing.
+      - name: Package installer and portable build
+        shell: bash
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          mkdir dist
+          STAGE="PhiLogg-${VERSION}_portable"
+          mkdir -p "$STAGE"
+          cp desktop/src-tauri/target/release/philogg-desktop.exe "$STAGE/PhiLogg.exe"
+          cp philogg.html "$STAGE/philogg.html"
+          cp desktop/chat.html "$STAGE/chat.html"
+          cp LICENSE.md desktop/THIRD_PARTY_NOTICES.md "$STAGE/"
+          echo "PhiLogg portable mode marker" > "$STAGE/philogg-portable"
+          (cd "$STAGE" && 7z a -tzip "../dist/${STAGE}.zip" .)
+          INSTALLERS=(desktop/src-tauri/target/release/bundle/nsis/*.exe)
+          [ ${#INSTALLERS[@]} -eq 1 ] || { echo "::error::expected one NSIS installer, found ${#INSTALLERS[@]}"; exit 1; }
+          cp "${INSTALLERS[0]}" "dist/PhiLogg-${VERSION}.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-windows
+          path: dist/
