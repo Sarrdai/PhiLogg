@@ -2,6 +2,11 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: calm folder-watch status dot + cog icon; fix: find-bar hit badges made rows taller (2026-09-29, person-requested)**
+  - The folder-watch header no longer runs an endless "scanning" ping: a live folder shows a neutral icon with a static 6px accent dot (error-colored when unreachable, none for lock/ZIP), and a single one-shot ping plays only when a rescan finds a NEW file (`folder._pingAt`, transient; `prefers-reduced-motion` skips the ring). Settings button now uses a new `i-cog` symbol (the app Settings glyph); `i-gear` stays for the library menu.
+  - Fix: `.tree-hit-badge` was 19px tall inside the 16px row content, growing badge rows from 28px to 31px and shifting the tree; it is now 14px line + 2px border = 16px.
+  - **Tests**: new **Group 336**; groups 37, the unreachable-folder group and 201c updated.
+
 - **fix: tree navigation reaches the rows under a merge's "Sources" node (2026-09-29, person-reported)**
   - Alt+Arrow (and tree-focus arrows) could not step into an expanded "Sources" node: `flattenTreeIds` walked only `node.children`, which stays empty for Sources, so its source rows (hidden create-first sources and the nested copies of a manual merge's sources) were never nav stops. They are now listed right after Sources, with their own subtrees. A source listed twice keeps its occurrence (`lastTreeNav`), ← from a nested source goes back to Sources.
   - Also fixed: with "Show Sources" off, the (not rendered) Sources node was still an invisible nav stop.
