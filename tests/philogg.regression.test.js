@@ -875,6 +875,7 @@ await withApp(async (w, d, T) => {
   w.render();
 
   // Ctrl+E edit-in-place
+  T.state.focusRegion = "tree"; // tree shortcuts apply only with tree focus
   fireKeydown(d, w, "e", { ctrlKey: true });
   assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+E opens the filter popup in edit mode");
   assert(d.querySelector("#filterInput").value === "message 1", "Ctrl+E pre-fills the existing value");
@@ -3924,6 +3925,7 @@ await withApp(async (w, d, T) => {
   // (Edit's shortcut moved from F2 to Ctrl+E this session, FEATURE_BACKLOG.md
   // #12, once F2 became Rename — see GROUP 96.)
   T.state.activeId = legacyAfter.id;
+  T.state.focusRegion = "tree"; // tree shortcuts apply only with tree focus
   w.render();
   fireKeydown(d, w, "e", { ctrlKey: true });
   assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "Ctrl+E on a legacy \"after\" node opens the time-range dialog (not the text popup)");
@@ -4421,12 +4423,8 @@ await withApp(async (w, d, T) => {
   const fileRow = [...d.querySelectorAll(".tree-row")].find(r => r.querySelector(".tree-label").textContent === "a.log");
   fireClick(fileRow, w);
   assert(T.state.activeId === f.id, "clicking the file's tree row makes it active");
-  assert(T.state.focusRegion === "entries", "clicking a tree row leaves focusRegion as \"entries\" (person-requested: arrow keys keep navigating the log, same as Alt+Arrow tree nav) rather than switching to \"tree\"");
+  assert(T.state.focusRegion === "tree", "clicking a tree row gives the tree keyboard focus (focus follows the last pointer interaction; arrow keys then move the tree selection)");
 
-  // Force tree focus (e.g. Ctrl+0) to exercise moveTreeSelection's own
-  // arrow-key traversal below — independent of the click-focus behavior
-  // just asserted above.
-  T.state.focusRegion = "tree";
   fireKeydown(d, w, "ArrowDown");
   assert(T.state.activeId === filterA.id, "ArrowDown from the file moves to its first child (filterA)");
   fireKeydown(d, w, "ArrowDown");
@@ -5613,6 +5611,7 @@ await withApp(async (w, d, T) => {
   // #12, once F2 became Rename — see GROUP 96.)
   const textNode = w.createFilterNode(fa.id, "text", "message 1");
   T.state.activeId = textNode.id;
+  T.state.focusRegion = "tree"; // tree shortcuts apply only with tree focus
   w.render();
   const stackLenBeforeEdit = T.undoStack.length;
   fireKeydown(d, w, "e", { ctrlKey: true });
@@ -5634,6 +5633,7 @@ await withApp(async (w, d, T) => {
   // ---------- Value/pattern edit: time-range dialog (legacy after -> timerange migration) ----------
   const rangeNode = w.createFilterNode(fa.id, "after", fa.entries[3].ts);
   T.state.activeId = rangeNode.id;
+  T.state.focusRegion = "tree"; // tree shortcuts apply only with tree focus
   w.render();
   const stackLenBeforeRange = T.undoStack.length;
   fireKeydown(d, w, "e", { ctrlKey: true });
@@ -7050,6 +7050,8 @@ await withApp(async (w, d, T) => {
    multi-selected) sorted chronologically, taking priority over the tree's
    own filter-node clipboard (state.clipboard) whenever focusRegion is
    "entries" (i.e. the log view, not the tree, was last interacted with).
+   Since GROUP 345 the two are strictly scoped: tree focus never copies log
+   rows and entries focus never touches the tree clipboard.
    ============================================================ */
 group(57);
 await withApp(async (w, d, T) => {
@@ -10878,6 +10880,7 @@ await withApp(async (w, d, T) => {
   assert(rowFor(node.id).querySelector(".tree-label").textContent === node.name, "tree row shows the raw auto-derived name before any rename");
 
   /* ---------- F2 starts an inline rename: label swaps for a text input ---------- */
+  T.state.focusRegion = "tree"; // F2 renames the tree node only with tree focus
   fireKeydown(d, w, "F2");
   let row = rowFor(node.id);
   let input = row.querySelector(".tree-rename-input");
@@ -11434,8 +11437,8 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#tableRows .log-row.temp-anchor-row") === null, "Off mode never draws the anchor row");
   assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id, "...but the anchor position is still remembered");
 
-  // A tree click leaves focusRegion as "entries" (Group 108b below), so
-  // plain row Up/Down already works here without any extra step.
+  // A tree click gives the tree focus (GROUP 345) — jump back to the log first.
+  T.state.focusRegion = "entries";
   fireKeydown(d, w, "ArrowDown"); // plain, no ctrl — ordinary row nav
   const keep2Id = d.querySelectorAll("#tableRows .log-row")[1].dataset.entryId;
   assert(T.state.selectedId === keep2Id, "Down from an off-mode (undrawn) anchor moves to the next REAL row after its position");
@@ -12152,7 +12155,7 @@ await withApp(async (w, d, T) => {
    ============================================================ */
 group(110);
 await withApp(async (w, d, T) => {
-  section("110a. A tree-row click leaves focusRegion as \"entries\" — plain arrow keys keep navigating the log, anchor included");
+  section("110a. A tree-row click gives the tree focus (GROUP 345); Ctrl+1 jumps back to the log and plain arrow keys continue from the temp anchor");
 
   const f = await w.addFile("app.log", makeLog(0, 5, { suffix: i => (i % 2 === 0 ? "keep" : "skip") }), () => {});
   const keepFilter = w.createFilterNode(f.id, "text", "keep"); // matches entries 0,2,4
@@ -12172,19 +12175,21 @@ await withApp(async (w, d, T) => {
 
   fireClick(d.querySelector('.tree-row[data-node-id="' + keepFilter.id + '"]'), w);
   assert(T.state.activeId === keepFilter.id, "sanity: the click switched the active filter");
-  assert(T.state.focusRegion === "entries", "a plain tree-row click leaves focusRegion as \"entries\", not \"tree\"");
+  assert(T.state.focusRegion === "tree", "a plain tree-row click gives the tree focus");
   assert(T.state.tempAnchor && T.state.tempAnchor.entryId === skip1Id && T.state.tempAnchor.nodeId === keepFilter.id,
     "the temp anchor is set exactly as it already was for Alt+Arrow — the click doesn't skip that mechanic");
 
-  // Plain ArrowDown must navigate the LOG (from the anchor's would-be
-  // position), not the filter tree, since focusRegion never left "entries".
+  // Ctrl+1 jumps to the log (Filtered view); plain ArrowDown then navigates
+  // the LOG from the anchor's would-be position, not the filter tree.
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.state.focusRegion === "entries", "Ctrl+1 moves focus to the log views");
   fireKeydown(d, w, "ArrowDown");
   // Fade is the default mode now, so the anchor row itself is also drawn in
   // #tableRows (between "keep 0" and "keep 2") — skip it to get the real rows.
   const realRows = [...d.querySelectorAll("#tableRows .log-row")].filter(r => !r.classList.contains("temp-anchor-row"));
   const keep2Id = realRows[1].dataset.entryId; // realRows: [keep0, keep2, keep4]
   assert(T.state.selectedId === keep2Id,
-    "plain ArrowDown right after a tree-row click moves the LOG selection, continuing from the temp anchor, not the filter tree");
+    "plain ArrowDown after Ctrl+1 moves the LOG selection, continuing from the temp anchor, not the filter tree");
   assert(T.state.activeId === keepFilter.id, "...and the active filter itself is untouched by that arrow key");
 });
 
@@ -17356,6 +17361,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.entriesView === "filter", "...and pointed the arrow keys at it too");
 
   const startIdx = T.currentViewEntries.findIndex(e => e.id === T.state.selectedId);
+  T.state.focusRegion = "entries"; // the tree click gave the tree focus (GROUP 345); back to the log rows
   fireKeydown(d, w, "ArrowUp");
   const movedIdx = T.currentViewEntries.findIndex(e => e.id === T.state.selectedId);
   assert(movedIdx === startIdx - 1, "ArrowUp moves through the Filtered pane's own list, got " + movedIdx + " from " + startIdx);
@@ -17981,6 +17987,7 @@ await withApp(async (w, d, T) => {
   // F2 with no column selected falls through to the tree-node rename (the
   // existing FEATURE_BACKLOG.md #12 behavior) — not the column path.
   T.state.tableSelection = null;
+  T.state.focusRegion = "tree";
   fireKeydown(d, w, "F2");
   assert(T.renamingNodeId === node.id, "F2 with no column selected still starts the ordinary tree-node rename");
   fireKeydown(d.querySelector(".tree-rename-input"), w, "Escape");
@@ -25594,7 +25601,7 @@ await withApp(async (w, d, T) => {
   section("220a. describeSidebarToolbarActions: nothing selected -> the six fixed buttons, all disabled");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.multiSelect = new Set();
-  T.state.activeId = f.id;
+  T.state.activeId = null; // the active node is always selected, so "nothing selected" means no active node either
   let { actions, note } = w.describeSidebarToolbarActions();
   assert(actions.map(a => a.action).join(",") === SB_FIXED, "fixed set/order, got " + actions.map(a => a.action).join(","));
   assert(actions.every(a => a.disabled === true), "nothing selected: every button disabled (not hidden), got " + sbState(actions));
@@ -25773,7 +25780,7 @@ await withApp(async (w, d, T) => {
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   const btns = () => [...d.querySelectorAll('#sidebarToolbar > [data-row-action]')];
-  T.state.multiSelect = new Set(); w.render();
+  T.state.multiSelect = new Set(); T.state.activeId = null; w.render();
   assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED, "six fixed buttons rendered, got " + btns().map(b => b.dataset.rowAction).join(","));
   assert(btns().every(b => b.disabled), "all disabled with nothing selected");
   assert(btns().every(b => b.querySelector("svg.icon use")), "every button draws a sprite icon");
@@ -25938,7 +25945,7 @@ await withApp(async (w, d, T) => {
 
   // The toolbar's multi mode (GROUP 319) is the one place offering
   // AND/OR/Link for the same 2-filter selection.
-  T.state.multiSelect = new Set([t1.id, t2.id]);
+  T.state.multiSelect = new Set([t1.id, t2.id]); T.state.activeId = t1.id;
   w.render();
   const barNames = [...d.querySelectorAll("#sidebarToolbar [data-multi-action]")].map(b => b.dataset.multiAction);
   assert(barNames.includes("and") && barNames.includes("or") && barNames.includes("link"),
@@ -29718,9 +29725,10 @@ await withApp(async (w, d, T) => {
   assert(w.getComputedStyle(at(A1, 23).find(g => g.classList.contains("h"))).height === "0px", "elbows are still zero-height (just their border)");
   T.state.multiSelect = new Set([A1.id, A2.id]);
   w.render();
-  assert(rowOf(A1).classList.contains("multi-selected") && w.getComputedStyle(rowOf(A1)).boxShadow === "none",
+  assert(rowOf(A1).classList.contains("multi-selected") && ["", "none"].includes(w.getComputedStyle(rowOf(A1)).boxShadow),
     "the active row carries no multi-select outline, got " + w.getComputedStyle(rowOf(A1)).boxShadow);
-  assert(w.getComputedStyle(rowOf(A2)).boxShadow !== "none", "other multi-selected rows keep their outline");
+  assert(["", "none"].includes(w.getComputedStyle(rowOf(A2)).boxShadow) && w.getComputedStyle(rowOf(A2)).backgroundColor === w.getComputedStyle(rowOf(A1)).backgroundColor,
+    "other selected rows look like the active one: no outline, same background (GROUP 345)");
   T.state.multiSelect = new Set([A1.id]);
 
   // Follow-up 3 (person-requested): the ancestors' names (file + parent
@@ -35785,6 +35793,8 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d, T) => {
   section("319d. sidebar toolbar multi mode: one content per selection shape");
   const bar = d.querySelector("#sidebarToolbar");
+  // The active node is always part of the tree selection, so set both together.
+  const selectTree = ids => { T.state.multiSelect = new Set(ids); T.state.activeId = ids[0] || null; w.render(); };
   const acts = () => [...bar.querySelectorAll("[data-multi-action]")].map(b => b.dataset.multiAction).join(",");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const fb = await w.addFile("b.log", makeLog(30, 10), () => {});
@@ -35792,13 +35802,13 @@ await withApp(async (w, d, T) => {
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   const t3 = w.createFilterNode(f.id, "text", "message 3");
   const tb = w.createFilterNode(fb.id, "text", "message 3");
-  T.state.multiSelect = new Set(); w.render();
+  selectTree([]);
   assert(!bar.classList.contains("multi") && acts() === "" && bar.querySelectorAll("[data-row-action]").length === 6, "no selection: normal row, no multi mode");
-  T.state.multiSelect = new Set([t1.id]); w.render();
+  selectTree([t1.id]);
   assert(!bar.classList.contains("multi") && acts() === "", "single node: normal row");
   assert(d.querySelector("#selectionBar") === null && !d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "the floating #selectionBar is gone");
 
-  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  selectTree([t1.id, t2.id]);
   assert(bar.classList.contains("multi"), "2 filters: multi class (accent-soft background)");
   assert(bar.querySelectorAll("[data-row-action]").length === 0, "2 filters: single-node buttons not rendered");
   assert(bar.querySelector(".stb-cnt").textContent === "2 filters", "count label '2 filters'");
@@ -35806,25 +35816,25 @@ await withApp(async (w, d, T) => {
   assert(bar.querySelector('[data-multi-action="link"]').textContent.trim() === "Link…", "Link… label");
   assert(bar.querySelector('[data-multi-action="and"] svg.icon use') && bar.querySelector('[data-multi-action="close"]').getAttribute("aria-label") === "Clear selection", "text+icon buttons, close has an aria-label");
   assert(/--accent-soft/.test(d.documentElement.innerHTML.match(/#sidebarToolbar\.multi\{[^}]*\}/)[0]), "#sidebarToolbar.multi paints --accent-soft");
-  T.state.multiSelect = new Set([t1.id, t2.id, t3.id]); w.render();
+  selectTree([t1.id, t2.id, t3.id]);
   assert(bar.querySelector(".stb-cnt").textContent === "3 filters" && acts() === "and,or,link,mute,close", "3 filters: same actions, got " + acts());
 
   // AND/OR hidden when a node fails canBeCombined (link node)
   const link = w.createLinkNode(t1.id, t2.id, "after", 1);
-  T.state.multiSelect = new Set([link.id, t3.id]); w.render();
+  selectTree([link.id, t3.id]);
   assert(acts() === "link,mute,close", "AND/OR hidden when a link node is selected, got " + acts());
 
-  T.state.multiSelect = new Set([f.id, fb.id]); w.render();
+  selectTree([f.id, fb.id]);
   assert(bar.querySelector(".stb-cnt").textContent === "2 files" && acts() === "merge,close", "2 files: Merge only, got " + acts());
   assert(bar.querySelector('[data-multi-action="merge"]').textContent.trim() === "Merge 2 files", "Merge label");
 
   const msg = () => bar.querySelector(".stb-msg");
-  T.state.multiSelect = new Set([t1.id, tb.id]); w.render();
+  selectTree([t1.id, tb.id]);
   assert(acts() === "mute,close" && bar.querySelector(".stb-cnt").title.includes("Merge the files first") && bar.classList.contains("multi"), "different roots: Mute + close, combine note as the count tooltip, got " + acts());
-  T.state.multiSelect = new Set([f.id, t1.id]); w.render();
+  selectTree([f.id, t1.id]);
   assert(acts() === "close" && msg().textContent === "Select only files or only filters" && msg().title.includes("not both"), "mixed files+filters: short message + tooltip");
   assert(bar.querySelector(".stb-cnt") === null, "mixed: no count label");
-  T.state.multiSelect = new Set(); w.render();
+  selectTree([]);
   assert(!bar.classList.contains("multi") && bar.querySelectorAll("[data-row-action]").length === 6 && !msg(), "back to the normal row, message gone");
 });
 
@@ -35850,6 +35860,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.multiSelect.size === 0 && !bar.classList.contains("multi"), "close button clears the selection");
 
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  T.state.focusRegion = "tree"; // Esc clears the tree selection only with tree focus
   const esc = () => d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
   const inp = d.createElement("input"); d.body.appendChild(inp); inp.focus();
   inp.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
@@ -35945,8 +35956,8 @@ await withApp(async (w, d, T) => {
   const names = () => [...d.querySelectorAll("#libraryMenuList .lib-it .n")].map(n => n.textContent);
   const open = () => { if (!menu.classList.contains("hidden")) fireClick(btn, w); fireClick(btn, w); };
 
-  // Target: single selected node wins over the active node.
-  T.state.activeId = f.id; T.state.multiSelect = new Set([g.id]); w.render();
+  // Target: the single selected node (which is always the active one now).
+  T.state.activeId = g.id; T.state.multiSelect = new Set([g.id]); w.render();
   open();
   assert(w.resolveLibraryTarget().id === g.id && tgt().textContent === "Applies to b.log", "the single selected node is the target, got " + tgt().textContent);
   // 2+ selected -> falls back to the active node.
@@ -35977,7 +35988,7 @@ await withApp(async (w, d, T) => {
   search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
   search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowUp", bubbles: true, cancelable: true }));
   assert(kb() === 1, "ArrowDown/ArrowUp move the highlight, got " + kb());
-  T.state.multiSelect = new Set([g.id]); T.state.activeId = f.id; w.render(); open();
+  T.state.multiSelect = new Set([g.id]); T.state.activeId = g.id; w.render(); open();
   const before = g.children.length;
   search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true, cancelable: true }));
   search.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
@@ -36286,6 +36297,7 @@ await withApp(async (w, d, T) => {
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   const act = w.eval("SHORTCUT_ACTIONS.find(a => a.id === 'muteFilter')");
   assert(act && act.default.key === "m" && !act.default.ctrl && act.label === "Mute/unmute a filter", "SHORTCUT_ACTIONS has muteFilter (default M)");
+  T.state.focusRegion = "tree"; // the mute shortcut is tree-only (GROUP 345)
   T.state.activeId = t1.id; T.state.multiSelect = new Set([t1.id]); w.render();
   fireKeydown(d, w, "m");
   assert(t1.muted === true && !t2.muted, "M mutes the active filter");
@@ -39936,6 +39948,219 @@ if (groupSelected()) {
     assert([...d.querySelectorAll("#tree [data-node-id]")].every(e => e.closest(".folder-watch")), "after Reconnect nothing is outside the folder either");
   }, { indexedDB: factory });
 }
+
+/* ============================================================
+   GROUP 345 — One tree selection model + keyboard shortcuts scoped to the
+   focused area (tree vs. log views)
+   Origin: 2026-09-30, person-reported: Ctrl+C after clicking a filter copied
+   the log line, and Ctrl+click on a second filter after creating one did not
+   include the active filter. (A) The active node is always part of the tree
+   selection (treeSelectionIds), selected rows look exactly like the active
+   row (no frame). (B) state.focusRegion follows the last pointer interaction
+   (tree row click / mousedown in #sidebar -> "tree", #content -> "entries");
+   tree shortcuts (Ctrl+C/X/V of filters, Delete, F2, Ctrl+E, M, Esc on the
+   tree selection) and log shortcuts (row copy, B, Alt+N, Enter, Esc on the
+   log selection) only act in their own area. Alt+Arrow and Ctrl+0..5 stay
+   global.
+   ============================================================ */
+group(345);
+await withApp(async (w, d, T) => {
+  section("345a. Unified tree selection: the active node is part of it, Ctrl+click toggles, one visual style");
+  const bar = d.querySelector("#sidebarToolbar");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1"); // createFilterNode -> active, multiSelect empty
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  T.state.activeId = t1.id; T.state.multiSelect = new Set();
+  w.render();
+  const rowOf = id => d.querySelector('.tree-row[data-node-id="' + id + '"]');
+  const ctrlClick = id => rowOf(id).dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+  const acts = () => [...bar.querySelectorAll("[data-multi-action]")].map(b => b.dataset.multiAction).join(",");
+  assert(w.treeSelectionIds().size === 1 && w.treeSelectionIds().has(t1.id), "treeSelectionIds is just the active node when multiSelect is empty");
+
+  ctrlClick(t2.id);
+  assert(w.treeSelectionIds().size === 2 && w.treeSelectionIds().has(t1.id) && w.treeSelectionIds().has(t2.id),
+    "Ctrl+click on another filter keeps the ACTIVE filter in the selection: both selected");
+  assert(T.state.activeId === t2.id, "the Ctrl+clicked filter becomes active");
+  assert(rowOf(t1.id).classList.contains("multi-selected") && rowOf(t2.id).classList.contains("active"), "both rows carry the selected look");
+  assert(bar.classList.contains("multi") && acts().includes("and") && acts().includes("or"), "the toolbar offers AND/OR for the 2 selected filters, got " + acts());
+
+  // One visual style: a selected row looks like the active row, without any frame.
+  const cs1 = w.getComputedStyle(rowOf(t1.id)), cs2 = w.getComputedStyle(rowOf(t2.id));
+  assert(["", "none"].includes(cs1.boxShadow) && ["", "none"].includes(cs2.boxShadow), "no box-shadow frame on selected rows");
+  assert(cs1.backgroundColor === cs2.backgroundColor && cs1.borderLeftColor === cs2.borderLeftColor && cs1.color === cs2.color,
+    "a selected row has the same background / left border / text colour as the active row");
+  assert(!/box-shadow:inset 0 0 0 1\.5px var\(--accent\);\s*\}\s*\/\* The active row is marked/.test(d.documentElement.innerHTML), "the old multi-select frame rule is gone");
+
+  // Ctrl+click on the active node deselects it; active moves to the most recently added remaining one.
+  ctrlClick(t2.id);
+  assert(T.state.activeId === t1.id && w.treeSelectionIds().size === 1 && !w.treeSelectionIds().has(t2.id),
+    "Ctrl+click on the active node removes it; the remaining node becomes active");
+  // Ctrl+click on the only selected node is a no-op.
+  ctrlClick(t1.id);
+  assert(T.state.activeId === t1.id && w.treeSelectionIds().size === 1, "Ctrl+click on the only selected node is a no-op");
+  // Ctrl+click on a selected, NON-active node removes just it.
+  ctrlClick(t2.id); // select t2 (active), t1 stays
+  const t3 = w.createFilterNode(f.id, "text", "message 3");
+  T.state.activeId = t2.id; T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  ctrlClick(t1.id);
+  assert(T.state.activeId === t2.id && w.treeSelectionIds().size === 1 && !w.treeSelectionIds().has(t1.id), "Ctrl+click on a selected non-active node drops only that node");
+  // A plain click selects just the clicked node.
+  T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
+  fireClick(rowOf(t3.id), w);
+  assert(w.treeSelectionIds().size === 1 && w.treeSelectionIds().has(t3.id), "a plain click leaves just the clicked node selected");
+  // Esc with tree focus reduces the selection to the active node.
+  T.state.multiSelect = new Set([t1.id, t3.id]); T.state.focusRegion = "tree"; w.render();
+  fireKeydown(d, w, "Escape");
+  assert(w.treeSelectionIds().size === 1 && w.treeSelectionIds().has(t3.id) && T.state.activeId === t3.id, "Esc (tree focus) reduces the selection to the active node");
+});
+
+await withApp(async (w, d, T) => {
+  section("345b. Focus: tree shortcuts only with tree focus, log shortcuts only with entries focus");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  w.render();
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  const rowOf = id => d.querySelector('.tree-row[data-node-id="' + id + '"]');
+
+  // Select a log row first, then click a filter: the copy must act on the filter.
+  w.selectEntry(f.entries[1].id);
+  assert(T.state.focusRegion === "entries" && T.state.selectedId, "sanity: a log row is selected, entries focus");
+  fireClick(rowOf(t1.id), w);
+  assert(T.state.focusRegion === "tree" && T.state.activeId === t1.id, "clicking a filter row gives the tree focus");
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(T.state.clipboard && T.state.clipboard.id === t1.id && T.state.clipboard.mode === "copy", "Ctrl+C after a filter click copies the filter to the tree clipboard");
+  assert(copied === null, "...and does NOT copy the log line");
+  T.state.activeId = t2.id; w.render();
+  fireKeydown(d, w, "v", { ctrlKey: true });
+  assert(Object.values(T.state.nodes).filter(n => n.type === "filter" && n.value === "message 1").length === 2, "Ctrl+V with tree focus pastes the filter");
+  fireKeydown(d, w, "x", { ctrlKey: true });
+  assert(T.state.clipboard && T.state.clipboard.mode === "cut", "Ctrl+X with tree focus cuts");
+  fireKeydown(d, w, "Escape");
+  assert(T.state.clipboard === null, "Esc with tree focus clears the tree clipboard");
+
+  // Entries focus: row copy works, the tree clipboard is untouched.
+  fireClick(rowOf(f.id), w); w.applyFhView("filter");
+  fireClick(d.querySelector("#tableRows .log-row"), w);
+  assert(T.state.focusRegion === "entries", "clicking a log row gives the log focus");
+  copied = null;
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(copied !== null, "Ctrl+C with entries focus copies the log row");
+  assert(T.state.clipboard === null, "...and leaves the tree clipboard alone");
+  T.state.clipboard = null;
+  // Nothing selected in the log: Ctrl+C does nothing (no fallback to the tree clipboard).
+  T.state.selectedId = null; T.state.logMultiSelect = new Set(); copied = null; w.render();
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(T.state.clipboard === null && copied === null, "Ctrl+C with entries focus and nothing selected does nothing");
+
+  // Tree-only shortcuts do nothing with entries focus.
+  T.state.activeId = t1.id; T.state.focusRegion = "entries"; w.render();
+  const nBefore = Object.keys(T.state.nodes).length;
+  fireKeydown(d, w, "Delete");
+  assert(T.state.nodes[t1.id], "Delete with entries focus does not delete the active filter");
+  fireKeydown(d, w, "F2");
+  assert(T.renamingNodeId !== t1.id, "F2 with entries focus does not rename the tree node");
+  fireKeydown(d, w, "e", { ctrlKey: true });
+  assert(d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+E with entries focus does not open the filter editor");
+  fireKeydown(d, w, "m");
+  assert(!t1.muted, "M with entries focus does not mute the active filter");
+  fireKeydown(d, w, "x", { ctrlKey: true });
+  fireKeydown(d, w, "v", { ctrlKey: true });
+  assert(T.state.clipboard === null && Object.keys(T.state.nodes).length === nBefore, "Ctrl+X / Ctrl+V with entries focus do nothing to the tree");
+  // ...and they work with tree focus.
+  T.state.focusRegion = "tree";
+  fireKeydown(d, w, "m");
+  assert(t1.muted === true, "M with tree focus mutes the active filter");
+  fireKeydown(d, w, "m");
+  fireKeydown(d, w, "F2");
+  assert(T.renamingNodeId === t1.id, "F2 with tree focus renames");
+  w.render();
+  d.activeElement && d.activeElement.blur && d.activeElement.blur();
+  T.renamingNodeId = null;
+  fireKeydown(d, w, "Delete");
+  assert(!T.state.nodes[t1.id], "Delete with tree focus deletes the active filter");
+
+  // Log-only shortcuts do nothing with tree focus.
+  w.selectEntry(f.entries[3].id);
+  const selId = T.state.selectedId;
+  T.state.focusRegion = "tree";
+  fireKeydown(d, w, "b");
+  assert(!T.state.bookmarks.has(selId), "B with tree focus does not bookmark the selected row");
+  fireKeydown(d, w, "n", { altKey: true });
+  assert(d.querySelector("#noteDialog") === null || d.querySelector("#noteDialog").classList.contains("hidden"), "Alt+N with tree focus does not open the note editor");
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "b");
+  assert(T.state.bookmarks.has(selId), "B with entries focus bookmarks the selected row");
+
+  // Esc with entries focus clears the log multi-selection, not the tree.
+  T.state.logMultiSelect = new Set([selId]); T.state.clipboard = { id: t2.id, mode: "copy" };
+  fireKeydown(d, w, "Escape");
+  assert(T.state.logMultiSelect.size === 0 && T.state.clipboard !== null, "Esc with entries focus clears the log selection and leaves the tree clipboard");
+});
+
+await withApp(async (w, d, T) => {
+  section("345c. Focus follows the mouse; Alt+Arrow / Ctrl+0 / Ctrl+1 stay global");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const t1 = w.createFilterNode(f.id, "text", "message 1");
+  const t2 = w.createFilterNode(f.id, "text", "message 2");
+  T.state.activeId = t1.id; w.render();
+  const md = el => el.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+  T.state.focusRegion = "entries";
+  md(d.querySelector("#sidebar .tree-row"));
+  assert(T.state.focusRegion === "tree", "mousedown inside #sidebar gives the tree focus");
+  md(d.querySelector("#tableRows .log-row") || d.querySelector("#content"));
+  assert(T.state.focusRegion === "entries", "mousedown inside #content gives the log views focus");
+  md(d.body);
+  assert(T.state.focusRegion === "entries", "mousedown elsewhere leaves the focus alone");
+
+  // Alt+Arrow moves the tree from either region and never changes focusRegion.
+  for (const region of ["entries", "tree"]) {
+    T.state.focusRegion = region; T.state.activeId = t1.id; w.render();
+    fireKeydown(d, w, "ArrowDown", { altKey: true });
+    assert(T.state.activeId === t2.id && T.state.focusRegion === region, "Alt+ArrowDown moves the tree from " + region + " focus without changing it");
+  }
+  // Ctrl+0 -> tree, Ctrl+1 -> entries from both.
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "0", { ctrlKey: true });
+  assert(T.state.focusRegion === "tree", "Ctrl+0 focuses the tree from entries focus");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.state.focusRegion === "entries", "Ctrl+1 focuses the log from tree focus");
+  fireKeydown(d, w, "1", { ctrlKey: true });
+  assert(T.state.focusRegion === "entries", "Ctrl+1 from entries focus stays on the log");
+  // Arrow keys after a filter click move the tree (tree focus).
+  fireClick(d.querySelector('.tree-row[data-node-id="' + t1.id + '"]'), w);
+  fireKeydown(d, w, "ArrowDown");
+  assert(T.state.activeId === t2.id, "plain ArrowDown after a tree click moves the tree selection");
+});
+
+// Hidden views: the log-row copy / table-selection copy never fire for a view that is not shown.
+await withApp(async (w, d, T) => {
+  section("345d. Ctrl+C never copies from a hidden view");
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  w.render();
+  let copied = null;
+  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
+  w.selectEntry(f.entries[1].id);
+  T.state.focusRegion = "entries";
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(copied !== null, "sanity: the visible log row is copied");
+  copied = null;
+  T.state.inlineViewer = { kind: "text", id: "x", name: "x.txt" };
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(copied === null, "no log-row copy while an inline viewer hides the log rows");
+  T.state.inlineViewer = null;
+  T.state.tableSelection = { kind: "cells", rows: [0], cols: [0] };
+  w.eval("copyTableSelection = function () { window.__tsCopied = true; }");
+  w.__tsCopied = false;
+  const wrap = d.querySelector("#extractWrap");
+  wrap.style.display = "none";
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(w.__tsCopied === false, "the extraction-table selection is not copied while the table is hidden");
+  wrap.style.display = "block";
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(w.__tsCopied === true, "...but is copied while the table is shown");
+});
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -44465,6 +44690,12 @@ process.exitCode = failed ? 1 : 0;
       back, index invalidation on every mutation kind), the stylesheet put back
       in full after the parse, both background polls caught by name. Same
       session: 266b, 332d/e, 334c made load-proof, 343h lost a fixed sleep.
+   Group 345 — 2026-09-30 (person-reported): one tree selection model (the active
+      node is always selected; Ctrl+click toggles within it; selected rows look like
+      the active one, no frame) + shortcuts scoped to the focused area (tree vs. log
+      views; focus follows mousedown/clicks; Alt+Arrow and Ctrl+0..5 global). Updated
+      groups 18, 32, 36, 46, 57, 96, 99, 110a, 150, 157a, 220a/j, 221c, 262, 319d/e,
+      320b, 321e.
    Group 344 — 2026-09-30 (person-reported): a restored folder awaiting Reconnect
       keeps its files inside the container — folder inline viewers are listed
       (restoreViewersFromCache seed) so their Filter-lines text versions stay
