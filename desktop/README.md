@@ -45,10 +45,12 @@ cd desktop/src-tauri
 cargo test -p philogg-logparse
 ```
 
-CI builds (Windows installer + portable zip, named `PhiLogg-<version>.exe`
-and `PhiLogg-<version>_portable.zip`) come only from the stable and beta
-release workflows, which share `.github/workflows/build-release-assets.yml`
-— see `docs/desktop.md` → "Release". macOS and Linux build locally only.
+CI builds (`PhiLogg-<version>.exe`, `PhiLogg-<version>_portable.zip`,
+`PhiLogg-<version>.dmg`, `PhiLogg-<version>.AppImage`) come only from the
+stable and beta release workflows, which share
+`.github/workflows/build-release-assets.yml` — a stable release builds all of
+them, a beta the ones ticked in its run dialog. See `docs/desktop.md` →
+"Release".
 
 ## Version stamp and release-only comment stripping
 
