@@ -2862,14 +2862,41 @@
   #exportDialog .settings-row{padding:10px 2px; gap:16px; border-bottom:1px solid var(--border-soft);}
   #exportDialog .settings-row:last-of-type{border-bottom:none;}
   #exportDialog .settings-subsection-title{margin:16px 0 4px;}
-  #exportExcerptInput{width:80px; box-sizing:border-box; text-align:right;}
+  #exportDialog .settings-row.export-stack{grid-template-columns:1fr; gap:8px;}
+  #exportDialog .export-seg{display:flex; flex-wrap:wrap; gap:6px;}
+  #exportDialog .export-seg .assert-mode-btn{flex:0 0 auto; padding:0 12px; height:30px; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;}
+  #exportDialog .assert-mode-btn:disabled{opacity:.4; cursor:default;}
+  #exportDialog .assert-mode-btn .export-seg-n{color:var(--text-tertiary); font-size:11px;}
+  #exportDialog .assert-mode-btn.active .export-seg-n{color:inherit;}
+  #exportFirstN{width:52px; height:20px; padding:0 4px; box-sizing:border-box; text-align:right; font-size:11.5px; margin:0;}
+  .export-toggles{display:flex; flex-wrap:wrap; gap:8px 28px; padding:10px 2px; border-bottom:1px solid var(--border-soft);}
+  .export-toggle{display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--text-primary);}
   .export-summary{font-size:12px; color:var(--text-secondary);}
-  #exportPreview{
-    width:100%; height:180px; box-sizing:border-box; resize:vertical; margin-top:8px;
+  #exportPreview, #exportPreviewRich{
+    width:100%; height:200px; box-sizing:border-box; resize:vertical; margin-top:8px;
     background:var(--bg-app); border:1px solid var(--border); border-radius:8px; color:var(--text-secondary);
     font-family:var(--font-mono); font-size:11px; line-height:1.5; padding:8px 10px; white-space:pre;
   }
-  .export-file-row{display:flex; gap:8px; flex-wrap:wrap; margin-top:8px;}
+  #exportPreview.hidden, #exportPreviewRich.hidden{display:none;}
+  /* Rich preview: the HTML the clipboard gets, on white like the pasted result. */
+  #exportPreviewRich{
+    background:#fff; color:#172b4d; overflow:auto; white-space:normal; resize:vertical;
+    font-family:-apple-system,"Segoe UI",sans-serif; font-size:13px; padding:10px 12px;
+  }
+  #exportDialog .link-dialog-actions{align-items:center;}
+  .export-save-wrap{position:relative; margin-right:auto;}
+  .export-save-menu{
+    position:absolute; left:0; bottom:calc(100% + 6px); min-width:210px; z-index:2;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:8px; padding:4px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35); display:flex; flex-direction:column;
+  }
+  .export-save-menu.hidden{display:none;}
+  .export-save-menu button{
+    text-align:left; background:transparent; border:none; color:var(--text-primary);
+    font-size:12.5px; padding:6px 10px; border-radius:5px; cursor:pointer;
+  }
+  .export-save-menu button:hover{background:var(--accent-soft);}
+  .export-save-menu .export-save-hint{font-size:11px; color:var(--text-tertiary); padding:4px 10px 2px;}
 
   /* ---------- Count context dialog (analogous to Time context above, but
      windows by entry count instead of milliseconds — see #countContextDialog
@@ -5287,6 +5314,10 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>
       Copy
     </div>
+    <div class="ctx-item" id="ctxCopyTicket">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/><path d="M11.5 6.5v3M10 8h3"/></svg>
+      Copy for ticket
+    </div>
   </div>
 
   <div id="addToSelectionMenu" class="hidden"></div>
@@ -5521,38 +5552,49 @@
     <div class="link-dialog-card">
       <div class="link-dialog-title">Export / Share — <span id="exportViewLabel" class="link-target-label"></span></div>
       <div class="export-summary" id="exportSummary"></div>
-      <div class="settings-subsection-title">Copy for ticket</div>
-      <div class="settings-row">
+      <div class="settings-row export-stack">
+        <div class="settings-row-text">
+          <span class="settings-row-label">Lines</span>
+          <span class="settings-row-hint">Which entries the snippet quotes.</span>
+        </div>
+        <div class="export-seg" id="exportLinesSeg">
+          <button type="button" class="assert-mode-btn" data-export-lines="marked">Marked rows <span class="export-seg-n" id="exportNMarked"></span></button>
+          <button type="button" class="assert-mode-btn" data-export-lines="all">All <span class="export-seg-n" id="exportNAll"></span></button>
+          <div class="assert-mode-btn" role="button" tabindex="0" data-export-lines="first">First <input type="number" id="exportFirstN" min="0" max="500" step="1" aria-label="Number of entries"></div>
+          <button type="button" class="assert-mode-btn" data-export-lines="bookmarked">Bookmarked <span class="export-seg-n" id="exportNBookmarked"></span></button>
+        </div>
+      </div>
+      <div class="settings-row export-stack">
         <div class="settings-row-text">
           <span class="settings-row-label">Format</span>
-          <span class="settings-row-hint">Markdown: Jira Cloud, GitHub, GitLab, Azure DevOps. Wiki: Jira Server.</span>
+          <span class="settings-row-hint">Rich text pastes formatted into Outlook, Confluence, Teams, Word.</span>
         </div>
-        <div class="settings-row-control assert-mode-row">
+        <div class="export-seg">
           <button type="button" class="assert-mode-btn" data-export-format="markdown">Markdown</button>
           <button type="button" class="assert-mode-btn" data-export-format="jira">Jira wiki</button>
           <button type="button" class="assert-mode-btn" data-export-format="plain">Plain text</button>
+          <button type="button" class="assert-mode-btn" data-export-format="rich">Rich text</button>
         </div>
       </div>
-      <div class="settings-row">
-        <div class="settings-row-text">
-          <label class="settings-row-label" for="exportExcerptInput">Excerpt lines</label>
-          <span class="settings-row-hint">Matching entries quoted in the snippet (0 = none).</span>
-        </div>
-        <div class="settings-row-control">
-          <input type="number" id="exportExcerptInput" min="0" max="500" step="1">
-        </div>
+      <div class="export-toggles">
+        <span class="export-toggle"><button type="button" role="switch" aria-checked="true" class="pill-toggle on" id="exportGapsToggle" aria-labelledby="exportGapsLabel"></button><label id="exportGapsLabel" for="exportGapsToggle">Show gaps between lines</label></span>
+        <span class="export-toggle"><button type="button" role="switch" aria-checked="true" class="pill-toggle on" id="exportHeaderToggle" aria-labelledby="exportHeaderLabel"></button><label id="exportHeaderLabel" for="exportHeaderToggle">Source &amp; filter header</label></span>
       </div>
       <textarea id="exportPreview" readonly spellcheck="false" aria-label="Ticket snippet preview"></textarea>
-      <div class="settings-subsection-title">Save as attachment (full view)</div>
-      <div class="export-file-row">
-        <button type="button" class="btn-mini-secondary" data-export-file="log">Log (.log)</button>
-        <button type="button" class="btn-mini-secondary" data-export-file="csv">CSV (.csv)</button>
-        <button type="button" class="btn-mini-secondary" data-export-file="tsv">TSV (.tsv)</button>
-        <button type="button" class="btn-mini-secondary" data-export-file="html">Report (.html)</button>
-      </div>
+      <div id="exportPreviewRich" class="hidden" aria-label="Rich text preview"></div>
       <div class="link-dialog-actions">
+        <div class="export-save-wrap">
+          <button type="button" id="exportSaveBtn" class="btn-mini-secondary" aria-haspopup="true">Save file ▾</button>
+          <div class="export-save-menu hidden" id="exportSaveMenu">
+            <button type="button" data-export-file="log">Log (.log)</button>
+            <button type="button" data-export-file="csv">CSV (.csv)</button>
+            <button type="button" data-export-file="tsv">TSV (.tsv)</button>
+            <button type="button" data-export-file="html">Report (.html)</button>
+            <div class="export-save-hint">Saves the full view</div>
+          </div>
+        </div>
         <button type="button" id="exportClose" class="btn-mini-secondary">Close</button>
-        <button type="button" id="exportCopy" class="btn-mini">Copy for ticket</button>
+        <button type="button" id="exportCopy" class="btn-mini">Copy</button>
       </div>
     </div>
   </div>
@@ -34180,6 +34222,14 @@ el("#ctxCopy").addEventListener("click", () => {
   showCopyToast("Line copied");
 });
 
+// "Copy for ticket": the marked rows when 2+ are marked, else the right-clicked row.
+el("#ctxCopyTicket").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  if (entry) copyMarkedRowsForTicket(entry);
+});
+
 // Scans a column's text for numbers and replaces each with a typed
 // placeholder, producing a ready-to-use wildcard pattern (e.g. "moved to
 // [*:float] after [*:int] tries"). Clock times / durations are
@@ -35651,6 +35701,9 @@ function openTreeContextMenu(ev, clickedId) {
       // now unreferenced by any menu item is expected, not dead code to clean
       // up — see FEATURE_BACKLOG.md #79 for the planned replacement.
       buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
+      if (node.filterType === "idset" && node.selectionFilter) {
+        buckets.clipboard.push({ action: "copyTicket", label: "Copy for ticket", icon: ICON_COPY });
+      }
       buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       // "Save to library…" moved out of the context menu (person-requested):
@@ -35734,6 +35787,12 @@ treeContextMenu.addEventListener("click", ev => {
 
   // Single-node actions operate on treeCtxId (the node the menu was opened
   // for), mirroring exactly what Ctrl+C/X/V/Delete do for state.activeId.
+  if (action === "copyTicket") {
+    // Story export of a selection filter, even when it isn't the active node.
+    const ctx = treeCtxId && collectExportContext(treeCtxId);
+    if (ctx) copyEntriesForTicket(ctx, pickTicketEntries(ctx, "all"));
+    return;
+  }
   if (action === "revealLocation") {
     const n = treeCtxId && state.nodes[treeCtxId];
     if (n && window.philogg) {
@@ -36325,7 +36384,13 @@ el("#csvExportConfirm").addEventListener("click", async () => {
 
 const EXPORT_FORMAT_KEY = "philogg-export-format";
 const EXPORT_EXCERPT_KEY = "philogg-export-excerpt-lines";
-const EXPORT_FORMATS = ["markdown", "jira", "plain"];
+const EXPORT_LINES_KEY = "philogg-export-lines";
+const EXPORT_GAPS_KEY = "philogg-export-gaps";
+const EXPORT_HEADER_KEY = "philogg-export-header";
+const EXPORT_FORMATS = ["markdown", "jira", "plain", "rich"];
+// Which entries the snippet quotes. "marked" (the log's multi-selection) is
+// transient — never stored; only these three are remembered.
+const EXPORT_LINES_MODES = ["all", "first", "bookmarked"];
 const EXPORT_EXCERPT_DEFAULT = 20;
 const EXPORT_EXCERPT_MAX = 500;
 // Jira's description/comment limit is 32,767 characters — stay under it
@@ -36333,24 +36398,33 @@ const EXPORT_EXCERPT_MAX = 500;
 const TICKET_SNIPPET_MAX_CHARS = 30000;
 // One excerpt entry (a huge stack trace) can't eat the whole budget.
 const TICKET_ENTRY_MAX_CHARS = 1000;
-const TICKET_FINDINGS_MAX = 25;
 const TICKET_TEXT_MAX_CHARS = 300; // one filter-step / note / message line in the snippet
 const EXPORT_CHUNK_ENTRIES = 5000; // entries per Blob string part
 
 let exportFormat = "markdown";
 let exportExcerptLines = EXPORT_EXCERPT_DEFAULT;
+let exportLinesMode = "first";
+let exportGaps = true;
+let exportHeader = true;
 function loadExportPrefs() {
   try {
     const f = localStorage.getItem(EXPORT_FORMAT_KEY);
     exportFormat = EXPORT_FORMATS.includes(f) ? f : "markdown";
     const n = parseInt(localStorage.getItem(EXPORT_EXCERPT_KEY), 10);
     exportExcerptLines = isNaN(n) ? EXPORT_EXCERPT_DEFAULT : Math.max(0, Math.min(EXPORT_EXCERPT_MAX, n));
+    const m = localStorage.getItem(EXPORT_LINES_KEY);
+    exportLinesMode = EXPORT_LINES_MODES.includes(m) ? m : "first";
+    exportGaps = localStorage.getItem(EXPORT_GAPS_KEY) !== "0";
+    exportHeader = localStorage.getItem(EXPORT_HEADER_KEY) !== "0";
   } catch (e) { /* storage unavailable — defaults stand */ }
 }
 function saveExportPrefs() {
   try {
     localStorage.setItem(EXPORT_FORMAT_KEY, exportFormat);
     localStorage.setItem(EXPORT_EXCERPT_KEY, String(exportExcerptLines));
+    localStorage.setItem(EXPORT_LINES_KEY, EXPORT_LINES_MODES.includes(exportLinesMode) ? exportLinesMode : "first");
+    localStorage.setItem(EXPORT_GAPS_KEY, exportGaps ? "1" : "0");
+    localStorage.setItem(EXPORT_HEADER_KEY, exportHeader ? "1" : "0");
   } catch (e) { /* storage unavailable — choice lasts for this session only */ }
 }
 loadExportPrefs();
@@ -36400,18 +36474,23 @@ function describeExportStep(node) {
 // once: the entries, the chain narrative with per-step counts, sources,
 // time span, and the root file's bookmarked/annotated entries (findings).
 // null when there's nothing to export (no active node).
-function collectExportContext() {
-  const active = state.activeId && state.nodes[state.activeId];
+// nodeId (optional): export that node's view instead of the active node's
+// (the tree menu's "Copy for ticket" on a selection filter that isn't active).
+function collectExportContext(nodeId) {
+  const active = nodeId ? state.nodes[nodeId] : state.activeId && state.nodes[state.activeId];
   if (!active) return null;
   const rootId = getRootFileId(active.id);
   const root = rootId && state.nodes[rootId];
   if (!root || root.type !== "file") return null;
-  const entries = applyLevelFilter(getEntries(active.id));
+  // A person-built selection filter ("story") is quoted as picked: the level
+  // quick filter doesn't apply to it (and isn't a chain step).
+  const selection = active.filterType === "idset" && !!active.selectionFilter;
+  const entries = selection ? getEntries(active.id) : applyLevelFilter(getEntries(active.id));
   const steps = getChain(active.id).map(n => ({
     text: describeExportStep(n),
     count: getEntries(n.id).length,
   }));
-  if (state.levelFilter.size) {
+  if (!selection && state.levelFilter.size) {
     steps.push({ text: "Level quick filter: " + [...state.levelFilter].join(", "), count: entries.length });
   }
   let from = Infinity, to = -Infinity;
@@ -36434,7 +36513,7 @@ function collectExportContext() {
     findings.sort((a, b) => a.idx - b.idx);
   }
   return {
-    root, active, entries, total: root.entries.length, steps, sources,
+    root, active, entries, selection, total: root.entries.length, steps, sources,
     from: isFinite(from) ? from : NaN, to: isFinite(to) ? to : NaN,
     findings, generatedAt: Date.now(),
   };
@@ -36493,68 +36572,188 @@ function exportPercent(x, y) {
   const p = x / y * 100;
   return (p >= 10 || p === 0 ? Math.round(p) : p.toFixed(1)) + "%";
 }
-function exportFindingLine(F, f) {
-  const e = f.entry;
-  let line = (f.bookmarked ? "★ " : "") + F.code(formatTime(e.ts) + " " + (e.level || "")) + " " +
-    F.esc(exportOneLine(e.message, TICKET_TEXT_MAX_CHARS));
-  if (f.note) line += " — " + F.b("Note:") + " " + F.esc(exportOneLine(f.note, TICKET_TEXT_MAX_CHARS));
-  return line;
+// Which entries the snippet quotes (see docs/export.md → "Lines"). Returns
+// entries in log order. "all" hands back ctx.entries itself (no copy — the
+// builders stop at the character budget instead of walking a huge view).
+//   all        the whole view
+//   first      the first n of the view (0..EXPORT_EXCERPT_MAX)
+//   bookmarked the root file's bookmarked/annotated entries
+//   marked     the log's multi-selection (state.logMultiSelect), limited to
+//              the active root file
+function pickTicketEntries(ctx, mode, n) {
+  if (mode === "all") return ctx.entries;
+  if (mode === "bookmarked") return ctx.findings.map(f => f.entry);
+  if (mode === "marked") {
+    const order = buildOrderIndexMap(ctx.root.id);
+    return [...state.logMultiSelect].map(id => entryIndex[id]).filter(e => e && order.has(e.id)).sort(chronoComparator(order));
+  }
+  const k = parseInt(n, 10);
+  return ctx.entries.slice(0, isNaN(k) ? EXPORT_EXCERPT_DEFAULT : Math.max(0, Math.min(EXPORT_EXCERPT_MAX, k)));
 }
 
-// The "Copy for ticket" snippet. Bounded: excerptLines matching entries at
-// most, each capped at TICKET_ENTRY_MAX_CHARS, the whole thing at
-// TICKET_SNIPPET_MAX_CHARS — and every cut is announced in the text.
-function buildTicketSnippet(ctx, flavor, excerptLines) {
-  const F = TICKET_FLAVORS[flavor] || TICKET_FLAVORS.markdown;
-  const out = [];
-  out.push(F.h("Log findings: " + F.esc(nodeDisplayName(ctx.active))));
-  out.push("");
-  out.push(F.b("Source:") + " " + ctx.sources.map(s => F.code(s)).join(", ") + " (" + ctx.total + " entries)");
-  if (ctx.entries.length) {
-    out.push(F.b("Time range:") + " " + F.code(formatTime(ctx.from)) + " → " + F.code(formatTime(ctx.to)) +
-      " (" + formatDuration(ctx.to - ctx.from) + ")");
-  }
-  out.push(F.b("Matched:") + " " + ctx.entries.length + " of " + ctx.total + " entries (" + exportPercent(ctx.entries.length, ctx.total) + ")");
-  out.push("");
-  out.push(F.b("Filter chain:"));
-  out.push(F.ol(ctx.steps.map(s => F.esc(exportTruncate(s.text, TICKET_TEXT_MAX_CHARS)) + " — " + s.count)));
-  if (ctx.findings.length) {
-    out.push("");
-    out.push(F.b("Bookmarks & notes (" + ctx.findings.length + "):"));
-    out.push(F.ul(ctx.findings.slice(0, TICKET_FINDINGS_MAX).map(f => exportFindingLine(F, f))));
-    const more = ctx.findings.length - TICKET_FINDINGS_MAX;
-    if (more > 0) out.push(F.em("… " + more + " more in the attached report."));
-  }
-  const footer = F.em("Exported with PhiLogg " + PHILOGG_VERSION + " on " + formatTime(ctx.generatedAt).slice(0, 16) + ".");
-  const wanted = Math.min(Math.max(0, excerptLines | 0), ctx.entries.length);
-  if (wanted > 0) {
-    // Reserve room for the headline, fence/tags, the "more" note and footer.
-    let budget = TICKET_SNIPPET_MAX_CHARS - out.join("\n").length - footer.length - 400;
-    const lines = [];
-    for (let i = 0; i < wanted; i++) {
-      const raw = exportTruncate(ctx.entries[i].raw, TICKET_ENTRY_MAX_CHARS);
-      if (raw.length + 1 > budget) break;
-      lines.push(raw);
-      budget -= raw.length + 1;
+function ticketSpanText(ctx, entries) {
+  let from = ctx.from, to = ctx.to;
+  if (entries !== ctx.entries) {
+    from = Infinity; to = -Infinity;
+    for (let i = 0; i < entries.length; i++) {
+      const t = entries[i].ts;
+      if (t < from) from = t;
+      if (t > to) to = t;
     }
-    if (lines.length) {
-      out.push("");
-      out.push(F.b(lines.length === ctx.entries.length ? "Matching entries:"
-        : "Excerpt (first " + lines.length + " of " + ctx.entries.length + " matching entries):"));
+  }
+  if (!isFinite(from) || !isFinite(to)) return "";
+  const f = formatTime(from);
+  if (from === to) return f;
+  const t = formatTime(to);
+  return f + " → " + (t.slice(0, 10) === f.slice(0, 10) ? t.slice(11) : t); // same day: end time only
+}
+// The compact header as plain strings; each flavor decides its own markup.
+//   heading  a selection filter's name (story view), else null
+//   source   file name(s), tail = everything after them on that line
+//   filter   chain steps after the file step + " → x of y", null when there's no filter
+function ticketHeaderData(ctx, entries) {
+  const span = ticketSpanText(ctx, entries);
+  let tail = " (" + ctx.total + " entries)";
+  if (ctx.selection) tail += " · " + ctx.entries.length + " hand-picked entries";
+  if (span) tail += " · " + span;
+  let filter = null;
+  if (!ctx.selection && ctx.steps.length > 1) {
+    filter = ctx.steps.slice(1).map(s => exportTruncate(s.text, TICKET_TEXT_MAX_CHARS)).join(" → ") +
+      " → " + ctx.entries.length + " of " + ctx.total;
+  }
+  return { heading: ctx.selection ? nodeDisplayName(ctx.active) : null, source: ctx.sources.join(", "), tail, filter };
+}
+function ticketHeaderLines(F, h) {
+  const out = [];
+  if (h.heading !== null) { out.push(F.h(F.esc(h.heading))); out.push(""); }
+  out.push(F.b(F.esc(h.source)) + h.tail);
+  if (h.filter !== null) out.push(F.b("Filter:") + " " + F.esc(h.filter));
+  return out;
+}
+
+// The quoted entries as items {gap} / {entry, raw, note}, walking `entries`
+// only until `budget` characters are used up (a "whole file" pick must not
+// stringify a million entries). Gap = a jump of more than one in the ROOT
+// file's order between two consecutive quoted entries; an entry without an
+// order index (Link pair) never gets one.
+function ticketQuoteItems(ctx, entries, gaps, budget) {
+  const order = gaps ? buildOrderIndexMap(ctx.root.id) : null;
+  const items = [];
+  let used = 0, quoted = 0, prev = null;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    const raw = exportTruncate(e.raw, TICKET_ENTRY_MAX_CHARS);
+    const note = state.notes.get(e.id);
+    const noteText = note ? exportOneLine(note, TICKET_TEXT_MAX_CHARS) : "";
+    let gap = "";
+    if (order && prev) {
+      const a = order.get(prev.id), b = order.get(e.id);
+      if (a !== undefined && b !== undefined && Math.abs(b - a) > 1) {
+        const n = Math.abs(b - a) - 1;
+        gap = "··· " + n + (n === 1 ? " line" : " lines");
+        if (isFinite(prev.ts) && isFinite(e.ts)) gap += " · +" + formatDuration(e.ts - prev.ts);
+        gap += " ···";
+      }
+    }
+    const cost = gap.length + raw.length + (noteText ? noteText.length + 12 : 0) + 3;
+    if (used + cost > budget) break;
+    used += cost;
+    if (gap) items.push({ gap });
+    items.push({ entry: e, raw, note: noteText });
+    quoted++;
+    prev = e;
+  }
+  return { items, quoted };
+}
+
+const TICKET_NOTHING_QUOTED = "(no lines selected — nothing quoted)";
+function ticketMoreText(rest) { return "… " + rest + " more entries not quoted — see the attached export."; }
+function ticketResolveOpts(ctx, opts) {
+  opts = opts || {};
+  return {
+    entries: opts.entries || pickTicketEntries(ctx, opts.mode || "first", opts.n),
+    gaps: opts.gaps !== false,
+    header: opts.header !== false,
+  };
+}
+
+// The "Copy for ticket" text snippet: compact header, ONE block of the
+// quoted entries with notes inline and gap markers, bounded by
+// TICKET_ENTRY_MAX_CHARS per entry and TICKET_SNIPPET_MAX_CHARS overall
+// (entries cut by the budget are announced). opts: { mode, n } (see
+// pickTicketEntries) or an explicit `entries` array; gaps / header default
+// on. flavor "rich" yields the Plain-text flavor (the text/plain half of
+// the rich clipboard payload — buildTicketSnippetHtml is the HTML half).
+function buildTicketSnippet(ctx, flavor, opts) {
+  const o = ticketResolveOpts(ctx, opts);
+  const F = TICKET_FLAVORS[flavor === "rich" ? "plain" : flavor] || TICKET_FLAVORS.markdown;
+  const out = o.header ? ticketHeaderLines(F, ticketHeaderData(ctx, o.entries)) : [];
+  if (out.length) out.push("");
+  if (!o.entries.length) {
+    out.push(TICKET_NOTHING_QUOTED);
+  } else {
+    // Reserve room for the fence/tags and the "not quoted" line.
+    const { items, quoted } = ticketQuoteItems(ctx, o.entries, o.gaps, TICKET_SNIPPET_MAX_CHARS - out.join("\n").length - 400);
+    if (items.length) {
+      const lines = [];
+      items.forEach(it => {
+        if (it.gap) lines.push(it.gap);
+        else { lines.push(it.raw); if (it.note) lines.push("  ↳ Note: " + it.note); }
+      });
       out.push(F.block(lines.join("\n")));
     }
-    const rest = ctx.entries.length - lines.length;
-    if (rest > 0) out.push(F.em("… " + rest + " more matching entries — see the attached export."));
-  } else if (ctx.entries.length) {
-    out.push("");
-    out.push(F.em("Matching entries: see the attached export."));
+    if (o.entries.length > quoted) out.push(F.em(ticketMoreText(o.entries.length - quoted)));
   }
-  out.push("");
-  out.push(footer);
   let text = out.join("\n");
   // Last-resort guard (a pathological chain/notes list): never exceed the cap.
   if (text.length > TICKET_SNIPPET_MAX_CHARS) text = text.slice(0, TICKET_SNIPPET_MAX_CHARS - 20) + "\n…[truncated]";
   return text;
+}
+
+// The "Rich text" flavor's text/html half: INLINE styles only (Outlook,
+// Confluence, Teams and Word drop <style>), no script/links, every log/user
+// string through escapeHtml. Same picks, header, gaps, notes and budget as
+// the text flavors.
+function buildTicketSnippetHtml(ctx, opts) {
+  const o = ticketResolveOpts(ctx, opts);
+  const esc = escapeHtml;
+  const data = ticketHeaderData(ctx, o.entries);
+  let html = "";
+  let headLen = 0;
+  if (o.header) {
+    headLen = ticketHeaderLines(TICKET_FLAVORS.plain, data).join("\n").length;
+    if (data.heading !== null) {
+      html += "<div style=\"font-weight:600;font-size:16px;margin:0 0 4px\">" + esc(data.heading) + "</div>" +
+        "<div style=\"margin:0 0 10px;color:#44546f\"><b>" + esc(data.source) + "</b>" + esc(data.tail) + "</div>";
+    } else {
+      html += "<div style=\"margin:0 0 " + (data.filter !== null ? "2" : "10") + "px\"><b>" + esc(data.source) + "</b>" + esc(data.tail) + "</div>";
+      if (data.filter !== null) html += "<div style=\"margin:0 0 10px;color:#44546f\"><b>Filter:</b> " + esc(data.filter) + "</div>";
+    }
+  }
+  if (!o.entries.length) return html + "<div style=\"color:#626f86\">(no lines selected)</div>";
+  const { items, quoted } = ticketQuoteItems(ctx, o.entries, o.gaps, TICKET_SNIPPET_MAX_CHARS - headLen - 400);
+  if (items.length) {
+    html += "<div style=\"font:12px/1.5 Consolas,'Courier New',monospace;border:1px solid #dcdfe4;border-radius:4px;padding:6px 0;background:#f7f8f9\">";
+    items.forEach(it => {
+      if (it.gap) {
+        html += "<div style=\"color:#626f86;text-align:center;font-style:italic;padding:1px 8px\">" + esc(it.gap) + "</div>";
+        return;
+      }
+      const e = it.entry;
+      const bm = state.bookmarks.has(e.id);
+      const bucket = levelBucket(e.level, e.formatId);
+      html += "<div style=\"padding:1px 8px;white-space:pre-wrap;overflow-wrap:anywhere;tab-size:4;" + (bm ? "background:#fff7d6;" : "") +
+        (bucket === "ERROR" ? "color:#ae2e24;" : bucket === "WARN" ? "color:#9a6700;" : "") + "\">" + (bm ? "★ " : "") + esc(it.raw) + "</div>";
+      if (it.note) {
+        html += "<div style=\"margin:2px 8px 4px 24px;padding:2px 8px;border-left:3px solid #1f8f8b;color:#172b4d;font:italic 13px -apple-system,'Segoe UI',sans-serif\">Note: " + esc(it.note) + "</div>";
+      }
+    });
+    html += "</div>";
+  }
+  if (o.entries.length > quoted) {
+    html += "<div style=\"margin:6px 0 0;color:#626f86;font-style:italic\">" + esc(ticketMoreText(o.entries.length - quoted)) + "</div>";
+  }
+  return html;
 }
 
 // Columns of the .csv/.tsv exports: exactly the log columns the loaded
@@ -36695,8 +36894,24 @@ async function saveExportFile(parts, filename, kind) {
 
 const exportDialog = el("#exportDialog");
 const exportPreview = el("#exportPreview");
-const exportExcerptInput = el("#exportExcerptInput");
+const exportPreviewRich = el("#exportPreviewRich");
+const exportFirstN = el("#exportFirstN");
+const exportSaveMenu = el("#exportSaveMenu");
 let exportDialogCtx = null;
+// The dialog's current Lines choice. Starts from a context-dependent default
+// on open (see exportDefaultLinesMode); only all/first/bookmarked are saved.
+let exportDialogMode = "first";
+
+function exportMarkedCount(ctx) { return pickTicketEntries(ctx, "marked").length; }
+function exportDefaultLinesMode(ctx) {
+  if (ctx.selection) return "all";
+  if (exportMarkedCount(ctx) >= 2) return "marked";
+  return exportLinesMode;
+}
+function exportDialogOpts() {
+  return { mode: exportDialogMode, n: exportExcerptLines, gaps: exportGaps, header: exportHeader };
+}
+function closeExportSaveMenu() { exportSaveMenu.classList.add("hidden"); }
 
 function renderExportDialog() {
   const ctx = exportDialogCtx;
@@ -36705,28 +36920,67 @@ function renderExportDialog() {
   el("#exportSummary").textContent = ctx.entries.length + " of " + ctx.total + " entries · " +
     ctx.steps.length + " step" + (ctx.steps.length === 1 ? "" : "s") + " · " +
     ctx.findings.length + " bookmark" + (ctx.findings.length === 1 ? "" : "s") + "/note" + (ctx.findings.length === 1 ? "" : "s");
+  const marked = exportMarkedCount(ctx);
+  if (exportDialogMode === "marked" && marked < 2) exportDialogMode = "first";
+  el("#exportNMarked").textContent = "(" + marked + ")";
+  el("#exportNAll").textContent = "(" + ctx.entries.length + ")";
+  el("#exportNBookmarked").textContent = "(" + ctx.findings.length + ")";
+  exportDialog.querySelectorAll("[data-export-lines]").forEach(b => {
+    b.classList.toggle("active", b.dataset.exportLines === exportDialogMode);
+    if (b.dataset.exportLines === "marked") b.disabled = marked < 2;
+  });
   exportDialog.querySelectorAll("[data-export-format]").forEach(b => b.classList.toggle("active", b.dataset.exportFormat === exportFormat));
-  exportExcerptInput.value = String(exportExcerptLines);
-  exportPreview.value = buildTicketSnippet(ctx, exportFormat, exportExcerptLines);
+  exportFirstN.value = String(exportExcerptLines);
+  pillSet(el("#exportGapsToggle"), exportGaps);
+  pillSet(el("#exportHeaderToggle"), exportHeader);
+  const opts = exportDialogOpts();
+  const rich = exportFormat === "rich";
+  exportPreview.classList.toggle("hidden", rich);
+  exportPreviewRich.classList.toggle("hidden", !rich);
+  if (rich) exportPreviewRich.innerHTML = buildTicketSnippetHtml(ctx, opts); // every string escaped by the builder
+  else exportPreview.value = buildTicketSnippet(ctx, exportFormat, opts);
 }
 function openExportDialog() {
   const ctx = collectExportContext();
   if (!ctx) { showCopyToast("Nothing to export"); return false; }
   exportDialogCtx = ctx;
+  exportDialogMode = exportDefaultLinesMode(ctx);
+  closeExportSaveMenu();
   renderExportDialog();
   exportDialog.classList.remove("hidden");
   return true;
 }
 function closeExportDialog() {
+  closeExportSaveMenu();
   exportDialog.classList.add("hidden");
   exportDialogCtx = null;
 }
 function copyTicketSnippet() {
   const ctx = exportDialogCtx || collectExportContext();
   if (!ctx) { showCopyToast("Nothing to export"); return; }
-  const text = buildTicketSnippet(ctx, exportFormat, exportExcerptLines);
-  copyTextToClipboard(text);
-  showCopyToast("Ticket snippet copied (" + text.length + " chars)");
+  const o = exportDialogCtx ? exportDialogOpts() : { mode: exportLinesMode, n: exportExcerptLines, gaps: exportGaps, header: exportHeader };
+  const opts = Object.assign({}, o, { entries: pickTicketEntries(ctx, o.mode, o.n) });
+  const text = buildTicketSnippet(ctx, exportFormat, opts);
+  copyTextToClipboard(text, exportFormat === "rich" ? buildTicketSnippetHtml(ctx, opts) : undefined);
+  showCopyToast("Copied for ticket (" + opts.entries.length + " entries)");
+}
+// The direct-copy paths (row context menu, shortcut, tree menu on a selection
+// filter) — no dialog: gaps always on, header per the remembered checkbox,
+// flavor per the remembered format (rich -> text/html + text/plain).
+// Returns the number of entries quoted (0 = nothing copied).
+function copyEntriesForTicket(ctx, entries) {
+  if (!ctx || !entries || !entries.length) { showCopyToast("Nothing to copy"); return 0; }
+  const opts = { entries, gaps: true, header: exportHeader };
+  copyTextToClipboard(buildTicketSnippet(ctx, exportFormat, opts), exportFormat === "rich" ? buildTicketSnippetHtml(ctx, opts) : undefined);
+  showCopyToast("Copied for ticket (" + entries.length + " entries)");
+  return entries.length;
+}
+// Marked rows (2+ in the active root file), else `fallback` (one entry or null).
+function copyMarkedRowsForTicket(fallback) {
+  const ctx = collectExportContext();
+  if (!ctx) { showCopyToast("Nothing to copy"); return 0; }
+  const marked = pickTicketEntries(ctx, "marked");
+  return copyEntriesForTicket(ctx, marked.length >= 2 ? marked : (fallback ? [fallback] : []));
 }
 async function exportViewFile(kind) {
   const ctx = exportDialogCtx || collectExportContext();
@@ -36743,13 +36997,32 @@ exportDialog.querySelectorAll("[data-export-format]").forEach(b => b.addEventLis
   saveExportPrefs();
   renderExportDialog();
 }));
-exportExcerptInput.addEventListener("change", () => {
-  const n = parseInt(exportExcerptInput.value, 10);
-  exportExcerptLines = isNaN(n) ? EXPORT_EXCERPT_DEFAULT : Math.max(0, Math.min(EXPORT_EXCERPT_MAX, n));
-  saveExportPrefs();
+function setExportLinesMode(mode) {
+  exportDialogMode = mode;
+  if (EXPORT_LINES_MODES.includes(mode)) { exportLinesMode = mode; saveExportPrefs(); } // "marked" is never remembered
   renderExportDialog();
+}
+exportDialog.querySelectorAll("[data-export-lines]").forEach(b => {
+  b.addEventListener("click", () => { if (!b.disabled) setExportLinesMode(b.dataset.exportLines); });
+  b.addEventListener("keydown", ev => {
+    if ((ev.key === "Enter" || ev.key === " ") && ev.target === b) { ev.preventDefault(); if (!b.disabled) setExportLinesMode(b.dataset.exportLines); }
+  });
 });
-exportDialog.querySelectorAll("[data-export-file]").forEach(b => b.addEventListener("click", () => exportViewFile(b.dataset.exportFile)));
+// The N input lives inside the "First" segment: focusing/typing selects First,
+// and its clicks must not bubble into the segment handler twice.
+exportFirstN.addEventListener("click", ev => ev.stopPropagation());
+exportFirstN.addEventListener("focus", () => { if (exportDialogMode !== "first") setExportLinesMode("first"); });
+exportFirstN.addEventListener("change", () => {
+  const n = parseInt(exportFirstN.value, 10);
+  exportExcerptLines = isNaN(n) ? EXPORT_EXCERPT_DEFAULT : Math.max(0, Math.min(EXPORT_EXCERPT_MAX, n));
+  setExportLinesMode("first");
+});
+el("#exportGapsToggle").addEventListener("change", ev => { exportGaps = pillGet(ev.target); saveExportPrefs(); renderExportDialog(); });
+el("#exportHeaderToggle").addEventListener("change", ev => { exportHeader = pillGet(ev.target); saveExportPrefs(); renderExportDialog(); });
+el("#exportSaveBtn").addEventListener("click", ev => { ev.stopPropagation(); exportSaveMenu.classList.toggle("hidden"); });
+exportSaveMenu.addEventListener("click", ev => ev.stopPropagation());
+exportDialog.addEventListener("click", closeExportSaveMenu);
+exportDialog.querySelectorAll("[data-export-file]").forEach(b => b.addEventListener("click", () => { closeExportSaveMenu(); exportViewFile(b.dataset.exportFile); }));
 el("#exportClose").addEventListener("click", closeExportDialog);
 el("#exportCopy").addEventListener("click", copyTicketSnippet);
 el("#contextDialogCancel").addEventListener("click", closeContextDialog);
@@ -38397,6 +38670,7 @@ const SHORTCUT_ACTIONS = [
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
   { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
   { id: "exportView",    label: "Export / Share the current view",     default: { ctrl: true, shift: true, key: "e" } },
+  { id: "copyForTicket", label: "Copy selected rows for ticket",       default: { ctrl: true, shift: true, key: "c" } },
 ];
 
 // Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)
@@ -41414,6 +41688,14 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "exportView")) {
     ev.preventDefault();
     openExportDialog();
+    return;
+  }
+
+  // Direct "Copy for ticket" (docs/export.md): marked rows, else the selected row.
+  // Must sit before the plain Ctrl+C handler below, which also matches Ctrl+Shift+C.
+  if (matchesShortcut(ev, "copyForTicket")) {
+    ev.preventDefault();
+    copyMarkedRowsForTicket(state.selectedId ? entryIndex[state.selectedId] : null);
     return;
   }
 
