@@ -40,7 +40,7 @@ result with screenshots. Pure questions and doc-only sessions don't need it.
   needs it, see `tests/README.md` — one line in TEST PROVENANCE,
   update/remove superseded groups instead of leaving a green check on dead
   code).
-- **Run the full suite (`cd tests && npm test`, ~2¼ min on 4 cores) only
+- **Run the full suite (`cd tests && npm test`, ~2-3 min on 4 cores) only
   when code changed** — i.e. `philogg.html`, `tests/*.js`, `scripts/`, or a
   change to the `window.philogg` / `nativeDirHandle` contract that
   `philogg.html` consumes. Report the pass count when you do.

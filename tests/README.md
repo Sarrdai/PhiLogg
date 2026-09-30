@@ -26,7 +26,7 @@ project-root/
 ```
 cd tests
 npm install
-npm test          # ~2¼ min on a 4-core machine, sharded across the available cores
+npm test          # ~2-3 min on a 4-core machine, sharded across the available cores
 ```
 
 While iterating on one group, run just that group instead of the whole
@@ -48,7 +48,7 @@ PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 
 `npm test` goes through `run.js`, which spawns one child per shard and sums
 their results back into the single `N passed, M failed` line the suite has
-always reported. **Always check that number** (8077 at the time of writing):
+always reported. **Always check that number** (8333 at the time of writing):
 a group that silently stopped running shows up as a lower count, not as a
 failure.
 
