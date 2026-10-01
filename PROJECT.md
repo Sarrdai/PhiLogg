@@ -30,7 +30,7 @@
 - [Known gotchas — check before touching related code](#known-gotchas--check-before-touching-related-code)
 <!-- /toc -->
 
-**Read this file first.** It's the entry point for understanding what PhiLogg is, how it's built, and why it's built that way, before touching `philogg.html`. For a human-facing overview (what it does, screenshots, how to use it, license) see `README.md` instead — keep that file in sync with user-visible changes; this file stays the architecture reference.
+**Read this file first.** It's the entry point for understanding what PhiLogg is, how it's built, and why it's built that way, before touching `philogg.html`. For a human-facing overview (what it does, screenshots, how to use it, license) see `README.md` instead — keep that file in sync with user-visible changes; this file stays the architecture reference. Rules for how to work on the project (workflow, tests, commits, PRs) live in `CLAUDE.md` and the skills, not here; this file explains how the app works and why.
 
 ## What this is
 
