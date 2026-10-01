@@ -14399,6 +14399,24 @@ function markFieldHtml(mm, text, columnKey, tokRanges) {
 // would linkify as "//host/path" from the URL's own double slash.
 const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&quot;|`((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)`|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)*[^\\/:*?"<>|\r\n\s]+|\\\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)+[^\\/:*?"<>|\r\n\s]+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
 
+// True for a path that leaves this machine or names a device: Windows UNC
+// (`\\server\share`, also as `//server/share` — Windows takes either
+// separator anywhere), `\\?\UNC\…`, `\\.\…` and the NT spelling `\??\…`.
+// A local extended-length path (`\\?\C:\…`), drive paths, POSIX paths and
+// relative paths are not remote. Mirrors `is_remote_path` in
+// desktop/src-tauri/src/pathguard.rs — keep the two in step. Why it matters:
+// asking Windows whether `\\attacker.example\share\x` exists opens an SMB
+// connection and sends the user's NTLM credentials, so a path found in log
+// text must never be checked (verifyVisibleFpCandidates) or offered as a
+// link (linkifyPaths) when it is one. Operates on the start of the string
+// only, where no HTML entity can appear (escapeHtml never touches `\ / ? . :`
+// or letters), so it gives the same answer for an escaped and a decoded path.
+function isRemoteFilePath(path) {
+  const p = String(path).trimStart().replace(/\//g, "\\");
+  if (p.startsWith("\\\\?\\") || p.startsWith("\\??\\")) return !/^[A-Za-z]:(?:\\|$)/.test(p.slice(4));
+  return p.startsWith("\\\\");
+}
+
 // Wraps every detected path candidate in a span the hover popup (see
 // openFpPathMenu) can key off. The path text (whichever of FILE_PATH_RE's
 // quoted capture groups matched, or the whole match for an unquoted one) is
@@ -14406,13 +14424,17 @@ const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-
 // reuse verbatim both as the span's content and as its data-fp attribute
 // value — the HTML parser decodes entities in attributes the same way it
 // does in text. A quote match keeps its quote characters OUTSIDE the span
-// (plain punctuation around the link, not part of it).
+// (plain punctuation around the link, not part of it). A remote path
+// (isRemoteFilePath — the quoted alternatives can capture `//server/x` or
+// `\\host\x`) stays plain text, quotes and all: no span, so nothing ever
+// asks the OS about it.
 function linkifyPaths(html) {
   if (!html) return html;
   return html.split(/(<[^>]+>)/).map(part =>
     part.charAt(0) === "<" ? part :
       part.replace(FILE_PATH_RE, (m, sq, dq, bt) => {
         const path = sq || dq || bt || m;
+        if (isRemoteFilePath(path)) return m;
         const quote = sq !== undefined ? "&#39;" : dq !== undefined ? "&quot;" : bt !== undefined ? "`" : "";
         return quote + '<span class="fp-candidate" data-fp="' + path + '">' + path + '</span>' + quote;
       })
@@ -29971,7 +29993,9 @@ async function openZipEntryExternally(entry, zip) {
     try {
       await window.philogg.openExtractedEntry(entry.name, bytes);
     } catch (err) {
-      showCopyToast(`Couldn't open "${entry.name}" (${err.message})`);
+      // `err` is the wrapper's own refusal text for an executable entry
+      // (open_extracted_entry), a plain string — see ipcErrorText.
+      showCopyToast(`Couldn't open "${entry.name}" (${ipcErrorText(err)})`);
     }
     return;
   }
@@ -35606,7 +35630,10 @@ function openEntryInVisualStudio(entry) {
     return;
   }
   if (target.error) return;
-  window.philogg.pathExists(target.path).then(exists => {
+  // allowRemote: this path is built from the connected IDE's own solution
+  // directory (which may sit on a network share), not taken from log text —
+  // the one caller that may ask about a UNC path (see isRemoteFilePath).
+  window.philogg.pathExists(target.path, { allowRemote: true }).then(exists => {
     if (!exists) { showCopyToast("Resolved file doesn't exist: " + target.path); return; }
     return window.philogg.vsOpenFile(ideVsConnection.moniker, target.path, target.line);
   }).catch(() => {
@@ -36561,6 +36588,9 @@ function verifyVisibleFpCandidates(container) {
   if (!window.philogg || typeof window.philogg.pathExists !== "function") return;
   container.querySelectorAll(".fp-candidate").forEach(span => {
     const path = span.dataset.fp;
+    // linkifyPaths never wraps a remote path; this is the second lock on the
+    // same door — a UNC path must not reach pathExists from log text.
+    if (isRemoteFilePath(path)) return;
     if (fpPathCache.has(path)) {
       if (fpPathCache.get(path)) span.classList.add("fp-verified");
       return;
@@ -36607,7 +36637,14 @@ fpPathMenu.addEventListener("click", ev => {
   const item = ev.target.closest("[data-fp-action]");
   if (!item || !window.philogg) return;
   const path = fpPathMenu.dataset.fp;
-  if (item.dataset.fpAction === "open") window.philogg.openPath(path);
+  if (item.dataset.fpAction === "open") {
+    // The wrapper refuses executable types (desktop pathguard.rs), and the
+    // refusal has to explain itself instead of "Open file" silently doing
+    // nothing. Promise.resolve: a bridge method needn't return a promise.
+    Promise.resolve(window.philogg.openPath(path)).catch(err => {
+      showCopyToast('Couldn\'t open "' + path + '" (' + ipcErrorText(err) + ')');
+    });
+  }
   else if (item.dataset.fpAction === "reveal") window.philogg.revealPath(path);
   else if (item.dataset.fpAction === "open-here") openFpPathHere(path);
   closeFpPathMenu();
@@ -36619,6 +36656,12 @@ fpPathMenu.addEventListener("click", ev => {
 // URL loadDesktopLocalFiles needs; only reached for a path openFpPathMenu
 // already gated on isCompatibleFolderFile, but the file can still have been
 // deleted/moved since path_exists last checked it, hence the catch.
+// A desktop-bridge command that fails with `Err(String)` rejects with that
+// plain string (no Error object, hence no `.message`).
+function ipcErrorText(err) {
+  return err && err.message ? err.message : String(err);
+}
+
 async function openFpPathHere(path) {
   if (!window.philogg || typeof window.philogg.openLocalPath !== "function") return;
   try {
