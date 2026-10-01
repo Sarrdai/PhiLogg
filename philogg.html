@@ -24959,7 +24959,7 @@ function setHighlightScroll(value) {
    lines get a `hit` class (and the filter's text matches are marked, like the
    Filtered rows mark them).
 
-   VIRTUALIZED (docs/text-files-implementation-plan.md Step 5), like the log
+   VIRTUALIZED (docs/ui-and-views.md "Text files"), like the log
    table: only the lines in/near the viewport are in the DOM (#teRows, between
    the #teTop/#teBottom spacers), one screen of overscan each side, rendered
    once per animation frame on scroll. The model is
@@ -24999,6 +24999,7 @@ const editorView = {
   mounted: [],          // [{pos, el}] ascending: the rows in the DOM (window rows + pinned ones)
   winStart: 0, winEnd: 0,
   hitIds: null, mm: null, hitKey: null,
+  selectAll: false,     // Ctrl+A: the whole file is selected (copy honours it, the rendered rows are selected visually)
   findOn: false, findKey: null, findCurIdx: -1,
   flashIdx: -1, flashTimer: 0,
 };
@@ -25015,7 +25016,7 @@ function resetEditorModel() {
   Object.assign(editorView, {
     rootId: null, key: null, entries: [], n: 0, folds: [], foldIdAt: null, lineParent: null, vis: null, maxLen: 0,
     cols: 0, tops: null, geoKey: null, mounted: [], winStart: 0, winEnd: 0,
-    hitIds: null, mm: null, hitKey: null, findOn: false, findKey: null, findCurIdx: -1, flashIdx: -1,
+    hitIds: null, mm: null, hitKey: null, selectAll: false, findOn: false, findKey: null, findCurIdx: -1, flashIdx: -1,
   });
   textEditorEl.style.width = "";
 }
@@ -25249,6 +25250,7 @@ function editorMount(start, end, full) {
   for (const m of out) editorPinStyle(m.el, m.pos, m.pos < start || m.pos >= end);
   editorView.mounted = out;
   editorView.winStart = start; editorView.winEnd = end;
+  if (editorView.selectAll) { const sel = window.getSelection(); if (sel && sel.rangeCount && sel.anchorNode === editorRowsEl) sel.selectAllChildren(editorRowsEl); } // new rows join the selection (removing rows collapsed it)
   const cnt = editorVisibleCount();
   editorTopEl.style.height = editorTopOfPos(start) + "px";
   editorBottomEl.style.height = (editorTopOfPos(cnt) - editorTopOfPos(end)) + "px";
@@ -25312,7 +25314,7 @@ function flashEditorLine(idx) {
   }, 1400);
 }
 
-/* Find bar in the editor (docs/text-files-implementation-plan.md Step 4).
+/* Find bar in the editor (docs/ui-and-views.md "Text files").
    The find bar's hits are indices into the file's entries == editor line
    indices (findState.entries is the editor's own entry list). Marks are added
    IN PLACE on the mounted rows — a <mark class="find-match-mark
@@ -25504,9 +25506,32 @@ function editorCopyText(a, b) {
   parts.push(es[b.line].message.slice(0, b.off));
   return parts.join("\n");
 }
+// Ctrl+A in the Context editor: the whole file is selected through the model —
+// the rendered rows visibly (re-applied as the window moves), the copy handler
+// below copies every line, folded ones included. Any other selection clears it.
+function editorContextOnScreen() {
+  return textEditorShown() && editorView.key !== null && fhSplit.style.display !== "none" &&
+    (fhLayout === "stacked" ? state.entriesView === "highlight" : fhActiveTab === "highlight");
+}
+function editorSelectAll() {
+  const sel = window.getSelection();
+  if (!sel || !editorView.n) return false;
+  editorView.selectAll = true;
+  sel.selectAllChildren(editorRowsEl);
+  return true;
+}
+function editorSelectAllIntact() {
+  const sel = window.getSelection();
+  return !!sel && sel.rangeCount > 0 && !sel.isCollapsed && sel.anchorNode === editorRowsEl;
+}
 document.addEventListener("copy", ev => {
   if (!textEditorShown() || editorView.key === null || !ev.clipboardData) return;
   const sel = window.getSelection ? window.getSelection() : null;
+  if (editorView.selectAll && editorSelectAllIntact()) {
+    ev.clipboardData.setData("text/plain", editorView.entries.map(e => e.message).join("\n"));
+    ev.preventDefault();
+    return;
+  }
   if (!sel || sel.isCollapsed || !sel.rangeCount) return;
   const a = editorEndpoint(sel.anchorNode, sel.anchorOffset), f = editorEndpoint(sel.focusNode, sel.focusOffset);
   if (!a || !f) return; // not (entirely) inside the editor rows: native copy
@@ -25515,6 +25540,7 @@ document.addEventListener("copy", ev => {
 });
 // A collapsed selection frees a pinned (scrolled-away) row: remount drops it.
 document.addEventListener("selectionchange", () => {
+  if (editorView.selectAll && !editorSelectAllIntact()) editorView.selectAll = false; // a click / new selection replaced it
   if (!textEditorShown() || !editorView.mounted.some(m => m.el.classList.contains("itv-pinned"))) return;
   const pins = editorPinnedRows();
   if (editorView.mounted.some(m => m.el.classList.contains("itv-pinned") && !pins.has(m.el))) editorRender(true);
@@ -43037,6 +43063,15 @@ document.addEventListener("keydown", ev => {
   if (matchesShortcut(ev, "bookmark") && logKeysActive() && state.selectedId) {
     ev.preventDefault();
     toggleBookmark(state.selectedId);
+    return;
+  }
+
+  // Ctrl+A: in the log views this stays the browser's native select-all; in the
+  // Context editor of a plain-text root it selects the whole file (the rows are
+  // virtualized, so the browser's own select-all would only cover what is rendered).
+  if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && key === "a" &&
+      logKeysActive() && editorContextOnScreen() && editorSelectAll()) {
+    ev.preventDefault();
     return;
   }
 

@@ -6,7 +6,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~45,600 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~46,500 lines: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -224,12 +224,16 @@ appended to its file: main-thread loop, worker adoption, `appendTailText`).
 That single choice keeps every order- and ts-based mechanism working
 unchanged (sorting, OR re-sort, link, context windows, minimap, time-range
 filters — all in lines); only the display side needs to know
-(`entryTimeText`, `formatTsFor`, `allRootsPlainText`). It is reached from
-the text viewer's "Filter lines" button (see `docs/ui-and-views.md` →
-"Inline text/image viewer"), never from filename resolution; no native
-parse (`nativeFormatSpec` → null), no merging. Its rows keep indentation and
-the viewer's JSON/XML highlighting, and it nests under its viewer entry in
-the tree (`node.viewerSource`) — see the same doc section.
+(`entryTimeText`, `formatTsFor`, `allRootsPlainText`). It is reached **by extension**: `formatIdForLoad`
+pins `.txt`/`.json`/`.xml` (`TEXT_FILE_EXTENSIONS`) to it and records
+`node.textSyntax` (`"json"` | `"xml"` | `null`); never from the content-based
+format resolution, no native parse (`nativeFormatSpec` -> null), no merging.
+A JSON file loads pretty-printed by default (`node.textLayout` `"pretty"` |
+`"raw"`, the file's own text on `node.textRaw`; the Context toolbar's
+Pretty/Raw toggle re-parses in place). The file is **one node** with two
+views: Context is a virtualized editor (folding, free selection, find),
+Filtered a line-numbered text-mode table — see `docs/ui-and-views.md` →
+"Text files". Its rows keep indentation and JSON/XML highlighting.
 
 **Native parsing under the desktop wrapper (`parseLocalFileNatively`).**
 When `window.philogg.parseLogFile` exists, a file opened from disk (dialog,
@@ -496,7 +500,8 @@ Reference for naming a UI element in conversation — points back to
 `docs/ui-and-views.md` for the prose explanation of how they behave.
 
 ### `docs/ui-concept-text-files.md`
-Decided concept (2026-10-01, German): text files (`.txt`/`.json`/`.xml`)
+Implemented concept (2026-10-01, German; current behaviour in
+`docs/ui-and-views.md` → "Text files"): text files (`.txt`/`.json`/`.xml`)
 load as one plain-text file node instead of an inline viewer plus a nested
 "Filter lines" copy; for such files the Context view shows the editor
 (folding, free selection, Pretty/Raw for JSON) and Filtered a text-mode
