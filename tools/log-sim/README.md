@@ -33,7 +33,9 @@ node tools/log-sim/cli.js --size 100MB -o /tmp/big.log  # ~6 s
 | `jsonl` | JSON Lines: nested `ctx`, literal dotted key `"http.status"`, arrays, objects | import `<prefix>.logformat.json` |
 | `syslog` | RFC 5424, numeric PRI as level (Integer level mode) | import `<prefix>.logformat.json` |
 | `mixed` | default lines interleaved with syslog lines | import the syslog definition, then add a Meta format `[syslog, Default]` |
-| `plain` | bare messages, `.txt` | open, then the text viewer's "Filter lines" |
+| `plain` | bare messages, `.txt` | opens as one plain-text file node |
+| `jsondoc` | ONE minified JSON document (`.json`) with nested scenario payloads | none (plain-text node; Pretty vs Raw layout) |
+| `xmldoc` | ONE XML document (`.xml`), one `<entry>` per line start | none (plain-text node) |
 
 Whenever output goes to a file or folder, the matching PhiLogg format
 definition (`philogg-log-format` export, with a filename rule for the
