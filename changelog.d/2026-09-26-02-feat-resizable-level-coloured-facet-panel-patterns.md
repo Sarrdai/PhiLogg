@@ -1,0 +1,6 @@
+- **feat: resizable, level-coloured Facet panel; Patterns moved to the first view tab (2026-09-26, person-requested)**. See `docs/ui-and-views.md` → "Facet panel" / "View Selector".
+  - **Facet panel width**: new `#facetResizer` grip on the panel's left edge drags its width (180px … view area − 240px), session-only like the other resizers. It sits inside `#facetPanel`, so it hides with the panel.
+  - **Facet level colour**: each value's name is shown in the colour of the most severe level among its entries (follows the level quick-filter).
+  - **Tab order**: `Patterns | Context | Filtered | Table | Plot` (Stacked: `Patterns | Stacked | Table | Plot`); `Ctrl+1` opens Patterns, `Ctrl+2`…`Ctrl+5` follow left to right.
+  - **Tests**: new **Group 288** (288c: level colour); GROUP 72, 194d and 286b updated to the new positions.
+  - **Full suite**: **6150 passed, 0 failed**.

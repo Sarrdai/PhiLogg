@@ -2,7 +2,7 @@
   "name": "philogg-regression-suite",
   "version": "1.0.0",
   "private": true,
-  "description": "Consolidated jsdom regression suite for philogg.html — drives the real file through actual DOM events. See the 'TEST PROVENANCE' comment at the bottom of philogg.regression.test.js for what each group covers.",
+  "description": "Consolidated jsdom regression suite for philogg.html — drives the real file through actual DOM events. One file per test group in groups/, see README.md.",
   "scripts": {
     "test": "node run.js",
     "test:single": "SHARDS=1 node philogg.regression.test.js"

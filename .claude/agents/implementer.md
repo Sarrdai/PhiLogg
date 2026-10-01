@@ -21,17 +21,24 @@ work (full tests, real-app screenshots) and may send corrections to you.
 ## While working
 
 - Stay in scope: no drive-by refactors, renames or "improvements".
-- `philogg.html` is ~42k lines: locate with `Grep`, read only the ranges
+- `philogg.html` is very large: locate with `Grep`, read only the ranges
   you need.
-- Every change ships with regression tests per `tests/README.md` (new
-  `GROUP N` with its `group(N);` marker, one TEST PROVENANCE line, or
-  update the superseded group), written to its timing rules ("Extending this
-  suite", step 2: `waitFor` instead of fixed sleeps, "nothing happened"
-  checked right after the step). Iterate with `cd tests && GROUP=N npm test`.
+- Every change ships with regression tests per `tests/README.md`: a new
+  group as its own file `tests/groups/<slug>.js` with its
+  `group("<slug>");` marker (never appended to the main test file), or an
+  update of the superseded group, written to its timing rules ("Extending
+  this suite", step 2: `waitFor` instead of fixed sleeps, "nothing
+  happened" checked right after the step). Iterate with
+  `cd tests && GROUP=<slug> npm test`; the lead runs the full suite.
+- **Log your progress.** If the brief names a progress file, append one
+  short line to it after each milestone (located the code, change done,
+  group written, group green, docs done) and whenever you hit a problem —
+  the lead mirrors it to the user, who otherwise sees nothing of your work.
+  Example: `14:32 GROUP text-files-bar: 9/12 green, fixing header height`.
 - Sample data only from `tools/log-sim/` — never hand-written log lines.
   If the simulator can't produce the case, extend it (scenario/format in
   `tools/log-sim/core.js` + GROUP 300).
-- Update the docs the brief lists (CHANGELOG.md entry, `docs/*.md`
+- Update the docs the brief lists (`changelog.d/` fragment, `docs/*.md`
   current-state section, README if user-visible).
 - Code and comments in English.
 - Do **not** commit or push unless the brief says so; the lead commits

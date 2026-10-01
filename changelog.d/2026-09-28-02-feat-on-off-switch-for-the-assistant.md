@@ -1,0 +1,3 @@
+- **feat: on/off switch for the assistant, default off (2026-09-28, person-requested: *"Gib dem Feature in den Settings noch einen On/Off Switch. Ausgeschaltet soll dann das Chat Icon nicht zu sehen sein. Default: Off"*)**. See `docs/llm-assistant.md` → "Chat view".
+  - Settings → Assistant → **Enable assistant** (`philogg-llm-enabled`). Off: no toolbar chat button, no chat window or docked panel, sessions not loaded; switching off stops a running round and closes the chat (stored chats and the docked preference are kept).
+  - **Tests**: new **Group 308**; the assistant groups 304–307 switch it on before boot. Screenshot scene `10-assistant.js` switches it on. Full suite **6781 passed, 0 failed**.

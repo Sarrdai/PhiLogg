@@ -1,0 +1,5 @@
+- **feat: tuple-style name lists for extraction column names (2026-09-29, person-requested)**
+  - A name list directly before an equally long value list is paired by position (`deriveTupleNames`): `(xo, yo, zo): ([*:float] , [*:float], [*:float])` → `xo`, `yo`, `zo`. Brackets `()` `[]` `{}` `<>` or none, separators `, ; / |` or (bracketed name list only) plain spaces, connectors `:` `=` `->` `=>`. Count mismatch or mixed separators → the word-before rule as before.
+  - Units per value (`[*:float]mm ,`) and group units (`(xo, yo) [mm]: (…)`, `(…) mm`, only-last-token unit on an unbracketed list) — a value's own unit wins. `extractUnitAfter` is now the single unit rule.
+  - Simulator: new opt-in scenario `tuples` (11 fixed shapes); default output unchanged.
+  - **Tests**: new **Group 327**; GROUP 300 extended.

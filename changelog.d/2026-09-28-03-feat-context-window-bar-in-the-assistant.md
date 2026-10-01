@@ -1,0 +1,5 @@
+- **feat: context window bar in the assistant chat (2026-09-28, person-requested: *"Unterstützt die Schnittstelle zu LM-Studio eine Anzeige des Kontextwindows? Könnte man das visuell in den Chat einbauen? Als progressbar mit Details beim Hovern?"*)**. See `docs/llm-assistant.md` → "Context window bar".
+  - Requests set `stream_options.include_usage`; the assembler reads the usage chunk (empty `choices`, previously dropped). The last turn's `prompt + completion` tokens are the fill, stored as `session.context`.
+  - The limit is the model's loaded context length from LM Studio's native `/api/v0/models` (new `philogg-llm::model_details`, command `llm_model_details`, bridge `window.philogg.llmModelDetails`), fetched once per round. Other servers: used tokens only, no bar.
+  - `chat.html`: bar above the input, "used / limit (%)", warn at 80 %, error color at 95 %, tooltip with prompt/answer tokens, context length and model.
+  - **Tests**: new **Group 313**; `cargo test -p philogg-llm` covers `model_details`. Full suite **6875 passed, 0 failed**.

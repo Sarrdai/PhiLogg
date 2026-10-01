@@ -1,0 +1,6 @@
+- **feat: Radar and Parallel coordinates charts; Heatmap/Profile over a column group (2026-09-27, person-requested: *"Wäre es aus deiner Sicht sinnvoll, Heatmap und Profile auch allgemein für Tabellen zu erlauben?"* … *"Ich fände beide Plots wären eine sinnvolle Ergänzung. Implementiere alle hier besprochenen Erweiterungen"*)**. See `docs/extraction-and-plotting.md` → "Value charts".
+  - **Column group** (`plotConfig.multiCols`, `#plotColList` with ▲/▼ reordering): an ordered set of plottable columns treated like an array per row. Heatmap/Profile can use it instead of an array column ("Values" select → Columns, `plotConfig.arraySource`), e.g. for `ch0=… ch1=… ch2=…`.
+  - **Radar** (new chart type): one spoke per column, each on its own min..max scale — for mixed units; the row slider and Table-selection overlays work as in Profile.
+  - **Parallel coordinates** (new chart type): one axis per column, one line per row (sampled above 3000 lines), optional color-by; drag along an axis to set a value range (rows outside are dimmed, "n of N rows in range"), **Select in table** selects the rows in range, click an axis to clear its range.
+  - The chart type row now holds eight buttons, four per row.
+  - **Tests**: new **Group 310** (sensors scenario of the log simulator); GROUP 299 updated to eight chart types. Full suite **6831 passed, 0 failed**.

@@ -1,0 +1,5 @@
+- **docs: README screenshots regenerated with the log simulator; simulator is the mandated source of sample data and screenshots (2026-09-27, person-requested)**. See `PROJECT.md` → "Sample data and screenshots".
+  - **Screenshots**: all seven README pictures re-shot against the current UI from simulator data (seed 7), plus two new ones (Heatmap, Patterns tab); `05-highlight-split.png` became `05-context-view.png`. `docs/screenshots/generate.sh` + `scenes/*.js` regenerate them reproducibly.
+  - **Rule**: `CLAUDE.md`/`PROJECT.md` — examples and screenshots always come from `tools/log-sim/`; a case it can't produce is added to the simulator first.
+  - **fix (simulator)**: `screenshot.js` ran `--eval` before the files had finished parsing (it waited on a `loading` flag the app doesn't have) — it now waits until each file's `loadFraction` is gone. Error bursts were far too frequent (~20% of all entries), weight lowered; checksum values always carry `0x` (an all-digit random hex value was grouped as a number in the Patterns tab).
+  - **Full suite**: **6519 passed, 0 failed**.
