@@ -2096,7 +2096,8 @@
      separate control living on the viewer itself. See renderZipEntryRow. */
   #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
   /* Inline Text View. Its OWN word-wrap toggle (state.wrapTextView /
-     body.textview-wrap, the #itvWrapBtn in the Text-View toolbar —
+     body.textview-wrap, toggled from the editor toolbar once Step 3 of
+     docs/text-files-implementation-plan.md lands —
      FEATURE_BACKLOG.md #68), separate from the log view's toggle. Off
      (default) = white-space:pre, long lines scroll horizontally
      (#inlineViewerBody overflow:auto); on = pre-wrap, they soft-wrap.
@@ -2205,20 +2206,15 @@
      toolbar row above the content — same Controls | Settings grouping and
      button styling #contextToolbar/#plotToolbar already establish, reused
      here rather than inventing a third visual language for "a small
-     toolbar with grouped buttons". Shared by BOTH sub-viewers (image zoom
-     controls, JSON Pretty Print) — see updateInlineViewerToolbar. */
+     toolbar with grouped buttons". Image zoom controls only — see
+     updateInlineViewerToolbar. */
   #inlineViewerToolbar{
     flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:6px 14px;
     background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #inlineViewerToolbar.hidden{display:none;}
   #inlineViewerToolbar .toolbar-group{display:flex; align-items:center; gap:4px;}
-  #inlineViewerToolbar .toolbar-group.hidden, #itvToolbarSep.hidden{display:none;}
-  /* Individual settings-group buttons hide independently now: the Settings
-     group shows for ANY text file (so #itvWrapBtn, the Text-View word-wrap
-     toggle, is available on .txt/.xml/.json), but Pretty Print stays
-     JSON-only — see updateInlineViewerToolbar. */
-  #itvWrapBtn.hidden, #itvPrettyPrintBtn.hidden, #itvFilterLinesBtn.hidden{display:none;}
+  #inlineViewerToolbar .toolbar-group.hidden{display:none;}
   /* Same non-icon button look #plotToolbar's own Reset button uses (see
      that selector's own comment) — Reset isn't part of the zoom pill (see
      .stepper's own comment above), so it stays its own plain flat button.
@@ -5012,17 +5008,8 @@
         <div id="inlineViewerHeader">
           <span id="inlineViewerName"></span>
         </div>
-        <!-- Unified toolbar (person-requested): same Controls | Settings
-             grouping convention as #contextToolbar/#plotToolbar above,
-             instead of the image viewer's own floating overlay pill. One
-             row for BOTH sub-viewers (text and image), not two separate
-             ones — Controls (image zoom, hidden for a text file) and
-             Settings (JSON Pretty Print, hidden for anything but .json)
-             each show/hide their own group depending on state.inlineViewer,
-             same idea as #plot2dToolsGroup's own conditional visibility;
-             updateInlineViewerToolbar (near openInlineViewer) does that
-             gating and hides the whole row when neither group has anything
-             to show (a plain .txt/.xml file). -->
+        <!-- Toolbar of the inline IMAGE viewer: zoom Controls only (text files
+             are no longer viewers — they load as plain-text file nodes). -->
         <div id="inlineViewerToolbar" class="hidden">
           <div class="toolbar-group" data-toolbar-group="controls">
             <div class="stepper stepper-compact">
@@ -5032,15 +5019,8 @@
             </div>
             <button type="button" id="imgZoomResetBtn" title="Reset zoom">Reset</button>
           </div>
-          <span id="itvToolbarSep" class="ctx-toolbar-sep hidden"></span>
-          <div class="toolbar-group" data-toolbar-group="settings">
-            <button type="button" id="itvWrapBtn" class="toolbar-icon-btn icon-toggle" title="Word wrap"></button>
-            <button type="button" id="itvPrettyPrintBtn" class="toolbar-icon-btn icon-toggle" title="Pretty-print this JSON">{ }</button>
-            <button type="button" id="itvFilterLinesBtn" class="toolbar-icon-btn" title="Open the lines shown here as a filterable text file (one entry per line — with Pretty Print on, the pretty-printed lines)"></button>
-          </div>
         </div>
         <div id="inlineViewerBody">
-          <pre id="inlineTextViewer" class="hidden"></pre>
           <div id="inlineImageViewer">
             <svg id="imgViewerSvg" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg"></svg>
             <div id="imgViewerDragRect" class="plot-drag-rect hidden"></div>
@@ -7032,8 +7012,8 @@ const ICON_NOTE = icon("note");
 // in for "multi-line text" the same way ICON_PIN's thumbtack stands in for
 // "pin". See PROJECT.md "Multiline message display toggle".
 const ICON_MULTILINE = icon("multiline");
-// Word-wrap toggle (.toggle-wrap in the log toolbars, #itvWrapBtn in the
-// Text-View toolbar — FEATURE_BACKLOG.md #68): a line that runs right, then
+// Word-wrap toggle (.toggle-wrap in the log toolbars, later the editor
+// toolbar — FEATURE_BACKLOG.md #68): a line that runs right, then
 // curls back down and left to a return arrowhead, standing in for "this line
 // wraps back". Distinct from ICON_MULTILINE's plain stacked lines.
 const ICON_WRAP = icon("wrap");
@@ -10027,7 +10007,8 @@ const DEFAULT_LOG_FORMAT = {
 
 // "Plain text": every physical line is its own entry (blank lines
 // included), its whole text the message — what makes an arbitrary text
-// file (or a Pretty-Printed JSON document, see openInlineViewerAsTextLog)
+// file (.txt/.json/.xml files always load this way — textFileSyntax; a JSON
+// document is laid out pretty-printed or raw, see applyTextLayout)
 // filterable/extractable/plottable with the ordinary filter tree. Such a
 // file has no time and no level: its entries' `ts` is the 1-based LINE
 // NUMBER instead (numberPlainTextEntry), which keeps every order-based
@@ -10080,14 +10061,55 @@ function levelBadgeHtml(e) {
   return isPlainTextFormat(e.formatId) ? "" : '<span class="level-badge">' + escapeHtml(e.level) + '</span>';
 }
 // Which syntax a plain-text file's lines are highlighted as: "json"/"xml"
-// when it came from such a text viewer (node.textSyntax, set by
-// openInlineViewerAsTextLog; derived from the name for a file restored
-// without it), else null.
+// for a text file (node.textSyntax, set at load from the extension; derived
+// from the name for a file that lacks it), else null.
 function plainTextSyntaxOf(fileNode) {
   if (!fileNode || !isPlainTextFormat(fileNode.formatId)) return null;
   if (fileNode.textSyntax !== undefined) return fileNode.textSyntax;
-  const m = /\.(json|xml)(?: \(pretty\))?$/i.exec(fileNode.name || "");
+  const m = /\.(json|xml)$/i.exec(fileNode.name || "");
   return m ? m[1].toLowerCase() : null;
+}
+
+// Text files (.txt/.json/.xml) load through every entry point (loose files,
+// watched folders, ZIP entries) as ONE ordinary file node pinned to the
+// Plain text format — never as an inline viewer (images still are one, see
+// inlineViewableKind). node.textSyntax marks such a node: "json" | "xml" |
+// null (.txt). textFileSyntax(name) is undefined for any other file.
+const TEXT_FILE_EXTENSIONS = ["txt", "xml", "json"];
+function textFileSyntax(name) {
+  const dot = String(name).lastIndexOf(".");
+  const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
+  if (!TEXT_FILE_EXTENSIONS.includes(ext)) return undefined;
+  return ext === "json" || ext === "xml" ? ext : null;
+}
+function isTextFileName(name) { return textFileSyntax(name) !== undefined; }
+// The format a freshly loaded file gets: a text file is pinned to Plain
+// text (and tagged with its syntax), anything else resolves from the
+// filename rules. Called wherever a load resolved the format by name.
+function formatIdForLoad(node, name) {
+  if (node.textSyntax === undefined) {
+    const syntax = textFileSyntax(name);
+    if (syntax === undefined) return resolveFormatIdForFilename(name);
+    node.textSyntax = syntax;
+  }
+  return PLAINTEXT_FORMAT_ID;
+}
+// JSON text files only: node.textLayout "pretty" | "raw" decides which text
+// the plain-text parser sees — the pretty-printed document (one entry per
+// line of the pretty print) or the file's own text. Pretty is the default
+// whenever the text is valid JSON; invalid JSON silently loads raw. The
+// file's own text stays on node.textRaw (a layout switch re-parses from it,
+// and the session cache stores it, not the pretty print). Returns the text
+// to parse; any other node is left alone.
+function applyTextLayout(node, text) {
+  if (node.textSyntax !== "json" || !isPlainTextFormat(node.formatId)) return text;
+  node.textRaw = text;
+  if (node.textLayout !== "raw") {
+    const pretty = prettyPrintedJsonOrNull(text);
+    if (pretty !== null) { node.textLayout = "pretty"; return pretty; }
+  }
+  node.textLayout = "raw";
+  return text;
 }
 function activePlainTextSyntax() {
   const rootId = state.activeId ? getRootFileId(state.activeId) : null;
@@ -11421,7 +11443,7 @@ function createFileNode(name, folderId) {
   // row would. Skipped during session restore for the same reason
   // state.activeId is: restoreSessionFromCache's own final correction is
   // the single source of truth for both once every file is back.
-  if (!sessionRestoreInProgress && !metaFormatSplitInProgress && !kbLoad) { state.activeId = node.id; state.multiSelect = new Set(); }
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress && !kbLoad) { state.activeId = node.id; state.multiSelect = new Set(); state.inlineViewer = null; } // a new file node replaces a shown (image) viewer
   flushLoadRender();
   return node;
 }
@@ -11467,6 +11489,7 @@ function activateQueuedFileNode(node) {
     // outlive the row it pointed at becoming inactive.
     state.activeId = node.id;
     state.multiSelect = new Set();
+    state.inlineViewer = null; // the loading file replaces a shown (image) viewer, same as createFileNode
   }
   flushLoadRender();
 }
@@ -11676,7 +11699,7 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
       return await loadMetaFormatText(name, text, fmt0);
     }
   }
-  await parseLogTextAsync(text, node, (done, total) => {
+  await parseLogTextAsync(applyTextLayout(node, text), node, (done, total) => {
     node.loadFraction = total ? done / total : 1;
     scheduleLoadRender(node.id);
     if (onProgress) onProgress(done, total);
@@ -11687,6 +11710,42 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
   // identical situation on its own load path.
   if (state.nodes[node.id] === node) flushLoadRender(node.id);
   return node;
+}
+
+// Switches a JSON text file node between its "pretty" and "raw" layout and
+// re-parses it in place: same node id, filter children kept (their results
+// recompute — text filters see the new lines, line-range filters keep their
+// numbers), entries replaced. Bookmarks/notes on the old entries are
+// dropped (their entries no longer exist). Returns false (nothing changed)
+// for a node that isn't a JSON text file, an unknown layout, the layout it
+// already has, or "pretty" for text that isn't valid JSON. Not undoable.
+async function setTextLayout(nodeId, layout) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "file" || node.textSyntax !== "json" || typeof node.textRaw !== "string") return false;
+  if ((layout !== "pretty" && layout !== "raw") || node.textLayout === layout) return false;
+  let text = node.textRaw;
+  if (layout === "pretty") {
+    text = prettyPrintedJsonOrNull(node.textRaw);
+    if (text === null) return false;
+  }
+  node.textLayout = layout;
+  await reparseTextFileNode(node, text);
+  persistFileNode(node);
+  render();
+  return true;
+}
+// Replaces a plain-text file node's entries with a fresh parse of `text`
+// (in place — the node, its id and its filter children stay).
+async function reparseTextFileNode(node, text) {
+  node.entries.forEach(e => { state.bookmarks.delete(e.id); state.notes.delete(e.id); });
+  releaseEntriesFromIndex(node.entries, node.id);
+  node.entries = [];
+  invalidateFileAggregate(node);
+  invalidateOrderIndexMap(node.id);
+  await parseLogTextAsync(text, node, null);
+  delete node._cacheBlob; // the cached File no longer matches the entries' layout
+  invalidateCachesForRoots([node.id]);
+  syncBookmarksFilterNode(node.id); syncNotesFilterNode(node.id);
 }
 
 // A meta-format's whole job: split one physical file's text into its
@@ -14866,9 +14925,11 @@ function snapshotSubtree(nodeId) {
     if (node.formatId) copy.formatId = node.formatId;
     if (node.folderId) copy.folderId = node.folderId;
     if (node.folderRelPath) copy.folderRelPath = node.folderRelPath;
-    // A "Filter lines" text version keeps its viewer nesting and syntax.
-    if (node.viewerSource) copy.viewerSource = node.viewerSource;
+    // A text file (.txt/.json/.xml) keeps its syntax and, for JSON, the
+    // layout and the file's own text a layout switch re-parses from.
     if (node.textSyntax !== undefined) copy.textSyntax = node.textSyntax;
+    if (node.textLayout) copy.textLayout = node.textLayout;
+    if (typeof node.textRaw === "string") copy.textRaw = node.textRaw;
     // Windowed/partial load (see loadFolderFileWindowed): losing this across
     // an undo would make a deliberately-incomplete node look like a normal
     // full file again, same class of bug node.formatId's own comment above
@@ -14950,8 +15011,9 @@ function restoreSubtree(snap) {
     if (snap.formatId) node.formatId = snap.formatId;
     if (snap.folderId) node.folderId = snap.folderId;
     if (snap.folderRelPath) node.folderRelPath = snap.folderRelPath;
-    if (snap.viewerSource) node.viewerSource = snap.viewerSource;
     if (snap.textSyntax !== undefined) node.textSyntax = snap.textSyntax;
+    if (snap.textLayout) node.textLayout = snap.textLayout;
+    if (typeof snap.textRaw === "string") node.textRaw = snap.textRaw;
     if (snap.partial) node.partial = snap.partial;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
     if (snap._cacheBlob) node._cacheBlob = snap._cacheBlob;
@@ -16927,8 +16989,7 @@ function renderMainView() {
     inlineViewerWrap.style.display = "flex";
     inlineViewerNameEl.textContent = state.inlineViewer.name;
     inlineViewerNameEl.title = state.inlineViewer.name;
-    if (state.inlineViewer.kind === "text") renderInlineTextViewer(state.inlineViewer);
-    else renderInlineImageViewer(state.inlineViewer);
+    renderInlineImageViewer(state.inlineViewer);
     return;
   }
   inlineViewerWrap.style.display = "none";
@@ -17245,7 +17306,7 @@ function renderTree() {
     // never as a separate top-level row (see createMergeShell). A source
     // that was already an independent top-level file BEFORE a manual merge
     // (mergeOwnerId set, mergeSourceHidden NOT set) stays visible here too.
-    if (node && (node.folderId || node.zipId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node))) return;
+    if (node && (node.folderId || node.zipId || (node.mergeOwnerId && node.mergeSourceHidden))) return;
     treeEl.appendChild(renderNode(id, 0));
   });
   // Directly opened/dropped non-log inline-viewable files (this session):
@@ -17451,12 +17512,8 @@ function flattenTreeIds() {
       level.items.forEach(onItem);
     })(tree);
   };
-  // A viewer entry's virtual id, followed by its nested "Filter lines" text
-  // versions (see viewerTextLogIds) — their visual position.
-  const pushViewer = (kind, ownerId, mapKey) => {
-    ids.push(viewerNavId(kind, ownerId, mapKey));
-    walk(viewerTextLogIds(kind, ownerId, mapKey));
-  };
+  // A viewer entry's virtual id.
+  const pushViewer = (kind, ownerId, mapKey) => { ids.push(viewerNavId(kind, ownerId, mapKey)); };
   // Section order = the sidebar's own: #folderWatchList, #zipList, then #tree
   // (main tree, then loose viewers).
   // Folder-watch files: opened log files (real nodes, skipped in the main walk
@@ -17515,7 +17572,7 @@ function flattenTreeIds() {
   // that Sources node (see walk above).
   walk(state.rootIds.filter(id => {
     const node = state.nodes[id];
-    return !(node && (node.zipId || node.folderId || (node.mergeOwnerId && node.mergeSourceHidden) || isNestedUnderViewer(node)));
+    return !(node && (node.zipId || node.folderId || (node.mergeOwnerId && node.mergeSourceHidden)));
   }));
   // Directly opened/dropped non-log files (this session): no owning
   // container at all, so each gets a top-level virtual id, in the same
@@ -17648,9 +17705,7 @@ function moveTreeSelection(key, opts) {
       const next = ids[idx + 1];
       firstChild = next && navParentId(next) === currentId ? next : null;
     } else if (isViewerNavId(currentId)) {
-      const p = parseViewerNavId(currentId);
-      const listed = new Set(ids);
-      firstChild = viewerTextLogIds(p.ownerKind, p.ownerId, p.mapKey).find(id => listed.has(id)) || null;
+      // An image viewer entry has no children: nothing to expand/collapse.
     } else {
       if (!node) return;
       const isSources = node.type === "filter" && node.filterType === "sources";
@@ -28817,8 +28872,7 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
   row.appendChild(label);
 
   function closeThisEntry() {
-    // By hand: its "Filter lines" text versions close with it, undoable.
-    closeInlineViewerEntry(ownerKind, ownerId, mapKey, { undo: true });
+    closeInlineViewerEntry(ownerKind, ownerId, mapKey);
     render();
   }
 
@@ -28862,26 +28916,8 @@ function buildInlineViewerEntryRow(ownerKind, ownerId, viewersMap, mapKey, displ
     render();
   });
   row.addEventListener("dblclick", openFn);
-  const nested = cachedViewer ? viewerTextLogIds(ownerKind, ownerId, mapKey) : [];
-  if (depth != null) {
-    // Tree item: the text versions nest in the same wrap, lines drawn by
-    // renderPathTree's decorateTreeGuides pass.
-    const wrap = pathTreeItemWrap(row, depth);
-    nested.forEach(id => wrap.appendChild(renderNode(id, depth + 1)));
-    return wrap;
-  }
-  if (!nested.length) return row;
-  // The entry's "Filter lines" text versions, one level below it.
-  const frag = document.createDocumentFragment();
-  frag.appendChild(row);
-  nested.forEach(id => {
-    const sub = renderNode(id, 1);
-    // renderNode only draws connector lines for a depth-0 subtree; this one
-    // starts at depth 1 (under the viewer row), so draw them here.
-    decorateTreeGuides(sub);
-    frag.appendChild(sub);
-  });
-  return frag;
+  // A tree item (subfolder listing) comes back wrapped for the depth guides.
+  return depth != null ? pathTreeItemWrap(row, depth) : row;
 }
 function renderZipEntryRow(zip, entry, depth) {
   const label = depth == null ? entry.name : basenameOf(entry.name);
@@ -28978,7 +29014,8 @@ async function openZipEntryExternally(entry, zip) {
 }
 
 // --- Inline viewers (this session) ------------------------------------
-// A non-log ZIP entry of one of these extensions renders in the main
+// Only IMAGES are inline viewers now; .txt/.xml/.json load as plain-text
+// file nodes (textFileSyntax). A non-log ZIP entry of one of these extensions renders in the main
 // content area instead of going to openZipEntryExternally's OS-open/
 // browser-tab fallback. Deliberately zip-specific, matching
 // openZipEntryExternally's own scope — checked, per the plan, whether any
@@ -28988,63 +29025,32 @@ async function openZipEntryExternally(entry, zip) {
 // dropped non-log file simply fails to parse as a log via the ordinary
 // loadFileDescriptors path (see docs/persistence-and-sync.md). So there is
 // no existing "open any file" mechanism elsewhere to generalize this into.
-const INLINE_TEXT_EXTENSIONS = ["txt", "xml", "json"];
 const INLINE_IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "tiff", "tif"];
 function inlineViewableKind(name) {
   const dot = name.lastIndexOf(".");
   const ext = dot >= 0 ? name.slice(dot + 1).toLowerCase() : "";
-  if (INLINE_TEXT_EXTENSIONS.includes(ext)) return "text";
   if (INLINE_IMAGE_EXTENSIONS.includes(ext)) return "image";
   return null;
 }
 
 const inlineViewerWrap = el("#inlineViewerWrap");
 const inlineViewerNameEl = el("#inlineViewerName");
-const inlineTextViewerEl = el("#inlineTextViewer");
 const inlineImageViewerEl = el("#inlineImageViewer");
 const imgViewerSvg = el("#imgViewerSvg");
 const inlineViewerToolbar = el("#inlineViewerToolbar");
-const itvControlsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="controls"]');
-const itvSettingsGroup = inlineViewerToolbar.querySelector('[data-toolbar-group="settings"]');
-const itvToolbarSep = el("#itvToolbarSep");
-const itvWrapBtn = el("#itvWrapBtn");
-// Unified toolbar (person-requested): one row, shared by the text and
-// image sub-viewers, instead of the image viewer's own floating overlay —
-// Controls (zoom) only makes sense for an image, Settings (Pretty Print)
-// only for JSON, so each group shows/hides independently per viewer, and
-// the whole row (plus its separator, only needed between two VISIBLE
-// groups) hides entirely once neither has anything to show — e.g. a plain
-// .txt file.
+// Toolbar of the inline IMAGE viewer: zoom Controls only (text files load as
+// plain-text file nodes now, see loadTextFileNode).
 function updateInlineViewerToolbar(v) {
-  const showControls = v.kind === "image";
-  const isText = v.kind === "text";
-  // Settings group shows for ANY text file so the word-wrap toggle (#itvWrapBtn,
-  // FEATURE_BACKLOG.md #68) is reachable on .txt/.xml/.json; Pretty Print stays
-  // JSON-only and hides itself for the rest.
-  const showSettings = isText;
-  itvWrapBtn.classList.toggle("hidden", !isText);
-  itvWrapBtn.classList.toggle("active", state.wrapTextView);
-  itvPrettyPrintBtn.classList.toggle("hidden", !(isText && v.ext === "json"));
-  itvFilterLinesBtn.classList.toggle("hidden", !isText);
-  itvControlsGroup.classList.toggle("hidden", !showControls);
-  itvSettingsGroup.classList.toggle("hidden", !showSettings);
-  itvToolbarSep.classList.toggle("hidden", !(showControls && showSettings));
-  inlineViewerToolbar.classList.toggle("hidden", !(showControls || showSettings));
+  inlineViewerToolbar.classList.toggle("hidden", v.kind !== "image");
 }
 
 // Reflects state.wrapTextView on the body-level class the .textview-wrap CSS
-// keys off and on the toolbar button. A pure CSS switch (no innerHTML rebuild),
-// so unlike the Pretty Print toggle it doesn't re-render the viewer — the text
-// stays put, only its wrapping changes.
+// keys off. The wrap toggle button itself lives in the editor toolbar (Step 3
+// of docs/text-files-implementation-plan.md); until then the setting is only
+// restored/persisted.
 function updateWrapTextViewButton() {
   document.body.classList.toggle("textview-wrap", state.wrapTextView);
-  itvWrapBtn.classList.toggle("active", state.wrapTextView);
 }
-itvWrapBtn.addEventListener("click", () => {
-  state.wrapTextView = !state.wrapTextView;
-  updateWrapTextViewButton();
-  schedulePersistMeta();
-});
 
 // Bug 2/3 fix (person-reported): the single shared "a non-log entry becomes
 // the active content" transition — every call site that sets
@@ -29097,34 +29103,25 @@ function registerInlineViewer(viewer, owner) {
   owner.map.set(owner.mapKey, viewer);
 }
 async function buildInlineViewer(name, bytes, kind) {
-  let viewer;
-  if (kind === "text") {
-    const text = new TextDecoder().decode(bytes);
-    const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
-    viewer = { kind, name, text, ext, prettyPrint: false };
-  } else {
-    const blob = new Blob([bytes], { type: guessZipEntryMimeType(name) });
-    const dataUrl = await new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.readAsDataURL(blob);
-    });
-    viewer = { kind, name, dataUrl };
-    imgZoom = null; // fresh image starts at its home (fit) view
-  }
-  return viewer;
+  const blob = new Blob([bytes], { type: guessZipEntryMimeType(name) });
+  const dataUrl = await new Promise(resolve => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.readAsDataURL(blob);
+  });
+  imgZoom = null; // fresh image starts at its home (fit) view
+  return { kind, name, dataUrl };
 }
 
-/* ---------- Viewer persistence (text/image files across a reload) ----------
+/* ---------- Viewer persistence (image files across a reload) ----------
    An opened loose or folder viewer is kept like a log file: its content
    record goes into the "files" store under a "viewer-" key — the file's
    PATH when the desktop wrapper can reopen it (re-read from disk on
    restore; a file gone since is skipped), else the File/bytes as a Blob —
    and the session meta lists the open viewers (buildCacheMeta: owner, map
-   key, Pretty Print, which one was shown). restoreViewersFromCache
-   rebuilds them after the files and watched folders are back, so a
-   "Filter lines" text version (restored as an ordinary file carrying its
-   viewerSource) nests under its viewer again. */
+   key, which one was shown). restoreViewersFromCache rebuilds them after
+   the files and watched folders are back. Text-viewer records saved by an
+   older version are ignored (and dropped from the store). */
 const VIEWER_CACHE_PREFIX = "viewer-";
 function persistViewer(viewer, src, bytes) {
   if (!cacheEnabled() || (viewer.ownerKind !== "loose" && viewer.ownerKind !== "folder")) return;
@@ -29141,7 +29138,7 @@ function persistViewer(viewer, src, bytes) {
 function persistedViewerList() {
   const out = [];
   const add = (ownerKind, ownerId, map) => map.forEach((v, mapKey) => {
-    if (v.cacheKey) out.push({ key: v.cacheKey, ownerKind, ownerId, mapKey, name: v.name, kind: v.kind, prettyPrint: !!v.prettyPrint });
+    if (v.cacheKey) out.push({ key: v.cacheKey, ownerKind, ownerId, mapKey, name: v.name, kind: v.kind });
   });
   state.folders.forEach(f => add("folder", f.id, f.inlineViewers));
   add("loose", "loose", state.looseInlineViewers);
@@ -29165,21 +29162,21 @@ async function restoreViewersFromCache(meta) {
   const keep = new Set();
   let active = null;
   for (const v of list) {
-    const map = v && viewerMapForOwner(v.ownerKind, v.ownerId);
+    if (!v || v.kind !== "image") continue; // a saved text viewer: text files are plain-text file nodes now
+    const map = viewerMapForOwner(v.ownerKind, v.ownerId);
     if (!map || map.has(v.mapKey)) continue;
     const rec = await cacheStoreOp("files", "readonly", store => store.get(v.key));
     if (!rec) continue;
     let bytes;
     try { bytes = await readViewerRecordBytes(rec); } catch { continue; } // moved or deleted since
     const viewer = await buildInlineViewer(v.name, bytes, v.kind);
-    if (v.prettyPrint) viewer.prettyPrint = true;
     viewer.cacheKey = v.key;
     viewer.localPath = rec.localPath || null;
     registerInlineViewer(viewer, { ownerKind: v.ownerKind, ownerId: v.ownerId, map, mapKey: v.mapKey });
     if (v.ownerKind === "folder") {
       // A restored folder still waiting for permission has no scan yet: seed
       // the viewer's listing entry (same shape as restoreWatchedFolders) so it
-      // stays listed and its text versions stay nested inside the folder.
+      // stays listed.
       const folder = state.folders.find(f => f.id === v.ownerId);
       if (folder && !folder.files.some(r => folderFileKey(r) === v.mapKey)) {
         folder.files.push({ name: v.name, relPath: v.mapKey, handle: null, nodeId: null });
@@ -29203,70 +29200,12 @@ function closeInlineViewer() {
   render();
 }
 
-// The text a text viewer actually shows, line for line: the pretty-printed
-// JSON while Pretty Print is on, the file's own text otherwise.
-function inlineViewerDisplayedText(v) {
-  const pretty = v.ext === "json" && v.prettyPrint ? prettyPrintedJsonOrNull(v.text) : null;
-  return pretty !== null ? pretty : v.text;
-}
-
-// "Filter lines": loads what the viewer shows as a new root file under the
-// Plain text format (one entry per line — see PLAINTEXT_LOG_FORMAT), so the
-// whole filter tree (text/regex/wildcard filters, Table, Plot) works on it.
-// It deliberately takes the DISPLAYED text: a minified JSON document is one
-// line and only becomes line-filterable pretty-printed.
-// The new file nests under the viewer's own row in the tree (viewer ->
-// text version -> its filters, see viewerTextLogIds); asking again for the
-// same version of the same viewer re-activates it instead of loading a
-// second copy.
-async function openInlineViewerAsTextLog(v) {
-  if (!v || v.kind !== "text") return null;
-  const pretty = v.ext === "json" && v.prettyPrint && prettyPrintedJsonOrNull(v.text) !== null;
-  const name = v.name + (pretty ? " (pretty)" : "");
-  const source = v.ownerKind ? { ownerKind: v.ownerKind, ownerId: v.ownerId, mapKey: v.mapKey } : null;
-  state.inlineViewer = null; // the text version's log view replaces the viewer
-  if (source) {
-    const existing = viewerTextLogIds(source.ownerKind, source.ownerId, source.mapKey).find(id => state.nodes[id].name === name);
-    if (existing) {
-      activateNewNode(state.nodes[existing]);
-      render();
-      return state.nodes[existing];
-    }
-  }
-  const node = createQueuedFileNode(name);
-  node.textSyntax = v.ext === "json" || v.ext === "xml" ? v.ext : null;
-  if (source) node.viewerSource = source;
-  const loaded = await addFile(name, inlineViewerDisplayedText(v), undefined, PLAINTEXT_FORMAT_ID, node);
-  // addFile itself writes no cache record (only the file-loading path does);
-  // without one the text version would be listed but not restorable.
-  if (loaded && state.nodes[loaded.id] === loaded) persistFileNode(loaded);
-  return loaded;
-}
-// The plain-text files opened from one viewer entry ("Filter lines"), in
-// open order — rendered nested under that entry's row while it is open
-// (isNestedUnderViewer), and closed together with it.
-function viewerTextLogIds(ownerKind, ownerId, mapKey) {
-  return state.rootIds.filter(id => {
-    const src = state.nodes[id] && state.nodes[id].viewerSource;
-    return !!src && src.ownerKind === ownerKind && src.ownerId === ownerId && src.mapKey === mapKey;
-  });
-}
-// Closes one listed ZIP/folder entry that is open as an inline viewer: its
-// "Filter lines" text versions (its children), its persisted viewer record,
-// the cached viewer itself and — if it is the one shown — the main view's
-// inlineViewer. The ONE implementation behind the row's ✕/middle-click (with
-// `undo`: the text versions become undo entries like any closed file — not
-// deleteFilterNodeWithUndo, whose quit-on-last-file-closed check would fire
-// while the viewer is open) and behind every automatic close (folder
-// auto-close/deleted on disk, folder/ZIP ✕ — no undo). Does not render.
-function closeInlineViewerEntry(ownerKind, ownerId, mapKey, opts) {
-  const undo = !!(opts && opts.undo);
-  viewerTextLogIds(ownerKind, ownerId, mapKey).forEach(id => {
-    const index = state.rootIds.indexOf(id);
-    const snapshot = undo ? snapshotSubtree(id) : null;
-    deleteNode(id);
-    if (undo) pushUndo({ kind: "deleteFile", snapshot, index });
-  });
+// Closes one listed ZIP/folder entry that is open as an inline (image)
+// viewer: its persisted viewer record, the cached viewer itself and — if it
+// is the one shown — the main view's inlineViewer. The ONE implementation
+// behind the row's ✕/middle-click and behind every automatic close (folder
+// auto-close/deleted on disk, folder/ZIP ✕). Does not render.
+function closeInlineViewerEntry(ownerKind, ownerId, mapKey) {
   const map = viewerMapForOwner(ownerKind, ownerId);
   const viewer = map && map.get(mapKey);
   if (viewer && viewer.cacheKey) cacheDeleteFile(viewer.cacheKey);
@@ -29274,26 +29213,6 @@ function closeInlineViewerEntry(ownerKind, ownerId, mapKey, opts) {
   const shown = state.inlineViewer;
   if (shown && (shown === viewer || (shown.ownerKind === ownerKind && shown.ownerId === ownerId && shown.mapKey === mapKey))) state.inlineViewer = null;
 }
-// Only while its source entry is still open: a text version whose viewer is
-// gone (only a restored leftover — a closing entry, folder or ZIP takes its
-// text versions with it) falls back to an ordinary top-level row.
-function isNestedUnderViewer(node) {
-  const src = node && node.viewerSource;
-  if (!src) return false;
-  const map = viewerMapForOwner(src.ownerKind, src.ownerId);
-  if (!map || !map.has(src.mapKey)) return false;
-  // A folder renders an entry only while it is listed; restoreViewersFromCache
-  // seeds that listing for a restored folder still waiting for permission.
-  if (src.ownerKind === "folder") {
-    const folder = state.folders.find(f => f.id === src.ownerId);
-    return !!folder && folder.files.some(r => folderFileKey(r) === src.mapKey);
-  }
-  return true;
-}
-const itvFilterLinesBtn = el("#itvFilterLinesBtn");
-itvFilterLinesBtn.innerHTML = ICON_FILTER;
-itvFilterLinesBtn.addEventListener("click", () => { openInlineViewerAsTextLog(state.inlineViewer); });
-
 // No dedicated syntax highlighter exists anywhere else in philogg.html to
 // reuse for JSON/XML (checked, per the plan — message highlighting
 // elsewhere in the app only ever colors whole log LINES by level/search
@@ -29341,6 +29260,9 @@ function tokenRangesHtml(text, ranges) {
   }
   return out + escapeHtml(text.slice(last));
 }
+// Editor helpers below (highlight*Text, find*FoldRanges, buildFoldTree,
+// renderFoldNode) are unreferenced for now: Step 3 of
+// docs/text-files-implementation-plan.md (editor as Context view) reuses them.
 function highlightJsonText(text) { return tokenRangesHtml(text, jsonTokenRanges(text)); }
 function highlightXmlText(text) { return tokenRangesHtml(text, xmlTokenRanges(text)); }
 
@@ -29472,77 +29394,12 @@ function renderFoldNode(node, lines, tokenize) {
   return '<span class="itv-fold" data-start="' + node.start + '" data-end="' + node.end + '">' +
     openHtml + restHtml + '<span class="itv-fold-ellipsis"> … </span></span>';
 }
-// Pretty-print (this session, person-requested, JSON only): when
-// v.prettyPrint is on, the text actually rendered/folded/tokenized is
-// JSON.stringify(JSON.parse(v.text), null, 2) instead of v.text itself —
-// v.text (and so state.inlineViewer.text, what copy/select ultimately reads
-// from) is never mutated, so switching the toggle off always gets back the
-// exact original bytes. Invalid JSON falls back to the raw text unchanged
-// (itvPrettyPrintBtn itself is only shown for v.ext === "json", but a
-// .json-named file need not actually contain valid JSON).
+// Pretty-printed form of a JSON text, or null when it isn't valid JSON. Used
+// by applyTextLayout (a JSON text file's default "pretty" layout).
 function prettyPrintedJsonOrNull(text) {
   try { return JSON.stringify(JSON.parse(text), null, 2); }
   catch (err) { return null; }
 }
-function renderInlineTextViewer(v) {
-  inlineTextViewerEl.classList.remove("hidden");
-  inlineImageViewerEl.classList.remove("active");
-  updateInlineViewerToolbar(v);
-  const showPrettyBtn = v.ext === "json";
-  itvPrettyPrintBtn.classList.toggle("active", showPrettyBtn && !!v.prettyPrint);
-  // Every render() lands here while a text viewer is shown (a folder scan,
-  // a background tail tick, a sidebar click), and re-tokenizing a large
-  // file each time both costs seconds and throws away collapsed folds and
-  // the selection — so the markup is only rebuilt when the viewer or its
-  // Pretty Print state actually changed.
-  const wantPretty = showPrettyBtn && !!v.prettyPrint;
-  if (inlineTextViewerEl._shownViewer === v && inlineTextViewerEl._shownPretty === wantPretty) return;
-  inlineTextViewerEl._shownViewer = v;
-  inlineTextViewerEl._shownPretty = wantPretty;
-  const text = inlineViewerDisplayedText(v);
-  const tokenize = v.ext === "json" ? highlightJsonText : v.ext === "xml" ? highlightXmlText : escapeHtml;
-  const lines = text.split("\n");
-  const ranges = v.ext === "json" ? findJsonFoldRanges(text)
-    : v.ext === "xml" ? findXmlFoldRanges(text) : [];
-  const tree = buildFoldTree(lines.length, ranges);
-  inlineTextViewerEl.innerHTML = tree.map(n => renderFoldNode(n, lines, tokenize)).join("");
-}
-itvPrettyPrintBtn.addEventListener("click", () => {
-  if (!state.inlineViewer || state.inlineViewer.kind !== "text") return;
-  const turningOn = !state.inlineViewer.prettyPrint;
-  // Toggling off never fails (falls back to the raw text either way), but
-  // toggling ON invalid JSON would silently show the untouched original —
-  // say why instead of a mysteriously inert button.
-  if (turningOn && prettyPrintedJsonOrNull(state.inlineViewer.text) === null) {
-    showCopyToast(`"${state.inlineViewer.name}" isn't valid JSON — can't pretty-print it.`);
-    return;
-  }
-  state.inlineViewer.prettyPrint = turningOn;
-  render();
-});
-// Toggling a fold only flips a class (CSS does the hiding, see
-// .itv-fold.collapsed rules) — no re-render, so selection/scroll position
-// elsewhere in the viewer is undisturbed.
-inlineTextViewerEl.addEventListener("click", ev => {
-  const toggle = ev.target.closest(".itv-fold-toggle");
-  if (!toggle) return;
-  const fold = toggle.closest(".itv-fold");
-  if (!fold) return;
-  fold.classList.toggle("collapsed");
-  toggle.textContent = fold.classList.contains("collapsed") ? "▸" : "▾";
-});
-// Bugfix (Bug 3, person-reported): re-selecting text that overlaps (or
-// starts right next to) an EXISTING selection was being hijacked into the
-// browser's own native "drag the currently-selected text" gesture (the same
-// affordance that lets you drag a text selection into another input) instead
-// of starting a plain new drag-select — every browser makes text inside an
-// active selection natively draggable by default, no app code required to
-// opt in. There is no per-app "selectable text" concept to preserve — this
-// viewer is meant to behave like a plain read-only text pane — so the fix is
-// simply to opt out of the browser's native drag-a-selection feature
-// entirely for this element, restoring ordinary click/drag == select.
-inlineTextViewerEl.addEventListener("dragstart", ev => ev.preventDefault());
-
 // --- Inline image viewer: zoom/pan/reset/rect-select-zoom -------------
 // Genuinely reuses Plot View's own interaction MODEL and constants
 // (PLOT_ZOOM_WHEEL_FACTOR/PLOT_ZOOM_BUTTON_FACTOR/PLOT_DRAG_THRESHOLD_PX,
@@ -29609,7 +29466,6 @@ function imgAspectFit(centerX, centerY, spanX, spanY, aspectWH) {
 }
 
 function renderInlineImageViewer(v) {
-  inlineTextViewerEl.classList.add("hidden");
   inlineImageViewerEl.classList.add("active");
   updateInlineViewerToolbar(v);
   const area = inlineImageViewerEl;
@@ -29819,7 +29675,9 @@ window.addEventListener("mouseup", ev => {
 // file on the next reload — correct, since there's no live zip source left
 // to nest it back into.
 function openZipEntry(entry, zip) {
-  if (!isLogZipEntry(entry)) return openZipEntryExternally(entry, zip);
+  // A text entry (.txt/.json/.xml) loads like a log: one plain-text file node
+  // (formatIdForLoad); only images (inline viewer) and other types go external.
+  if (!isLogZipEntry(entry) && !isTextFileName(entry.name)) return openZipEntryExternally(entry, zip);
   // A brand-new log file entering the tree for the first time never goes
   // through the plain tree-row click handler above (it doesn't have a real
   // row to click yet) — clear any currently-shown non-log inline viewer
@@ -30009,7 +29867,7 @@ function loadOneFileIntoTree(name, file, handle, folderId, existingNode) { retur
 async function loadOneFileIntoTreeImpl(name, file, handle, folderId, existingNode) {
   const node = existingNode || createFileNode(name, folderId);
   if (existingNode) activateQueuedFileNode(node);
-  node.formatId = resolveFormatIdForFilename(name); // filename known before parsing starts
+  node.formatId = formatIdForLoad(node, name); // filename known before parsing starts
 
   const fmt0 = state.logFormats.find(f => f.id === node.formatId);
   if (fmt0 && fmt0.mode === "meta") {
@@ -30049,7 +29907,7 @@ async function loadOneFileIntoTreeImpl(name, file, handle, folderId, existingNod
 // whether the source was gzip. `file` may be null when canParseNatively(handle)
 // (see loadOneFileIntoTree). Not for meta-format files (the caller checks).
 async function readParseFileNode(node, name, file, handle, parseOpts) {
-  node.formatId = resolveFormatIdForFilename(name);
+  node.formatId = formatIdForLoad(node, name);
   // gzip (see "gzip-compressed logs" above): inflated right before the text
   // read, as the read phase's own progress — the text read of the in-memory
   // result is then near-instant. A gzip file never tails (see below). The
@@ -30106,7 +29964,7 @@ async function readParseFileNode(node, name, file, handle, parseOpts) {
       node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
       scheduleLoadRender(node.id);
     });
-    await parseLogTextAsync(text, node, (done, total) => {
+    await parseLogTextAsync(applyTextLayout(node, text), node, (done, total) => {
       node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
       scheduleLoadRender(node.id);
     }, parseOpts);
@@ -30242,7 +30100,7 @@ async function loadFileDescriptorsImpl(descs) {
     if (descs.length === 0) return;
   }
 
-  // Non-log, inline-viewable descriptors (generalized this session — see
+  // Image descriptors (inline-viewable; generalized earlier — see
   // openInlineViewer's own comment on ownerKind/ownerId/mapKey) never
   // become real tree nodes and skip the whole queued-placeholder/merge-
   // confirmation machinery below entirely, since that exists purely for the
@@ -30267,6 +30125,10 @@ async function loadFileDescriptorsImpl(descs) {
 
   const queuedNodes = descs.map(d => {
     const n = createQueuedFileNode(d.file ? d.file.name : d.name);
+    // A text file (.txt/.json/.xml) loads as a plain-text file node (see
+    // formatIdForLoad) and never takes part in the batch's merge.
+    const textSyntax = textFileSyntax(n.name);
+    if (textSyntax !== undefined) n.textSyntax = textSyntax;
     // Tags a zip-sourced entry from the very first (queued-placeholder)
     // render, same as node.folderId does for a watched-folder file (see
     // createFileNode) — this is what lets renderZipSection nest it inside
@@ -30303,7 +30165,8 @@ async function loadFileDescriptorsImpl(descs) {
     })().catch(err => ({ err }));
   });
 
-  const mergeAfter = descs.length > 1 ? await confirmMergeOnLoad(queuedNodes.map(n => n.name)) : false;
+  const mergeable = queuedNodes.filter(n => n.textSyntax === undefined);
+  const mergeAfter = mergeable.length > 1 ? await confirmMergeOnLoad(mergeable.map(n => n.name)) : false;
 
   // Create the merge FIRST (person-requested this session), before any
   // source has even started reading — each queued placeholder is tagged
@@ -30312,13 +30175,13 @@ async function loadFileDescriptorsImpl(descs) {
   // grayed row for the whole batch.
   let mergeShell = null;
   if (mergeAfter) {
-    mergeShell = createMergeShell(queuedNodes.map(n => n.name).join(" + "), undefined);
+    mergeShell = createMergeShell(mergeable.map(n => n.name).join(" + "), undefined);
     // Real File objects are in scope here — weight each source by its true
     // byte size (person-requested: reflect actual relative load effort,
     // not an equal N-way split). A zip-sourced entry has no `.file` (only
     // `.name`) — weight 1 (equal) for those.
-    mergeShell.loadSources = descs.map((d, i) => ({ id: queuedNodes[i].id, weight: d.file ? d.file.size : 1 }));
-    queuedNodes.forEach(n => { n.mergeOwnerId = mergeShell.id; n.mergeSourceHidden = true; });
+    mergeShell.loadSources = descs.map((d, i) => ({ id: queuedNodes[i].id, weight: d.file ? d.file.size : 1 })).filter(src => mergeable.some(n => n.id === src.id));
+    mergeable.forEach(n => { n.mergeOwnerId = mergeShell.id; n.mergeSourceHidden = true; });
     render();
   }
 
@@ -30376,7 +30239,7 @@ async function loadFileDescriptorsImpl(descs) {
         return null;
       }
     }));
-    loadedIds.push(...results.filter(id => id != null));
+    loadedIds.push(...results.filter(id => id != null && state.nodes[id] && state.nodes[id].textSyntax === undefined));
   } finally {
     if (needsFinalRender) render();
   }
@@ -30539,13 +30402,13 @@ function nativeDirHandle(path, name) {
       // subfolders each extra sequential IPC round trip is felt (see
       // scanFolderHandle's walk(), which calls values() once per directory
       // and awaits nested directories one at a time too).
-      // Widened this session (see scanFolderHandle's own filter comment):
-      // the native listing has to be told about inline-viewable extensions
+      // Widened earlier (see scanFolderHandle's own filter comment):
+      // the native listing has to be told about text and image extensions
       // too, or it filters them out on the Rust side before scanFolderHandle
       // ever gets a chance to widen anything.
       const [listed, subdirs] = await Promise.all([
         window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS.concat([GZIP_LOG_EXTENSION],
-          INLINE_TEXT_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e))),
+          TEXT_FILE_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e))),
         typeof window.philogg.listSubfolders === "function"
           ? window.philogg.listSubfolders(path) : Promise.resolve([]),
       ]);
@@ -31040,6 +30903,23 @@ async function tailTick() {
           return;
         }
       }
+      // A pretty-layout JSON file can't take appended raw lines (the pretty
+      // print of the grown document is not the old pretty print plus the
+      // new text): any size change reloads the whole file, like a rotation.
+      if (node.textLayout === "pretty" && f.size !== t.offset) {
+        const full = await f.text();
+        releaseEntriesFromIndex(node.entries, id);
+        node.entries = [];
+        t.offset = f.size;
+        t.pending = "";
+        t.lastGrowth = Date.now();
+        node.textRaw = full;
+        const pretty = prettyPrintedJsonOrNull(full); // mid-write (invalid) text shows raw until the writer finishes
+        appendTailText(node, (pretty !== null ? pretty : full).replace(/\r?\n$/, "") + "\n");
+        changedRootIds.push(id);
+        t.errorCount = 0;
+        return;
+      }
       let rotated = false;
       if (f.size < t.offset) {
         // File shrank — truncated or rotated. Start over with the new content.
@@ -31051,6 +30931,7 @@ async function tailTick() {
         t.offset = 0;
         t.pending = "";
         t.lastGrowth = Date.now();
+        if (typeof node.textRaw === "string") node.textRaw = "";
         rotated = true;
         changedRootIds.push(id);
       }
@@ -31059,6 +30940,7 @@ async function tailTick() {
         const chunk = await f.slice(start, f.size).text();
         t.offset = f.size;
         t.lastGrowth = Date.now();
+        if (typeof node.textRaw === "string") node.textRaw += chunk; // raw-layout JSON: keeps a later switch to pretty current
         const oldLen = node.entries.length;
         if (appendTailText(node, chunk)) {
           if (!rotated) appendedFrom.set(id, oldLen);
@@ -31364,13 +31246,13 @@ async function scanFolderHandle(dirHandle, settings) {
         }
         continue;
       }
-      // A log file (isCompatibleFolderFile) OR a non-log inline-viewable one
-      // (inlineViewableKind — .txt/.xml/.json, .jpg/.png/... — see
-      // openInlineViewer) gets listed; isCompatibleFolderFile itself is left
+      // A log file (isCompatibleFolderFile), a text file (.txt/.xml/.json —
+      // isTextFileName, loads as a plain-text node) OR an image
+      // (inlineViewableKind — see openInlineViewer) gets listed; isCompatibleFolderFile itself is left
       // meaning "is a log file" (isLogZipEntry and the start filters key off
       // it). The per-folder auto-open/auto-close/show-newest rules apply to
       // EVERY listed file, whichever of the two it is (applyFolderAutoRules).
-      if (entryHandle.kind !== "file" || !(isCompatibleFolderFile(entryHandle.name) || inlineViewableKind(entryHandle.name))) continue;
+      if (entryHandle.kind !== "file" || !(isCompatibleFolderFile(entryHandle.name) || inlineViewableKind(entryHandle.name) || isTextFileName(entryHandle.name))) continue;
       if (!patterns.some(p => fileNameGlobTest(p.pattern || "*", entryHandle.name))) continue;
       const relPath = relDir ? relDir + "/" + entryHandle.name : entryHandle.name;
       const rec = { name: entryHandle.name, relPath, handle: entryHandle };
@@ -31475,9 +31357,8 @@ async function mergeScannedFiles(folder, scanned) {
   await applyFolderAutoRules(folder);
 }
 
-// Whether a listed file is open: a log's node is alive, or (a non-log
-// inline-viewable file — .txt/.xml/.json/images) its viewer is registered in
-// folder.inlineViewers. The one "is it open" question the auto rules and the
+// Whether a listed file is open: its node is alive (a log or a text file), or
+// (an image) its viewer is registered in folder.inlineViewers. The one "is it open" question the auto rules and the
 // merge ask, so both kinds of file are treated alike.
 function isFolderRecOpen(folder, rec) {
   return !!(rec.nodeId && state.nodes[rec.nodeId]) || folder.inlineViewers.has(folderFileKey(rec));
@@ -31652,8 +31533,7 @@ function removeWatchedFolder(folderId) {
 // Closes everything a container (watched folder / ZIP source, `ownerKind`
 // "folder"|"zip") has open, for its ✕: silent preload jobs, every file node
 // opened from it (node.folderId / node.zipId — also one still loading or a
-// hidden merge source), every inline viewer with its persisted record, and any
-// text version ("Filter lines") of those viewers. Clears the main view if it
+// hidden merge source) and every inline viewer with its persisted record. Clears the main view if it
 // showed the container's viewer or (folder) its minimap. No undo, no render.
 function closeContainerFiles(ownerKind, owner) {
   const isZip = ownerKind === "zip";
@@ -31661,8 +31541,7 @@ function closeContainerFiles(ownerKind, owner) {
     if (isZip ? job.zip === owner : job.folder === owner) abortFolderPreload(job);
   }
   const opened = n => isZip ? n.zipId === owner.id : n.folderId === owner.id;
-  const textVersion = n => !!n.viewerSource && n.viewerSource.ownerKind === ownerKind && n.viewerSource.ownerId === owner.id;
-  Object.values(state.nodes).filter(n => n.type === "file" && (opened(n) || textVersion(n))).forEach(n => deleteNode(n.id));
+  Object.values(state.nodes).filter(n => n.type === "file" && opened(n)).forEach(n => deleteNode(n.id));
   [...owner.inlineViewers.keys()].forEach(key => closeInlineViewerEntry(ownerKind, owner.id, key));
   const shown = state.inlineViewer;
   if (shown && shown.ownerKind === ownerKind && shown.ownerId === owner.id) state.inlineViewer = null;
@@ -31696,10 +31575,12 @@ async function loadFolderFile(folder, rec, auto, quiet) {
   // a window job, a failed job) takes the normal route below.
   const preJob = takeFolderPreload(folder, rec, null);
   if (preJob && await loadFolderFileFromPreload(folder, rec, preJob, auto, quiet)) return;
-  // Non-log, inline-viewable file (see openInlineViewer's own comment): never
+  // Image (inline-viewable, see openInlineViewer's own comment): never
   // becomes a real node/rec.nodeId, same as a ZIP entry of one of these
   // types — its open state is folder.inlineViewers (isFolderRecOpen). The
   // auto rules apply to it like to a log (`auto` is true when one opens it).
+  // A text file (.txt/.json/.xml) is NOT one: it loads below as an ordinary
+  // plain-text file node (formatIdForLoad).
   const viewKind = inlineViewableKind(rec.name);
   // A log file the desktop wrapper parses natively is never fetched here
   // (see canParseNatively) — loadOneFileIntoTree takes it from the handle.
@@ -31751,7 +31632,8 @@ async function finishFolderFileNode(folder, rec, node, auto) {
   rec.openedByAuto = !!auto;
   if (auto) {
     rec.autoOpenFired = true;
-    await applyFolderStartFilter(folder, rec, node);
+    // Filter-library start filters are for LOG nodes: a text file skips them.
+    if (node.textSyntax === undefined) await applyFolderStartFilter(folder, rec, node);
   }
   // Under a wrapper that listed the folder natively the file's real path
   // and its philogg://local/… URL are both known, so a folder file gets
@@ -32238,7 +32120,7 @@ function desiredFolderPreloads(folder) {
   const out = new Map();
   for (const rec of resolveFolderMinimapTargets(folder)) {
     if (rec.nodeId && state.nodes[rec.nodeId]) continue;
-    if (inlineViewableKind(rec.name)) continue;
+    if (inlineViewableKind(rec.name) || isTextFileName(rec.name)) continue;
     const fmt = state.logFormats.find(f => f.id === resolveFormatIdForFilename(rec.name));
     if (fmt && fmt.mode === "meta") continue;
     out.set(folder.id + "|" + folderFileKey(rec), {
@@ -32264,7 +32146,7 @@ function cursorPreloadTarget() {
   if (!item) return null;
   const name = item.name;
   if (isZip ? !isLogZipEntry(item) : (item.nodeId && state.nodes[item.nodeId])) return null;
-  if (inlineViewableKind(name) || mightBePhiloggExport(name)) return null;
+  if (inlineViewableKind(name) || isTextFileName(name) || mightBePhiloggExport(name)) return null;
   const fmt = state.logFormats.find(f => f.id === resolveFormatIdForFilename(name));
   if (fmt && fmt.mode === "meta") return null;
   const owned = n => n && n.type === "file" && !n.preload && n.name === name && (isZip ? n.zipId === owner.id : n.folderId === owner.id);
@@ -32399,7 +32281,7 @@ function activatePreloadNode(node) {
   // A keyboard load (kbLoadNavIds) leaves the main view alone, like createFileNode.
   const kbLoad = !!kbLoadNavIdOf(node);
   if (!kbLoad) state.folderView = null;
-  if (!sessionRestoreInProgress && !metaFormatSplitInProgress && !kbLoad) { state.activeId = node.id; state.multiSelect = new Set(); }
+  if (!sessionRestoreInProgress && !metaFormatSplitInProgress && !kbLoad) { state.activeId = node.id; state.multiSelect = new Set(); state.inlineViewer = null; } // a new file node replaces a shown (image) viewer
   flushLoadRender();
 }
 
@@ -41893,12 +41775,6 @@ document.addEventListener("keydown", ev => {
 
   if (matchesShortcut(ev, "newFilter")) {
     ev.preventDefault();
-    // On an open text viewer: turn it into its "Filter lines" text version
-    // first (or re-activate the existing one) and filter that.
-    if (state.inlineViewer && state.inlineViewer.kind === "text") {
-      openInlineViewerAsTextLog(state.inlineViewer).then(node => { if (node) openFilterPopup(); });
-      return;
-    }
     if (state.activeId) openFilterPopup();
     return;
   }
@@ -42297,16 +42173,14 @@ document.addEventListener("keydown", ev => {
       }
       // A log row (Filter/Highlight view): copy ITS raw text (see
       // copyLogSelectionToClipboard). Exception: if the person has selected
-      // text inside the Entry Detail panel or an open ZIP inline text viewer
-      // (bugfix, person-reported: a background log-row selection won over an
-      // actual text selection made inside the viewer, because this handler
-      // fires on keydown and pre-empts the native `copy` event, including the
-      // inline viewer's own `copy` listener), let the browser's native copy
-      // handle that selection instead.
+      // text inside the Entry Detail panel (a background log-row selection must
+      // not win over an actual text selection made there — this handler fires
+      // on keydown and pre-empts the native `copy` event), let the browser's
+      // native copy handle that selection instead.
       if (logKeysActive() && state.selectedId) {
         const sel = window.getSelection();
         if (sel && sel.toString().length &&
-            (detailPanel.contains(sel.anchorNode) || inlineTextViewerEl.contains(sel.anchorNode))) return;
+            detailPanel.contains(sel.anchorNode)) return;
         ev.preventDefault();
         copyLogSelectionToClipboard();
       }
@@ -42463,6 +42337,9 @@ function newCacheKey() {
 // yields the same entries again; lines before the first header and blank
 // lines are the only content the original parse already dropped.
 function rebuildFileText(node) {
+  // A JSON text file: the file's own text (the entries may be its pretty
+  // print — re-parsing that raw would double-apply the layout).
+  if (typeof node.textRaw === "string") return node.textRaw;
   return node.entries.map(e => e.raw).join("\n");
 }
 
@@ -42554,10 +42431,12 @@ async function persistFileNode(node, immediate, noSnapshot) {
     text: source === "text" ? rebuildFileText(node) : null,
     blob: source === "blob" || source === "snapshot" ? blob : null,
     formatId: node.formatId || null,
-    // A "Filter lines" text version: which viewer it nests under, and its
-    // syntax (see openInlineViewerAsTextLog / restoreViewersFromCache).
-    viewerSource: node.viewerSource || null,
+    // A text file (.txt/.json/.xml): its syntax, and for JSON its layout
+    // ("pretty" | "raw") — restoreSessionFromCache applies both before the
+    // re-parse (the record's content is the file's own text, see
+    // rebuildFileText / applyTextLayout).
     textSyntax: node.textSyntax !== undefined ? node.textSyntax : null,
+    textLayout: node.textLayout || null,
     // FEATURE_BACKLOG.md #52 ("Open File Location"): localPath (desktop
     // wrapper only) and sourceUrl (any ?url=/philoggLoadUrl deep-link) both
     // need to survive a
@@ -43034,6 +42913,10 @@ async function restoreSessionFromCache(metaIn) {
       // whatever format it was actually parsed under, even if the person's
       // filename rules have since changed — see "Log format definitions".
       let node, reopened = null;
+      // Before the re-parse: a text file's syntax/layout decide which text
+      // the plain-text parser sees (applyTextLayout).
+      if (rec.textSyntax) placeholder.textSyntax = rec.textSyntax;
+      if (rec.textLayout) placeholder.textLayout = rec.textLayout;
       try {
         if (typeof rec.text === "string" || rec.blob) {
           const text = typeof rec.text === "string" ? rec.text : await rec.blob.text();
@@ -43070,8 +42953,6 @@ async function restoreSessionFromCache(metaIn) {
       // via restoreWatchedFolders, called right after this function returns.
       if (rec.folderId) node.folderId = rec.folderId;
       if (rec.folderRelPath) node.folderRelPath = rec.folderRelPath;
-      if (rec.viewerSource) node.viewerSource = rec.viewerSource;
-      if (rec.textSyntax) node.textSyntax = rec.textSyntax;
       if (rec.localPath) node.localPath = rec.localPath;
       if (rec.sourceUrl) node.sourceUrl = rec.sourceUrl;
       // Re-read from disk: this run's own philogg://local/… URL replaces the
@@ -45541,7 +45422,6 @@ btnPinBookmarks.forEach(b => b.innerHTML = ICON_PIN);
 btnNotes.forEach(b => b.innerHTML = ICON_NOTE);
 btnMultilineMsg.forEach(b => b.innerHTML = ICON_MULTILINE);
 btnWrapMsg.forEach(b => b.innerHTML = ICON_WRAP);
-itvWrapBtn.innerHTML = ICON_WRAP;
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
