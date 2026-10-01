@@ -274,7 +274,7 @@ Fake-Modell getestet. Der Test mit echtem LM Studio kommt gesammelt am Ende
 - Tests: `chat.html` in jsdom mit Fake-Transport; Screenshot für README
   via Simulator.
 - Backlog-Eintrag #70 entfernen; `docs/desktop.md`, neuer Abschnitt in
-  `docs/` für die Werkzeuge, README, CHANGELOG.
+  `docs/` für die Werkzeuge, README, changelog.d.
 
 **Phase 5 — Mehrere Sessions**
 - Neu/Wechseln/Umbenennen/Löschen, automatische Titel, optionale

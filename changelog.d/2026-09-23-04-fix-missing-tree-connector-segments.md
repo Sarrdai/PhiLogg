@@ -1,0 +1,1 @@
+- **fix: missing tree connector segments (this session, 2026-09-23, person-reported, screenshot)**. The previous fix's base `.tree-guide{height:0}` overrode the `top:0; bottom:0` stretch, so every rail, stem and lower half collapsed to nothing. Only the cross axis is zeroed now (`.v{width:0}`, `.h{height:0}`). Group 262 extended. Full suite: **5264 passed, 0 failed**.

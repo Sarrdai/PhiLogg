@@ -501,8 +501,8 @@ philogg.html                            the application — everything lives her
 site/                                   the product homepage (static landing page); `scripts/build-site.js` builds it with the hosted app + tour, `.github/workflows/pages.yml` deploys it to GitHub Pages (see docs/homepage.md)
 LICENSE.md                              license terms (PolyForm Noncommercial 1.0.0 + commercial evaluation), shipped with every build
 tests/
-  philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events): harness + older groups
-  groups/                               one file per newer test group
+  philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events): harness + shared helpers
+  groups/                               one file per test group
   fixtures/native-parse-golden.json     parsing golden file shared with the native parser's cargo test
   README.md                             testing conventions
 tools/
@@ -520,7 +520,7 @@ examples/
 scripts/
   install_pkgs.sh                       helper for installing test dependencies
   branch-status.sh                      session-start hint: how far the branch is behind main
-  changelog.js                          lists the changelog.d/ fragments, folds them into CHANGELOG.md at release
+  changelog.js                          prints changelog.d/ as one newest-first history (optionally since a date)
   strip-comments.js                     release-only: strips every comment out of a copy of philogg.html
   release-version.js                    release-only: computes the next beta version and stamps a version into the build's checkout
 .github/workflows/release-please.yml      two-stage stable release: proposes the version bump on demand, then tags + publishes all variants (HTML/Windows/Windows portable/macOS/Linux) when that release PR merges
@@ -532,8 +532,7 @@ PROJECT.md                              architecture entry point + index into do
 docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing, performance)
   screenshots/                          screenshots used by this README (generate.sh + scenes/ regenerate them)
   archive/                              finished concepts and implementation plans
-changelog.d/                            dated history, one file per change since 2026-10-01
-CHANGELOG.md                            dated history up to 2026-10-01 (fragments are folded in at release)
+changelog.d/                            dated changelog, one file per change
 FEATURE_BACKLOG.md                      unelaborated feature ideas
 CLAUDE.md                               instructions for AI coding sessions on this repo
 ```
@@ -575,9 +574,8 @@ Project documentation is split by audience:
 - **`docs/*.md`** — current-state architecture reference, one file per
   topic cluster (filters, UI/views, extraction/plotting,
   persistence/sync, desktop, testing/limitations).
-- **`changelog.d/` + `CHANGELOG.md`** — the dated history of what
-  shipped and why: one fragment file per change, folded into
-  `CHANGELOG.md` at release.
+- **`changelog.d/`** — the dated history of what shipped and why, one
+  file per change (`node scripts/changelog.js` prints it as one list).
 - **`FEATURE_BACKLOG.md`** — raw, unelaborated ideas for future work.
 - **`CLAUDE.md`** — short, load-every-session instructions for AI coding
   sessions.

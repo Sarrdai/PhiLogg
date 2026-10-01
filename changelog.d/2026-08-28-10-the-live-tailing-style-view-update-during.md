@@ -1,0 +1,1 @@
+- **The live tailing-style view update during a file's own load was removed outright**

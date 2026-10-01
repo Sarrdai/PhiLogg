@@ -1,0 +1,6 @@
+- **feat: column names from the message + role chips in the Plot tab (2026-09-29, person-requested, concept mockup proposals 1+2)**
+  - Extraction columns are named after the word before their placeholder (`temperature=[*:float]` → `temperature`, stop words skipped, fallback `value`), a short unit word after it becomes `col.unit`; plot axis titles read `temperature [C]` (`columnAxisLabel`). Chips show name + unit/type, the sidebar Y list shows the name in normal case with its unit.
+  - Plot tab: pattern chips show their plot role (X/Y/Z/C, column-group position, V) and open a role menu (`#plotRoleMenu`, `setPlotColumnRole`); a `Row` group adds Index/t (ms)/Δt; 2D axis titles are clickable column menus. Ignore moved into the menu there; the Table tab is unchanged.
+  - Fixed on the way: `renderPlotControls`' unchanged-HTML cache ignored role fields, leaving sidebar selects stale after an outside `plotConfig` change.
+  - Backlog #74 reduced to drag & drop only.
+  - **Tests**: new **Group 325** and **Group 326**; column-name expectations in existing copy/CSV/stats/assistant assertions updated to the derived names.

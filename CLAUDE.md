@@ -4,8 +4,7 @@ Project-specific instructions for Claude Code sessions on PhiLogg. This file
 loads automatically every session — kept short on purpose. `PROJECT.md` is
 the entry point into the architecture: overview, data model, gotchas, and
 links into `docs/*.md` for per-feature detail. `changelog.d/` (one file
-per change) and `CHANGELOG.md` (everything up to 2026-10-01) hold the
-dated history — read them for "why/when did X change", not for "how does X
+per change) holds the dated history — read them for "why/when did X change", not for "how does X
 work today" (that's `docs/`). For planned work see `FEATURE_BACKLOG.md`.
 
 ## What this is
@@ -69,8 +68,8 @@ in a feature branch: parallel sessions only see a rule once it is on
   desktop-app setup (`tools/perf/desktop-load-bench.sh`) that works in the
   cloud container.
 - **Update the docs every session that changes behavior**: one new
-  fragment `changelog.d/YYYY-MM-DD-<slug>.md` (3–6 lines, format in
-  `changelog.d/README.md` — never edit `CHANGELOG.md` directly); the
+  file `changelog.d/YYYY-MM-DD-<slug>.md` (3–6 lines, format in
+  `changelog.d/README.md`); the
   relevant `docs/*.md` file (or `PROJECT.md` itself for core architecture)
   updated to describe the *current* state — don't append a second narrative
   on top of the old one, edit the section to reflect how it works now; line

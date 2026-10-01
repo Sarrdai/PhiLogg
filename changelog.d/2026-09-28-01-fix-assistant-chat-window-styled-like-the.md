@@ -1,0 +1,6 @@
+- **fix: assistant chat window styled like the main app (2026-09-28, person-reported after the first desktop start: *"Passe Buttons und Window Style des Chatfensters an die Hauptanwendung an."*)**. See `docs/llm-assistant.md` → "Chat view".
+  - **Window**: frameless like the main window (macOS: overlay title bar with traffic lights); `chat.html` draws its own title bar — drag region, the main window's minimize/maximize/close buttons (close still only hides the chat).
+  - **Buttons**: emoji glyphs replaced by the main window's `.toolbar-icon-btn` with SVG icons; the session controls moved to their own toolbar row; Send, answer buttons, select and input use the main app's button/field styles; the snapshot's theme now also carries `accent-on`/`border-hover`.
+  - **Dialogs** (same day, person-reported: *"Das Rename Fenster sieht komisch aus. Passe auch hier den Style an."*): rename and the confirms (delete chat, undo a round you built on) no longer use the webview's native `prompt()`/`confirm()` boxes but an in-page dialog styled like the app's dialogs (Enter / Escape / backdrop click).
+  - **Screenshot**: `docs/screenshots/10-assistant.png` regenerated (`docs/screenshots/generate.sh assistant`).
+  - **Tests**: new **Group 307**; Groups 304c/305a/306c updated. Full suite **6770 passed, 0 failed**; desktop `npm run build` passes.

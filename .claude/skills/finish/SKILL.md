@@ -20,9 +20,9 @@ Never rebase or force-push a branch that is already pushed. Conflict rules:
 | File | Resolution |
 |---|---|
 | `changelog.d/*.md` | Can't conflict (one new file per change). If two branches picked the same file name, rename yours. |
-| `CHANGELOG.md` | Frozen; take `main`'s side. If your branch still edited it, move your entry into a `changelog.d/` fragment. |
-| `tests/groups/*.js` | Can't conflict (one new file per group). |
-| `tests/philogg.regression.test.js` | Keep both sides' changes; if both edited the same group, merge the assertions and re-run that group. |
+| `CHANGELOG.md` | Gone since 2026-10-01: if a branch started earlier still edits it, delete the file again and move its new entry into a `changelog.d/` file. |
+| `tests/groups/*.js` | New groups can't conflict (one new file each). Two branches changing the same group: merge the assertions, re-run that group. |
+| `tests/philogg.regression.test.js` | Harness and shared helpers only since 2026-10-01. A branch started earlier that added or changed a group in it: move that group's change into its `tests/groups/NNN-*.js` file (a new group becomes a new file) and take `main`'s side of the main file. |
 | `FEATURE_BACKLOG.md` | Keep both sides' rows. `LAST_ID` = the higher value; if both sides used the same new ID, give yours the next free one (`LAST_ID` + 1) and fix any reference to it in your branch. |
 | `PROJECT.md`, `docs/*.md`, `README.md` | Merge by content: the result must describe the current state of both changes, not two narratives. |
 | `philogg.html` | Resolve by understanding both changes; re-run the groups of both sides (`GROUP=a,b npm test`). |
