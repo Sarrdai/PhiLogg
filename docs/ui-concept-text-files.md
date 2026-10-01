@@ -55,8 +55,8 @@ ganze Datei ist dasselbe Doppelklick/Enter wie bei Logs.
 | Thema | Verhalten |
 |---|---|
 | Laden | Alle Einstiegspunkte, die heute `openInlineViewer` mit `kind === "text"` aufrufen, laden stattdessen einen Dateiknoten im Plain-text-Format. Ordner-Auto-Regeln bleiben wie heute log-only. |
-| Kopfleiste | Beide Ansichten haben dieselbe Kopfleiste: „LINE“ über der Zeilennummer, daneben der Dateiname (bei JSON mit „· pretty“/„· raw“). Sie ersetzt in Filtered den Spaltenkopf „Line \| Message“. |
-| Deckungsgleich | Filtered im Textmodus: eigene Zeilenhöhe gleich der Editor-Zeilenhöhe (skaliert mit `logTextScale`), gleicher Gutter (Zeilennummer + Faltspalte), Text an derselben x-Position, gleiche Schrift. Beide Toolbars gleich hoch. |
+| Kopfleiste | Beide Ansichten haben dieselbe Kopfleiste: „LINE“ über der Zeilennummer, daneben der Dateiname (ohne Pretty/Raw-Zusatz; der Zustand steht am Toggle). Sie ersetzt in Filtered den Spaltenkopf „Line \| Message“. |
+| Deckungsgleich | Filtered im Textmodus: Trennlinien zwischen den Zeilen wie bei Logs (Context ohne), kein Entry-Detail-Panel, eigene Zeilenhöhe gleich der Editor-Zeilenhöhe (skaliert mit `logTextScale`), gleicher Gutter (Zeilennummer + Faltspalte), Text an derselben x-Position, gleiche Schrift. Beide Toolbars gleich hoch. |
 | Tab-Wechsel | Die oberste sichtbare Zeile bleibt an ihrer Bildschirmposition (Anker = Zeilennummer). Fehlt sie in der Zielansicht, ist der Anker die ausgewählte Zeile, sonst die nächste Trefferzeile darunter. |
 | Sprung | Doppelklick/Enter in Filtered springt in Context desselben Knotens an die Zeile (`revealInHighlightView`), zentriert und kurz hervorgehoben. Liegt sie in einem eingeklappten Block, klappt nur dieser Pfad auf. |
 | Context-Inhalt | Ganze Datei statt „… N lines“-Streifen; die Streifen-Einstellungen greifen hier nicht. Falten übernimmt deren Rolle. |

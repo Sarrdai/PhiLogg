@@ -40064,11 +40064,12 @@ if (groupSelected()) {
    of docs/ui-and-views.md "Text files"). When the ACTIVE node's root is
    a plain-text file (not "every loaded file is" — a mixed session keeps the
    log table for log roots) the Filtered view becomes an editor-like listing:
-   .text-row rows with no level stripe/separators, TEXT_ROW_HEIGHT (19px,
+   .text-row rows with no level stripe (separators as an inset shadow), TEXT_ROW_HEIGHT (19px,
    scaled by logTextScale, used by the virtualization), a right-aligned line
    number, an empty fold slot and the message (gutter widths --text-num-w /
    --text-fold-w shared with the Context editor), and a header bar ("LINE",
-   file name, + " · pretty"/" · raw" for JSON) instead of the table header.
+   file name only — the layout shows on the Pretty/Raw toggle) instead of
+   the table header.
    Sample data: tools/log-sim (plain, jsondoc, xmldoc, default).
    ============================================================ */
 group(348);
@@ -40114,22 +40115,28 @@ if (groupSelected()) {
     const cs = d.documentElement.style;
     assert(cs.getPropertyValue("--text-num-w") === T.TEXT_NUM_W + "px" && cs.getPropertyValue("--text-fold-w") === T.TEXT_FOLD_W + "px", "--text-num-w/--text-fold-w come from TEXT_NUM_W/TEXT_FOLD_W");
     assert(/\.text-header-bar\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html) && /\.log-row\.text-row\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html), "rows and header bar use the same gutter columns");
+    // Row separators (person-requested 2026-10-01): Filtered text rows get the
+    // log view's separator line as a zero-specificity inset shadow (no border,
+    // which would eat 1px of TEXT_ROW_HEIGHT); the Context editor lines don't.
+    assert(/:where\(\.log-row\.text-row\)\{box-shadow:inset 0 -1px 0 var\(--border-soft\);\}/.test(html), "Filtered text rows: separator as a :where() inset shadow");
+    assert(/\.log-row\.text-row\{[^}]*border-bottom:none/.test(html), "Filtered text rows: no border (keeps the 19px line grid)");
+    assert(!/\.itv-line[^{]*\{[^}]*(border-bottom|box-shadow:inset 0 -1px)/.test(html), "Context editor lines: no separator");
     // Toolbar parity: both toolbar rows have the same fixed height.
     const tbH = id => (new RegExp("#" + id + "\\{[^}]*height:(\\d+)px").exec(html) || [])[1];
     assert(tbH("filteredToolbar") === "36" && tbH("contextToolbar") === "36", "Filtered and Context toolbar rows are both 36px, got " + tbH("filteredToolbar") + "/" + tbH("contextToolbar"));
   });
 
   await withApp(async (w, d, T) => {
-    section("348b. Header bar for JSON shows the layout; XML and .txt don't");
+    section("348b. Header bar shows only the file name (no layout suffix, person-requested 2026-10-01)");
     await addText(w, "orders.json", json348.text);
     await addText(w, "orders.xml", xml348.text);
     const js = byName(T, "orders.json"), xml = byName(T, "orders.xml");
     const name = () => d.querySelector("#tableHeader .text-hb-name").textContent;
     filterOn(w, T, js.id, '"');
-    assert(name() === "orders.json · pretty", "pretty JSON: name + ' · pretty', got " + name());
+    assert(name() === "orders.json", "pretty JSON: just the name, got " + name());
     assert(await w.setTextLayout(js.id, "raw"), "layout switched to raw");
     T.state.activeId = js.id; w.render();
-    assert(name() === "orders.json · raw", "raw JSON: name + ' · raw', got " + name());
+    assert(name() === "orders.json", "raw JSON: just the name, got " + name());
     filterOn(w, T, xml.id, "<");
     assert(name() === "orders.xml", "XML: just the name, got " + name());
     const nameEl = d.querySelector("#tableHeader .text-hb-name");
@@ -40160,10 +40167,15 @@ if (groupSelected()) {
     // Back to the log root's filter, then its file node.
     T.state.activeId = f1.id; w.render();
     assert(!wrap.classList.contains("text-mode") && d.querySelector("#tableRows .row-grid") && !d.querySelector("#tableRows .text-row"), "back on the log root: log rendering again");
+    assert(!d.body.classList.contains("text-root"), "log root: Entry detail panel shown (no body.text-root)");
     T.state.activeId = txt.id; w.render();
     assert(wrap.classList.contains("text-mode") && d.querySelector("#tableRows .text-row"), "the text file node itself: text mode");
+    // No Entry detail panel for plain-text files (person-requested 2026-10-01).
+    assert(d.body.classList.contains("text-root"), "text root: body.text-root hides the Entry detail panel");
+    assert(/body\.text-root :is\(#detailPanel, #detailResizer\)\{display:none !important;\}/.test(html), "CSS: body.text-root hides #detailPanel and #detailResizer");
     T.state.activeId = log.id; w.render();
     assert(!wrap.classList.contains("text-mode") && d.querySelector("#tableRows .row-grid"), "the log file node: log mode");
+    assert(!d.body.classList.contains("text-root"), "back on the log root: Entry detail panel shown again");
   });
 
   await withApp(async (w, d, T) => {
@@ -40190,7 +40202,8 @@ if (groupSelected()) {
     const menu = d.querySelector("#contextMenu");
     assert(menu && !menu.classList.contains("hidden") && menu.textContent.length > 0, "the row context menu opens on a text row");
     const selEntry = T.entryIndex[T.state.selectedId];
-    assert(selEntry && d.querySelector("#detailPanel").textContent.includes(selEntry.message.trim().slice(0, 12)), "the detail panel shows the selected line");
+    assert(selEntry, "a text line is selected");
+    assert(d.body.classList.contains("text-root"), "no Entry detail panel on a text file (body.text-root)");
   });
 
   await withApp(async (w, d, T) => {
@@ -40274,7 +40287,7 @@ if (groupSelected()) {
     const open = lines(d).filter(l => l.querySelector(".itv-fold-toggle"));
     assert(open.length > 2 && lines(d).every(l => !!l.querySelector(".itv-fold-toggle") === (ev.foldIdAt[+l.dataset.line] >= 0)), "exactly the fold-opening lines carry the toggle (" + open.length + " in the window)");
     assert(!!d.querySelector("#textEditor .tok-key") && !!d.querySelector("#textEditor .tok-string"), "JSON tokens are highlighted");
-    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json · pretty", "header bar: file name and layout");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json", "header bar: file name");
     const tgRow = open[1], line0 = +tgRow.dataset.line, fi = ev.foldIdAt[line0];
     tgRow.querySelector(".itv-fold-toggle").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
     assert(ev.folds[fi].collapsed && ev.vis !== null, "clicking a toggle collapses its fold in the model");
@@ -40487,7 +40500,7 @@ if (groupSelected()) {
     raw.click();
     await waitFor(() => js.textLayout === "raw" && T.editorView.n === 1);
     assert(js.textLayout === "raw" && raw.classList.contains("active") && !pretty.classList.contains("active"), "Raw click: layout raw, button state follows");
-    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json · raw", "header bar follows");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json", "header bar: still just the file name");
     assert(lines(d).length === 1, "raw JSON is one line");
     pretty.click();
     await waitFor(() => js.textLayout === "pretty" && T.editorView.n > 20);
@@ -45559,7 +45572,7 @@ process.exitCode = failed ? 1 : 0;
       Filtered view renders .text-row rows (no level stripe/separators,
       TEXT_ROW_HEIGHT 19px scaled by logTextScale, line number + fold slot +
       message gutter via --text-num-w/--text-fold-w) under a reusable header bar
-      (LINE | file name [· pretty/raw]); mixed sessions keep log rendering for
+      (LINE | file name); mixed sessions keep log rendering for
       log roots and switch with the active node. Group 347l: session export/import
       carries textSyntax/textLayout.
    Group 347 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 1):
