@@ -10604,6 +10604,40 @@ async function probeFileTimeRange(file, formatId) {
   return { first, last };
 }
 
+// Length of the longest prefix of `bytes` that does not end inside an
+// incomplete UTF-8 sequence: a trailing lead byte (0xC2-0xDF needs 1
+// continuation byte, 0xE0-0xEF 2, 0xF0-0xF4 3) that has fewer continuation
+// bytes after it than it needs. Only the last 3 bytes can be affected.
+// Stray or invalid bytes (a lone continuation byte, 0xC0/0xC1, 0xF5-0xFF) are
+// NOT "incomplete" — they stay in the prefix and decode to U+FFFD, so a
+// genuinely broken file reads exactly as it would without this check.
+function utf8CompleteLength(bytes) {
+  const n = bytes.length;
+  for (let back = 1; back <= 3 && back <= n; back++) {
+    const b = bytes[n - back];
+    if ((b & 0xC0) === 0x80) continue; // continuation byte: keep looking for its lead
+    const need = b >= 0xF0 && b <= 0xF4 ? 3 : b >= 0xE0 && b <= 0xEF ? 2 : b >= 0xC2 && b <= 0xDF ? 1 : 0;
+    return need > back - 1 ? n - back : n;
+  }
+  return n;
+}
+
+// Decodes a mid-file byte range (a Blob-shaped `part`, `byteLength` bytes
+// long) as UTF-8, up to the last COMPLETE character: Blob.text() on a range
+// that ends inside a multi-byte character turns the cut half into U+FFFD, and
+// the read that continues from the same offset turns the other half into
+// U+FFFD too. Resolves { text, length }, `length` being the bytes consumed
+// (0-3 less than `byteLength` when the range ends inside a character) — the
+// caller advances by `length`, so the held-back bytes are read again together
+// with the rest of their character. An object with no arrayBuffer() (a
+// minimal file stand-in) is decoded whole through text().
+async function readUtf8Range(part, byteLength) {
+  if (typeof part.arrayBuffer !== "function") return { text: await part.text(), length: byteLength };
+  const bytes = new Uint8Array(await part.arrayBuffer());
+  const length = utf8CompleteLength(bytes);
+  return { text: new TextDecoder().decode(length === bytes.length ? bytes : bytes.subarray(0, length)), length };
+}
+
 /* ===================== Windowed/partial file load =====================
    Extends probeFileTimeRange's own trick (learn a file's time range from
    only a head+tail chunk, never a full read) to the folder-watch minimap's
@@ -10717,9 +10751,15 @@ async function parseFileWindow(file, node, from, to, onProgress) {
 
   while (pos < file.size && !stopped) {
     const end = Math.min(file.size, pos + WINDOW_READ_CHUNK_BYTES);
-    const text = carry + await file.slice(pos, end).text();
-    carry = "";
     const atRealEOF = end >= file.size;
+    // The chunk boundary may fall inside a multi-byte character: an interior
+    // chunk decodes whole characters only and `length` says how far it got,
+    // the held-back bytes lead the next chunk (see readUtf8Range). At EOF
+    // nothing follows, so the chunk is read as is.
+    const part = file.slice(pos, end);
+    const { text: chunkText, length } = atRealEOF ? { text: await part.text(), length: end - pos } : await readUtf8Range(part, end - pos);
+    const text = carry + chunkText;
+    carry = "";
     const lines = text.split(/\r?\n/);
     if (!atRealEOF) carry = lines.pop(); // may be a genuine full line — re-parsed whole once the next chunk's read completes it
     // The very first chunk may itself start mid-line (startOffset is only
@@ -10737,7 +10777,7 @@ async function parseFileWindow(file, node, from, to, onProgress) {
         appendContinuationLine(current, line);
       }
     }
-    pos = end;
+    pos += length;
     if (onProgress) onProgress(pos - startOffset, Math.max(1, file.size - startOffset));
     await new Promise(r => setTimeout(r, 0)); // yield a tick, same as parseLogTextAsync's own loop
     // node.id is only ever unset for a node that was never registered in
@@ -31903,14 +31943,21 @@ async function tailTick() {
       }
       if (f.size > t.offset) {
         const start = t.offset;
-        const chunk = await f.slice(start, f.size).text();
-        t.offset = f.size;
-        t.lastGrowth = Date.now();
-        if (typeof node.textRaw === "string") node.textRaw += chunk; // raw-layout JSON: keeps a later switch to pretty current
-        const oldLen = node.entries.length;
-        if (appendTailText(node, chunk)) {
-          if (!rotated) appendedFrom.set(id, oldLen);
-          if (!changedRootIds.includes(id)) changedRootIds.push(id);
+        // Whole UTF-8 characters only: a poll that ends inside a multi-byte
+        // character leaves its 1-3 bytes unread (t.offset stops before them),
+        // so the next poll decodes them together with the rest of the
+        // character instead of turning both halves into U+FFFD.
+        const { text: chunk, length } = await readUtf8Range(f.slice(start, f.size), f.size - start);
+        // Nothing but a character's first bytes arrived: not growth yet.
+        if (length > 0) {
+          t.offset = start + length;
+          t.lastGrowth = Date.now();
+          if (typeof node.textRaw === "string") node.textRaw += chunk; // raw-layout JSON: keeps a later switch to pretty current
+          const oldLen = node.entries.length;
+          if (appendTailText(node, chunk)) {
+            if (!rotated) appendedFrom.set(id, oldLen);
+            if (!changedRootIds.includes(id)) changedRootIds.push(id);
+          }
         }
       }
       t.errorCount = 0; // a clean poll clears any streak of prior transient failures
