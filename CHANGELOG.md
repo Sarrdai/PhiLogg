@@ -2,6 +2,8 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+**Frozen as of 2026-10-01: don't edit this file in a feature branch.** New entries go into `changelog.d/` as one file per change (see `changelog.d/README.md`); a release folds them in here with `node scripts/changelog.js --fold`.
+
 - **feat: product homepage on GitHub Pages — landing page, hosted app, tour, live downloads (2026-10-01, person-requested)**
   - **`site/index.html`**: one self-contained static page (inline CSS/JS, system fonts, light/dark): hero with deep links into the hosted app (`app/`, demo log, tour, tour + Add-log-format dialog), a hero terminal replaying the first header lines of the simulator's `welcome.log`, facts, four feature cards with screenshots, three ways to run it, a **Download** section reading the GitHub Releases API in the browser (latest stable, plus a newer beta labelled Beta; assets grouped by variant; fallback link on any failure) and a footer with the license. All links relative, so it works under a project path and at a custom domain root.
   - **`scripts/build-site.js`**: `--out <dir>` builds site + screenshots + `app/index.html` (comment-stripped `philogg.html`) + `app/LICENSE.md` + `app/tour/` (simulator `-f tour`) + `.nojekyll`; `{ buildSite }` for tests.

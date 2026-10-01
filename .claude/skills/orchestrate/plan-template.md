@@ -18,13 +18,13 @@ Commit it to `docs/` only when the work spans several sessions.
 ## Steps
 ### Step 1 — <name>
 - Change: <what, where>
-- Tests: <GROUP N: what to assert>
+- Tests: <tests/groups/<slug>.js: what to assert>
 - Done when: <observable result, incl. what the screenshot must show>
 
 ### Step 2 — …
 
 ## Docs to update at the end
-CHANGELOG.md entry, docs/<file>.md section, README feature list /
+changelog.d/ fragment, docs/<file>.md section, README feature list /
 screenshots (docs/screenshots scenes), PROJECT.md line count.
 
 ## Risks

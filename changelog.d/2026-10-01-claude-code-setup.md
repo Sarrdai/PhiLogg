@@ -1,0 +1,5 @@
+- **chore: development setup without merge hotspots, `finish` skill, visible implementer progress (2026-10-01, person-requested)**
+  - Changelog entries are now one file each in `changelog.d/` (`scripts/changelog.js` lists them and folds them into the frozen `CHANGELOG.md` at release); new test groups are their own files in `tests/groups/` with a name instead of a number. Both were the main sources of merge conflicts between parallel branches. The redundant TEST PROVENANCE block (4,600 lines) is gone.
+  - New `finish` skill (merge main with fixed conflict rules, tests, docs, push, no PR), a SessionStart line showing how far the branch is behind main, implementers log progress to a file the lead mirrors into the status, process changes go through main on their own branch.
+  - Docs: log formats moved from `PROJECT.md` to `docs/log-formats.md`, finished concepts and plans to `docs/archive/`, duplicated line counts removed, term glossary in the `orchestrate` skill. CI runs the suite on every session-branch push (`.github/workflows/tests.yml`).
+  - **Tests**: GROUP changelog-fragments; GROUP 354 moved to `tests/groups/354-homepage-site.js`.

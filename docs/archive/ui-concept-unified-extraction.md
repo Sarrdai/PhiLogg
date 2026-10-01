@@ -1,6 +1,6 @@
 # Konzeptvorschlag: Table/Plot als Tabs statt separater Extract-View
 
-Status: **Umgesetzt** (2026-09-03) — siehe `docs/ui-implementation-plan.md`
+Status: **Umgesetzt** (2026-09-03) — siehe `docs/archive/ui-implementation-plan.md`
 für den tatsächlichen Umsetzungsplan (der diesem Konzept in einem Punkt
 bewusst widerspricht, siehe dessen "Die vier Präzisierungen" Punkt 2) und
 dessen "Entscheidungen bei der Umsetzung" für die finalen Entscheidungen
@@ -45,7 +45,7 @@ auf, oder gar nicht mehr.
 
 ## Sketch
 
-![Unified toolbar concept](images/concept-unified-toolbar.svg)
+![Unified toolbar concept](../images/concept-unified-toolbar.svg)
 
 ## Warum v1 nicht ausreichte
 

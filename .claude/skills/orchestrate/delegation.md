@@ -29,6 +29,10 @@ the brief — it must not re-derive it.
 ## Out of scope
 <What not to touch / not to "improve" along the way>
 
+## Progress
+Append one line per milestone to <scratchpad>/progress-<topic>.md
+(time, what is done, what is next or what blocks).
+
 ## Report back
 Files changed, test group(s) + result, anything you deviated from or
 could not do, open questions. Do not commit.

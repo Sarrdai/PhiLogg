@@ -1,8 +1,9 @@
 # PhiLogg regression suite
 
 Consolidated jsdom regression suite, assembled from the assertions written
-across the project's implementation sessions (see "TEST PROVENANCE" at the
-bottom of `philogg.regression.test.js` for the session-by-session map).
+across the project's implementation sessions. Each group's banner says what
+it covers and where it came from (`Origin: <date> (...)`); older history is
+in git.
 
 ## Layout
 
@@ -14,7 +15,8 @@ project-root/
   PROJECT.md
   FEATURE_BACKLOG.md
   tests/                              <- this folder
-    philogg.regression.test.js
+    philogg.regression.test.js        <- harness + groups 1-353
+    groups/                           <- one file per newer group (see "Group files")
     run.js                            <- shard runner, what `npm test` calls
     jsdom-fast-selectors.js           <- [data-*] selector fast path (see "How it works")
     package.json
@@ -52,9 +54,8 @@ PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 their results back into the single `N passed, M failed` line the suite has
 always reported. Above it, a sharded run lists the ten slowest groups (wall
 time in the shard that ran them), so a group that got seconds slower shows
-up on the next run. **Always check that number** (8689 at the time of writing):
-a group that silently stopped running shows up as a lower count, not as a
-failure.
+up on the next run. **Always compare that number with a run on `main`**: a group that
+silently stopped running shows up as a lower count, not as a failure.
 
 Both the shard children and `run.js` itself end on `process.exitCode`, never
 `process.exit()`. Under the runner a child's stdout is a **pipe**, where
@@ -72,9 +73,8 @@ submits — asserting on resulting state/DOM, per the project's established
 "Testing approach" (see `PROJECT.md`). Layout-dependent getters
 (`clientHeight`/`clientWidth`/`getBoundingClientRect`) are stubbed since
 jsdom has no real layout engine — that also means it can't catch pure
-CSS/paint bugs (see the note in the file's provenance section about the
-`#tableWrap` flex-direction regression from 2026-08-10, which this suite
-deliberately does NOT try to re-test).
+CSS/paint bugs (the `#tableWrap` flex-direction regression from 2026-08-10,
+for example, is deliberately NOT re-tested here).
 
 Each group runs in its own fresh `JSDOM` instance (`withApp(...)`) so state
 never bleeds between groups.
@@ -204,20 +204,18 @@ gotcha: top-level `let`/`const` in the page's inline `<script>` aren't
 **Keep this file and extend it every session** instead of writing a
 throwaway test from scratch. When a session adds a feature:
 
-1. Add a new `GROUP N` block (copy the shape of an existing one — the
-   `/* ==== GROUP N ==== */` banner, **the `group(N);` marker line directly
-   under it**, a `section(...)` header, a fresh
-   `withApp(async (w, d, T) => { ... })`). Without the marker the group
-   inherits the previous group's shard, which still runs it but puts it in
-   the wrong bucket; a group whose only content is outside `withApp` (GROUP
-   146) needs its own `if (groupSelected())` gate instead, or it runs in
-   every shard and inflates the total.
-   Number it one higher than the current max, but feel free to physically
-   append it anywhere convenient — the groups don't depend on file order,
-   only on running inside their own `withApp`. A group testing something
-   that isn't the page itself may skip `withApp` entirely — GROUP 146
-   (`scripts/strip-comments.js`, a plain Node module) is the one such case
-   today, and uses a bare gated block instead.
+1. Add the new group as **its own file** `groups/<slug>.js` (see "Group
+   files" below) — never append it to `philogg.regression.test.js`. The
+   file starts with the usual banner comment (`GROUP <slug> — what it
+   covers`, then `Origin: <date> (person-requested/-reported, ...)`), the
+   `group("<slug>");` marker line, and then `section(...)` headers with a
+   fresh `withApp(async (w, d, T) => { ... })` each. Without the marker the
+   group inherits the previous group's shard, which still runs it but puts
+   it in the wrong bucket; a group whose only content is outside `withApp`
+   (GROUP 146, 354) needs its own `if (groupSelected())` gate instead, or it
+   runs in every shard and inflates the total. The slug is the group's id
+   (`GROUP=<slug> npm test`) and needs no number, so two parallel branches
+   can never pick the same one.
 2. Make it independent of machine speed. Every rule here comes from a group
    that was green alone and red under full-suite load (see "How it works"):
    - Wait for async work with `waitFor(pred)` on the thing you are about to
@@ -237,15 +235,32 @@ throwaway test from scratch. When a session adds a feature:
    through jsdom's own slow selector engine as well, and a nested `run.js`. Before the final push run `SHARDS=8 npm test` once: more shards
    than cores is the load that exposes the rules above being broken, and a
    failure there is a bug in the test, not a flake to re-run.
-4. Add one line to the "TEST PROVENANCE" comment block at the end of the
-   file, noting the originating session/date and a one-line summary.
-5. If a session **removes or replaces** behavior an existing group tests
+4. If a session **removes or replaces** behavior an existing group tests
    (e.g. superseding a UI element, changing a function's semantics), update
    or delete that group's assertions in the same session — don't leave a
-   green check that's silently testing dead code. Move a short note to the
-   "Deliberately DROPPED" list in TEST PROVENANCE explaining why, the same
-   way the existing entries do (checkbox multi-select, the old two-tab
-   Filter/Highlight switcher, the old destructive double-click jump, etc.).
+   green check that's silently testing dead code. Say why in the commit
+   message.
+
+## Group files
+
+`philogg.regression.test.js` holds the harness and groups 1-353; every group
+added since lives in `groups/*.js`. The main file runs each of them near its
+end, in file-name order, by a **direct `eval` inside its own async
+function**: a group file sees every helper defined there (`withApp`,
+`waitFor`, `assert`, `section`, `fs`, `path`, `makeLog`, `LOGSIM`, ...)
+exactly like an inline group, and whatever it declares stays local to it.
+Errors point at `tests/groups/<file>.js` (`sourceURL`).
+
+- Name: `groups/<slug>.js`, slug in kebab-case after the feature
+  (`text-files-find-bar.js`). Groups moved out of the main file keep their
+  number as prefix and id (`354-homepage-site.js`, `group(354)`).
+- Id: `group("<slug>")` — sharding hashes non-numeric ids, `GROUP=` takes
+  them as they are (`GROUP=text-files-find-bar,58`).
+- Helpers several group files share go into the main file's helper section,
+  not into one group file another depends on (file order is alphabetical,
+  not chronological).
+- Moving an existing group out of the main file is welcome whenever a
+  session touches it anyway; keep its number.
 
 ## Known gaps (things this suite does NOT cover)
 
