@@ -495,6 +495,14 @@ row anatomy and context menus, and the Extraction view's Table/Plot tabs.
 Reference for naming a UI element in conversation — points back to
 `docs/ui-and-views.md` for the prose explanation of how they behave.
 
+### `docs/ui-concept-text-files.md`
+Decided concept (2026-10-01, German): text files (`.txt`/`.json`/`.xml`)
+load as one plain-text file node instead of an inline viewer plus a nested
+"Filter lines" copy; for such files the Context view shows the editor
+(folding, free selection, Pretty/Raw for JSON) and Filtered a text-mode
+table with the same line geometry and a shared "LINE | <file>" header
+bar. Rules table and rejected variants inside; mockup links at the top.
+
 ### `docs/ui-concept-unified-extraction.md`
 Unimplemented proposal (v3): fold the separate `extract`-node Table/Plot
 views into `#viewBar`'s Context/Filtered/Stacked tabs (as `Table`/`Plot`
