@@ -351,6 +351,10 @@ async function withApp(run, opts = {}) {
       set hoverExpandDetail(v) { hoverExpandDetail = v; },
       get focusModePrevState() { return focusModePrevState; },
       get ROW_HEIGHT() { return ROW_HEIGHT; },
+      get TEXT_ROW_HEIGHT() { return TEXT_ROW_HEIGHT; },
+      get TEXT_NUM_W() { return TEXT_NUM_W; },
+      get TEXT_FOLD_W() { return TEXT_FOLD_W; },
+      get filteredTextMode() { return filteredTextMode; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
       get BUFFER_ROWS() { return BUFFER_ROWS; },
@@ -31242,7 +31246,7 @@ group(273);
     const colKeys = [...d.querySelectorAll("#columnsList input[data-col]")].map(cb => cb.dataset.col).join(",");
     assert(colKeys === "message", "Columns panel offers no Δt toggle for plain text (" + colKeys + ")");
     const row = [...d.querySelectorAll("#tableRows .log-row")].find(r => r.dataset.entryId === f.entries[2].id);
-    assert(row && row.querySelector(".col-time").textContent === "3" && row.querySelector(".col-delta").textContent === "—", "row: line number, no Δt");
+    assert(row && row.querySelector(".col-time").textContent === "3" && !row.querySelector(".col-delta"), "row: line number, no Δt cell (text mode, GROUP 348)");
 
     section("273d. Line ranges: time filters are named in lines, merge is refused");
     const range = w.createFilterNode(f.id, "timerange", { from: 2, to: 3 });
@@ -40017,6 +40021,197 @@ if (groupSelected()) {
     fireKeydown(d, w, "f", { ctrlKey: true });
     assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+F on the text file's node opens the filter popup like for any node");
   });
+
+  let exported347 = null;
+  const json347 = jsonDoc(5, 11);
+  await withApp(async (w, d, T) => {
+    section("347l. Session export carries textSyntax/textLayout; an imported embedded file keeps its layout");
+    await w.loadFileDescriptors([
+      { file: new w.File([json347.text], "orders.json"), handle: null },
+      { file: new w.File([json347.text], "orders-raw.json"), handle: null },
+      { file: new w.File([txtDoc.text], "notes.txt"), handle: null },
+    ]);
+    const raw = nodeNamed(T, "orders-raw.json");
+    assert(await w.setTextLayout(raw.id, "raw"), "one JSON switched to raw");
+    const ids = T.state.rootIds.slice();
+    const doc = w.buildSessionExport(ids, new Set(ids));
+    const rec = n => doc.files.find(r => r.name === n);
+    assert(rec("orders.json").textSyntax === "json" && rec("orders.json").textLayout === "pretty", "pretty JSON: syntax + layout exported");
+    assert(rec("orders-raw.json").textLayout === "raw" && rec("notes.txt").textSyntax === null && rec("notes.txt").textLayout === undefined, "raw layout exported; .txt syntax null, no layout");
+    assert(rec("orders.json").text === json347.text, "the embedded text is the file's own text, not the pretty print");
+    exported347 = JSON.stringify(doc);
+  });
+  await withApp(async (w, d, T) => {
+    w.importSessionJson(exported347);
+    for (let i = 0; i < 3; i++) {
+      await waitFor(() => !d.querySelector("#sessionMatchDialog").classList.contains("hidden"));
+      d.querySelector('input[name="sessionMatchTarget"][value="embedded"]').checked = true;
+      fireClick(d.querySelector("#sessionMatchApply"), w);
+      await waitFor(() => T.state.rootIds.length === i + 1 && loaded(T.state.nodes[T.state.rootIds[i]]));
+    }
+    const pj = nodeNamed(T, "orders.json"), rj = nodeNamed(T, "orders-raw.json"), tx = nodeNamed(T, "notes.txt");
+    assert([pj, rj, tx].every(n => n.formatId === PT), "all three imported as plain text");
+    assert(pj.textLayout === "pretty" && pj.entries.length === prettyLines(json347.text).length, "the pretty JSON imports pretty");
+    assert(rj.textLayout === "raw" && rj.entries.length === 1, "the raw JSON stays raw");
+    assert(pj.textSyntax === "json" && tx.textSyntax === null && tx.entries.length === lineCount(txtDoc.text), "syntax kept; the .txt has one entry per line");
+  });
+}
+
+/* ============================================================
+   GROUP 348 — Filtered text mode + shared text header bar
+   Origin: 2026-10-01, person-requested (docs/ui-concept-text-files.md, Step 2
+   of docs/text-files-implementation-plan.md). When the ACTIVE node's root is
+   a plain-text file (not "every loaded file is" — a mixed session keeps the
+   log table for log roots) the Filtered view becomes an editor-like listing:
+   .text-row rows with no level stripe/separators, TEXT_ROW_HEIGHT (19px,
+   scaled by logTextScale, used by the virtualization), a right-aligned line
+   number, an empty fold slot and the message (gutter widths --text-num-w /
+   --text-fold-w shared with the Context editor), and a header bar ("LINE",
+   file name, + " · pretty"/" · raw" for JSON) instead of the table header.
+   Sample data: tools/log-sim (plain, jsondoc, xmldoc, default).
+   ============================================================ */
+group(348);
+if (groupSelected()) {
+  const PT348 = "fmt-plaintext";
+  const sim = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0];
+  const txt348 = sim("plain", 120, 7);
+  const json348 = sim("jsondoc", 8, 3);
+  const xml348 = sim("xmldoc", 6, 3);
+  const log348 = sim("default", 60, 2);
+  const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
+  const filterOn = (w, T, rootId, value) => { const f = w.createFilterNode(rootId, "text", value); T.state.activeId = f.id; w.render(); return f; };
+
+  await withApp(async (w, d, T) => {
+    section("348a. A filter on a plain-text file: text-mode class, row height, gutter, header bar");
+    await addText(w, "notes.txt", txt348.text);
+    const root = byName(T, "notes.txt");
+    const f = filterOn(w, T, root.id, "e");
+    const wrap = d.querySelector("#tableWrap");
+    assert(wrap.classList.contains("text-mode") && T.filteredTextMode === true, "#tableWrap carries text-mode, got " + wrap.className);
+    assert(T.TEXT_ROW_HEIGHT === 19, "TEXT_ROW_HEIGHT is 19px at 100%");
+    const rows = [...d.querySelectorAll("#tableRows .log-row")];
+    const matches = w.getEntries(f.id).length;
+    assert(rows.length > 10 && rows.every(r => r.classList.contains("text-row") && !r.classList.contains("row-grid")), "every rendered row is a .text-row, not a .row-grid log row (" + rows.length + ")");
+    assert(rows.every(r => r.style.height === "19px"), "every row is TEXT_ROW_HEIGHT (19px) tall");
+    assert(!d.querySelector("#tableRows .col-bar") && !d.querySelector("#tableRows .col-level") && !d.querySelector("#tableRows .col-delta"), "no level stripe, level or delta cell");
+    assert(!/\blvl-/.test(rows.map(r => r.className).join(" ")), "no level tint class");
+    const e0 = w.getEntries(f.id)[0];
+    const r0 = rows[0];
+    assert(r0.dataset.entryId === e0.id && r0.querySelector(".col-time").textContent === String(e0.ts), "number cell = the line number of the file (" + e0.ts + ")");
+    assert(r0.children.length === 3 && r0.children[1].classList.contains("col-fold") && r0.children[1].textContent === "", "gutter: number, an empty fold slot, then the message");
+    assert(r0.children[2].classList.contains("col-msg") && r0.children[2].classList.contains("plaintext") && r0.children[2].dataset.col === "message", "the message cell keeps the plaintext (white-space:pre) class");
+    assert(d.querySelector("#tableSpacer").style.height === (matches * 19 + 22) + "px", "spacer height = rows * TEXT_ROW_HEIGHT + pad, got " + d.querySelector("#tableSpacer").style.height);
+    assert(rows.length === Math.ceil(400 / 19) + 2 * T.BUFFER_ROWS || rows.length === matches, "the rendered window is sized by TEXT_ROW_HEIGHT (" + rows.length + " of " + matches + ")");
+    // Header bar replaces the table header.
+    const bar = d.querySelector("#tableHeader .text-header-bar");
+    assert(bar && bar.querySelector(".text-hb-line").textContent === "Line", 'header bar: "Line" over the number column');
+    assert(bar.querySelector(".text-hb-name").textContent === "notes.txt", "header bar: the file name, no layout suffix for a .txt, got " + bar.querySelector(".text-hb-name").textContent);
+    assert(bar.children.length === 3 && bar.children[1].classList.contains("text-hb-fold"), "header bar: LINE, fold slot, name");
+    assert(/#tableWrap\.text-mode #tableHeader \.row-grid\{display:none;\}/.test(html) && /#tableWrap\.text-mode #tableHeader \.text-header-bar\{display:grid;\}/.test(html), "CSS: text mode hides the log header grid and shows the bar");
+    // Shared gutter widths: JS constants == CSS vars.
+    const cs = d.documentElement.style;
+    assert(cs.getPropertyValue("--text-num-w") === T.TEXT_NUM_W + "px" && cs.getPropertyValue("--text-fold-w") === T.TEXT_FOLD_W + "px", "--text-num-w/--text-fold-w come from TEXT_NUM_W/TEXT_FOLD_W");
+    assert(/\.text-header-bar\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html) && /\.log-row\.text-row\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html), "rows and header bar use the same gutter columns");
+    // Toolbar parity: both toolbar rows have the same fixed height.
+    const tbH = id => (new RegExp("#" + id + "\\{[^}]*height:(\\d+)px").exec(html) || [])[1];
+    assert(tbH("filteredToolbar") === "36" && tbH("contextToolbar") === "36", "Filtered and Context toolbar rows are both 36px, got " + tbH("filteredToolbar") + "/" + tbH("contextToolbar"));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348b. Header bar for JSON shows the layout; XML and .txt don't");
+    await addText(w, "orders.json", json348.text);
+    await addText(w, "orders.xml", xml348.text);
+    const js = byName(T, "orders.json"), xml = byName(T, "orders.xml");
+    const name = () => d.querySelector("#tableHeader .text-hb-name").textContent;
+    filterOn(w, T, js.id, '"');
+    assert(name() === "orders.json · pretty", "pretty JSON: name + ' · pretty', got " + name());
+    assert(await w.setTextLayout(js.id, "raw"), "layout switched to raw");
+    T.state.activeId = js.id; w.render();
+    assert(name() === "orders.json · raw", "raw JSON: name + ' · raw', got " + name());
+    filterOn(w, T, xml.id, "<");
+    assert(name() === "orders.xml", "XML: just the name, got " + name());
+    const nameEl = d.querySelector("#tableHeader .text-hb-name");
+    w.render();
+    assert(d.querySelector("#tableHeader .text-hb-name") === nameEl, "the bar is only rewritten when its content changes");
+    assert(typeof w.renderTextHeaderBar === "function", "renderTextHeaderBar is a reusable component (barEl, root)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348c. A log root is unchanged; a mixed session switches mode with the active node's root");
+    await addText(w, "app.log", log348.text);
+    await addText(w, "notes.txt", txt348.text);
+    const log = byName(T, "app.log"), txt = byName(T, "notes.txt");
+    assert(T.state.rootIds.length === 2 && !w.allRootsPlainText(), "mixed session: not all roots are plain text");
+    const f1 = filterOn(w, T, log.id, "INFO");
+    const wrap = d.querySelector("#tableWrap");
+    assert(!wrap.classList.contains("text-mode") && T.filteredTextMode === false, "log root: no text mode in a mixed session");
+    const lrows = [...d.querySelectorAll("#tableRows .log-row")];
+    assert(lrows.length > 5 && lrows.every(r => r.classList.contains("row-grid") && !r.classList.contains("text-row") && r.style.height === "28px"), "log rows keep the row-grid markup and ROW_HEIGHT (28px)");
+    assert(!!lrows[0].querySelector(".col-bar") && !!lrows[0].querySelector(".col-level .level-badge"), "log rows keep the level stripe and badge");
+    assert(d.querySelector("#tableHeader .row-grid .th-sortable") && d.querySelector("#tableHeader .row-grid").textContent.includes("Level"), "the log table header (Time/Level/...) is still the header");
+    assert(d.querySelector("#tableSpacer").style.height === (w.getEntries(f1.id).length * 28 + 22) + "px", "spacer uses ROW_HEIGHT for the log root");
+    // Switch to the text file's filter: text mode on.
+    const f2 = filterOn(w, T, txt.id, "e");
+    assert(wrap.classList.contains("text-mode") && d.querySelector("#tableRows .text-row") && !d.querySelector("#tableRows .col-bar"), "active node on the text root: text mode");
+    assert(d.querySelector("#tableHeader .text-hb-name").textContent === "notes.txt", "header bar names the active root");
+    assert(d.querySelector("#tableSpacer").style.height === (w.getEntries(f2.id).length * 19 + 22) + "px", "spacer uses TEXT_ROW_HEIGHT");
+    // Back to the log root's filter, then its file node.
+    T.state.activeId = f1.id; w.render();
+    assert(!wrap.classList.contains("text-mode") && d.querySelector("#tableRows .row-grid") && !d.querySelector("#tableRows .text-row"), "back on the log root: log rendering again");
+    T.state.activeId = txt.id; w.render();
+    assert(wrap.classList.contains("text-mode") && d.querySelector("#tableRows .text-row"), "the text file node itself: text mode");
+    T.state.activeId = log.id; w.render();
+    assert(!wrap.classList.contains("text-mode") && d.querySelector("#tableRows .row-grid"), "the log file node: log mode");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348d. Selection, bookmarks, notes, multiselect and the context menu keep working on text rows");
+    await addText(w, "notes.txt", txt348.text);
+    const root = byName(T, "notes.txt");
+    const f = filterOn(w, T, root.id, "e");
+    const ids = w.getEntries(f.id).map(e => e.id);
+    const rowOf = id => d.querySelector('#tableRows .log-row[data-entry-id="' + id + '"]');
+    fireClick(rowOf(ids[1]), w);
+    assert(T.state.selectedId === ids[1] && rowOf(ids[1]).classList.contains("selected"), "click selects a text row");
+    w.toggleBookmark(ids[1]);
+    assert(!!rowOf(ids[1]).querySelector(".col-bookmark-icon"), "a bookmarked text row shows the bookmark icon");
+    T.state.notes.set(ids[2], "check this line"); T.state.showNotes = true; w.render();
+    assert(!!d.querySelector('#tableRows .note-row[data-entry-id="' + ids[2] + '"]'), "a note row renders under its text row");
+    const spacerH = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+    assert(spacerH > ids.length * 19 + 22, "a note row adds its own height to the spacer (offsets path), got " + spacerH);
+    const row2 = rowOf(ids[2]);
+    assert(row2.style.height === "19px", "the row itself stays TEXT_ROW_HEIGHT with a note below");
+    fireClick(rowOf(ids[3]), w);
+    rowOf(ids[4]).dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+    assert(T.state.logMultiSelect.has(ids[4]) && rowOf(ids[4]).classList.contains("row-multi-selected"), "Ctrl+click multi-selects a text row");
+    fireContextMenu(rowOf(ids[3]), w);
+    const menu = d.querySelector("#contextMenu");
+    assert(menu && !menu.classList.contains("hidden") && menu.textContent.length > 0, "the row context menu opens on a text row");
+    const selEntry = T.entryIndex[T.state.selectedId];
+    assert(selEntry && d.querySelector("#detailPanel").textContent.includes(selEntry.message.trim().slice(0, 12)), "the detail panel shows the selected line");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348e. Virtualization and scroll math use TEXT_ROW_HEIGHT, scaled by the log text size");
+    await addText(w, "notes.txt", txt348.text);
+    const root = byName(T, "notes.txt");
+    const f = filterOn(w, T, root.id, "e");
+    const body = d.querySelector("#tableBody");
+    body.scrollTop = 60 * 19;
+    w.renderVisibleRows();
+    const first = d.querySelector("#tableRows .log-row");
+    const ents = w.getEntries(f.id);
+    assert(first.dataset.entryId === ents[60 - T.BUFFER_ROWS].id, "scrolled to 60*19px: the window starts BUFFER_ROWS above entry 60");
+    assert(d.querySelector("#tableRows").style.top === ((60 - T.BUFFER_ROWS) * 19) + "px", "the window's top offset is index * TEXT_ROW_HEIGHT, got " + d.querySelector("#tableRows").style.top);
+    w.scrollToIndex(100);
+    assert(Math.abs(body.scrollTop - (100 * 19 + 19 - 400)) <= 1, "scrollToIndex positions by TEXT_ROW_HEIGHT, got " + body.scrollTop);
+    w.applyLogTextScale(150);
+    assert(T.TEXT_ROW_HEIGHT === Math.round(19 * 1.5) && T.ROW_HEIGHT === 42, "TEXT_ROW_HEIGHT scales with the log text size like ROW_HEIGHT (" + T.TEXT_ROW_HEIGHT + ")");
+    const sr = d.querySelector("#tableRows .log-row");
+    assert(sr.style.height === T.TEXT_ROW_HEIGHT + "px" && d.documentElement.style.getPropertyValue("--text-row-h") === T.TEXT_ROW_HEIGHT + "px", "rows and --text-row-h follow the scale");
+    w.applyLogTextScale(100);
+  });
 }
 
 console.log("\n" + "=".repeat(60));
@@ -44553,6 +44748,14 @@ process.exitCode = failed ? 1 : 0;
       views; focus follows mousedown/clicks; Alt+Arrow and Ctrl+0..5 global). Updated
       groups 18, 32, 36, 46, 57, 96, 99, 110a, 150, 157a, 220a/j, 221c, 262, 319d/e,
       320b, 321e.
+   Group 348 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 2):
+      Filtered text mode — when the active node's root is a plain-text file the
+      Filtered view renders .text-row rows (no level stripe/separators,
+      TEXT_ROW_HEIGHT 19px scaled by logTextScale, line number + fold slot +
+      message gutter via --text-num-w/--text-fold-w) under a reusable header bar
+      (LINE | file name [· pretty/raw]); mixed sessions keep log rendering for
+      log roots and switch with the active node. Group 347l: session export/import
+      carries textSyntax/textLayout.
    Group 347 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 1):
       .txt/.json/.xml load through every entry point (loose, watched folder, ZIP)
       as ONE plain-text file node (formatIdForLoad, node.textSyntax); JSON gets
