@@ -346,7 +346,7 @@ shape:
   "New" stays visible/enabled everywhere regardless (`state.activeId` is
   its only gate).
   Plot's own two dedicated viewport-filter buttons this used to swap in
-  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see the CHANGELOG for
+  (`#plotFilterTimeRangeBtn`/`#plotFilterEntriesBtn`, see changelog.d/ for
   their original 2026-09-04 design) are gone entirely — "these entries"
   as an `"idset"` filter no longer has a UI trigger of its own; use "Select"
   (below) to build a selection filter from the same viewport instead. The
@@ -1003,7 +1003,7 @@ Regression-tested: **Group 261**:
 - **261f**: a hand-typed regex (suggested marks, new column, one-step undo/redo, invalid-regex error), the filename rule (added last, listed on reopen, not duplicated), and a Pattern-mode format saved as Regex mode and still parsing.
 - **261h**: default-format-shaped examples (person-reported) — the suggestion claims the path as Location, doesn't pin one line's file, and matches every header line; a multi-line quoted message still starts its own entry, both with the suggestion and with hand marks (optional closing quote), and its closing quote is dropped in the preview, a real parse, and the sandboxed worker source.
 - **261g**: in edit mode, new examples stay on the format's own regex (no automatic suggestion, a no-match warning, the timestamp format untouched), while a new format still gets the suggestion; Re-suggest's warning, "Keep current", confirm (marks dropped, suggestion + timestamp format in place, preview following), and a single Undo reverting it.
-- **Also**: Groups 70e/70j/116d/117d/234a/260b/260c were rewritten for the dialog (see TEST PROVENANCE).
+- **Also**: Groups 70e/70j/116d/117d/234a/260b/260c were rewritten for the dialog.
 
 ### JSON Lines kind
 

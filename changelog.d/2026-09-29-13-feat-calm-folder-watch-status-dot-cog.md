@@ -1,0 +1,4 @@
+- **feat: calm folder-watch status dot + cog icon; fix: find-bar hit badges made rows taller (2026-09-29, person-requested)**
+  - The folder-watch header no longer runs an endless "scanning" ping: a live folder shows a neutral icon with a static 6px accent dot (error-colored when unreachable, none for lock/ZIP), and a single one-shot ping plays only when a rescan finds a NEW file (`folder._pingAt`, transient; `prefers-reduced-motion` skips the ring). Settings button now uses a new `i-cog` symbol (the app Settings glyph); `i-gear` stays for the library menu.
+  - Fix: `.tree-hit-badge` was 19px tall inside the 16px row content, growing badge rows from 28px to 31px and shifting the tree; it is now 14px line + 2px border = 16px.
+  - **Tests**: new **Group 336**; groups 37, the unreachable-folder group and 201c updated.

@@ -1,0 +1,4 @@
+- **feat: assistant plots every chart type (2026-09-27, person-requested: *"Erweitere die Plot Werkzeuge für den LLM Assistenten, er soll alle Einträge kennen."*)**. See `docs/llm-assistant.md` → tool table.
+  - `show_view`'s `plot` now takes all eight types plus `z`, `color`, `colorMap`, `columns` (column group), `array`, `row` and `ranges` (parallel-coordinates value ranges, open ends allowed); unknown types/colormaps/columns come back as errors with the valid list; the result reports the effective plot (column names, rows, rows in range). The system prompt names which chart fits which question.
+  - **Fix**: a range with an open end was not drawn on its axis (NaN height) — now clamped to the axis.
+  - **Tests**: new **Group 311**. Full suite **6848 passed, 0 failed**.

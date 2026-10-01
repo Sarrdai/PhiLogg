@@ -1,0 +1,5 @@
+- **feat: OS / browser shortcut collision audit (2026-09-29, FEATURE_BACKLOG #49)**
+  - `closeFile` defaults to **Alt+W in the plain browser build** (Chrome/Edge/Firefox reserve Ctrl+W and ignore `preventDefault`); the desktop build keeps Ctrl+W. New optional `browserDefault` on `SHORTCUT_ACTIONS` entries and `defaultShortcutBinding()` (checks `window.philogg` at call time), used by `getShortcutBinding`, so the conflict check, list rendering and Reset follow.
+  - `comboFromEvent` falls back to `ev.code` (`KeyX` / `DigitN`) when Alt is down and `ev.key` isn't a plain letter/digit (keeps QWERTZ/AZERTY layouts correct), fixing Alt+N / Alt+W and Alt+letter rebinding on macOS (Option dead keys); the recorder now stores the letter.
+  - `docs/ui-and-views.md`: new "OS / browser shortcut collisions" table (macOS desktop menu accelerators noted as unverified).
+  - **Tests**: new **Group 323**; GROUP 75 runs as the desktop build (`w.philogg = {}`).

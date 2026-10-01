@@ -1,0 +1,6 @@
+- **fix: extraction of numbers with thousands separators (2026-09-28, person-reported: a value > 1000 logged as `1,234.5` — `[*:float]` returned only the entries below 1000, the auto-pattern split it into `[*:int],[*:float]`)**. See `docs/extraction-and-plotting.md` → "Thousands separators in numeric placeholders".
+  - **Root cause**: `[*:float]` allows no `,`, so it matched only the `1` and the literal text after the placeholder then failed; the whole line dropped out.
+  - Plain `[*:float]` now accepts the unambiguous shape with both separators (`1,234.5` / `1.234,5`). A lone `1,234` stays unguessed (en 1234 vs de 1.234, and one log can mix both); `[*:float@en]` / `[*:float@de]` (also on `int`) pin the format.
+  - Captured values are normalized to `1234.5` for table, conditions, plot, stats and export; "Extract" and the Patterns tab keep a both-separator number as one `[*:float]`.
+  - **Log simulator**: new opt-in `grouped` scenario (not part of `all`).
+  - **Tests**: new **Group 316**. Full suite **6917 passed, 0 failed**.

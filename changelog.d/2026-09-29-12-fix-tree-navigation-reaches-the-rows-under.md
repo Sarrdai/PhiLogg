@@ -1,0 +1,4 @@
+- **fix: tree navigation reaches the rows under a merge's "Sources" node (2026-09-29, person-reported)**
+  - Alt+Arrow (and tree-focus arrows) could not step into an expanded "Sources" node: `flattenTreeIds` walked only `node.children`, which stays empty for Sources, so its source rows (hidden create-first sources and the nested copies of a manual merge's sources) were never nav stops. They are now listed right after Sources, with their own subtrees. A source listed twice keeps its occurrence (`lastTreeNav`), ← from a nested source goes back to Sources.
+  - Also fixed: with "Show Sources" off, the (not rendered) Sources node was still an invisible nav stop.
+  - **Tests**: new **Group 335**.

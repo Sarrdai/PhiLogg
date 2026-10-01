@@ -1,0 +1,9 @@
+- **feat: JSON Lines log formats with path-addressable keys, array columns in the extraction table, Heatmap + Profile plots (2026-09-27, person-requested, FEATURE_BACKLOG.md #82)**. Research first (Loki, Splunk `spath`, Elasticsearch/Kibana, Seq, Datadog, jq/JMESPath): dot paths are the norm, `["a.b"]` escapes a dotted key, arrays come down to index / any-match / explode. See `PROJECT.md` → "JSON Lines formats", `docs/ui-and-views.md` → "JSON Lines kind", `docs/extraction-and-plotting.md` → "Pattern restricted to columns" / "Array columns" / "Heatmap and Profile".
+  - **Format mode `json`**: each `{`-line is one entry; time/level/message from configurable keys (epoch s/ms/µs/ns or ISO 8601 or a tsFormat); custom columns by path — `ctx.req.id`, `tags[0]`, `["http.status"]`, a literal dotted key winning first (OpenTelemetry). Objects/arrays are kept as JSON text. Workers parse it too; the native desktop parser doesn't (falls back to JS).
+  - **Format dialog**: a **JSON Lines** kind — detected keys with types and counts, Time/Level/Message selects, checkboxes for columns, a path field; JSON examples switch a new format to it automatically. Export/import carry the keys.
+  - **Extraction**: a pattern restricted to columns now tabulates from those columns. **Array columns** (every value a JSON array): Joined / Per index / Aggregate / Explode, via a header toggle or the context menu, stored as `node.arrayViews` through every persistence carrier.
+  - **Plot**: **Heatmap** (X × element index → color, bounded by pixel-sized bands) and **Profile** (one row's array via a slider, table-selected rows overlaid).
+  - **Fix**: `#extractContextMenu`'s hidden items (Rename column outside a header) were never actually hidden — no CSS rule matched them.
+  - **Backlog**: #82 reduced to its logfmt half.
+  - **Tests**: new **Groups 297–299**.
+  - **Full suite**: **6454 passed, 0 failed**.

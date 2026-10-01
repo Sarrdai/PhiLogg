@@ -1,0 +1,1 @@
+- **feat: ancestor names on the active path take the path accent (this session, 2026-09-23, person-requested)**. `decorateTreeGuides` marks the file and parent filter rows of the active node `.on-path`; their names render in `--accent`, like the highlighted lines (level-node word colors included). Group 262 extended. Full suite: **5267 passed, 0 failed**.

@@ -15,8 +15,8 @@ project-root/
   PROJECT.md
   FEATURE_BACKLOG.md
   tests/                              <- this folder
-    philogg.regression.test.js        <- harness + groups 1-353
-    groups/                           <- one file per newer group (see "Group files")
+    philogg.regression.test.js        <- harness + shared helpers
+    groups/                           <- one file per test group (see "Group files")
     run.js                            <- shard runner, what `npm test` calls
     jsdom-fast-selectors.js           <- [data-*] selector fast path (see "How it works")
     package.json
@@ -231,7 +231,7 @@ throwaway test from scratch. When a session adds a feature:
 3. Run `npm test` and fix until green before delivering the feature. Look at
    the "Slowest groups" list above the total too: a new group in it needs a
    reason (a big generated log, say), not just an unlucky selector or a
-   sleep. GROUP 346 sits at the top on purpose: it runs every checked query
+   sleep. GROUP 346 is slow on purpose: it runs every checked query
    through jsdom's own slow selector engine as well, and a nested `run.js`. Before the final push run `SHARDS=8 npm test` once: more shards
    than cores is the load that exposes the rules above being broken, and a
    failure there is a bug in the test, not a flake to re-run.
@@ -243,24 +243,30 @@ throwaway test from scratch. When a session adds a feature:
 
 ## Group files
 
-`philogg.regression.test.js` holds the harness and groups 1-353; every group
-added since lives in `groups/*.js`. The main file runs each of them near its
-end, in file-name order, by a **direct `eval` inside its own async
+Every group is its own file in `groups/`; `philogg.regression.test.js` holds
+only the harness (module level: page loading, `withApp`, `waitFor`,
+`assert`, group selection, ...) and, inside its async function, the
+**helpers several group files share** (`nativeFolderBridge`,
+`buildZipFixture`, the LLM and chat stubs, ...). It runs the group files
+near its end, in file-name order, by a **direct `eval` inside its own async
 function**: a group file sees every helper defined there (`withApp`,
 `waitFor`, `assert`, `section`, `fs`, `path`, `makeLog`, `LOGSIM`, ...)
 exactly like an inline group, and whatever it declares stays local to it.
 Errors point at `tests/groups/<file>.js` (`sourceURL`).
 
 - Name: `groups/<slug>.js`, slug in kebab-case after the feature
-  (`text-files-find-bar.js`). Groups moved out of the main file keep their
-  number as prefix and id (`354-homepage-site.js`, `group(354)`).
+  (`text-files-find-bar.js`). The groups from before 2026-10-01 keep their
+  number as prefix and id (`199-zip-files-as-a-log.js`, `group(199)`); a
+  number that used to appear twice in the old single file (29, 30, 55, 73,
+  303) is one file with both parts.
 - Id: `group("<slug>")` — sharding hashes non-numeric ids, `GROUP=` takes
   them as they are (`GROUP=text-files-find-bar,58`).
-- Helpers several group files share go into the main file's helper section,
-  not into one group file another depends on (file order is alphabetical,
-  not chronological).
-- Moving an existing group out of the main file is welcome whenever a
-  session touches it anyway; keep its number.
+- A helper a second group file needs moves into the main file's shared
+  section; a group file never depends on another one (file order is
+  alphabetical, and sharding runs them in different processes). Watch out
+  for a `function` declared inside a `{ }` block: sloppy-mode JavaScript
+  hoists it to the whole function, so in the old single file other groups
+  could call it; in a group file it stays local.
 
 ## Known gaps (things this suite does NOT cover)
 

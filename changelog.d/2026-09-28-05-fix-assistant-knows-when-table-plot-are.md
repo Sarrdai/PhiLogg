@@ -1,0 +1,5 @@
+- **fix: assistant knows when Table/Plot are available (2026-09-28, person-reported: *"Das LLM hat öfter versucht einen Plot auszuführen obwohl keine Extraction vorlag … Bedingung für Tabelle/Plot klarstellen"*)**. See `docs/llm-assistant.md` → "Table/Plot condition".
+  - Every node result carries `tablePlot` (`get_overview` tree, `create_filter`; `create_link` always `false`), true exactly when `nodeIsExtractionView` holds (own or inherited extraction pattern).
+  - System prompt: a "Table/Plot condition" concept line and step 4 say to call `show_view` table/plot only with a `tablePlot: true` id, else create the extraction first (under a link: with the link as parent) or use `filtered`. `show_view`'s description repeats it; the link tip points to the new node.
+  - The refusal now names the concrete next step (`create_filter` with `parentId` = that node, then `show_view` on the new id).
+  - **Tests**: new **Group 315**. Full suite **6893 passed, 1 failed** — the one failure is GROUP 266's 50 ms scroll-timing check under heavy container load (run took 491 s); GROUP 266 alone passes 32/32.
