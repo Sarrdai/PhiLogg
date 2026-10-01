@@ -2015,6 +2015,40 @@
      indentation, so whitespace is preserved rather than collapsed. */
   .col-msg.plaintext{white-space:pre; tab-size:4; text-overflow:clip;}
   .wrap-messages .col-msg.plaintext{white-space:pre-wrap; word-break:break-all;}
+  /* Text mode (the active node's root is a plain-text file — see
+     syncTextMode): the Filtered view drops the log table for an editor-like
+     listing. No level stripe, no row separators, a compact fixed row height
+     (TEXT_ROW_HEIGHT, set inline per row and as --text-row-h for the cells'
+     line-height), and a three-part gutter shared with the Context view's
+     editor: right-aligned line number (--text-num-w), an empty fold slot
+     (--text-fold-w) and then the message, so the message's x position is the
+     same in both. The two widths are set from TEXT_NUM_W/TEXT_FOLD_W at
+     startup (these are only the pre-script defaults). */
+  :root{--text-num-w:56px; --text-fold-w:16px; --text-row-h:19px;}
+  .log-row.text-row{
+    display:grid; grid-template-columns:var(--text-num-w) var(--text-fold-w) 1fr; column-gap:0;
+    align-items:center; border-bottom:none;
+  }
+  .text-row .col-time{
+    text-align:right; padding-right:10px; box-sizing:border-box; color:var(--text-tertiary);
+    line-height:var(--text-row-h);
+  }
+  #tableRows .text-row .col-msg{line-height:var(--text-row-h);}
+  /* Reusable header bar for text-mode views (Filtered now, the Context
+     editor next): "LINE" over the number column, the fold slot, then the
+     file name (+ layout for JSON). Fixed to the height of the log header's
+     .row-grid (9px + label + 9px) so both headers are the same height. */
+  .text-header-bar{
+    display:none; grid-template-columns:var(--text-num-w) var(--text-fold-w) 1fr; column-gap:0;
+    align-items:center; height:29px; position:relative; box-sizing:border-box;
+  }
+  .text-header-bar .text-hb-line{text-align:right; padding-right:10px; box-sizing:border-box;}
+  .text-header-bar .text-hb-name{
+    text-transform:none; letter-spacing:0; font-weight:600; font-size:11px; color:var(--text-secondary);
+    min-width:0;
+  }
+  #tableWrap.text-mode #tableHeader .row-grid{display:none;}
+  #tableWrap.text-mode #tableHeader .text-header-bar{display:grid;}
   /* With wrap on, the message track must be free to shrink and wrap rather
      than being forced to its widest line's width — that forced width is what
      drives the horizontal scrollbar in the non-wrap views (see the
@@ -4960,6 +4994,9 @@
                    fixed six) — see philogg.html's "Log view column
                    visibility / width" section. -->
               <div class="row-grid"></div>
+              <!-- Text mode's header (a plain-text active root): see
+                   renderTextHeaderBar — shown instead of .row-grid. -->
+              <div class="text-header-bar"></div>
             </div>
             <div id="tableBody">
               <div id="tableSpacer">
@@ -8327,6 +8364,8 @@ function applyLogTextScale(scale) {
   ROW_HEIGHT = Math.round(ROW_HEIGHT_BASE * logTextScale / 100);
   EXTRACT_ROW_HEIGHT = Math.round(EXTRACT_ROW_HEIGHT_BASE * logTextScale / 100);
   LINK_PAIR_ROW_HEIGHT = Math.round(LINK_PAIR_ROW_HEIGHT_BASE * logTextScale / 100);
+  TEXT_ROW_HEIGHT = Math.round(TEXT_ROW_HEIGHT_BASE * logTextScale / 100);
+  document.documentElement.style.setProperty("--text-row-h", TEXT_ROW_HEIGHT + "px");
   render();
 }
 
@@ -22961,6 +23000,55 @@ el("#ctxRenameColumn").addEventListener("click", () => {
 // the unscaled value every rescale multiplies from (never itself mutated).
 let ROW_HEIGHT = 28;
 const ROW_HEIGHT_BASE = 28;
+// Text mode (see syncTextMode): the compact row height of a plain-text file's
+// Filtered rows — also the editor line height of the Context view's text
+// editor. Scaled by logTextScale exactly like ROW_HEIGHT (applyLogTextScale).
+let TEXT_ROW_HEIGHT = 19;
+const TEXT_ROW_HEIGHT_BASE = 19;
+// Text-mode gutter, shared by the Filtered rows/header bar and the Context
+// editor: line-number column, then the fold slot, then the message. Written
+// to --text-num-w/--text-fold-w at startup (initTextGutterVars).
+const TEXT_NUM_W = 56;
+const TEXT_FOLD_W = 16;
+const TEXT_GUTTER_W = TEXT_NUM_W + TEXT_FOLD_W;
+document.documentElement.style.setProperty("--text-num-w", TEXT_NUM_W + "px");
+document.documentElement.style.setProperty("--text-fold-w", TEXT_FOLD_W + "px");
+document.documentElement.style.setProperty("--text-row-h", TEXT_ROW_HEIGHT + "px");
+
+// Text mode: true while the active node's ROOT file is plain text (not
+// "every loaded file is": a mixed session keeps the log table for a log
+// root and switches as the active node moves between roots). Drives the
+// Filtered view's row geometry/markup, its header bar and the #tableWrap
+// "text-mode" class; refreshed by renderTable (before it builds anything).
+let filteredTextMode = false;
+// The Filtered view's flat row height (offsets-free virtualization math).
+function tableRowH() { return filteredTextMode ? TEXT_ROW_HEIGHT : ROW_HEIGHT; }
+// Width of everything left of the message in a Filtered row: the text-mode
+// gutter, or the log grid's fixed columns plus the gap before the message.
+function tableGutterW() { return filteredTextMode ? TEXT_GUTTER_W : lastColumnEdgeX + COLUMN_GRID_GAP; }
+function syncTextMode() {
+  const rootId = state.activeId ? getRootFileId(state.activeId) : null;
+  const root = rootId ? state.nodes[rootId] : null;
+  filteredTextMode = !!root && isPlainTextFormat(root.formatId);
+  tableWrap.classList.toggle("text-mode", filteredTextMode);
+  renderTextHeaderBar(tableHeaderEl.querySelector(".text-header-bar"), filteredTextMode ? root : null);
+}
+// The reusable header bar of a text-mode view (Filtered now, the Context
+// editor next): "LINE" over the number column, the fold slot, then the file
+// name — plus " · pretty" / " · raw" for a JSON file. Idempotent: rewrites
+// the element only when its content changed.
+function renderTextHeaderBar(barEl, root) {
+  if (!barEl) return;
+  const name = root ? root.name : "";
+  const layout = root && root.textSyntax === "json" && root.textLayout ? " · " + root.textLayout : "";
+  const key = name + "\n" + layout;
+  if (barEl._textBarKey === key) return;
+  barEl._textBarKey = key;
+  barEl.innerHTML = root
+    ? '<span class="th text-hb-line">Line</span><span class="text-hb-fold"></span>' +
+      '<span class="th text-hb-name" title="' + escapeHtml(name) + '">' + escapeHtml(name + layout) + '</span>'
+    : "";
+}
 const BUFFER_ROWS = 10;
 
 /* ---------- Virtualized scroll height beyond a browser's own ceiling ----
@@ -23103,7 +23191,7 @@ function msgCharWidth() {
 // 0) — callers then fall back to the plain non-wrapped ROW_HEIGHT.
 function wrapColsForBody(bodyEl) {
   if (!state.wrapMessages) return 0;
-  const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - lastColumnEdgeX - COLUMN_GRID_GAP;
+  const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
   if (!(track > 0)) return 0;
   const cw = msgCharWidth();
   return Math.max(1, Math.floor((track - cw) / cw));
@@ -23129,11 +23217,15 @@ function messageWrapLines(message, cols) {
 // note-row gets its own separate height, see renderVisibleRows/
 // renderHighlightVisibleRows). `cols` is the wrapping view's char capacity
 // (tableWrapCols/highlightWrapCols); 0/absent = no word-wrap.
-function baseRowHeightForEntry(e, cols) {
+// `textRows` (the Filtered view in text mode only): TEXT_ROW_HEIGHT rows whose
+// extra lines are TEXT_ROW_HEIGHT each (the cells' line-height, see
+// .text-row's CSS).
+function baseRowHeightForEntry(e, cols, textRows) {
+  const h = textRows ? TEXT_ROW_HEIGHT : ROW_HEIGHT;
   const wrapOn = state.wrapMessages && cols >= 1;
-  if (!state.multilineMessages && !wrapOn) return ROW_HEIGHT;
+  if (!state.multilineMessages && !wrapOn) return h;
   const n = wrapOn ? messageWrapLines(e.message, cols) : messageLineCount(e.message);
-  return n > 1 ? ROW_HEIGHT + (n - 1) * MULTILINE_LINE_HEIGHT : ROW_HEIGHT;
+  return n > 1 ? h + (n - 1) * (textRows ? TEXT_ROW_HEIGHT : MULTILINE_LINE_HEIGHT) : h;
 }
 // A row's TOTAL height in either virtualized view: the entry's own line(s)
 // plus its note-row, if any (see noteHeightForEntry/needsRowOffsets — a note
@@ -23143,8 +23235,8 @@ function baseRowHeightForEntry(e, cols) {
 // buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e, cols) +
 // noteHeightForEntry(e) exactly, or the two DOM elements' real heights drift
 // out of sync with the virtualization math.
-function rowHeightForEntry(e, cols) {
-  return baseRowHeightForEntry(e, cols) + noteHeightForEntry(e);
+function rowHeightForEntry(e, cols, textRows) {
+  return baseRowHeightForEntry(e, cols, textRows) + noteHeightForEntry(e);
 }
 // Whether the offsets-array virtualization path (tableRowOffsets/
 // highlightRowOffsets, built via buildRowOffsets) is needed instead of the
@@ -23160,7 +23252,7 @@ function buildRowOffsets(entries) {
   tableWrapCols = wrapColsForBody(tableBody);
   const cols = tableWrapCols;
   const offsets = new Float64Array(entries.length + 1);
-  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols);
+  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols, filteredTextMode);
   return offsets;
 }
 // Largest i such that offsets[i] <= y, clamped to a valid row index (offsets
@@ -23187,9 +23279,9 @@ let highlightRowOffsets = null; // same, built by renderHighlightView()
 // e.g. right after the multiline toggle flips the flag but before the view
 // rebuilds) as the source of truth for whether these particular offsets are
 // variable-height ones.
-function topVisibleEntryId(entries, offsets, scrollTop) {
+function topVisibleEntryId(entries, offsets, scrollTop, rowH) {
   if (!entries.length) return null;
-  const idx = offsets ? findOffsetIndex(offsets, scrollTop) : Math.floor(scrollTop / ROW_HEIGHT);
+  const idx = offsets ? findOffsetIndex(offsets, scrollTop) : Math.floor(scrollTop / (rowH || ROW_HEIGHT));
   return entries[Math.max(0, Math.min(idx, entries.length - 1))].id;
 }
 
@@ -23214,11 +23306,12 @@ function captureViewAnchor(entries, offsets, scrollEl) {
   // logical space offsets/ROW_HEIGHT math already uses.
   const scrollTop = scrollEl === tableBody ? physicalToLogicalScrollPx(scrollEl.scrollTop) : scrollEl.scrollTop;
   const viewportH = scrollEl.clientHeight || 400;
+  const flatH = scrollEl === tableBody ? tableRowH() : ROW_HEIGHT;
   if (state.selectedId) {
     const idx = entries.findIndex(e => e.id === state.selectedId);
     if (idx !== -1) {
-      const rowTop = offsets ? offsets[idx] : idx * ROW_HEIGHT;
-      const rowH = offsets ? (offsets[idx + 1] - rowTop) : ROW_HEIGHT;
+      const rowTop = offsets ? offsets[idx] : idx * flatH;
+      const rowH = offsets ? (offsets[idx + 1] - rowTop) : flatH;
       const onScreen = rowTop + rowH > scrollTop && rowTop < scrollTop + viewportH;
       // offset === null: the selected row wasn't on screen before the change
       // either — nothing to preserve, just an obligation to reveal it now
@@ -23226,7 +23319,7 @@ function captureViewAnchor(entries, offsets, scrollEl) {
       return { id: state.selectedId, offset: onScreen ? (rowTop - scrollTop) : null };
     }
   }
-  const fallbackId = topVisibleEntryId(entries, offsets, scrollTop);
+  const fallbackId = topVisibleEntryId(entries, offsets, scrollTop, flatH);
   return fallbackId != null ? { id: fallbackId, offset: 0 } : null;
 }
 
@@ -23258,11 +23351,12 @@ function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
   if (!anchor) return false;
   const idx = entries.findIndex(e => e.id === anchor.id);
   if (idx === -1) return false;
-  const rowTop = offsets ? offsets[idx] : idx * ROW_HEIGHT;
+  const flatH = scrollEl === tableBody ? tableRowH() : ROW_HEIGHT;
+  const rowTop = offsets ? offsets[idx] : idx * flatH;
   if (anchor.offset != null) {
     setScrollFn(rowTop - anchor.offset);
   } else {
-    const rowH = offsets ? (offsets[idx + 1] - rowTop) : ROW_HEIGHT;
+    const rowH = offsets ? (offsets[idx + 1] - rowTop) : flatH;
     const viewportH = scrollEl.clientHeight || 400;
     setScrollFn(rowTop - viewportH / 2 + rowH / 2); // wasn't visible before — reveal it centered, not another edge-snap jump
   }
@@ -23431,6 +23525,8 @@ function setTableScrollLogical(value) { setTableScroll(logicalToPhysicalScrollPx
 function syncTableHeaderWidth() {
   const headerGrid = tableHeaderEl.querySelector(".row-grid");
   if (headerGrid) headerGrid.style.width = tableRows.scrollWidth + "px";
+  const headerBar = tableHeaderEl.querySelector(".text-header-bar");
+  if (headerBar) headerBar.style.width = tableRows.scrollWidth + "px";
 }
 tableBody.addEventListener("scroll", () => { tableHeaderEl.scrollLeft = tableBody.scrollLeft; });
 
@@ -23472,6 +23568,7 @@ function renderVisibleRows(reuseRows) {
   // logical (rendered rows sit at their true height regardless of
   // compression), so the conversion happens only at this one read boundary.
   const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
+  const flatRowH = tableRowH(); // the Filtered view's flat row height (text mode: TEXT_ROW_HEIGHT)
   // The entry range [start, end) to render with `pad` rows beyond the
   // viewport on each side, and #tableRows' physical top for it.
   function rowWindow(pad) {
@@ -23497,13 +23594,13 @@ function renderVisibleRows(reuseRows) {
         top = Math.min(top, detectMaxTableScrollPx() - (tableRowOffsets[end] - tableRowOffsets[start]));
       }
     } else {
-      const maxVisible = Math.ceil(viewportH / ROW_HEIGHT) + pad * 2;
-      start = Math.min(Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - pad), Math.max(0, total - 1));
+      const maxVisible = Math.ceil(viewportH / flatRowH) + pad * 2;
+      start = Math.min(Math.max(0, Math.floor(scrollTop / flatRowH) - pad), Math.max(0, total - 1));
       end = Math.min(total, start + maxVisible);
-      top = logicalToPhysicalScrollPx(start * ROW_HEIGHT);
+      top = logicalToPhysicalScrollPx(start * flatRowH);
       // Same tail-overhang guard as the offsets branch above.
       if (tableScrollHeightScale !== 1 && end === total) {
-        top = Math.min(top, detectMaxTableScrollPx() - (end - start) * ROW_HEIGHT);
+        top = Math.min(top, detectMaxTableScrollPx() - (end - start) * flatRowH);
       }
     }
     return { start, end, top };
@@ -23518,7 +23615,7 @@ function renderVisibleRows(reuseRows) {
   const w = tableRowsWindow;
   const canReuse = !!(reuseRows && w && w.entries === currentViewEntries && w.total === total &&
     tableRows.firstElementChild === w.first);
-  let win = rowWindow(canReuse ? Math.max(BUFFER_ROWS, Math.ceil(viewportH / ROW_HEIGHT)) : BUFFER_ROWS);
+  let win = rowWindow(canReuse ? Math.max(BUFFER_ROWS, Math.ceil(viewportH / flatRowH)) : BUFFER_ROWS);
   const reuse = canReuse && win.start < w.end && win.end > w.start;
   if (canReuse && !reuse) win = rowWindow(BUFFER_ROWS);
   const { start, end } = win;
@@ -23552,7 +23649,7 @@ function renderVisibleRows(reuseRows) {
   // computeGapEntries), or, under a column sort, the chronological Δt
   // renderTable captured before sorting (buildViewDeltaMap).
   const gapMs = activeNode && activeNode.filterType === "gap" && !activeNode.inverted ? activeNode._gapMs : null;
-  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null) };
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, textMode: filteredTextMode, deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null) };
   let groups;
   if (reuse) {
     for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
@@ -23588,7 +23685,7 @@ function renderVisibleRows(reuseRows) {
 function appendLogRow(frag, i, rc) {
   const e = currentViewEntries[i];
   const row = document.createElement("div");
-  let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
+  let cls = (rc.textMode ? "log-row text-row" : "log-row row-grid " + levelClass(e.level, e.formatId)) + (e.id === state.selectedId ? " selected" : "") +
     (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
     (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
     (e._tempAnchor ? " temp-anchor-row" : "");
@@ -23648,9 +23745,16 @@ function appendLogRow(frag, i, rc) {
   const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
   row.className = cls;
-  row.style.height = baseRowHeightForEntry(e, tableWrapCols) + "px";
+  row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode) + "px";
   row.dataset.entryId = e.id;
-  row.innerHTML =
+  // Text mode: no level stripe/Δt/Level/columns — line number, the (empty)
+  // fold slot, the message. A text file has no other columns.
+  row.innerHTML = rc.textMode ?
+    bracketHtml +
+    (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
+    '<span class="col-time" data-col="time">' + timeHtml + '</span>' +
+    '<span class="col-fold"></span>' +
+    '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' :
     bracketHtml +
     (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
     '<span class="col-bar"></span>' +
@@ -25076,10 +25180,10 @@ tableBody.addEventListener("scroll", () => {
   // recognized via the timestamp and never trigger either transition here.
   if (performance.now() - lastProgrammaticScrollTs > 150 && isTailedLogViewActive()) {
     const distFromBottom = tableBody.scrollHeight - tableBody.clientHeight - tableBody.scrollTop;
-    if (state.tailFollow && distFromBottom > ROW_HEIGHT * 1.5) {
+    if (state.tailFollow && distFromBottom > tableRowH() * 1.5) {
       state.tailFollow = false;
       updateTailJumpBtn();
-    } else if (!state.tailFollow && distFromBottom <= ROW_HEIGHT * 1.5) {
+    } else if (!state.tailFollow && distFromBottom <= tableRowH() * 1.5) {
       maybeReengageTailFollow();
     }
   }
@@ -26163,8 +26267,9 @@ function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
     startIdx = Math.min(maxIdx, Math.max(0, findOffsetIndex(rowOffsets, scrollTop)));
     endIdx = Math.min(maxIdx, Math.max(startIdx, findOffsetIndex(rowOffsets, scrollTop + viewportH)));
   } else {
-    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollTop / ROW_HEIGHT)));
-    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollTop + viewportH) / ROW_HEIGHT)));
+    const flatH = scrollEl === tableBody ? tableRowH() : ROW_HEIGHT;
+    startIdx = Math.min(maxIdx, Math.max(0, Math.floor(scrollTop / flatH)));
+    endIdx = Math.min(maxIdx, Math.max(startIdx, Math.ceil((scrollTop + viewportH) / flatH)));
   }
   // The temp anchor row (see spliceTempAnchor) is a foreign entry that's
   // genuinely rendered in the viewport but isn't a real member of the view —
@@ -26545,10 +26650,10 @@ function scrollToIndex(index, opts) {
   let rowTop, rowH;
   if (needsRowOffsets() && tableRowOffsets) {
     rowTop = tableRowOffsets[index] || 0;
-    rowH = tableRowOffsets[index + 1] - rowTop || ROW_HEIGHT;
+    rowH = tableRowOffsets[index + 1] - rowTop || tableRowH();
   } else {
-    rowTop = index * ROW_HEIGHT;
-    rowH = ROW_HEIGHT;
+    rowTop = index * tableRowH();
+    rowH = tableRowH();
   }
   let target;
   if (opts.offset != null) {
@@ -27678,7 +27783,7 @@ function toggleBookmark(entryId) {
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
     tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
     {
-      const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+      const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
       tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
     }
     cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
@@ -28112,7 +28217,7 @@ function syncTableRowsWidth() {
   // stretch-fill (left:0;right:0), same as a short-message file.
   if (state.wrapMessages) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
-    ? lastColumnEdgeX + COLUMN_GRID_GAP + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
+    ? tableGutterW() + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
     : 0;
   // Only override when content genuinely needs more than the viewport
   // already gives it for free — otherwise clear the inline style so
@@ -28324,6 +28429,7 @@ function renderTable() {
   // switch, multiline toggle, sort, pin-bookmarks toggle, …, not just one
   // special-cased transition).
   const scrollAnchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
+  syncTextMode(); // after the capture (it measured the OLD rows), before anything below builds new ones
 
   // Captured before spliceTempAnchor below: the temp anchor is a foreign
   // entry stitched into the table for context, not a member of the actual
@@ -28336,7 +28442,7 @@ function renderTable() {
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   {
-    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
     tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
   }
   cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
@@ -34122,7 +34228,7 @@ function findAnchor(entries) {
   const isHl = findState.kind === "highlight";
   const offsets = isHl ? highlightRowOffsets : (needsRowOffsets() ? tableRowOffsets : null);
   const scrollTop = isHl ? highlightBody.scrollTop : physicalToLogicalScrollPx(tableBody.scrollTop);
-  const topId = topVisibleEntryId(entries, offsets, scrollTop);
+  const topId = topVisibleEntryId(entries, offsets, scrollTop, isHl ? ROW_HEIGHT : tableRowH());
   const idx = topId ? entries.findIndex(e => e.id === topId) : -1;
   return { idx: Math.max(0, idx), fromSelection: false };
 }
@@ -37601,7 +37707,7 @@ function setNoteAndRepaint(entryId, text) {
   renderTree(); // repaint the sidebar in case the auto "Notes" node just appeared/disappeared
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   {
-    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * ROW_HEIGHT;
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
     tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
   }
   rebuildHighlightOffsets();
@@ -43198,6 +43304,10 @@ function buildSessionExport(fileIds, embedTextIds) {
       clockOffset: node.clockOffset || 0,
     };
     if (embedTextIds && embedTextIds.has(id)) rec.text = rebuildFileText(node);
+    // A text file (.txt/.json/.xml) keeps its syntax and JSON layout (an
+    // embedded text is the file's own text — runSessionImport re-lays it out).
+    if (node.textSyntax !== undefined) rec.textSyntax = node.textSyntax;
+    if (node.textLayout) rec.textLayout = node.textLayout;
     files.push(rec);
     perFile.set(id, { rec, refs });
   }
@@ -43732,7 +43842,18 @@ async function resolveExportedFileManually(rec, nearMissIds, summary) {
       // carry a formatId (that's an IndexedDB session-cache concept, not
       // part of the portable export format) — resolves live by filename,
       // same as any other fresh load.
-      const node = await addFile(String(rec.name || "embedded.log"), rec.text);
+      const embeddedName = String(rec.name || "embedded.log");
+      let node;
+      if (rec.textSyntax !== undefined) {
+        // An exported text file: pinned to Plain text with its syntax/layout
+        // set before the parse (applyTextLayout).
+        const placeholder = createQueuedFileNode(embeddedName);
+        placeholder.textSyntax = rec.textSyntax === "json" || rec.textSyntax === "xml" ? rec.textSyntax : null;
+        if (rec.textLayout === "pretty" || rec.textLayout === "raw") placeholder.textLayout = rec.textLayout;
+        node = await addFile(embeddedName, rec.text, undefined, PLAINTEXT_FORMAT_ID, placeholder);
+      } else {
+        node = await addFile(embeddedName, rec.text);
+      }
       persistFileNode(node); // same fire-and-forget as loadFileDescriptors
       const { refMap, placed, total, notesPlaced, notesTotal } = applySessionEntryByOrdinal(rec, node);
       summary.placed += placed;
