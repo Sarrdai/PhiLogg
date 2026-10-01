@@ -25,7 +25,9 @@ work (full tests, real-app screenshots) and may send corrections to you.
   you need.
 - Every change ships with regression tests per `tests/README.md` (new
   `GROUP N` with its `group(N);` marker, one TEST PROVENANCE line, or
-  update the superseded group). Iterate with `cd tests && GROUP=N npm test`.
+  update the superseded group), written to its timing rules ("Extending this
+  suite", step 2: `waitFor` instead of fixed sleeps, "nothing happened"
+  checked right after the step). Iterate with `cd tests && GROUP=N npm test`.
 - Sample data only from `tools/log-sim/` — never hand-written log lines.
   If the simulator can't produce the case, extend it (scenario/format in
   `tools/log-sim/core.js` + GROUP 300).
