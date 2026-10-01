@@ -884,6 +884,14 @@ Regression-tested: **Group 116** — default-format behavior unchanged, a custom
 
 Regression-tested: **Group 94** — default mode, node creation/in-place-edit/deletion-on-empty (undo included) in `"auto"`, the classic Set + `#btnApplyLevelToTree` round trip in `"explicit"`, the mode-switch clearing side effect, and a direct `serializeFilterTreeForCache`/`materializeCachedFilters` round trip proving the generic `value` field and the `FILTER_TYPES` addition both work without special-casing. Groups 4/13/33/52/61a/61b/61d/61e predate this feature and click the level bar only incidentally (to test the minimap, scroll anchoring, load-tick DOM identity, …) — each now pins `levelFilterTreeMode = "explicit"` first so "auto" becoming the default doesn't silently change what those older assertions are testing.
 
+## Tour banner
+
+`#tourBanner`, the first child of `#content`: a one-line hint strip above the log view (accent-soft background, bottom border, 13px text, "× close tour" button on the right), shown when an imported session file (Import… or `?session=`) carries a top-level `banner` string and at least one of its files landed. Plain text, `**x**` renders bold in the accent-strong colour (escaped first). `setSessionBanner(text|null)`; the close button and any later session import without a banner hide it. Runtime only: not in the session cache, not written by the app's own session export. Group 352.
+
+## Timestamps without a date
+
+A format whose `tsFormat` has no date tokens (e.g. `HH:mm:ss.SSS`) parses to 1970-01-01 local time (`parseTimestampGeneric`'s defaults); order, Δt and time filters work as usual, and the format dialog's suggestion already proposes `HH:mm:ss.SSS` for such lines. `formatTime` omits the date for any timestamp on 1970-01-01 local, so these show as `00:01:03.700` everywhere the app prints a time (the datetime-local inputs keep the full value). Group 352g/h.
+
 ## Log format export/import (JSON)
 
 Each ordinary format row in Settings → Log Formats has an **Export** button (not a meta-format — it only names other formats by id). `exportLogFormatToFile` writes `{format: "philogg-log-format", version: 1, savedAt, logFormat, fileNamePatterns}` (save picker, `downloadJsonFallback` otherwise): `logFormat` is the record reduced to `LOG_FORMAT_EXPORT_FIELDS` (name, mode, pattern/regex, tsFormat, levels, levelValueType, columnDefs, messageVisible, sampleSetup — no id/builtin/edited/createdAt), `fileNamePatterns` the globs of every rule mapped to it, in rule order.
