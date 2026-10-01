@@ -5,9 +5,10 @@ name: Build Release Assets
 # picked by checkbox). Builds the selected variants of one commit — HTML,
 # Windows installer, Windows portable, macOS, Linux — with `version` stamped
 # into the checked-out copy (never committed back), and hands them to the
-# caller as workflow artifacts named `release-*`. Publishing is the caller's
-# job, so a failed build never leaves a half-filled release behind. See
-# PROJECT.md -> "Release builds".
+# caller as workflow artifacts: `release-html` (the page + LICENSE.md) and
+# one unzipped artifact per desktop file, named after that file
+# (`PhiLogg-*`). Publishing is the caller's job, so a failed build never
+# leaves a half-filled release behind. See PROJECT.md -> "Release builds".
 on:
   workflow_call:
     inputs:
@@ -88,7 +89,7 @@ jobs:
 
       # LICENSE.md travels with every download (the page also shows the full
       # text under Settings -> License).
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: release-html
           path: dist/
@@ -175,15 +176,15 @@ jobs:
           [ "$SUBSYSTEM" = "2" ] || { echo "::error::$EXE is not a GUI-subsystem build (subsystem $SUBSYSTEM)"; exit 1; }
 
       # Tauri's bundler has no artifact-name template, so each bundle is
-      # copied into dist/ under the release name. Exactly one bundle per
-      # selected variant is expected; anything else fails the build.
+      # copied under the release name. Exactly one bundle per selected
+      # variant is expected; anything else fails the build.
       - name: Collect installer
+        id: installer
         shell: bash
         env:
           VERSION: ${{ inputs.version }}
           WANT_WINDOWS: ${{ inputs.windows }}
         run: |
-          mkdir -p dist
           BUNDLE=desktop/src-tauri/target/release/bundle
           case "$RUNNER_OS" in
             Windows) [ "$WANT_WINDOWS" = "true" ] || exit 0; SRC=("$BUNDLE"/nsis/*.exe); EXT=exe ;;
@@ -191,7 +192,8 @@ jobs:
             Linux)   SRC=("$BUNDLE"/appimage/*.AppImage); EXT=AppImage ;;
           esac
           [ ${#SRC[@]} -eq 1 ] && [ -f "${SRC[0]}" ] || { echo "::error::expected one $EXT bundle, found: ${SRC[*]}"; exit 1; }
-          cp "${SRC[0]}" "dist/PhiLogg-${VERSION}.${EXT}"
+          cp "${SRC[0]}" "PhiLogg-${VERSION}.${EXT}"
+          echo "file=PhiLogg-${VERSION}.${EXT}" >> "$GITHUB_OUTPUT"
 
       # Windows only: `npm run build` already produced the raw, unbundled
       # `cargo build --release` binary alongside the NSIS installer — that
@@ -200,10 +202,9 @@ jobs:
       # philogg.html and a marker file telling settings.rs/windows.rs to keep
       # settings.json and the webview's storage in a data/ folder beside the
       # exe instead of the OS's per-user directories. See
-      # desktop/README.md "Portable build". The zip ends up as a file inside
-      # the `release-Windows` artifact, which the caller downloads (unzipping
-      # the artifact, not this zip) before publishing.
+      # desktop/README.md "Portable build".
       - name: Package portable build
+        id: portable
         if: runner.os == 'Windows' && inputs.windows_portable
         shell: bash
         env:
@@ -216,10 +217,24 @@ jobs:
           cp desktop/chat.html "$STAGE/chat.html"
           cp LICENSE.md desktop/THIRD_PARTY_NOTICES.md "$STAGE/"
           echo "PhiLogg portable mode marker" > "$STAGE/philogg-portable"
-          (cd "$STAGE" && 7z a -tzip "../dist/${STAGE}.zip" .)
+          (cd "$STAGE" && 7z a -tzip "../${STAGE}.zip" .)
+          echo "file=${STAGE}.zip" >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      # One artifact per file, uploaded as-is (`archive: false`, artifact
+      # name = file name): the run page offers the installer and the
+      # portable zip as separate downloads, and neither comes wrapped in a
+      # second zip. The callers' publish jobs download these with
+      # skip-decompress so the portable zip stays a zip.
+      - uses: actions/upload-artifact@v7
+        if: steps.installer.outputs.file != ''
         with:
-          name: release-${{ runner.os }}
-          path: dist/
+          path: ${{ steps.installer.outputs.file }}
+          archive: false
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
+        if: steps.portable.outputs.file != ''
+        with:
+          path: ${{ steps.portable.outputs.file }}
+          archive: false
           if-no-files-found: error

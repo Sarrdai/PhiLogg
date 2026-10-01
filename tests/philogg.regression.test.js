@@ -38407,7 +38407,8 @@ await withApp(async (w, d, T) => {
    rewrites the version in all four files release-please keeps in sync and
    the build hash. The workflows wire it up: beta-release.yml is main-only
    and publishes a pre-release, both release workflows share
-   build-release-assets.yml, and the old tester workflow is gone.
+   build-release-assets.yml, and the old tester workflow is gone. Each
+   desktop file (installer, portable zip, ...) is its own unzipped artifact.
    ============================================================ */
 group(340);
 if (groupSelected()) {
@@ -38461,8 +38462,14 @@ if (groupSelected()) {
   }
   const build = wf("build-release-assets.yml");
   assert((build.match(/release-version\.js stamp "\$VERSION"/g) || []).length === 2, "both build jobs stamp the version");
-  assert(/7z a -tzip "\.\.\/dist\/\$\{STAGE\}\.zip" \./.test(build) && /name: release-\$\{\{ runner\.os \}\}\n\s+path: dist\//.test(build),
-    "portable zip is a file inside the artifact, unzipped again by the publish job's download");
+  assert(/7z a -tzip "\.\.\/\$\{STAGE\}\.zip" \./.test(build), "portable build is zipped once");
+  const rawUploads = build.match(/uses: actions\/upload-artifact@v7\n\s+if: steps\.(installer|portable)\.outputs\.file != ''\n\s+with:\n\s+path: \$\{\{ steps\.\1\.outputs\.file \}\}\n\s+archive: false/g) || [];
+  assert(rawUploads.length === 2, "installer and portable zip are separate, unzipped artifacts");
+  for (const f of ["beta-release.yml", "release-please.yml"]) {
+    assert(/pattern: release-html\n\s+path: dist\n\s+merge-multiple: true\n/.test(wf(f)) &&
+      /pattern: PhiLogg-\*\n\s+path: dist\n\s+merge-multiple: true\n\s+skip-decompress: true/.test(wf(f)),
+      f + ": HTML artifact unpacked, desktop files kept as-is (portable zip stays a zip)");
+  }
 
   section("340c. Variant selection: checkboxes on beta, everything on stable");
   const variants = ["html", "windows", "windows_portable", "mac", "linux"];
@@ -41087,6 +41094,377 @@ if (groupSelected()) {
     d.dispatchEvent(logDown);
     assert(logDown.defaultPrevented === false && ev.selectAll === false, "a log view's Ctrl+A is not handled (native select-all)");
   });
+}
+
+
+/* ============================================================
+   GROUP 352 — ?session=<url> / ?open=format deep links, session-file
+   fields url / logFormat / banner, the tour banner, time-only timestamps
+   Origin: 2026-10-01 (person-requested, homepage prerequisites Step 1).
+   ?session= fetches a philogg-session-export file and loads its records
+   FRESH (rec.url resolved against the session file's URL, else embedded
+   text; a record with neither goes through tiers 1-2 only), applies filters /
+   notes / bookmarks / settings, adds a record's logFormat as a persisted
+   format (or reuses an identical one) and shows the banner. ?open=format
+   opens "Add log format", after the session load when combined. A timestamp
+   on 1970-01-01 local (tsFormat without date tokens) displays without the
+   date. fetch is faked (jsdom has none), as in GROUP 66.
+   ============================================================ */
+group(352);
+if (groupSelected()) {
+  const simText = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0].text;
+  const SESSION_URL = "http://host.example/tours/t.session.json";
+  const enc = (w, text) => new w.TextEncoder().encode(text).buffer;
+  // Fake fetch over { url: text | { status } | Error }.
+  const fakeFetch = (w, map, seen) => async u => {
+    seen.push(u);
+    const v = map[u];
+    if (v instanceof Error) throw v;
+    if (v === undefined) return { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0), text: async () => "" };
+    return { ok: true, status: 200, arrayBuffer: async () => enc(w, v), text: async () => v };
+  };
+  const toast = d => d.querySelector("#copyToast").textContent;
+  const bannerText = d => d.querySelector("#tourBanner .tour-banner-text").innerHTML;
+
+  // Producer window: two files with a filter tree, a bookmark, a note, an active node.
+  let sessionDoc = null, wantFilterValue = null, wantBookmarkOrdinal = 3, wantNoteOrdinal = 5, textA = simText("default", 60, 11), textB = simText("default", 40, 12);
+  await withApp(async (w, d, T) => {
+    const a = await w.addFile("a.log", textA, () => {});
+    const b = await w.addFile("b.log", textB, () => {});
+    wantFilterValue = a.entries[0].message.split(/\s+/)[0];
+    const f = w.createFilterNode(a.id, "text", wantFilterValue);
+    T.state.activeId = f.id;
+    T.state.bookmarks.set(a.entries[wantBookmarkOrdinal].id, { bookmarkedAt: 1 });
+    T.state.notes.set(a.entries[wantNoteOrdinal].id, "look here");
+    T.state.levelFilter.clear(); T.state.levelFilter.add("ERROR");
+    sessionDoc = JSON.parse(JSON.stringify(w.buildSessionExport([a.id, b.id], new Set())));
+  });
+  assert(sessionDoc && sessionDoc.files.length === 2, "352 setup: the producer exported two files");
+  const makeSession = patch => {
+    const doc = JSON.parse(JSON.stringify(sessionDoc));
+    doc.files[0].url = "logs/a.log";
+    doc.files[1].url = "http://other.example/b.log";
+    return Object.assign(doc, patch || {});
+  };
+
+  await withApp(async (w, d, T) => {
+    section("352a. ?session=: url records (relative + absolute) load fresh, filters/notes/bookmarks/settings/active/banner applied");
+    await T.bootRestore;
+    const seen = [];
+    const doc = makeSession({ banner: "Read **this** first <b>x</b>" });
+    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(doc), "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB }, seen);
+    // The two exported hashes would tier-1 match an open copy — ?session= must not look at open files.
+    await w.loadSessionFromUrl(SESSION_URL);
+    assert(seen[0] === SESSION_URL && seen.includes("http://host.example/tours/logs/a.log") && seen.includes("http://other.example/b.log"),
+      "the relative url resolves against the session file's URL, the absolute one is used as is: " + seen.join(" "));
+    assert(T.state.rootIds.length === 2, "two files loaded, got " + T.state.rootIds.length);
+    const a = T.state.nodes[T.state.rootIds[0]], b = T.state.nodes[T.state.rootIds[1]];
+    assert(a.name === "a.log" && b.name === "b.log" && a.entries.length === 60 && b.entries.length === 40, "names from the records, entries parsed");
+    assert(a.sourceUrl === "http://host.example/tours/logs/a.log", "the file remembers its resolved source URL (Copy URL)");
+    const textFilter = a.children.map(id => T.state.nodes[id]).find(n => n.filterType === "text" && n.value === wantFilterValue);
+    assert(textFilter, "the filter tree was rebuilt under the file");
+    assert(T.state.activeId === textFilter.id, "the active node is the exported one");
+    assert(T.state.bookmarks.has(a.entries[wantBookmarkOrdinal].id), "the bookmark landed on its ordinal");
+    assert(T.state.notes.get(a.entries[wantNoteOrdinal].id) === "look here", "the note landed on its ordinal");
+    assert([...T.state.levelFilter].join(",") === "ERROR", "levelFilter applied");
+    assert(isVisible(d.querySelector("#tourBanner"), w), "the banner is shown");
+    assert(bannerText(d) === "Read <b>this</b> first &lt;b&gt;x&lt;/b&gt;", "**x** renders bold, everything else is escaped, got " + bannerText(d));
+    assert(/Session: 2 files loaded/.test(toast(d)), "summary toast, got " + toast(d));
+    const closeBtn = d.querySelector("#tourBannerClose");
+    assert(closeBtn.tagName === "BUTTON" && closeBtn.getAttribute("aria-label") && closeBtn.textContent.includes("close tour"), "the close control is a labelled button");
+    fireClick(closeBtn, w);
+    assert(!isVisible(d.querySelector("#tourBanner"), w), "close hides the banner");
+    // Loading the same link again replaces the banner; a session without a banner clears it.
+    await w.loadSessionFromUrl(SESSION_URL);
+    assert(isVisible(d.querySelector("#tourBanner"), w), "a new ?session= with a banner shows it again");
+    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(makeSession()), "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB }, seen);
+    await w.loadSessionFromUrl(SESSION_URL);
+    assert(!isVisible(d.querySelector("#tourBanner"), w), "a session without banner clears it");
+    w.setSessionBanner("x");
+    w.importSessionJson(JSON.stringify(makeSession()));
+    await sleep(100);
+    assert(!isVisible(d.querySelector("#tourBanner"), w), "a plain session import without a banner clears it too");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("352b. A record's logFormat: added silently + persisted + pinned; reused when identical; changed one is added again; invalid one ignored");
+    await T.bootRestore;
+    await waitForFormatConfig(T);
+    const text = simText("bracket", 40, 3);
+    const lf = LOGSIM.formatExport("bracket").logFormat;
+    const rec = (name, logFormat) => ({ exportId: "x-" + name, name, text, logFormat, filters: [], bookmarks: [], notes: [] });
+    const session = recs => JSON.stringify({ format: "philogg-session-export", version: 1, files: recs, settings: { active: { exportId: "x-" + recs[0].name, ref: null } } });
+    const seen = [];
+    const formatsBefore = T.state.logFormats.length, rulesBefore = T.state.formatRules.length;
+    w.fetch = fakeFetch(w, { [SESSION_URL]: session([rec("one.log", lf)]) }, seen);
+    await w.loadSessionFromUrl(SESSION_URL);
+    const one = T.state.nodes[T.state.rootIds[0]];
+    assert(T.state.logFormats.length === formatsBefore + 1, "the format was added");
+    const added = T.state.logFormats.find(f => f.id === one.formatId);
+    assert(added && added.name === lf.name && !added.builtin && added.regex === lf.regex, "the file is pinned to the new format");
+    assert(one.entries.length === 40 && one.entries.every(e => e.level), "parsed with it (40 entries)");
+    assert(T.state.formatRules.length === rulesBefore, "no filename rule was added");
+    assert(!isVisible(d.querySelector("#formatDialog"), w), "no dialog");
+    const stored = await w.listLogFormats();
+    assert(stored.some(f => f.id === added.id), "persisted in the logFormats store");
+    await w.loadSessionFromUrl(SESSION_URL);
+    assert(T.state.logFormats.length === formatsBefore + 1, "an identical format is reused, not added again");
+    assert(T.state.rootIds.every(id => T.state.nodes[id].formatId === added.id), "...and the second file is pinned to it too");
+    const changed = Object.assign({}, lf, { levels: lf.levels.slice(1) });
+    w.fetch = fakeFetch(w, { [SESSION_URL]: session([rec("two.log", changed)]) }, seen);
+    await w.loadSessionFromUrl(SESSION_URL);
+    assert(T.state.logFormats.length === formatsBefore + 2, "same name but different fields: added as a new format");
+    w.fetch = fakeFetch(w, { [SESSION_URL]: session([rec("three.log", Object.assign({}, lf, { mode: "bogus" }))]) }, seen);
+    await w.loadSessionFromUrl(SESSION_URL);
+    const three = Object.values(T.state.nodes).find(n => n.type === "file" && n.name === "three.log");
+    assert(three && three.formatId === "fmt-default" && T.state.logFormats.length === formatsBefore + 2, "an invalid logFormat is ignored, the file loads by its filename");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("352c. Embedded text loads; a record with neither url nor text matches an open file (tier 1) or is skipped, never a dialog");
+    await T.bootRestore;
+    const open = await w.addFile("open.log", textA, () => {});
+    const embedded = { exportId: "e1", name: "emb.log", text: textB, filters: [], bookmarks: [], notes: [] };
+    const matching = Object.assign({}, sessionDoc.files[0], { exportId: "m1", filters: [], bookmarks: [], notes: [] }); // carries fullHash of textA, no text/url
+    const orphan = { exportId: "o1", name: "gone.log", entryCount: 5, fullHash: "0000000000000000", timeSpan: null, filters: [], bookmarks: [], notes: [] };
+    const doc = { format: "philogg-session-export", version: 1, files: [embedded, matching, orphan], settings: {} };
+    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(doc) }, []);
+    await w.loadSessionFromUrl(SESSION_URL);
+    const names = T.state.rootIds.map(id => T.state.nodes[id].name);
+    assert(names.join(",") === "open.log,emb.log", "embedded text opened as a new file, the matched record reused the open one, the orphan opened nothing: " + names);
+    assert(d.querySelector("#sessionMatchDialog").classList.contains("hidden"), "no tier-3 dialog");
+    assert(/1 file loaded/.test(toast(d)) && /1 file matched automatically/.test(toast(d)) && /1 skipped/.test(toast(d)), "summary counts loaded / matched / skipped, got " + toast(d));
+    // A failing url record is skipped, the rest still loads.
+    const seen = [];
+    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(makeSession()), "http://other.example/b.log": textB }, seen);
+    await w.loadSessionFromUrl(SESSION_URL);
+    assert(/1 skipped/.test(toast(d)), "a url that 404s counts as skipped, got " + toast(d));
+  }, { indexedDB: new IDBFactory() });
+
+  {
+    section("352d. Reload of a ?session= link: restored copies are replaced, the session shows once");
+    const factory = new IDBFactory();
+    const docText = JSON.stringify(makeSession({ banner: "Tour" }));
+    const urls = { [SESSION_URL]: docText, "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB };
+    const query = "?session=" + encodeURIComponent(SESSION_URL);
+    await withApp(async (w, d, T) => {
+      await T.bootRestore;
+      await waitFor(() => /Session: /.test(toast(d)));
+      assert(T.state.rootIds.length === 2, "first visit: two files, got " + T.state.rootIds.length);
+      await w.persistMetaNow();
+      await waitFor(async () => (await w.cacheStoreOp("files", "readonly", s => s.getAll())).length === 2);
+    }, { indexedDB: factory, url: "http://localhost/philogg.html" + query, beforeParse: win => { win.fetch = fakeFetch(win, urls, []); } });
+    await withApp(async (w, d, T) => {
+      await T.bootRestore;
+      await waitFor(() => /Session: /.test(toast(d)));
+      const files = T.state.rootIds.map(id => T.state.nodes[id]);
+      assert(files.length === 2, "reload: still two files (not four), got " + files.map(f => f.name));
+      assert(files.every(f => f.sourceUrl), "...and they are the freshly loaded ones");
+      assert(isVisible(d.querySelector("#tourBanner"), w), "the banner is shown again after the reload");
+    }, { indexedDB: factory, url: "http://localhost/philogg.html" + query, beforeParse: win => { win.fetch = fakeFetch(win, urls, []); } });
+  }
+
+  await withApp(async (w, d, T) => {
+    section("352e. Error paths: network, HTTP status, not a session, newer version, bad JSON — toast, nothing loaded");
+    await T.bootRestore;
+    const cases = [
+      [new Error("boom"), "network or CORS"],
+      [undefined, "HTTP 404"],
+      ["not json", "Not a valid JSON"],
+      [JSON.stringify({ hello: 1 }), "Not a PhiLogg session file"],
+      [JSON.stringify({ format: "philogg-session-export", version: 99, files: [] }), "newer version"],
+    ];
+    for (const [resp, expect] of cases) {
+      w.fetch = fakeFetch(w, resp === undefined ? {} : { [SESSION_URL]: resp }, []);
+      const ok = await w.loadSessionFromUrl(SESSION_URL);
+      assert(ok === false && toast(d).includes(expect), "toast mentions '" + expect + "', got " + toast(d));
+      assert(T.state.rootIds.length === 0 && !isVisible(d.querySelector("#tourBanner"), w), "nothing loaded, no banner (" + expect + ")");
+    }
+  }, { indexedDB: new IDBFactory() });
+
+  {
+    section("352f. ?open=format opens the Add-format dialog; with ?session= only after the session finished loading");
+    await withApp(async (w, d, T) => {
+      await T.bootRestore;
+      await waitFor(() => isVisible(d.querySelector("#formatDialog"), w));
+      assert(isVisible(d.querySelector("#formatDialog"), w) && d.querySelector("#formatEditTitle").textContent === "Add log format", "?open=format opens the empty Add log format dialog");
+    }, { indexedDB: new IDBFactory(), url: "http://localhost/philogg.html?open=format" });
+
+    let release;
+    const gate = new Promise(r => { release = r; });
+    let dialogWhileLoading = null, requested = false;
+    await withApp(async (w, d, T) => {
+      await T.bootRestore;
+      await waitFor(() => requested);
+      await sleep(30);
+      dialogWhileLoading = isVisible(d.querySelector("#formatDialog"), w);
+      release();
+      await waitFor(() => isVisible(d.querySelector("#formatDialog"), w));
+      assert(dialogWhileLoading === false, "the dialog is not open while the session is still loading");
+      assert(isVisible(d.querySelector("#formatDialog"), w) && T.state.rootIds.length === 2, "it opens once the session (two files) is loaded");
+    }, { indexedDB: new IDBFactory(), url: "http://localhost/philogg.html?open=format&session=" + encodeURIComponent(SESSION_URL), beforeParse: win => {
+      const inner = fakeFetch(win, { [SESSION_URL]: JSON.stringify(makeSession()), "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB }, []);
+      win.fetch = async u => { if (u.endsWith("a.log")) { requested = true; await gate; } return inner(u); };
+    } });
+  }
+
+  await withApp(async (w, d, T) => {
+    section("352g. Time-only timestamps (tsFormat HH:mm:ss.SSS): parse to 1970-01-01 local in order, display without the date");
+    await T.bootRestore;
+    await waitForFormatConfig(T);
+    const g = LOGSIM.createGenerator({ format: "bracket", seed: 3 });
+    const gen = [];
+    while (gen.length < 30) { const e = g.next(); if (!e.msg.includes("\n")) gen.push(e); }
+    const p2 = n => String(n).padStart(2, "0"), p3 = n => String(n).padStart(3, "0");
+    const clock = ts => { const x = new Date(ts); return p2(x.getUTCHours()) + ":" + p2(x.getUTCMinutes()) + ":" + p2(x.getUTCSeconds()) + "." + p3(x.getUTCMilliseconds()); };
+    const text = gen.map(e => clock(e.ts) + " " + e.level + " [" + e.thread + "] " + e.msg).join("\n") + "\n";
+    const lf = Object.assign({}, LOGSIM.formatExport("bracket").logFormat, {
+      name: "Time only", regex: "^(?<ts>\\d{2}:\\d{2}:\\d{2}\\.\\d{3}) (?<level>[A-Z]+) \\[(?<thread>[^\\]]*)\\] (?<message>.*)$", tsFormat: "HH:mm:ss.SSS",
+    });
+    T.state.logFormats.push(Object.assign({ id: "fmt-time-only", builtin: false, edited: false, createdAt: 0 }, lf));
+    const f = await w.addFile("t.log", text, () => {}, "fmt-time-only");
+    assert(f.entries.length === 30, "30 entries parsed, got " + f.entries.length);
+    const first = new Date(gen[0].ts);
+    assert(f.entries[0].ts === new Date(1970, 0, 1, first.getUTCHours(), first.getUTCMinutes(), first.getUTCSeconds(), first.getUTCMilliseconds()).getTime(), "the first timestamp is that clock time on 1970-01-01 local");
+    assert(f.entries.every((e, i) => i === 0 || e.ts - f.entries[i - 1].ts === gen[i].ts - gen[i - 1].ts), "timestamps are in order and the deltas equal the generated ones");
+    assert(w.formatTime(f.entries[0].ts) === clock(gen[0].ts), "formatTime shows the time only: " + w.formatTime(f.entries[0].ts));
+    assert(w.formatTime(new Date(2024, 0, 15, 10, 0, 0, 5).getTime()) === "2024-01-15 10:00:00.005", "a real date still shows in full");
+    assert(w.formatTime(new Date(1970, 0, 2, 3, 4, 5, 6).getTime()) === "1970-01-02 03:04:05.006", "only 1970-01-01 itself drops the date");
+    w.render();
+    const cell = d.querySelector("#tableRows .log-row .col-time");
+    assert(cell && cell.textContent === clock(gen[0].ts), "the log table's time column shows the time only, got " + (cell && cell.textContent));
+    assert(w.tsToLocalInputValue(f.entries[0].ts).startsWith("1970-01-01T"), "datetime-local inputs keep the full value");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("352h. The format dialog proposes HH:mm:ss.SSS for time-only example lines");
+    await waitForFormatConfig(T);
+    const g = LOGSIM.createGenerator({ format: "bracket", seed: 3 });
+    const p2 = n => String(n).padStart(2, "0"), p3 = n => String(n).padStart(3, "0");
+    const lines = Array.from({ length: 4 }, () => { const e = g.next(); const x = new Date(e.ts); return p2(x.getUTCHours()) + ":" + p2(x.getUTCMinutes()) + ":" + p2(x.getUTCSeconds()) + "." + p3(x.getUTCMilliseconds()) + " " + e.level + " [" + e.thread + "] " + e.msg.split("\n")[0]; });
+    w.openFormatEditDialog(null);
+    fwzPaste(w, d, lines.join("\n"));
+    assert(d.querySelector("#formatEditTsFormat").value === "HH:mm:ss.SSS", "the suggested tsFormat is HH:mm:ss.SSS, got " + d.querySelector("#formatEditTsFormat").value);
+  }, { indexedDB: new IDBFactory() });
+}
+
+
+/* ============================================================
+   GROUP 353 — log simulator format `tour` (tools/log-sim/tour.js): the
+   guided tour as a log + format + session file + demo log
+   Origin: 2026-10-01 (person-requested, homepage prerequisites Step 2).
+   Output is deterministic; every tour line parses with the generated format
+   (six custom levels, chapters as threads, explanation lines attached,
+   time-only timestamps); the demo log offers what the TRY steps use; the
+   generated session loads through ?session= (fake fetch) into the expected
+   tree with the banner, and the level bar's DEEP button reveals the
+   internals; the CLI writes the same files.
+   ============================================================ */
+group(353);
+if (groupSelected()) {
+  const TOUR = require(path.join(__dirname, "..", "tools", "log-sim", "tour.js"));
+  const files = Object.fromEntries(TOUR.generateTour().map(f => [f.path, f.text]));
+  const SESSION_URL = "http://tour.example/t/welcome.session.json";
+  const enc = (w, text) => new w.TextEncoder().encode(text).buffer;
+  const tourFetch = w => async u => {
+    const rel = u.replace("http://tour.example/t/", "");
+    const text = files[rel];
+    if (text === undefined) return { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0), text: async () => "" };
+    return { ok: true, status: 200, arrayBuffer: async () => enc(w, text), text: async () => text };
+  };
+
+  {
+    section("353a. Deterministic, the four files, the format export imports");
+    const again = Object.fromEntries(TOUR.generateTour().map(f => [f.path, f.text]));
+    assert(JSON.stringify(Object.keys(files)) === JSON.stringify(["welcome.log", "welcome.logformat.json", "welcome.session.json", "demo/app.log"]), "four files: " + Object.keys(files));
+    assert(Object.keys(files).every(k => files[k] === again[k]), "same bytes on every run");
+  }
+
+  await withApp(async (w, d, T) => {
+    section("353b. Every tour line parses: six custom levels, chapters as threads, explanations attached, time-only timestamps");
+    await T.bootRestore;
+    await waitForFormatConfig(T);
+    const exp = w.parseLogFormatExport(files["welcome.logformat.json"]);
+    assert(exp && !exp.error && exp.fileNamePatterns.join() === "welcome.log" && exp.logFormat.name === "PhiLogg Tour", "the .logformat.json imports (rule: welcome.log)");
+    const sess = JSON.parse(files["welcome.session.json"]);
+    assert(JSON.stringify(sess.files[0].logFormat) === JSON.stringify(JSON.parse(files["welcome.logformat.json"]).logFormat), "the session record carries the same format as the export");
+    T.state.logFormats.push(Object.assign({ id: "fmt-tour", builtin: false, edited: false, createdAt: 0 }, exp.logFormat));
+    const f = await w.addFile("welcome.log", files["welcome.log"], () => {}, "fmt-tour");
+    assert(f.entries.length === TOUR.ROWS.length, TOUR.ROWS.length + " entries, got " + f.entries.length);
+    const levels = new Set(f.entries.map(e => w.levelBucket(e.level, "fmt-tour")));
+    assert(TOUR.LEVELS.every(l => levels.has(l)) && levels.size === 6, "all six custom levels occur and none falls into OTHER: " + [...levels]);
+    assert(f.entries.every((e, i) => e.thread === TOUR.ROWS[i][1]), "the chapter is the Thread column");
+    assert(f.entries.every((e, i) => e.message.split("\n").length === 1 + TOUR.ROWS[i][3].length), "every explanation line is attached to its entry");
+    assert(f.entries.every((e, i) => i === 0 || e.ts > f.entries[i - 1].ts), "timestamps strictly increase (reading time)");
+    assert(w.formatTime(f.entries[1].ts) === files["welcome.log"].split("\n").find(l => /^\d\d:/.test(l) && l.includes("[intro]") && l.includes(" HOW ")).slice(0, 12), "time-only timestamps display without a date");
+    const slots = TOUR.LEVELS.map(l => w.customLevelSlot(l, "fmt-tour"));
+    assert(new Set(slots).size === 6 && slots.every(s => s >= 1 && s <= 6), "each level has its own palette slot (per-theme colors): " + slots);
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("353c. demo/app.log has what the TRY steps use");
+    await T.bootRestore;
+    const text = files["demo/app.log"];
+    const node = await w.addFile("app.log", text, () => {});
+    assert(node.entries.length === 2500, "2500 entries");
+    const count = (v, opts) => w.getEntries(w.createFilterNode(node.id, "text", v).id).length;
+    assert(count("timeout") > 5, "step 'timeout' finds lines");
+    const moves = count("Move requested"), reached = count("Position reached");
+    assert(moves > 50 && reached > 50 && reached < moves, "Link step: " + moves + " Move requested, " + reached + " Position reached (some moves are aborted)");
+    const ids = w.createFilterNode(node.id, "text", "Move requested"), tgt = w.createFilterNode(node.id, "text", "Position reached");
+    const pairs = w.getEntries(w.createLinkNode(ids.id, tgt.id, "after", 1, { key: { pattern: "job=[*]" } }).id).length;
+    assert(pairs === reached, "pairing by job=[*] gives exactly one pair per Position reached (" + pairs + "), aborted moves stay unpaired");
+    const slow = w.getEntries(w.createLinkNode(ids.id, tgt.id, "after", 1, { key: { pattern: "job=[*]" }, dt: { op: ">", ms: 1000 } }).id).length;
+    assert(slow > 0 && slow < pairs, "a Δt > 1 s condition keeps a few slow pairs (" + slow + ")");
+    const pos = w.createFilterNode(node.id, "text", "Position update x=[*:float] y=[*:float] z=[*:float]");
+    assert(w.nodeHasExtractableWildcards(pos) && w.getEntries(pos.id).length > 50, "extraction step: Position update is extractable");
+    assert(count("Batch imported [*:int@en] records") > count("Batch imported [*:int] records"), "number-format step: @en finds the grouped integers a plain [*:int] misses");
+    assert(w.compileExtractPattern("Meter reading [*:float@de] kWh"), "...and the @de form is a valid pattern");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("353d. ?session=welcome.session.json: files, format, tree, banner; the DEEP button reveals the internals");
+    await T.bootRestore;
+    await waitForFormatConfig(T);
+    w.fetch = tourFetch(w);
+    assert(await w.loadSessionFromUrl(SESSION_URL), "the session loads");
+    assert(T.state.rootIds.length === 2, "two files");
+    const [wel, app] = T.state.rootIds.map(id => T.state.nodes[id]);
+    assert(wel.name === "welcome.log" && app.name === "app.log" && app.entries.length === 2500 && wel.entries.length === TOUR.ROWS.length, "welcome.log + demo app.log loaded");
+    assert(T.state.logFormats.some(f => f.id === wel.formatId && f.name === "PhiLogg Tour"), "welcome.log is pinned to the added PhiLogg Tour format");
+    const kids = id => T.state.nodes[id].children.map(c => T.state.nodes[c]).filter(n => n.filterType !== "bookmarks" && n.filterType !== "notes");
+    const view = kids(wel.id);
+    assert(view.length === 1 && view[0].filterType === "level" && view[0].value.join() === "WHAT,HOW,TRY,GOTCHA,DONT", "one root-level node: the Reading view without DEEP");
+    assert(T.state.activeId === view[0].id, "the Reading view is the active node");
+    assert(kids(view[0].id).map(n => n.label).join("|") === "Quick read (WHAT)|Hands-on (TRY)|1 \u00b7 Opening files|2 \u00b7 Your own format|3 \u00b7 The filter tree|4 \u00b7 Link start & end|5 \u00b7 Extract & plot|6 \u00b7 Patterns|Pitfalls (GOTCHA + DONT)", "quick read, hands-on, six chapters, pitfalls below it");
+    const byLabel = l => kids(view[0].id).find(n => n.label === l);
+    const ch = byLabel("2 \u00b7 Your own format");
+    assert(ch.filterType === "text" && ch.columns.join() === "thread" && w.getEntries(ch.id).length === TOUR.ROWS.filter(r => r[1] === "format" && r[0] !== "DEEP").length, "a chapter is a text filter on the Thread column (DEEP lines hidden by the Reading view)");
+    assert(w.getEntries(byLabel("Pitfalls (GOTCHA + DONT)").id).length === TOUR.ROWS.filter(r => r[0] === "GOTCHA" || r[0] === "DONT").length, "Pitfalls = GOTCHA + DONT");
+    assert(w.getEntries(view[0].id).length === TOUR.ROWS.filter(r => r[0] !== "DEEP").length, "the Reading view hides DEEP");
+    assert(T.state.levelFilter.size === 0, "no global level filter (it would be invisible in the default level-bar mode)");
+    assert(isVisible(d.querySelector("#tourBanner"), w) && d.querySelector("#tourBanner .tour-banner-text").innerHTML === TOUR.BANNER.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"), "the banner shows the tour text");
+    const btn = d.querySelector('#levelBar .level-btn[data-level="DEEP"]');
+    assert(btn && !btn.classList.contains("active"), "the DEEP button is off");
+    fireClick(btn, w);
+    assert(T.state.nodes[view[0].id].value.includes("DEEP") && w.getEntries(view[0].id).length === TOUR.ROWS.length, "clicking DEEP adds it to the active level node: the internals show");
+  }, { indexedDB: new IDBFactory() });
+
+  {
+    section("353e. CLI: -f tour writes the same files; --list names it; needs -o");
+    const { spawnSync } = require("child_process");
+    const os = require("os");
+    const cli = path.join(__dirname, "..", "tools", "log-sim", "cli.js");
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "philogg-tour-"));
+    const run = args => spawnSync(process.execPath, [cli].concat(args), { encoding: "utf8" });
+    const r = run(["-f", "tour", "-o", dir + path.sep, "-q"]);
+    assert(r.status === 0, "exit 0: " + r.stderr);
+    assert(Object.keys(files).every(k => fs.readFileSync(path.join(dir, k), "utf8") === files[k]), "every file equals generateTour()'s output");
+    assert(/\btour\b/.test(run(["--list"]).stdout) && /welcome\.session\.json/.test(run(["--list"]).stdout), "--list shows tour with its hint");
+    assert(run(["-f", "tour"]).status !== 0, "-f tour without -o fails");
+    assert(JSON.parse(run(["-f", "tour", "--format-json"]).stdout).logFormat.name === "PhiLogg Tour", "--format-json prints the tour format");
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 console.log("\n" + "=".repeat(60));
@@ -45612,7 +45990,8 @@ process.exitCode = failed ? 1 : 0;
       shared build-release-assets.yml wiring, tester workflow removed; 340c
       variant checkboxes on beta, all five variants on stable. Updated
       GROUP 271e (LICENSE/notices now asserted on the shared build) and 218's
-      message.
+      message. 2026-10-01 (person-requested): 340b now asserts one unzipped
+      artifact per desktop file and the two-step download in both publish jobs.
    Group 346 — 2026-09-30 (person-requested, suite speed-up): the harness's own
       speed-ups stay exact — tests/jsdom-fast-selectors.js against jsdom's
       selector engine (page-wide, edge cases, odd-shaped data-* names handed
@@ -45632,6 +46011,15 @@ process.exitCode = failed ? 1 : 0;
       views; focus follows mousedown/clicks; Alt+Arrow and Ctrl+0..5 global). Updated
       groups 18, 32, 36, 46, 57, 96, 99, 110a, 150, 157a, 220a/j, 221c, 262, 319d/e,
       320b, 321e.
+   Group 353 — 2026-10-01 (person-requested, homepage prerequisites Step 2): the simulator's
+              `tour` format: deterministic files, welcome.log parses with its own format (six
+              custom levels, chapters as threads, time-only timestamps), demo/app.log serves the
+              TRY steps, welcome.session.json loads via ?session= into the expected tree + banner,
+              the DEEP level button, CLI output.
+   Group 352 — 2026-10-01 (person-requested, homepage prerequisites Step 1): ?session=<url>
+              + ?open=format deep links, session-file fields url/logFormat/banner, the tour
+              banner (show/close/clear), reload duplicate removal, error toasts, time-only
+              timestamps (parse + display without the 1970-01-01 date, format-dialog suggestion).
    Group 351 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 5):
               the virtualized editor: visible line list over nested folds,
               windowed rendering (~3 screens in the DOM of a 30k-line file),

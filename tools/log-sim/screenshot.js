@@ -7,7 +7,13 @@
 //
 //   node tools/log-sim/screenshot.js [--out shot.png] [--size 1440x900]
 //        [--theme <mode|theme id>] [--eval "<js run in the page before the shot>"]
-//        [--wait <ms>] <log files and *.logformat.json files...>
+//        [--wait <ms>] [--url <page url>] <log files and *.logformat.json files...>
+//
+// --url opens an http(s) page URL instead of file://.../philogg.html — for the
+// deep links (e.g. http://localhost:8123/philogg.html?session=tour.session.json,
+// the files served by any static server). The app then loads everything
+// itself, so no log files are needed; the shot waits until every root file is
+// parsed (and at least one exists).
 //
 // --theme light|dark sets the theme MODE (setThemeMode), i.e. the default
 // pair: Catppuccin Latte / Mocha. Any other value is an explicit theme id
@@ -24,10 +30,10 @@ const { chromium } = require("playwright");
 
 async function main() {
   const args = process.argv.slice(2);
-  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500 };
+  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500, url: null };
   const files = [];
   for (let i = 0; i < args.length; i++) {
-    const m = /^--(out|size|theme|eval|wait)$/.exec(args[i]);
+    const m = /^--(out|size|theme|eval|wait|url)$/.exec(args[i]);
     if (m) opt[m[1]] = args[++i];
     else files.push(path.resolve(args[i]));
   }
@@ -35,7 +41,7 @@ async function main() {
   // *.zip files open as archive containers (#zipInput), not as logs.
   const zips = files.filter(f => /\.zip$/i.test(f));
   const logs = files.filter(f => !f.endsWith(".logformat.json") && !/\.zip$/i.test(f));
-  if (!logs.length && !zips.length) throw new Error("no log files given");
+  if (!logs.length && !zips.length && !opt.url) throw new Error("no log files given");
   const [width, height] = opt.size.split("x").map(Number);
 
   const browser = await chromium.launch(process.env.PLAYWRIGHT_BROWSERS_PATH ? {} : { executablePath: "/opt/pw-browsers/chromium" });
@@ -43,7 +49,7 @@ async function main() {
   try {
     const page = await browser.newPage({ viewport: { width, height } });
     page.on("pageerror", e => errors.push(e.message));
-    await page.goto("file://" + path.resolve(__dirname, "..", "..", "philogg.html"));
+    await page.goto(opt.url || "file://" + path.resolve(__dirname, "..", "..", "philogg.html"));
     await page.waitForFunction(() => state.logFormats.length > 0);
     for (const f of formats) {
       const text = require("fs").readFileSync(f, "utf8");
@@ -68,7 +74,7 @@ async function main() {
     // deleted at the end of the load) and it is no longer a queued placeholder.
     await page.waitForFunction(n => state.rootIds.map(id => state.nodes[id])
       .filter(f => f.type === "file" && f.loadFraction === undefined && !f.queued && f.entries && f.entries.length).length >= n,
-    logs.length, { timeout: 120000 });
+    opt.url ? 1 : logs.length, { timeout: 120000 });
     if (opt.eval) await page.evaluate(opt.eval);
     await page.waitForTimeout(+opt.wait);
     await page.screenshot({ path: opt.out });

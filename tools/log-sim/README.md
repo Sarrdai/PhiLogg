@@ -6,9 +6,10 @@ or approximate size) or growing live for tailing and folder watch.
 
 | File | What it is |
 | --- | --- |
+| `tour.js` | The `tour` format: the guided tour texts, its format, session file and demo log (Node only). |
 | `core.js` | The generator engine: scenarios, formats, size control, ZIP writer. UMD — `require`d by Node, loaded by the page via `<script src>`. |
 | `cli.js` | Headless front end (Node ≥ 18, no dependencies). |
-| `screenshot.js` | Opens `philogg.html` in headless Chromium with generated files (and their format definitions) loaded, and saves a screenshot. |
+| `screenshot.js` | Opens `philogg.html` in headless Chromium with generated files (and their format definitions) loaded, and saves a screenshot. `--url <page url>` opens an http(s) deep link (e.g. `?session=`) instead. |
 | `../log-simulator.html` | Browser UI: the same options, download or write to a folder, plus live writing (tailing, rotation, burst, truncate). |
 
 Same seed + same options = byte-identical output in the CLI and the UI, in
@@ -37,10 +38,36 @@ node tools/log-sim/cli.js --size 100MB -o /tmp/big.log  # ~6 s
 | `jsondoc` | ONE minified JSON document (`.json`) with nested scenario payloads | none (plain-text node; Pretty vs Raw layout) |
 | `xmldoc` | ONE XML document (`.xml`), one `<entry>` per line start | none (plain-text node) |
 
+| `tour` | not random output: the guided tour of PhiLogg as a log (see below) | open `welcome.session.json` via `?session=` |
+
 Whenever output goes to a file or folder, the matching PhiLogg format
 definition (`philogg-log-format` export, with a filename rule for the
 generated names) is written next to it — import it via Open → Import… or by
 dropping it onto PhiLogg. `--format-json` prints it instead.
+
+## The tour (`-f tour`)
+
+```bash
+node tools/log-sim/cli.js -f tour -o "$SCRATCH/tour/"
+# serve the directory plus philogg.html over http, then open
+#   philogg.html?session=welcome.session.json            (add &open=format for the format dialog)
+NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js --url "http://localhost:8123/philogg.html?session=welcome.session.json" --out tour.png
+```
+
+`-o <dir>/` receives `welcome.log` (the tour: custom levels WHAT / HOW / TRY /
+GOTCHA / DONT / DEEP, the chapter in the Thread column, the explanation as
+indented continuation lines, timestamps = reading time `HH:mm:ss.SSS`),
+`welcome.logformat.json` (its format "PhiLogg Tour", importable alone),
+`welcome.session.json` (a session file: both logs by relative `url`, the
+format on the welcome record, the filter tree — a "Reading view" level node
+hiding DEEP with Quick read, Hands-on, six chapter filters on the Thread
+column and Pitfalls below it — and the tour `banner`) and `demo/app.log`
+(default format, all scenarios plus `grouped`, seed 7, 2500 entries — what
+the TRY steps work on). Fixed output: `-n`, `--size`, `-s`, `--seed` and the
+other content options are ignored; `--format-json` prints the format. The
+tour texts are data in `tour.js` (`ROWS`); every claim in them was checked
+against `philogg.html`, so change them together with the app. Not in the
+browser UI (`log-simulator.html`).
 
 ## Scenarios (`-s`, default: all)
 

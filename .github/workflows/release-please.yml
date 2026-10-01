@@ -75,10 +75,21 @@ jobs:
     needs: [cut-release, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      # The HTML artifact is a regular zip (page + LICENSE.md) and gets
+      # unpacked; the desktop files were uploaded unzipped and must not be,
+      # or the portable zip would arrive as loose files.
+      - uses: actions/download-artifact@v8
         with:
+          pattern: release-html
           path: dist
           merge-multiple: true
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: PhiLogg-*
+          path: dist
+          merge-multiple: true
+          skip-decompress: true
 
       # This has failed a `gh release upload` before with a clean build and
       # no error output, which matches a transient upload hiccup rather
