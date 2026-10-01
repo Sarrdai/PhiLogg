@@ -52,7 +52,7 @@ PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 their results back into the single `N passed, M failed` line the suite has
 always reported. Above it, a sharded run lists the ten slowest groups (wall
 time in the shard that ran them), so a group that got seconds slower shows
-up on the next run. **Always check that number** (8589 at the time of writing):
+up on the next run. **Always check that number** (8689 at the time of writing):
 a group that silently stopped running shows up as a lower count, not as a
 failure.
 

@@ -41181,9 +41181,9 @@ if (groupSelected()) {
     await w.loadSessionFromUrl(SESSION_URL);
     assert(!isVisible(d.querySelector("#tourBanner"), w), "a session without banner clears it");
     w.setSessionBanner("x");
-    w.importSessionJson(JSON.stringify(makeSession()));
-    await sleep(100);
-    assert(!isVisible(d.querySelector("#tourBanner"), w), "a plain session import without a banner clears it too");
+    assert(isVisible(d.querySelector("#tourBanner"), w), "sanity: the banner is showing before the import");
+    w.importSessionJson(JSON.stringify(makeSession())); // fire-and-forget: wait for its effect, not a fixed time
+    assert(await waitFor(() => !isVisible(d.querySelector("#tourBanner"), w)), "a plain session import without a banner clears it too");
   }, { indexedDB: new IDBFactory() });
 
   await withApp(async (w, d, T) => {
@@ -46004,7 +46004,8 @@ process.exitCode = failed ? 1 : 0;
       matched b's stale view under load and crashed its whole shard). 346f:
       a rejection from a window withApp already closed no longer ends the
       shard (193b's fire-and-forget library render did, under load); 193b
-      waits for the dialog row's own re-render before asserting on it.
+      waits for the dialog row's own re-render before asserting on it, 352a
+      for the session import instead of a fixed 100ms.
    Group 345 — 2026-09-30 (person-reported): one tree selection model (the active
       node is always selected; Ctrl+click toggles within it; selected rows look like
       the active one, no frame) + shortcuts scoped to the focused area (tree vs. log
