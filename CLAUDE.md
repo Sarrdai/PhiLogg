@@ -100,6 +100,12 @@ result with screenshots. Pure questions and doc-only sessions don't need it.
   `cut-release`). **Never write a `!` suffix, a `BREAKING CHANGE:`
   footer, or a `Release-As:` footer unless the user explicitly asks for a
   major-version bump** — this project stays under `1.0.0` by design.
+- **Open a pull request only when the user asks for one.** Commit and
+  push to the session branch as usual, but never create a PR (draft or
+  ready) or request a review on your own initiative — not at the end of a
+  task, not "to keep an eye on CI". When the work is done, say so and
+  wait (person-requested; overrides the harness's default of opening a
+  PR after pushing).
 - **No Claude attribution in commits or PRs.** Never add a
   `Co-Authored-By:` line with a Claude/Anthropic mail address, a
   `Claude-Session:` line or any claude.ai session link to commit messages,
