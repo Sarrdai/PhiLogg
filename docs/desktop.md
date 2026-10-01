@@ -1170,19 +1170,23 @@ checkout only, nothing is committed back. A beta version like `0.2.0-beta.3` is 
 NSIS: Tauri writes the numeric `0.2.0.0` into the installer's `VIProductVersion` and
 keeps the full string everywhere else (MSI would reject it, but no MSI is built).
 
-It then copies the bundle into `dist/PhiLogg-<version>.<exe|dmg|AppImage>` (Windows only
+It then copies the bundle to `PhiLogg-<version>.<exe|dmg|AppImage>` (Windows only
 if the installer was selected; exactly one bundle expected) and, if selected, packages
-`dist/PhiLogg-<version>_portable.zip`: the raw, unbundled `philogg-desktop.exe` from the
+`PhiLogg-<version>_portable.zip`: the raw, unbundled `philogg-desktop.exe` from the
 same `cargo build --release` (needs no install — WebView2 ships with Windows) as
 `PhiLogg.exe`, the stamped/stripped `philogg.html`, `chat.html`, `LICENSE.md`,
 `THIRD_PARTY_NOTICES.md` and a `philogg-portable` marker file (see "Persistent data"
-above; it carries one line of text, only its existence matters), zipped with 7z. `dist/`
-is uploaded as the workflow artifact `release-<runner.os>` (`build_html` does the same with
-`philogg-<version>.html` + `LICENSE.md` as `release-html`). The caller's `publish` job
-downloads both artifacts — which unzips the artifact, not the portable zip inside it —
-and only then attaches them to the GitHub Release (`gh release upload`, retried up to 5×)
-or creates the beta pre-release (`gh release create --prerelease`). So a failed build
-never leaves a half-filled release, and the portable zip is published as a single zip.
+above; it carries one line of text, only its existence matters), zipped with 7z. Each of
+these files is uploaded as its own workflow artifact without archiving
+(`actions/upload-artifact@v7`, `archive: false` — the artifact is named after the file),
+so the run page offers the installer and the portable zip as separate downloads, neither
+wrapped in a second zip. `build_html` uploads `philogg-<version>.html` + `LICENSE.md` as
+the regular (zipped) artifact `release-html`. The caller's `publish` job downloads
+`release-html` unpacked and `PhiLogg-*` with `skip-decompress` (download-artifact@v8 would
+otherwise extract the portable zip, since it unpacks anything served as a zip), and only
+then attaches them to the GitHub Release (`gh release upload`, retried up to 5×) or creates
+the beta pre-release (`gh release create --prerelease`). So a failed build never leaves a
+half-filled release, and the portable zip is published as a single zip.
 
 ## Capabilities
 
