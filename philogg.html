@@ -2017,7 +2017,8 @@
   .wrap-messages .col-msg.plaintext{white-space:pre-wrap; word-break:break-all;}
   /* Text mode (the active node's root is a plain-text file — see
      syncTextMode): the Filtered view drops the log table for an editor-like
-     listing. No level stripe, no row separators, a compact fixed row height
+     listing. No level stripe, row separators as in the log view (an inset
+     shadow, see below), a compact fixed row height
      (TEXT_ROW_HEIGHT, set inline per row and as --text-row-h for the cells'
      line-height), and a three-part gutter shared with the Context view's
      editor: right-aligned line number (--text-num-w), an empty fold slot
@@ -2029,6 +2030,15 @@
     display:grid; grid-template-columns:var(--text-num-w) var(--text-fold-w) 1fr; column-gap:0;
     align-items:center; border-bottom:none;
   }
+  /* Row separator as an inset shadow, not a border: a border would eat 1px
+     of the fixed TEXT_ROW_HEIGHT and shift the text off the Context editor's
+     line grid (the editor itself has no separators). :where() keeps it at
+     zero specificity so .selected/.row-multi-selected/.pinned-row shadows
+     still win. */
+  :where(.log-row.text-row){box-shadow:inset 0 -1px 0 var(--border-soft);}
+  /* No Entry detail panel (and its resize handle) while a plain-text file's
+     node is active — renderMainView toggles body.text-root. */
+  body.text-root :is(#detailPanel, #detailResizer){display:none !important;}
   .text-row .col-time{
     text-align:right; padding-right:10px; box-sizing:border-box; color:var(--text-tertiary);
     line-height:var(--text-row-h);
@@ -2036,7 +2046,7 @@
   #tableRows .text-row .col-msg{line-height:var(--text-row-h);}
   /* Reusable header bar for text-mode views (Filtered now, the Context
      editor next): "LINE" over the number column, the fold slot, then the
-     file name (+ layout for JSON). Fixed to the height of the log header's
+     file name. Fixed to the height of the log header's
      .row-grid (9px + label + 9px) so both headers are the same height. */
   .text-header-bar{
     display:none; grid-template-columns:var(--text-num-w) var(--text-fold-w) 1fr; column-gap:0;
@@ -17074,6 +17084,11 @@ function unloadedCursorEntryName() {
 
 function renderMainView() {
   syncFolderPreloads(); // leaving the folder minimap aborts its silent preloads
+  // A plain-text file has no Entry detail panel (person-requested,
+  // 2026-10-01): a line is fully visible in its row/editor line already.
+  // A body class, so every branch below that sets the panel's display can
+  // stay as is (see the body.text-root rule in the stylesheet).
+  document.body.classList.toggle("text-root", !state.inlineViewer && nodeIsPlainText(state.activeId));
   const hasFiles = state.rootIds.length > 0;
   if (state.inlineViewer) {
     // Bug 3 fix (person-reported): the minimap is a log-view-only concept
@@ -23112,18 +23127,17 @@ function syncTextMode() {
 }
 // The reusable header bar of a text-mode view (Filtered now, the Context
 // editor next): "LINE" over the number column, the fold slot, then the file
-// name — plus " · pretty" / " · raw" for a JSON file. Idempotent: rewrites
+// name (the JSON layout shows on the Pretty/Raw toggle). Idempotent: rewrites
 // the element only when its content changed.
 function renderTextHeaderBar(barEl, root) {
   if (!barEl) return;
   const name = root ? root.name : "";
-  const layout = root && root.textSyntax === "json" && root.textLayout ? " · " + root.textLayout : "";
-  const key = name + "\n" + layout;
+  const key = name;
   if (barEl._textBarKey === key) return;
   barEl._textBarKey = key;
   barEl.innerHTML = root
     ? '<span class="th text-hb-line">Line</span><span class="text-hb-fold"></span>' +
-      '<span class="th text-hb-name" title="' + escapeHtml(name) + '">' + escapeHtml(name + layout) + '</span>'
+      '<span class="th text-hb-name" title="' + escapeHtml(name) + '">' + escapeHtml(name) + '</span>'
     : "";
 }
 const BUFFER_ROWS = 10;
