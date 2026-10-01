@@ -1,6 +1,6 @@
 # Implementierungsplan: Vereinheitlichte Toolbar (Table/Plot als Tabs)
 
-Setzt `docs/ui-concept-unified-extraction.md` (v3) um, mit vier
+Setzt `docs/archive/ui-concept-unified-extraction.md` (v3) um, mit vier
 Präzisierungen aus der Diskussion — eine davon (Punkt 2) **widerspricht
 der v3-Skizze** und ersetzt sie: die Kompakt-Chip-Zeile für Table wird
 verworfen, `#extractPatternView`/`#extractStatsBar` bleiben optisch
@@ -89,7 +89,7 @@ Scope-Cut gegenüber Schritt 4/5 dieses Plans.
 
 ### Schritt 4 — Slot-Zeile
 - Neuer Container direkt unter `#viewBar`, feste Verankerung im Layout
-  (immer an derselben Stelle, siehe `docs/ui-concept-unified-extraction.md`).
+  (immer an derselben Stelle, siehe `docs/archive/ui-concept-unified-extraction.md`).
 - Vier Inhalts-Varianten, je nach `fhActiveTab`/`fhLayout`:
   - `highlight` (Context): sechs Log-Toggles **+** `#contextToolbar`-Inhalt
     (Prev/Next-Match, Expand/Collapse all).
@@ -130,7 +130,7 @@ Scope-Cut gegenüber Schritt 4/5 dieses Plans.
 - `docs/ui-and-views.md`, `docs/extraction-and-plotting.md`: Abschnitte zu
   `#fhTabs`, `#extractToolbar`, Stacked-Umschaltung aktualisieren.
 - `CHANGELOG.md`: datierter Eintrag nach Umsetzung (Non-negotiable).
-- `docs/ui-concept-unified-extraction.md`: nach Umsetzung als
+- `docs/archive/ui-concept-unified-extraction.md`: nach Umsetzung als
   "umgesetzt" markieren oder in die reguläre Doku überführen, damit keine
   zwei Wahrheiten nebeneinander stehen.
 

@@ -14,6 +14,14 @@ found during verification — anything bigger goes back to an implementer.
 Talk to the user in their language (German); everything written to the
 repo stays English (CLAUDE.md).
 
+**Terms** (the user's words map to these, ask if unclear):
+
+| Term | What it is |
+|---|---|
+| **Mockup** (Konzept-Mockup) | Interactive Artifact to decide between variants; never a repo file unless asked |
+| **Konzept** (concept file) | `docs/ui-concept-<topic>.md` in the repo: the decided rules, written from the mockup; moves to `docs/archive/` once implemented |
+| **Plan** | `plan-<topic>.md` in the scratchpad: steps for the implementer |
+
 ## Phase 1 — Scope the task
 
 - Restate the goal in a few sentences, in the user's terms.
@@ -54,12 +62,19 @@ Spawning — see `delegation.md` for the brief template:
 
 - `subagent_type: "implementer"`, `run_in_background: true` unless you
   have nothing else to do meanwhile.
-- **One implementer at a time on `philogg.html`** (single 42k-line file —
+- **One implementer at a time on `philogg.html`** (one very large file —
   parallel edits conflict). Parallel agents only for disjoint files
   (e.g. `tools/log-sim/` vs. `desktop/src-tauri/`), each with
   `isolation: "worktree"` if they could touch shared files.
-- Split big plans into steps and hand them out one at a time; verify each
-  step before the next.
+- Split big plans into steps of at most ~30–45 minutes of implementer
+  work and hand them out one at a time; verify each step before the next.
+- **Keep the user's view current.** A background implementer is invisible
+  to the user. Give each step its own line in the status checklist, and
+  tell the implementer its progress file
+  (`<scratchpad>/progress-<topic>.md`, see `delegation.md`). While it
+  runs, read that file whenever you are woken anyway and mirror its latest
+  line into the checklist (e.g. "Schritt 2: GROUP text-files-bar 14/14
+  grün, Doku läuft").
 - Keep the agent's ID: corrections go to the **same** agent via
   `SendMessage` so it keeps its context; spawn a new one only when the
   context is spent or the task changes.
@@ -73,7 +88,7 @@ Never forward an implementer's "done" unchecked. See `verification.md`:
    stress run before the final push.
 3. Real-app screenshots of every changed view (simulator data), compared
    against the mockup / expected behavior; both themes if styling changed.
-4. Docs/CHANGELOG/README updated as CLAUDE.md requires.
+4. Docs updated as CLAUDE.md requires (`changelog.d/` fragment, `docs/*.md`, README).
 
 Anything off → concrete correction message to the same implementer
 (what is wrong, where, expected vs. seen, attach the screenshot path),
@@ -83,8 +98,9 @@ then verify again. Loop until clean.
 
 Only after verification passed:
 
-- Commit (Conventional Commit prefix, no Claude attribution — CLAUDE.md)
-  and push to the session branch.
+- Run the `finish` skill: merge current `main`, full suite (+ one
+  `SHARDS=8` before the final push), docs check, commit, push. No PR
+  unless the user asks.
 - Show the result **with screenshots** (`SendUserFile`, `display:
   "render"`, one caption each), or an Artifact with before/after when a
   comparison matters.

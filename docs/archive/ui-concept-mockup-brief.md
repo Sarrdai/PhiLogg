@@ -1,6 +1,6 @@
 # Handoff-Brief für Claude Design: Realistisches Mockup "Vereinheitlichte Toolbar"
 
-Basiert auf `docs/ui-concept-unified-extraction.md` (v3) und den Sketches in
+Basiert auf `docs/archive/ui-concept-unified-extraction.md` (v3) und den Sketches in
 `docs/images/`. Zweck dieses Dokuments: als Prompt/Briefing an Claude Design
 übergeben, um ein **visuell realistisches, größtenteils statisches Mockup**
 zu bekommen — kein Backend, keine echte Filterlogik. Einzige geforderte

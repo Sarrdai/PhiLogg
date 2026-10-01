@@ -2,7 +2,7 @@
 
 The value-extraction table (Index/t(ms) columns, virtualized rendering, live pattern preview + ignored columns), the Plot tab, value assertions, and column statistics.
 
-## filterType merge: there is no separate "extract" filterType (this session, follow-up to `docs/ui-implementation-plan.md`)
+## filterType merge: there is no separate "extract" filterType (this session, follow-up to `docs/archive/ui-implementation-plan.md`)
 
 Every extraction-related feature on this page now lives on an ordinary
 **`"text"` filter node** — the dedicated `filterType === "extract"` node
@@ -89,8 +89,8 @@ row / click on a Plot mark both reveal into the same node's Filtered view,
 including the plain-click-not-a-drag case on the Plot tab). Groups
 1/8/39/40/41 (fixture creation, the tree context-menu Invert exclusion, the
 two-button popup redesign, column-rename persistence) were updated in place
-for the merge — see `tests/philogg.regression.test.js`'s own TEST PROVENANCE
-mapping for the group-by-group detail.
+for the merge (group-by-group detail in those groups' banners and the git
+history).
 
 ## Extraction table: synthetic Index + t(ms) columns
 
@@ -252,7 +252,7 @@ Regression-tested: **Group 197** — a timerange child created under a configure
 
 Mouse-wheel zoom anchored at the cursor, middle-click-drag panning, an editable zoom-level readout (`#plotZoomLevelInput`: +/- buttons, a typed %, Reset — the `−`/field/`+` trio sits inside one shared `.stepper.stepper-compact` pill since this session's UI harmonization, see `docs/ui-and-views.md` → "Shared 'stepper' control"; Reset stays its own separate button beside the pill), left-click-drag rectangle zoom (multi-step), and a hover tooltip showing a mark's exact underlying value — for all three chart types (Line/Bar/Scatter), including Bar's categorical X.
 
-**`#plotToolbar`** is the Plot view's own toolbar — a real row in normal flow at the top of `#plotWrap` (`#plotWrap` is now a column: `#plotToolbar` then `#plotBody`, which holds `#plotControls` + `#plotChartArea` as before), the same pattern `#contextToolbar` already established for the Context view rather than an overlay on the chart. It used to live in the shared extraction toolbar's second row (`.extract-toolbar-row2`, next to the Table/Plot `#extractViewTabs`) as `#plotZoomBar`; moving it into the Plot view itself meant it was no longer coupled to a container also used by the Table tab. **`#extractViewTabs` itself is gone** (this session, `docs/ui-implementation-plan.md`) — Table/Plot switching is now done through the main `#fhTabs` group (see "Unified toolbar: Context/Filtered/Table/Plot" in `docs/ui-and-views.md`), and `switchExtractView(view)` is called from `renderMainView()` based on `fhActiveTab` rather than from a click handler on the old sub-toggle; the function itself, and `#plotToolbar`'s own position inside `#plotWrap`, are otherwise unchanged. Two groups:
+**`#plotToolbar`** is the Plot view's own toolbar — a real row in normal flow at the top of `#plotWrap` (`#plotWrap` is now a column: `#plotToolbar` then `#plotBody`, which holds `#plotControls` + `#plotChartArea` as before), the same pattern `#contextToolbar` already established for the Context view rather than an overlay on the chart. It used to live in the shared extraction toolbar's second row (`.extract-toolbar-row2`, next to the Table/Plot `#extractViewTabs`) as `#plotZoomBar`; moving it into the Plot view itself meant it was no longer coupled to a container also used by the Table tab. **`#extractViewTabs` itself is gone** (this session, `docs/archive/ui-implementation-plan.md`) — Table/Plot switching is now done through the main `#fhTabs` group (see "Unified toolbar: Context/Filtered/Table/Plot" in `docs/ui-and-views.md`), and `switchExtractView(view)` is called from `renderMainView()` based on `fhActiveTab` rather than from a click handler on the old sub-toggle; the function itself, and `#plotToolbar`'s own position inside `#plotWrap`, are otherwise unchanged. Two groups:
 - **`#plot2dToolsGroup`** — the zoom controls (`−`/level/`+`/Reset) and the "Create filter from plot view" buttons (below), separated by `.ctx-toolbar-sep`. Hidden via `updatePlotZoomIndicator()` whenever there's no 2D render to act on (`plotLastRender` is `null`) or the chart type is 3D (3D rotates/zooms/pans directly on its own canvas, see below) — same `plotLastRender`-gated show/hide as before, just scoped to this sub-group instead of the whole toolbar.
 - A second `.toolbar-group` with **Fullscreen** (`#plotFullscreenBtn`) and **Save** (`#plotSaveImageBtn`), always present regardless of chart type or zoom state.
 

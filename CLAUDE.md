@@ -3,19 +3,20 @@
 Project-specific instructions for Claude Code sessions on PhiLogg. This file
 loads automatically every session — kept short on purpose. `PROJECT.md` is
 the entry point into the architecture: overview, data model, gotchas, and
-links into `docs/*.md` for per-feature detail. `CHANGELOG.md` holds the
-chronological, dated history — read it for "why/when did X change", not for
-"how does X work today" (that's `docs/`). For planned work see
-`FEATURE_BACKLOG.md`.
+links into `docs/*.md` for per-feature detail. `changelog.d/` (one file
+per change) and `CHANGELOG.md` (everything up to 2026-10-01) hold the
+dated history — read them for "why/when did X change", not for "how does X
+work today" (that's `docs/`). For planned work see `FEATURE_BACKLOG.md`.
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~46,500 lines, inline CSS,
-vanilla JS — no framework, no build tooling; the only tooling is
-`scripts/strip-comments.js`, which release builds run over a throwaway copy
-— see `PROJECT.md` → "Release builds"). Personal tool for browser-based
-log analysis. Companion: `tests/philogg.regression.test.js` (jsdom
-regression suite, see `tests/README.md` for conventions). Optional
+PhiLogg: a single self-contained `philogg.html` (very large, size in
+`PROJECT.md`; inline CSS, vanilla JS — no framework, no build tooling; the
+only tooling is `scripts/strip-comments.js`, which release builds run over
+a throwaway copy — see `PROJECT.md` → "Release builds"). Personal tool for
+browser-based log analysis. Companion: `tests/philogg.regression.test.js`
+plus `tests/groups/*.js` (jsdom regression suite, see `tests/README.md` for
+conventions). Optional
 `desktop/` wrapper (Tauri v2 + the OS webview) adds file associations
 and a frameless window around the unmodified `philogg.html` — see
 `desktop/README.md`.
@@ -29,17 +30,25 @@ decision, delegates implementation to `implementer` subagents (Sonnet,
 `.claude/agents/implementer.md`) via a brief or a written plan, verifies
 each round itself (full tests + real-app screenshots), and presents the
 result with screenshots. Pure questions and doc-only sessions don't need it.
+Every session that changed files ends with the `finish` skill
+(`.claude/skills/finish/`): merge current `main`, full suite, docs check,
+push, report — no PR.
+
+**Process changes go through `main` on their own.** A change to
+`CLAUDE.md`, `.claude/**` or the rules in `tests/README.md` /
+`changelog.d/README.md` gets its own branch off `main`, never rides along
+in a feature branch: parallel sessions only see a rule once it is on
+`main`.
 
 ## Non-negotiables
 
 - **Diagnose before implementing.** For bug reports or ambiguous behavior,
   find the root cause first, then fix — not a speculative patch.
-- **Every feature/fix ships with regression tests.** Extend
-  `tests/philogg.regression.test.js` per `tests/README.md`'s conventions
-  (new `GROUP N` **plus its `group(N);` marker line** — the shard runner
-  needs it, see `tests/README.md` — one line in TEST PROVENANCE,
-  update/remove superseded groups instead of leaving a green check on dead
-  code).
+- **Every feature/fix ships with regression tests.** A new group is **its
+  own file** `tests/groups/<slug>.js` with its `group("<slug>");` marker
+  (never appended to the main test file — see `tests/README.md` → "Group
+  files"); update/remove superseded groups instead of leaving a green check
+  on dead code.
 - **Run the full suite (`cd tests && npm test`, ~2-3 min on 4 cores) only
   when code changed** — i.e. `philogg.html`, `tests/*.js`, `scripts/`, or a
   change to the `window.philogg` / `nativeDirHandle` contract that
@@ -53,19 +62,21 @@ result with screenshots. Pure questions and doc-only sessions don't need it.
   `cargo test -p philogg-logparse` in `desktop/src-tauri/` when the native
   parser changed — and when JS parsing changes, regenerate its golden
   fixture, see `docs/desktop.md` → "Native parsing") — and a session that
-  only touched Markdown (`PROJECT.md`, `docs/*.md`, `CHANGELOG.md`,
-  `README.md`, `FEATURE_BACKLOG.md`, `CLAUDE.md`). Don't run it out of habit.
+  only touched Markdown (`PROJECT.md`, `docs/*.md`, `changelog.d/*.md`,
+  `README.md`, `FEATURE_BACKLOG.md`, `CLAUDE.md`, `.claude/**`). Don't run it out of habit.
 - **Performance claims get measured in the real app**, not only in a
   component benchmark — `docs/performance-testing.md` has the headless
   desktop-app setup (`tools/perf/desktop-load-bench.sh`) that works in the
   cloud container.
-- **Update the docs every session that changes behavior**: a dated,
-  newest-first entry in `CHANGELOG.md`; the relevant `docs/*.md` file (or
-  `PROJECT.md` itself for core architecture) updated to describe the
-  *current* state — don't append a second narrative on top of the old one,
-  edit the section to reflect how it works now; line count in `PROJECT.md`
-  if it moved meaningfully. A pure doc/planning session doesn't need a
-  changelog entry.
+- **Update the docs every session that changes behavior**: one new
+  fragment `changelog.d/YYYY-MM-DD-<slug>.md` (3–6 lines, format in
+  `changelog.d/README.md` — never edit `CHANGELOG.md` directly); the
+  relevant `docs/*.md` file (or `PROJECT.md` itself for core architecture)
+  updated to describe the *current* state — don't append a second narrative
+  on top of the old one, edit the section to reflect how it works now; line
+  count in `PROJECT.md` if it moved meaningfully. A concept or plan file
+  moves to `docs/archive/` once implemented. A pure doc/planning session
+  doesn't need a changelog entry.
 - **Keep `README.md` up to date.** It's the human-facing entry point
   (overview, features, screenshots, usage, license) — `PROJECT.md` stays
   the entry point and full reference for Claude sessions. When a session

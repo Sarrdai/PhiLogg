@@ -9,7 +9,8 @@ input, not proof.
 everything asked for is there, nothing outside scope changed, CLAUDE.md
 gotchas respected (stopPropagation on popup openers, DOM identity,
 immutable `node.value`, new node fields in every persistence carrier),
-test group added with its `group(N);` marker and TEST PROVENANCE line, and
+new test group added as its own `tests/groups/<slug>.js` file with its
+`group("<slug>");` marker (never appended to the main test file), and
 new or changed tests keep `tests/README.md`'s timing rules ("Extending this
 suite", step 2: `waitFor` instead of fixed sleeps, "nothing happened"
 checked right after the step, no wall-clock-dependent paths).
@@ -53,7 +54,7 @@ NODE_PATH="$(npm root -g)" node tools/log-sim/screenshot.js \
 
 ## 4. Docs
 
-CHANGELOG.md entry (dated, newest first), the matching `docs/*.md`
+One `changelog.d/YYYY-MM-DD-<slug>.md` fragment (3–6 lines), the matching `docs/*.md`
 section describes the new current state, README if user-visible,
 PROJECT.md line count if it moved meaningfully.
 

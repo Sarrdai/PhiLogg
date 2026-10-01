@@ -501,7 +501,8 @@ philogg.html                            the application — everything lives her
 site/                                   the product homepage (static landing page); `scripts/build-site.js` builds it with the hosted app + tour, `.github/workflows/pages.yml` deploys it to GitHub Pages (see docs/homepage.md)
 LICENSE.md                              license terms (PolyForm Noncommercial 1.0.0 + commercial evaluation), shipped with every build
 tests/
-  philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events)
+  philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events): harness + older groups
+  groups/                               one file per newer test group
   fixtures/native-parse-golden.json     parsing golden file shared with the native parser's cargo test
   README.md                             testing conventions
 tools/
@@ -518,16 +519,21 @@ examples/
   bracket-format.log                    a sample log file in a different format, for trying the Format Manager
 scripts/
   install_pkgs.sh                       helper for installing test dependencies
+  branch-status.sh                      session-start hint: how far the branch is behind main
+  changelog.js                          lists the changelog.d/ fragments, folds them into CHANGELOG.md at release
   strip-comments.js                     release-only: strips every comment out of a copy of philogg.html
   release-version.js                    release-only: computes the next beta version and stamps a version into the build's checkout
 .github/workflows/release-please.yml      two-stage stable release: proposes the version bump on demand, then tags + publishes all variants (HTML/Windows/Windows portable/macOS/Linux) when that release PR merges
 .github/workflows/beta-release.yml        manual beta pre-release from main (e.g. v0.2.0-beta.3), variants picked per run
 .github/workflows/build-release-assets.yml  the build both release workflows share
+.github/workflows/tests.yml               runs the regression suite on every session-branch push and PR
 release-please-config.json              release-please configuration (+ .release-please-manifest.json, the current version)
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
 docs/                                   per-topic current-state architecture reference (filters, UI, extraction, persistence, desktop, testing, performance)
   screenshots/                          screenshots used by this README (generate.sh + scenes/ regenerate them)
-CHANGELOG.md                            full chronological, dated changelog
+  archive/                              finished concepts and implementation plans
+changelog.d/                            dated history, one file per change since 2026-10-01
+CHANGELOG.md                            dated history up to 2026-10-01 (fragments are folded in at release)
 FEATURE_BACKLOG.md                      unelaborated feature ideas
 CLAUDE.md                               instructions for AI coding sessions on this repo
 ```
@@ -569,8 +575,9 @@ Project documentation is split by audience:
 - **`docs/*.md`** — current-state architecture reference, one file per
   topic cluster (filters, UI/views, extraction/plotting,
   persistence/sync, desktop, testing/limitations).
-- **`CHANGELOG.md`** — the full chronological, dated history of what
-  shipped and why.
+- **`changelog.d/` + `CHANGELOG.md`** — the dated history of what
+  shipped and why: one fragment file per change, folded into
+  `CHANGELOG.md` at release.
 - **`FEATURE_BACKLOG.md`** — raw, unelaborated ideas for future work.
 - **`CLAUDE.md`** — short, load-every-session instructions for AI coding
   sessions.

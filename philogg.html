@@ -8882,13 +8882,13 @@ document.getElementById("settingsOpenScrollPosition").addEventListener("change",
 });
 
 // "Context/Filtered display" (Settings → Behavior): the ONLY way fhLayout
-// changes now (docs/ui-implementation-plan.md precisiation 4 — the old
+// changes now (docs/archive/ui-implementation-plan.md precisiation 4 — the old
 // "Stacked" tab button used to set fhLayout itself on click; that tab is
 // gone from the "Separate" group entirely, and the "Stacked" button that
 // replaces the whole group in "Gestapelt" mode only ever switches fhActiveTab
 // back from Table/Plot, see applyFhView). Deliberately does NOT reset
 // fhActiveTab off "table"/"plot" when flipped mid-Table/Plot — see
-// "Entscheidungen bei der Umsetzung" in docs/ui-implementation-plan.md for
+// "Entscheidungen bei der Umsetzung" in docs/archive/ui-implementation-plan.md for
 // why (least behavior change: the tab you're looking at stays put, only the
 // other two/one tabs beside it change).
 function initSettingsFhLayoutOption() {
@@ -12285,10 +12285,10 @@ function compileExtractPattern(pattern) {
 
 // Whether a node currently offers a usable Table/Plot view — used by
 // renderViewTabs() to enable/disable those two tabs
-// (docs/ui-implementation-plan.md precisiation 3: they stay visible, just
+// (docs/archive/ui-implementation-plan.md precisiation 3: they stay visible, just
 // disabled, so the rest of the tab group never jumps sideways when they
 // become available). There is no separate "extract" filterType anymore
-// (this session's filterType merge, see docs/ui-implementation-plan.md's
+// (this session's filterType merge, see docs/archive/ui-implementation-plan.md's
 // follow-up note) — a "text" filter node unlocks Table/Plot the moment its
 // own pattern contains [*:...]/[*] wildcards. Regex mode has no such
 // placeholder vocabulary (isExtractPattern would only find a coincidental
@@ -13709,7 +13709,7 @@ function deleteNode(nodeId) {
 //
 // `wildcardRegex` (optional): a "text" filter can carry [*:...]/[*]
 // tokens — there is no separate "extract" filterType (this session's
-// filterType merge, docs/ui-implementation-plan.md's follow-up note): the
+// filterType merge, docs/archive/ui-implementation-plan.md's follow-up note): the
 // same "text" node both filters/highlights AND, whenever its pattern has
 // wildcards, unlocks Table/Plot (see nodeHasExtractableWildcards). When set,
 // wildcardRegex is compileExtractPattern's regex (rebuilt with the right
@@ -14566,7 +14566,7 @@ function getEntriesUncached(node, parentOverride) {
     } else if (isExtractPattern(value)) {
       // A "text" filter's value can contain [*:...]/[*] tokens — there
       // is no separate "extract" filterType to route to instead (this
-      // session's filterType merge, docs/ui-implementation-plan.md's
+      // session's filterType merge, docs/archive/ui-implementation-plan.md's
       // follow-up note). The same node both filters/highlights on this
       // match AND, via nodeHasExtractableWildcards, unlocks Table/Plot,
       // which build their own rows from renderExtractTable's own
@@ -16219,12 +16219,12 @@ const ctxCollapseAll = el("#ctxCollapseAll");
        initSettingsFhLayoutOption below) — clicking the tab group's own
        "Stacked" button (visible only while fhLayout is already "stacked")
        just returns to the log views from Table/Plot, it does not change
-       fhLayout itself. This is docs/ui-implementation-plan.md's
+       fhLayout itself. This is docs/archive/ui-implementation-plan.md's
        precisiation 4.
      - fhActiveTab: "highlight" | "filter" | "table" | "plot" — which
        content component is on screen. "stacked" is deliberately NOT a
        value here (see "Entscheidungen bei der Umsetzung" in
-       docs/ui-implementation-plan.md) — whether both log panels show is
+       docs/archive/ui-implementation-plan.md) — whether both log panels show is
        entirely fhLayout's job; fhActiveTab only ever names one of the four
        tabs, "highlight"/"filter" doing double duty as "which one is the
        stacked pair's own last-active pane" the same way it already did
@@ -16484,7 +16484,7 @@ function applyFhView(view) {
   } else if (isOffLogTab(view)) {
     // Switching to Table/Plot (or Patterns) never touches fhLayout — a person who set
     // "Gestapelt" in Settings stays there when they come back to the log
-    // views (docs/ui-implementation-plan.md's third open question:
+    // views (docs/archive/ui-implementation-plan.md's third open question:
     // fhActiveTab is simply allowed to sit on "table"/"plot" independently
     // of whichever fhLayout is current, least-behavior-change resolution —
     // see "Entscheidungen bei der Umsetzung").
@@ -17070,11 +17070,11 @@ function renderInner() {
 // matched entries — that's what renderExtractTable itself has always built
 // the table from), it just ADDITIONALLY unlocks the Table/Plot tabs. There
 // is no more isExtract special path that hides #fhSplit outright — see
-// docs/ui-implementation-plan.md Schritt 5 (with one accepted scope
+// docs/archive/ui-implementation-plan.md Schritt 5 (with one accepted scope
 // reduction from the plan's original Schritt 4/5: #contextToolbar/
 // #extractToolbar/#plotToolbar/the level-filter row stay in their existing
 // DOM locations rather than being reparented into a new shared slot row —
-// see "Entscheidungen bei der Umsetzung" in docs/ui-implementation-plan.md
+// see "Entscheidungen bei der Umsetzung" in docs/archive/ui-implementation-plan.md
 // for why).
 // #emptyState is one element with three texts, all built here: the original
 // markup (no files at all), "No file selected" (files are open, none is
@@ -20433,7 +20433,7 @@ function formatAxisNumber(v) {
 // screen — driven by the main #fhTabs "Table"/"Plot" buttons now (via
 // renderMainView(), which calls this whenever fhActiveTab is "table"/"plot")
 // rather than the old #extractViewTabs sub-toggle, which is gone (see
-// docs/ui-implementation-plan.md Schritt 6). `extractView` itself stays a
+// docs/archive/ui-implementation-plan.md Schritt 6). `extractView` itself stays a
 // separate variable rather than every one of its many other call sites
 // switching to read fhActiveTab directly — a smaller, lower-risk diff.
 function switchExtractView(view) {
@@ -28347,7 +28347,7 @@ function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
 // unchanged), this does NOT jump away to the root file's unfiltered log —
 // the active node itself already has an ordinary Filtered pane showing
 // exactly its own matched entries (see nodeHasExtractableWildcards/
-// docs/ui-implementation-plan.md's follow-up note), so staying on the same
+// docs/archive/ui-implementation-plan.md's follow-up note), so staying on the same
 // node and just switching fhActiveTab is both simpler and more useful:
 // double-clicking a Table row and clicking that same row's Filtered entry
 // land on the exact same entry, same node. Modeled directly on
@@ -34626,7 +34626,7 @@ filterCaseCheckbox.addEventListener("change", evaluateLiveMatch);
 filterWholeWordCheckbox.addEventListener("change", evaluateLiveMatch);
 
 // "Add filter" is now the only outcome the popup can commit — this session's
-// filterType merge (docs/ui-implementation-plan.md's follow-up note) retired
+// filterType merge (docs/archive/ui-implementation-plan.md's follow-up note) retired
 // the separate "Extract" button/action and the dedicated "extract"
 // filterType entirely. A pattern's [*:...]/[*] wildcards no longer
 // choose between two node types; they simply make the resulting "text" node
