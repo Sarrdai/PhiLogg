@@ -10,7 +10,7 @@ chronological, dated history — read it for "why/when did X change", not for
 
 ## What this is
 
-PhiLogg: a single self-contained `philogg.html` (~45,600 lines, inline CSS,
+PhiLogg: a single self-contained `philogg.html` (~46,500 lines, inline CSS,
 vanilla JS — no framework, no build tooling; the only tooling is
 `scripts/strip-comments.js`, which release builds run over a throwaway copy
 — see `PROJECT.md` → "Release builds"). Personal tool for browser-based
@@ -40,10 +40,10 @@ result with screenshots. Pure questions and doc-only sessions don't need it.
   needs it, see `tests/README.md` — one line in TEST PROVENANCE,
   update/remove superseded groups instead of leaving a green check on dead
   code).
-- **Run the full suite (`cd tests && npm test`, ~30s) only when code
-  changed** — i.e. `philogg.html`, `tests/philogg.regression.test.js`,
-  `scripts/`, or a change to the `window.philogg` / `nativeDirHandle`
-  contract that `philogg.html` consumes. Report the pass count when you do.
+- **Run the full suite (`cd tests && npm test`, ~2-3 min on 4 cores) only
+  when code changed** — i.e. `philogg.html`, `tests/*.js`, `scripts/`, or a
+  change to the `window.philogg` / `nativeDirHandle` contract that
+  `philogg.html` consumes. Report the pass count when you do.
   While iterating, `GROUP=58 npm test` re-runs a single group in ~2s; the
   full suite is what settles the session.
   Two things the suite does **not** cover, so don't run it for them: a change
@@ -100,6 +100,12 @@ result with screenshots. Pure questions and doc-only sessions don't need it.
   `cut-release`). **Never write a `!` suffix, a `BREAKING CHANGE:`
   footer, or a `Release-As:` footer unless the user explicitly asks for a
   major-version bump** — this project stays under `1.0.0` by design.
+- **Open a pull request only when the user asks for one.** Commit and
+  push to the session branch as usual, but never create a PR (draft or
+  ready) or request a review on your own initiative — not at the end of a
+  task, not "to keep an eye on CI". When the work is done, say so and
+  wait (person-requested; overrides the harness's default of opening a
+  PR after pushing).
 - **No Claude attribution in commits or PRs.** Never add a
   `Co-Authored-By:` line with a Claude/Anthropic mail address, a
   `Claude-Session:` line or any claude.ai session link to commit messages,

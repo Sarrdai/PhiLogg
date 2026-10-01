@@ -171,6 +171,7 @@ async function writeBatch(a, o, log) {
 async function follow(a, o, log) {
   if (!a.out) throw new Error("--follow needs -o/--out (a directory, or a file for a single file)");
   const fmt = sim.FORMATS[o.format];
+  if (fmt.document) throw new Error("--follow is not supported for document formats (" + o.format + ")");
   const rotateLines = a["rotate-lines"] != null ? +a["rotate-lines"] : 0;
   const isDir = rotateLines > 0 || (fs.existsSync(a.out) && fs.statSync(a.out).isDirectory()) || /[\\/]$/.test(a.out);
   const dir = isDir ? a.out : path.dirname(a.out);
