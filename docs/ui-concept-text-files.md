@@ -37,7 +37,8 @@ Für diese Dateien ändern sich die beiden vorhandenen Ansichten:
   Filter-Knoten sind dessen Trefferzeilen hinterlegt und die Suchtreffer
   markiert.
 - **Filtered** zeigt die Tabelle im **Textmodus**: kein Level-Streifen,
-  keine Trennlinien, Zeilengeometrie wie im Editor.
+  Trennlinien wie bei Logs, Zeilengeometrie wie im Editor, kein
+  Entry-Detail-Panel.
 
 Es gibt **keinen zusätzlichen Schalter**; der Sprung vom Treffer in die
 ganze Datei ist dasselbe Doppelklick/Enter wie bei Logs.
