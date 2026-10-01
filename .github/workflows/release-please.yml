@@ -17,6 +17,8 @@ name: Release Please
 #     macOS, Linux — a merge has no run dialog to pick from) and `publish`
 #     uploads them to that same GitHub Release. See PROJECT.md ->
 #     "Release builds".
+#     `pages` then redeploys the homepage + hosted app from the new tag
+#     (pages.yml, see docs/homepage.md); a beta never touches the site.
 #
 # Beta pre-releases (v0.2.0-beta.N) are a separate, manual workflow:
 # beta-release.yml. It never touches the manifest, so release-please keeps
@@ -110,3 +112,16 @@ jobs:
           done
           echo "::error::giving up uploading release assets after 5 attempts"
           exit 1
+
+  # Redeploys the homepage and the hosted app from the release tag, once the
+  # assets are published (the page reads them live from the Releases API).
+  pages:
+    needs: [cut-release, publish]
+    if: needs.cut-release.outputs.release_created == 'true'
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    uses: ./.github/workflows/pages.yml
+    with:
+      ref: ${{ needs.cut-release.outputs.tag_name }}
