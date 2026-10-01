@@ -48,6 +48,8 @@ SHARDS=8 npm test               # once before the final push: load stress
 
 ## 3. Docs check
 
+- `node scripts/doc-toc.js` — refreshes the table of contents of every
+  Markdown file over 100 lines (CLAUDE.md rule); commit what it changes.
 - One fragment `changelog.d/YYYY-MM-DD-<slug>.md`, 3–6 lines (format:
   `changelog.d/README.md`). A later round on the same branch edits it.
 - The matching `docs/*.md` section (or `PROJECT.md`) describes the current
