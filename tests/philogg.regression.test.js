@@ -355,6 +355,7 @@ async function withApp(run, opts = {}) {
       get TEXT_NUM_W() { return TEXT_NUM_W; },
       get TEXT_FOLD_W() { return TEXT_FOLD_W; },
       get filteredTextMode() { return filteredTextMode; },
+      get editorView() { return editorView; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
       get BUFFER_ROWS() { return BUFFER_ROWS; },
@@ -40216,7 +40217,9 @@ if (groupSelected()) {
 
 /* ============================================================
    GROUP 349 — Editor as the Context view of a plain-text root
-   (docs/text-files-implementation-plan.md Step 3)
+   (docs/text-files-implementation-plan.md Step 3; virtualized since Step 5,
+   so the DOM holds only the rows near the viewport — the assertions walk the
+   line model (T.editorView) and scroll the window where they need more)
    ============================================================ */
 group(349);
 if (groupSelected()) {
@@ -40228,68 +40231,69 @@ if (groupSelected()) {
   const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
   const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
   const LH = 19;
-  // jsdom has no layout: give every visible .itv-line a top of LH * (visible lines above it) and LH height;
-  // lines hidden by a collapsed fold report 0 (display:none).
-  const stubEditorLayout = (w, d) => {
-    const editor = d.querySelector("#textEditor");
-    const hidden = el => {
-      let child = el;
-      for (let p = el.parentElement; p && p !== editor; child = p, p = p.parentElement)
-        if (p.classList.contains("itv-fold") && p.classList.contains("collapsed") && p.firstElementChild !== child) return true;
-      return false;
-    };
-    const lines = () => [...editor.querySelectorAll(".itv-line")];
-    const top = el => { let n = 0; for (const l of lines()) { if (l === el) break; if (!hidden(l)) n++; } return n * LH; };
-    Object.defineProperty(w.HTMLElement.prototype, "offsetTop", { get() { return this.classList && this.classList.contains("itv-line") ? top(this) : 0; }, configurable: true });
-    Object.defineProperty(w.HTMLElement.prototype, "offsetHeight", { get() { return this.classList && this.classList.contains("itv-line") ? (hidden(this) ? 0 : LH) : 0; }, configurable: true });
-  };
-  const editorLines = d => [...d.querySelectorAll("#textEditor .itv-line")];
-  const lineEl = (d, ts) => d.querySelector('#textEditor .itv-line[data-n="' + ts + '"]');
+  const lines = d => [...d.querySelectorAll("#textEditor .itv-line")];
+  const rowOf = (d, ts) => d.querySelector('#textEditor .itv-line[data-n="' + ts + '"]');
   const filterOn = (w, T, rootId, value) => { const f = w.createFilterNode(rootId, "text", value); T.state.activeId = f.id; w.render(); return f; };
+  const collapseAll = (w, T) => { T.editorView.folds.forEach(f => { f.collapsed = true; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true); };
+  const scrollTo = (w, d, y) => { d.querySelector("#highlightBody").scrollTop = y; w.editorRender(false); };
+  // Visits the editor window at every viewport-sized step through the file.
+  const walkWindows = (w, d, fn) => {
+    const total = w.editorTopOfPos(w.editorVisibleCount()) + 22;
+    for (let y = 0; y < total; y += 380) { scrollTo(w, d, y); fn(); }
+    scrollTo(w, d, 0);
+  };
 
   await withApp(async (w, d, T) => {
-    section("349a. A .txt/.json/.xml root renders the editor as its Context view, whole file, folds and syntax colours for JSON/XML");
+    section("349a. A .txt/.json/.xml root renders the editor as its Context view: the file's lines (windowed), folds and syntax colours for JSON/XML");
     await addText(w, "notes.txt", txt349.text);
     const txt = byName(T, "notes.txt");
     T.state.activeId = txt.id; w.render();
     assert(T.fhActiveTab === "highlight", "a plain-text file node with no remembered view lands on Context, got " + T.fhActiveTab);
     const wrap = d.querySelector("#highlightWrap");
     assert(wrap.classList.contains("text-mode"), "#highlightWrap carries text-mode");
-    const lines = editorLines(d);
-    assert(lines.length === txt.entries.length && lines.length > 100, "one editor line per file line (" + lines.length + ")");
-    assert(lines.every((l, i) => l.dataset.n === String(txt.entries[i].ts) && l.textContent === (txt.entries[i].message || "")), "line numbers (data-n = entry ts) and text are the file's lines verbatim");
-    assert(!d.querySelector("#textEditor .itv-fold") && !d.querySelector("#textEditor .itv-fold-toggle"), "a .txt has no folds");
+    const ev = T.editorView;
+    assert(ev.n === txt.entries.length && ev.n > 100 && ev.vis === null, "the model holds every file line (" + ev.n + ")");
+    const rows = lines(d);
+    assert(rows.length > 20 && rows.length < ev.n, "only a window of the lines is in the DOM (" + rows.length + " of " + ev.n + ")");
+    walkWindows(w, d, () => {
+      assert(lines(d).every(l => l.dataset.n === String(txt.entries[+l.dataset.line].ts) && l.textContent === (txt.entries[+l.dataset.line].message || "")),
+        "every rendered row shows its line: number (data-n = entry ts) and the text verbatim");
+    });
+    assert(ev.folds.length === 0 && !d.querySelector("#textEditor .itv-fold-toggle"), "a .txt has no folds");
     assert(!d.querySelector("#highlightBody .log-row"), "no log rows in the Context body of a text root");
     const bar = d.querySelector("#highlightHeader .text-header-bar");
     assert(bar && bar.querySelector(".text-hb-name").textContent === "notes.txt", "the shared header bar names the file under the toolbar");
-    // Geometry parity with Filtered: same CSS variables for the gutter and the line height.
     assert(/\.itv-line\{[^}]*padding-left:var\(--text-gutter-w\)[^}]*height:var\(--text-row-h\)/.test(html) && /\.itv-line::before\{[^}]*width:var\(--text-num-w\)/.test(html) &&
       /\.itv-fold-toggle\{[^}]*left:var\(--text-num-w\)[^}]*width:var\(--text-fold-w\)/.test(html), "editor lines/numbers/fold toggles use the --text-* gutter variables that Filtered's rows use");
 
     await addText(w, "orders.json", json349.text);
     const js = byName(T, "orders.json");
     T.state.activeId = js.id; w.render();
-    assert(T.fhActiveTab === "highlight" && editorLines(d).length === js.entries.length && js.textLayout === "pretty", "pretty JSON: the whole pretty-printed text, " + editorLines(d).length + " lines");
-    const folds = [...d.querySelectorAll("#textEditor .itv-fold")];
-    assert(folds.length > 5 && folds.every(f => f.firstElementChild.classList.contains("itv-line") && f.firstElementChild.querySelector(".itv-fold-toggle")), "folds wrap their opening line, which carries the toggle (" + folds.length + ")");
+    assert(T.fhActiveTab === "highlight" && ev.n === js.entries.length && js.textLayout === "pretty", "pretty JSON: the whole pretty-printed text, " + ev.n + " lines");
+    assert(ev.folds.length > 5, "the fold list has the file's blocks (" + ev.folds.length + ")");
+    const open = lines(d).filter(l => l.querySelector(".itv-fold-toggle"));
+    assert(open.length > 2 && lines(d).every(l => !!l.querySelector(".itv-fold-toggle") === (ev.foldIdAt[+l.dataset.line] >= 0)), "exactly the fold-opening lines carry the toggle (" + open.length + " in the window)");
     assert(!!d.querySelector("#textEditor .tok-key") && !!d.querySelector("#textEditor .tok-string"), "JSON tokens are highlighted");
     assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json · pretty", "header bar: file name and layout");
-    const tg = d.querySelector("#textEditor .itv-fold-toggle");
-    tg.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-    assert(tg.closest(".itv-fold").classList.contains("collapsed") && tg.textContent === "▸", "clicking a toggle collapses its fold and flips the glyph");
-    tg.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-    assert(!tg.closest(".itv-fold").classList.contains("collapsed"), "…and expands it again");
+    const tgRow = open[1], line0 = +tgRow.dataset.line, fi = ev.foldIdAt[line0];
+    tgRow.querySelector(".itv-fold-toggle").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(ev.folds[fi].collapsed && ev.vis !== null, "clicking a toggle collapses its fold in the model");
+    const rowAfter = rowOf(d, js.entries[line0].ts);
+    assert(rowAfter.classList.contains("collapsed") && rowAfter.querySelector(".itv-fold-toggle").textContent === "▸", "…the row shows the folded glyph and the ellipsis marker");
+    assert(!rowOf(d, js.entries[line0 + 1].ts), "…and the lines the fold hides are gone from the DOM");
+    rowAfter.querySelector(".itv-fold-toggle").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(!ev.folds[fi].collapsed && ev.vis === null && !!rowOf(d, js.entries[line0 + 1].ts), "…and expands it again");
 
     await addText(w, "orders.xml", xml349.text);
     const xml = byName(T, "orders.xml");
     T.state.activeId = xml.id; w.render();
-    assert(editorLines(d).length === xml.entries.length && d.querySelectorAll("#textEditor .itv-fold").length >= 1 && !!d.querySelector("#textEditor .tok-tag"), "XML: the <log> element folds, tags are coloured");
+    assert(T.editorView.n === xml.entries.length && T.editorView.folds.length >= 1 && !!d.querySelector("#textEditor .tok-tag"), "XML: the <log> element folds, tags are coloured");
     assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.xml", "header bar: the XML name has no layout suffix");
 
     await addText(w, "app.log", log349.text);
     const log = byName(T, "app.log");
     T.state.activeId = log.id; w.render();
-    assert(!d.querySelector("#highlightWrap").classList.contains("text-mode") && !d.querySelector("#textEditor .itv-line") === true, "a log root: no editor, Context stays the log view");
+    assert(!d.querySelector("#highlightWrap").classList.contains("text-mode") && T.editorView.key === null && !d.querySelector("#textEditor .itv-line"), "a log root: no editor, Context stays the log view");
   });
 
   await withApp(async (w, d, T) => {
@@ -40300,59 +40304,67 @@ if (groupSelected()) {
     assert(T.fhActiveTab === "filter", "a filter node keeps landing on Filtered");
     w.applyFhView("highlight");
     const ids1 = new Set(w.getEntries(f1.id).map(e => e.id));
-    const hits = () => editorLines(d).filter(l => l.classList.contains("hit"));
-    assert(ids1.size > 3 && hits().length === ids1.size, "every result line is a .hit (" + hits().length + " of " + ids1.size + ")");
-    assert(hits().every(l => ids1.has(txt.entries[+l.dataset.line].id)) && editorLines(d).length === txt.entries.length, "only result lines are hits; the file is complete");
-    const marks = [...d.querySelectorAll("#textEditor .itv-line.hit .text-match-mark")];
-    assert(marks.length >= ids1.size && marks.every(m => m.textContent === "Heartbeat"), "the filter's text matches are marked in the hit lines (" + marks.length + ")");
-    assert(!d.querySelector("#textEditor .itv-line:not(.hit) .text-match-mark"), "no marks outside the hit lines");
-    // Another node: hits/marks move, the markup nodes stay.
-    const first = editorLines(d)[0], editor = d.querySelector("#textEditor");
+    const hitsSeen = () => { const seen = new Set(); walkWindows(w, d, () => { for (const l of lines(d)) if (l.classList.contains("hit")) seen.add(+l.dataset.line); }); return seen; };
+    const seen1 = hitsSeen();
+    assert(ids1.size > 3 && T.editorView.hitIds.size === ids1.size && seen1.size === ids1.size, "every result line is a .hit once rendered (" + seen1.size + " of " + ids1.size + ")");
+    assert([...seen1].every(i => ids1.has(txt.entries[i].id)), "only result lines are hits");
+    let marks = 0, stray = 0;
+    walkWindows(w, d, () => {
+      for (const l of lines(d)) {
+        const ms = [...l.querySelectorAll(".text-match-mark")];
+        if (l.classList.contains("hit")) marks += ms.filter(m => m.textContent === "Heartbeat").length; else stray += ms.length;
+      }
+    });
+    assert(marks >= ids1.size && stray === 0, "the filter's text matches are marked in the hit lines (" + marks + "), none elsewhere");
+    // Another node: hits/marks move; the mounted rows stay the same elements.
+    const first = lines(d)[0], editor = d.querySelector("#textEditor");
     const f2 = filterOn(w, T, txt.id, "Sensor");
     w.applyFhView("highlight");
     const ids2 = new Set(w.getEntries(f2.id).map(e => e.id));
-    assert(ids2.size > 1 && hits().length === ids2.size && hits().every(l => ids2.has(txt.entries[+l.dataset.line].id)), "switching to another filter re-marks the hits (" + hits().length + ")");
-    assert(editorLines(d)[0] === first && !d.querySelector("#textEditor .text-match-mark[data-x]") && [...d.querySelectorAll("#textEditor .text-match-mark")].every(m => m.textContent === "Sensor"), "same line elements; the old marks are gone");
+    assert(lines(d)[0] === first && [...d.querySelectorAll("#textEditor .text-match-mark")].every(m => m.textContent === "Sensor"), "same row elements (updated in place); the old marks are gone");
+    const seen2 = hitsSeen();
+    assert(ids2.size > 1 && seen2.size === ids2.size && [...seen2].every(i => ids2.has(txt.entries[i].id)), "switching to another filter re-marks the hits (" + seen2.size + ")");
+    const first2 = lines(d)[0];
     T.state.activeId = txt.id; w.render();
-    assert(hits().length === 0 && !d.querySelector("#textEditor .text-match-mark") && editorLines(d)[0] === first, "the file node itself: no hits, no marks");
+    assert(lines(d)[0] === first2, "the file node: the same rows");
+    assert(hitsSeen().size === 0 && !d.querySelector("#textEditor .text-match-mark"), "the file node itself: no hits, no marks");
     assert(d.querySelector("#textEditor") === editor, "the editor element itself never changes");
-    // A combined filter (OR of two text nodes) marks the union too.
     const f3 = filterOn(w, T, txt.id, "Heartbeat");
     const f4 = w.createFilterNode(f3.id, "text", "e");
     T.state.activeId = f4.id; w.render(); w.applyFhView("highlight");
     const ids4 = new Set(w.getEntries(f4.id).map(e => e.id));
-    assert(hits().length === ids4.size && ids4.size > 0, "a nested filter node marks its own (narrower) result (" + hits().length + ")");
+    assert(hitsSeen().size === ids4.size && ids4.size > 0, "a nested filter node marks its own (narrower) result (" + ids4.size + ")");
   });
 
   await withApp(async (w, d, T) => {
-    section("349c. DOM identity: unrelated renders keep the editor markup (folds, selection survive); layout/entries changes rebuild it");
+    section("349c. DOM identity: unrelated renders keep the rows (folds survive); layout/entries changes rebuild the model");
     await addText(w, "orders.json", json349.text);
     const js = byName(T, "orders.json");
     T.state.activeId = js.id; w.render();
-    const editor = d.querySelector("#textEditor");
-    const lines = editorLines(d);
+    const editor = d.querySelector("#textEditor"), ev = T.editorView;
+    const rows = lines(d);
     const tg = d.querySelectorAll("#textEditor .itv-fold-toggle")[2];
     tg.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-    const collapsed = d.querySelectorAll("#textEditor .itv-fold.collapsed").length;
-    assert(collapsed === 1, "one fold collapsed");
+    assert(ev.folds.filter(f => f.collapsed).length === 1, "one fold collapsed");
+    const rows1 = lines(d);
     w.render(); w.render();
     w.selectEntry(js.entries[3].id);
     T.state.showNotes = !T.state.showNotes; w.render();
     w.renderHighlightView();
-    const lines2 = editorLines(d);
-    assert(lines2.length === lines.length && lines2.every((l, i) => l === lines[i]), "every line element survived unrelated renders (same identity)");
-    assert(d.querySelectorAll("#textEditor .itv-fold.collapsed").length === collapsed, "the collapsed fold stayed collapsed");
-    // Filter created and removed: still the same nodes.
+    const rows2 = lines(d);
+    assert(rows2.length === rows1.length && rows2.every((l, i) => l === rows1[i]), "every mounted row survived unrelated renders (same identity)");
+    assert(ev.folds.filter(f => f.collapsed).length === 1, "the collapsed fold stayed collapsed");
     const f = filterOn(w, T, js.id, "msg");
     w.applyFhView("highlight");
     T.state.activeId = js.id; w.render();
-    assert(editorLines(d).every((l, i) => l === lines[i]), "activating filters and going back keeps the markup");
-    // Layout change: rebuilt.
+    assert(lines(d).every((l, i) => l === rows1[i]), "activating filters and going back keeps the rows");
+    const key0 = ev.key;
     assert(await w.setTextLayout(js.id, "raw"), "switch to raw");
     T.state.activeId = js.id; w.render();
-    assert(editorLines(d).length === 1 && editorLines(d)[0] !== lines[0], "a layout change rebuilds the editor (raw: one line)");
+    assert(T.editorView.key !== key0 && T.editorView.n === 1 && lines(d).length === 1 && lines(d)[0] !== rows[0], "a layout change rebuilds the model (raw: one line)");
     assert(await w.setTextLayout(js.id, "pretty"), "back to pretty");
-    assert(editorLines(d).length === lines.length && editorLines(d)[0] !== lines[0], "…and back to the pretty lines (new nodes)");
+    assert(T.editorView.n === js.entries.length && T.editorView.n > 20 && lines(d)[0] !== rows[0] && T.editorView.folds.every(f => !f.collapsed), "…and back to the pretty lines (new model, folds reset)");
+    assert(d.querySelector("#textEditor") === editor, "the editor element itself never changes");
   });
 
   await withApp(async (w, d, T) => {
@@ -40364,7 +40376,6 @@ if (groupSelected()) {
     assert(T.fhActiveTab === "highlight", "text file node: Context");
     const f = filterOn(w, T, txt.id, "e");
     assert(T.fhActiveTab === "filter", "its filter node: Filtered");
-    // Remembered: leave the file node on Filtered, come back later.
     T.state.activeId = txt.id; w.render();
     w.applyFhView("filter");
     T.state.activeId = log.id; w.render();
@@ -40374,13 +40385,11 @@ if (groupSelected()) {
     T.state.activeId = log.id; w.render();
     T.state.activeId = txt.id; w.render();
     assert(T.fhActiveTab === "highlight", "…and a remembered Context view too");
-    // alwaysFiltered keeps its meaning for a text file that was never opened.
     await addText(w, "b.txt", txt349.text);
     const b = byName(T, "b.txt");
     T.filterActivationView = "alwaysFiltered";
     T.state.activeId = log.id; w.render();
     T.state.activeId = b.id; w.render();
-    // b.txt was just loaded and activated (Context); drop that memory by a fresh third file
     await addText(w, "c.txt", txt349.text);
     const c = byName(T, "c.txt");
     T.state.activeId = c.id; w.render();
@@ -40395,42 +40404,38 @@ if (groupSelected()) {
     section("349e. Reveal from Filtered: centred, flashed, unfolds only the folds that hide the line; Stacked scrolls the editor");
     await addText(w, "orders.json", json349.text);
     const js = byName(T, "orders.json");
-    stubEditorLayout(w, d);
     T.state.activeId = js.id; w.render();
     const f = filterOn(w, T, js.id, "msg");
     const results = w.getEntries(f.id);
     assert(results.length >= 6, "the filter has several results (" + results.length + ")");
     w.applyFhView("highlight");
-    // Collapse every fold (outermost last so inner ones stay closed too).
-    const toggles = [...d.querySelectorAll("#textEditor .itv-fold-toggle")];
-    for (const t of toggles) if (!t.closest(".itv-fold").classList.contains("collapsed")) t.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
-    assert(d.querySelectorAll("#textEditor .itv-fold.collapsed").length >= 2, "folds collapsed");
+    const ev = T.editorView;
+    collapseAll(w, T);
+    assert(ev.folds.filter(x => x.collapsed).length >= 2 && ev.vis !== null && ev.vis.length < 5, "all folds collapsed: the visible line list is just the top level (" + ev.vis.length + ")");
     w.applyFhView("filter");
-    const target = results[results.length - 2];
-    const el0 = lineEl(d, target.ts);
-    const chain = []; for (let p = el0.parentElement; p && p.id !== "textEditor"; p = p.parentElement) if (p.classList.contains("itv-fold")) chain.push(p);
-    assert(chain.length >= 2, "the target line sits inside nested folds (" + chain.length + ")");
-    const chainSet = new Set(chain);
-    const sibling = [...d.querySelectorAll("#textEditor .itv-fold")].filter(x => !chainSet.has(x) && !x.contains(el0) && !el0.contains(x))[0];
+    const target = results[results.length - 2], idx = js.entries.findIndex(e => e.id === target.id);
+    const chain = []; for (let g = ev.lineParent[idx]; g >= 0; g = ev.folds[g].parent) chain.push(g);
+    assert(chain.length >= 2 && chain.every(g => ev.folds[g].collapsed), "the target line sits inside nested collapsed folds (" + chain.length + ")");
+    const others = ev.folds.filter((x, i) => !chain.includes(i) && x.collapsed);
     w.revealInHighlightView(target, null, null);
     assert(T.fhActiveTab === "highlight", "reveal switches to Context");
-    assert(chain.every(f => !f.classList.contains("collapsed") || f.firstElementChild === el0 || f.firstElementChild.contains(el0)), "every fold above the line is open");
-    assert(sibling && sibling.classList.contains("collapsed"), "an unrelated fold stays collapsed");
+    assert(chain.every(g => !ev.folds[g].collapsed), "every fold above the line is open");
+    assert(others.length > 2 && others.every(x => x.collapsed), "unrelated folds stay collapsed (" + others.length + ")");
     const body = d.querySelector("#highlightBody");
-    const expected = Math.max(0, el0.offsetTop - 400 / 2 + LH / 2);
+    const el0 = rowOf(d, target.ts);
+    assert(!!el0, "the revealed line is mounted");
+    const expected = Math.max(0, w.editorRowScrollTop(w.editorPosOf(idx)) - 400 / 2 + LH / 2);
     assert(Math.abs(body.scrollTop - expected) <= 1, "the line is centred in the viewport: scrollTop " + body.scrollTop + " vs " + expected);
     assert(el0.classList.contains("flash"), "the line flashes");
     assert(T.state.selectedId === target.id, "and becomes the selected entry");
-    // The fold the line merely OPENS stays as it was.
-    const opening = [...d.querySelectorAll("#textEditor .itv-fold")].find(x => x.firstElementChild.querySelector(".itv-fold-toggle") && x.classList.contains("collapsed"));
-    assert(!!opening, "folds that do not hide the line are still collapsed");
+    const opening = ev.folds.find(x => x.collapsed);
+    assert(!!opening && !!rowOf(d, js.entries[opening.start].ts) === (ev.vis.includes(opening.start)), "folds that do not hide the line are still collapsed");
 
-    // Stacked: both panels on screen, the reveal scrolls the editor below... above.
     w.applyFhView("stacked");
-    body.scrollTop = 0;
-    const other = results[results.length - 1];
+    scrollTo(w, d, 0);
+    const other = results[results.length - 1], oi = js.entries.findIndex(e => e.id === other.id);
     w.revealInHighlightView(other, null, null);
-    assert(T.fhLayout === "stacked" && body.scrollTop > 0, "Stacked: the editor scrolled to the revealed line (" + body.scrollTop + ")");
+    assert(T.fhLayout === "stacked" && body.scrollTop > 0 && !!rowOf(d, other.ts) && ev.vis.includes(oi), "Stacked: the editor scrolled to the revealed line (" + body.scrollTop + ")");
     assert(T.state.selectedId === other.id, "Stacked: the line is selected");
   });
 
@@ -40438,68 +40443,58 @@ if (groupSelected()) {
     section("349f. Tab switch keeps the top visible line at the same offset (file node both ways; filter node falls back to the selection, then the next hit)");
     await addText(w, "notes.txt", txt349.text);
     const txt = byName(T, "notes.txt");
-    stubEditorLayout(w, d);
     T.state.activeId = txt.id; w.render();
     const body = d.querySelector("#highlightBody"), tbody = d.querySelector("#tableBody");
-    body.scrollTop = 40 * LH + 5; // line 41 (index 40) partly scrolled
+    scrollTo(w, d, 40 * LH + 5);
     w.applyFhView("filter");
     assert(tbody.scrollTop === 40 * LH + 5, "Context -> Filtered on the file node: the same top line at the same offset, got " + tbody.scrollTop);
     tbody.scrollTop = 70 * LH + 3;
     w.renderVisibleRows();
     w.applyFhView("highlight");
     assert(body.scrollTop === 70 * LH + 3, "Filtered -> Context: back at that line, got " + body.scrollTop);
-    // Filter node: top Context line is not a hit -> next hit below.
     const f = filterOn(w, T, txt.id, "Heartbeat");
     const res = w.getEntries(f.id);
     w.applyFhView("highlight");
-    const k = res.findIndex((e, i) => i > 0 && i < res.length - 5 && res[i + 1].ts - e.ts > 1); // hit k is followed by a gap of non-hit lines
+    const k = res.findIndex((e, i) => i > 0 && i < res.length - 5 && res[i + 1].ts - e.ts > 1);
     assert(k >= 0, "two consecutive hits with a gap between them");
-    const ts0 = res[k].ts; // the editor line ts0 + 1 is no hit (scrollTop ts0*LH puts it on top)
+    const ts0 = res[k].ts; // the editor line ts0 + 1 (index ts0) is no hit
     T.state.selectedId = null;
-    body.scrollTop = ts0 * LH;
+    scrollTo(w, d, 2 + ts0 * LH);
     w.applyFhView("filter");
-    assert(tbody.scrollTop === (k + 1) * LH, "top line is no hit, nothing selected: the next hit below becomes the top row (row " + (k + 1) + "), got " + tbody.scrollTop);
-    // With a selection: the selected line anchors.
+    assert(tbody.scrollTop === (k + 1) * LH + 2, "top line is no hit, nothing selected: the next hit below becomes the top row (row " + (k + 1) + "), got " + tbody.scrollTop);
     w.applyFhView("highlight");
-    body.scrollTop = ts0 * LH;
+    scrollTo(w, d, 2 + ts0 * LH);
     w.selectEntry(res[k + 3].id);
-    body.scrollTop = ts0 * LH;
+    scrollTo(w, d, 2 + ts0 * LH);
     w.applyFhView("filter");
-    assert(tbody.scrollTop === (k + 3) * LH, "the selected line (row " + (k + 3) + ") is the anchor when the top line is no hit, got " + tbody.scrollTop);
-    // Filtered -> Context on the filter node: the top row's line.
+    assert(tbody.scrollTop === (k + 3) * LH + 2, "the selected line (row " + (k + 3) + ") is the anchor when the top line is no hit, got " + tbody.scrollTop);
     tbody.scrollTop = 4 * LH + 2; w.renderVisibleRows();
     w.applyFhView("highlight");
     assert(body.scrollTop === (res[4].ts - 1) * LH + 2, "Filtered -> Context: the top hit row's line (" + res[4].ts + ") at the same offset, got " + body.scrollTop);
   });
 
   await withApp(async (w, d, T) => {
-    section("349g. Pretty/Raw toggle in the Context toolbar (JSON only), anchored by line number");
+    section("349g. Pretty/Raw toggle in the Context toolbar (JSON only)");
     await addText(w, "orders.json", json349.text);
     await addText(w, "notes.txt", txt349.text);
     const js = byName(T, "orders.json"), txt = byName(T, "notes.txt");
-    stubEditorLayout(w, d);
     T.state.activeId = js.id; w.render();
     const group = d.querySelector("#ctxTextLayout").parentElement;
     const pretty = d.querySelector("#ctxLayoutPretty"), raw = d.querySelector("#ctxLayoutRaw");
     assert(group.style.display !== "none" && pretty.classList.contains("active") && !raw.classList.contains("active"), "a JSON root shows Pretty active");
     assert(!d.querySelector("#contextToolbar").classList.contains("hidden"), "the Context toolbar is shown on a file node of a text root");
-    // Raw JSON of the sim is one line -> the anchor is line 1.
-    const body = d.querySelector("#highlightBody");
-    body.scrollTop = 30 * LH;
+    scrollTo(w, d, 30 * LH);
     raw.click();
-    await waitFor(() => js.textLayout === "raw" && editorLines(d).length === 1);
+    await waitFor(() => js.textLayout === "raw" && T.editorView.n === 1);
     assert(js.textLayout === "raw" && raw.classList.contains("active") && !pretty.classList.contains("active"), "Raw click: layout raw, button state follows");
     assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json · raw", "header bar follows");
-    assert(body.scrollTop === 0, "the scroll clamps to the only line (no stale offset), got " + body.scrollTop);
+    assert(lines(d).length === 1, "raw JSON is one line");
     pretty.click();
-    await waitFor(() => js.textLayout === "pretty" && editorLines(d).length > 20);
-    assert(pretty.classList.contains("active") && editorLines(d).length === js.entries.length, "Pretty click: back to the pretty lines");
-    // Not JSON: the group is hidden.
+    await waitFor(() => js.textLayout === "pretty" && T.editorView.n > 20);
+    assert(pretty.classList.contains("active") && T.editorView.n === js.entries.length, "Pretty click: back to the pretty lines");
     T.state.activeId = txt.id; w.render();
     assert(group.style.display === "none", "a .txt root hides the layout toggle");
-    // Log-only controls are marked, so a text root hides them via CSS.
-    assert(d.querySelectorAll("#contextToolbar [data-log-only]").length >= 9 && /#highlightWrap\.text-mode #contextToolbar \[data-log-only\]\{display:none/.test(html.replace(/\s+/g, " ").replace(/ ?\{ ?/g, "{").replace(/ ?\} ?/g, "}")) ||
-      /\[data-log-only\]\{[^}]*display:none/.test(html), "log-only Context controls (gap/expand/navigation) are hidden for text roots");
+    assert(d.querySelectorAll("#contextToolbar [data-log-only]").length >= 9 && /\[data-log-only\]\{[^}]*display:none/.test(html), "log-only Context controls (gap/expand/navigation) are hidden for text roots");
   });
 
   await withApp(async (w, d, T) => {
@@ -40507,23 +40502,27 @@ if (groupSelected()) {
     await addText(w, "notes.txt", txt349.text);
     const txt = byName(T, "notes.txt");
     T.state.activeId = txt.id; w.render();
-    const editor = d.querySelector("#textEditor"), l0 = editorLines(d)[0];
+    const editor = d.querySelector("#textEditor"), ev = T.editorView, key0 = ev.key;
     const btn = d.querySelector("#contextToolbar .toggle-wrap");
-    assert(btn && !btn.classList.contains("active") && !T.state.wrapTextView, "Wrap starts off");
+    assert(btn && !btn.classList.contains("active") && !T.state.wrapTextView && ev.tops === null && ev.cols === 0, "Wrap starts off (fixed-height rows)");
     btn.click();
     assert(T.state.wrapTextView === true && btn.classList.contains("active") && d.body.classList.contains("textview-wrap"), "the toggle sets state.wrapTextView and the body class");
     assert(T.state.wrapMessages === false, "the log message wrap is untouched");
-    assert(editorLines(d)[0] === l0 && d.querySelector("#textEditor") === editor, "wrap is pure CSS: the editor markup is not rebuilt");
+    assert(ev.key === key0 && d.querySelector("#textEditor") === editor, "the model is not rebuilt");
+    assert(ev.cols > 10 && ev.tops && ev.tops.length === ev.n + 1, "…but the rows get wrap-aware heights (" + ev.cols + " columns)");
+    const longLine = txt.entries.findIndex(e => e.message.length > ev.cols + 5);
+    assert(longLine >= 0 && ev.tops[longLine + 1] - ev.tops[longLine] >= 2 * LH, "a line longer than the columns is two or more rows tall");
+    assert(ev.tops[ev.n] > ev.n * LH, "the content height grows with the wrapped lines");
     assert(/\.textview-wrap \.itv-line\{[^}]*white-space:pre-wrap/.test(html), "CSS: wrapped editor lines are pre-wrap");
     assert(/\.textview-wrap #tableWrap\.text-mode \.log-row\.text-row[^{]*\{[^}]*height:auto/.test(html) || /\.textview-wrap[^{]*\.text-row[^{]*\{[^}]*white-space:pre-wrap/.test(html), "CSS: wrapped Filtered text rows are pre-wrap too");
-    // Filtered view: same flag drives the row height bookkeeping.
     filterOn(w, T, txt.id, "e");
     assert(T.state.wrapTextView === true && d.body.classList.contains("textview-wrap"), "still wrapping in Filtered");
     const fbtn = d.querySelector("#filteredToolbar .toggle-wrap");
     assert(fbtn && fbtn.classList.contains("active"), "the Filtered toolbar's Wrap button shows the same state");
     fbtn.click();
     assert(T.state.wrapTextView === false && !d.body.classList.contains("textview-wrap"), "toggling it in Filtered turns the editor wrap off as well");
-    // Log root: the same button drives wrapMessages.
+    w.applyFhView("highlight");
+    assert(T.editorView.tops === null && T.editorView.cols === 0, "back to fixed-height rows in the editor");
     await addText(w, "app.log", log349.text);
     T.state.activeId = byName(T, "app.log").id; w.render();
     d.querySelector("#filteredToolbar .toggle-wrap").click();
@@ -40534,26 +40533,25 @@ if (groupSelected()) {
     section("349i. Nav history anchors the editor by line number; a minimap click (selectHighlightEntry) scrolls the editor");
     await addText(w, "notes.txt", txt349.text);
     const txt = byName(T, "notes.txt");
-    stubEditorLayout(w, d);
     T.state.activeId = txt.id; w.render();
     const body = d.querySelector("#highlightBody");
-    body.scrollTop = 50 * LH + 4;
+    scrollTo(w, d, 50 * LH + 4);
     const wp = w.captureNavWaypoint();
     assert(wp.contextAnchor && wp.contextAnchor.line === txt.entries[50].ts && wp.contextAnchor.offset === -4 && wp.contextAnchor.id === txt.entries[50].id, "the waypoint anchors the top editor line by its line number, got " + JSON.stringify(wp.contextAnchor));
-    body.scrollTop = 0;
+    scrollTo(w, d, 0);
     w.applyNavWaypoint(wp);
     assert(body.scrollTop === 50 * LH + 4, "applying the waypoint scrolls the editor back, got " + body.scrollTop);
-    // Minimap click path.
-    body.scrollTop = 0;
+    scrollTo(w, d, 0);
     const e = txt.entries[120];
     w.selectHighlightEntry(e.id, { scroll: true, center: true, index: 120 });
-    assert(Math.abs(body.scrollTop - (120 * LH - 200 + LH / 2)) <= 1 && T.state.selectedId === e.id, "selectHighlightEntry (minimap click/drag) centres the line in the editor, got " + body.scrollTop);
+    assert(Math.abs(body.scrollTop - (2 + 120 * LH - 200 + LH / 2)) <= 1 && T.state.selectedId === e.id && !!rowOf(d, e.ts), "selectHighlightEntry (minimap click/drag) centres the line in the editor, got " + body.scrollTop);
   });
 }
 
 /* ============================================================
    GROUP 350 — Find bar in the editor (docs/text-files-implementation-plan.md
-   Step 4) + Context/Filtered vertical parity (CSS)
+   Step 4; marks apply to the rendered rows since Step 5) + Context/Filtered
+   vertical parity (CSS)
    ============================================================ */
 group(350);
 if (groupSelected()) {
@@ -40563,74 +40561,63 @@ if (groupSelected()) {
   const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
   const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
   const LH = 19;
-  const stubEditorLayout = (w, d) => {
-    const editor = d.querySelector("#textEditor");
-    const hidden = el => {
-      let child = el;
-      for (let p = el.parentElement; p && p !== editor; child = p, p = p.parentElement)
-        if (p.classList.contains("itv-fold") && p.classList.contains("collapsed") && p.firstElementChild !== child) return true;
-      return false;
-    };
-    const lines = () => [...editor.querySelectorAll(".itv-line")];
-    const top = el => { let n = 0; for (const l of lines()) { if (l === el) break; if (!hidden(l)) n++; } return n * LH; };
-    Object.defineProperty(w.HTMLElement.prototype, "offsetTop", { get() { return this.classList && this.classList.contains("itv-line") ? top(this) : 0; }, configurable: true });
-    Object.defineProperty(w.HTMLElement.prototype, "offsetHeight", { get() { return this.classList && this.classList.contains("itv-line") ? (hidden(this) ? 0 : LH) : 0; }, configurable: true });
-  };
   const lines = d => [...d.querySelectorAll("#textEditor .itv-line")];
   const search = async (w, d, q) => { const input = d.getElementById("findInput"); input.value = q; fireInput(input, w); await sleep(220); };
   const count = d => d.getElementById("findCount").textContent;
   const marks = d => [...d.querySelectorAll("#textEditor mark.editor-find-mark")];
-  const collapseAll = (w, d) => { for (const t of d.querySelectorAll("#textEditor .itv-fold-toggle")) if (!t.closest(".itv-fold").classList.contains("collapsed")) t.dispatchEvent(new w.MouseEvent("click", { bubbles: true })); };
+  const collapseAll = (w, T) => { T.editorView.folds.forEach(f => { f.collapsed = true; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true); };
+  // Matches of `re` (global) in the rendered rows' lines — what the marks must cover.
+  const expectedMarks = (T, d, re) => lines(d).reduce((n, l) => n + ((T.editorView.entries[+l.dataset.line].message.match(re) || []).length), 0);
 
   await withApp(async (w, d, T) => {
-    section("350a. Ctrl+G in the editor: counts, marks every match in place, steps with F3/Shift+F3, unfolds only the hiding folds");
+    section("350a. Ctrl+G in the editor: counts, marks every rendered match in place, steps with F3/Shift+F3, unfolds only the hiding folds");
+    const fb = d.createElement("script");
+    fb.textContent = "window.__find = { get state() { return findState; } };";
+    d.body.appendChild(fb);
     await addText(w, "orders.json", json350.text);
     const js = byName(T, "orders.json");
-    stubEditorLayout(w, d);
     T.state.activeId = js.id; w.render();
-    collapseAll(w, d);
-    const before = lines(d), editor = d.querySelector("#textEditor");
-    const collapsed0 = d.querySelectorAll("#textEditor .itv-fold.collapsed").length;
+    collapseAll(w, T);
+    const ev = T.editorView, editor = d.querySelector("#textEditor"), key0 = ev.key;
+    const collapsed0 = ev.folds.filter(f => f.collapsed).length;
     assert(collapsed0 > 5, "folds collapsed first (" + collapsed0 + ")");
     fireKeydown(d, w, "g", { ctrlKey: true });
     assert(isVisible(d.getElementById("findBar"), w), "Ctrl+G opens the find bar in the Context editor");
     await search(w, d, "0.1");
-    const expectLines = js.entries.filter(e => e.message.includes("0.1"));
+    const expectLines = js.entries.map((e, i) => i).filter(i => js.entries[i].message.includes("0.1"));
     assert(expectLines.length >= 3, "the fixture has several lines containing 0.1 (" + expectLines.length + ")");
-    const total = expectLines.reduce((n, e) => n + e.message.split("0.1").length - 1, 0);
+    assert(w.__find.state.hits.length === expectLines.length && w.__find.state.hits.every((h, i) => h === expectLines[i]), "the scan finds every line of the file, rendered or not");
     assert(count(d) === "1 / " + expectLines.length, "the counter reads n / m over the file's lines, got " + count(d));
-    assert(marks(d).length === total && marks(d).every(m => m.textContent === "0.1"), "every match is marked in place (" + marks(d).length + " of " + total + ")");
-    assert(lines(d).every((l, i) => l === before[i]) && d.querySelector("#textEditor") === editor, "no editor rebuild: the same line elements");
+    assert(marks(d).length === expectedMarks(T, d, /0\.1/g) && marks(d).length >= 1 && marks(d).every(m => m.textContent === "0.1"), "every match in the rendered rows is marked in place (" + marks(d).length + ")");
+    assert(ev.key === key0 && T.editorView.entries === ev.entries && d.querySelector("#textEditor") === editor, "no editor rebuild");
     const cur = () => d.querySelector("#textEditor .find-cur");
-    assert(cur() && cur().dataset.n === String(expectLines[0].ts), "the current hit's line is .find-cur (line " + expectLines[0].ts + ")");
-    // The first hit sat inside collapsed folds: only the folds that hide it opened.
-    const el0 = cur();
-    const hidingFolds = []; for (let p = el0.parentElement; p && p.id !== "textEditor"; p = p.parentElement) if (p.classList.contains("itv-fold")) hidingFolds.push(p);
-    assert(hidingFolds.every(f => !f.classList.contains("collapsed") || f.firstElementChild === el0), "the folds above the current match are open");
-    const collapsed1 = d.querySelectorAll("#textEditor .itv-fold.collapsed").length;
-    assert(collapsed1 > 0 && collapsed1 < collapsed0 + 1 && collapsed0 - collapsed1 <= hidingFolds.length, "other folds stay collapsed (" + collapsed1 + " of " + collapsed0 + ")");
+    const e0 = js.entries[expectLines[0]];
+    assert(cur() && cur().dataset.n === String(e0.ts), "the current hit's line is .find-cur (line " + e0.ts + ")");
+    const chain = []; for (let g = ev.lineParent[expectLines[0]]; g >= 0; g = ev.folds[g].parent) chain.push(g);
+    assert(chain.every(g => !ev.folds[g].collapsed), "the folds above the current match are open");
+    const collapsed1 = ev.folds.filter(f => f.collapsed).length;
+    assert(collapsed1 > 0 && collapsed0 - collapsed1 <= chain.length, "other folds stay collapsed (" + collapsed1 + " of " + collapsed0 + ")");
     const body = d.querySelector("#highlightBody");
-    assert(Math.abs(body.scrollTop - Math.max(0, el0.offsetTop - 200 + LH / 2)) <= 1, "scrolled so the match is centred, got " + body.scrollTop);
-    assert(T.state.selectedId === expectLines[0] .id, "the hit's entry is the selected entry");
-    // F3 / Shift+F3 (wraps).
+    assert(Math.abs(body.scrollTop - Math.max(0, w.editorRowScrollTop(w.editorPosOf(expectLines[0])) - 200 + LH / 2)) <= 1, "scrolled so the match is centred, got " + body.scrollTop);
+    assert(T.state.selectedId === e0.id, "the hit's entry is the selected entry");
+    const nLast = expectLines.length;
     fireKeydown(d, w, "F3");
-    assert(count(d) === "2 / " + expectLines.length && cur().dataset.n === String(expectLines[1].ts), "F3: next hit, got " + count(d));
+    assert(count(d) === "2 / " + nLast && cur().dataset.n === String(js.entries[expectLines[1]].ts), "F3: next hit, got " + count(d));
     fireKeydown(d, w, "F3", { shiftKey: true });
     fireKeydown(d, w, "F3", { shiftKey: true });
-    assert(count(d) === expectLines.length + " / " + expectLines.length && cur().dataset.n === String(expectLines[expectLines.length - 1].ts), "Shift+F3 from the first hit wraps to the last, got " + count(d));
-    assert(!cur().closest(".itv-fold.collapsed") || cur().closest(".itv-fold.collapsed").firstElementChild === cur(), "the last hit is visible too (unfolded)");
+    assert(count(d) === nLast + " / " + nLast && cur().dataset.n === String(js.entries[expectLines[nLast - 1]].ts), "Shift+F3 from the first hit wraps to the last, got " + count(d));
+    assert(!!ev.vis && ev.vis.includes(expectLines[nLast - 1]), "the last hit is visible too (unfolded)");
     d.getElementById("findNextBtn").click();
-    assert(count(d) === "1 / " + expectLines.length, "the bar's Next button steps and wraps, got " + count(d));
+    assert(count(d) === "1 / " + nLast, "the bar's Next button steps and wraps, got " + count(d));
     d.getElementById("findPrevBtn").click();
-    assert(count(d) === expectLines.length + " / " + expectLines.length, "the Prev button steps back");
-    assert(lines(d).every((l, i) => l === before[i]), "still the same line elements after all the steps");
+    assert(count(d) === nLast + " / " + nLast, "the Prev button steps back");
+    assert(ev.key === key0, "still the same model after all the steps");
   });
 
   await withApp(async (w, d, T) => {
     section("350b. Marks are removed on close and leave the line's original nodes (selection/copy stay correct)");
     await addText(w, "orders.json", json350.text);
     const js = byName(T, "orders.json");
-    stubEditorLayout(w, d);
     T.state.activeId = js.id; w.render();
     const hitEntry = js.entries.find(e => e.message.includes("msg"));
     const hitLine = d.querySelector('#textEditor .itv-line[data-n="' + hitEntry.ts + '"]');
@@ -40638,33 +40625,31 @@ if (groupSelected()) {
     const otherLine = d.querySelector('#textEditor .itv-line[data-n="' + otherEntry.ts + '"]');
     const html0 = hitLine.innerHTML, other0 = otherLine.innerHTML;
     const otherNodes = [...otherLine.childNodes];
-    const text0 = d.querySelector("#textEditor").textContent;
+    const text0 = d.querySelector("#teRows").textContent;
     fireKeydown(d, w, "g", { ctrlKey: true });
     await search(w, d, "msg");
-    assert(marks(d).length >= 12 && hitLine.querySelector("mark.editor-find-mark"), "the matches are marked (" + marks(d).length + ")");
-    assert(hitLine.textContent === hitEntry.message && d.querySelector("#textEditor").textContent === text0, "marking never changes the text");
+    assert(marks(d).length >= 3 && hitLine.querySelector("mark.editor-find-mark"), "the matches are marked (" + marks(d).length + ")");
+    assert(hitLine.textContent === hitEntry.message && d.querySelector("#teRows").textContent === text0, "marking never changes the text");
     assert([...otherLine.childNodes].every((n, i) => n === otherNodes[i]) && otherLine.innerHTML === other0, "a line without a hit is untouched (same nodes)");
-    // Selection inside a line that will gain/lose marks: a range over its first text node.
     d.getElementById("findCloseBtn").click();
     assert(marks(d).length === 0 && !d.querySelector("#textEditor .find-cur"), "closing the bar removes every mark and the current-line class");
     assert(hitLine.innerHTML === html0, "the hit line's markup is exactly what it was before the search (marks unwrapped, text nodes merged back)");
     assert(!isVisible(d.getElementById("findBar"), w), "bar hidden");
-    // Reopen with an empty/invalid query: nothing marked.
     fireKeydown(d, w, "g", { ctrlKey: true });
     await search(w, d, "zzzzqq");
     assert(count(d) === "No results" && marks(d).length === 0, "no results: no marks");
     await search(w, d, "msg");
-    assert(marks(d).length >= 12, "a new query marks again");
+    assert(marks(d).length >= 3, "a new query marks again");
     await search(w, d, "");
     assert(marks(d).length === 0, "clearing the query clears the marks");
-    // A text selection spanning lines survives marks coming and going elsewhere.
+    await search(w, d, "msg");
     const sel = w.getSelection(), range = d.createRange();
     range.selectNodeContents(otherLine); sel.removeAllRanges(); sel.addRange(range);
     const selText = sel.toString();
+    await search(w, d, "msg ");
     await search(w, d, "msg");
-    assert(marks(d).length >= 12 && sel.rangeCount === 1 && sel.toString() === selText && selText.length > 0 && sel.getRangeAt(0).commonAncestorContainer === otherLine,
+    assert(marks(d).length >= 3 && sel.rangeCount === 1 && sel.toString() === selText && selText.length > 0 && sel.getRangeAt(0).commonAncestorContainer === otherLine,
       "a selection in an unmarked line is untouched while marks come and go");
-    // A selection inside a line that gets a mark: the surrounding text node is split, not replaced.
     const hitText = hitLine.querySelector("mark.editor-find-mark").previousSibling || hitLine.firstChild;
     const r2 = d.createRange(); r2.setStart(hitLine, 0); r2.setEnd(hitLine, hitLine.childNodes.length);
     sel.removeAllRanges(); sel.addRange(r2);
@@ -40681,21 +40666,20 @@ if (groupSelected()) {
     fireKeydown(d, w, "g", { ctrlKey: true });
     await search(w, d, "heartbeat");
     const ci = txt.entries.filter(e => /heartbeat/i.test(e.message)).length;
-    assert(ci > 3 && count(d) === "1 / " + ci && marks(d).length === ci, "case-insensitive by default (" + ci + ")");
+    assert(ci > 3 && count(d) === "1 / " + ci && marks(d).length === expectedMarks(T, d, /heartbeat/gi) && marks(d).length > 0, "case-insensitive by default (" + ci + ")");
     d.getElementById("findCaseBtn").click(); await sleep(220);
     assert(count(d) === "No results" && marks(d).length === 0, "Aa: 'heartbeat' no longer matches 'Heartbeat'");
     d.getElementById("findCaseBtn").click(); await sleep(220);
     d.getElementById("findRegexBtn").click();
     await search(w, d, "Heartbeat|Retrying");
     const re = txt.entries.filter(e => /Heartbeat|Retrying/.test(e.message)).length;
-    assert(new RegExp("^\\d+ / " + re + "$").test(count(d)) && marks(d).length === re, "regex alternation (" + re + ") got " + count(d) + " / " + marks(d).length);
+    assert(new RegExp("^\\d+ / " + re + "$").test(count(d)) && marks(d).length === expectedMarks(T, d, /Heartbeat|Retrying/g), "regex alternation (" + re + ") got " + count(d) + " / " + marks(d).length);
     await search(w, d, "(");
     assert(/Invalid/.test(count(d)) && marks(d).length === 0, "an invalid regex shows the error and marks nothing, got " + count(d));
-    // A wildcard pattern (non-regex).
     d.getElementById("findRegexBtn").click();
     await search(w, d, "axis=[*:int] target");
     const wc = txt.entries.filter(e => /axis=\d+ target/.test(e.message)).length;
-    assert(wc > 2 && new RegExp("^\\d+ / " + wc + "$").test(count(d)) && marks(d).length === wc, "a [*:int] wildcard pattern matches like the filter (" + wc + ") got " + count(d) + " / " + marks(d).length);
+    assert(wc > 2 && new RegExp("^\\d+ / " + wc + "$").test(count(d)) && marks(d).length === expectedMarks(T, d, /axis=\d+ target/g), "a [*:int] wildcard pattern matches like the filter (" + wc + ") got " + count(d) + " / " + marks(d).length);
   });
 
   await withApp(async (w, d, T) => {
@@ -40708,26 +40692,23 @@ if (groupSelected()) {
     fireKeydown(d, w, "g", { ctrlKey: true });
     await search(w, d, "Sensor");
     const n = txt.entries.filter(e => /sensor/i.test(e.message)).length;
-    assert(count(d) === "1 / " + n && marks(d).length === n, "Context on a filter node searches the whole file, not only the result lines (" + n + ")");
-    assert(d.querySelectorAll("#textEditor .itv-line.hit").length === w.getEntries(f.id).length, "the filter's own hit lines are unchanged");
+    assert(count(d) === "1 / " + n && marks(d).length === expectedMarks(T, d, /sensor/gi), "Context on a filter node searches the whole file, not only the result lines (" + n + ")");
+    assert(T.editorView.hitIds.size === w.getEntries(f.id).length, "the filter's own hit lines are unchanged");
     const nodes0 = Object.keys(T.state.nodes).length;
     d.getElementById("findAddFilterBtn").click();
     const added = Object.values(T.state.nodes).find(x => x.type === "filter" && x.filterType === "text" && x.value === "Sensor");
     assert(added && added.parentId === f.id && Object.keys(T.state.nodes).length === nodes0 + 1, "Add as filter creates a text filter under the active node");
     assert(!isVisible(d.getElementById("findBar"), w) && marks(d).length === 0 && T.state.activeId === added.id, "the bar closes, the marks go, the new node is active");
     assert(T.fhActiveTab === "filter", "its result lives in Filtered");
-    // Filtered text rows: find marks the rows, not the editor.
     T.state.activeId = txt.id; w.render(); w.applyFhView("filter");
     fireKeydown(d, w, "g", { ctrlKey: true });
     await search(w, d, "Sensor");
-    assert(d.querySelectorAll("#tableRows mark.find-match-mark").length > 0 && marks(d).length === 0, "in Filtered the rows are marked (unchanged behaviour), the editor is not: " + d.querySelectorAll("#tableRows mark.find-match-mark").length + "/" + marks(d).length + " " + T.fhActiveTab + " " + count(d));
-    assert(count(d) === "1 / " + n || /\/ /.test(count(d)), "Filtered counter works, got " + count(d));
-    // Switching to Context while the bar is open marks the editor.
+    assert(d.querySelectorAll("#tableRows mark.find-match-mark").length > 0 && marks(d).length === 0, "in Filtered the rows are marked (unchanged behaviour), the editor is not");
+    assert(/\/ /.test(count(d)), "Filtered counter works, got " + count(d));
     w.applyFhView("highlight");
-    assert(marks(d).length === n, "switching to Context with the bar open marks the editor lines (" + marks(d).length + ")");
+    assert(marks(d).length === expectedMarks(T, d, /sensor/gi) && marks(d).length > 0, "switching to Context with the bar open marks the editor rows (" + marks(d).length + ")");
     w.applyFhView("filter");
     d.getElementById("findCloseBtn").click();
-    // A log root: rows marked as before, no editor involvement.
     T.state.activeId = log.id; w.render();
     fireKeydown(d, w, "g", { ctrlKey: true });
     await search(w, d, "INFO");
@@ -40742,6 +40723,241 @@ if (groupSelected()) {
     assert(/#textEditor\{[^}]*--rows-pad-left: ?calc\(26px \+ \(var\(--color-mark-w\) - 3px\)\)/.test(html), "…and the same --rows-pad-left formula");
     assert(/\.log-row\.text-row\{[^}]*height:var\(--text-row-h\)|\.log-row\.text-row\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html) &&
       /\.itv-line\{[^}]*height:var\(--text-row-h\)[^}]*\}/.test(html), "line height is --text-row-h in both");
+    assert(/#teRows\{|#teTop, #teBottom, #teRows\{display:block;\}/.test(html), "the editor's row container and spacers are plain blocks");
+    assert(/mark.find-match-mark \*[^{]*\{color:var\(--text-primary\)/.test(html.replace(/\s+/g, " ")) , "marked text keeps the normal text colour over the token colours");
+  });
+}
+
+/* ============================================================
+   GROUP 351 — Virtualized editor (docs/text-files-implementation-plan.md
+   Step 5): visible line list, windowed rendering, copy from the line model,
+   reveal / find / marks on a large file
+   ============================================================ */
+group(351);
+if (groupSelected()) {
+  const sim = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0];
+  const big351 = sim("plain", 30000, 5);
+  const json351 = sim("jsondoc", 600, 3);
+  const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
+  const LH = 19;
+  const lines = d => [...d.querySelectorAll("#textEditor .itv-line")];
+  const rowOf = (d, ts) => d.querySelector('#textEditor .itv-line[data-n="' + ts + '"]');
+  const scrollTo = (w, d, y) => { d.querySelector("#highlightBody").scrollTop = y; w.editorRender(false); };
+  const collapseAll = (w, T) => { T.editorView.folds.forEach(f => { f.collapsed = true; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true); };
+  const heightsOf = d => parseFloat(d.querySelector("#teTop").style.height) + parseFloat(d.querySelector("#teBottom").style.height);
+  const copyText = (w, d) => {
+    let got = null;
+    const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+    ev.clipboardData = { setData(type, v) { got = v; } };
+    d.dispatchEvent(ev);
+    return { text: got, prevented: ev.defaultPrevented };
+  };
+  const search351 = async (w, d, q) => { const input = d.getElementById("findInput"); input.value = q; fireInput(input, w); await sleep(400); };
+  const textNodeOf = row => { const wk = d => d.ownerDocument.createTreeWalker(row, 4); const t = wk(row).nextNode(); return t; };
+
+  await withApp(async (w, d, T) => {
+    section("351a. The visible line list: nested folds collapse/expand the list, positions map back to lines");
+    await addText(w, "orders.json", json351.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView, n = ev.n;
+    assert(n > 3000 && ev.folds.length > 500 && ev.vis === null && w.editorVisibleCount() === n, "a 600-entry document: " + n + " lines, " + ev.folds.length + " folds, all visible (vis is null)");
+    // Two nested folds: an entry object and a block inside it.
+    const outer = ev.folds.findIndex((f, i) => f.parent >= 0 && ev.folds.some(g => g.parent === i));
+    const inner = ev.folds.findIndex(g => g.parent === outer);
+    const fo = ev.folds[outer], fi = ev.folds[inner];
+    assert(outer >= 0 && inner >= 0 && fo.start < fi.start && fi.end < fo.end, "found a nested pair (" + fo.start + "-" + fo.end + " > " + fi.start + "-" + fi.end + ")");
+    w.toggleEditorFold(inner);
+    assert(ev.vis && ev.vis.length === n - (fi.end - fi.start), "collapsing the inner fold hides lines start+1..end (" + (n - ev.vis.length) + ")");
+    assert(ev.vis.includes(fi.start) && !ev.vis.includes(fi.start + 1) && !ev.vis.includes(fi.end) && ev.vis.includes(fi.end + 1), "the opener stays, the body and closing line go");
+    assert(w.editorPosOf(fi.start + 1) === w.editorPosOf(fi.start) && ev.vis[w.editorPosOf(fi.start + 1)] === fi.start, "a hidden line maps to its fold's opener");
+    w.toggleEditorFold(outer);
+    assert(ev.vis.length === n - (fo.end - fo.start), "collapsing the outer fold hides its whole range, the collapsed inner fold included (" + (n - ev.vis.length) + ")");
+    w.toggleEditorFold(inner); // toggled while hidden: only its flag flips
+    assert(ev.vis.length === n - (fo.end - fo.start) && !fi.collapsed, "toggling the hidden inner fold changes nothing visible");
+    w.toggleEditorFold(outer);
+    assert(ev.vis === null && w.editorVisibleCount() === n, "expanding the outer fold shows everything again (inner was re-opened)");
+    // Every line parent chain is consistent: a line's parent fold contains it.
+    let bad = 0;
+    for (let i = 0; i < n; i += 7) { const g = ev.lineParent[i]; if (g >= 0 && !(ev.folds[g].start < i && i <= ev.folds[g].end)) bad++; }
+    assert(bad === 0, "lineParent points at the innermost fold containing each line");
+    // Rendering slices the list: hidden lines are not rows.
+    collapseAll(w, T);
+    assert(ev.vis.length < 10 && lines(d).length === ev.vis.length, "all collapsed: the DOM holds just the top-level rows (" + lines(d).length + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351b. Windowed rendering on a 30,000-line file: only about the viewport (plus a screen each side) is in the DOM; scrolling reuses rows");
+    await addText(w, "big.txt", big351.text);
+    const txt = byName(T, "big.txt");
+    T.state.activeId = txt.id; w.render();
+    const ev = T.editorView, n = ev.n, body = d.querySelector("#highlightBody");
+    assert(n >= 30000, "the model has all " + n + " lines");
+    let rows = lines(d);
+    assert(rows.length > 40 && rows.length < 120, "only ~3 screens of rows are mounted (" + rows.length + " of " + n + ")");
+    assert(Math.abs(heightsOf(d) + rows.length * LH - n * LH) < 1, "spacers + rows add up to the full content height (" + n * LH + ")");
+    assert(rows[0].dataset.line === "0" && d.querySelector("#teTop").style.height === "0px", "at the top the first row is line 1 and the top spacer is empty");
+    // Scroll by a few rows: the rows that stay are the same elements.
+    const keep = rows[30];
+    scrollTo(w, d, 40 * LH);
+    rows = lines(d);
+    assert(rows.includes(keep) && rows.length < 120, "a small scroll keeps the rows still in range (same elements)");
+    assert(rows.every((r, i) => i === 0 || +r.dataset.line === +rows[i - 1].dataset.line + 1), "mounted rows are consecutive lines");
+    // Scroll to the middle: a completely new window around line 15000.
+    scrollTo(w, d, 15000 * LH);
+    rows = lines(d);
+    const first = +rows[0].dataset.line, last = +rows[rows.length - 1].dataset.line;
+    assert(first <= 15000 && last >= 15000 + 20 && rows.length < 120 && first > 14000, "the window follows the scroll position (" + first + ".." + last + ")");
+    assert(Math.abs(parseFloat(d.querySelector("#teTop").style.height) - first * LH) < 1 && Math.abs(heightsOf(d) + rows.length * LH - n * LH) < 1, "spacers follow");
+    // Then the bottom.
+    scrollTo(w, d, n * LH);
+    rows = lines(d);
+    assert(+rows[rows.length - 1].dataset.line === n - 1 && rows.length < 120, "at the end the last line is mounted (" + rows.length + " rows)");
+    // The scroll listener path: a scroll event renders the window (one frame later).
+    scrollTo(w, d, 0);
+    body.scrollTop = 9000 * LH;
+    body.dispatchEvent(new w.Event("scroll"));
+    await waitFor(() => lines(d).some(r => r.dataset.line === "9000"));
+    assert(lines(d).some(r => r.dataset.line === "9000"), "a scroll event renders the new window on the next frame");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351c. Copy from the line model: a selection across rendered and unrendered lines, partial first/last, folded lines included");
+    await addText(w, "big.txt", big351.text);
+    const txt = byName(T, "big.txt");
+    T.state.activeId = txt.id; w.render();
+    const ev = T.editorView, es = txt.entries, sel = w.getSelection();
+    const tn = line => textNodeOf(d.querySelector('#textEditor .itv-line[data-line="' + line + '"]'));
+    // Anchor in line 5 (offset 3), focus in line 6 (offset 4): within the window.
+    sel.setBaseAndExtent(tn(5), 3, tn(6), 4);
+    let c = copyText(w, d);
+    assert(c.prevented && c.text === es[5].message.slice(3) + "\n" + es[6].message.slice(0, 4), "a two-line selection copies the tail of the first and the head of the second line, got " + JSON.stringify(c.text));
+    // Now scroll far away: the anchor row (selection endpoint) stays mounted, pinned.
+    const anchorRow = d.querySelector('#textEditor .itv-line[data-line="5"]');
+    scrollTo(w, d, 15000 * LH);
+    assert(anchorRow.isConnected && anchorRow.classList.contains("itv-pinned") && anchorRow.style.position === "absolute", "a row holding a selection endpoint stays in the DOM, pinned, when it scrolls out of range");
+    assert(!d.querySelector('#textEditor .itv-line[data-line="6"]') || d.querySelector('#textEditor .itv-line[data-line="6"]').classList.contains("itv-pinned"), "…while its unselected neighbours are unmounted");
+    // Extend the selection to a row near line 15003 (offset 4): 15000 lines between are NOT in the DOM.
+    const far = d.querySelector('#textEditor .itv-line[data-line="15003"]');
+    sel.setBaseAndExtent(textNodeOf(anchorRow), 3, textNodeOf(far), 4);
+    scrollTo(w, d, 15000 * LH + 40);
+    c = copyText(w, d);
+    const expected = [es[5].message.slice(3)].concat(es.slice(6, 15003).map(e => e.message), [es[15003].message.slice(0, 4)]).join("\n");
+    assert(c.prevented && c.text === expected, "copy spans lines 6..15004 although only ~60 are rendered (" + (c.text || "").length + " chars, expected " + expected.length + ")");
+    assert(c.text.split("\n").length === 15003 - 5 + 1, "one text line per file line");
+    // Backwards selection (focus before anchor) gives the same text.
+    sel.setBaseAndExtent(textNodeOf(far), 4, textNodeOf(anchorRow), 3);
+    assert(copyText(w, d).text === expected, "a backwards selection copies the same text");
+    // Dropping the selection releases the pinned row.
+    sel.removeAllRanges();
+    w.editorRender(true);
+    assert(!anchorRow.isConnected && !d.querySelector(".itv-pinned"), "with no selection the pinned row is unmounted again");
+    assert(copyText(w, d).prevented === false, "no selection: the copy event is left alone");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351d. Copy: a selection across a collapsed fold includes the hidden lines in full");
+    await addText(w, "orders.json", json351.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView, es = js.entries, sel = w.getSelection();
+    const f = ev.folds.find(x => x.start > 5 && x.end - x.start > 6);
+    w.toggleEditorFold(ev.folds.indexOf(f));
+    assert(!d.querySelector('#textEditor .itv-line[data-line="' + (f.start + 1) + '"]'), "the fold's body is not rendered");
+    const a = d.querySelector('#textEditor .itv-line[data-line="' + (f.start - 1) + '"]'), b = d.querySelector('#textEditor .itv-line[data-line="' + (f.end + 1) + '"]');
+    const tnode = row => { const wk = d.createTreeWalker(row, 4); let t; while ((t = wk.nextNode())) { if (!t.parentNode.closest(".itv-fold-toggle, .itv-fold-ellipsis")) return t; } };
+    sel.setBaseAndExtent(tnode(a), 2, tnode(b), 5);
+    const text = copyText(w, d).text;
+    const exp = [es[f.start - 1].message.slice(2)].concat(es.slice(f.start, f.end + 1).map(e => e.message), [es[f.end + 1].message.slice(0, 5)]).join("\n");
+    assert(text === exp && text.includes(es[f.start + 1].message.trim()), "the collapsed lines are part of the copied text (" + (f.end - f.start + 1) + " hidden/folded lines)");
+    assert(!text.includes("▸") && !text.includes("lines"), "the fold toggle and the '… N lines' marker are not copied");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351e. Reveal into a folded block of a large document: unfolds the chain, mounts and centres the line, others stay collapsed");
+    await addText(w, "orders.json", json351.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView;
+    const f = w.createFilterNode(js.id, "text", "Position update");
+    T.state.activeId = f.id; w.render(); w.applyFhView("filter");
+    const results = w.getEntries(f.id);
+    assert(results.length > 20, "many matches (" + results.length + ")");
+    w.applyFhView("highlight");
+    collapseAll(w, T);
+    w.applyFhView("filter");
+    const target = results[Math.floor(results.length * 0.8)], idx = js.entries.findIndex(e => e.id === target.id);
+    const chain = []; for (let g = ev.lineParent[idx]; g >= 0; g = ev.folds[g].parent) chain.push(g);
+    assert(chain.length >= 2 && ev.vis.length < 10, "the target (line " + target.ts + ") is hidden in " + chain.length + " nested folds");
+    w.revealInHighlightView(target, null, null);
+    const row = rowOf(d, target.ts);
+    assert(!!row && row.classList.contains("flash"), "the line is mounted and flashes");
+    assert(chain.every(g => !ev.folds[g].collapsed), "the chain is open");
+    assert(ev.folds.filter(x => x.collapsed).length > ev.folds.length - chain.length - 5, "nearly every other fold is still collapsed (" + ev.folds.filter(x => x.collapsed).length + " of " + ev.folds.length + ")");
+    const body = d.querySelector("#highlightBody");
+    assert(Math.abs(body.scrollTop - Math.max(0, w.editorRowScrollTop(w.editorPosOf(idx)) - 200 + LH / 2)) <= 1, "centred at " + body.scrollTop);
+    assert(lines(d).length < 80, "still a small window (" + lines(d).length + " rows) for " + ev.n + " lines");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351f. Find: stepping into an unrendered region mounts it, marks the match, unfolds; hit and find marks appear on newly rendered rows");
+    const fb = d.createElement("script");
+    fb.textContent = "window.__find = { get state() { return findState; } };";
+    d.body.appendChild(fb);
+    await addText(w, "big.txt", big351.text);
+    const txt = byName(T, "big.txt");
+    const f = w.createFilterNode(txt.id, "text", "Heartbeat");
+    T.state.activeId = f.id; w.render(); w.applyFhView("highlight");
+    const ev = T.editorView;
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search351(w, d, "Spectrum");
+    const hits = w.__find.state.hits;
+    assert(hits.length > 100 && w.__find.state.done, "the scan covers the whole file (" + hits.length + " hits)");
+    assert(!d.querySelector("#textEditor mark.editor-find-mark") || [...d.querySelectorAll("#textEditor mark.editor-find-mark")].length < 40, "only rendered rows carry marks");
+    const lastHit = hits[hits.length - 1];
+    while (w.__find.state.cur !== hits.length - 1) { fireKeydown(d, w, "F3", { shiftKey: true }); if (hits.length - 1 - w.__find.state.cur > 1 && w.__find.state.cur > 3) break; } // Shift+F3 from the top wraps to the last hit
+    await sleep(30);
+    const row = rowOf(d, txt.entries[lastHit].ts);
+    assert(!!row && row.classList.contains("find-cur") && row.querySelector("mark.editor-find-mark") && / \/ /.test(d.getElementById("findCount").textContent), "the last hit (line " + txt.entries[lastHit].ts + ", far outside the first window) is mounted, current and marked");
+    const nfmt = hits.length.toLocaleString("de-DE");
+    assert(d.getElementById("findCount").textContent === nfmt + " / " + nfmt, "the counter reads n / m, got " + d.getElementById("findCount").textContent);
+    scrollTo(w, d, hits[Math.floor(hits.length / 2)] * LH - 100);
+    const newRows = lines(d);
+    const hitRows = newRows.filter(r => hits.includes(+r.dataset.line));
+    assert(hitRows.length > 0 && hitRows.every(r => r.querySelector("mark.editor-find-mark")) && newRows.every(r => hits.includes(+r.dataset.line) || !r.querySelector("mark.editor-find-mark")),
+      "rows scrolled into view get their find marks as they are built (" + hitRows.length + " hit rows)");
+    scrollTo(w, d, 12000 * LH);
+    const hl = lines(d).filter(r => ev.hitIds.has(txt.entries[+r.dataset.line].id));
+    assert(hl.length > 0 && hl.every(r => r.classList.contains("hit") && r.querySelector(".text-match-mark")), "…and so do the filter's hit classes and text marks (" + hl.length + " rows)");
+    d.getElementById("findCloseBtn").click();
+    assert(!d.querySelector("#textEditor mark.editor-find-mark") && !d.querySelector("#textEditor .find-cur"), "closing the bar clears the marks");
+    scrollTo(w, d, 20000 * LH);
+    assert(!d.querySelector("#textEditor mark.editor-find-mark"), "…and rows built afterwards are not marked");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351g. Wrap with the virtualized editor: heights are estimated from the character count; the scroll math stays consistent");
+    await addText(w, "big.txt", sim("plain", 3000, 5).text);
+    const txt = byName(T, "big.txt");
+    T.state.activeId = txt.id; w.render();
+    d.querySelector("#contextToolbar .toggle-wrap").click();
+    const ev = T.editorView, cols = ev.cols;
+    assert(cols > 10 && ev.tops && ev.tops.length === ev.n + 1, "wrap on: row tops from " + cols + " columns");
+    let expectTotal = 0;
+    for (const e of txt.entries) expectTotal += LH * Math.max(1, Math.ceil((e.message.length + 3 * (e.message.split("\t").length - 1)) / cols));
+    assert(ev.tops[ev.n] === expectTotal && expectTotal > ev.n * LH, "the content height is the sum of the estimated row heights (" + expectTotal + ")");
+    const wrapRows = lines(d);
+    assert(Math.abs(heightsOf(d) + wrapRows.reduce((h, r) => h + ev.tops[+r.dataset.line + 1] - ev.tops[+r.dataset.line], 0) - expectTotal) < 1, "spacers + mounted rows' estimated heights add up to the content height");
+    // Scrolling still lands on the right line.
+    const y = ev.tops[1500] + 2 + 3;
+    scrollTo(w, d, y);
+    const anchor = w.captureEditorAnchor();
+    assert(anchor.idx === 1500 && anchor.offset === ev.tops[1500] - y, "the anchor at an arbitrary scroll position maps to line 1501 (offset " + anchor.offset + ")");
+    assert(lines(d).some(r => r.dataset.line === "1500"), "its row is mounted");
+    // Reveal works with variable heights.
+    w.revealEditorLine(2500, { center: true });
+    assert(Math.abs(d.querySelector("#highlightBody").scrollTop - (2 + ev.tops[2500] - 200 + (ev.tops[2501] - ev.tops[2500]) / 2)) <= 1 && lines(d).some(r => r.dataset.line === "2500"), "reveal centres by the estimated row geometry");
   });
 }
 
@@ -45279,6 +45495,14 @@ process.exitCode = failed ? 1 : 0;
       views; focus follows mousedown/clicks; Alt+Arrow and Ctrl+0..5 global). Updated
       groups 18, 32, 36, 46, 57, 96, 99, 110a, 150, 157a, 220a/j, 221c, 262, 319d/e,
       320b, 321e.
+   Group 351 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 5):
+              the virtualized editor: visible line list over nested folds,
+              windowed rendering (~3 screens in the DOM of a 30k-line file),
+              copy rebuilt from the line model across unrendered lines
+              (pinned selection endpoints, partial first/last, folded lines),
+              reveal / find / hit+find marks on newly built rows, wrap
+              geometry. Groups 349/350 rewritten from "every line is in the
+              DOM" to the model + window.
    Group 350 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 4):
               the find bar in the Context editor (count, in-place marks,
               F3/Shift+F3 stepping with unfold + centre, case/regex/wildcard,
