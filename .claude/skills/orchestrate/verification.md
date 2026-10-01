@@ -9,11 +9,18 @@ input, not proof.
 everything asked for is there, nothing outside scope changed, CLAUDE.md
 gotchas respected (stopPropagation on popup openers, DOM identity,
 immutable `node.value`, new node fields in every persistence carrier),
-test group added with its `group(N);` marker and TEST PROVENANCE line.
+test group added with its `group(N);` marker and TEST PROVENANCE line, and
+new or changed tests keep `tests/README.md`'s timing rules ("Extending this
+suite", step 2: `waitFor` instead of fixed sleeps, "nothing happened"
+checked right after the step, no wall-clock-dependent paths).
 
 ## 2. Tests
 
-- `cd tests && npm test` — full suite, note the pass count.
+- `cd tests && npm test` — full suite, note the pass count, and look at the
+  "Slowest groups" list above it: a new or changed group in it gets a look.
+- Before the session's final push: `SHARDS=8 npm test` once (more shards
+  than cores). A failure only there is a load-dependent test bug: fix it,
+  don't re-run it away.
 - Rust / Tauri changes: `cd desktop && npm run build`, plus
   `cargo test -p philogg-logparse` in `desktop/src-tauri/` if the native
   parser changed.

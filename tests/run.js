@@ -11,10 +11,14 @@
 // fixed split. Every child prints a `##SHARD {...}` line, which is summed here
 // into the single total the suite has always reported — so a dropped group
 // shows up immediately as a lower count than the one in tests/README.md.
+// Their `##GROUPS {...}` lines (wall time per group) give the list of the
+// slowest groups printed above the total, so a group that suddenly costs
+// seconds more stands out on the next run instead of going unnoticed.
 //
 //   npm test                 shard across the available cores
 //   SHARDS=1 npm test        one process, no sharding (what CI/debugging wants)
 //   GROUP=58,127 npm test    just those groups, in one process (~1-2s)
+//   GROUP=1,2 SHARDS=2 npm test   those groups, sharded (GROUP 346e does this)
 "use strict";
 
 const { spawn } = require("child_process");
@@ -24,8 +28,10 @@ const path = require("path");
 
 const TEST_FILE = path.join(__dirname, "philogg.regression.test.js");
 const cores = typeof os.availableParallelism === "function" ? os.availableParallelism() : os.cpus().length;
-// GROUP= is a single-group dev run; sharding it would only add process startup.
-const shards = process.env.GROUP ? 1 : Math.max(1, Math.min(Number(process.env.SHARDS) || cores, 8));
+// GROUP= is a single-group dev run; sharding it would only add process startup,
+// unless SHARDS asks for it explicitly.
+const shards = process.env.GROUP && !process.env.SHARDS ? 1 : Math.max(1, Math.min(Number(process.env.SHARDS) || cores, 8));
+const SLOWEST_LISTED = 10;
 // Each child's V8 heap is capped at its share of the free memory (half of it:
 // RSS runs at about twice the heap). Uncapped, V8 keeps the closed windows'
 // dead vm contexts around until memory gets tight, so every child grew to
@@ -56,10 +62,15 @@ function runShard(index) {
 
   let passed = 0, failed = 0, broken = false;
   const failures = [];
+  const groupMs = {};
   for (const r of results) {
-    const marker = r.out.split("\n").find(l => l.startsWith("##SHARD "));
-    // Forward the child's own output verbatim, minus the machine-readable line.
-    process.stdout.write(r.out.split("\n").filter(l => !l.startsWith("##SHARD ")).join("\n"));
+    const lines = r.out.split("\n");
+    const marker = lines.find(l => l.startsWith("##SHARD "));
+    const timing = lines.find(l => l.startsWith("##GROUPS "));
+    // Each group ran in one shard; the others only walked past it (~0ms).
+    if (timing) for (const [g, ms] of Object.entries(JSON.parse(timing.slice("##GROUPS ".length)))) groupMs[g] = Math.max(groupMs[g] || 0, ms);
+    // Forward the child's own output verbatim, minus the machine-readable lines.
+    process.stdout.write(lines.filter(l => !l.startsWith("##SHARD ") && !l.startsWith("##GROUPS ")).join("\n"));
     if (r.err.trim()) process.stderr.write(r.err);
     if (shards === 1) {
       // Unsharded: the child already printed the real summary and set the code.
@@ -80,6 +91,11 @@ function runShard(index) {
   const secs = ((Date.now() - started) / 1000).toFixed(1);
   if (shards > 1) {
     console.log("\n" + "=".repeat(60));
+    const slowest = Object.entries(groupMs).sort((a, b) => b[1] - a[1]).slice(0, SLOWEST_LISTED);
+    if (slowest.length) {
+      console.log("Slowest groups:");
+      slowest.forEach(([g, ms]) => console.log("  GROUP " + g.padEnd(5) + (ms / 1000).toFixed(1).padStart(6) + "s"));
+    }
     console.log(passed + " passed, " + failed + " failed across " + shards + " shards in " + secs + "s");
     failures.forEach(f => console.log("FAIL  " + f));
   } else {
