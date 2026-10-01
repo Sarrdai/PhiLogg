@@ -8,7 +8,7 @@ or approximate size) or growing live for tailing and folder watch.
 | --- | --- |
 | `core.js` | The generator engine: scenarios, formats, size control, ZIP writer. UMD — `require`d by Node, loaded by the page via `<script src>`. |
 | `cli.js` | Headless front end (Node ≥ 18, no dependencies). |
-| `screenshot.js` | Opens `philogg.html` in headless Chromium with generated files (and their format definitions) loaded, and saves a screenshot. |
+| `screenshot.js` | Opens `philogg.html` in headless Chromium with generated files (and their format definitions) loaded, and saves a screenshot. `--url <page url>` opens an http(s) deep link (e.g. `?session=`) instead. |
 | `../log-simulator.html` | Browser UI: the same options, download or write to a folder, plus live writing (tailing, rotation, burst, truncate). |
 
 Same seed + same options = byte-identical output in the CLI and the UI, in
