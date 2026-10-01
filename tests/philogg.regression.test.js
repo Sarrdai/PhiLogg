@@ -39786,7 +39786,7 @@ await withApp(async (w, d, T) => {
 /* ============================================================
    GROUP 347 — Text files (.txt/.json/.xml) load as ONE plain-text file node
    Origin: 2026-10-01, person-requested (docs/ui-concept-text-files.md, Step 1
-   of docs/text-files-implementation-plan.md). Every entry point (loose files,
+   of docs/ui-and-views.md "Text files"). Every entry point (loose files,
    a watched folder, a ZIP entry) that used to open an inline text viewer now
    loads an ordinary file node pinned to the Plain text format
    (formatIdForLoad) with node.textSyntax = "json" | "xml" | null; the
@@ -40061,7 +40061,7 @@ if (groupSelected()) {
 /* ============================================================
    GROUP 348 — Filtered text mode + shared text header bar
    Origin: 2026-10-01, person-requested (docs/ui-concept-text-files.md, Step 2
-   of docs/text-files-implementation-plan.md). When the ACTIVE node's root is
+   of docs/ui-and-views.md "Text files"). When the ACTIVE node's root is
    a plain-text file (not "every loaded file is" — a mixed session keeps the
    log table for log roots) the Filtered view becomes an editor-like listing:
    .text-row rows with no level stripe/separators, TEXT_ROW_HEIGHT (19px,
@@ -40217,7 +40217,7 @@ if (groupSelected()) {
 
 /* ============================================================
    GROUP 349 — Editor as the Context view of a plain-text root
-   (docs/text-files-implementation-plan.md Step 3; virtualized since Step 5,
+   (docs/ui-and-views.md "Text files"; virtualized,
    so the DOM holds only the rows near the viewport — the assertions walk the
    line model (T.editorView) and scroll the window where they need more)
    ============================================================ */
@@ -40549,7 +40549,7 @@ if (groupSelected()) {
 }
 
 /* ============================================================
-   GROUP 350 — Find bar in the editor (docs/text-files-implementation-plan.md
+   GROUP 350 — Find bar in the editor (docs/ui-and-views.md "Text files"
    Step 4; marks apply to the rendered rows since Step 5) + Context/Filtered
    vertical parity (CSS)
    ============================================================ */
@@ -40729,7 +40729,7 @@ if (groupSelected()) {
 }
 
 /* ============================================================
-   GROUP 351 — Virtualized editor (docs/text-files-implementation-plan.md
+   GROUP 351 — Virtualized editor (docs/ui-and-views.md "Text files"
    Step 5): visible line list, windowed rendering, copy from the line model,
    reveal / find / marks on a large file
    ============================================================ */
@@ -40958,6 +40958,44 @@ if (groupSelected()) {
     // Reveal works with variable heights.
     w.revealEditorLine(2500, { center: true });
     assert(Math.abs(d.querySelector("#highlightBody").scrollTop - (2 + ev.tops[2500] - 200 + (ev.tops[2501] - ev.tops[2500]) / 2)) <= 1 && lines(d).some(r => r.dataset.line === "2500"), "reveal centres by the estimated row geometry");
+  });
+  await withApp(async (w, d, T) => {
+    section("351h. Ctrl+A in the Context editor selects the whole file through the model; log views keep the native select-all");
+    await addText(w, "orders.json", json351.text);
+    await addText(w, "app.log", sim("default", 40, 2).text);
+    const js = byName(T, "orders.json"), log = byName(T, "app.log");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView, es = js.entries, sel = w.getSelection();
+    collapseAll(w, T); // folded lines must be in the copied text too
+    const down = fireKeydown(d, w, "a", { ctrlKey: true });
+    assert(ev.selectAll === true && sel.anchorNode === d.querySelector("#teRows") && !sel.isCollapsed, "Ctrl+A selects the editor's rows and sets the select-all state");
+    let c = copyText(w, d);
+    assert(c.prevented && c.text === es.map(e => e.message).join("\n") && c.text.split("\n").length === es.length, "copy gives every line of the file (" + es.length + "), folded ones included, although only a few rows are rendered (" + lines(d).length + ")");
+    // The window moves: new rows join the visual selection.
+    ev.folds.forEach(f => { f.collapsed = false; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true);
+    scrollTo(w, d, 5000 * LH);
+    assert(sel.anchorNode === d.querySelector("#teRows") && sel.focusOffset === d.querySelector("#teRows").childNodes.length && ev.selectAll, "after scrolling the selection still covers the rendered rows " + [sel.anchorNode && sel.anchorNode.nodeName, sel.focusOffset, d.querySelector("#teRows").childNodes.length, ev.selectAll, ev.n].join(","));
+    // A click / new selection clears the state; copy is native again.
+    const row = lines(d)[3];
+    sel.collapse(row.lastChild, 0);
+    await sleep(30);
+    assert(ev.selectAll === false && copyText(w, d).prevented === false, "a click clears select-all; copy is left alone");
+    sel.setBaseAndExtent(textNodeOf(lines(d)[2]), 1, textNodeOf(lines(d)[4]), 2);
+    fireKeydown(d, w, "a", { ctrlKey: true });
+    sel.setBaseAndExtent(textNodeOf(lines(d)[2]), 1, textNodeOf(lines(d)[4]), 2);
+    await sleep(30);
+    assert(ev.selectAll === false, "a new text selection clears it");
+    // Not in an input; not for other keys.
+    const input = d.getElementById("filterInput");
+    input.focus();
+    fireKeydown(input, w, "a", { ctrlKey: true });
+    assert(ev.selectAll === false, "Ctrl+A inside a text input is the input's own select-all");
+    input.blur();
+    // Log views: untouched (native select-all).
+    T.state.activeId = log.id; w.render(); w.applyFhView("highlight");
+    const logDown = new w.KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true });
+    d.dispatchEvent(logDown);
+    assert(logDown.defaultPrevented === false && ev.selectAll === false, "a log view's Ctrl+A is not handled (native select-all)");
   });
 }
 

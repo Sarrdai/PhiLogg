@@ -1,6 +1,7 @@
 # Konzept: Textdateien als ein Knoten, Editor als Context-Ansicht
 
-Status: **Entschieden** (2026-10-01), Umsetzung beauftragt. Interaktives
+Status: **Umgesetzt** (2026-10-01) — aktueller Stand in `docs/ui-and-views.md`
+(Abschnitt "Text files"). Interaktives
 Mockup: https://claude.ai/artifact/DxE8868LJws1pQkKRyhRwd (Variantenvergleich
 A/B/C, der zu dieser Entscheidung geführt hat:
 https://claude.ai/artifact/UWSbsB4vBGqAbvJAwzDN7x). Nach der Umsetzung
