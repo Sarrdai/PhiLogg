@@ -7,13 +7,17 @@ const fs = require("fs");
 const path = require("path");
 const zlib = require("zlib");
 const sim = require("./core.js");
+const tour = require("./tour.js");
 
 const HELP = `PhiLogg log simulator — writes sample logs for every PhiLogg feature.
 
 Usage: node tools/log-sim/cli.js [options]
 
 Content
-  -f, --format <name>      ${Object.keys(sim.FORMATS).join(" | ")} (default: default)
+  -f, --format <name>      ${Object.keys(sim.FORMATS).concat("tour").join(" | ")} (default: default)
+                           tour: writes the guided tour (welcome.log, its format,
+                           welcome.session.json, demo/app.log) into the -o
+                           directory; the other content/amount options are ignored
   -s, --scenarios <list>   comma list, "all" (default) or "all,-gaps,-text"
       --seed <n>           PRNG seed; same seed + options = same bytes (default 1)
       --start <time>       first timestamp, e.g. 2026-01-15T08:00:00 (default)
@@ -76,9 +80,13 @@ function parseArgs(argv) {
   return a;
 }
 
+const TOUR_HINT = "Not random output: writes welcome.log (the tour, custom format), welcome.logformat.json, welcome.session.json and demo/app.log into the -o directory " +
+  "(-n/--size/-s/--seed/--files are ignored). Open it with philogg.html?session=welcome.session.json served next to the files (?session= needs http(s)).";
+
 function listAll() {
   const out = ["FORMATS"];
   for (const [k, f] of Object.entries(sim.FORMATS)) out.push("  " + k.padEnd(9) + f.label + " (" + f.ext + ")", "           " + f.hint);
+  out.push("  tour".padEnd(11) + "PhiLogg guided tour (a log + session file + demo log)", "           " + TOUR_HINT);
   out.push("", "SCENARIOS (default: all)");
   for (const [k, s] of Object.entries(sim.SCENARIOS)) out.push("  " + k.padEnd(11) + s.label, "             " + s.hint);
   return out.join("\n") + "\n";
@@ -97,7 +105,8 @@ function genOptions(a) {
     skew: a.skew != null ? +a.skew : 0,
     prefix: a.prefix || null,
   };
-  if (!sim.FORMATS[o.format]) throw new Error("Unknown format '" + o.format + "' (see --list)");
+  if (o.format !== "tour" && !sim.FORMATS[o.format]) throw new Error("Unknown format '" + o.format + "' (see --list)");
+  if (o.format === "tour") return o;
   o.scenarios = sim.normalizeScenarios(o.scenarios);
   if (o.layout !== "rotate" && o.layout !== "parallel") throw new Error("--layout must be rotate or parallel");
   if (a.entries != null) o.entries = +a.entries;
@@ -119,6 +128,20 @@ function writeFormatFile(o, dir, log) {
   const p = path.join(dir, prefix + ".logformat.json");
   fs.writeFileSync(p, JSON.stringify(doc, null, 2) + "\n");
   log("format definition: " + p + "  (PhiLogg: Open -> Import..., or drop it onto the window)");
+}
+
+function writeTour(a, log) {
+  if (a["format-json"]) { process.stdout.write(JSON.stringify(tour.formatExport(), null, 2) + "\n"); return; }
+  if (!a.out) throw new Error("-f tour needs -o <directory> (it writes several files)");
+  if (a.follow || a.zip || a.gzip) throw new Error("-f tour does not support --follow/--zip/--gzip");
+  const dir = a.out;
+  for (const f of tour.generateTour()) {
+    const p = path.join(dir, f.path);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, f.text);
+    log(p + "  " + human(Buffer.byteLength(f.text)));
+  }
+  log("open it: serve the directory plus philogg.html over http and visit philogg.html?session=welcome.session.json");
 }
 
 async function writeBatch(a, o, log) {
@@ -211,6 +234,7 @@ async function main() {
   if (a.list) { process.stdout.write(listAll()); return; }
   const o = genOptions(a);
   const log = a.quiet ? () => {} : s => process.stderr.write(s + "\n");
+  if (o.format === "tour") return writeTour(a, log);
   if (a["format-json"]) {
     const doc = sim.formatExport(o.format, o.prefix);
     process.stdout.write(doc ? JSON.stringify(doc, null, 2) + "\n" : "null\n");

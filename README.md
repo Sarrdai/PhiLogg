@@ -281,7 +281,9 @@ deployments possible:
 - **Deep-link loading** — `philogg.html?url=<encoded-url>` fetches and opens
   a log at boot, for linking straight to a log from CI/a report (requires
   PhiLogg itself served over `http(s)`, not opened as a local file, and CORS
-  on the remote log server).
+  on the remote log server). `?session=<url>` opens a whole session file
+  the same way (logs referenced by URL or embedded, filters, notes, an
+  optional hint banner), and `?open=format` opens the format dialog.
 - **"Open File Location" / "Copy Path" / "Copy URL"** — a file's tree context
   menu jumps straight to its containing folder in the OS file manager, or
   puts the path on the clipboard, whenever a real path is known. That's the

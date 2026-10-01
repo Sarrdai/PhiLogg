@@ -1059,6 +1059,18 @@
      reliably contribute to a shrinking flex item's automatic minimum size
      the way normal flex children do. Hit exactly this regression once
      already; keep both declarations. */
+  #tourBanner{
+    flex:0 0 auto; display:flex; gap:12px; align-items:center; padding:9px 14px;
+    background:var(--accent-soft); border-bottom:1px solid var(--border);
+    font-size:13px; color:var(--text-primary);
+  }
+  #tourBanner.hidden{display:none;}
+  #tourBanner b{color:var(--accent-strong); font-weight:700;}
+  #tourBannerClose{
+    margin-left:auto; flex:0 0 auto; background:none; border:0; padding:2px 4px;
+    font:inherit; font-size:12px; color:var(--text-secondary); cursor:pointer;
+  }
+  #tourBannerClose:hover{color:var(--text-primary);}
   #viewBar{
     flex:0 0 auto; display:flow-root;
     padding:8px 16px; min-height:16px;
@@ -4709,6 +4721,12 @@
     <div id="sidebarResizer" title="Drag to resize"></div>
 
     <section id="content">
+
+      <!-- Tour banner: set by a session file's `banner` (see setSessionBanner). -->
+      <div id="tourBanner" class="hidden" role="note">
+        <span class="tour-banner-text"></span>
+        <button type="button" id="tourBannerClose" aria-label="Close the tour hint">× close tour</button>
+      </div>
 
       <div id="filterPopup" class="hidden">
         <form id="filterForm">
@@ -11625,6 +11643,11 @@ function formatTime(ms) {
   const d = new Date(ms);
   const p2 = n => String(n).padStart(2, "0");
   const p3 = n => String(n).padStart(3, "0");
+  // A tsFormat without date tokens parses to 1970-01-01 local (see
+  // parseTimestampGeneric): that placeholder date is not shown.
+  if (d.getFullYear() === 1970 && d.getMonth() === 0 && d.getDate() === 1) {
+    return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}`;
+  }
   return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${p3(d.getMilliseconds())}`;
 }
 
@@ -31467,6 +31490,16 @@ async function loadFromUrlParam() {
   await loadUrlIntoTree(url);
 }
 
+// ?session=<url> loads a session file (files + filters + notes + settings, see
+// loadSessionFromUrl); ?open=format opens the "Add log format" dialog, after
+// the session load when both are given.
+async function loadSessionAndOpenFromParams() {
+  const params = new URLSearchParams(location.search);
+  const sessionUrl = params.get("session");
+  if (sessionUrl) await loadSessionFromUrl(sessionUrl);
+  if (params.get("open") === "format") openFormatEditDialog(null);
+}
+
 // Called by the desktop wrapper (its single-instance / file-association
 // route) to hand an already-running window a file opened after boot —
 // e.g. a second file-association double-click — instead of spawning a new
@@ -40176,7 +40209,13 @@ function parseLogFormatExport(text) {
   try { data = JSON.parse(text); } catch { return null; }
   if (!data || typeof data !== "object" || data.format !== LOG_FORMAT_FILE_FORMAT) return null;
   if (!(data.version <= LOG_FORMAT_FILE_VERSION)) return { error: "Log format file was saved by a newer version" };
-  const src = data.logFormat;
+  return normalizeLogFormatExport(data.logFormat, data.fileNamePatterns);
+}
+
+// The validation + field reduction shared by a .logformat.json import
+// (parseLogFormatExport) and a session file's per-file `logFormat` record.
+// Returns { logFormat, fileNamePatterns } or { error }.
+function normalizeLogFormatExport(src, rawFileNamePatterns) {
   if (!src || typeof src !== "object" || typeof src.name !== "string") return { error: "Log format file is incomplete" };
   if (src.mode !== "regex" && src.mode !== "pattern" && src.mode !== "json") return { error: "Log format file uses an unsupported format mode" };
   const compiled = src.mode === "json" ? {} : src.mode === "regex" ? validateFormatRegex(String(src.regex || "")) : compileFormatPattern(String(src.pattern || ""), String(src.tsFormat || ""));
@@ -40194,7 +40233,7 @@ function parseLogFormatExport(text) {
   else logFormat.columnDefs = logFormat.columnDefs.filter(c => c && typeof c.key === "string");
   if (logFormat.messageVisible !== undefined) logFormat.messageVisible = !!logFormat.messageVisible;
   if (!(logFormat.sampleSetup && Array.isArray(logFormat.sampleSetup.lines))) delete logFormat.sampleSetup;
-  const fileNamePatterns = [...new Set((Array.isArray(data.fileNamePatterns) ? data.fileNamePatterns : [])
+  const fileNamePatterns = [...new Set((Array.isArray(rawFileNamePatterns) ? rawFileNamePatterns : [])
     .filter(g => typeof g === "string" && g.trim()).map(g => g.trim()))];
   return { logFormat, fileNamePatterns };
 }
@@ -44459,27 +44498,53 @@ importFileInput.addEventListener("change", ev => {
 // Envelope validation mirrors importFilterJson: a file saved by a newer
 // version refuses to import with a toast rather than partially applying an
 // unknown shape.
-function importSessionJson(text) {
+function parseSessionJson(text) {
   let data;
-  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return; }
+  try { data = JSON.parse(text); } catch { showCopyToast("Not a valid JSON file"); return null; }
   if (!data || data.format !== SESSION_FILE_FORMAT || !Array.isArray(data.files)) {
     showCopyToast("Not a PhiLogg session file");
-    return;
+    return null;
   }
-  if (data.version > SESSION_FILE_VERSION) { showCopyToast("Session file was saved by a newer version"); return; }
-  runSessionImport(data); // async continuation (tier-3 dialogs), fire-and-forget
+  if (data.version > SESSION_FILE_VERSION) { showCopyToast("Session file was saved by a newer version"); return null; }
+  return data;
 }
 
-async function runSessionImport(data) {
-  const summary = { auto: 0, tier2Names: [], manual: 0, skipped: 0, placed: 0, totalBookmarks: 0, notesPlaced: 0, totalNotes: 0 };
+function importSessionJson(text) {
+  const data = parseSessionJson(text);
+  if (data) runSessionImport(data); // async continuation (tier-3 dialogs), fire-and-forget
+}
+
+// opts.fresh (the ?session= deep link, see loadSessionFromUrl): every record
+// with a `url` (fetched, resolved against opts.baseUrl) or embedded `text` is
+// loaded as a NEW file instead of being matched against the open ones; a
+// record with neither still goes through tiers 1-2, and an unmatched one is
+// skipped (no tier-3 dialog — nobody is there to answer it).
+async function runSessionImport(data, opts = {}) {
+  const summary = { auto: 0, loaded: 0, tier2Names: [], manual: 0, skipped: 0, placed: 0, totalBookmarks: 0, notesPlaced: 0, totalNotes: 0 };
   const resolved = new Map(); // exportId -> { fileNode, refMap }
   const unresolved = [];
+  const freshNodeIds = [];
+  let recIndex = -1;
 
   // Pass 1: silent automatic matches. Tier-2 matches surface a passive toast
   // for transparency (the file plainly grew/shrank outside the exported
   // window); tier 1 applies silently.
   for (const rec of data.files) {
+    recIndex++;
     if (!rec || typeof rec !== "object") continue;
+    if (opts.fresh && (typeof rec.url === "string" || typeof rec.text === "string")) {
+      const node = await loadSessionRecordFresh(rec, opts.baseUrl);
+      if (!node) { summary.skipped++; continue; }
+      const { refMap, placed, total, notesPlaced, notesTotal } = applySessionEntryByOrdinal(rec, node);
+      resolved.set(rec.exportId !== undefined ? rec.exportId : "#" + recIndex, { fileNode: node, refMap });
+      freshNodeIds.push(node.id);
+      summary.loaded++;
+      summary.placed += placed;
+      summary.totalBookmarks += total;
+      summary.notesPlaced += notesPlaced;
+      summary.totalNotes += notesTotal;
+      continue;
+    }
     const { matchId, tier, nearMissIds } = matchExportedFile(rec, state.rootIds);
     if (matchId) {
       const fileNode = state.nodes[matchId];
@@ -44502,7 +44567,8 @@ async function runSessionImport(data) {
   // Pass 2: one reassignment dialog per unresolved entry — one at a time
   // keeps the metadata comparison legible. Cancel skips this AND all
   // remaining entries (already-applied ones stay).
-  for (let i = 0; i < unresolved.length; i++) {
+  if (opts.fresh) summary.skipped += unresolved.length;
+  else for (let i = 0; i < unresolved.length; i++) {
     const result = await resolveExportedFileManually(unresolved[i].rec, unresolved[i].nearMissIds, summary);
     if (result === "cancel") { summary.skipped += unresolved.length - i; break; }
     if (result) { resolved.set(unresolved[i].rec.exportId, result); summary.manual++; }
@@ -44526,12 +44592,16 @@ async function runSessionImport(data) {
       state.activeId = viaRef && state.nodes[viaRef] ? viaRef : fileNode.id;
     }
     revealFilteredView(); // imported filters are new filters — same visibility rule
+    setSessionBanner(typeof data.banner === "string" ? data.banner : null);
   }
+  if (freshNodeIds.length) removeDuplicatesOfFreshFiles(freshNodeIds);
 
   updatePinBookmarksButton();
   render();
 
-  const parts = [summary.auto + " file" + (summary.auto === 1 ? "" : "s") + " matched automatically"];
+  const parts = [];
+  if (opts.fresh) parts.push(summary.loaded + " file" + (summary.loaded === 1 ? "" : "s") + " loaded");
+  if (!opts.fresh || summary.auto) parts.push(summary.auto + " file" + (summary.auto === 1 ? "" : "s") + " matched automatically");
   if (summary.manual) parts.push(summary.manual + " resolved manually");
   if (summary.skipped) parts.push(summary.skipped + " skipped");
   if (summary.totalBookmarks) {
@@ -44540,8 +44610,138 @@ async function runSessionImport(data) {
   if (summary.totalNotes) {
     parts.push(summary.notesPlaced + " of " + summary.totalNotes + " note" + (summary.totalNotes === 1 ? "" : "s") + " placed");
   }
-  showCopyToast("Import: " + parts.join(", "));
+  showCopyToast((opts.fresh ? "Session: " : "Import: ") + parts.join(", "));
 }
+
+// A session record's embedded/fetched log text becomes a file node: a text
+// file (textSyntax) is pinned to Plain text with its layout set before the
+// parse (applyTextLayout); a record carrying a `logFormat` is pinned to that
+// format (ensureSessionLogFormat); anything else resolves live by filename,
+// like any fresh load. Shared by the tier-3 "embedded" choice and ?session=.
+async function addSessionRecordText(rec, name, text) {
+  if (rec.textSyntax !== undefined) {
+    const placeholder = createQueuedFileNode(name);
+    placeholder.textSyntax = rec.textSyntax === "json" || rec.textSyntax === "xml" ? rec.textSyntax : null;
+    if (rec.textLayout === "pretty" || rec.textLayout === "raw") placeholder.textLayout = rec.textLayout;
+    return await addFile(name, text, undefined, PLAINTEXT_FORMAT_ID, placeholder);
+  }
+  const formatId = rec.logFormat ? await ensureSessionLogFormat(rec.logFormat) : null;
+  return formatId ? await addFile(name, text, undefined, formatId) : await addFile(name, text);
+}
+
+function canonicalJson(v) {
+  if (Array.isArray(v)) return "[" + v.map(canonicalJson).join(",") + "]";
+  if (v && typeof v === "object") return "{" + Object.keys(v).sort().filter(k => v[k] !== undefined).map(k => JSON.stringify(k) + ":" + canonicalJson(v[k])).join(",") + "}";
+  return JSON.stringify(v);
+}
+
+// The id of the stored format a session record's `logFormat` stands for:
+// a non-meta format with the same name and the same exported fields is
+// reused, otherwise it is added as a new persisted format (what importing a
+// .logformat.json does, silently: no dialog, no filename rule). null when
+// the record's format is invalid (the file then loads by its filename).
+async function ensureSessionLogFormat(src) {
+  const parsed = normalizeLogFormatExport(src, []);
+  if (parsed.error) return null;
+  await formatConfigReady; // state.logFormats must be settled before looking up / appending
+  const pick = f => { const o = {}; LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (f[k] !== undefined) o[k] = f[k]; }); return o; };
+  const wanted = canonicalJson(parsed.logFormat);
+  const same = state.logFormats.find(f => {
+    if (f.mode === "meta" || f.name !== parsed.logFormat.name) return false;
+    const n = normalizeLogFormatExport(pick(f), []);
+    return !n.error && canonicalJson(n.logFormat) === wanted;
+  });
+  if (same) return same.id;
+  const fmt = Object.assign({
+    id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+    builtin: false, edited: false, createdAt: Date.now(),
+  }, parsed.logFormat);
+  await saveLogFormat(fmt);
+  state.logFormats.push(fmt);
+  renderFormatList();
+  renderFormatRuleFormatOptions();
+  return fmt.id;
+}
+
+// ?session= path of runSessionImport: fetches one record's `url` (resolved
+// against the session file's own URL) or takes its embedded `text`. Returns
+// the loaded file node, or null when it can't be loaded.
+async function loadSessionRecordFresh(rec, baseUrl) {
+  let name = typeof rec.name === "string" && rec.name ? rec.name : "";
+  let text = rec.text;
+  let sourceUrl = null;
+  if (typeof rec.url === "string") {
+    try { sourceUrl = new URL(rec.url, baseUrl || location.href).href; } catch { return null; }
+    if (!name) {
+      try { name = decodeURIComponent(new URL(sourceUrl).pathname.split("/").filter(Boolean).pop() || ""); } catch { /* fallback below */ }
+    }
+    try {
+      const res = await fetch(sourceUrl);
+      if (!res.ok) return null;
+      const buf = await res.arrayBuffer();
+      text = new TextDecoder().decode(await gunzipBytesIfCompressed(buf));
+    } catch { return null; }
+  }
+  if (typeof text !== "string") return null;
+  const node = await addSessionRecordText(rec, name || "session.log", text);
+  if (sourceUrl) node.sourceUrl = sourceUrl;
+  persistFileNode(node); // same fire-and-forget as loadFileDescriptors
+  return node;
+}
+
+// A reload of a ?session= link restores the previous visit's files from the
+// session cache first; the link then loads them again. Root files that are
+// byte-identical (tier-1 hash) to a freshly loaded one are dropped so the
+// session shows up once, not twice.
+function removeDuplicatesOfFreshFiles(freshIds) {
+  const fresh = new Set(freshIds);
+  const hashes = new Set(freshIds.map(id => state.nodes[id]).filter(n => n && n.entries && n.entries.length).map(getFileFullHash));
+  for (const id of state.rootIds.slice()) {
+    const n = state.nodes[id];
+    if (fresh.has(id) || !n || n.type !== "file" || !n.entries || !n.entries.length) continue;
+    if (hashes.has(getFileFullHash(n))) deleteNode(id);
+  }
+}
+
+// ?session=<url>: fetches a session file and loads it as a whole (see
+// runSessionImport's opts.fresh). Error wording follows loadUrlIntoTree's.
+function loadSessionFromUrl(url) { return trackForegroundLoad(() => loadSessionFromUrlImpl(...arguments)); }
+async function loadSessionFromUrlImpl(url) {
+  if (location.protocol === "file:") {
+    showCopyToast("?session= needs PhiLogg served over http(s), not opened as a local file");
+    return false;
+  }
+  let baseUrl;
+  try { baseUrl = new URL(url, location.href).href; } catch { showCopyToast("Invalid session URL"); return false; }
+  let res;
+  try {
+    res = await fetch(baseUrl);
+  } catch (err) {
+    showCopyToast("Could not load session from URL (network or CORS error)");
+    return false;
+  }
+  if (!res.ok) { showCopyToast(`Could not load session from URL (HTTP ${res.status})`); return false; }
+  const data = parseSessionJson(await res.text());
+  if (!data) return false;
+  await runSessionImport(data, { fresh: true, baseUrl });
+  return true;
+}
+
+// Tour banner: a one-line hint strip above the log view, set by a session
+// file's top-level `banner` (plain text, **x** renders bold) and closed with
+// its button. Runtime only — not persisted, not written by session export.
+const tourBannerEl = el("#tourBanner");
+function setSessionBanner(text) {
+  const textEl = tourBannerEl.querySelector(".tour-banner-text");
+  if (!text) {
+    textEl.innerHTML = "";
+    tourBannerEl.classList.add("hidden");
+    return;
+  }
+  textEl.innerHTML = escapeHtml(text).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+  tourBannerEl.classList.remove("hidden");
+}
+el("#tourBannerClose").addEventListener("click", ev => { ev.stopPropagation(); setSessionBanner(null); });
 
 /* ---------- Tier 3: manual reassignment dialog ---------- */
 
@@ -44665,17 +44865,7 @@ async function resolveExportedFileManually(rec, nearMissIds, summary) {
       // part of the portable export format) — resolves live by filename,
       // same as any other fresh load.
       const embeddedName = String(rec.name || "embedded.log");
-      let node;
-      if (rec.textSyntax !== undefined) {
-        // An exported text file: pinned to Plain text with its syntax/layout
-        // set before the parse (applyTextLayout).
-        const placeholder = createQueuedFileNode(embeddedName);
-        placeholder.textSyntax = rec.textSyntax === "json" || rec.textSyntax === "xml" ? rec.textSyntax : null;
-        if (rec.textLayout === "pretty" || rec.textLayout === "raw") placeholder.textLayout = rec.textLayout;
-        node = await addFile(embeddedName, rec.text, undefined, PLAINTEXT_FORMAT_ID, placeholder);
-      } else {
-        node = await addFile(embeddedName, rec.text);
-      }
+      const node = await addSessionRecordText(rec, embeddedName, rec.text);
       persistFileNode(node); // same fire-and-forget as loadFileDescriptors
       const { refMap, placed, total, notesPlaced, notesTotal } = applySessionEntryByOrdinal(rec, node);
       summary.placed += placed;
@@ -46481,6 +46671,9 @@ const bootRestore = bootMeta.then(meta => restoreSessionFromCache(meta)).then(re
   if (restored) showCopyToast("Session restored");
   return restoreWatchedFolders();
 }).then(() => bootMeta).then(meta => restoreViewersFromCache(meta));
+// Deep links ?session=<url> and ?open=format, once the boot restore has
+// settled (the session load removes restored duplicates of the files it loads).
+bootRestore.catch(() => {}).then(() => loadSessionAndOpenFromParams());
 // LLM assistant (desktop build only — window.philogg.llmChat): toolbar
 // button, Settings section, stored chat sessions. See "LLM assistant".
 initLlmAssistantUi();
