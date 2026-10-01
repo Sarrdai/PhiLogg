@@ -244,25 +244,21 @@ deployments possible:
   entry, or the desktop build's "Open in PhiLogg". It's decompressed on the
   fly by the browser's own `DecompressionStream`, with no extra library. A
   compressed file is a fixed snapshot, never live-tailed.
-- **View common text/image files right in the app** — `.txt`/`.xml`/`.json`
-  and `.jpg`/`.jpeg`/`.png`/`.tiff`/`.tif`, however they're opened: a ZIP
-  entry, a watched folder, or a direct open/drag-drop, all the same. JSON/XML
-  get syntax highlighting with collapsible multi-line sections (click the
-  small toggle next to a line number), JSON also gets an optional Pretty
-  Print button in the viewer's own header; text selection/copy behaves like
-  a normal read-only text pane (leading whitespace/tabs included); images
-  get pan/zoom/reset (drag-to-select a region to zoom, same as Plot View).
-  Every opened one is closable the same way a log file is (✕ or middle-click
-  its row).
-- **Filter text files line by line** — the text viewer's funnel button
-  ("Filter lines"), or simply Ctrl+F in the viewer, opens what it shows as a filterable file, one entry per
-  line: text, regex and wildcard filters (`"temp": [*:float>20]`), the
-  extraction Table and Plot all work, with the line number taking the place
-  of the timestamp. With JSON Pretty Print on, the filters see the
-  pretty-printed lines, so a minified one-line JSON document becomes
-  searchable field by field. The filterable version sits under its file in
-  the tree (file → text version → filters) and keeps the viewer's
-  indentation and JSON/XML syntax colors.
+- **Text, JSON and XML files as editable-looking, filterable files** —
+  `.txt`/`.json`/`.xml` open as one file, however they're opened (a ZIP
+  entry, a watched folder, or a direct open/drag-drop). The Context view is
+  an editor-style pane with line numbers; JSON/XML get syntax colors and
+  collapsible multi-line sections, JSON opens pretty-printed (so a minified
+  one-line document is readable) with a Pretty/Raw toggle, and selecting and
+  copying behaves like a normal text pane even for huge files (a 19 MB,
+  390k-line file opens in about a second). Filtered shows the same lines with
+  the line number in place of the timestamp, so text, regex and wildcard
+  filters, the extraction Table and Plot, and the find bar (Ctrl+G) all work
+  on it, and a filter's matching lines are marked in the editor.
+- **View common image files right in the app** — `.jpg`/`.jpeg`/`.png`/
+  `.tiff`/`.tif` open in an image viewer with pan/zoom/reset (drag-to-select
+  a region to zoom, same as Plot View). Every opened one is closable the same
+  way a log file is (✕ or middle-click its row).
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
@@ -405,7 +401,7 @@ deployments possible:
   embedded in it. The choice is remembered across reloads.
 - **Word wrap** — a soft-wrap toggle in each log toolbar wraps long messages
   instead of scrolling sideways (it also wraps the Entry Detail message), and
-  a separate toggle in the Text-View toolbar wraps a plain text file. Both are
+  on a text/JSON/XML file the same toggle wraps its lines instead. Both are
   distinct from multiline display, remembered across reloads, and off by
   default.
 - **"On open, scroll log to"** (Settings → Behavior) — start at the top

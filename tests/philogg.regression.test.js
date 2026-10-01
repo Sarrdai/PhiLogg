@@ -22,6 +22,7 @@ const { JSDOM } = require("jsdom");
 const fs = require("fs");
 const path = require("path");
 const vm = require("vm");
+const LOGSIM = require(path.join(__dirname, "..", "tools", "log-sim", "core.js"));
 // In-memory IndexedDB for the session-cache group (Group 20): jsdom ships no
 // IndexedDB at all, so the cache feature silently disables itself in every
 // other group (openCacheDb resolves null) — exactly the graceful-degradation
@@ -350,6 +351,11 @@ async function withApp(run, opts = {}) {
       set hoverExpandDetail(v) { hoverExpandDetail = v; },
       get focusModePrevState() { return focusModePrevState; },
       get ROW_HEIGHT() { return ROW_HEIGHT; },
+      get TEXT_ROW_HEIGHT() { return TEXT_ROW_HEIGHT; },
+      get TEXT_NUM_W() { return TEXT_NUM_W; },
+      get TEXT_FOLD_W() { return TEXT_FOLD_W; },
+      get filteredTextMode() { return filteredTextMode; },
+      get editorView() { return editorView; },
       get EXTRACT_ROW_HEIGHT() { return EXTRACT_ROW_HEIGHT; },
       get LINK_PAIR_ROW_HEIGHT() { return LINK_PAIR_ROW_HEIGHT; },
       get BUFFER_ROWS() { return BUFFER_ROWS; },
@@ -15916,8 +15922,8 @@ await withApp(async (w, d, T) => {
 
   // --- (c) the navigation half ------------------------------------------
   const prev = d.querySelector("#ctxPrevMatch"), next = d.querySelector("#ctxNextMatch");
-  assert([...bar.querySelectorAll("button")].every(b => b.classList.contains("toolbar-icon-btn")),
-    "every button uses the app's own icon-button shape (.toolbar-icon-btn), not a one-off style");
+  assert([...bar.querySelectorAll("button")].filter(b => !b.closest("#ctxTextLayout")).every(b => b.classList.contains("toolbar-icon-btn")),
+    "every button (bar the plain-text Pretty/Raw segmented toggle) uses the app's own icon-button shape (.toolbar-icon-btn), not a one-off style");
   // Every button here (person-requested, 2026-09-05: the same
   // reveal-a-label-on-hover mechanic as the Filter-Toolbar's row-actions,
   // just square-to-rectangle instead of circle-to-pill — see
@@ -20312,7 +20318,7 @@ await withApp(async (w, d, T) => {
   // with whatever the markup already says).
   function groupKinds(toolbarEl) {
     return [...toolbarEl.children]
-      .filter(c => c.classList.contains("toolbar-group"))
+      .filter(c => c.classList.contains("toolbar-group") && !c.hasAttribute("data-text-only")) // the plain-text Pretty/Raw group (GROUP 349) is not part of the log toolbar
       .map(c => c.dataset.toolbarGroup);
   }
   function assertOrdered(kinds, toolbarName) {
@@ -20338,7 +20344,7 @@ await withApp(async (w, d, T) => {
   assertNoGroupLabel(d.querySelector("#contextToolbar"));
   // Merged nav (Prev/Next match + Expand/Collapse) into one Controls group,
   // no separator between them any more (both are "Controls").
-  assert(d.querySelector("#contextToolbar").querySelectorAll(".ctx-toolbar-sep").length === 2,
+  assert(d.querySelector("#contextToolbar").querySelectorAll(".ctx-toolbar-sep:not([data-text-only])").length === 2,
     "#contextToolbar has exactly 2 separators for 3 groups (Controls|Settings|Actions)");
 
   w.applyFhView("filter");
@@ -22525,34 +22531,6 @@ group(199);
     assert(!!d.querySelector("#zipList .folder-watch-file"), "closing the opened file returns it to an inert placeholder row in the zip section, got " + d.querySelector("#zipList").innerHTML);
   });
 
-  await withApp(async (w, d, T) => {
-    section("199i. a .txt zip entry (item 3, this session's inline-viewer extension) opens the inline text viewer in the main content area, hiding the tab bar");
-
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-
-    let windowOpenCalled = false;
-    w.open = () => { windowOpenCalled = true; };
-
-    const row = d.querySelector("#zipList .folder-watch-file");
-    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer !== null);
-
-    assert(T.state.inlineViewer.kind === "text", "state.inlineViewer is set to the text kind, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.kind));
-    assert(T.state.inlineViewer.text === "hello world", "the extracted text content is stored, got " + (T.state.inlineViewer && T.state.inlineViewer.text));
-    assert(!windowOpenCalled, "a .txt entry no longer falls through to the browser-tab fallback");
-    assert(T.state.rootIds.length === 0, "no tree/log node is created for an inline-viewed entry");
-    assert(d.querySelector("#inlineViewerWrap").style.display === "flex", "the inline viewer wrap is shown");
-    // .itv-line's own textContent is the exact line text — the line number
-    // is a CSS ::before counter (generated content, not a DOM text node),
-    // so it never shows up here (see GROUP 199k below for the gutter itself).
-    assert(d.querySelector("#inlineTextViewer .itv-line").textContent === "hello world", "the text viewer renders the extracted content");
-
-    w.closeInlineViewer();
-    assert(T.state.inlineViewer === null, "closing the inline viewer clears state.inlineViewer");
-  });
 
   await withApp(async (w, d, T) => {
     section("199i-2. .json/.xml zip entries get JSON/XML token highlighting (highlightJsonText/highlightXmlText) in the inline text viewer");
@@ -22590,69 +22568,14 @@ group(199);
     assert(!!d.querySelector("#imgZoomInBtn") && !!d.querySelector("#imgZoomOutBtn") && !!d.querySelector("#imgZoomResetBtn"), "the zoom/reset buttons are present");
   });
 
-  await withApp(async (w, d, T) => {
-    section("199k. inline text viewer: line-number gutter renders one .itv-line SPAN per line, numbers are a CSS ::before counter — never a DOM text node, so they can't enter a selection/copy at all");
 
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "first\nsecond\nthird", method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-
-    const row = d.querySelector("#zipList .folder-watch-file");
-    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer !== null);
-
-    const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
-    assert(lines.length === 3, "one .itv-line per source line, got " + lines.length);
-    assert(lines[0].tagName === "SPAN", "each line is an inline SPAN (not a block DIV), so the browser never inserts a forced line break inside one line's own text, got " + lines[0].tagName);
-    const contents = Array.from(lines).map(l => l.textContent);
-    assert(contents.join("|") === "first|second|third", "each line's own text lives directly in .itv-line's textContent — no separate gutter/content sub-elements, got " + contents.join("|"));
-    const dataLines = Array.from(lines).map(l => l.dataset.line);
-    assert(dataLines.join(",") === "0,1,2", "data-line is 0-based and in order, got " + dataLines.join(","));
-
-    // The gutter number is generated CSS content (::before counter), so it
-    // is never present as a DOM node/text at all — the only thing assertable
-    // here (jsdom doesn't compute :before generated content or layout) is
-    // that the CSS source carries the counter rules and that no gutter
-    // element/class exists in the markup any more.
-    assert(!d.querySelector("#inlineTextViewer .itv-line-num"), "no separate .itv-line-num element exists — the gutter is pure CSS now");
-    assert(/counter-reset:itv-line/.test(html), "the viewer resets the itv-line CSS counter");
-    assert(/\.itv-line::before\{[^}]*content:counter\(itv-line\)/.test(html), "the line-number gutter is rendered via a ::before counter");
-    assert(/\.itv-line::before\{[^}]*user-select:none/.test(html), "the ::before gutter is marked non-selectable (belt-and-suspenders — generated content is already unselectable by definition)");
-  });
-
-  await withApp(async (w, d, T) => {
-    section("199n. inline text viewer: hover-only line highlight — pure CSS :hover, no click handler, no selectedLine state (click-to-highlight removed, person-reported interference with drag-to-select)");
-
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "alpha\nbeta\ngamma", method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-
-    const row = d.querySelector("#zipList .folder-watch-file");
-    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer !== null);
-
-    // No click-driven state or class exists any more.
-    assert(T.state.inlineViewer.selectedLine === undefined, "state.inlineViewer no longer carries a selectedLine field");
-    const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
-    lines[1].dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(!lines[1].classList.contains("itv-line-selected"), "a click on a line does nothing any more — no .itv-line-selected class exists");
-    assert(!/\.itv-line-selected\{/.test(html), "the .itv-line-selected CSS rule itself is gone from the stylesheet, not just unused");
-
-    // Hover is pure CSS (:hover on .itv-line, always active, no listener) —
-    // jsdom doesn't run :hover, so what's assertable here is that the CSS
-    // source carries the rule and that .itv-line has no click affordance
-    // left (no inline "cursor:pointer" tied to a now-removed click target).
-    assert(/\.itv-line:hover\{background:var\(--bg-elevated\);\}/.test(html), "the plain CSS :hover rule for a line is present");
-  });
 
   await withApp(async (w, d, T) => {
     section("199m. lifecycle unification: a non-log zip entry's row toggles the same grayed/opened/active look and ✕-to-close a log file's own tree row uses, instead of a separate close button on the viewer");
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello", method: 0 }]);
+    const zipBuf = buildZipFixture([{ name: "notes.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 }]);
     await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
 
     assert(!d.querySelector("#inlineViewerCloseBtn"), "the viewer's own separate close button is gone");
@@ -22679,25 +22602,25 @@ group(199);
     await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].entries && T.state.nodes[T.state.rootIds[0]].entries.length > 0);
     assert(T.state.inlineViewer === null, "opening a log entry from the zip clears the previously-open non-log inline viewer, got " + JSON.stringify(T.state.inlineViewer));
 
-    // The notes.txt row is still "opened" (grayed-off) but no longer
+    // The notes.png row is still "opened" (grayed-off) but no longer
     // "active" (not currently shown) — same as an open-but-not-selected
     // log file's own tree row.
-    const txtRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    const txtRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.png"));
     assert(txtRow.classList.contains("zip-entry-opened") && !txtRow.classList.contains("zip-entry-active"),
-      "the notes.txt row stays opened (not grayed) but is no longer active, got " + txtRow.className);
+      "the notes.png row stays opened (not grayed) but is no longer active, got " + txtRow.className);
 
     // A plain click on that still-opened row re-selects/re-shows it,
     // without needing to re-extract it (no fresh dblclick needed) —
     // mirroring a plain click on an already-open log file's tree row.
     txtRow.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.txt", "a plain click on an opened non-log row re-selects it, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.name));
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.png", "a plain click on an opened non-log row re-selects it, got " + JSON.stringify(T.state.inlineViewer && T.state.inlineViewer.name));
 
     // And the row's own ✕ closes it — the row goes back to being grayed,
     // and state.inlineViewer clears, exactly like closing a log file.
-    const reRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    const reRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.png"));
     reRow.querySelector(".tree-del").dispatchEvent(new w.Event("click", { bubbles: true }));
     assert(T.state.inlineViewer === null, "closing via the row's own ✕ clears state.inlineViewer");
-    const finalRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.txt"));
+    const finalRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("notes.png"));
     assert(!finalRow.classList.contains("zip-entry-opened"), "...and the row goes back to its grayed, unopened look");
   });
 
@@ -22706,7 +22629,7 @@ group(199);
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello", method: 0 }]);
+    const zipBuf = buildZipFixture([{ name: "notes.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 }]);
     await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
 
     // Root cause: .zip-entry-opened used to only reset opacity, leaving
@@ -22725,13 +22648,13 @@ group(199);
     // state.nodes entries (flattenTreeIds) — an opened non-log entry had no
     // node at all, so it was silently skipped by the cycle no matter what.
     const zip = T.state.zips[0];
-    assert(zip.inlineViewers.has("notes.txt"), "sanity: the entry is cached as opened");
+    assert(zip.inlineViewers.has("notes.png"), "sanity: the entry is cached as opened");
 
     // From nothing active, Alt+Down should land straight on the (only)
     // opened non-log entry.
     T.state.activeId = null;
     w.moveTreeSelection("ArrowDown");
-    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
+    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.png",
       "Alt+Down reaches the opened non-log entry, got " + JSON.stringify(T.state.inlineViewer));
 
     // Open a second, real log entry from a second zip so there's something
@@ -22746,10 +22669,10 @@ group(199);
     // Nav order now follows each zip's own on-screen position (Bug 1 fix,
     // see flattenTreeIds/GROUP 199q below), not "real tree nodes first, then
     // every zip-viewer virtual id appended afterwards": "logs.zip" (holding
-    // notes.txt) renders above "second.zip" (holding app.log) in #zipList,
-    // since it was opened first, so notes.txt's virtual nav id precedes
+    // notes.png) renders above "second.zip" (holding app.log) in #zipList,
+    // since it was opened first, so notes.png's virtual nav id precedes
     // app.log's real node in the flattened order. From nothing active,
-    // Alt+Down already landed on notes.txt above; from there Alt+Down is the
+    // Alt+Down already landed on notes.png above; from there Alt+Down is the
     // step that reaches app.log's real node.
     w.moveTreeSelection("ArrowDown");
     assert(T.state.inlineViewer === null && T.state.activeId === T.state.rootIds[0],
@@ -22758,139 +22681,53 @@ group(199);
 
     // And Alt+Up from there returns to the still-opened non-log entry.
     w.moveTreeSelection("ArrowUp");
-    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.txt",
+    assert(T.state.inlineViewer && T.state.inlineViewer.entryName === "notes.png",
       "Alt+Up from the real log node moves back to the non-log entry above it, got " + JSON.stringify(T.state.inlineViewer));
   });
 
-  await withApp(async (w, d, T) => {
-    section("199p. rearchitecture: no `copy` event interception exists any more — each line's exact source text (including a genuinely empty line) sits directly in one inline .itv-line SPAN's textContent, so native browser select/copy needs no help to get line breaks right");
-
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const original = "first line\nsecond line\nthird line\n\nfifth line";
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: original, method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-
-    const row = d.querySelector("#zipList .folder-watch-file");
-    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer !== null);
-
-    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
-    const lines = inlineTextViewerEl.querySelectorAll(".itv-line");
-    assert(lines.length === 5, "one .itv-line per source line including the empty one, got " + lines.length);
-    assert(lines[2].textContent === "third line", "each line holds its own exact text, got " + JSON.stringify(lines[2].textContent));
-    assert(lines[3].textContent === "", "the genuinely empty line renders as an empty .itv-line, not skipped or merged, got " + JSON.stringify(lines[3].textContent));
-    assert(lines[4].textContent === "fifth line", "the last line's text is exact, got " + JSON.stringify(lines[4].textContent));
-
-    // A `copy` event dispatched on the viewer is no longer intercepted —
-    // nothing here calls preventDefault or touches clipboardData any more,
-    // the browser's own native copy of whatever is selected is what runs.
-    const ev = new w.Event("copy", { bubbles: true, cancelable: true });
-    ev.clipboardData = { data: {}, setData(type, val) { this.data[type] = val; } };
-    inlineTextViewerEl.dispatchEvent(ev);
-    assert(!ev.defaultPrevented, "the copy event is left alone — no app-level interception any more");
-    assert(ev.clipboardData.data["text/plain"] === undefined, "clipboardData is untouched by app code");
-  });
 
   section("199q. bugfix (Bug 1, person-reported): Alt+Up/Down nav order now matches the zip container's rendered top-to-bottom order (alphabetical, log and non-log entries interleaved) instead of tacking every opened non-log entry on as one block after the whole tree");
   await withApp(async (w, d, T) => {
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    // Alphabetical listing per the report's own example: a.png above b.txt
+    // Alphabetical listing per the report's own example: a.png above b.png
     // above c.log — a real tree node for the opened log entry (node.zipId)
     // should land BETWEEN the two opened non-log virtual nav ids, not after
     // both of them.
     const zipBuf = buildZipFixture([
       { name: "a.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47]), method: 0 },
-      { name: "b.txt", data: "hello", method: 0 },
+      { name: "b.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 },
       { name: "c.log", data: makeLog(0, 2), method: 0 },
     ]);
     await w.openZipSource(new w.File([zipBuf], "assets.zip"), "assets.zip");
     const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
     // Open all three, in a DELIBERATELY non-alphabetical order (c.log first,
-    // then a.png, then b.txt) — flattenTreeIds must ignore this open order
+    // then a.png, then b.png) — flattenTreeIds must ignore this open order
     // and reflect only the alphabetical RENDER order.
     rows().find(r => r.title.includes("c.log")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => d.querySelectorAll("#zipList .folder-watch-file, #zipList .tree-row").length >= 1 &&
       T.state.rootIds.some(id => T.state.nodes[id] && T.state.nodes[id].zipId));
     rows().find(r => r.title.includes("a.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
     await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.entryName === "a.png");
-    rows().find(r => r.title.includes("b.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.entryName === "b.txt");
+    rows().find(r => r.title.includes("b.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.entryName === "b.png");
 
     const zip = T.state.zips[0];
     const logNode = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n && n.zipId === zip.id);
     const ids = w.flattenTreeIds();
     const idxPng = ids.indexOf(w.viewerNavId("zip", zip.id, "a.png"));
     const idxLog = ids.indexOf(logNode.id);
-    const idxTxt = ids.indexOf(w.viewerNavId("zip", zip.id, "b.txt"));
+    const idxTxt = ids.indexOf(w.viewerNavId("zip", zip.id, "b.png"));
     assert(idxPng !== -1 && idxLog !== -1 && idxTxt !== -1, "all three entries have a nav slot");
-    // Alphabetical render order is a.png, b.txt, c.log — the real c.log tree
+    // Alphabetical render order is a.png, b.png, c.log — the real c.log tree
     // node must land LAST despite being opened FIRST (open order must not
     // matter, only render order does).
     assert(idxPng < idxTxt && idxTxt < idxLog,
-      "nav order follows the zip's alphabetical render order (a.png, b.txt, then the real c.log tree node) — got png@" +
+      "nav order follows the zip's alphabetical render order (a.png, b.png, then the real c.log tree node) — got png@" +
       idxPng + " txt@" + idxTxt + " log@" + idxLog);
   });
 
-  section("199r. bugfix (Bug 2, person-reported): Ctrl+C with a selected log row in the background AND an active text-viewer selection copies the text-viewer's selection, not the log row");
-  await withApp(async (w, d, T) => {
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const log = makeLog(0, 3, { msgPrefix: "row" });
-    const file = new w.File([log], "app.log", { type: "text/plain" });
-    const donePromise = w.loadFileDescriptors([{ file, handle: null }]);
-    await donePromise;
-    await waitFor(() => d.querySelector(".log-row"));
-    const firstRow = d.querySelector(".log-row");
-    firstRow.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(T.state.focusRegion === "entries" && T.state.selectedId, "a log row is selected (background selection)");
 
-    const zipBuf = buildZipFixture([{ name: "notes.xml", data: "<a>hello world</a>", method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "docs.zip"), "docs.zip");
-    const row = d.querySelector("#zipList .folder-watch-file");
-    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer !== null);
-    // Opening the viewer leaves focusRegion/selectedId exactly as before
-    // (see the tree-row click handler's own comment) — the log row stays
-    // "selected in the background" while the viewer is what's actually shown.
-    assert(T.state.focusRegion === "entries" && T.state.selectedId, "the log row selection is still there in the background");
-
-    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
-    const contentEl = inlineTextViewerEl.querySelector(".itv-line");
-    const range = w.document.createRange();
-    range.selectNodeContents(contentEl);
-    const sel = w.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(range);
-    assert(sel.toString().length > 0, "a genuine text selection exists inside the inline viewer");
-
-    const ev = new w.KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, cancelable: true });
-    d.dispatchEvent(ev);
-    assert(!ev.defaultPrevented, "the global Ctrl+C handler yields — does not preventDefault — when a real text selection exists in the inline viewer");
-  });
-
-  section("199s. leading whitespace/tabs on a line are stored as plain text directly in .itv-line's own textContent (no wrapper span, no offset math needed for native selection to pick them up), and the viewer still opts out of the browser's native drag-the-selection gesture");
-  await withApp(async (w, d, T) => {
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "indented.json", data: '{\n  "a": 1,\n  "b": 2\n}', method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-    const row = d.querySelector("#zipList .folder-watch-file");
-    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer !== null);
-
-    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
-    const lines = inlineTextViewerEl.querySelectorAll(".itv-line");
-    assert(lines[1].textContent === '  "a": 1,', "leading whitespace sits directly in the line's own text, got " + JSON.stringify(lines[1].textContent));
-    assert(lines[2].textContent === '  "b": 2', "so does every other indented line, got " + JSON.stringify(lines[2].textContent));
-
-    // The viewer still opts out of the browser's native "drag the current
-    // selection" affordance — dragstart is prevented.
-    const dragEv = new w.Event("dragstart", { bubbles: true, cancelable: true });
-    inlineTextViewerEl.dispatchEvent(dragEv);
-    assert(dragEv.defaultPrevented, "dragstart on the text viewer is prevented, so clicking/dragging over an existing selection re-selects instead of native-dragging it");
-  });
 
   section("199u. bugfix (Bug 2, person-reported): opening/selecting a non-log inline-viewer entry clears the previously-active log file's tree-row 'active' styling, the same state.activeId-clearing transition a log-to-log switch already gets");
   await withApp(async (w, d, T) => {
@@ -22904,7 +22741,7 @@ group(199);
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    const zipBuf = buildZipFixture([{ name: "notes.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 }]);
     await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
     const zipRow = d.querySelector("#zipList .folder-watch-file");
     zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
@@ -22947,7 +22784,7 @@ group(199);
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    const zipBuf = buildZipFixture([{ name: "notes.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 }]);
     await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
     const zipRow = d.querySelector("#zipList .folder-watch-file");
     zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
@@ -22979,7 +22816,7 @@ group(199);
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "notes.txt", data: "hello world", method: 0 }]);
+    const zipBuf = buildZipFixture([{ name: "notes.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 }]);
     await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
     const zipRow = d.querySelector("#zipList .folder-watch-file");
     zipRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
@@ -22989,46 +22826,6 @@ group(199);
     assert(detailResizer.style.display === "none", "the detail resizer handle hides along with the panel");
   });
 
-  section("199y. rearchitecture: JSON/XML fold ranges are found and nested correctly, and .itv-fold-toggle collapses/expands exactly the wrapped inner lines (leaving the opening and closing line visible)");
-  await withApp(async (w, d, T) => {
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const json = '{\n  "a": 1,\n  "nested": {\n    "b": 2\n  }\n}';
-    const zipBuf = buildZipFixture([{ name: "data.json", data: json, method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-    const row = d.querySelector("#zipList .folder-watch-file");
-    row.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer !== null);
-
-    const inlineTextViewerEl = d.querySelector("#inlineTextViewer");
-    const folds = inlineTextViewerEl.querySelectorAll(".itv-fold");
-    assert(folds.length === 2, "one fold for the outer object (lines 0-5) and one nested fold for \"nested\" (lines 2-4), got " + folds.length);
-    const outerFold = Array.from(folds).find(f => f.dataset.start === "0");
-    assert(outerFold && outerFold.dataset.end === "5", "the outer object's fold spans its opening { to closing }, got " + JSON.stringify(outerFold && outerFold.dataset));
-    const innerFold = Array.from(folds).find(f => f.dataset.start === "2");
-    assert(innerFold && innerFold.dataset.end === "4", "the nested object's fold spans its own { to }, got " + JSON.stringify(innerFold && innerFold.dataset));
-    assert(outerFold.contains(innerFold), "the nested fold sits inside the outer fold's DOM subtree");
-
-    const toggle = outerFold.querySelector(".itv-fold-toggle");
-    assert(!!toggle, "the outer fold's opening line carries a toggle glyph");
-    assert(!outerFold.classList.contains("collapsed"), "starts expanded");
-    toggle.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(outerFold.classList.contains("collapsed"), "clicking the toggle collapses the fold");
-    toggle.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(!outerFold.classList.contains("collapsed"), "clicking it again expands the fold back");
-
-    // XML: a multi-line element gets a fold; a self-closing tag and a
-    // single-line element do not.
-    const xml = "<root>\n  <a/>\n  <b>x</b>\n  <c>\n    y\n  </c>\n</root>";
-    const zipBuf2 = buildZipFixture([{ name: "data.xml", data: xml, method: 0 }]);
-    await w.openZipSource(new w.File([zipBuf2], "logs2.zip"), "logs2.zip");
-    const xmlRow = Array.from(d.querySelectorAll("#zipList .folder-watch-file")).find(r => r.textContent.includes("data.xml"));
-    xmlRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "data.xml");
-    const xmlFolds = d.querySelectorAll("#inlineTextViewer .itv-fold");
-    // <root>...</root> (0-6) and <c>...</c> (3-5); <a/> and <b>x</b> don't fold.
-    assert(xmlFolds.length === 2, "exactly the two genuinely multi-line elements get a fold, got " + xmlFolds.length);
-  });
 
   await withApp(async (w, d, T) => {
     section("199z. bugfix (person-reported: no visible/clickable fold-toggle glyph at all): .itv-fold-toggle no longer sits at a negative `left`, which put it outside .itv-line's own box (and #inlineTextViewer's clipped content) entirely — it now has its own non-negative slot inside the gutter, left of the ::before line-number counter");
@@ -23036,9 +22833,9 @@ group(199);
     assert(!/\.itv-fold-toggle\{[^}]*left:-/.test(html), "no negative `left` on .itv-fold-toggle any more");
     const toggleMatch = html.match(/\.itv-fold-toggle\{([^}]*)\}/);
     assert(toggleMatch, "the .itv-fold-toggle rule exists");
-    assert(/left:0\b/.test(toggleMatch[1]), "the toggle sits at left:0 of its own .itv-line box, got " + toggleMatch[1]);
+    assert(/left:var\(--text-num-w\)/.test(toggleMatch[1]) && /width:var\(--text-fold-w\)/.test(toggleMatch[1]), "the toggle sits in the fold column right of the line-number column, got " + toggleMatch[1]);
     const beforeMatch = html.match(/\.itv-line::before\{([^}]*)\}/);
-    assert(beforeMatch && /left:1\.3em/.test(beforeMatch[1]), "the line-number counter is shifted right of the toggle's own slot, got " + (beforeMatch && beforeMatch[1]));
+    assert(beforeMatch && /left:0\b/.test(beforeMatch[1]) && /width:var\(--text-num-w\)/.test(beforeMatch[1]), "the line-number counter fills the number column left of the toggle's slot (GROUP 349), got " + (beforeMatch && beforeMatch[1]));
   });
 
   await withApp(async (w, d, T) => {
@@ -23048,32 +22845,32 @@ group(199);
 
     w.Response = Response;
     w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([{ name: "a.json", data: "{}", method: 0 }, { name: "b.txt", data: "hi", method: 0 }]);
+    const zipBuf = buildZipFixture([{ name: "a.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 }, { name: "b.png", data: Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]), method: 0 }]);
     await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
     const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
-    rows().find(r => r.textContent.includes("a.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "a.json");
-    rows().find(r => r.textContent.includes("b.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "b.txt");
+    rows().find(r => r.textContent.includes("a.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "a.png");
+    rows().find(r => r.textContent.includes("b.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "b.png");
 
     const zip = T.state.zips[0];
     assert(zip.inlineViewers.size === 2, "both entries are cached as opened, got " + zip.inlineViewers.size);
 
-    // Close the currently-INACTIVE one (a.json) via its ✕.
-    const aRow = rows().find(r => r.textContent.includes("a.json"));
+    // Close the currently-INACTIVE one (a.png) via its ✕.
+    const aRow = rows().find(r => r.textContent.includes("a.png"));
     aRow.querySelector(".tree-del").dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(!zip.inlineViewers.has("a.json"), "a.json is removed from zip.inlineViewers");
-    assert(T.state.inlineViewer && T.state.inlineViewer.name === "b.txt", "closing the inactive entry leaves the active one (b.txt) untouched");
+    assert(!zip.inlineViewers.has("a.png"), "a.png is removed from zip.inlineViewers");
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "b.png", "closing the inactive entry leaves the active one (b.png) untouched");
 
-    // Close the currently-ACTIVE one (b.txt) via middle-click (auxclick).
-    const bRow = rows().find(r => r.textContent.includes("b.txt"));
+    // Close the currently-ACTIVE one (b.png) via middle-click (auxclick).
+    const bRow = rows().find(r => r.textContent.includes("b.png"));
     bRow.dispatchEvent(new w.MouseEvent("auxclick", { bubbles: true, button: 1 }));
-    assert(!zip.inlineViewers.has("b.txt"), "b.txt is removed from zip.inlineViewers via middle-click");
+    assert(!zip.inlineViewers.has("b.png"), "b.png is removed from zip.inlineViewers via middle-click");
     assert(T.state.inlineViewer === null, "closing the active entry also clears state.inlineViewer");
   });
 
   await withApp(async (w, d, T) => {
-    section("199ab. general file support: a non-log inline-viewable file (.json) in a watched folder is now listed (was filtered out entirely before this session), opens via the inline viewer instead of the log parser, and is closable via its own row's ✕ — a genuinely incompatible file (.pdf) still isn't listed");
+    section("199ab. general file support: an inline-viewable file (.png) in a watched folder is listed, opens via the inline viewer instead of the log parser, and is closable via its own row's ✕; a text file (.json) is listed too but opens as a plain-text file node — a genuinely incompatible file (.pdf) still isn't listed");
 
     function fakeFileHandle(name, text) {
       return {
@@ -23090,27 +22887,34 @@ group(199);
     function fakeDirHandle(name, fileMap) {
       return { kind: "directory", name, async *values() { for (const f of Object.keys(fileMap)) yield fakeFileHandle(f, fileMap[f]); } };
     }
-    const fileMap = { "app.log": makeLog(0, 2), "data.json": '{"x":1}', "skip.pdf": "not listed" };
+    const fileMap = { "app.log": makeLog(0, 2), "data.png": "PNGDATA", "data.json": '{"x":1}', "skip.pdf": "not listed" };
     await w.addWatchedFolder(fakeDirHandle("logs", fileMap));
 
     const folder = T.state.folders[0];
-    assert(folder.files.map(f => f.name).sort().join(",") === "app.log,data.json",
-      "the .json is now listed alongside the .log; the .pdf still isn't, got " + folder.files.map(f => f.name).sort().join(","));
+    assert(folder.files.map(f => f.name).sort().join(",") === "app.log,data.json,data.png",
+      "the .png and the .json are listed alongside the .log; the .pdf still isn't, got " + folder.files.map(f => f.name).sort().join(","));
 
-    const jsonRow = Array.from(d.querySelectorAll(".folder-watch-file")).find(r => r.textContent.includes("data.json"));
-    assert(!!jsonRow, "the .json file gets a row");
+    const jsonRow = Array.from(d.querySelectorAll(".folder-watch-file")).find(r => r.textContent.includes("data.png"));
+    assert(!!jsonRow, "the .png file gets a row");
     jsonRow.dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "data.json");
-    assert(T.state.inlineViewer.text === '{"x":1}', "it opens through the inline viewer with its exact text, got " + JSON.stringify(T.state.inlineViewer.text));
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "data.png");
+    assert(T.state.inlineViewer.kind === "image" && typeof T.state.inlineViewer.dataUrl === "string", "it opens through the inline image viewer");
     assert(T.state.rootIds.length === 0, "it never becomes a real log tree node");
-    assert(folder.inlineViewers.has("data.json"), "cached as opened on the folder, same role zip.inlineViewers plays for a ZIP");
+    assert(folder.inlineViewers.has("data.png"), "cached as opened on the folder, same role zip.inlineViewers plays for a ZIP");
 
-    const jsonRow2 = Array.from(d.querySelectorAll(".folder-watch-file")).find(r => r.textContent.includes("data.json"));
+    const jsonRow2 = Array.from(d.querySelectorAll(".folder-watch-file")).find(r => r.textContent.includes("data.png"));
     const del = jsonRow2.querySelector(".tree-del");
     assert(!!del, "the opened entry's row carries a close button");
     del.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(!folder.inlineViewers.has("data.json"), "closing it removes it from folder.inlineViewers");
+    assert(!folder.inlineViewers.has("data.png"), "closing it removes it from folder.inlineViewers");
     assert(T.state.inlineViewer === null, "and clears the active viewer");
+
+    // A text file opens as ONE plain-text file node inside the folder, never as a viewer.
+    const jrec = folder.files.find(f => f.name === "data.json");
+    await w.loadFolderFile(folder, jrec);
+    const jnode = T.state.nodes[jrec.nodeId];
+    assert(jnode && jnode.formatId === "fmt-plaintext" && jnode.textSyntax === "json" && jnode.folderId === folder.id, "data.json is a plain-text file node of the folder");
+    assert(T.state.inlineViewer === null && !folder.inlineViewers.has("data.json"), "...and no viewer");
   });
 
   await withApp(async (w, d, T) => {
@@ -23134,98 +22938,15 @@ group(199);
     assert(T.state.inlineViewer === null, "and clears the active viewer");
   });
 
-  await withApp(async (w, d, T) => {
-    section("199ad. JSON Pretty Print toggle: #itvPrettyPrintBtn appears only for .json, reformats compact JSON without mutating the underlying source text, and refuses (with a toast) to turn on for invalid JSON");
-
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const zipBuf = buildZipFixture([
-      { name: "compact.json", data: '{"a":1,"b":[1,2]}', method: 0 },
-      { name: "plain.txt", data: "hello", method: 0 },
-      { name: "broken.json", data: "{not valid", method: 0 },
-    ]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-    const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
-    const prettyBtn = d.querySelector("#itvPrettyPrintBtn");
-
-    const settingsGroup = d.querySelector('#inlineViewerToolbar [data-toolbar-group="settings"]');
-
-    rows().find(r => r.textContent.includes("plain.txt")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "plain.txt");
-    // Since FEATURE_BACKLOG.md #68 (word wrap) the Settings group shows for ANY
-    // text file (it now holds the Text-View word-wrap toggle too), so the group
-    // and the toolbar are visible even for a plain .txt — but Pretty Print
-    // itself stays hidden for a non-JSON file.
-    assert(!settingsGroup.classList.contains("hidden"), "the Settings group is visible for a plain .txt file (it holds the word-wrap toggle)");
-    assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "the toolbar is shown for a plain .txt file (word-wrap toggle present)");
-    assert(prettyBtn.classList.contains("hidden"), "Pretty Print itself stays hidden for a non-JSON file");
-    assert(!d.querySelector("#itvWrapBtn").classList.contains("hidden"), "the word-wrap toggle is shown for a plain .txt file");
-
-    rows().find(r => r.textContent.includes("compact.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "compact.json");
-    assert(!settingsGroup.classList.contains("hidden"), "the Settings group is visible for a .json file");
-    assert(!prettyBtn.classList.contains("hidden"), "Pretty Print is shown for a .json file");
-    assert(!d.querySelector("#inlineViewerToolbar").classList.contains("hidden"), "...so the toolbar itself is shown");
-    assert(!prettyBtn.classList.contains("active"), "starts off");
-
-    const originalText = d.querySelector("#inlineTextViewer").textContent;
-    assert(originalText.replace(/\s+/g, "") === '{"a":1,"b":[1,2]}', "starts showing the raw compact text");
-
-    prettyBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(T.state.inlineViewer.prettyPrint === true, "toggling sets prettyPrint on the viewer object");
-    assert(T.state.inlineViewer.text === '{"a":1,"b":[1,2]}', "the underlying source text itself is never mutated, got " + JSON.stringify(T.state.inlineViewer.text));
-    const prettyText = d.querySelector("#inlineTextViewer").textContent;
-    assert(prettyText.includes("\n") === false, "textContent itself has no literal newlines (line breaks are separate .itv-line elements)");
-    const lineCount = d.querySelectorAll("#inlineTextViewer .itv-line").length;
-    assert(lineCount > 1, "pretty-printing produces multiple lines where the compact form had one, got " + lineCount);
-    assert(prettyBtn.classList.contains("active"), "the button shows its own on state");
-
-    prettyBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(T.state.inlineViewer.prettyPrint === false, "toggling again turns it back off");
-    assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === 1, "back to the original single-line compact rendering");
-
-    // Invalid JSON: turning pretty-print ON is refused with a toast, state
-    // untouched.
-    rows().find(r => r.textContent.includes("broken.json")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "broken.json");
-    prettyBtn.dispatchEvent(new w.Event("click", { bubbles: true }));
-    assert(T.state.inlineViewer.prettyPrint === false, "invalid JSON never turns prettyPrint on");
-    const toast = d.querySelector("#copyToast");
-    assert(toast && toast.textContent.includes("broken.json"), "a toast explains why, naming the file, got " + (toast && toast.textContent));
-  });
 
   await withApp(async (w, d, T) => {
     section("199ae. person-requested: the \"…\" a collapsed fold shows is shifted right to align with the line-number column, instead of sitting flush-left under the fold arrows");
 
     assert(!/\.itv-fold-ellipsis\{[^}]*padding-left:0/.test(html), "the ellipsis no longer sits flush at column 0 (under the toggle arrows)");
     const ellipsisMatch = html.match(/\.itv-fold-ellipsis\{([^}]*)\}/);
-    assert(ellipsisMatch && /padding-left:1\.3em/.test(ellipsisMatch[1]), "it's padded in by the same 1.3em .itv-line::before (the line-number counter) uses, got " + (ellipsisMatch && ellipsisMatch[1]));
+    assert(ellipsisMatch && /padding-left:\.6em/.test(ellipsisMatch[1]), "it's set off from the text by a small padding (the gutter is now a fixed column, GROUP 349), got " + (ellipsisMatch && ellipsisMatch[1]));
   });
 
-  await withApp(async (w, d, T) => {
-    section("199af. bugfix (person-reported: the previously-open XML's fold arrows/text still showed \"behind\"/around a newly opened image): #inlineTextViewer now has its own .hidden{display:none} rule, so only the actually-selected viewer (per state.inlineViewer) ever renders");
-
-    assert(/#inlineTextViewer\.hidden\{display:none;?\}/.test(html), "#inlineTextViewer.hidden actually maps to display:none now");
-
-    w.Response = Response;
-    w.DecompressionStream = DecompressionStream;
-    const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4]);
-    const zipBuf = buildZipFixture([
-      { name: "notes.xml", data: "<root>\n  <a>x</a>\n</root>", method: 0 },
-      { name: "shot.png", data: pngBytes, method: 0 },
-    ]);
-    await w.openZipSource(new w.File([zipBuf], "logs.zip"), "logs.zip");
-    const rows = () => Array.from(d.querySelectorAll("#zipList .folder-watch-file"));
-
-    rows().find(r => r.textContent.includes("notes.xml")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.xml");
-    assert(d.querySelector("#inlineTextViewer").children.length > 0, "sanity: the XML actually rendered some lines");
-
-    rows().find(r => r.textContent.includes("shot.png")).dispatchEvent(new w.Event("dblclick", { bubbles: true }));
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "shot.png");
-    assert(d.querySelector("#inlineTextViewer").classList.contains("hidden"), "switching to the image marks the text viewer hidden");
-    assert(d.querySelector("#inlineImageViewer").classList.contains("active"), "...and the image viewer active — only one of the two is ever the shown one");
-  });
 
   await withApp(async (w, d, T) => {
     section("199ag. bugfix (person-reported: drag-to-zoom on an image was imprecise): imgAspectFit expands whichever side of a selection is proportionally too small for the viewport's own aspect ratio, centered on the selection's own center, instead of cropping or leaving the browser's own independent preserveAspectRatio fitting to silently skew the pixel<->data mapping");
@@ -24796,41 +24517,6 @@ await withApp(async (w, d, T) => {
   assert(meta && meta.settings.wrapTextView === true, "cache: wrapTextView written to meta.settings");
 }, { indexedDB: new IDBFactory() });
 
-await withApp(async (w, d, T) => {
-  section("211b. Text-View word-wrap toggle: soft-wraps WITHOUT changing the logical line number, separate from the log toggle");
-  // A four-logical-line text file whose 2nd line is very long (would wrap).
-  const text = "line zero\n" + "z".repeat(300) + "\nline two\nline three";
-  const logicalLines = text.split("\n").length; // 4
-  const v = { kind: "text", name: "sample.txt", text, ext: "txt", prettyPrint: false };
-  T.state.inlineViewer = v;
-  w.renderInlineTextViewer(v);
-
-  const viewerEl = d.querySelector("#inlineTextViewer");
-  assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === logicalLines,
-    "one .itv-line (one line number) per LOGICAL source line (" + logicalLines + "), off by default");
-
-  const btn = d.querySelector("#itvWrapBtn");
-  assert(btn && !btn.classList.contains("hidden"), "Text-View toolbar shows the word-wrap button for a .txt file");
-  assert(!T.state.wrapTextView, "wrapTextView off by default");
-  assert(!d.body.classList.contains("textview-wrap"), "no .textview-wrap body class by default");
-
-  fireClick(btn, w);
-  assert(T.state.wrapTextView === true, "click flips state.wrapTextView on");
-  assert(d.body.classList.contains("textview-wrap"), "body gains .textview-wrap");
-  assert(btn.classList.contains("active"), "Text-View wrap button shows active");
-  assert(!d.body.classList.contains("wrap-messages"), "Text-View wrap is independent of the log-view wrap (no .wrap-messages)");
-
-  // A wrapped display line must NOT get its own line number: the count of
-  // numbered .itv-line elements is unchanged across a re-render with wrap on.
-  w.renderInlineTextViewer(v);
-  assert(d.querySelectorAll("#inlineTextViewer .itv-line").length === logicalLines,
-    "with wrap ON the logical line count is unchanged (" + logicalLines + ") — a wrapped continuation shares its line's number, does not add one");
-
-  // The line number is a CSS ::before counter on .itv-line, so the long
-  // (wrapping) line is still a single .itv-line element carrying one number.
-  const lines = d.querySelectorAll("#inlineTextViewer .itv-line");
-  assert(lines[1] && lines[1].textContent.length >= 300, "the long line is still ONE .itv-line element (its whole text in a single numbered line)");
-}, { indexedDB: new IDBFactory() });
 
 /* ============================================================
    GROUP 212 — Boolean pill toggle (.pill-toggle), the docs/ui-standard.md #69
@@ -25112,14 +24798,14 @@ await withApp(async (w, d, T) => {
 
 group(215);
 await withApp(async (w, d, T) => {
-  section("215. Toggle buttons (Notes/Multiline/Wrap/Columns/TextMatch/HighlightMatch/FilePaths/Pin + Text-View Wrap/Pretty-print): no button chrome, accent icon + status-bar LED");
+  section("215. Toggle buttons (Notes/Multiline/Wrap/Columns/TextMatch/HighlightMatch/FilePaths/Pin): no button chrome, accent icon + status-bar LED");
 
   await w.addFile("a.log", makeLog(0, 5, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
   w.render();
 
   const toggles = [...d.querySelectorAll(".icon-toggle")];
-  assert(toggles.length === 18,
-    "exactly 18 .icon-toggle instances (7 log-display toggles x2 toolbars + toggle-pin + itvWrapBtn + itvPrettyPrintBtn + #btnFacets), got " + toggles.length);
+  assert(toggles.length === 16,
+    "exactly 16 .icon-toggle instances (7 log-display toggles x2 toolbars + toggle-pin + #btnFacets), got " + toggles.length);
   toggles.forEach(t => assert(t.classList.contains("toolbar-icon-btn"), t.className + " still carries the base .toolbar-icon-btn class (28x28 footprint, flex-centering)"));
 
   // A plain (non-toggle) .toolbar-icon-btn in the same toolbar area must NOT get the class.
@@ -31434,15 +31120,7 @@ group(272);
   });
 
   await withApp(async (w, d, T) => {
-    section("272h. Text viewer: no rebuild on an unrelated render; image viewer: pan/zoom keeps the <image>, size is per image");
-    await w.openInlineViewer("a.json", new TextEncoder().encode('{\n  "a": 1\n}'), "text", null);
-    const tv = d.querySelector("#inlineTextViewer");
-    const first = tv.firstChild;
-    w.render();
-    assert(first && tv.firstChild === first, "unrelated render leaves the text viewer's markup alone");
-    T.state.inlineViewer.prettyPrint = true;
-    w.render();
-    assert(tv.firstChild !== first, "a Pretty Print change rebuilds it");
+    section("272h. Image viewer: pan/zoom keeps the <image>, size is per image");
     const png = new Uint8Array([137, 80, 78, 71]);
     await w.openInlineViewer("wide.png", png, "image", null);
     const wide = T.state.inlineViewer;
@@ -31569,7 +31247,7 @@ group(273);
     const colKeys = [...d.querySelectorAll("#columnsList input[data-col]")].map(cb => cb.dataset.col).join(",");
     assert(colKeys === "message", "Columns panel offers no Δt toggle for plain text (" + colKeys + ")");
     const row = [...d.querySelectorAll("#tableRows .log-row")].find(r => r.dataset.entryId === f.entries[2].id);
-    assert(row && row.querySelector(".col-time").textContent === "3" && row.querySelector(".col-delta").textContent === "—", "row: line number, no Δt");
+    assert(row && row.querySelector(".col-time").textContent === "3" && !row.querySelector(".col-delta"), "row: line number, no Δt cell (text mode, GROUP 348)");
 
     section("273d. Line ranges: time filters are named in lines, merge is refused");
     const range = w.createFilterNode(f.id, "timerange", { from: 2, to: 3 });
@@ -31604,44 +31282,18 @@ group(273);
     assert(f.entries.map(e => e.ts + ":" + e.message).join("|") === "1:one|2:two|3:|4:four", "tail: numbered on append, partial line pending");
     assert(!w.nativeFormatSpec({ id: PT, mode: "plaintext" }), "no native parse spec: plain text stays on the JS path");
   });
-
-  await withApp(async (w, d, T) => {
-    section("273g. \"Filter lines\" opens what the text viewer shows — pretty-printed JSON line by line");
-    const json = '{"a":1,"list":[1,2],"b":"x"}';
-    await w.openInlineViewer("data.json", new TextEncoder().encode(json), "text", null);
-    const btn = d.querySelector("#itvFilterLinesBtn");
-    assert(btn && !btn.classList.contains("hidden"), "button shown for a text viewer");
-    fireClick(d.querySelector("#itvPrettyPrintBtn"), w);
-    assert(T.state.inlineViewer.prettyPrint, "sanity: Pretty Print on");
-    fireClick(btn, w);
-    await waitFor(() => T.state.rootIds.length === 1 && !("loadFraction" in T.state.nodes[T.state.rootIds[0]]));
-    const f = T.state.nodes[T.state.rootIds[0]];
-    const pretty = JSON.stringify(JSON.parse(json), null, 2).split("\n");
-    assert(f.name === "data.json (pretty)" && f.formatId === PT, "new plain-text root named after the viewer (" + f.name + ")");
-    assert(f.entries.length === pretty.length && f.entries.every((e, i) => e.message === pretty[i]), "one entry per pretty-printed line: " + JSON.stringify(f.entries.map(e => e.message)));
-    assert(T.state.inlineViewer === null && T.state.activeId === f.id, "its log view replaces the viewer");
-    const flt = w.createFilterNode(f.id, "text", '"a": [*:int]');
-    assert(w.getEntries(flt.id).length === 1, "a wildcard filter matches the pretty-printed line");
-
-    await w.openInlineViewer("raw.json", new TextEncoder().encode(json), "text", null);
-    const raw = await w.openInlineViewerAsTextLog(T.state.inlineViewer);
-    assert(raw.name === "raw.json" && raw.entries.length === 1, "without Pretty Print: the file's own (single) line");
-  });
 }
 
 /* ============================================================
    GROUP 274 — Plain-text rows: indentation, syntax highlighting, nesting
    Origin: 2026-09-25, person-requested follow-up to Group 273 — keep a
    plain-text line's leading spaces/tabs and the viewer's JSON/XML syntax
-   highlighting in the filter views, and hang a "Filter lines" text version
-   under its source file in the tree (file -> text version -> filters).
-   Covers: the .col-msg.plaintext class, token ranges (JSON, XML incl. an
-   attribute value with "&"), tokens combined with filter-match marks in
-   markCombinedHtml, highlighted rows in the Filtered view (none for an
-   ordinary log), the nested tree row + nav order, reuse on a second
-   "Filter lines", closing the viewer entry closes its text versions
-   (undoable, then top-level), and the token-range refactor keeping the
-   viewer's own highlighting.
+   highlighting in the filter views. Covers: the .col-msg.plaintext class,
+   token ranges (JSON, XML incl. an attribute value with "&"), tokens
+   combined with filter-match marks in markCombinedHtml, highlighted rows in
+   the Filtered view (none for an ordinary log). The "Filter lines" nesting
+   under a text viewer (274c/274d) is gone: text files load as one
+   plain-text node (GROUP 347).
    ============================================================ */
 group(274);
 {
@@ -31663,18 +31315,17 @@ group(274);
 
   await withApp(async (w, d, T) => {
     section("274b. Filtered view: indentation kept, JSON highlighted, marks still shown; an ordinary log gets no tokens");
-    const map = T.state.looseInlineViewers;
-    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k1" });
-    T.state.inlineViewer.prettyPrint = true;
-    const f = await w.openInlineViewerAsTextLog(T.state.inlineViewer);
-    assert(f.viewerSource && f.viewerSource.mapKey === "k1" && f.textSyntax === "json", "text version remembers its viewer and syntax");
-    const flt = w.createFilterNode(f.id, "text", "temp");
+    const [doc] = LOGSIM.generateToStrings({ format: "jsondoc", entries: 6, seed: 3 });
+    await w.loadFileDescriptors([{ file: new w.File([doc.text], doc.name), handle: null }]);
+    const f = T.state.nodes[T.state.rootIds[0]];
+    assert(f.formatId === "fmt-plaintext" && f.textSyntax === "json", "the .json loaded as a plain-text file node with its syntax");
+    const flt = w.createFilterNode(f.id, "text", "level");
     T.state.activeId = flt.id;
     w.render();
     const msg = d.querySelector("#tableRows .log-row .col-msg");
     assert(msg && msg.classList.contains("plaintext"), "message cell carries .plaintext (white-space:pre)");
-    assert(msg.textContent === '  "temp": 21.5,', "leading spaces kept in the cell text (" + JSON.stringify(msg.textContent) + ")");
-    assert(msg.querySelector(".tok-key") && msg.querySelector(".tok-number"), "key and number highlighted");
+    assert(/^ {6}"level": "/.test(msg.textContent), "leading spaces kept in the cell text (" + JSON.stringify(msg.textContent) + ")");
+    assert(msg.querySelector(".tok-key") && msg.querySelector(".tok-string"), "key and string highlighted");
     assert(msg.querySelector("mark.text-match-mark"), "the filter match is still marked");
     // Person-reported: an empty level badge painted a small grey block right
     // before every message (its padding/background spilling out of the
@@ -31690,114 +31341,58 @@ group(274);
     const logMsg = d.querySelector("#tableRows .log-row .col-msg");
     assert(logMsg && !logMsg.classList.contains("plaintext") && !logMsg.querySelector("[class^='tok-']"), "ordinary log rows: no plaintext class, no tokens");
   });
-
-  await withApp(async (w, d, T) => {
-    section("274c. Tree: file -> text version -> filter, nav order, reuse, close cascade");
-    const map = T.state.looseInlineViewers;
-    await w.openInlineViewer("notes.txt", new TextEncoder().encode("a\n\tb\n"), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k2" });
-    const viewer = T.state.inlineViewer;
-    const f = await w.openInlineViewerAsTextLog(viewer);
-    const flt = w.createFilterNode(f.id, "text", "b");
-    w.render();
-    const tree = d.querySelector("#tree");
-    const rows = [...tree.querySelectorAll(".zip-source-file, .tree-row")];
-    const vIdx = rows.findIndex(r => r.classList.contains("zip-source-file"));
-    const fIdx = rows.findIndex(r => r.dataset.nodeId === f.id);
-    const cIdx = rows.findIndex(r => r.dataset.nodeId === flt.id);
-    assert(vIdx >= 0 && vIdx < fIdx && fIdx < cIdx, "viewer row, then its text version, then the filter (" + [vIdx, fIdx, cIdx] + ")");
-    assert(tree.querySelectorAll('.tree-row[data-node-id="' + f.id + '"]').length === 1, "text version rendered once (not also top-level)");
-    // Person-reported: the nested subtree had no connector lines (renderNode
-    // only decorates depth-0 subtrees).
-    const fltRow = tree.querySelector('.tree-row[data-node-id="' + flt.id + '"]');
-    assert(fltRow.querySelector(".tree-guide.h") && tree.querySelector('.tree-row[data-node-id="' + f.id + '"] .tree-guide.v'),
-      "text version -> filter drawn with connector lines (stem + elbow)");
-    const nav = w.flattenTreeIds();
-    const nv = nav.indexOf(w.viewerNavId("loose", "loose", "k2"));
-    assert(nv >= 0 && nav[nv + 1] === f.id && nav[nv + 2] === flt.id, "arrow-key order follows the nesting");
-    const again = await w.openInlineViewerAsTextLog(viewer);
-    assert(again === f && T.state.rootIds.length === 1 && T.state.activeId === f.id, "a second \"Filter lines\" re-activates the same text version");
-    w.render();
-    fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
-    assert(!T.state.nodes[f.id] && !map.has("k2"), "closing the viewer entry closes its text version");
-    w.undo();
-    assert(T.state.nodes[f.id] && T.state.nodes[f.id].viewerSource, "undo restores it (viewerSource kept)");
-    w.render();
-    assert(d.querySelector('#tree .tree-row[data-node-id="' + f.id + '"]') && !w.isNestedUnderViewer(T.state.nodes[f.id]), "...as a top-level row, its viewer being closed");
-  });
-
-  await withApp(async (w, d, T) => {
-    section("274d. Ctrl+F on an open text viewer opens its text version and the filter popup at once");
-    const map = T.state.looseInlineViewers;
-    await w.openInlineViewer("cfg.json", new TextEncoder().encode(JSON_TEXT), "text", { ownerKind: "loose", ownerId: "loose", map, mapKey: "k3" });
-    T.state.inlineViewer.prettyPrint = true;
-    fireKeydown(d, w, "f", { ctrlKey: true });
-    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
-    const f = T.state.nodes[T.state.activeId];
-    assert(f && f.formatId === "fmt-plaintext" && f.name === "cfg.json (pretty)" && f.viewerSource.mapKey === "k3", "the displayed (pretty) text became the active text version");
-    assert(T.state.inlineViewer === null, "the viewer gave way to its log view");
-    w.closeFilterPopup();
-    w.activateInlineViewer(map.get("k3"));
-    fireKeydown(d, w, "f", { ctrlKey: true });
-    await waitFor(() => !d.querySelector("#filterPopup").classList.contains("hidden"));
-    assert(T.state.rootIds.length === 1 && T.state.activeId === f.id, "again on the same viewer: the same text version, no copy");
-  });
 }
 
 /* ============================================================
-   GROUP 275 — Text/image viewers survive a reload like log files
+   GROUP 275 — Image viewers (and text files) survive a reload like log files
    Origin: 2026-09-25, person-requested: after a page reload / app restart,
-   restore opened text and image files too — on the desktop from their
-   stored path (if still there), like log files — so a "Filter lines" text
-   version nests under its file again. Covers: a loose viewer's record
-   (Blob in the browser, path only on the desktop), the meta's viewer list
-   (owner, map key, Pretty Print, active viewer), restore after the files
-   (text version nested again, filters kept), an image viewer, a path whose
+   restore opened image files too — on the desktop from their stored path (if
+   still there), like log files. Updated 2026-10-01: text files (.txt/.json/
+   .xml) are ordinary plain-text file nodes now (GROUP 347), so only images
+   are viewers; a text-viewer record saved by an older version is ignored.
+   Covers: a loose viewer's record (Blob in the browser, path only on the
+   desktop), the meta's viewer list (owner, map key, active viewer), restore
+   after the files, a saved text viewer record ignored and swept, a path whose
    file is gone (skipped), closing a viewer drops its record, and stale
    viewer records are swept on restore.
    ============================================================ */
 group(275);
 {
-  const JSON_TEXT = '{"a":1,"b":[1,2]}';
+  const PNG_BYTES = [0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4];
   const factory = new IDBFactory();
   let viewerKey = null;
   await withApp(async (w, d, T) => {
-    section("275a. A directly opened text viewer + its text version are persisted");
+    section("275a. A directly opened image viewer is persisted");
     await T.bootRestore;
-    await w.loadFiles([new w.File([JSON_TEXT], "cfg.json", { type: "application/json" })]);
+    await w.loadFiles([new w.File([new Uint8Array(PNG_BYTES)], "pic.png", { type: "image/png" })]);
     const v = T.state.inlineViewer;
-    assert(v && v.cacheKey && v.cacheKey.startsWith("viewer-"), "the viewer got a cache key");
+    assert(v && v.kind === "image" && v.cacheKey && v.cacheKey.startsWith("viewer-"), "the viewer got a cache key");
     viewerKey = v.cacheKey;
     await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey))));
     const rec = await w.cacheStoreOp("files", "readonly", st => st.get(viewerKey));
     assert(rec && rec.viewer && rec.blob && !rec.localPath, "browser: the record holds the file as a Blob");
-    v.prettyPrint = true;
-    const f = await w.openInlineViewerAsTextLog(v);
-    w.createFilterNode(f.id, "text", '"a"');
-    // Written by openInlineViewerAsTextLog itself (idle-deferred text record)
-    // — not by the test: addFile alone persists nothing.
-    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(f.cacheKey))));
-    // The viewer is shown at save time: it comes back as the shown one.
-    w.activateInlineViewer(v);
     await w.persistMetaNow();
     const meta = await w.cacheStoreOp("meta", "readonly", st => st.get("session"));
-    assert(meta.viewers.length === 1 && meta.viewers[0].prettyPrint && meta.viewers[0].ownerKind === "loose" && meta.activeViewer === viewerKey, "meta lists the viewer (loose, pretty, active)");
-    // A stale viewer record (closed in a session that never got to clean up).
+    assert(meta.viewers.length === 1 && meta.viewers[0].kind === "image" && meta.viewers[0].ownerKind === "loose" && meta.activeViewer === viewerKey, "meta lists the viewer (loose, image, active)");
+    assert(!("prettyPrint" in meta.viewers[0]), "no text-viewer fields in the meta any more");
+    // A stale viewer record (closed in a session that never got to clean up) and a
+    // text viewer saved by an older version (a listed record of kind "text").
     await w.cacheStoreOp("files", "readwrite", st => st.put({ key: "viewer-stale", name: "old.txt", viewer: true, blob: new w.Blob(["x"]) }));
+    await w.cacheStoreOp("files", "readwrite", st => st.put({ key: "viewer-oldtext", name: "old.json", viewer: true, blob: new w.Blob(["{}"]) }));
+    meta.viewers.push({ key: "viewer-oldtext", ownerKind: "loose", ownerId: "loose", mapKey: "loose:old", name: "old.json", kind: "text", prettyPrint: true });
+    await w.cacheStoreOp("meta", "readwrite", st => st.put(meta));
   }, { indexedDB: factory });
 
   await withApp(async (w, d, T) => {
-    section("275b. Reload: viewer back (pretty, shown), text version nested under it with its filter");
+    section("275b. Reload: the image viewer is back and shown; a saved text viewer is ignored; stale records are swept");
     await T.bootRestore;
     const map = T.state.looseInlineViewers;
     const v = [...map.values()][0];
-    assert(map.size === 1 && v.name === "cfg.json" && v.text === JSON_TEXT && v.prettyPrint && v.cacheKey === viewerKey, "viewer restored with its content and Pretty Print");
+    assert(map.size === 1 && v.name === "pic.png" && v.kind === "image" && v.cacheKey === viewerKey, "viewer restored (and only it, got " + map.size + ")");
     assert(T.state.inlineViewer === v, "...and shown, as it was");
-    const f = T.state.rootIds.map(id => T.state.nodes[id])[0];
-    assert(f && f.name === "cfg.json (pretty)" && f.textSyntax === "json" && w.isNestedUnderViewer(f), "text version restored and nested under its viewer");
-    assert(f.children.length === 1 && T.state.nodes[f.children[0]].value === '"a"', "its filter came back");
-    const rows = [...d.querySelectorAll("#tree .zip-source-file, #tree .tree-row")];
-    assert(rows[0].classList.contains("zip-source-file") && rows[1].dataset.nodeId === f.id, "tree: viewer row, then the text version");
+    assert(T.state.rootIds.length === 0, "the saved text viewer did not come back as a node either");
     assert(!(await w.cacheStoreOp("files", "readonly", st => st.get("viewer-stale"))), "a viewer record the meta doesn't list is swept");
+    assert(!(await w.cacheStoreOp("files", "readonly", st => st.get("viewer-oldtext"))), "the ignored text-viewer record is swept too");
 
     section("275c. Closing the viewer drops its record");
     fireClick(d.querySelector("#tree .zip-source-file .tree-del"), w);
@@ -31806,7 +31401,8 @@ group(275);
   }, { indexedDB: factory });
 
   // Desktop: stored as a path, re-read from disk; a file gone since is skipped.
-  const onDisk = { "/data/pic.png": "PNGDATA", "/data/notes.txt": "hello\nworld" };
+  const [simDoc] = LOGSIM.generateToStrings({ format: "plain", entries: 4, seed: 11 });
+  const onDisk = { "/data/pic.png": "PNGDATA", "/data/notes.txt": simDoc.text };
   const bridge = () => ({
     openLocalPath: async p => {
       if (!(p in onDisk)) throw new Error("gone");
@@ -31815,25 +31411,31 @@ group(275);
   });
   const deskFactory = new IDBFactory();
   await withApp(async (w, d, T) => {
-    section("275d. Desktop: an image and a text viewer are stored by path only");
+    section("275d. Desktop: an image viewer and a text file node are stored by path only");
     await T.bootRestore;
     const mk = (p, type) => ({ name: p.split("/").pop(), localPath: p, file: new w.File([onDisk[p]], p.split("/").pop(), { type }) });
     await w.loadFileDescriptors([mk("/data/pic.png", "image/png"), mk("/data/notes.txt", "text/plain")]);
-    const keys = [...T.state.looseInlineViewers.values()].map(v => v.cacheKey);
-    await waitFor(async () => (await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))))).every(Boolean));
-    const recs = await Promise.all(keys.map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))));
-    assert(recs.every(r => r.localPath && !r.blob), "records hold the path, no content");
+    const viewer = [...T.state.looseInlineViewers.values()][0];
+    const node = T.state.nodes[T.state.rootIds[0]];
+    assert(viewer && node && node.name === "notes.txt" && node.formatId === "fmt-plaintext", "sanity: png is a viewer, notes.txt a plain-text node");
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(viewer.cacheKey))));
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", st => st.get(node.cacheKey))));
+    const recs = await Promise.all([viewer.cacheKey, node.cacheKey].map(k => w.cacheStoreOp("files", "readonly", st => st.get(k))));
+    assert(recs.every(r => r.localPath && !r.blob && !r.text), "records hold the path, no content");
     await w.persistMetaNow();
   }, { indexedDB: deskFactory, philogg: bridge() });
 
-  onDisk["/data/notes.txt"] = "hello\nworld\nagain"; // changed on disk
-  delete onDisk["/data/pic.png"];                    // deleted
+  onDisk["/data/notes.txt"] = simDoc.text + "\nappended line"; // changed on disk
+  delete onDisk["/data/pic.png"];                              // deleted
   await withApp(async (w, d, T) => {
-    section("275e. Desktop reload: re-read from the path, a deleted file is skipped");
+    section("275e. Desktop reload: re-read from the path, a deleted image is skipped");
     w.fetch = async u => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(onDisk["/data/" + String(u).split("/").pop()]).buffer });
     await T.bootRestore;
-    const views = [...T.state.looseInlineViewers.values()];
-    assert(views.length === 1 && views[0].name === "notes.txt" && views[0].text === "hello\nworld\nagain", "the text file came back from disk (current content), the deleted image didn't (" + views.map(v => v.name) + ")");
+    assert(T.state.looseInlineViewers.size === 0, "the deleted image didn't come back");
+    const node = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "notes.txt");
+    const lines = (simDoc.text + "\nappended line").replace(/\r?\n$/, "").split(/\r?\n/);
+    assert(node && node.formatId === "fmt-plaintext" && node.entries.length === lines.length && node.entries[node.entries.length - 1].message === "appended line",
+      "the text file came back from disk (current content) as a plain-text node (" + (node && node.entries.length) + " vs " + lines.length + " lines)");
   }, { indexedDB: deskFactory, philogg: bridge() });
 }
 
@@ -33385,10 +32987,10 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#btnImportFormat") && !d.querySelector("#logFormatImportDialog") && !d.querySelector("#logFormatFileInput"),
     "Settings → Log Formats has no Import… button / own import dialog any more");
 
-  // Any other .json still loads as a normal file (inline viewer).
+  // Any other .json still loads as a normal file (a plain-text file node).
   await w.loadFileDescriptors([{ file: new w.File(['{"hello":1}'], "data.json"), handle: null }]);
   assert(!isVisible(dlg, w), "a plain JSON file does not open the wizard");
-  assert(T.state.looseInlineViewers.size === 1, "...it opens as before (inline viewer)");
+  assert(T.state.looseInlineViewers.size === 0 && T.state.rootIds.some(id => T.state.nodes[id].name === "data.json" && T.state.nodes[id].formatId === "fmt-plaintext"), "...it loads as a plain-text file node");
 });
 
 /* GROUP 294 — Central import: Open → "Import…" (replaces "Import
@@ -33959,7 +33561,6 @@ await withApp(async (w, d, T) => {
    deterministic per seed, size-limited, rotates/parallelizes files, and its
    ZIP writer is readable by the app's ZIP reader. */
 group(300);
-const LOGSIM = require(path.join(__dirname, "..", "tools", "log-sim", "core.js"));
 const logsimLocal = ms => { const x = new Date(ms); return new Date(x.getUTCFullYear(), x.getUTCMonth(), x.getUTCDate(), x.getUTCHours(), x.getUTCMinutes(), x.getUTCSeconds(), x.getUTCMilliseconds()).getTime(); };
 const logsimEntries = (format, n, seed) => { const g = LOGSIM.createGenerator({ format, seed }); return Array.from({ length: n }, () => g.next()); };
 const logsimEntries2 = (format, scenarios, n, seed) => { const g = LOGSIM.createGenerator({ format, scenarios, seed }); return Array.from({ length: n }, () => g.next()); };
@@ -34078,6 +33679,21 @@ await withApp(async (w, d, T) => {
   const entries = await w.readZipEntries(new w.File([zip], "sim.zip"));
   assert(entries.length === 3 && entries.every(e => e.compressionMethod === 0) && entries[1].name === "logs/sim-default-2.log", "the app lists the simulator's ZIP entries");
   assert(new TextDecoder().decode(await entries[2].extract()) === rot[2].text, "a stored entry extracts byte-for-byte");
+});
+
+await withApp(async (w, d, T) => {
+  section("300e. Document formats: one valid minified JSON document, one well-formed XML document");
+  const [j] = LOGSIM.generateToStrings({ format: "jsondoc", entries: 60, seed: 4 });
+  const doc = JSON.parse(j.text);
+  assert(j.name === "sim-jsondoc-1.json" && !j.text.includes("\n") && doc.entries.length === 60 && j.entries === 60, "jsondoc: a single-line, valid JSON document with 60 entries");
+  assert(doc.entries.some(e => e.data && typeof e.data === "object" && Object.keys(e.data).length), "jsondoc: scenario payloads appear as nested data");
+  assert(w.prettyPrintedJsonOrNull(j.text).split("\n").length > 100, "jsondoc: pretty printing expands it to many lines");
+  assert(j.text === LOGSIM.generateToStrings({ format: "jsondoc", entries: 60, seed: 4 })[0].text, "jsondoc: deterministic per seed");
+  const [x] = LOGSIM.generateToStrings({ format: "xmldoc", entries: 60, seed: 4 });
+  const xd = new w.DOMParser().parseFromString(x.text, "application/xml");
+  assert(x.name.endsWith(".xml") && !xd.querySelector("parsererror") && xd.documentElement.nodeName === "log" && xd.querySelectorAll("entry").length === 60, "xmldoc: well-formed, 60 <entry> elements");
+  assert(x.text.split("\n").filter(l => l.startsWith("  <entry ")).length === 60, "xmldoc: every entry starts on its own line");
+  assert(LOGSIM.formatExport("jsondoc") === null && LOGSIM.formatExport("xmldoc") === null, "document formats need no format import");
 });
 
 /* ============================================================
@@ -37120,7 +36736,7 @@ group(329);
     { name: "sub/deep.log", data: makeLog(0, 3) },
     { name: "a.log", data: makeLog(0, 4) },
     { name: "c.log", data: makeLog(1, 4) },
-    { name: "notes.txt", data: "hello notes" },
+    { name: "notes.png", data: "hello notes" },
   ]);
 
   await withApp(async (w, d, T) => {
@@ -37130,11 +36746,11 @@ group(329);
     T.state.activeId = plain.id; T.state.focusRegion = "entries"; w.render();
     const subId = w.dirNavId("zip", zip.id, "sub");
     const U = n => w.unloadedNavId("zip", zip.id, n);
-    assert(w.flattenTreeIds().join("|") === [subId, U("a.log"), U("c.log"), U("notes.txt"), plain.id].join("|"),
+    assert(w.flattenTreeIds().join("|") === [subId, U("a.log"), U("c.log"), U("notes.png"), plain.id].join("|"),
       "flatten: dir row, the unloaded entries in listing order, then the main tree, got " + w.flattenTreeIds().join("|"));
     const key = (k, o) => fireKeydown(d, w, k, o);
     key("ArrowUp", { altKey: true });
-    assert(w.treeCursorId() === U("notes.txt"), "Alt+Up from a loaded node lands on the unloaded entry above");
+    assert(w.treeCursorId() === U("notes.png"), "Alt+Up from a loaded node lands on the unloaded entry above");
     assert(T.state.activeId === null && !T.state.inlineViewer, "...and deselects the previous file (Group 343: activeId null, nothing shown for it)");
     assert(T.state.focusRegion === "entries", "Alt+Arrow leaves focusRegion alone");
     const cur = [...d.querySelectorAll("#zipList .tree-cursor")];
@@ -37145,7 +36761,7 @@ group(329);
     key("ArrowUp", { altKey: true });
     assert(w.treeCursorId() === U("c.log"), "Alt+Up again -> the next unloaded entry");
     key("ArrowDown", { altKey: true });
-    assert(w.treeCursorId() === U("notes.txt"), "Alt+Down goes back down");
+    assert(w.treeCursorId() === U("notes.png"), "Alt+Down goes back down");
     key("ArrowDown", { altKey: true });
     assert(w.treeCursorId() === null && T.state.activeId === plain.id, "Alt+Down onto the loaded node selects it again (cursor cleared)");
     key("ArrowUp", { altKey: true }); key("ArrowUp", { altKey: true }); key("ArrowUp", { altKey: true }); key("ArrowUp", { altKey: true });
@@ -37176,10 +36792,10 @@ group(329);
     assert(T.state.activeId === plain.id && w.treeCursorId() === null, "Shift+Down from an unloaded stop continues past the remaining unloaded entries");
     // Shift+Right on an unloaded entry behaves like Right
     T.state.focusRegion = "tree";
-    w.setTreeCursor(w.unloadedNavId("zip", zip.id, "notes.txt")); w.render();
+    w.setTreeCursor(w.unloadedNavId("zip", zip.id, "notes.png")); w.render();
     key("ArrowRight", { shiftKey: true });
     await waitFor(() => T.state.inlineViewer);
-    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.txt", "Shift+Right opens the entry like Right");
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.png", "Shift+Right opens the entry like Right");
   });
 
   await withApp(async (w, d, T) => {
@@ -37250,12 +36866,12 @@ group(329);
     const plain = await w.addFile("plain.log", makeLog(0, 3), () => {});
     T.state.activeId = plain.id; T.state.focusRegion = "tree"; w.render();
     const key = (k, o) => fireKeydown(d, w, k, o);
-    w.setTreeCursor(w.unloadedNavId("zip", zip.id, "notes.txt")); w.render();
+    w.setTreeCursor(w.unloadedNavId("zip", zip.id, "notes.png")); w.render();
     key("ArrowRight", { altKey: true });
     await waitFor(() => T.state.inlineViewer);
-    assert(T.state.inlineViewer.name === "notes.txt" && T.state.activeId === null && w.treeCursorId() === null, "inline viewer shown, cursor cleared");
-    assert(zip.inlineViewers.has("notes.txt"), "viewer registered under the entry name (row is now an opened row)");
-    assert(w.flattenTreeIds().includes(w.viewerNavId("zip", zip.id, "notes.txt")) && !w.flattenTreeIds().includes(w.unloadedNavId("zip", zip.id, "notes.txt")), "nav list now has the viewer id instead of the unloaded stop");
+    assert(T.state.inlineViewer.name === "notes.png" && T.state.activeId === null && w.treeCursorId() === null, "inline viewer shown, cursor cleared");
+    assert(zip.inlineViewers.has("notes.png"), "viewer registered under the entry name (row is now an opened row)");
+    assert(w.flattenTreeIds().includes(w.viewerNavId("zip", zip.id, "notes.png")) && !w.flattenTreeIds().includes(w.unloadedNavId("zip", zip.id, "notes.png")), "nav list now has the viewer id instead of the unloaded stop");
   });
 
   await withApp(async (w, d, T) => {
@@ -39188,71 +38804,71 @@ if (groupSelected()) {
     return c;
   };
 
-  section("342a. 25 .json files, \"Show newest 3\" + \"Auto-open newest\": 3 listed, the newest opens as an inline viewer flagged auto");
+  section("342a. 25 .png files, \"Show newest 3\" + \"Auto-open newest\": 3 listed, the newest opens as an inline viewer flagged auto");
   {
     const dirs = { "/data": {} }, mtimes = {};
-    for (let i = 1; i <= 25; i++) { const n = "evt" + String(i).padStart(2, "0") + ".json"; dirs["/data"][n] = jsonBody(i); mtimes["/data/" + n] = 1000 + i; }
+    for (let i = 1; i <= 25; i++) { const n = "evt" + String(i).padStart(2, "0") + ".png"; dirs["/data"][n] = jsonBody(i); mtimes["/data/" + n] = 1000 + i; }
     const bridge = mkBridge(dirs, mtimes);
     await withApp(async (w, d, T) => {
       bridge.installFetch(w);
       const folder = await watch(w, T);
-      assert(folder.files.length === 25, "sanity: with the default pattern all 25 .json files are listed, got " + folder.files.length);
-      setPatterns(folder, [{ pattern: "*.json", showNewest: 3, autoOpenNewest: true }]);
+      assert(folder.files.length === 25, "sanity: with the default pattern all 25 .png files are listed, got " + folder.files.length);
+      setPatterns(folder, [{ pattern: "*.png", showNewest: 3, autoOpenNewest: true }]);
       await w.rescanFolder(folder);
-      assert(folder.files.map(r => r.name).join(",") === "evt23.json,evt24.json,evt25.json",
-        "\"Show newest 3\" applies to .json files (by mtime), got " + folder.files.map(r => r.name).join(","));
-      assert(openNames(folder).join(",") === "evt25.json" && folder.inlineViewers.has("evt25.json"),
-        "\"Auto-open newest\" opened the newest .json as an inline viewer, got " + openNames(folder).join(","));
-      assert(T.state.inlineViewer && T.state.inlineViewer.name === "evt25.json" && T.state.rootIds.length === 0,
+      assert(folder.files.map(r => r.name).join(",") === "evt23.png,evt24.png,evt25.png",
+        "\"Show newest 3\" applies to .png files (by mtime), got " + folder.files.map(r => r.name).join(","));
+      assert(openNames(folder).join(",") === "evt25.png" && folder.inlineViewers.has("evt25.png"),
+        "\"Auto-open newest\" opened the newest .png as an inline viewer, got " + openNames(folder).join(","));
+      assert(T.state.inlineViewer && T.state.inlineViewer.name === "evt25.png" && T.state.rootIds.length === 0,
         "...it is the shown viewer, and no log node was created");
-      const rec = folder.files.find(r => r.name === "evt25.json");
+      const rec = folder.files.find(r => r.name === "evt25.png");
       assert(rec.openedByAuto === true && rec.autoOpenFired === true, "the viewer open sets openedByAuto/autoOpenFired like a node does");
       assert(folder.failed === false, "the folder is not failed");
-      const row = rowOf(d, "evt25.json");
+      const row = rowOf(d, "evt25.png");
       assert(row && row.classList.contains("zip-entry-opened"), "its row is the opened look");
       assert(row.querySelector(".tree-icon use").getAttribute("href") === "#i-file-auto" && /automatically/.test(row.querySelector(".tree-icon").title),
         "...with the auto badge and tooltip an auto-opened log row has");
-      assert(!rowOf(d, "evt24.json").querySelector(".tree-icon use[href='#i-file-auto']"), "a listed, unopened row has no auto badge");
+      assert(!rowOf(d, "evt24.png").querySelector(".tree-icon use[href='#i-file-auto']"), "a listed, unopened row has no auto badge");
 
       const c = countRenders(w);
       for (let i = 0; i < 3; i++) await w.folderScanTick();
-      assert(c.n === 0 && folder.files.length === 3, "stable polls with rules on .json files trigger zero renders (Group 195), got " + c.n);
+      assert(c.n === 0 && folder.files.length === 3, "stable polls with rules on .png files trigger zero renders (Group 195), got " + c.n);
       c.restore();
     }, { philogg: bridge });
   }
 
-  section("342b. keep-1 sliding window on .json: a newer file opens and the previous auto-opened viewer closes; a manual open is never auto-closed; a hand-closed one is not reopened");
+  section("342b. keep-1 sliding window on .png: a newer file opens and the previous auto-opened viewer closes; a manual open is never auto-closed; a hand-closed one is not reopened");
   {
-    const dirs = { "/data": { "evt1.json": jsonBody(1), "evt2.json": jsonBody(2), "evt3.json": jsonBody(3) } };
-    const mtimes = { "/data/evt1.json": 1001, "/data/evt2.json": 1002, "/data/evt3.json": 1003 };
+    const dirs = { "/data": { "evt1.png": jsonBody(1), "evt2.png": jsonBody(2), "evt3.png": jsonBody(3) } };
+    const mtimes = { "/data/evt1.png": 1001, "/data/evt2.png": 1002, "/data/evt3.png": 1003 };
     const bridge = mkBridge(dirs, mtimes);
     await withApp(async (w, d, T) => {
       bridge.installFetch(w);
       const folder = await watch(w, T);
-      setPatterns(folder, [{ pattern: "*.json", autoCloseKeep: 1 }]);
+      setPatterns(folder, [{ pattern: "*.png", autoCloseKeep: 1 }]);
       await w.rescanFolder(folder);
-      assert(openNames(folder).join(",") === "evt3.json", "keep-1 opened the newest .json, got " + openNames(folder).join(","));
+      assert(openNames(folder).join(",") === "evt3.png", "keep-1 opened the newest .png, got " + openNames(folder).join(","));
 
-      dirs["/data"]["evt4.json"] = jsonBody(4); mtimes["/data/evt4.json"] = 1004;
+      dirs["/data"]["evt4.png"] = jsonBody(4); mtimes["/data/evt4.png"] = 1004;
       await w.folderScanTick(); // the real poll
-      assert(openNames(folder).join(",") === "evt4.json", "a newer .json arriving opens, the previous auto-opened viewer closes, got " + openNames(folder).join(","));
-      assert(!folder.inlineViewers.has("evt3.json") && folder.files.some(r => r.name === "evt3.json"), "...the closed one is still listed");
-      assert(rowOf(d, "evt3.json") && !rowOf(d, "evt3.json").classList.contains("zip-entry-opened"), "...as a grayed row (not the opened look)");
-      assert(T.state.inlineViewer && T.state.inlineViewer.name === "evt4.json", "the new viewer is the shown one");
+      assert(openNames(folder).join(",") === "evt4.png", "a newer .png arriving opens, the previous auto-opened viewer closes, got " + openNames(folder).join(","));
+      assert(!folder.inlineViewers.has("evt3.png") && folder.files.some(r => r.name === "evt3.png"), "...the closed one is still listed");
+      assert(rowOf(d, "evt3.png") && !rowOf(d, "evt3.png").classList.contains("zip-entry-opened"), "...as a grayed row (not the opened look)");
+      assert(T.state.inlineViewer && T.state.inlineViewer.name === "evt4.png", "the new viewer is the shown one");
 
       // A viewer the person opened by hand is never auto-closed.
-      await w.loadFolderFile(folder, folder.files.find(r => r.name === "evt1.json"));
-      assert(folder.files.find(r => r.name === "evt1.json").openedByAuto === false, "a manual open is not flagged auto");
-      dirs["/data"]["evt5.json"] = jsonBody(5); mtimes["/data/evt5.json"] = 1005;
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "evt1.png"));
+      assert(folder.files.find(r => r.name === "evt1.png").openedByAuto === false, "a manual open is not flagged auto");
+      dirs["/data"]["evt5.png"] = jsonBody(5); mtimes["/data/evt5.png"] = 1005;
       await w.folderScanTick();
-      assert(openNames(folder).join(",") === "evt1.json,evt5.json", "evt5 opened, auto evt4 closed, the manual evt1 stays open, got " + openNames(folder).join(","));
+      assert(openNames(folder).join(",") === "evt1.png,evt5.png", "evt5 opened, auto evt4 closed, the manual evt1 stays open, got " + openNames(folder).join(","));
 
       // Closed by hand (the row's ✕), an auto-opened newest stays closed on later merges.
-      fireClick(rowOf(d, "evt5.json").querySelector(".tree-del"), w);
-      assert(!folder.inlineViewers.has("evt5.json"), "sanity: the person closed the auto-opened viewer");
-      dirs["/data"]["aaa.json"] = jsonBody(0); mtimes["/data/aaa.json"] = 500; // older: a merge runs, the newest is still evt5
+      fireClick(rowOf(d, "evt5.png").querySelector(".tree-del"), w);
+      assert(!folder.inlineViewers.has("evt5.png"), "sanity: the person closed the auto-opened viewer");
+      dirs["/data"]["aaa.png"] = jsonBody(0); mtimes["/data/aaa.png"] = 500; // older: a merge runs, the newest is still evt5
       await w.folderScanTick();
-      assert(folder.files.some(r => r.name === "aaa.json") && openNames(folder).join(",") === "evt1.json",
+      assert(folder.files.some(r => r.name === "aaa.png") && openNames(folder).join(",") === "evt1.png",
         "a later merge does not reopen a hand-closed auto-opened file (autoOpenFired), got " + openNames(folder).join(","));
 
       const c = countRenders(w);
@@ -39262,33 +38878,33 @@ if (groupSelected()) {
     }, { philogg: bridge });
   }
 
-  section("342c. a mixed .log + .json pattern: Show newest / Auto-open newest treat both kinds alike");
+  section("342c. a mixed .log + .png pattern: Show newest / Auto-open newest treat both kinds alike");
   {
-    const dirs = { "/data": { "a.log": simLog(1), "b.json": jsonBody(2), "c.log": simLog(3), "d.json": jsonBody(4) } };
-    const mtimes = { "/data/a.log": 1000, "/data/b.json": 2000, "/data/c.log": 3000, "/data/d.json": 4000 };
+    const dirs = { "/data": { "a.log": simLog(1), "b.png": jsonBody(2), "c.log": simLog(3), "d.png": jsonBody(4) } };
+    const mtimes = { "/data/a.log": 1000, "/data/b.png": 2000, "/data/c.log": 3000, "/data/d.png": 4000 };
     const bridge = mkBridge(dirs, mtimes);
     await withApp(async (w, d, T) => {
       bridge.installFetch(w);
       const folder = await watch(w, T);
       setPatterns(folder, [{ pattern: "*", showNewest: 3, autoOpenNewest: true }]);
       await w.rescanFolder(folder);
-      assert(folder.files.map(r => r.name).join(",") === "b.json,c.log,d.json", "the 3 newest of BOTH kinds are listed, got " + folder.files.map(r => r.name).join(","));
-      assert(openNames(folder).join(",") === "d.json" && T.state.rootIds.length === 0, "the newest (a .json) auto-opened as a viewer, got " + openNames(folder).join(","));
+      assert(folder.files.map(r => r.name).join(",") === "b.png,c.log,d.png", "the 3 newest of BOTH kinds are listed, got " + folder.files.map(r => r.name).join(","));
+      assert(openNames(folder).join(",") === "d.png" && T.state.rootIds.length === 0, "the newest (a .png) auto-opened as a viewer, got " + openNames(folder).join(","));
 
       dirs["/data"]["e.log"] = simLog(5); mtimes["/data/e.log"] = 5000;
       await w.folderScanTick();
-      assert(folder.files.map(r => r.name).join(",") === "c.log,d.json,e.log", "the window moved on, got " + folder.files.map(r => r.name).join(","));
+      assert(folder.files.map(r => r.name).join(",") === "c.log,d.png,e.log", "the window moved on, got " + folder.files.map(r => r.name).join(","));
       const e = folder.files.find(r => r.name === "e.log");
       assert(e.nodeId && T.state.nodes[e.nodeId] && T.state.nodes[e.nodeId].folderId === folder.id, "the newest, a .log, opened as a real node");
-      assert(folder.inlineViewers.has("d.json"), "\"Auto-open newest\" closes nothing: the .json viewer stays open");
-      assert(openNames(folder).join(",") === "d.json,e.log", "both kinds count as open, got " + openNames(folder).join(","));
+      assert(folder.inlineViewers.has("d.png"), "\"Auto-open newest\" closes nothing: the .png viewer stays open");
+      assert(openNames(folder).join(",") === "d.png,e.log", "both kinds count as open, got " + openNames(folder).join(","));
     }, { philogg: bridge });
   }
 
   section("342d. a failed listing shows its error in the dot's tooltip, is retried every poll, heals, and then the rules run");
   {
-    const dirs = { "/data": { "one.json": jsonBody(1) } };
-    const mtimes = { "/data/one.json": 1000 };
+    const dirs = { "/data": { "one.png": jsonBody(1) } };
+    const mtimes = { "/data/one.png": 1000 };
     const bridge = mkBridge(dirs, mtimes);
     const MSG = "os error 5: Access is denied";
     let failures = 0;
@@ -39311,15 +38927,15 @@ if (groupSelected()) {
       c.restore();
 
       // The disk recovers and gained a file; a rule is configured meanwhile.
-      dirs["/data"]["two.json"] = jsonBody(2); mtimes["/data/two.json"] = 2000;
-      setPatterns(folder, [{ pattern: "*.json", autoOpenNewest: true }]);
+      dirs["/data"]["two.png"] = jsonBody(2); mtimes["/data/two.png"] = 2000;
+      setPatterns(folder, [{ pattern: "*.png", autoOpenNewest: true }]);
       let merges = 0;
       const realMerge = w.mergeScannedFiles;
       w.mergeScannedFiles = (...a) => { merges++; return realMerge.apply(w, a); };
       await w.folderScanTick();
       assert(folder.failed === false && folder.failedMessage === null, "the first successful poll clears failed and the message");
-      assert(folder.files.map(r => r.name).join(",") === "one.json,two.json", "the file added while failed is listed, got " + folder.files.map(r => r.name).join(","));
-      assert(openNames(folder).join(",") === "two.json" && T.state.inlineViewer && T.state.inlineViewer.name === "two.json", "...and the auto rule fired (newest .json opened)");
+      assert(folder.files.map(r => r.name).join(",") === "one.png,two.png", "the file added while failed is listed, got " + folder.files.map(r => r.name).join(","));
+      assert(openNames(folder).join(",") === "two.png" && T.state.inlineViewer && T.state.inlineViewer.name === "two.png", "...and the auto rule fired (newest .png opened)");
       icon = d.querySelector(".folder-watch-icon");
       assert(icon.classList.contains("live") && !icon.classList.contains("failed") && !/can't be read/.test(icon.title), "the dot is live again");
       assert(merges === 1, "the healing poll merged, got " + merges);
@@ -39341,22 +38957,22 @@ if (groupSelected()) {
   section("342e. only a failing listing flags the folder: an unreadable file, a throwing open, merge or render are logged, never `failed`");
   {
     const mk = () => {
-      const dirs = { "/data": { "a.log": simLog(1), "z.json": jsonBody(9) } };
-      const mtimes = { "/data/a.log": 1000, "/data/z.json": 2000 };
+      const dirs = { "/data": { "a.log": simLog(1), "z.png": jsonBody(9) } };
+      const mtimes = { "/data/a.log": 1000, "/data/z.png": 2000 };
       return { dirs, mtimes, bridge: mkBridge(dirs, mtimes) };
     };
-    const rules = [{ pattern: "*.json", autoOpenNewest: true }, { pattern: "*.log", autoOpenNewest: true }];
+    const rules = [{ pattern: "*.png", autoOpenNewest: true }, { pattern: "*.log", autoOpenNewest: true }];
     {
       const { bridge } = mk();
       await withApp(async (w, d, T) => {
         bridge.installFetch(w);
         const realFetch = w.fetch;
-        w.fetch = async (url, ...a) => /z\.json$/.test(String(url)) ? { ok: false, status: 404 } : realFetch(url, ...a);
+        w.fetch = async (url, ...a) => /z\.png$/.test(String(url)) ? { ok: false, status: 404 } : realFetch(url, ...a);
         const folder = await watch(w, T);
         setPatterns(folder, rules);
         await w.rescanFolder(folder);
         assert(folder.failed === false, "an auto-open whose file answers 404 does not set failed");
-        assert(!folder.inlineViewers.has("z.json") && openNames(folder).join(",") === "a.log",
+        assert(!folder.inlineViewers.has("z.png") && openNames(folder).join(",") === "a.log",
           "...and the other pattern's rule still ran (a.log opened), got " + openNames(folder).join(","));
       }, { philogg: bridge });
     }
@@ -39372,7 +38988,7 @@ if (groupSelected()) {
         await w.rescanFolder(folder);
         assert(folder.failed === false, "an auto-open that throws does not set failed");
         assert(openNames(folder).join(",") === "a.log", "...the remaining pattern's rule still ran, got " + openNames(folder).join(","));
-        assert(errs.some(e => /auto-opening "z\.json" failed/.test(e) && /viewer boom/.test(e)), "...and it is console.error'ed, got " + JSON.stringify(errs));
+        assert(errs.some(e => /auto-opening "z\.png" failed/.test(e) && /viewer boom/.test(e)), "...and it is console.error'ed, got " + JSON.stringify(errs));
       }, { philogg: bridge });
     }
     {
@@ -39384,7 +39000,7 @@ if (groupSelected()) {
         const folder = await watch(w, T);
         const realMerge = w.mergeScannedFiles;
         w.mergeScannedFiles = async () => { throw new Error("merge boom"); };
-        dirs["/data"]["n.json"] = jsonBody(3); mtimes["/data/n.json"] = 3000;
+        dirs["/data"]["n.png"] = jsonBody(3); mtimes["/data/n.png"] = 3000;
         await w.folderScanTick();
         assert(folder.failed === false && errs.some(e => /merge boom/.test(e)), "a throwing merge in the poll is logged, not failed, got failed=" + folder.failed);
         assert(folder.busy === false, "...and the folder is not left busy");
@@ -39393,7 +39009,7 @@ if (groupSelected()) {
         w.mergeScannedFiles = realMerge;
 
         // A render that throws after a poll does not flag the folder either, nor reject the tick.
-        dirs["/data"]["m.json"] = jsonBody(4); mtimes["/data/m.json"] = 4000;
+        dirs["/data"]["m.png"] = jsonBody(4); mtimes["/data/m.png"] = 4000;
         const realRender = w.render;
         w.render = () => { throw new Error("render boom"); };
         let rejected = false;
@@ -39401,33 +39017,34 @@ if (groupSelected()) {
         w.render = realRender;
         assert(!rejected && folder.failed === false && folder.busy === false, "a throwing render in the tick: no rejection, not failed, not busy");
         assert(errs.some(e => /render boom/.test(e)), "...and it is logged");
-        assert(folder.files.some(r => r.name === "m.json"), "the merge itself had already happened");
+        assert(folder.files.some(r => r.name === "m.png"), "the merge itself had already happened");
       }, { philogg: bridge });
     }
   }
 
-  section("342f. deleted on disk: an open viewer (shown) with its \"Filter lines\" text version and an open log all go, without undo entries or orphan rows");
+  section("342f. deleted on disk: an open viewer (shown), an open text file node and an open log all go, without undo entries or orphan rows");
   {
-    const dirs = { "/data": { "keep.json": jsonBody(1), "gone.json": '{"a":1}', "gone.log": simLog(2) } };
+    const dirs = { "/data": { "keep.png": jsonBody(1), "gone.png": "PNGDATA", "gone.log": simLog(2), "gone.txt": "a\nb" } };
     const bridge = mkBridge(dirs, {});
     await withApp(async (w, d, T) => {
       bridge.installFetch(w);
       const folder = await watch(w, T);
       await w.loadFolderFile(folder, folder.files.find(r => r.name === "gone.log"));
-      await w.loadFolderFile(folder, folder.files.find(r => r.name === "gone.json"));
-      const viewer = folder.inlineViewers.get("gone.json");
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "gone.png"));
+      const viewer = folder.inlineViewers.get("gone.png");
       assert(viewer && T.state.inlineViewer === viewer, "sanity: the viewer is open and shown");
-      const textNode = await w.openInlineViewerAsTextLog(viewer);
-      assert(textNode && w.viewerTextLogIds("folder", folder.id, "gone.json").length === 1, "sanity: its text version is open, nested under the viewer");
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "gone.txt"));
+      const textNode = Object.values(T.state.nodes).find(n => n.name === "gone.txt");
+      assert(textNode && textNode.formatId === "fmt-plaintext" && textNode.folderId === folder.id, "sanity: the text file is open as a plain-text node of the folder");
       w.activateInlineViewer(viewer); w.render();
       assert(d.querySelector(".folder-watch .tree-row"), "sanity: rows of the open files are inside the folder box");
       const undoBefore = T.undoStack.length;
 
-      delete dirs["/data"]["gone.json"]; delete dirs["/data"]["gone.log"];
+      delete dirs["/data"]["gone.png"]; delete dirs["/data"]["gone.log"]; delete dirs["/data"]["gone.txt"];
       await w.folderScanTick();
-      assert(folder.files.map(r => r.name).join(",") === "keep.json", "the vanished files left the listing, got " + folder.files.map(r => r.name).join(","));
-      assert(!folder.inlineViewers.has("gone.json") && T.state.inlineViewer === null, "the viewer is closed and no longer shown");
-      assert(T.state.nodes[textNode.id] === undefined, "its text version is gone too");
+      assert(folder.files.map(r => r.name).join(",") === "keep.png", "the vanished files left the listing, got " + folder.files.map(r => r.name).join(","));
+      assert(!folder.inlineViewers.has("gone.png") && T.state.inlineViewer === null, "the viewer is closed and no longer shown");
+      assert(T.state.nodes[textNode.id] === undefined, "the text file node is gone too");
       assert(T.state.rootIds.length === 0 && Object.keys(T.state.nodes).length === 0, "no node is left behind (no orphan top-level row)");
       assert(d.querySelectorAll("#tree .tree-row").length === 0 && d.querySelectorAll(".folder-watch .tree-row").length === 0, "no tree row anywhere");
       assert(T.undoStack.length === undoBefore, "no undo entries for the automatic close");
@@ -39435,31 +39052,32 @@ if (groupSelected()) {
     }, { philogg: bridge });
   }
 
-  section("342g. the folder's ✕ closes its open log, viewers and text versions (no undo, nothing left in #tree), drops the viewer records and the folder view");
+  section("342g. the folder's ✕ closes its open log, viewers and text files (no undo, nothing left in #tree), drops the viewer records and the folder view");
   {
-    const dirs = { "/data": { "a.log": simLog(1), "v1.json": jsonBody(1), "v2.json": jsonBody(2) } };
+    const dirs = { "/data": { "a.log": simLog(1), "v1.png": jsonBody(1), "v2.png": jsonBody(2), "t.txt": "a\nb" } };
     const bridge = mkBridge(dirs, {});
     await withApp(async (w, d, T) => {
       bridge.installFetch(w);
       const folder = await watch(w, T);
       const plain = await w.addFile("plain.log", simLog(7), () => {});
       await w.loadFolderFile(folder, folder.files.find(r => r.name === "a.log"));
-      await w.loadFolderFile(folder, folder.files.find(r => r.name === "v1.json"));
-      const v1 = folder.inlineViewers.get("v1.json");
-      const textNode = await w.openInlineViewerAsTextLog(v1);
-      await w.loadFolderFile(folder, folder.files.find(r => r.name === "v2.json"));
-      const v2 = folder.inlineViewers.get("v2.json");
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "v1.png"));
+      const v1 = folder.inlineViewers.get("v1.png");
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "t.txt"));
+      const textNode = Object.values(T.state.nodes).find(n => n.name === "t.txt");
+      await w.loadFolderFile(folder, folder.files.find(r => r.name === "v2.png"));
+      const v2 = folder.inlineViewers.get("v2.png");
       assert(v1.cacheKey && v2.cacheKey, "sanity: both viewers are persisted (cache on)");
       assert(T.state.inlineViewer === v2, "sanity: v2 is shown");
       const folderNodes = Object.values(T.state.nodes).filter(n => n.folderId === folder.id).length;
-      assert(folderNodes === 1 && textNode, "sanity: one log node + one text version belong to the folder");
+      assert(folderNodes === 2 && textNode, "sanity: one log node + one text file node belong to the folder");
       const undoBefore = T.undoStack.length;
 
       fireClick(d.querySelector(".folder-watch-close"), w);
       assert(T.state.folders.length === 0 && d.querySelector(".folder-watch") === null, "the folder is gone");
       assert(T.state.rootIds.join() === plain.id && Object.keys(T.state.nodes).every(id => T.state.nodes[id] === plain || T.state.nodes[id].parentId === plain.id || id === plain.id),
         "only the unrelated plain file is left; nothing of the folder remained as a top-level file, got " + T.state.rootIds.length + " roots");
-      assert(T.state.nodes[textNode.id] === undefined, "the viewer's text version is closed");
+      assert(T.state.nodes[textNode.id] === undefined, "the text file node is closed");
       assert(T.state.inlineViewer === null && folder.inlineViewers.size === 0, "the viewers are closed, none is shown");
       assert(d.querySelectorAll("#tree .tree-row").length === 1, "#tree shows just the plain file's row, got " + d.querySelectorAll("#tree .tree-row").length);
       assert(T.undoStack.length === undoBefore, "no undo entries");
@@ -39477,7 +39095,7 @@ if (groupSelected()) {
     }, { philogg: bridge, indexedDB: new IDBFactory() });
   }
 
-  section("342h. the ZIP's ✕ closes its opened entries: a shown log node, a viewer and its text version — no invisible orphan in state.rootIds");
+  section("342h. the ZIP's ✕ closes its opened entries: a shown log node, a viewer and a text file node — no invisible orphan in state.rootIds");
   {
     const storedZip = (entries) => {
       let offset = 0; const local = [], central = [];
@@ -39496,7 +39114,7 @@ if (groupSelected()) {
       return Buffer.concat([L, C, eocd]);
     };
     const zipBytes = () => storedZip([
-      { name: "a.log", data: simLog(1) }, { name: "b.log", data: simLog(2) }, { name: "notes.json", data: '{"k":1}' },
+      { name: "a.log", data: simLog(1) }, { name: "b.log", data: simLog(2) }, { name: "notes.png", data: "PNGDATA" }, { name: "t.txt", data: "a\nb" },
     ]);
     await withApp(async (w, d, T) => {
       const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
@@ -39505,11 +39123,13 @@ if (groupSelected()) {
       w.openZipEntry(zip.entries.find(e => e.name === "a.log"), zip);
       await waitFor(() => zipNode() && typeof zipNode().loadFraction !== "number" && zipNode().entries.length > 0);
       const logNode = zipNode();
-      w.openZipEntry(zip.entries.find(e => e.name === "notes.json"), zip);
-      await waitFor(() => zip.inlineViewers.has("notes.json"));
-      const viewer = zip.inlineViewers.get("notes.json");
-      const textNode = await w.openInlineViewerAsTextLog(viewer);
-      assert(textNode && w.viewerTextLogIds("zip", zip.id, "notes.json").length === 1, "sanity: the viewer's text version is open");
+      w.openZipEntry(zip.entries.find(e => e.name === "notes.png"), zip);
+      await waitFor(() => zip.inlineViewers.has("notes.png"));
+      const viewer = zip.inlineViewers.get("notes.png");
+      w.openZipEntry(zip.entries.find(e => e.name === "t.txt"), zip);
+      await waitFor(() => Object.values(T.state.nodes).some(n => n.zipId === zip.id && n.name === "t.txt" && typeof n.loadFraction !== "number" && n.entries.length > 0));
+      const textNode = Object.values(T.state.nodes).find(n => n.zipId === zip.id && n.name === "t.txt");
+      assert(textNode.formatId === "fmt-plaintext", "sanity: the text entry is open as a plain-text node of the ZIP");
       T.state.inlineViewer = null; T.state.activeId = logNode.id; w.render();
       assert(T.state.rootIds.includes(logNode.id) && T.state.activeId === logNode.id, "sanity: the ZIP's log node is open and the active file");
       const undoBefore = T.undoStack.length;
@@ -39517,7 +39137,7 @@ if (groupSelected()) {
       fireClick(d.querySelector("#zipList .folder-watch-close"), w);
       assert(T.state.zips.length === 0 && d.querySelector("#zipList .folder-watch") === null, "the ZIP is gone");
       assert(T.state.nodes[logNode.id] === undefined && !T.state.rootIds.includes(logNode.id), "its opened log node is closed, not left in state.rootIds");
-      assert(T.state.nodes[textNode.id] === undefined, "the viewer's text version is closed");
+      assert(T.state.nodes[textNode.id] === undefined, "the text file node is closed");
       assert(zip.inlineViewers.size === 0 && T.state.inlineViewer === null, "the viewer is closed");
       assert(T.state.rootIds.join() === plain.id, "only the unrelated plain file remains, got " + T.state.rootIds.length + " roots");
       assert(T.state.activeId === plain.id, "state.activeId no longer points at the removed ZIP's node, got " + T.state.activeId);
@@ -39526,8 +39146,8 @@ if (groupSelected()) {
     // A shown viewer of the ZIP is cleared too.
     await withApp(async (w, d, T) => {
       const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
-      w.openZipEntry(zip.entries.find(e => e.name === "notes.json"), zip);
-      await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.json");
+      w.openZipEntry(zip.entries.find(e => e.name === "notes.png"), zip);
+      await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.png");
       fireClick(d.querySelector("#zipList .folder-watch-close"), w);
       assert(T.state.inlineViewer === null && T.state.zips.length === 0, "a viewer shown from the removed ZIP is cleared");
     });
@@ -39570,7 +39190,7 @@ if (groupSelected()) {
   };
   const zipBytes = () => storedZip([
     { name: "a.log", data: simLog(1) }, { name: "b.log", data: simLog(2) }, { name: "c.log", data: simLog(3) },
-    { name: "notes.json", data: '{"k":1}' },
+    { name: "notes.png", data: "PNGDATA" },
   ]);
   const ZIP_BODY = "Press → or Alt+→ to load it, or double-click it.";
   const empty = d => ({ el: d.querySelector("#emptyState"), h: d.querySelector("#emptyState h2").textContent, p: d.querySelector("#emptyState p").textContent });
@@ -39639,18 +39259,18 @@ if (groupSelected()) {
   await withApp(async (w, d, T) => {
     const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
     const key = (k, o) => fireKeydown(d, w, k, o);
-    fireDblClick(zipRow(d, "notes.json"), w);
-    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.json");
+    fireDblClick(zipRow(d, "notes.png"), w);
+    await waitFor(() => T.state.inlineViewer && T.state.inlineViewer.name === "notes.png");
     assert(isVisible(d.querySelector("#inlineViewerWrap"), w) && !isVisible(empty(d).el, w), "sanity: the viewer is shown");
     key("ArrowUp", { altKey: true });
     assert(w.treeCursorId() === w.unloadedNavId("zip", zip.id, "c.log"), "Alt+Up from the viewer lands on c.log, got " + w.treeCursorId());
     assert(T.state.inlineViewer === null && T.state.activeId === null, "the viewer is no longer shown");
     assert(!isVisible(d.querySelector("#inlineViewerWrap"), w) && empty(d).h === '"c.log" is not loaded' && isVisible(empty(d).el, w), "the placeholder replaces it");
-    assert(zip.inlineViewers.has("notes.json"), "the viewer entry itself is still open");
-    const nr = zipRow(d, "notes.json");
+    assert(zip.inlineViewers.has("notes.png"), "the viewer entry itself is still open");
+    const nr = zipRow(d, "notes.png");
     assert(nr.classList.contains("zip-entry-opened") && !nr.classList.contains("zip-entry-active"), "...its row is the opened look, not the active one");
     key("ArrowDown", { altKey: true });
-    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.json" && !isVisible(empty(d).el, w), "Alt+Down onto the open viewer shows it again");
+    assert(T.state.inlineViewer && T.state.inlineViewer.name === "notes.png" && !isVisible(empty(d).el, w), "Alt+Down onto the open viewer shows it again");
   });
 
   section("343d. Right / Alt+Right loads the entry and selects it when the cursor stayed; while it loads the placeholder says so");
@@ -39798,7 +39418,7 @@ if (groupSelected()) {
 
     // Alt+Up/Down keeps walking from the unloaded row; a real selection then works normally
     key("ArrowDown", { altKey: true });
-    assert(w.treeCursorId() === w.unloadedNavId("zip", zip.id, "notes.json") || T.state.inlineViewer || w.treeCursorId() !== navId,
+    assert(w.treeCursorId() === w.unloadedNavId("zip", zip.id, "notes.png") || T.state.inlineViewer || w.treeCursorId() !== navId,
       "Alt+Down moves on from the unloaded row");
     assert(errs.length === 0, "no errors anywhere above, got " + JSON.stringify(errs));
     T.state.activeId = a.id; w.render();
@@ -39811,7 +39431,7 @@ if (groupSelected()) {
     const a = await openZipLog(w, d, T, zip, "a.log");
     const c = await openZipLog(w, d, T, zip, "c.log");
     assert(T.state.activeId === c.id, "sanity: a.log then c.log were visited (history [a, c])");
-    fireKeydown(d, w, "ArrowDown", { altKey: true }); // c.log -> the closed notes.json entry below it, nothing selected
+    fireKeydown(d, w, "ArrowDown", { altKey: true }); // c.log -> the closed notes.png entry below it, nothing selected
     assert(T.state.activeId === null && isVisible(empty(d).el, w), "sanity: placeholder shown");
     let captures = 0;
     const realCapture = w.captureNavWaypoint;
@@ -39848,9 +39468,8 @@ if (groupSelected()) {
    Reconnect after a reload
    Origin: 2026-09-30, person-reported. A restored folder (needsPermission)
    listed only its restored LOG nodes, and with `relPath: n.name`: (1) an
-   inline viewer (.txt/.json/...) was not listed and its "Filter lines" text
-   version fell out of the folder to the top level of #tree (until Reconnect
-   scanned the folder again); (2) a subfolder log's seed rec didn't match the
+   inline viewer (an image since 2026-10-01; then also .txt/.json) was not
+   listed (until Reconnect scanned the folder again); (2) a subfolder log's seed rec didn't match the
    scan's "sub/x.log", so Reconnect CLOSED the open file. Now node.folderRelPath
    (persisted) seeds the log's relPath and restoreViewersFromCache seeds the
    viewer's listing entry.
@@ -39881,12 +39500,12 @@ if (groupSelected()) {
     async queryPermission() { return "granted"; }
     async requestPermission() { return "granted"; }
   }
-  const disk = w => ({ "notes.txt": "alpha\nbeta\ngamma\n", "top.log": simText(1), sub: { "deep.log": simText(2) } });
+  const disk = w => ({ "pic.png": "PNGDATA", "notes.txt": "alpha\nbeta\ngamma\n", "top.log": simText(1), sub: { "deep.log": simText(2) } });
   const factory = new IDBFactory();
   let folderId = null;
 
   await withApp(async (w, d, T) => {
-    section("344a. Window A: watch a folder (subfolders on), open a subfolder log, a .txt viewer and its Filter-lines text version");
+    section("344a. Window A: watch a folder (subfolders on), open a subfolder log, an image viewer and a .txt plain-text node");
     await T.bootRestore;
     await w.addWatchedFolder(new Dir(w, "watched", disk(w)));
     const folder = T.state.folders[0];
@@ -39902,48 +39521,50 @@ if (groupSelected()) {
     await w.persistFileNode(node);
     const fileRec = await w.cacheStoreOp("files", "readonly", s => s.get(node.cacheKey));
     assert(fileRec.folderRelPath === "sub/deep.log", "...and it is persisted");
+    const pic = folder.files.find(r => r.name === "pic.png");
+    await w.loadFolderFile(folder, pic);
+    const viewer = folder.inlineViewers.get("pic.png");
+    assert(viewer, "the .png opened as a folder inline viewer");
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", s => s.get(viewer.cacheKey))));
     const txt = folder.files.find(r => r.name === "notes.txt");
     await w.loadFolderFile(folder, txt);
-    const viewer = folder.inlineViewers.get("notes.txt");
-    assert(viewer, "the .txt opened as a folder inline viewer");
-    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", s => s.get(viewer.cacheKey))));
-    const tv = await w.openInlineViewerAsTextLog(viewer);
-    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", s => s.get(tv.cacheKey))));
+    const tv = T.state.nodes[txt.nodeId];
+    assert(tv && tv.formatId === "fmt-plaintext" && tv.folderId === folder.id, "the .txt opened as a plain-text node of the folder");
     await w.persistFileNode(tv);
     w.activateInlineViewer(viewer);
     await w.persistMetaNow();
   }, { indexedDB: factory });
 
   await withApp(async (w, d, T) => {
-    section("344b. Window B (folder awaiting Reconnect): viewer listed in the folder, its text version and the subfolder log nested inside, nothing loose in #tree");
+    section("344b. Window B (folder awaiting Reconnect): viewer listed in the folder, the text node and the subfolder log nested inside, nothing loose in #tree");
     await T.bootRestore;
     const folder = T.state.folders[0];
     assert(folder && folder.id === folderId && folder.needsPermission === true, "sanity: the folder is restored and awaits Reconnect");
     const rel = folder.files.map(r => r.relPath).sort();
-    assert(rel.join(",") === "notes.txt,sub/deep.log", "the folder lists the viewer and the subfolder log by relPath, got " + rel);
-    assert(folder.inlineViewers.has("notes.txt"), "the viewer is restored into the folder");
-    const tvNode = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.viewerSource);
-    assert(tvNode && w.isNestedUnderViewer(tvNode), "the text version is nested under the folder viewer");
+    assert(rel.join(",") === "notes.txt,pic.png,sub/deep.log", "the folder lists the viewer, the text file and the subfolder log by relPath, got " + rel);
+    assert(folder.inlineViewers.has("pic.png"), "the viewer is restored into the folder");
+    const tvNode = T.state.rootIds.map(id => T.state.nodes[id]).find(n => n.name === "notes.txt");
+    assert(tvNode && tvNode.folderId === folder.id && tvNode.formatId === "fmt-plaintext", "the text file's node is restored into the folder as plain text");
     w.render();
     const box = d.querySelector(".folder-watch");
     assert(box && /Reconnect/.test(box.textContent), "the folder shows Reconnect");
-    assert(box.querySelector(".zip-source-file") || [...box.querySelectorAll(".folder-watch-file-name")].some(e => e.textContent === "notes.txt"), "the viewer row is inside .folder-watch");
-    assert(box.querySelector('[data-node-id="' + tvNode.id + '"]'), "the text version row is inside .folder-watch");
+    assert(box.querySelector(".zip-source-file") || [...box.querySelectorAll(".folder-watch-file-name")].some(e => e.textContent === "pic.png"), "the viewer row is inside .folder-watch");
+    assert(box.querySelector('[data-node-id="' + tvNode.id + '"]'), "the text file's row is inside .folder-watch");
     const loose = [...d.querySelectorAll("#tree [data-node-id]")].filter(e => !e.closest(".folder-watch"));
     assert(loose.length === 0, "no file row sits outside the folder container, got " + loose.length);
 
     section("344c. Reconnect: identity kept, the subfolder log is not closed, still nothing outside");
     const deepRec = folder.files.find(r => r.relPath === "sub/deep.log");
     const deepNode = T.state.nodes[deepRec.nodeId];
-    const viewerBefore = folder.inlineViewers.get("notes.txt");
-    const recBefore = folder.files.find(r => r.relPath === "notes.txt");
+    const viewerBefore = folder.inlineViewers.get("pic.png");
+    const recBefore = folder.files.find(r => r.relPath === "pic.png");
     folder.handle = new Dir(w, "watched", disk(w));
     await w.reconnectFolder(folder);
     assert(folder.needsPermission === false, "reconnected");
     const deepAfter = folder.files.find(r => r.relPath === "sub/deep.log");
     assert(deepAfter === deepRec && deepAfter.nodeId === deepNode.id && T.state.nodes[deepNode.id] === deepNode, "the subfolder log's rec and node survived the reconnect");
-    assert(folder.files.find(r => r.relPath === "notes.txt") === recBefore && folder.inlineViewers.get("notes.txt") === viewerBefore, "the viewer and its rec kept their identity");
-    assert(tvNode && T.state.nodes[tvNode.id] === tvNode && w.isNestedUnderViewer(tvNode), "the text version is still alive and nested");
+    assert(folder.files.find(r => r.relPath === "pic.png") === recBefore && folder.inlineViewers.get("pic.png") === viewerBefore, "the viewer and its rec kept their identity");
+    assert(tvNode && T.state.nodes[tvNode.id] === tvNode, "the text file's node is still alive");
     w.render();
     assert([...d.querySelectorAll("#tree [data-node-id]")].every(e => e.closest(".folder-watch")), "after Reconnect nothing is outside the folder either");
   }, { indexedDB: factory });
@@ -40146,7 +39767,7 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "c", { ctrlKey: true });
   assert(copied !== null, "sanity: the visible log row is copied");
   copied = null;
-  T.state.inlineViewer = { kind: "text", id: "x", name: "x.txt" };
+  T.state.inlineViewer = { kind: "image", id: "x", name: "x.png" };
   fireKeydown(d, w, "c", { ctrlKey: true });
   assert(copied === null, "no log-row copy while an inline viewer hides the log rows");
   T.state.inlineViewer = null;
@@ -40161,6 +39782,1235 @@ await withApp(async (w, d, T) => {
   fireKeydown(d, w, "c", { ctrlKey: true });
   assert(w.__tsCopied === true, "...but is copied while the table is shown");
 });
+
+/* ============================================================
+   GROUP 347 — Text files (.txt/.json/.xml) load as ONE plain-text file node
+   Origin: 2026-10-01, person-requested (docs/ui-concept-text-files.md, Step 1
+   of docs/ui-and-views.md "Text files"). Every entry point (loose files,
+   a watched folder, a ZIP entry) that used to open an inline text viewer now
+   loads an ordinary file node pinned to the Plain text format
+   (formatIdForLoad) with node.textSyntax = "json" | "xml" | null; the
+   viewer, its "Filter lines" copy and the viewerSource nesting are gone
+   (images keep the inline image viewer). JSON gets node.textLayout "pretty"
+   (default when valid) | "raw" (invalid JSON, or chosen): setTextLayout
+   re-parses in place — same node id, filter children kept and recomputed —
+   and the layout (plus the file's own text, node.textRaw) survives
+   snapshot/restore (undo), the session cache and a folder tail (a pretty
+   file reloads whole). Sample data: tools/log-sim (jsondoc/xmldoc/plain).
+   ============================================================ */
+group(347);
+if (groupSelected()) {
+  const PT = "fmt-plaintext";
+  const jsonDoc = (entries, seed) => LOGSIM.generateToStrings({ format: "jsondoc", entries: entries || 6, seed: seed || 3 })[0];
+  const xmlDoc = LOGSIM.generateToStrings({ format: "xmldoc", entries: 6, seed: 3 })[0];
+  const txtDoc = LOGSIM.generateToStrings({ format: "plain", entries: 8, seed: 5 })[0];
+  const prettyLines = text => JSON.stringify(JSON.parse(text), null, 2).split("\n");
+  const lineCount = text => text.replace(/\r?\n$/, "").split(/\r?\n/).length;
+  const loaded = n => n && !n.queued && typeof n.loadFraction !== "number" && n.entries.length > 0;
+  const nodeNamed = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const fakeFileHandle = (w, name, text) => ({
+    kind: "file", name,
+    async getFile() {
+      const blob = new w.Blob([text]);
+      Object.defineProperty(blob, "name", { value: name, configurable: true });
+      Object.defineProperty(blob, "size", { get: () => text.length, configurable: true });
+      blob.text = async () => text;
+      blob.arrayBuffer = async () => new w.TextEncoder().encode(text).buffer;
+      blob.slice = start => { const t = text.slice(start); const b = new w.Blob([t]); b.text = async () => t; return b; };
+      return blob;
+    },
+  });
+  const fakeDir = (w, name, map) => ({ kind: "directory", name, async *values() { for (const f of Object.keys(map)) yield fakeFileHandle(w, f, map[f]); } });
+  const storedZip = entries => {
+    let offset = 0; const local = [], central = [];
+    for (const e of entries) {
+      const nameBuf = Buffer.from(e.name, "utf8"), data = Buffer.from(e.data, "utf8");
+      const lh = Buffer.alloc(30); lh.writeUInt32LE(0x04034b50, 0); lh.writeUInt16LE(20, 4);
+      lh.writeUInt32LE(data.length, 18); lh.writeUInt32LE(data.length, 22); lh.writeUInt16LE(nameBuf.length, 26);
+      const rec = Buffer.concat([lh, nameBuf, data]);
+      const ch = Buffer.alloc(46); ch.writeUInt32LE(0x02014b50, 0); ch.writeUInt16LE(20, 4); ch.writeUInt16LE(20, 6);
+      ch.writeUInt32LE(data.length, 20); ch.writeUInt32LE(data.length, 24); ch.writeUInt16LE(nameBuf.length, 28); ch.writeUInt32LE(offset, 42);
+      local.push(rec); central.push(Buffer.concat([ch, nameBuf])); offset += rec.length;
+    }
+    const L = Buffer.concat(local), C = Buffer.concat(central), eocd = Buffer.alloc(22);
+    eocd.writeUInt32LE(0x06054b50, 0); eocd.writeUInt16LE(entries.length, 8); eocd.writeUInt16LE(entries.length, 10);
+    eocd.writeUInt32LE(C.length, 12); eocd.writeUInt32LE(L.length, 16);
+    return Buffer.concat([L, C, eocd]);
+  };
+
+  await withApp(async (w, d, T) => {
+    section("347a. Loose files: .txt/.json/.xml each become exactly one plain-text node, no viewer; JSON is pretty by default");
+    const json = jsonDoc();
+    assert(!json.text.includes("\n") && JSON.parse(json.text).entries.length === 6, "sanity: the simulator's JSON document is minified, valid, one line");
+    await w.loadFileDescriptors([
+      { file: new w.File([txtDoc.text], "notes.txt"), handle: null },
+      { file: new w.File([json.text], "orders.json"), handle: null },
+      { file: new w.File([xmlDoc.text], "orders.xml"), handle: null },
+    ]);
+    assert(T.state.inlineViewer === null && T.state.looseInlineViewers.size === 0, "no inline viewer anywhere");
+    assert(T.state.rootIds.length === 3 && d.querySelector("#mergeLoadDialog").classList.contains("hidden"), "three root nodes; plain-text files never raise the merge-on-load question, got " + T.state.rootIds.length);
+    const txt = nodeNamed(T, "notes.txt"), js = nodeNamed(T, "orders.json"), xml = nodeNamed(T, "orders.xml");
+    [txt, js, xml].forEach(n => assert(n && n.formatId === PT && !n.queued && !n.mergeOwnerId, n && n.name + " is an ordinary plain-text file node"));
+    assert(txt.textSyntax === null && js.textSyntax === "json" && xml.textSyntax === "xml", "textSyntax from the extension (null for .txt)");
+    assert(txt.textLayout === undefined && xml.textLayout === undefined, "textLayout is JSON-only");
+    assert(txt.entries.length === lineCount(txtDoc.text) && txt.entries[0].message === txtDoc.text.split("\n")[0], ".txt: one entry per line");
+    assert(xml.entries.length === lineCount(xmlDoc.text), ".xml: one entry per line (" + xml.entries.length + ")");
+    const pretty = prettyLines(json.text);
+    assert(js.textLayout === "pretty" && js.entries.length === pretty.length && pretty.length > 20 && js.entries.every((e, i) => e.message === pretty[i]), ".json: pretty by default — one entry per pretty-printed line");
+    assert(js.textRaw === json.text, "the file's own text is kept for a layout switch");
+    // A log dropped with a text file: the log keeps its merge question logic (only one mergeable file -> none).
+    assert(d.querySelectorAll("#tree .tree-row").length === 3, "three tree rows, no viewer row");
+
+    section("347b. Invalid JSON loads raw, silently");
+    const broken = jsonDoc().text.slice(0, -7);
+    await w.loadFileDescriptors([{ file: new w.File([broken], "broken.json"), handle: null }]);
+    const b = nodeNamed(T, "broken.json");
+    assert(b && b.textLayout === "raw" && b.entries.length === 1 && b.entries[0].message === broken && b.formatId === PT, "one raw line, layout raw");
+    assert(d.querySelector("#copyToast") === null || !/valid JSON/.test(d.querySelector("#copyToast").textContent), "no toast about it");
+    assert(await w.setTextLayout(b.id, "pretty") === false && b.textLayout === "raw" && b.entries.length === 1, "switching to pretty refuses for invalid JSON, nothing changes");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("347c. Watched folder: a text file opens as one plain-text node of the folder (rec.nodeId), never a viewer");
+    const json = jsonDoc();
+    await w.addWatchedFolder(fakeDir(w, "docs", { "orders.json": json.text, "notes.txt": txtDoc.text, "app.log": makeLog(0, 2) }));
+    const folder = T.state.folders[0];
+    assert(folder.files.map(r => r.name).sort().join(",") === "app.log,notes.txt,orders.json", "text files are listed with the log");
+    const rec = folder.files.find(r => r.name === "orders.json");
+    await w.loadFolderFile(folder, rec);
+    const node = T.state.nodes[rec.nodeId];
+    assert(node && node.formatId === PT && node.folderId === folder.id && node.textSyntax === "json" && node.textLayout === "pretty", "plain-text node tagged with the folder, pretty");
+    assert(node.entries.length === prettyLines(json.text).length, "parsed from the pretty print");
+    assert(folder.inlineViewers.size === 0 && T.state.inlineViewer === null, "no viewer registered");
+    assert(d.querySelectorAll(".folder-watch .tree-row").length === 1, "its row is a normal tree row inside the folder box");
+    const trec = folder.files.find(r => r.name === "notes.txt");
+    await w.loadFolderFile(folder, trec);
+    assert(T.state.nodes[trec.nodeId].textSyntax === null && T.state.nodes[trec.nodeId].entries.length === lineCount(txtDoc.text), "a .txt too");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("347d. ZIP entries: a text entry loads as one plain-text node of the ZIP, never a viewer");
+    const json = jsonDoc();
+    const zip = await w.openZipSource(new w.File([storedZip([{ name: "orders.json", data: json.text }, { name: "orders.xml", data: xmlDoc.text }, { name: "notes.txt", data: txtDoc.text }])], "docs.zip"), "docs.zip");
+    for (const name of ["orders.json", "orders.xml", "notes.txt"]) {
+      w.openZipEntry(zip.entries.find(e => e.name === name), zip);
+      await waitFor(() => loaded(Object.values(T.state.nodes).find(n => n.zipId === zip.id && n.name === name)));
+    }
+    const nodes = Object.values(T.state.nodes).filter(n => n.zipId === zip.id);
+    assert(nodes.length === 3 && nodes.every(n => n.formatId === PT), "three plain-text nodes inside the ZIP");
+    assert(zip.inlineViewers.size === 0 && T.state.inlineViewer === null, "no viewer");
+    const js = nodes.find(n => n.name === "orders.json");
+    assert(js.textLayout === "pretty" && js.entries.length === prettyLines(json.text).length, "the JSON entry is pretty");
+    assert(d.querySelectorAll("#zipList .tree-row").length === 3, "the entries render as tree rows in the ZIP section");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("347e. Layout switch re-parses in place: same id, filter children kept and recomputed, line ranges keep their numbers");
+    const json = jsonDoc();
+    await w.loadFileDescriptors([{ file: new w.File([json.text], "orders.json"), handle: null }]);
+    const f = nodeNamed(T, "orders.json");
+    const pretty = prettyLines(json.text);
+    const levelLines = pretty.filter(l => l.includes('"level"')).length;
+    const text = w.createFilterNode(f.id, "text", '"level"');
+    const range = w.createFilterNode(f.id, "timerange", { from: 2, to: 3 });
+    assert(w.getEntries(text.id).length === levelLines && levelLines === 6, "pretty: the text filter hits one line per entry");
+    assert(w.getEntries(range.id).length === 2, "pretty: the line range 2-3 holds two lines");
+    const id = f.id, oldIds = f.entries.map(e => e.id);
+
+    assert(await w.setTextLayout(id, "raw") === true, "switch to raw");
+    assert(T.state.nodes[id] === f && f.textLayout === "raw" && f.children.join() === [text.id, range.id].join(), "same node, same children");
+    assert(f.entries.length === 1 && f.entries[0].message === json.text && f.entries[0].ts === 1, "raw: the file's own single line");
+    assert(oldIds.every(i => T.entryIndex[i] === undefined), "the old entries left the entry index");
+    assert(w.getEntries(text.id).length === 1, "the text filter recomputed on the raw line");
+    assert(w.getEntries(range.id).length === 0, "the line range keeps its numbers (lines 2-3 don't exist in raw)");
+    assert(T.state.nodes[text.id].parentId === id, "filter children still hang under the node");
+    assert(await w.setTextLayout(id, "raw") === false, "switching to the layout it already has is a no-op");
+
+    assert(await w.setTextLayout(id, "pretty") === true && f.textLayout === "pretty", "back to pretty");
+    assert(f.entries.length === pretty.length && w.getEntries(text.id).length === levelLines && w.getEntries(range.id).length === 2, "everything recomputed again");
+    const txt = await w.addFile("notes.txt", txtDoc.text, () => {}, PT);
+    assert(await w.setTextLayout(txt.id, "raw") === false, "no layout for a non-JSON node");
+    assert(await w.setTextLayout("nope", "raw") === false && await w.setTextLayout(id, "wide") === false, "unknown node/layout refused");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("347f. textLayout survives snapshot/restore (delete + undo)");
+    const json = jsonDoc();
+    await w.loadFileDescriptors([{ file: new w.File([json.text], "orders.json"), handle: null }]);
+    const f = nodeNamed(T, "orders.json");
+    await w.setTextLayout(f.id, "raw");
+    const snap = w.snapshotSubtree(f.id);
+    assert(snap.textLayout === "raw" && snap.textSyntax === "json" && snap.textRaw === json.text, "the snapshot carries layout, syntax and the file's own text");
+    w.deleteFilterNodeWithUndo(f.id);
+    assert(!T.state.nodes[f.id], "sanity: closed");
+    w.undo();
+    const back = T.state.nodes[f.id];
+    assert(back && back.textLayout === "raw" && back.textSyntax === "json" && back.textRaw === json.text && back.entries.length === 1, "undo restores the raw layout");
+    assert(await w.setTextLayout(back.id, "pretty") === true && back.entries.length === prettyLines(json.text).length, "...and the layout can still be switched from the restored node");
+  });
+
+  const factory = new IDBFactory();
+  const json346 = jsonDoc(6, 9);
+  await withApp(async (w, d, T) => {
+    section("347g. The session cache keeps the layout: written as the file's own text, restored with its layout");
+    await T.bootRestore;
+    await w.loadFileDescriptors([{ file: new w.File([json346.text], "orders.json"), handle: null }, { file: new w.File([xmlDoc.text], "orders.xml"), handle: null }]);
+    const f = nodeNamed(T, "orders.json");
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey))));
+    let rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec.textLayout === "pretty" && rec.textSyntax === "json" && rec.blob && !rec.text, "default pretty: the record holds the original file (blob) and the layout");
+    await w.setTextLayout(f.id, "raw");
+    await w.persistFileNode(f, true);
+    rec = await w.cacheStoreOp("files", "readonly", s => s.get(f.cacheKey));
+    assert(rec.textLayout === "raw" && rec.text === json346.text, "after a switch: the text record is the file's own text, not the pretty lines");
+    const x = nodeNamed(T, "orders.xml");
+    await waitFor(async () => !!(await w.cacheStoreOp("files", "readonly", s => s.get(x.cacheKey))));
+    assert((await w.cacheStoreOp("files", "readonly", s => s.get(x.cacheKey))).textSyntax === "xml", "the XML node's syntax is recorded");
+    await w.persistMetaNow();
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("347h. Reload: both nodes come back as plain text with their syntax; raw stays raw and can switch to pretty");
+    await T.bootRestore;
+    const f = nodeNamed(T, "orders.json"), x = nodeNamed(T, "orders.xml");
+    assert(f && f.formatId === PT && f.textSyntax === "json" && f.textLayout === "raw" && f.entries.length === 1 && f.textRaw === json346.text, "the JSON file is back raw (one line)");
+    assert(x && x.formatId === PT && x.textSyntax === "xml" && x.entries.length === lineCount(xmlDoc.text), "the XML file is back");
+    assert(T.state.looseInlineViewers.size === 0 && T.state.inlineViewer === null, "no viewer");
+    assert(await w.setTextLayout(f.id, "pretty") === true && f.entries.length === prettyLines(json346.text).length, "the restored node switches to pretty from its own text");
+    await w.persistFileNode(f, true);
+    await w.persistMetaNow();
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("347i. Reload again: a pretty layout is restored pretty (record text/blob stays the raw document)");
+    await T.bootRestore;
+    const f = nodeNamed(T, "orders.json");
+    assert(f && f.textLayout === "pretty" && f.entries.length === prettyLines(json346.text).length && f.textRaw === json346.text, "pretty restored from the raw document");
+  }, { indexedDB: factory });
+
+  await withApp(async (w, d, T) => {
+    section("347j. Tail: a pretty JSON file reloads whole when it changes; a plain .txt still appends lines");
+    const small = jsonDoc(4, 2), big = jsonDoc(9, 2);
+    await w.loadFileDescriptors([{ file: new w.File([small.text], "live.json"), handle: null }, { file: new w.File([txtDoc.text], "live.txt"), handle: null }]);
+    const f = nodeNamed(T, "live.json"), t = nodeNamed(T, "live.txt");
+    let jsonNow = small.text, txtNow = txtDoc.text;
+    const blobOf = text => { const b = new w.Blob([text]); b.text = async () => text; b.slice = (a, z) => { const s = text.slice(a, z); const bl = new w.Blob([s]); bl.text = async () => s; return bl; }; return b; };
+    const tailOf = (get, len) => ({ handle: { async getFile() { return blobOf(get()); } }, offset: len, pending: "", failed: false, busy: false, gzipChecked: true, lastGrowth: Date.now() });
+    f.tail = tailOf(() => jsonNow, jsonNow.length);
+    t.tail = tailOf(() => txtNow, txtNow.length);
+    jsonNow = big.text;
+    txtNow = txtDoc.text + "appended one\nappended two\n";
+    const tid = t.entries.length;
+    const idsBefore = new Set(f.entries.map(e => e.id));
+    await w.tailTick();
+    const prettyBig = prettyLines(big.text);
+    assert(f.entries.length === prettyBig.length && f.entries.every((e, i) => e.message === prettyBig[i]), "the JSON node was reloaded from the whole grown file (pretty lines)");
+    assert(f.entries.every(e => !idsBefore.has(e.id)) && f.textRaw === big.text && f.textLayout === "pretty", "...with fresh entries, the new raw text and the same layout");
+    assert(f.tail.offset === big.text.length, "the tail offset follows the file");
+    assert(t.entries.length === tid + 2 && t.entries[tid].message === "appended one", "the .txt just appended its two new lines");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("347k. The text viewer is gone: no Filter-lines button, no nesting helpers; images keep their viewer");
+    assert(!d.querySelector("#itvFilterLinesBtn") && !d.querySelector("#inlineTextViewer") && !d.querySelector("#itvPrettyPrintBtn") && !d.querySelector("#itvWrapBtn"), "the text half of the inline viewer toolbar/markup is gone");
+    assert(typeof w.openInlineViewerAsTextLog === "undefined" && typeof w.viewerTextLogIds === "undefined" && typeof w.isNestedUnderViewer === "undefined", "the Filter-lines / nesting functions are gone");
+    assert(!/viewerSource/.test(html), "no viewerSource anywhere");
+    await w.loadFileDescriptors([{ file: new w.File([new Uint8Array([0x89, 0x50, 0x4e, 0x47, 1, 2, 3, 4])], "shot.png"), handle: null }]);
+    assert(T.state.inlineViewer && T.state.inlineViewer.kind === "image" && T.state.rootIds.length === 0, "a .png still opens the inline image viewer");
+    await w.loadFileDescriptors([{ file: new w.File([txtDoc.text], "notes.txt"), handle: null }]);
+    assert(T.state.inlineViewer === null && T.state.activeId === T.state.rootIds[0], "opening a text file after it activates the node and leaves the viewer");
+    fireKeydown(d, w, "f", { ctrlKey: true });
+    assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+F on the text file's node opens the filter popup like for any node");
+  });
+
+  let exported347 = null;
+  const json347 = jsonDoc(5, 11);
+  await withApp(async (w, d, T) => {
+    section("347l. Session export carries textSyntax/textLayout; an imported embedded file keeps its layout");
+    await w.loadFileDescriptors([
+      { file: new w.File([json347.text], "orders.json"), handle: null },
+      { file: new w.File([json347.text], "orders-raw.json"), handle: null },
+      { file: new w.File([txtDoc.text], "notes.txt"), handle: null },
+    ]);
+    const raw = nodeNamed(T, "orders-raw.json");
+    assert(await w.setTextLayout(raw.id, "raw"), "one JSON switched to raw");
+    const ids = T.state.rootIds.slice();
+    const doc = w.buildSessionExport(ids, new Set(ids));
+    const rec = n => doc.files.find(r => r.name === n);
+    assert(rec("orders.json").textSyntax === "json" && rec("orders.json").textLayout === "pretty", "pretty JSON: syntax + layout exported");
+    assert(rec("orders-raw.json").textLayout === "raw" && rec("notes.txt").textSyntax === null && rec("notes.txt").textLayout === undefined, "raw layout exported; .txt syntax null, no layout");
+    assert(rec("orders.json").text === json347.text, "the embedded text is the file's own text, not the pretty print");
+    exported347 = JSON.stringify(doc);
+  });
+  await withApp(async (w, d, T) => {
+    w.importSessionJson(exported347);
+    for (let i = 0; i < 3; i++) {
+      await waitFor(() => !d.querySelector("#sessionMatchDialog").classList.contains("hidden"));
+      d.querySelector('input[name="sessionMatchTarget"][value="embedded"]').checked = true;
+      fireClick(d.querySelector("#sessionMatchApply"), w);
+      await waitFor(() => T.state.rootIds.length === i + 1 && loaded(T.state.nodes[T.state.rootIds[i]]));
+    }
+    const pj = nodeNamed(T, "orders.json"), rj = nodeNamed(T, "orders-raw.json"), tx = nodeNamed(T, "notes.txt");
+    assert([pj, rj, tx].every(n => n.formatId === PT), "all three imported as plain text");
+    assert(pj.textLayout === "pretty" && pj.entries.length === prettyLines(json347.text).length, "the pretty JSON imports pretty");
+    assert(rj.textLayout === "raw" && rj.entries.length === 1, "the raw JSON stays raw");
+    assert(pj.textSyntax === "json" && tx.textSyntax === null && tx.entries.length === lineCount(txtDoc.text), "syntax kept; the .txt has one entry per line");
+  });
+}
+
+/* ============================================================
+   GROUP 348 — Filtered text mode + shared text header bar
+   Origin: 2026-10-01, person-requested (docs/ui-concept-text-files.md, Step 2
+   of docs/ui-and-views.md "Text files"). When the ACTIVE node's root is
+   a plain-text file (not "every loaded file is" — a mixed session keeps the
+   log table for log roots) the Filtered view becomes an editor-like listing:
+   .text-row rows with no level stripe (separators as an inset shadow), TEXT_ROW_HEIGHT (19px,
+   scaled by logTextScale, used by the virtualization), a right-aligned line
+   number, an empty fold slot and the message (gutter widths --text-num-w /
+   --text-fold-w shared with the Context editor), and a header bar ("LINE",
+   file name only — the layout shows on the Pretty/Raw toggle) instead of
+   the table header.
+   Sample data: tools/log-sim (plain, jsondoc, xmldoc, default).
+   ============================================================ */
+group(348);
+if (groupSelected()) {
+  const PT348 = "fmt-plaintext";
+  const sim = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0];
+  const txt348 = sim("plain", 120, 7);
+  const json348 = sim("jsondoc", 8, 3);
+  const xml348 = sim("xmldoc", 6, 3);
+  const log348 = sim("default", 60, 2);
+  const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
+  const filterOn = (w, T, rootId, value) => { const f = w.createFilterNode(rootId, "text", value); T.state.activeId = f.id; w.render(); return f; };
+
+  await withApp(async (w, d, T) => {
+    section("348a. A filter on a plain-text file: text-mode class, row height, gutter, header bar");
+    await addText(w, "notes.txt", txt348.text);
+    const root = byName(T, "notes.txt");
+    const f = filterOn(w, T, root.id, "e");
+    const wrap = d.querySelector("#tableWrap");
+    assert(wrap.classList.contains("text-mode") && T.filteredTextMode === true, "#tableWrap carries text-mode, got " + wrap.className);
+    assert(T.TEXT_ROW_HEIGHT === 19, "TEXT_ROW_HEIGHT is 19px at 100%");
+    const rows = [...d.querySelectorAll("#tableRows .log-row")];
+    const matches = w.getEntries(f.id).length;
+    assert(rows.length > 10 && rows.every(r => r.classList.contains("text-row") && !r.classList.contains("row-grid")), "every rendered row is a .text-row, not a .row-grid log row (" + rows.length + ")");
+    assert(rows.every(r => r.style.height === "19px"), "every row is TEXT_ROW_HEIGHT (19px) tall");
+    assert(!d.querySelector("#tableRows .col-bar") && !d.querySelector("#tableRows .col-level") && !d.querySelector("#tableRows .col-delta"), "no level stripe, level or delta cell");
+    assert(!/\blvl-/.test(rows.map(r => r.className).join(" ")), "no level tint class");
+    const e0 = w.getEntries(f.id)[0];
+    const r0 = rows[0];
+    assert(r0.dataset.entryId === e0.id && r0.querySelector(".col-time").textContent === String(e0.ts), "number cell = the line number of the file (" + e0.ts + ")");
+    assert(r0.children.length === 3 && r0.children[1].classList.contains("col-fold") && r0.children[1].textContent === "", "gutter: number, an empty fold slot, then the message");
+    assert(r0.children[2].classList.contains("col-msg") && r0.children[2].classList.contains("plaintext") && r0.children[2].dataset.col === "message", "the message cell keeps the plaintext (white-space:pre) class");
+    assert(d.querySelector("#tableSpacer").style.height === (matches * 19 + 22) + "px", "spacer height = rows * TEXT_ROW_HEIGHT + pad, got " + d.querySelector("#tableSpacer").style.height);
+    assert(rows.length === Math.ceil(400 / 19) + 2 * T.BUFFER_ROWS || rows.length === matches, "the rendered window is sized by TEXT_ROW_HEIGHT (" + rows.length + " of " + matches + ")");
+    // Header bar replaces the table header.
+    const bar = d.querySelector("#tableHeader .text-header-bar");
+    assert(bar && bar.querySelector(".text-hb-line").textContent === "Line", 'header bar: "Line" over the number column');
+    assert(bar.querySelector(".text-hb-name").textContent === "notes.txt", "header bar: the file name, no layout suffix for a .txt, got " + bar.querySelector(".text-hb-name").textContent);
+    assert(bar.children.length === 3 && bar.children[1].classList.contains("text-hb-fold"), "header bar: LINE, fold slot, name");
+    assert(/#tableWrap\.text-mode #tableHeader \.row-grid\{display:none;\}/.test(html) && /#tableWrap\.text-mode #tableHeader \.text-header-bar\{display:grid;\}/.test(html), "CSS: text mode hides the log header grid and shows the bar");
+    // Shared gutter widths: JS constants == CSS vars.
+    const cs = d.documentElement.style;
+    assert(cs.getPropertyValue("--text-num-w") === T.TEXT_NUM_W + "px" && cs.getPropertyValue("--text-fold-w") === T.TEXT_FOLD_W + "px", "--text-num-w/--text-fold-w come from TEXT_NUM_W/TEXT_FOLD_W");
+    assert(/\.text-header-bar\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html) && /\.log-row\.text-row\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html), "rows and header bar use the same gutter columns");
+    // Row separators (person-requested 2026-10-01): Filtered text rows get the
+    // log view's separator line as a zero-specificity inset shadow (no border,
+    // which would eat 1px of TEXT_ROW_HEIGHT); the Context editor lines don't.
+    assert(/:where\(\.log-row\.text-row\)\{box-shadow:inset 0 -1px 0 var\(--border-soft\);\}/.test(html), "Filtered text rows: separator as a :where() inset shadow");
+    assert(/\.log-row\.text-row\{[^}]*border-bottom:none/.test(html), "Filtered text rows: no border (keeps the 19px line grid)");
+    assert(!/\.itv-line[^{]*\{[^}]*(border-bottom|box-shadow:inset 0 -1px)/.test(html), "Context editor lines: no separator");
+    // Toolbar parity: both toolbar rows have the same fixed height.
+    const tbH = id => (new RegExp("#" + id + "\\{[^}]*height:(\\d+)px").exec(html) || [])[1];
+    assert(tbH("filteredToolbar") === "36" && tbH("contextToolbar") === "36", "Filtered and Context toolbar rows are both 36px, got " + tbH("filteredToolbar") + "/" + tbH("contextToolbar"));
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348b. Header bar shows only the file name (no layout suffix, person-requested 2026-10-01)");
+    await addText(w, "orders.json", json348.text);
+    await addText(w, "orders.xml", xml348.text);
+    const js = byName(T, "orders.json"), xml = byName(T, "orders.xml");
+    const name = () => d.querySelector("#tableHeader .text-hb-name").textContent;
+    filterOn(w, T, js.id, '"');
+    assert(name() === "orders.json", "pretty JSON: just the name, got " + name());
+    assert(await w.setTextLayout(js.id, "raw"), "layout switched to raw");
+    T.state.activeId = js.id; w.render();
+    assert(name() === "orders.json", "raw JSON: just the name, got " + name());
+    filterOn(w, T, xml.id, "<");
+    assert(name() === "orders.xml", "XML: just the name, got " + name());
+    const nameEl = d.querySelector("#tableHeader .text-hb-name");
+    w.render();
+    assert(d.querySelector("#tableHeader .text-hb-name") === nameEl, "the bar is only rewritten when its content changes");
+    assert(typeof w.renderTextHeaderBar === "function", "renderTextHeaderBar is a reusable component (barEl, root)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348c. A log root is unchanged; a mixed session switches mode with the active node's root");
+    await addText(w, "app.log", log348.text);
+    await addText(w, "notes.txt", txt348.text);
+    const log = byName(T, "app.log"), txt = byName(T, "notes.txt");
+    assert(T.state.rootIds.length === 2 && !w.allRootsPlainText(), "mixed session: not all roots are plain text");
+    const f1 = filterOn(w, T, log.id, "INFO");
+    const wrap = d.querySelector("#tableWrap");
+    assert(!wrap.classList.contains("text-mode") && T.filteredTextMode === false, "log root: no text mode in a mixed session");
+    const lrows = [...d.querySelectorAll("#tableRows .log-row")];
+    assert(lrows.length > 5 && lrows.every(r => r.classList.contains("row-grid") && !r.classList.contains("text-row") && r.style.height === "28px"), "log rows keep the row-grid markup and ROW_HEIGHT (28px)");
+    assert(!!lrows[0].querySelector(".col-bar") && !!lrows[0].querySelector(".col-level .level-badge"), "log rows keep the level stripe and badge");
+    assert(d.querySelector("#tableHeader .row-grid .th-sortable") && d.querySelector("#tableHeader .row-grid").textContent.includes("Level"), "the log table header (Time/Level/...) is still the header");
+    assert(d.querySelector("#tableSpacer").style.height === (w.getEntries(f1.id).length * 28 + 22) + "px", "spacer uses ROW_HEIGHT for the log root");
+    // Switch to the text file's filter: text mode on.
+    const f2 = filterOn(w, T, txt.id, "e");
+    assert(wrap.classList.contains("text-mode") && d.querySelector("#tableRows .text-row") && !d.querySelector("#tableRows .col-bar"), "active node on the text root: text mode");
+    assert(d.querySelector("#tableHeader .text-hb-name").textContent === "notes.txt", "header bar names the active root");
+    assert(d.querySelector("#tableSpacer").style.height === (w.getEntries(f2.id).length * 19 + 22) + "px", "spacer uses TEXT_ROW_HEIGHT");
+    // Back to the log root's filter, then its file node.
+    T.state.activeId = f1.id; w.render();
+    assert(!wrap.classList.contains("text-mode") && d.querySelector("#tableRows .row-grid") && !d.querySelector("#tableRows .text-row"), "back on the log root: log rendering again");
+    assert(!d.body.classList.contains("text-root"), "log root: Entry detail panel shown (no body.text-root)");
+    T.state.activeId = txt.id; w.render();
+    assert(wrap.classList.contains("text-mode") && d.querySelector("#tableRows .text-row"), "the text file node itself: text mode");
+    // No Entry detail panel for plain-text files (person-requested 2026-10-01).
+    assert(d.body.classList.contains("text-root"), "text root: body.text-root hides the Entry detail panel");
+    assert(/body\.text-root :is\(#detailPanel, #detailResizer\)\{display:none !important;\}/.test(html), "CSS: body.text-root hides #detailPanel and #detailResizer");
+    T.state.activeId = log.id; w.render();
+    assert(!wrap.classList.contains("text-mode") && d.querySelector("#tableRows .row-grid"), "the log file node: log mode");
+    assert(!d.body.classList.contains("text-root"), "back on the log root: Entry detail panel shown again");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348d. Selection, bookmarks, notes, multiselect and the context menu keep working on text rows");
+    await addText(w, "notes.txt", txt348.text);
+    const root = byName(T, "notes.txt");
+    const f = filterOn(w, T, root.id, "e");
+    const ids = w.getEntries(f.id).map(e => e.id);
+    const rowOf = id => d.querySelector('#tableRows .log-row[data-entry-id="' + id + '"]');
+    fireClick(rowOf(ids[1]), w);
+    assert(T.state.selectedId === ids[1] && rowOf(ids[1]).classList.contains("selected"), "click selects a text row");
+    w.toggleBookmark(ids[1]);
+    assert(!!rowOf(ids[1]).querySelector(".col-bookmark-icon"), "a bookmarked text row shows the bookmark icon");
+    T.state.notes.set(ids[2], "check this line"); T.state.showNotes = true; w.render();
+    assert(!!d.querySelector('#tableRows .note-row[data-entry-id="' + ids[2] + '"]'), "a note row renders under its text row");
+    const spacerH = parseInt(d.querySelector("#tableSpacer").style.height, 10);
+    assert(spacerH > ids.length * 19 + 22, "a note row adds its own height to the spacer (offsets path), got " + spacerH);
+    const row2 = rowOf(ids[2]);
+    assert(row2.style.height === "19px", "the row itself stays TEXT_ROW_HEIGHT with a note below");
+    fireClick(rowOf(ids[3]), w);
+    rowOf(ids[4]).dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, ctrlKey: true }));
+    assert(T.state.logMultiSelect.has(ids[4]) && rowOf(ids[4]).classList.contains("row-multi-selected"), "Ctrl+click multi-selects a text row");
+    fireContextMenu(rowOf(ids[3]), w);
+    const menu = d.querySelector("#contextMenu");
+    assert(menu && !menu.classList.contains("hidden") && menu.textContent.length > 0, "the row context menu opens on a text row");
+    const selEntry = T.entryIndex[T.state.selectedId];
+    assert(selEntry, "a text line is selected");
+    assert(d.body.classList.contains("text-root"), "no Entry detail panel on a text file (body.text-root)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("348e. Virtualization and scroll math use TEXT_ROW_HEIGHT, scaled by the log text size");
+    await addText(w, "notes.txt", txt348.text);
+    const root = byName(T, "notes.txt");
+    const f = filterOn(w, T, root.id, "e");
+    const body = d.querySelector("#tableBody");
+    body.scrollTop = 60 * 19;
+    w.renderVisibleRows();
+    const first = d.querySelector("#tableRows .log-row");
+    const ents = w.getEntries(f.id);
+    assert(first.dataset.entryId === ents[60 - T.BUFFER_ROWS].id, "scrolled to 60*19px: the window starts BUFFER_ROWS above entry 60");
+    assert(d.querySelector("#tableRows").style.top === ((60 - T.BUFFER_ROWS) * 19) + "px", "the window's top offset is index * TEXT_ROW_HEIGHT, got " + d.querySelector("#tableRows").style.top);
+    w.scrollToIndex(100);
+    assert(Math.abs(body.scrollTop - (100 * 19 + 19 - 400)) <= 1, "scrollToIndex positions by TEXT_ROW_HEIGHT, got " + body.scrollTop);
+    w.applyLogTextScale(150);
+    assert(T.TEXT_ROW_HEIGHT === Math.round(19 * 1.5) && T.ROW_HEIGHT === 42, "TEXT_ROW_HEIGHT scales with the log text size like ROW_HEIGHT (" + T.TEXT_ROW_HEIGHT + ")");
+    const sr = d.querySelector("#tableRows .log-row");
+    assert(sr.style.height === T.TEXT_ROW_HEIGHT + "px" && d.documentElement.style.getPropertyValue("--text-row-h") === T.TEXT_ROW_HEIGHT + "px", "rows and --text-row-h follow the scale");
+    w.applyLogTextScale(100);
+  });
+}
+
+/* ============================================================
+   GROUP 349 — Editor as the Context view of a plain-text root
+   (docs/ui-and-views.md "Text files"; virtualized,
+   so the DOM holds only the rows near the viewport — the assertions walk the
+   line model (T.editorView) and scroll the window where they need more)
+   ============================================================ */
+group(349);
+if (groupSelected()) {
+  const sim = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0];
+  const txt349 = sim("plain", 150, 7);
+  const json349 = sim("jsondoc", 12, 3);
+  const xml349 = sim("xmldoc", 8, 3);
+  const log349 = sim("default", 60, 2);
+  const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
+  const LH = 19;
+  const lines = d => [...d.querySelectorAll("#textEditor .itv-line")];
+  const rowOf = (d, ts) => d.querySelector('#textEditor .itv-line[data-n="' + ts + '"]');
+  const filterOn = (w, T, rootId, value) => { const f = w.createFilterNode(rootId, "text", value); T.state.activeId = f.id; w.render(); return f; };
+  const collapseAll = (w, T) => { T.editorView.folds.forEach(f => { f.collapsed = true; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true); };
+  const scrollTo = (w, d, y) => { d.querySelector("#highlightBody").scrollTop = y; w.editorRender(false); };
+  // Visits the editor window at every viewport-sized step through the file.
+  const walkWindows = (w, d, fn) => {
+    const total = w.editorTopOfPos(w.editorVisibleCount()) + 22;
+    for (let y = 0; y < total; y += 380) { scrollTo(w, d, y); fn(); }
+    scrollTo(w, d, 0);
+  };
+
+  await withApp(async (w, d, T) => {
+    section("349a. A .txt/.json/.xml root renders the editor as its Context view: the file's lines (windowed), folds and syntax colours for JSON/XML");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "highlight", "a plain-text file node with no remembered view lands on Context, got " + T.fhActiveTab);
+    const wrap = d.querySelector("#highlightWrap");
+    assert(wrap.classList.contains("text-mode"), "#highlightWrap carries text-mode");
+    const ev = T.editorView;
+    assert(ev.n === txt.entries.length && ev.n > 100 && ev.vis === null, "the model holds every file line (" + ev.n + ")");
+    const rows = lines(d);
+    assert(rows.length > 20 && rows.length < ev.n, "only a window of the lines is in the DOM (" + rows.length + " of " + ev.n + ")");
+    walkWindows(w, d, () => {
+      assert(lines(d).every(l => l.dataset.n === String(txt.entries[+l.dataset.line].ts) && l.textContent === (txt.entries[+l.dataset.line].message || "")),
+        "every rendered row shows its line: number (data-n = entry ts) and the text verbatim");
+    });
+    assert(ev.folds.length === 0 && !d.querySelector("#textEditor .itv-fold-toggle"), "a .txt has no folds");
+    assert(!d.querySelector("#highlightBody .log-row"), "no log rows in the Context body of a text root");
+    const bar = d.querySelector("#highlightHeader .text-header-bar");
+    assert(bar && bar.querySelector(".text-hb-name").textContent === "notes.txt", "the shared header bar names the file under the toolbar");
+    assert(/\.itv-line\{[^}]*padding-left:var\(--text-gutter-w\)[^}]*height:var\(--text-row-h\)/.test(html) && /\.itv-line::before\{[^}]*width:var\(--text-num-w\)/.test(html) &&
+      /\.itv-fold-toggle\{[^}]*left:var\(--text-num-w\)[^}]*width:var\(--text-fold-w\)/.test(html), "editor lines/numbers/fold toggles use the --text-* gutter variables that Filtered's rows use");
+
+    await addText(w, "orders.json", json349.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    assert(T.fhActiveTab === "highlight" && ev.n === js.entries.length && js.textLayout === "pretty", "pretty JSON: the whole pretty-printed text, " + ev.n + " lines");
+    assert(ev.folds.length > 5, "the fold list has the file's blocks (" + ev.folds.length + ")");
+    const open = lines(d).filter(l => l.querySelector(".itv-fold-toggle"));
+    assert(open.length > 2 && lines(d).every(l => !!l.querySelector(".itv-fold-toggle") === (ev.foldIdAt[+l.dataset.line] >= 0)), "exactly the fold-opening lines carry the toggle (" + open.length + " in the window)");
+    assert(!!d.querySelector("#textEditor .tok-key") && !!d.querySelector("#textEditor .tok-string"), "JSON tokens are highlighted");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json", "header bar: file name");
+    const tgRow = open[1], line0 = +tgRow.dataset.line, fi = ev.foldIdAt[line0];
+    tgRow.querySelector(".itv-fold-toggle").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(ev.folds[fi].collapsed && ev.vis !== null, "clicking a toggle collapses its fold in the model");
+    const rowAfter = rowOf(d, js.entries[line0].ts);
+    assert(rowAfter.classList.contains("collapsed") && rowAfter.querySelector(".itv-fold-toggle").textContent === "▸", "…the row shows the folded glyph and the ellipsis marker");
+    assert(!rowOf(d, js.entries[line0 + 1].ts), "…and the lines the fold hides are gone from the DOM");
+    rowAfter.querySelector(".itv-fold-toggle").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(!ev.folds[fi].collapsed && ev.vis === null && !!rowOf(d, js.entries[line0 + 1].ts), "…and expands it again");
+
+    await addText(w, "orders.xml", xml349.text);
+    const xml = byName(T, "orders.xml");
+    T.state.activeId = xml.id; w.render();
+    assert(T.editorView.n === xml.entries.length && T.editorView.folds.length >= 1 && !!d.querySelector("#textEditor .tok-tag"), "XML: the <log> element folds, tags are coloured");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.xml", "header bar: the XML name has no layout suffix");
+
+    await addText(w, "app.log", log349.text);
+    const log = byName(T, "app.log");
+    T.state.activeId = log.id; w.render();
+    assert(!d.querySelector("#highlightWrap").classList.contains("text-mode") && T.editorView.key === null && !d.querySelector("#textEditor .itv-line"), "a log root: no editor, Context stays the log view");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349b. A filter node: result lines get the hit class, text matches are marked; both update in place");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    const f1 = filterOn(w, T, txt.id, "Heartbeat");
+    assert(T.fhActiveTab === "filter", "a filter node keeps landing on Filtered");
+    w.applyFhView("highlight");
+    const ids1 = new Set(w.getEntries(f1.id).map(e => e.id));
+    const hitsSeen = () => { const seen = new Set(); walkWindows(w, d, () => { for (const l of lines(d)) if (l.classList.contains("hit")) seen.add(+l.dataset.line); }); return seen; };
+    const seen1 = hitsSeen();
+    assert(ids1.size > 3 && T.editorView.hitIds.size === ids1.size && seen1.size === ids1.size, "every result line is a .hit once rendered (" + seen1.size + " of " + ids1.size + ")");
+    assert([...seen1].every(i => ids1.has(txt.entries[i].id)), "only result lines are hits");
+    let marks = 0, stray = 0;
+    walkWindows(w, d, () => {
+      for (const l of lines(d)) {
+        const ms = [...l.querySelectorAll(".text-match-mark")];
+        if (l.classList.contains("hit")) marks += ms.filter(m => m.textContent === "Heartbeat").length; else stray += ms.length;
+      }
+    });
+    assert(marks >= ids1.size && stray === 0, "the filter's text matches are marked in the hit lines (" + marks + "), none elsewhere");
+    // Another node: hits/marks move; the mounted rows stay the same elements.
+    const first = lines(d)[0], editor = d.querySelector("#textEditor");
+    const f2 = filterOn(w, T, txt.id, "Sensor");
+    w.applyFhView("highlight");
+    const ids2 = new Set(w.getEntries(f2.id).map(e => e.id));
+    assert(lines(d)[0] === first && [...d.querySelectorAll("#textEditor .text-match-mark")].every(m => m.textContent === "Sensor"), "same row elements (updated in place); the old marks are gone");
+    const seen2 = hitsSeen();
+    assert(ids2.size > 1 && seen2.size === ids2.size && [...seen2].every(i => ids2.has(txt.entries[i].id)), "switching to another filter re-marks the hits (" + seen2.size + ")");
+    const first2 = lines(d)[0];
+    T.state.activeId = txt.id; w.render();
+    assert(lines(d)[0] === first2, "the file node: the same rows");
+    assert(hitsSeen().size === 0 && !d.querySelector("#textEditor .text-match-mark"), "the file node itself: no hits, no marks");
+    assert(d.querySelector("#textEditor") === editor, "the editor element itself never changes");
+    const f3 = filterOn(w, T, txt.id, "Heartbeat");
+    const f4 = w.createFilterNode(f3.id, "text", "e");
+    T.state.activeId = f4.id; w.render(); w.applyFhView("highlight");
+    const ids4 = new Set(w.getEntries(f4.id).map(e => e.id));
+    assert(hitsSeen().size === ids4.size && ids4.size > 0, "a nested filter node marks its own (narrower) result (" + ids4.size + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349c. DOM identity: unrelated renders keep the rows (folds survive); layout/entries changes rebuild the model");
+    await addText(w, "orders.json", json349.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const editor = d.querySelector("#textEditor"), ev = T.editorView;
+    const rows = lines(d);
+    const tg = d.querySelectorAll("#textEditor .itv-fold-toggle")[2];
+    tg.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(ev.folds.filter(f => f.collapsed).length === 1, "one fold collapsed");
+    const rows1 = lines(d);
+    w.render(); w.render();
+    w.selectEntry(js.entries[3].id);
+    T.state.showNotes = !T.state.showNotes; w.render();
+    w.renderHighlightView();
+    const rows2 = lines(d);
+    assert(rows2.length === rows1.length && rows2.every((l, i) => l === rows1[i]), "every mounted row survived unrelated renders (same identity)");
+    assert(ev.folds.filter(f => f.collapsed).length === 1, "the collapsed fold stayed collapsed");
+    const f = filterOn(w, T, js.id, "msg");
+    w.applyFhView("highlight");
+    T.state.activeId = js.id; w.render();
+    assert(lines(d).every((l, i) => l === rows1[i]), "activating filters and going back keeps the rows");
+    const key0 = ev.key;
+    assert(await w.setTextLayout(js.id, "raw"), "switch to raw");
+    T.state.activeId = js.id; w.render();
+    assert(T.editorView.key !== key0 && T.editorView.n === 1 && lines(d).length === 1 && lines(d)[0] !== rows[0], "a layout change rebuilds the model (raw: one line)");
+    assert(await w.setTextLayout(js.id, "pretty"), "back to pretty");
+    assert(T.editorView.n === js.entries.length && T.editorView.n > 20 && lines(d)[0] !== rows[0] && T.editorView.folds.every(f => !f.collapsed), "…and back to the pretty lines (new model, folds reset)");
+    assert(d.querySelector("#textEditor") === editor, "the editor element itself never changes");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349d. Start tab: file node -> Context; filter nodes -> Filtered; remembered view and 'always Filtered' keep working; logs unchanged");
+    await addText(w, "notes.txt", txt349.text);
+    await addText(w, "app.log", log349.text);
+    const txt = byName(T, "notes.txt"), log = byName(T, "app.log");
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "highlight", "text file node: Context");
+    const f = filterOn(w, T, txt.id, "e");
+    assert(T.fhActiveTab === "filter", "its filter node: Filtered");
+    T.state.activeId = txt.id; w.render();
+    w.applyFhView("filter");
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "filter", "a remembered Filtered view on the file node is restored, got " + T.fhActiveTab);
+    w.applyFhView("highlight");
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "highlight", "…and a remembered Context view too");
+    await addText(w, "b.txt", txt349.text);
+    const b = byName(T, "b.txt");
+    T.filterActivationView = "alwaysFiltered";
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = b.id; w.render();
+    await addText(w, "c.txt", txt349.text);
+    const c = byName(T, "c.txt");
+    T.state.activeId = c.id; w.render();
+    w.applyFhView("filter");
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = c.id; w.render();
+    assert(T.fhActiveTab === "filter", "'always Filtered' lands a file node on Filtered, got " + T.fhActiveTab);
+    T.filterActivationView = "rememberLast";
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349e. Reveal from Filtered: centred, flashed, unfolds only the folds that hide the line; Stacked scrolls the editor");
+    await addText(w, "orders.json", json349.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const f = filterOn(w, T, js.id, "msg");
+    const results = w.getEntries(f.id);
+    assert(results.length >= 6, "the filter has several results (" + results.length + ")");
+    w.applyFhView("highlight");
+    const ev = T.editorView;
+    collapseAll(w, T);
+    assert(ev.folds.filter(x => x.collapsed).length >= 2 && ev.vis !== null && ev.vis.length < 5, "all folds collapsed: the visible line list is just the top level (" + ev.vis.length + ")");
+    w.applyFhView("filter");
+    const target = results[results.length - 2], idx = js.entries.findIndex(e => e.id === target.id);
+    const chain = []; for (let g = ev.lineParent[idx]; g >= 0; g = ev.folds[g].parent) chain.push(g);
+    assert(chain.length >= 2 && chain.every(g => ev.folds[g].collapsed), "the target line sits inside nested collapsed folds (" + chain.length + ")");
+    const others = ev.folds.filter((x, i) => !chain.includes(i) && x.collapsed);
+    w.revealInHighlightView(target, null, null);
+    assert(T.fhActiveTab === "highlight", "reveal switches to Context");
+    assert(chain.every(g => !ev.folds[g].collapsed), "every fold above the line is open");
+    assert(others.length > 2 && others.every(x => x.collapsed), "unrelated folds stay collapsed (" + others.length + ")");
+    const body = d.querySelector("#highlightBody");
+    const el0 = rowOf(d, target.ts);
+    assert(!!el0, "the revealed line is mounted");
+    const expected = Math.max(0, w.editorRowScrollTop(w.editorPosOf(idx)) - 400 / 2 + LH / 2);
+    assert(Math.abs(body.scrollTop - expected) <= 1, "the line is centred in the viewport: scrollTop " + body.scrollTop + " vs " + expected);
+    assert(el0.classList.contains("flash"), "the line flashes");
+    assert(T.state.selectedId === target.id, "and becomes the selected entry");
+    const opening = ev.folds.find(x => x.collapsed);
+    assert(!!opening && !!rowOf(d, js.entries[opening.start].ts) === (ev.vis.includes(opening.start)), "folds that do not hide the line are still collapsed");
+
+    w.applyFhView("stacked");
+    scrollTo(w, d, 0);
+    const other = results[results.length - 1], oi = js.entries.findIndex(e => e.id === other.id);
+    w.revealInHighlightView(other, null, null);
+    assert(T.fhLayout === "stacked" && body.scrollTop > 0 && !!rowOf(d, other.ts) && ev.vis.includes(oi), "Stacked: the editor scrolled to the revealed line (" + body.scrollTop + ")");
+    assert(T.state.selectedId === other.id, "Stacked: the line is selected");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349f. Tab switch keeps the top visible line at the same offset (file node both ways; filter node falls back to the selection, then the next hit)");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    T.state.activeId = txt.id; w.render();
+    const body = d.querySelector("#highlightBody"), tbody = d.querySelector("#tableBody");
+    scrollTo(w, d, 40 * LH + 5);
+    w.applyFhView("filter");
+    assert(tbody.scrollTop === 40 * LH + 5, "Context -> Filtered on the file node: the same top line at the same offset, got " + tbody.scrollTop);
+    tbody.scrollTop = 70 * LH + 3;
+    w.renderVisibleRows();
+    w.applyFhView("highlight");
+    assert(body.scrollTop === 70 * LH + 3, "Filtered -> Context: back at that line, got " + body.scrollTop);
+    const f = filterOn(w, T, txt.id, "Heartbeat");
+    const res = w.getEntries(f.id);
+    w.applyFhView("highlight");
+    const k = res.findIndex((e, i) => i > 0 && i < res.length - 5 && res[i + 1].ts - e.ts > 1);
+    assert(k >= 0, "two consecutive hits with a gap between them");
+    const ts0 = res[k].ts; // the editor line ts0 + 1 (index ts0) is no hit
+    T.state.selectedId = null;
+    scrollTo(w, d, 2 + ts0 * LH);
+    w.applyFhView("filter");
+    assert(tbody.scrollTop === (k + 1) * LH + 2, "top line is no hit, nothing selected: the next hit below becomes the top row (row " + (k + 1) + "), got " + tbody.scrollTop);
+    w.applyFhView("highlight");
+    scrollTo(w, d, 2 + ts0 * LH);
+    w.selectEntry(res[k + 3].id);
+    scrollTo(w, d, 2 + ts0 * LH);
+    w.applyFhView("filter");
+    assert(tbody.scrollTop === (k + 3) * LH + 2, "the selected line (row " + (k + 3) + ") is the anchor when the top line is no hit, got " + tbody.scrollTop);
+    tbody.scrollTop = 4 * LH + 2; w.renderVisibleRows();
+    w.applyFhView("highlight");
+    assert(body.scrollTop === (res[4].ts - 1) * LH + 2, "Filtered -> Context: the top hit row's line (" + res[4].ts + ") at the same offset, got " + body.scrollTop);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349g. Pretty/Raw toggle in the Context toolbar (JSON only)");
+    await addText(w, "orders.json", json349.text);
+    await addText(w, "notes.txt", txt349.text);
+    const js = byName(T, "orders.json"), txt = byName(T, "notes.txt");
+    T.state.activeId = js.id; w.render();
+    const group = d.querySelector("#ctxTextLayout").parentElement;
+    const pretty = d.querySelector("#ctxLayoutPretty"), raw = d.querySelector("#ctxLayoutRaw");
+    assert(group.style.display !== "none" && pretty.classList.contains("active") && !raw.classList.contains("active"), "a JSON root shows Pretty active");
+    assert(!d.querySelector("#contextToolbar").classList.contains("hidden"), "the Context toolbar is shown on a file node of a text root");
+    scrollTo(w, d, 30 * LH);
+    raw.click();
+    await waitFor(() => js.textLayout === "raw" && T.editorView.n === 1);
+    assert(js.textLayout === "raw" && raw.classList.contains("active") && !pretty.classList.contains("active"), "Raw click: layout raw, button state follows");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json", "header bar: still just the file name");
+    assert(lines(d).length === 1, "raw JSON is one line");
+    pretty.click();
+    await waitFor(() => js.textLayout === "pretty" && T.editorView.n > 20);
+    assert(pretty.classList.contains("active") && T.editorView.n === js.entries.length, "Pretty click: back to the pretty lines");
+    T.state.activeId = txt.id; w.render();
+    assert(group.style.display === "none", "a .txt root hides the layout toggle");
+    assert(d.querySelectorAll("#contextToolbar [data-log-only]").length >= 9 && /\[data-log-only\]\{[^}]*display:none/.test(html), "log-only Context controls (gap/expand/navigation) are hidden for text roots");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349h. The Wrap toggle (state.wrapTextView) applies to the Context editor AND Filtered text rows, not to log wrapping");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    T.state.activeId = txt.id; w.render();
+    const editor = d.querySelector("#textEditor"), ev = T.editorView, key0 = ev.key;
+    const btn = d.querySelector("#contextToolbar .toggle-wrap");
+    assert(btn && !btn.classList.contains("active") && !T.state.wrapTextView && ev.tops === null && ev.cols === 0, "Wrap starts off (fixed-height rows)");
+    btn.click();
+    assert(T.state.wrapTextView === true && btn.classList.contains("active") && d.body.classList.contains("textview-wrap"), "the toggle sets state.wrapTextView and the body class");
+    assert(T.state.wrapMessages === false, "the log message wrap is untouched");
+    assert(ev.key === key0 && d.querySelector("#textEditor") === editor, "the model is not rebuilt");
+    assert(ev.cols > 10 && ev.tops && ev.tops.length === ev.n + 1, "…but the rows get wrap-aware heights (" + ev.cols + " columns)");
+    const longLine = txt.entries.findIndex(e => e.message.length > ev.cols + 5);
+    assert(longLine >= 0 && ev.tops[longLine + 1] - ev.tops[longLine] >= 2 * LH, "a line longer than the columns is two or more rows tall");
+    assert(ev.tops[ev.n] > ev.n * LH, "the content height grows with the wrapped lines");
+    assert(/\.textview-wrap \.itv-line\{[^}]*white-space:pre-wrap/.test(html), "CSS: wrapped editor lines are pre-wrap");
+    assert(/\.textview-wrap #tableWrap\.text-mode \.log-row\.text-row[^{]*\{[^}]*height:auto/.test(html) || /\.textview-wrap[^{]*\.text-row[^{]*\{[^}]*white-space:pre-wrap/.test(html), "CSS: wrapped Filtered text rows are pre-wrap too");
+    filterOn(w, T, txt.id, "e");
+    assert(T.state.wrapTextView === true && d.body.classList.contains("textview-wrap"), "still wrapping in Filtered");
+    const fbtn = d.querySelector("#filteredToolbar .toggle-wrap");
+    assert(fbtn && fbtn.classList.contains("active"), "the Filtered toolbar's Wrap button shows the same state");
+    fbtn.click();
+    assert(T.state.wrapTextView === false && !d.body.classList.contains("textview-wrap"), "toggling it in Filtered turns the editor wrap off as well");
+    w.applyFhView("highlight");
+    assert(T.editorView.tops === null && T.editorView.cols === 0, "back to fixed-height rows in the editor");
+    await addText(w, "app.log", log349.text);
+    T.state.activeId = byName(T, "app.log").id; w.render();
+    d.querySelector("#filteredToolbar .toggle-wrap").click();
+    assert(T.state.wrapMessages === true && T.state.wrapTextView === false, "on a log root the button toggles the log message wrap");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349i. Nav history anchors the editor by line number; a minimap click (selectHighlightEntry) scrolls the editor");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    T.state.activeId = txt.id; w.render();
+    const body = d.querySelector("#highlightBody");
+    scrollTo(w, d, 50 * LH + 4);
+    const wp = w.captureNavWaypoint();
+    assert(wp.contextAnchor && wp.contextAnchor.line === txt.entries[50].ts && wp.contextAnchor.offset === -4 && wp.contextAnchor.id === txt.entries[50].id, "the waypoint anchors the top editor line by its line number, got " + JSON.stringify(wp.contextAnchor));
+    scrollTo(w, d, 0);
+    w.applyNavWaypoint(wp);
+    assert(body.scrollTop === 50 * LH + 4, "applying the waypoint scrolls the editor back, got " + body.scrollTop);
+    scrollTo(w, d, 0);
+    const e = txt.entries[120];
+    w.selectHighlightEntry(e.id, { scroll: true, center: true, index: 120 });
+    assert(Math.abs(body.scrollTop - (2 + 120 * LH - 200 + LH / 2)) <= 1 && T.state.selectedId === e.id && !!rowOf(d, e.ts), "selectHighlightEntry (minimap click/drag) centres the line in the editor, got " + body.scrollTop);
+  });
+}
+
+/* ============================================================
+   GROUP 350 — Find bar in the editor (docs/ui-and-views.md "Text files"
+   Step 4; marks apply to the rendered rows since Step 5) + Context/Filtered
+   vertical parity (CSS)
+   ============================================================ */
+group(350);
+if (groupSelected()) {
+  const sim = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0];
+  const txt350 = sim("plain", 150, 7);
+  const json350 = sim("jsondoc", 12, 3);
+  const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
+  const LH = 19;
+  const lines = d => [...d.querySelectorAll("#textEditor .itv-line")];
+  const search = async (w, d, q) => { const input = d.getElementById("findInput"); input.value = q; fireInput(input, w); await sleep(220); };
+  const count = d => d.getElementById("findCount").textContent;
+  const marks = d => [...d.querySelectorAll("#textEditor mark.editor-find-mark")];
+  const collapseAll = (w, T) => { T.editorView.folds.forEach(f => { f.collapsed = true; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true); };
+  // Matches of `re` (global) in the rendered rows' lines — what the marks must cover.
+  const expectedMarks = (T, d, re) => lines(d).reduce((n, l) => n + ((T.editorView.entries[+l.dataset.line].message.match(re) || []).length), 0);
+
+  await withApp(async (w, d, T) => {
+    section("350a. Ctrl+G in the editor: counts, marks every rendered match in place, steps with F3/Shift+F3, unfolds only the hiding folds");
+    const fb = d.createElement("script");
+    fb.textContent = "window.__find = { get state() { return findState; } };";
+    d.body.appendChild(fb);
+    await addText(w, "orders.json", json350.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    collapseAll(w, T);
+    const ev = T.editorView, editor = d.querySelector("#textEditor"), key0 = ev.key;
+    const collapsed0 = ev.folds.filter(f => f.collapsed).length;
+    assert(collapsed0 > 5, "folds collapsed first (" + collapsed0 + ")");
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    assert(isVisible(d.getElementById("findBar"), w), "Ctrl+G opens the find bar in the Context editor");
+    await search(w, d, "0.1");
+    const expectLines = js.entries.map((e, i) => i).filter(i => js.entries[i].message.includes("0.1"));
+    assert(expectLines.length >= 3, "the fixture has several lines containing 0.1 (" + expectLines.length + ")");
+    assert(w.__find.state.hits.length === expectLines.length && w.__find.state.hits.every((h, i) => h === expectLines[i]), "the scan finds every line of the file, rendered or not");
+    assert(count(d) === "1 / " + expectLines.length, "the counter reads n / m over the file's lines, got " + count(d));
+    assert(marks(d).length === expectedMarks(T, d, /0\.1/g) && marks(d).length >= 1 && marks(d).every(m => m.textContent === "0.1"), "every match in the rendered rows is marked in place (" + marks(d).length + ")");
+    assert(ev.key === key0 && T.editorView.entries === ev.entries && d.querySelector("#textEditor") === editor, "no editor rebuild");
+    const cur = () => d.querySelector("#textEditor .find-cur");
+    const e0 = js.entries[expectLines[0]];
+    assert(cur() && cur().dataset.n === String(e0.ts), "the current hit's line is .find-cur (line " + e0.ts + ")");
+    const chain = []; for (let g = ev.lineParent[expectLines[0]]; g >= 0; g = ev.folds[g].parent) chain.push(g);
+    assert(chain.every(g => !ev.folds[g].collapsed), "the folds above the current match are open");
+    const collapsed1 = ev.folds.filter(f => f.collapsed).length;
+    assert(collapsed1 > 0 && collapsed0 - collapsed1 <= chain.length, "other folds stay collapsed (" + collapsed1 + " of " + collapsed0 + ")");
+    const body = d.querySelector("#highlightBody");
+    assert(Math.abs(body.scrollTop - Math.max(0, w.editorRowScrollTop(w.editorPosOf(expectLines[0])) - 200 + LH / 2)) <= 1, "scrolled so the match is centred, got " + body.scrollTop);
+    assert(T.state.selectedId === e0.id, "the hit's entry is the selected entry");
+    const nLast = expectLines.length;
+    fireKeydown(d, w, "F3");
+    assert(count(d) === "2 / " + nLast && cur().dataset.n === String(js.entries[expectLines[1]].ts), "F3: next hit, got " + count(d));
+    fireKeydown(d, w, "F3", { shiftKey: true });
+    fireKeydown(d, w, "F3", { shiftKey: true });
+    assert(count(d) === nLast + " / " + nLast && cur().dataset.n === String(js.entries[expectLines[nLast - 1]].ts), "Shift+F3 from the first hit wraps to the last, got " + count(d));
+    assert(!!ev.vis && ev.vis.includes(expectLines[nLast - 1]), "the last hit is visible too (unfolded)");
+    d.getElementById("findNextBtn").click();
+    assert(count(d) === "1 / " + nLast, "the bar's Next button steps and wraps, got " + count(d));
+    d.getElementById("findPrevBtn").click();
+    assert(count(d) === nLast + " / " + nLast, "the Prev button steps back");
+    assert(ev.key === key0, "still the same model after all the steps");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("350b. Marks are removed on close and leave the line's original nodes (selection/copy stay correct)");
+    await addText(w, "orders.json", json350.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const hitEntry = js.entries.find(e => e.message.includes("msg"));
+    const hitLine = d.querySelector('#textEditor .itv-line[data-n="' + hitEntry.ts + '"]');
+    const otherEntry = js.entries.find(e => !e.message.includes("msg") && e.message.trim().length > 6);
+    const otherLine = d.querySelector('#textEditor .itv-line[data-n="' + otherEntry.ts + '"]');
+    const html0 = hitLine.innerHTML, other0 = otherLine.innerHTML;
+    const otherNodes = [...otherLine.childNodes];
+    const text0 = d.querySelector("#teRows").textContent;
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search(w, d, "msg");
+    assert(marks(d).length >= 3 && hitLine.querySelector("mark.editor-find-mark"), "the matches are marked (" + marks(d).length + ")");
+    assert(hitLine.textContent === hitEntry.message && d.querySelector("#teRows").textContent === text0, "marking never changes the text");
+    assert([...otherLine.childNodes].every((n, i) => n === otherNodes[i]) && otherLine.innerHTML === other0, "a line without a hit is untouched (same nodes)");
+    d.getElementById("findCloseBtn").click();
+    assert(marks(d).length === 0 && !d.querySelector("#textEditor .find-cur"), "closing the bar removes every mark and the current-line class");
+    assert(hitLine.innerHTML === html0, "the hit line's markup is exactly what it was before the search (marks unwrapped, text nodes merged back)");
+    assert(!isVisible(d.getElementById("findBar"), w), "bar hidden");
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search(w, d, "zzzzqq");
+    assert(count(d) === "No results" && marks(d).length === 0, "no results: no marks");
+    await search(w, d, "msg");
+    assert(marks(d).length >= 3, "a new query marks again");
+    await search(w, d, "");
+    assert(marks(d).length === 0, "clearing the query clears the marks");
+    await search(w, d, "msg");
+    const sel = w.getSelection(), range = d.createRange();
+    range.selectNodeContents(otherLine); sel.removeAllRanges(); sel.addRange(range);
+    const selText = sel.toString();
+    await search(w, d, "msg ");
+    await search(w, d, "msg");
+    assert(marks(d).length >= 3 && sel.rangeCount === 1 && sel.toString() === selText && selText.length > 0 && sel.getRangeAt(0).commonAncestorContainer === otherLine,
+      "a selection in an unmarked line is untouched while marks come and go");
+    const hitText = hitLine.querySelector("mark.editor-find-mark").previousSibling || hitLine.firstChild;
+    const r2 = d.createRange(); r2.setStart(hitLine, 0); r2.setEnd(hitLine, hitLine.childNodes.length);
+    sel.removeAllRanges(); sel.addRange(r2);
+    const sel2 = sel.toString();
+    d.getElementById("findCloseBtn").click();
+    assert(r2.toString() === sel2 && hitLine.innerHTML === html0 && hitText !== null, "a live Range over the line still covers the same text after the marks are unwrapped (got " + JSON.stringify(r2.toString()) + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("350c. Case and regex options work in the editor like for logs");
+    await addText(w, "notes.txt", txt350.text);
+    const txt = byName(T, "notes.txt");
+    T.state.activeId = txt.id; w.render();
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search(w, d, "heartbeat");
+    const ci = txt.entries.filter(e => /heartbeat/i.test(e.message)).length;
+    assert(ci > 3 && count(d) === "1 / " + ci && marks(d).length === expectedMarks(T, d, /heartbeat/gi) && marks(d).length > 0, "case-insensitive by default (" + ci + ")");
+    d.getElementById("findCaseBtn").click(); await sleep(220);
+    assert(count(d) === "No results" && marks(d).length === 0, "Aa: 'heartbeat' no longer matches 'Heartbeat'");
+    d.getElementById("findCaseBtn").click(); await sleep(220);
+    d.getElementById("findRegexBtn").click();
+    await search(w, d, "Heartbeat|Retrying");
+    const re = txt.entries.filter(e => /Heartbeat|Retrying/.test(e.message)).length;
+    assert(new RegExp("^\\d+ / " + re + "$").test(count(d)) && marks(d).length === expectedMarks(T, d, /Heartbeat|Retrying/g), "regex alternation (" + re + ") got " + count(d) + " / " + marks(d).length);
+    await search(w, d, "(");
+    assert(/Invalid/.test(count(d)) && marks(d).length === 0, "an invalid regex shows the error and marks nothing, got " + count(d));
+    d.getElementById("findRegexBtn").click();
+    await search(w, d, "axis=[*:int] target");
+    const wc = txt.entries.filter(e => /axis=\d+ target/.test(e.message)).length;
+    assert(wc > 2 && new RegExp("^\\d+ / " + wc + "$").test(count(d)) && marks(d).length === expectedMarks(T, d, /axis=\d+ target/g), "a [*:int] wildcard pattern matches like the filter (" + wc + ") got " + count(d) + " / " + marks(d).length);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("350d. On a filter node the whole file is searched; Add as filter creates a node under the active node; Filtered/log find unchanged");
+    await addText(w, "notes.txt", txt350.text);
+    await addText(w, "app.log", sim("default", 40, 2).text);
+    const txt = byName(T, "notes.txt"), log = byName(T, "app.log");
+    const f = w.createFilterNode(txt.id, "text", "Heartbeat");
+    T.state.activeId = f.id; w.render(); w.applyFhView("highlight");
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search(w, d, "Sensor");
+    const n = txt.entries.filter(e => /sensor/i.test(e.message)).length;
+    assert(count(d) === "1 / " + n && marks(d).length === expectedMarks(T, d, /sensor/gi), "Context on a filter node searches the whole file, not only the result lines (" + n + ")");
+    assert(T.editorView.hitIds.size === w.getEntries(f.id).length, "the filter's own hit lines are unchanged");
+    const nodes0 = Object.keys(T.state.nodes).length;
+    d.getElementById("findAddFilterBtn").click();
+    const added = Object.values(T.state.nodes).find(x => x.type === "filter" && x.filterType === "text" && x.value === "Sensor");
+    assert(added && added.parentId === f.id && Object.keys(T.state.nodes).length === nodes0 + 1, "Add as filter creates a text filter under the active node");
+    assert(!isVisible(d.getElementById("findBar"), w) && marks(d).length === 0 && T.state.activeId === added.id, "the bar closes, the marks go, the new node is active");
+    assert(T.fhActiveTab === "filter", "its result lives in Filtered");
+    T.state.activeId = txt.id; w.render(); w.applyFhView("filter");
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search(w, d, "Sensor");
+    assert(d.querySelectorAll("#tableRows mark.find-match-mark").length > 0 && marks(d).length === 0, "in Filtered the rows are marked (unchanged behaviour), the editor is not");
+    assert(/\/ /.test(count(d)), "Filtered counter works, got " + count(d));
+    w.applyFhView("highlight");
+    assert(marks(d).length === expectedMarks(T, d, /sensor/gi) && marks(d).length > 0, "switching to Context with the bar open marks the editor rows (" + marks(d).length + ")");
+    w.applyFhView("filter");
+    d.getElementById("findCloseBtn").click();
+    T.state.activeId = log.id; w.render();
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search(w, d, "INFO");
+    assert(marks(d).length === 0 && d.querySelectorAll("#tableRows mark.find-match-mark, #highlightRows mark.find-match-mark").length > 0, "log roots keep marking their rows");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("350e. Vertical/horizontal parity of Context and Filtered lines (CSS: same top padding, gutter columns, line height)");
+    const pad = sel => (new RegExp(sel.replace(/[.#]/g, "\\$&") + "[^{]*\\{[^}]*padding:([^;}]+)").exec(html) || [])[1];
+    assert(pad("#textEditor") === "2px 16px 20px var(--rows-pad-left)" && /#tableRows, #highlightRows\{[^}]*padding:2px 16px 20px var\(--rows-pad-left\)/.test(html),
+      "#textEditor and #tableRows share the padding box (2px top, same left inset), got " + pad("#textEditor"));
+    assert(/#textEditor\{[^}]*--rows-pad-left: ?calc\(26px \+ \(var\(--color-mark-w\) - 3px\)\)/.test(html), "…and the same --rows-pad-left formula");
+    assert(/\.log-row\.text-row\{[^}]*height:var\(--text-row-h\)|\.log-row\.text-row\{[^}]*grid-template-columns:var\(--text-num-w\) var\(--text-fold-w\) 1fr/.test(html) &&
+      /\.itv-line\{[^}]*height:var\(--text-row-h\)[^}]*\}/.test(html), "line height is --text-row-h in both");
+    assert(/#teRows\{|#teTop, #teBottom, #teRows\{display:block;\}/.test(html), "the editor's row container and spacers are plain blocks");
+    assert(/mark.find-match-mark \*[^{]*\{color:var\(--text-primary\)/.test(html.replace(/\s+/g, " ")) , "marked text keeps the normal text colour over the token colours");
+  });
+}
+
+/* ============================================================
+   GROUP 351 — Virtualized editor (docs/ui-and-views.md "Text files"
+   Step 5): visible line list, windowed rendering, copy from the line model,
+   reveal / find / marks on a large file
+   ============================================================ */
+group(351);
+if (groupSelected()) {
+  const sim = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0];
+  const big351 = sim("plain", 30000, 5);
+  const json351 = sim("jsondoc", 600, 3);
+  const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
+  const LH = 19;
+  const lines = d => [...d.querySelectorAll("#textEditor .itv-line")];
+  const rowOf = (d, ts) => d.querySelector('#textEditor .itv-line[data-n="' + ts + '"]');
+  const scrollTo = (w, d, y) => { d.querySelector("#highlightBody").scrollTop = y; w.editorRender(false); };
+  const collapseAll = (w, T) => { T.editorView.folds.forEach(f => { f.collapsed = true; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true); };
+  const heightsOf = d => parseFloat(d.querySelector("#teTop").style.height) + parseFloat(d.querySelector("#teBottom").style.height);
+  const copyText = (w, d) => {
+    let got = null;
+    const ev = new w.Event("copy", { bubbles: true, cancelable: true });
+    ev.clipboardData = { setData(type, v) { got = v; } };
+    d.dispatchEvent(ev);
+    return { text: got, prevented: ev.defaultPrevented };
+  };
+  const search351 = async (w, d, q) => { const input = d.getElementById("findInput"); input.value = q; fireInput(input, w); await sleep(400); };
+  const textNodeOf = row => { const wk = d => d.ownerDocument.createTreeWalker(row, 4); const t = wk(row).nextNode(); return t; };
+
+  await withApp(async (w, d, T) => {
+    section("351a. The visible line list: nested folds collapse/expand the list, positions map back to lines");
+    await addText(w, "orders.json", json351.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView, n = ev.n;
+    assert(n > 3000 && ev.folds.length > 500 && ev.vis === null && w.editorVisibleCount() === n, "a 600-entry document: " + n + " lines, " + ev.folds.length + " folds, all visible (vis is null)");
+    // Two nested folds: an entry object and a block inside it.
+    const outer = ev.folds.findIndex((f, i) => f.parent >= 0 && ev.folds.some(g => g.parent === i));
+    const inner = ev.folds.findIndex(g => g.parent === outer);
+    const fo = ev.folds[outer], fi = ev.folds[inner];
+    assert(outer >= 0 && inner >= 0 && fo.start < fi.start && fi.end < fo.end, "found a nested pair (" + fo.start + "-" + fo.end + " > " + fi.start + "-" + fi.end + ")");
+    w.toggleEditorFold(inner);
+    assert(ev.vis && ev.vis.length === n - (fi.end - fi.start), "collapsing the inner fold hides lines start+1..end (" + (n - ev.vis.length) + ")");
+    assert(ev.vis.includes(fi.start) && !ev.vis.includes(fi.start + 1) && !ev.vis.includes(fi.end) && ev.vis.includes(fi.end + 1), "the opener stays, the body and closing line go");
+    assert(w.editorPosOf(fi.start + 1) === w.editorPosOf(fi.start) && ev.vis[w.editorPosOf(fi.start + 1)] === fi.start, "a hidden line maps to its fold's opener");
+    w.toggleEditorFold(outer);
+    assert(ev.vis.length === n - (fo.end - fo.start), "collapsing the outer fold hides its whole range, the collapsed inner fold included (" + (n - ev.vis.length) + ")");
+    w.toggleEditorFold(inner); // toggled while hidden: only its flag flips
+    assert(ev.vis.length === n - (fo.end - fo.start) && !fi.collapsed, "toggling the hidden inner fold changes nothing visible");
+    w.toggleEditorFold(outer);
+    assert(ev.vis === null && w.editorVisibleCount() === n, "expanding the outer fold shows everything again (inner was re-opened)");
+    // Every line parent chain is consistent: a line's parent fold contains it.
+    let bad = 0;
+    for (let i = 0; i < n; i += 7) { const g = ev.lineParent[i]; if (g >= 0 && !(ev.folds[g].start < i && i <= ev.folds[g].end)) bad++; }
+    assert(bad === 0, "lineParent points at the innermost fold containing each line");
+    // Rendering slices the list: hidden lines are not rows.
+    collapseAll(w, T);
+    assert(ev.vis.length < 10 && lines(d).length === ev.vis.length, "all collapsed: the DOM holds just the top-level rows (" + lines(d).length + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351b. Windowed rendering on a 30,000-line file: only about the viewport (plus a screen each side) is in the DOM; scrolling reuses rows");
+    await addText(w, "big.txt", big351.text);
+    const txt = byName(T, "big.txt");
+    T.state.activeId = txt.id; w.render();
+    const ev = T.editorView, n = ev.n, body = d.querySelector("#highlightBody");
+    assert(n >= 30000, "the model has all " + n + " lines");
+    let rows = lines(d);
+    assert(rows.length > 40 && rows.length < 120, "only ~3 screens of rows are mounted (" + rows.length + " of " + n + ")");
+    assert(Math.abs(heightsOf(d) + rows.length * LH - n * LH) < 1, "spacers + rows add up to the full content height (" + n * LH + ")");
+    assert(rows[0].dataset.line === "0" && d.querySelector("#teTop").style.height === "0px", "at the top the first row is line 1 and the top spacer is empty");
+    // Scroll by a few rows: the rows that stay are the same elements.
+    const keep = rows[30];
+    scrollTo(w, d, 40 * LH);
+    rows = lines(d);
+    assert(rows.includes(keep) && rows.length < 120, "a small scroll keeps the rows still in range (same elements)");
+    assert(rows.every((r, i) => i === 0 || +r.dataset.line === +rows[i - 1].dataset.line + 1), "mounted rows are consecutive lines");
+    // Scroll to the middle: a completely new window around line 15000.
+    scrollTo(w, d, 15000 * LH);
+    rows = lines(d);
+    const first = +rows[0].dataset.line, last = +rows[rows.length - 1].dataset.line;
+    assert(first <= 15000 && last >= 15000 + 20 && rows.length < 120 && first > 14000, "the window follows the scroll position (" + first + ".." + last + ")");
+    assert(Math.abs(parseFloat(d.querySelector("#teTop").style.height) - first * LH) < 1 && Math.abs(heightsOf(d) + rows.length * LH - n * LH) < 1, "spacers follow");
+    // Then the bottom.
+    scrollTo(w, d, n * LH);
+    rows = lines(d);
+    assert(+rows[rows.length - 1].dataset.line === n - 1 && rows.length < 120, "at the end the last line is mounted (" + rows.length + " rows)");
+    // The scroll listener path: a scroll event renders the window (one frame later).
+    scrollTo(w, d, 0);
+    body.scrollTop = 9000 * LH;
+    body.dispatchEvent(new w.Event("scroll"));
+    await waitFor(() => lines(d).some(r => r.dataset.line === "9000"));
+    assert(lines(d).some(r => r.dataset.line === "9000"), "a scroll event renders the new window on the next frame");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351c. Copy from the line model: a selection across rendered and unrendered lines, partial first/last, folded lines included");
+    await addText(w, "big.txt", big351.text);
+    const txt = byName(T, "big.txt");
+    T.state.activeId = txt.id; w.render();
+    const ev = T.editorView, es = txt.entries, sel = w.getSelection();
+    const tn = line => textNodeOf(d.querySelector('#textEditor .itv-line[data-line="' + line + '"]'));
+    // Anchor in line 5 (offset 3), focus in line 6 (offset 4): within the window.
+    sel.setBaseAndExtent(tn(5), 3, tn(6), 4);
+    let c = copyText(w, d);
+    assert(c.prevented && c.text === es[5].message.slice(3) + "\n" + es[6].message.slice(0, 4), "a two-line selection copies the tail of the first and the head of the second line, got " + JSON.stringify(c.text));
+    // Now scroll far away: the anchor row (selection endpoint) stays mounted, pinned.
+    const anchorRow = d.querySelector('#textEditor .itv-line[data-line="5"]');
+    scrollTo(w, d, 15000 * LH);
+    assert(anchorRow.isConnected && anchorRow.classList.contains("itv-pinned") && anchorRow.style.position === "absolute", "a row holding a selection endpoint stays in the DOM, pinned, when it scrolls out of range");
+    assert(!d.querySelector('#textEditor .itv-line[data-line="6"]') || d.querySelector('#textEditor .itv-line[data-line="6"]').classList.contains("itv-pinned"), "…while its unselected neighbours are unmounted");
+    // Extend the selection to a row near line 15003 (offset 4): 15000 lines between are NOT in the DOM.
+    const far = d.querySelector('#textEditor .itv-line[data-line="15003"]');
+    sel.setBaseAndExtent(textNodeOf(anchorRow), 3, textNodeOf(far), 4);
+    scrollTo(w, d, 15000 * LH + 40);
+    c = copyText(w, d);
+    const expected = [es[5].message.slice(3)].concat(es.slice(6, 15003).map(e => e.message), [es[15003].message.slice(0, 4)]).join("\n");
+    assert(c.prevented && c.text === expected, "copy spans lines 6..15004 although only ~60 are rendered (" + (c.text || "").length + " chars, expected " + expected.length + ")");
+    assert(c.text.split("\n").length === 15003 - 5 + 1, "one text line per file line");
+    // Backwards selection (focus before anchor) gives the same text.
+    sel.setBaseAndExtent(textNodeOf(far), 4, textNodeOf(anchorRow), 3);
+    assert(copyText(w, d).text === expected, "a backwards selection copies the same text");
+    // Dropping the selection releases the pinned row.
+    sel.removeAllRanges();
+    w.editorRender(true);
+    assert(!anchorRow.isConnected && !d.querySelector(".itv-pinned"), "with no selection the pinned row is unmounted again");
+    assert(copyText(w, d).prevented === false, "no selection: the copy event is left alone");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351d. Copy: a selection across a collapsed fold includes the hidden lines in full");
+    await addText(w, "orders.json", json351.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView, es = js.entries, sel = w.getSelection();
+    const f = ev.folds.find(x => x.start > 5 && x.end - x.start > 6);
+    w.toggleEditorFold(ev.folds.indexOf(f));
+    assert(!d.querySelector('#textEditor .itv-line[data-line="' + (f.start + 1) + '"]'), "the fold's body is not rendered");
+    const a = d.querySelector('#textEditor .itv-line[data-line="' + (f.start - 1) + '"]'), b = d.querySelector('#textEditor .itv-line[data-line="' + (f.end + 1) + '"]');
+    const tnode = row => { const wk = d.createTreeWalker(row, 4); let t; while ((t = wk.nextNode())) { if (!t.parentNode.closest(".itv-fold-toggle, .itv-fold-ellipsis")) return t; } };
+    sel.setBaseAndExtent(tnode(a), 2, tnode(b), 5);
+    const text = copyText(w, d).text;
+    const exp = [es[f.start - 1].message.slice(2)].concat(es.slice(f.start, f.end + 1).map(e => e.message), [es[f.end + 1].message.slice(0, 5)]).join("\n");
+    assert(text === exp && text.includes(es[f.start + 1].message.trim()), "the collapsed lines are part of the copied text (" + (f.end - f.start + 1) + " hidden/folded lines)");
+    assert(!text.includes("▸") && !text.includes("lines"), "the fold toggle and the '… N lines' marker are not copied");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351e. Reveal into a folded block of a large document: unfolds the chain, mounts and centres the line, others stay collapsed");
+    await addText(w, "orders.json", json351.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView;
+    const f = w.createFilterNode(js.id, "text", "Position update");
+    T.state.activeId = f.id; w.render(); w.applyFhView("filter");
+    const results = w.getEntries(f.id);
+    assert(results.length > 20, "many matches (" + results.length + ")");
+    w.applyFhView("highlight");
+    collapseAll(w, T);
+    w.applyFhView("filter");
+    const target = results[Math.floor(results.length * 0.8)], idx = js.entries.findIndex(e => e.id === target.id);
+    const chain = []; for (let g = ev.lineParent[idx]; g >= 0; g = ev.folds[g].parent) chain.push(g);
+    assert(chain.length >= 2 && ev.vis.length < 10, "the target (line " + target.ts + ") is hidden in " + chain.length + " nested folds");
+    w.revealInHighlightView(target, null, null);
+    const row = rowOf(d, target.ts);
+    assert(!!row && row.classList.contains("flash"), "the line is mounted and flashes");
+    assert(chain.every(g => !ev.folds[g].collapsed), "the chain is open");
+    assert(ev.folds.filter(x => x.collapsed).length > ev.folds.length - chain.length - 5, "nearly every other fold is still collapsed (" + ev.folds.filter(x => x.collapsed).length + " of " + ev.folds.length + ")");
+    const body = d.querySelector("#highlightBody");
+    assert(Math.abs(body.scrollTop - Math.max(0, w.editorRowScrollTop(w.editorPosOf(idx)) - 200 + LH / 2)) <= 1, "centred at " + body.scrollTop);
+    assert(lines(d).length < 80, "still a small window (" + lines(d).length + " rows) for " + ev.n + " lines");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351f. Find: stepping into an unrendered region mounts it, marks the match, unfolds; hit and find marks appear on newly rendered rows");
+    const fb = d.createElement("script");
+    fb.textContent = "window.__find = { get state() { return findState; } };";
+    d.body.appendChild(fb);
+    await addText(w, "big.txt", big351.text);
+    const txt = byName(T, "big.txt");
+    const f = w.createFilterNode(txt.id, "text", "Heartbeat");
+    T.state.activeId = f.id; w.render(); w.applyFhView("highlight");
+    const ev = T.editorView;
+    fireKeydown(d, w, "g", { ctrlKey: true });
+    await search351(w, d, "Spectrum");
+    const hits = w.__find.state.hits;
+    assert(hits.length > 100 && w.__find.state.done, "the scan covers the whole file (" + hits.length + " hits)");
+    assert(!d.querySelector("#textEditor mark.editor-find-mark") || [...d.querySelectorAll("#textEditor mark.editor-find-mark")].length < 40, "only rendered rows carry marks");
+    const lastHit = hits[hits.length - 1];
+    while (w.__find.state.cur !== hits.length - 1) { fireKeydown(d, w, "F3", { shiftKey: true }); if (hits.length - 1 - w.__find.state.cur > 1 && w.__find.state.cur > 3) break; } // Shift+F3 from the top wraps to the last hit
+    await sleep(30);
+    const row = rowOf(d, txt.entries[lastHit].ts);
+    assert(!!row && row.classList.contains("find-cur") && row.querySelector("mark.editor-find-mark") && / \/ /.test(d.getElementById("findCount").textContent), "the last hit (line " + txt.entries[lastHit].ts + ", far outside the first window) is mounted, current and marked");
+    const nfmt = hits.length.toLocaleString("de-DE");
+    assert(d.getElementById("findCount").textContent === nfmt + " / " + nfmt, "the counter reads n / m, got " + d.getElementById("findCount").textContent);
+    scrollTo(w, d, hits[Math.floor(hits.length / 2)] * LH - 100);
+    const newRows = lines(d);
+    const hitRows = newRows.filter(r => hits.includes(+r.dataset.line));
+    assert(hitRows.length > 0 && hitRows.every(r => r.querySelector("mark.editor-find-mark")) && newRows.every(r => hits.includes(+r.dataset.line) || !r.querySelector("mark.editor-find-mark")),
+      "rows scrolled into view get their find marks as they are built (" + hitRows.length + " hit rows)");
+    scrollTo(w, d, 12000 * LH);
+    const hl = lines(d).filter(r => ev.hitIds.has(txt.entries[+r.dataset.line].id));
+    assert(hl.length > 0 && hl.every(r => r.classList.contains("hit") && r.querySelector(".text-match-mark")), "…and so do the filter's hit classes and text marks (" + hl.length + " rows)");
+    d.getElementById("findCloseBtn").click();
+    assert(!d.querySelector("#textEditor mark.editor-find-mark") && !d.querySelector("#textEditor .find-cur"), "closing the bar clears the marks");
+    scrollTo(w, d, 20000 * LH);
+    assert(!d.querySelector("#textEditor mark.editor-find-mark"), "…and rows built afterwards are not marked");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("351g. Wrap with the virtualized editor: heights are estimated from the character count; the scroll math stays consistent");
+    await addText(w, "big.txt", sim("plain", 3000, 5).text);
+    const txt = byName(T, "big.txt");
+    T.state.activeId = txt.id; w.render();
+    d.querySelector("#contextToolbar .toggle-wrap").click();
+    const ev = T.editorView, cols = ev.cols;
+    assert(cols > 10 && ev.tops && ev.tops.length === ev.n + 1, "wrap on: row tops from " + cols + " columns");
+    let expectTotal = 0;
+    for (const e of txt.entries) expectTotal += LH * Math.max(1, Math.ceil((e.message.length + 3 * (e.message.split("\t").length - 1)) / cols));
+    assert(ev.tops[ev.n] === expectTotal && expectTotal > ev.n * LH, "the content height is the sum of the estimated row heights (" + expectTotal + ")");
+    const wrapRows = lines(d);
+    assert(Math.abs(heightsOf(d) + wrapRows.reduce((h, r) => h + ev.tops[+r.dataset.line + 1] - ev.tops[+r.dataset.line], 0) - expectTotal) < 1, "spacers + mounted rows' estimated heights add up to the content height");
+    // Scrolling still lands on the right line.
+    const y = ev.tops[1500] + 2 + 3;
+    scrollTo(w, d, y);
+    const anchor = w.captureEditorAnchor();
+    assert(anchor.idx === 1500 && anchor.offset === ev.tops[1500] - y, "the anchor at an arbitrary scroll position maps to line 1501 (offset " + anchor.offset + ")");
+    assert(lines(d).some(r => r.dataset.line === "1500"), "its row is mounted");
+    // Reveal works with variable heights.
+    w.revealEditorLine(2500, { center: true });
+    assert(Math.abs(d.querySelector("#highlightBody").scrollTop - (2 + ev.tops[2500] - 200 + (ev.tops[2501] - ev.tops[2500]) / 2)) <= 1 && lines(d).some(r => r.dataset.line === "2500"), "reveal centres by the estimated row geometry");
+  });
+  await withApp(async (w, d, T) => {
+    section("351h. Ctrl+A in the Context editor selects the whole file through the model; log views keep the native select-all");
+    await addText(w, "orders.json", json351.text);
+    await addText(w, "app.log", sim("default", 40, 2).text);
+    const js = byName(T, "orders.json"), log = byName(T, "app.log");
+    T.state.activeId = js.id; w.render();
+    const ev = T.editorView, es = js.entries, sel = w.getSelection();
+    collapseAll(w, T); // folded lines must be in the copied text too
+    const down = fireKeydown(d, w, "a", { ctrlKey: true });
+    assert(ev.selectAll === true && sel.anchorNode === d.querySelector("#teRows") && !sel.isCollapsed, "Ctrl+A selects the editor's rows and sets the select-all state");
+    let c = copyText(w, d);
+    assert(c.prevented && c.text === es.map(e => e.message).join("\n") && c.text.split("\n").length === es.length, "copy gives every line of the file (" + es.length + "), folded ones included, although only a few rows are rendered (" + lines(d).length + ")");
+    // The window moves: new rows join the visual selection.
+    ev.folds.forEach(f => { f.collapsed = false; }); w.rebuildEditorVisible(); w.editorRebuildTops(); w.editorRender(true);
+    scrollTo(w, d, 5000 * LH);
+    assert(sel.anchorNode === d.querySelector("#teRows") && sel.focusOffset === d.querySelector("#teRows").childNodes.length && ev.selectAll, "after scrolling the selection still covers the rendered rows " + [sel.anchorNode && sel.anchorNode.nodeName, sel.focusOffset, d.querySelector("#teRows").childNodes.length, ev.selectAll, ev.n].join(","));
+    // A click / new selection clears the state; copy is native again.
+    const row = lines(d)[3];
+    sel.collapse(row.lastChild, 0);
+    await sleep(30);
+    assert(ev.selectAll === false && copyText(w, d).prevented === false, "a click clears select-all; copy is left alone");
+    sel.setBaseAndExtent(textNodeOf(lines(d)[2]), 1, textNodeOf(lines(d)[4]), 2);
+    fireKeydown(d, w, "a", { ctrlKey: true });
+    sel.setBaseAndExtent(textNodeOf(lines(d)[2]), 1, textNodeOf(lines(d)[4]), 2);
+    await sleep(30);
+    assert(ev.selectAll === false, "a new text selection clears it");
+    // Not in an input; not for other keys.
+    const input = d.getElementById("filterInput");
+    input.focus();
+    fireKeydown(input, w, "a", { ctrlKey: true });
+    assert(ev.selectAll === false, "Ctrl+A inside a text input is the input's own select-all");
+    input.blur();
+    // Log views: untouched (native select-all).
+    T.state.activeId = log.id; w.render(); w.applyFhView("highlight");
+    const logDown = new w.KeyboardEvent("keydown", { key: "a", ctrlKey: true, bubbles: true, cancelable: true });
+    d.dispatchEvent(logDown);
+    assert(logDown.defaultPrevented === false && ev.selectAll === false, "a log view's Ctrl+A is not handled (native select-all)");
+  });
+}
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
@@ -44696,6 +45546,48 @@ process.exitCode = failed ? 1 : 0;
       views; focus follows mousedown/clicks; Alt+Arrow and Ctrl+0..5 global). Updated
       groups 18, 32, 36, 46, 57, 96, 99, 110a, 150, 157a, 220a/j, 221c, 262, 319d/e,
       320b, 321e.
+   Group 351 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 5):
+              the virtualized editor: visible line list over nested folds,
+              windowed rendering (~3 screens in the DOM of a 30k-line file),
+              copy rebuilt from the line model across unrendered lines
+              (pinned selection endpoints, partial first/last, folded lines),
+              reveal / find / hit+find marks on newly built rows, wrap
+              geometry. Groups 349/350 rewritten from "every line is in the
+              DOM" to the model + window.
+   Group 350 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 4):
+              the find bar in the Context editor (count, in-place marks,
+              F3/Shift+F3 stepping with unfold + centre, case/regex/wildcard,
+              close removes marks leaving the original nodes, Add as filter,
+              Filtered/log find unchanged) plus the CSS parity of Context and
+              Filtered line geometry.
+   Group 349 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 3):
+              the editor as the Context view of a plain-text root. Covers the
+              editor render (txt/json/xml), hit marking on filter nodes, DOM
+              identity, start-tab rules, reveal + unfold + flash (tabs and
+              Stacked), tab-switch anchoring, Pretty/Raw from the Context
+              toolbar and the shared Wrap toggle. Updated groups 151/177/199
+              for the new toolbar group and fixed-width gutter CSS.
+   Group 348 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 2):
+      Filtered text mode — when the active node's root is a plain-text file the
+      Filtered view renders .text-row rows (no level stripe/separators,
+      TEXT_ROW_HEIGHT 19px scaled by logTextScale, line number + fold slot +
+      message gutter via --text-num-w/--text-fold-w) under a reusable header bar
+      (LINE | file name); mixed sessions keep log rendering for
+      log roots and switch with the active node. Group 347l: session export/import
+      carries textSyntax/textLayout.
+   Group 347 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 1):
+      .txt/.json/.xml load through every entry point (loose, watched folder, ZIP)
+      as ONE plain-text file node (formatIdForLoad, node.textSyntax); JSON gets
+      node.textLayout "pretty" (default, valid JSON) | "raw" and setTextLayout
+      re-parses in place (filters kept and recomputed); layout + the file's own
+      text (textRaw) ride snapshot/restore, the session cache and a pretty-file
+      tail reload. The inline text viewer, "Filter lines" (openInlineViewerAsTextLog),
+      the viewerSource nesting and the viewer toolbar's Wrap/Pretty/Filter-lines
+      buttons are removed (images keep the viewer). Updated/removed: 199i/k/n/p/r/s/
+      y/ad/af (text viewer DOM; lifecycle tests moved to .png entries), 211b, 215
+      (16 toggles), 272h, 273g, 274b-d, 275 (image viewers + text node by path;
+      saved text-viewer records ignored), 293, 329, 342 (.png as the viewer type),
+      343, 344. Group 300e: the simulator's jsondoc/xmldoc document formats.
    Group 344 — 2026-09-30 (person-reported): a restored folder awaiting Reconnect
       keeps its files inside the container — folder inline viewers are listed
       (restoreViewersFromCache seed) so their Filter-lines text versions stay
@@ -44713,7 +45605,7 @@ process.exitCode = failed ? 1 : 0;
       newest) for every listed type via isFolderRecOpen/closeFolderRec; `failed`
       only for a failing listing (tooltip with the error, retried every poll,
       heals + merges); deletions, the folder's ✕ and the ZIP's ✕ close open
-      viewers, their text versions and nodes. Updated Group 37 (removeWatchedFolder
+      viewers and nodes. Updated Group 37 (removeWatchedFolder
       now closes the open files instead of detaching them).
    Group 341 — 2026-09-30 (person-requested): theme mode (System/Light/Dark) +
       Light/Dark theme slots, Catppuccin Latte/Mocha as defaults, live OS
