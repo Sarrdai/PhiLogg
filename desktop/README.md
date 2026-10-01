@@ -98,7 +98,7 @@ reloads.
 
 ## Portable build (Windows)
 
-Released alongside the installer as `PhiLogg-<sha>_portable.zip`. Unzip it
+Released alongside the installer as `PhiLogg-<version>_portable.zip`. Unzip it
 anywhere — a USB stick or external drive included — and run `PhiLogg.exe`
 directly; nothing is installed and nothing is written to the host machine.
 Both `settings.json` and the session cache move into a `data\` folder next
