@@ -15921,8 +15921,8 @@ await withApp(async (w, d, T) => {
 
   // --- (c) the navigation half ------------------------------------------
   const prev = d.querySelector("#ctxPrevMatch"), next = d.querySelector("#ctxNextMatch");
-  assert([...bar.querySelectorAll("button")].every(b => b.classList.contains("toolbar-icon-btn")),
-    "every button uses the app's own icon-button shape (.toolbar-icon-btn), not a one-off style");
+  assert([...bar.querySelectorAll("button")].filter(b => !b.closest("#ctxTextLayout")).every(b => b.classList.contains("toolbar-icon-btn")),
+    "every button (bar the plain-text Pretty/Raw segmented toggle) uses the app's own icon-button shape (.toolbar-icon-btn), not a one-off style");
   // Every button here (person-requested, 2026-09-05: the same
   // reveal-a-label-on-hover mechanic as the Filter-Toolbar's row-actions,
   // just square-to-rectangle instead of circle-to-pill — see
@@ -20317,7 +20317,7 @@ await withApp(async (w, d, T) => {
   // with whatever the markup already says).
   function groupKinds(toolbarEl) {
     return [...toolbarEl.children]
-      .filter(c => c.classList.contains("toolbar-group"))
+      .filter(c => c.classList.contains("toolbar-group") && !c.hasAttribute("data-text-only")) // the plain-text Pretty/Raw group (GROUP 349) is not part of the log toolbar
       .map(c => c.dataset.toolbarGroup);
   }
   function assertOrdered(kinds, toolbarName) {
@@ -20343,7 +20343,7 @@ await withApp(async (w, d, T) => {
   assertNoGroupLabel(d.querySelector("#contextToolbar"));
   // Merged nav (Prev/Next match + Expand/Collapse) into one Controls group,
   // no separator between them any more (both are "Controls").
-  assert(d.querySelector("#contextToolbar").querySelectorAll(".ctx-toolbar-sep").length === 2,
+  assert(d.querySelector("#contextToolbar").querySelectorAll(".ctx-toolbar-sep:not([data-text-only])").length === 2,
     "#contextToolbar has exactly 2 separators for 3 groups (Controls|Settings|Actions)");
 
   w.applyFhView("filter");
@@ -22832,9 +22832,9 @@ group(199);
     assert(!/\.itv-fold-toggle\{[^}]*left:-/.test(html), "no negative `left` on .itv-fold-toggle any more");
     const toggleMatch = html.match(/\.itv-fold-toggle\{([^}]*)\}/);
     assert(toggleMatch, "the .itv-fold-toggle rule exists");
-    assert(/left:0\b/.test(toggleMatch[1]), "the toggle sits at left:0 of its own .itv-line box, got " + toggleMatch[1]);
+    assert(/left:var\(--text-num-w\)/.test(toggleMatch[1]) && /width:var\(--text-fold-w\)/.test(toggleMatch[1]), "the toggle sits in the fold column right of the line-number column, got " + toggleMatch[1]);
     const beforeMatch = html.match(/\.itv-line::before\{([^}]*)\}/);
-    assert(beforeMatch && /left:1\.3em/.test(beforeMatch[1]), "the line-number counter is shifted right of the toggle's own slot, got " + (beforeMatch && beforeMatch[1]));
+    assert(beforeMatch && /left:0\b/.test(beforeMatch[1]) && /width:var\(--text-num-w\)/.test(beforeMatch[1]), "the line-number counter fills the number column left of the toggle's slot (GROUP 349), got " + (beforeMatch && beforeMatch[1]));
   });
 
   await withApp(async (w, d, T) => {
@@ -22943,7 +22943,7 @@ group(199);
 
     assert(!/\.itv-fold-ellipsis\{[^}]*padding-left:0/.test(html), "the ellipsis no longer sits flush at column 0 (under the toggle arrows)");
     const ellipsisMatch = html.match(/\.itv-fold-ellipsis\{([^}]*)\}/);
-    assert(ellipsisMatch && /padding-left:1\.3em/.test(ellipsisMatch[1]), "it's padded in by the same 1.3em .itv-line::before (the line-number counter) uses, got " + (ellipsisMatch && ellipsisMatch[1]));
+    assert(ellipsisMatch && /padding-left:\.6em/.test(ellipsisMatch[1]), "it's set off from the text by a small padding (the gutter is now a fixed column, GROUP 349), got " + (ellipsisMatch && ellipsisMatch[1]));
   });
 
 
@@ -40214,6 +40214,343 @@ if (groupSelected()) {
   });
 }
 
+/* ============================================================
+   GROUP 349 — Editor as the Context view of a plain-text root
+   (docs/text-files-implementation-plan.md Step 3)
+   ============================================================ */
+group(349);
+if (groupSelected()) {
+  const sim = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0];
+  const txt349 = sim("plain", 150, 7);
+  const json349 = sim("jsondoc", 12, 3);
+  const xml349 = sim("xmldoc", 8, 3);
+  const log349 = sim("default", 60, 2);
+  const byName = (T, name) => Object.values(T.state.nodes).find(n => n.type === "file" && n.name === name);
+  const addText = async (w, name, text) => { await w.loadFileDescriptors([{ file: new w.File([text], name), handle: null }]); };
+  const LH = 19;
+  // jsdom has no layout: give every visible .itv-line a top of LH * (visible lines above it) and LH height;
+  // lines hidden by a collapsed fold report 0 (display:none).
+  const stubEditorLayout = (w, d) => {
+    const editor = d.querySelector("#textEditor");
+    const hidden = el => {
+      let child = el;
+      for (let p = el.parentElement; p && p !== editor; child = p, p = p.parentElement)
+        if (p.classList.contains("itv-fold") && p.classList.contains("collapsed") && p.firstElementChild !== child) return true;
+      return false;
+    };
+    const lines = () => [...editor.querySelectorAll(".itv-line")];
+    const top = el => { let n = 0; for (const l of lines()) { if (l === el) break; if (!hidden(l)) n++; } return n * LH; };
+    Object.defineProperty(w.HTMLElement.prototype, "offsetTop", { get() { return this.classList && this.classList.contains("itv-line") ? top(this) : 0; }, configurable: true });
+    Object.defineProperty(w.HTMLElement.prototype, "offsetHeight", { get() { return this.classList && this.classList.contains("itv-line") ? (hidden(this) ? 0 : LH) : 0; }, configurable: true });
+  };
+  const editorLines = d => [...d.querySelectorAll("#textEditor .itv-line")];
+  const lineEl = (d, ts) => d.querySelector('#textEditor .itv-line[data-n="' + ts + '"]');
+  const filterOn = (w, T, rootId, value) => { const f = w.createFilterNode(rootId, "text", value); T.state.activeId = f.id; w.render(); return f; };
+
+  await withApp(async (w, d, T) => {
+    section("349a. A .txt/.json/.xml root renders the editor as its Context view, whole file, folds and syntax colours for JSON/XML");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "highlight", "a plain-text file node with no remembered view lands on Context, got " + T.fhActiveTab);
+    const wrap = d.querySelector("#highlightWrap");
+    assert(wrap.classList.contains("text-mode"), "#highlightWrap carries text-mode");
+    const lines = editorLines(d);
+    assert(lines.length === txt.entries.length && lines.length > 100, "one editor line per file line (" + lines.length + ")");
+    assert(lines.every((l, i) => l.dataset.n === String(txt.entries[i].ts) && l.textContent === (txt.entries[i].message || "")), "line numbers (data-n = entry ts) and text are the file's lines verbatim");
+    assert(!d.querySelector("#textEditor .itv-fold") && !d.querySelector("#textEditor .itv-fold-toggle"), "a .txt has no folds");
+    assert(!d.querySelector("#highlightBody .log-row"), "no log rows in the Context body of a text root");
+    const bar = d.querySelector("#highlightHeader .text-header-bar");
+    assert(bar && bar.querySelector(".text-hb-name").textContent === "notes.txt", "the shared header bar names the file under the toolbar");
+    // Geometry parity with Filtered: same CSS variables for the gutter and the line height.
+    assert(/\.itv-line\{[^}]*padding-left:var\(--text-gutter-w\)[^}]*height:var\(--text-row-h\)/.test(html) && /\.itv-line::before\{[^}]*width:var\(--text-num-w\)/.test(html) &&
+      /\.itv-fold-toggle\{[^}]*left:var\(--text-num-w\)[^}]*width:var\(--text-fold-w\)/.test(html), "editor lines/numbers/fold toggles use the --text-* gutter variables that Filtered's rows use");
+
+    await addText(w, "orders.json", json349.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    assert(T.fhActiveTab === "highlight" && editorLines(d).length === js.entries.length && js.textLayout === "pretty", "pretty JSON: the whole pretty-printed text, " + editorLines(d).length + " lines");
+    const folds = [...d.querySelectorAll("#textEditor .itv-fold")];
+    assert(folds.length > 5 && folds.every(f => f.firstElementChild.classList.contains("itv-line") && f.firstElementChild.querySelector(".itv-fold-toggle")), "folds wrap their opening line, which carries the toggle (" + folds.length + ")");
+    assert(!!d.querySelector("#textEditor .tok-key") && !!d.querySelector("#textEditor .tok-string"), "JSON tokens are highlighted");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json · pretty", "header bar: file name and layout");
+    const tg = d.querySelector("#textEditor .itv-fold-toggle");
+    tg.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(tg.closest(".itv-fold").classList.contains("collapsed") && tg.textContent === "▸", "clicking a toggle collapses its fold and flips the glyph");
+    tg.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(!tg.closest(".itv-fold").classList.contains("collapsed"), "…and expands it again");
+
+    await addText(w, "orders.xml", xml349.text);
+    const xml = byName(T, "orders.xml");
+    T.state.activeId = xml.id; w.render();
+    assert(editorLines(d).length === xml.entries.length && d.querySelectorAll("#textEditor .itv-fold").length >= 1 && !!d.querySelector("#textEditor .tok-tag"), "XML: the <log> element folds, tags are coloured");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.xml", "header bar: the XML name has no layout suffix");
+
+    await addText(w, "app.log", log349.text);
+    const log = byName(T, "app.log");
+    T.state.activeId = log.id; w.render();
+    assert(!d.querySelector("#highlightWrap").classList.contains("text-mode") && !d.querySelector("#textEditor .itv-line") === true, "a log root: no editor, Context stays the log view");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349b. A filter node: result lines get the hit class, text matches are marked; both update in place");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    const f1 = filterOn(w, T, txt.id, "Heartbeat");
+    assert(T.fhActiveTab === "filter", "a filter node keeps landing on Filtered");
+    w.applyFhView("highlight");
+    const ids1 = new Set(w.getEntries(f1.id).map(e => e.id));
+    const hits = () => editorLines(d).filter(l => l.classList.contains("hit"));
+    assert(ids1.size > 3 && hits().length === ids1.size, "every result line is a .hit (" + hits().length + " of " + ids1.size + ")");
+    assert(hits().every(l => ids1.has(txt.entries[+l.dataset.line].id)) && editorLines(d).length === txt.entries.length, "only result lines are hits; the file is complete");
+    const marks = [...d.querySelectorAll("#textEditor .itv-line.hit .text-match-mark")];
+    assert(marks.length >= ids1.size && marks.every(m => m.textContent === "Heartbeat"), "the filter's text matches are marked in the hit lines (" + marks.length + ")");
+    assert(!d.querySelector("#textEditor .itv-line:not(.hit) .text-match-mark"), "no marks outside the hit lines");
+    // Another node: hits/marks move, the markup nodes stay.
+    const first = editorLines(d)[0], editor = d.querySelector("#textEditor");
+    const f2 = filterOn(w, T, txt.id, "Sensor");
+    w.applyFhView("highlight");
+    const ids2 = new Set(w.getEntries(f2.id).map(e => e.id));
+    assert(ids2.size > 1 && hits().length === ids2.size && hits().every(l => ids2.has(txt.entries[+l.dataset.line].id)), "switching to another filter re-marks the hits (" + hits().length + ")");
+    assert(editorLines(d)[0] === first && !d.querySelector("#textEditor .text-match-mark[data-x]") && [...d.querySelectorAll("#textEditor .text-match-mark")].every(m => m.textContent === "Sensor"), "same line elements; the old marks are gone");
+    T.state.activeId = txt.id; w.render();
+    assert(hits().length === 0 && !d.querySelector("#textEditor .text-match-mark") && editorLines(d)[0] === first, "the file node itself: no hits, no marks");
+    assert(d.querySelector("#textEditor") === editor, "the editor element itself never changes");
+    // A combined filter (OR of two text nodes) marks the union too.
+    const f3 = filterOn(w, T, txt.id, "Heartbeat");
+    const f4 = w.createFilterNode(f3.id, "text", "e");
+    T.state.activeId = f4.id; w.render(); w.applyFhView("highlight");
+    const ids4 = new Set(w.getEntries(f4.id).map(e => e.id));
+    assert(hits().length === ids4.size && ids4.size > 0, "a nested filter node marks its own (narrower) result (" + hits().length + ")");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349c. DOM identity: unrelated renders keep the editor markup (folds, selection survive); layout/entries changes rebuild it");
+    await addText(w, "orders.json", json349.text);
+    const js = byName(T, "orders.json");
+    T.state.activeId = js.id; w.render();
+    const editor = d.querySelector("#textEditor");
+    const lines = editorLines(d);
+    const tg = d.querySelectorAll("#textEditor .itv-fold-toggle")[2];
+    tg.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    const collapsed = d.querySelectorAll("#textEditor .itv-fold.collapsed").length;
+    assert(collapsed === 1, "one fold collapsed");
+    w.render(); w.render();
+    w.selectEntry(js.entries[3].id);
+    T.state.showNotes = !T.state.showNotes; w.render();
+    w.renderHighlightView();
+    const lines2 = editorLines(d);
+    assert(lines2.length === lines.length && lines2.every((l, i) => l === lines[i]), "every line element survived unrelated renders (same identity)");
+    assert(d.querySelectorAll("#textEditor .itv-fold.collapsed").length === collapsed, "the collapsed fold stayed collapsed");
+    // Filter created and removed: still the same nodes.
+    const f = filterOn(w, T, js.id, "msg");
+    w.applyFhView("highlight");
+    T.state.activeId = js.id; w.render();
+    assert(editorLines(d).every((l, i) => l === lines[i]), "activating filters and going back keeps the markup");
+    // Layout change: rebuilt.
+    assert(await w.setTextLayout(js.id, "raw"), "switch to raw");
+    T.state.activeId = js.id; w.render();
+    assert(editorLines(d).length === 1 && editorLines(d)[0] !== lines[0], "a layout change rebuilds the editor (raw: one line)");
+    assert(await w.setTextLayout(js.id, "pretty"), "back to pretty");
+    assert(editorLines(d).length === lines.length && editorLines(d)[0] !== lines[0], "…and back to the pretty lines (new nodes)");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349d. Start tab: file node -> Context; filter nodes -> Filtered; remembered view and 'always Filtered' keep working; logs unchanged");
+    await addText(w, "notes.txt", txt349.text);
+    await addText(w, "app.log", log349.text);
+    const txt = byName(T, "notes.txt"), log = byName(T, "app.log");
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "highlight", "text file node: Context");
+    const f = filterOn(w, T, txt.id, "e");
+    assert(T.fhActiveTab === "filter", "its filter node: Filtered");
+    // Remembered: leave the file node on Filtered, come back later.
+    T.state.activeId = txt.id; w.render();
+    w.applyFhView("filter");
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "filter", "a remembered Filtered view on the file node is restored, got " + T.fhActiveTab);
+    w.applyFhView("highlight");
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = txt.id; w.render();
+    assert(T.fhActiveTab === "highlight", "…and a remembered Context view too");
+    // alwaysFiltered keeps its meaning for a text file that was never opened.
+    await addText(w, "b.txt", txt349.text);
+    const b = byName(T, "b.txt");
+    T.filterActivationView = "alwaysFiltered";
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = b.id; w.render();
+    // b.txt was just loaded and activated (Context); drop that memory by a fresh third file
+    await addText(w, "c.txt", txt349.text);
+    const c = byName(T, "c.txt");
+    T.state.activeId = c.id; w.render();
+    w.applyFhView("filter");
+    T.state.activeId = log.id; w.render();
+    T.state.activeId = c.id; w.render();
+    assert(T.fhActiveTab === "filter", "'always Filtered' lands a file node on Filtered, got " + T.fhActiveTab);
+    T.filterActivationView = "rememberLast";
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349e. Reveal from Filtered: centred, flashed, unfolds only the folds that hide the line; Stacked scrolls the editor");
+    await addText(w, "orders.json", json349.text);
+    const js = byName(T, "orders.json");
+    stubEditorLayout(w, d);
+    T.state.activeId = js.id; w.render();
+    const f = filterOn(w, T, js.id, "msg");
+    const results = w.getEntries(f.id);
+    assert(results.length >= 6, "the filter has several results (" + results.length + ")");
+    w.applyFhView("highlight");
+    // Collapse every fold (outermost last so inner ones stay closed too).
+    const toggles = [...d.querySelectorAll("#textEditor .itv-fold-toggle")];
+    for (const t of toggles) if (!t.closest(".itv-fold").classList.contains("collapsed")) t.dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+    assert(d.querySelectorAll("#textEditor .itv-fold.collapsed").length >= 2, "folds collapsed");
+    w.applyFhView("filter");
+    const target = results[results.length - 2];
+    const el0 = lineEl(d, target.ts);
+    const chain = []; for (let p = el0.parentElement; p && p.id !== "textEditor"; p = p.parentElement) if (p.classList.contains("itv-fold")) chain.push(p);
+    assert(chain.length >= 2, "the target line sits inside nested folds (" + chain.length + ")");
+    const chainSet = new Set(chain);
+    const sibling = [...d.querySelectorAll("#textEditor .itv-fold")].filter(x => !chainSet.has(x) && !x.contains(el0) && !el0.contains(x))[0];
+    w.revealInHighlightView(target, null, null);
+    assert(T.fhActiveTab === "highlight", "reveal switches to Context");
+    assert(chain.every(f => !f.classList.contains("collapsed") || f.firstElementChild === el0 || f.firstElementChild.contains(el0)), "every fold above the line is open");
+    assert(sibling && sibling.classList.contains("collapsed"), "an unrelated fold stays collapsed");
+    const body = d.querySelector("#highlightBody");
+    const expected = Math.max(0, el0.offsetTop - 400 / 2 + LH / 2);
+    assert(Math.abs(body.scrollTop - expected) <= 1, "the line is centred in the viewport: scrollTop " + body.scrollTop + " vs " + expected);
+    assert(el0.classList.contains("flash"), "the line flashes");
+    assert(T.state.selectedId === target.id, "and becomes the selected entry");
+    // The fold the line merely OPENS stays as it was.
+    const opening = [...d.querySelectorAll("#textEditor .itv-fold")].find(x => x.firstElementChild.querySelector(".itv-fold-toggle") && x.classList.contains("collapsed"));
+    assert(!!opening, "folds that do not hide the line are still collapsed");
+
+    // Stacked: both panels on screen, the reveal scrolls the editor below... above.
+    w.applyFhView("stacked");
+    body.scrollTop = 0;
+    const other = results[results.length - 1];
+    w.revealInHighlightView(other, null, null);
+    assert(T.fhLayout === "stacked" && body.scrollTop > 0, "Stacked: the editor scrolled to the revealed line (" + body.scrollTop + ")");
+    assert(T.state.selectedId === other.id, "Stacked: the line is selected");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349f. Tab switch keeps the top visible line at the same offset (file node both ways; filter node falls back to the selection, then the next hit)");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    stubEditorLayout(w, d);
+    T.state.activeId = txt.id; w.render();
+    const body = d.querySelector("#highlightBody"), tbody = d.querySelector("#tableBody");
+    body.scrollTop = 40 * LH + 5; // line 41 (index 40) partly scrolled
+    w.applyFhView("filter");
+    assert(tbody.scrollTop === 40 * LH + 5, "Context -> Filtered on the file node: the same top line at the same offset, got " + tbody.scrollTop);
+    tbody.scrollTop = 70 * LH + 3;
+    w.renderVisibleRows();
+    w.applyFhView("highlight");
+    assert(body.scrollTop === 70 * LH + 3, "Filtered -> Context: back at that line, got " + body.scrollTop);
+    // Filter node: top Context line is not a hit -> next hit below.
+    const f = filterOn(w, T, txt.id, "Heartbeat");
+    const res = w.getEntries(f.id);
+    w.applyFhView("highlight");
+    const k = res.findIndex((e, i) => i > 0 && i < res.length - 5 && res[i + 1].ts - e.ts > 1); // hit k is followed by a gap of non-hit lines
+    assert(k >= 0, "two consecutive hits with a gap between them");
+    const ts0 = res[k].ts; // the editor line ts0 + 1 is no hit (scrollTop ts0*LH puts it on top)
+    T.state.selectedId = null;
+    body.scrollTop = ts0 * LH;
+    w.applyFhView("filter");
+    assert(tbody.scrollTop === (k + 1) * LH, "top line is no hit, nothing selected: the next hit below becomes the top row (row " + (k + 1) + "), got " + tbody.scrollTop);
+    // With a selection: the selected line anchors.
+    w.applyFhView("highlight");
+    body.scrollTop = ts0 * LH;
+    w.selectEntry(res[k + 3].id);
+    body.scrollTop = ts0 * LH;
+    w.applyFhView("filter");
+    assert(tbody.scrollTop === (k + 3) * LH, "the selected line (row " + (k + 3) + ") is the anchor when the top line is no hit, got " + tbody.scrollTop);
+    // Filtered -> Context on the filter node: the top row's line.
+    tbody.scrollTop = 4 * LH + 2; w.renderVisibleRows();
+    w.applyFhView("highlight");
+    assert(body.scrollTop === (res[4].ts - 1) * LH + 2, "Filtered -> Context: the top hit row's line (" + res[4].ts + ") at the same offset, got " + body.scrollTop);
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349g. Pretty/Raw toggle in the Context toolbar (JSON only), anchored by line number");
+    await addText(w, "orders.json", json349.text);
+    await addText(w, "notes.txt", txt349.text);
+    const js = byName(T, "orders.json"), txt = byName(T, "notes.txt");
+    stubEditorLayout(w, d);
+    T.state.activeId = js.id; w.render();
+    const group = d.querySelector("#ctxTextLayout").parentElement;
+    const pretty = d.querySelector("#ctxLayoutPretty"), raw = d.querySelector("#ctxLayoutRaw");
+    assert(group.style.display !== "none" && pretty.classList.contains("active") && !raw.classList.contains("active"), "a JSON root shows Pretty active");
+    assert(!d.querySelector("#contextToolbar").classList.contains("hidden"), "the Context toolbar is shown on a file node of a text root");
+    // Raw JSON of the sim is one line -> the anchor is line 1.
+    const body = d.querySelector("#highlightBody");
+    body.scrollTop = 30 * LH;
+    raw.click();
+    await waitFor(() => js.textLayout === "raw" && editorLines(d).length === 1);
+    assert(js.textLayout === "raw" && raw.classList.contains("active") && !pretty.classList.contains("active"), "Raw click: layout raw, button state follows");
+    assert(d.querySelector("#highlightHeader .text-hb-name").textContent === "orders.json · raw", "header bar follows");
+    assert(body.scrollTop === 0, "the scroll clamps to the only line (no stale offset), got " + body.scrollTop);
+    pretty.click();
+    await waitFor(() => js.textLayout === "pretty" && editorLines(d).length > 20);
+    assert(pretty.classList.contains("active") && editorLines(d).length === js.entries.length, "Pretty click: back to the pretty lines");
+    // Not JSON: the group is hidden.
+    T.state.activeId = txt.id; w.render();
+    assert(group.style.display === "none", "a .txt root hides the layout toggle");
+    // Log-only controls are marked, so a text root hides them via CSS.
+    assert(d.querySelectorAll("#contextToolbar [data-log-only]").length >= 9 && /#highlightWrap\.text-mode #contextToolbar \[data-log-only\]\{display:none/.test(html.replace(/\s+/g, " ").replace(/ ?\{ ?/g, "{").replace(/ ?\} ?/g, "}")) ||
+      /\[data-log-only\]\{[^}]*display:none/.test(html), "log-only Context controls (gap/expand/navigation) are hidden for text roots");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349h. The Wrap toggle (state.wrapTextView) applies to the Context editor AND Filtered text rows, not to log wrapping");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    T.state.activeId = txt.id; w.render();
+    const editor = d.querySelector("#textEditor"), l0 = editorLines(d)[0];
+    const btn = d.querySelector("#contextToolbar .toggle-wrap");
+    assert(btn && !btn.classList.contains("active") && !T.state.wrapTextView, "Wrap starts off");
+    btn.click();
+    assert(T.state.wrapTextView === true && btn.classList.contains("active") && d.body.classList.contains("textview-wrap"), "the toggle sets state.wrapTextView and the body class");
+    assert(T.state.wrapMessages === false, "the log message wrap is untouched");
+    assert(editorLines(d)[0] === l0 && d.querySelector("#textEditor") === editor, "wrap is pure CSS: the editor markup is not rebuilt");
+    assert(/\.textview-wrap \.itv-line\{[^}]*white-space:pre-wrap/.test(html), "CSS: wrapped editor lines are pre-wrap");
+    assert(/\.textview-wrap #tableWrap\.text-mode \.log-row\.text-row[^{]*\{[^}]*height:auto/.test(html) || /\.textview-wrap[^{]*\.text-row[^{]*\{[^}]*white-space:pre-wrap/.test(html), "CSS: wrapped Filtered text rows are pre-wrap too");
+    // Filtered view: same flag drives the row height bookkeeping.
+    filterOn(w, T, txt.id, "e");
+    assert(T.state.wrapTextView === true && d.body.classList.contains("textview-wrap"), "still wrapping in Filtered");
+    const fbtn = d.querySelector("#filteredToolbar .toggle-wrap");
+    assert(fbtn && fbtn.classList.contains("active"), "the Filtered toolbar's Wrap button shows the same state");
+    fbtn.click();
+    assert(T.state.wrapTextView === false && !d.body.classList.contains("textview-wrap"), "toggling it in Filtered turns the editor wrap off as well");
+    // Log root: the same button drives wrapMessages.
+    await addText(w, "app.log", log349.text);
+    T.state.activeId = byName(T, "app.log").id; w.render();
+    d.querySelector("#filteredToolbar .toggle-wrap").click();
+    assert(T.state.wrapMessages === true && T.state.wrapTextView === false, "on a log root the button toggles the log message wrap");
+  });
+
+  await withApp(async (w, d, T) => {
+    section("349i. Nav history anchors the editor by line number; a minimap click (selectHighlightEntry) scrolls the editor");
+    await addText(w, "notes.txt", txt349.text);
+    const txt = byName(T, "notes.txt");
+    stubEditorLayout(w, d);
+    T.state.activeId = txt.id; w.render();
+    const body = d.querySelector("#highlightBody");
+    body.scrollTop = 50 * LH + 4;
+    const wp = w.captureNavWaypoint();
+    assert(wp.contextAnchor && wp.contextAnchor.line === txt.entries[50].ts && wp.contextAnchor.offset === -4 && wp.contextAnchor.id === txt.entries[50].id, "the waypoint anchors the top editor line by its line number, got " + JSON.stringify(wp.contextAnchor));
+    body.scrollTop = 0;
+    w.applyNavWaypoint(wp);
+    assert(body.scrollTop === 50 * LH + 4, "applying the waypoint scrolls the editor back, got " + body.scrollTop);
+    // Minimap click path.
+    body.scrollTop = 0;
+    const e = txt.entries[120];
+    w.selectHighlightEntry(e.id, { scroll: true, center: true, index: 120 });
+    assert(Math.abs(body.scrollTop - (120 * LH - 200 + LH / 2)) <= 1 && T.state.selectedId === e.id, "selectHighlightEntry (minimap click/drag) centres the line in the editor, got " + body.scrollTop);
+  });
+}
+
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
 // run.js parses this to sum the shards up into one total.
@@ -44748,6 +45085,13 @@ process.exitCode = failed ? 1 : 0;
       views; focus follows mousedown/clicks; Alt+Arrow and Ctrl+0..5 global). Updated
       groups 18, 32, 36, 46, 57, 96, 99, 110a, 150, 157a, 220a/j, 221c, 262, 319d/e,
       320b, 321e.
+   Group 349 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 3):
+              the editor as the Context view of a plain-text root. Covers the
+              editor render (txt/json/xml), hit marking on filter nodes, DOM
+              identity, start-tab rules, reveal + unfold + flash (tabs and
+              Stacked), tab-switch anchoring, Pretty/Raw from the Context
+              toolbar and the shared Wrap toggle. Updated groups 151/177/199
+              for the new toolbar group and fixed-width gutter CSS.
    Group 348 — 2026-10-01 (person-requested, docs/ui-concept-text-files.md Step 2):
       Filtered text mode — when the active node's root is a plain-text file the
       Filtered view renders .text-row rows (no level stripe/separators,
