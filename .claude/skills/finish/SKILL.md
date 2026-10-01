@@ -43,8 +43,11 @@ SHARDS=8 npm test               # once before the final push: load stress
   group silently stopped running.
 - A failure only under `SHARDS=8` is a load-dependent test bug: fix it per
   `tests/README.md` → "Extending this suite", step 2. Never re-run it away.
-- Rust/Tauri changes: `cd desktop && npm run build`, plus `cargo test -p
-  philogg-logparse` in `desktop/src-tauri/` when the native parser changed.
+- Rust/Tauri-only changes (`desktop/src-tauri/**`, `desktop/frontend/`):
+  the suite doesn't load them; run `cd desktop && npm run build`, plus
+  `cargo test -p philogg-logparse` in `desktop/src-tauri/` when the native
+  parser changed. A JS parsing change also regenerates the parser's golden
+  fixture (`docs/desktop.md` → "Native parsing").
 
 ## 3. Docs check
 
