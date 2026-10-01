@@ -2024,7 +2024,7 @@
      (--text-fold-w) and then the message, so the message's x position is the
      same in both. The two widths are set from TEXT_NUM_W/TEXT_FOLD_W at
      startup (these are only the pre-script defaults). */
-  :root{--text-num-w:56px; --text-fold-w:16px; --text-row-h:19px;}
+  :root{--text-num-w:56px; --text-fold-w:16px; --text-row-h:19px; --text-gutter-w:calc(var(--text-num-w) + var(--text-fold-w));}
   .log-row.text-row{
     display:grid; grid-template-columns:var(--text-num-w) var(--text-fold-w) 1fr; column-gap:0;
     align-items:center; border-bottom:none;
@@ -2049,6 +2049,32 @@
   }
   #tableWrap.text-mode #tableHeader .row-grid{display:none;}
   #tableWrap.text-mode #tableHeader .text-header-bar{display:grid;}
+  /* The same bar in the Context view (#highlightWrap.text-mode = the editor
+     is showing); the header's left padding matches the editor's (and the
+     Filtered rows'), not the log Context's wider ctx-active lane. */
+  #highlightWrap.text-mode #highlightHeader .row-grid{display:none;}
+  #highlightWrap.text-mode #highlightHeader .text-header-bar{display:grid;}
+  #highlightWrap.text-mode #highlightHeader, #highlightWrap.text-mode #highlightHeader.ctx-active{
+    padding-left:calc(26px + (var(--color-mark-w) - 3px));
+  }
+  /* Context toolbar for a plain-text root: the log-only controls (match
+     navigation, gap expansion, row actions, log display toggles) give way to
+     the Pretty/Raw switch (JSON) and the shared Wrap toggle. */
+  #contextToolbar [data-text-only]{display:none;}
+  #highlightWrap.text-mode #contextToolbar [data-text-only]{display:flex;}
+  #highlightWrap.text-mode #contextToolbar [data-log-only]{display:none;}
+  .seg-toggle{display:inline-flex; gap:0; border:1px solid var(--border); border-radius:6px; overflow:hidden;}
+  .seg-toggle button{
+    font:inherit; font-size:11.5px; font-weight:600; border:0; background:transparent; color:var(--text-secondary);
+    padding:0 10px; height:26px; cursor:pointer;
+  }
+  .seg-toggle button + button{border-left:1px solid var(--border);}
+  .seg-toggle button.active{background:var(--accent-soft); color:var(--accent);}
+  .seg-toggle button:disabled{opacity:.45; cursor:default;}
+  /* Word wrap for the Filtered text rows follows the editor's own toggle
+     (state.wrapTextView / body.textview-wrap), never the log toggle. */
+  #tableRows .text-row .col-msg.plaintext{white-space:pre; word-break:normal; min-width:max-content;}
+  .textview-wrap #tableRows .text-row .col-msg.plaintext{white-space:pre-wrap; word-break:break-all; min-width:0;}
   /* With wrap on, the message track must be free to shrink and wrap rather
      than being forced to its widest line's width — that forced width is what
      drives the horizontal scrollbar in the non-wrap views (see the
@@ -2129,91 +2155,56 @@
      section (the same .tree-del ✕ a log file's row already uses), not a
      separate control living on the viewer itself. See renderZipEntryRow. */
   #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
-  /* Inline Text View. Its OWN word-wrap toggle (state.wrapTextView /
-     body.textview-wrap, toggled from the editor toolbar once Step 3 of
-     docs/text-files-implementation-plan.md lands —
-     FEATURE_BACKLOG.md #68), separate from the log view's toggle. Off
-     (default) = white-space:pre, long lines scroll horizontally
-     (#inlineViewerBody overflow:auto); on = pre-wrap, they soft-wrap.
-     CRITICAL: the line number is a CSS ::before counter on each `.itv-line`
-     (one per LOGICAL source line — see the gutter comment below), so a
-     wrapped continuation stays inside the same `.itv-line` and does NOT get
-     its own number; wrapping never shifts the numbering. */
-  #inlineTextViewer{
-    margin:0; padding:12px 0; font-family:var(--font-mono); font-size:12px; line-height:1.6;
-    color:var(--text-primary); white-space:pre; word-break:normal;
-    counter-reset:itv-line;
+  /* Text editor: the Context view of a plain-text root (.txt/.json/.xml —
+     renderTextEditorView). One inline-block-free tree of block-level
+     .itv-line spans (nested in .itv-fold wrappers for JSON/XML blocks), so
+     native selection and copy are the file's own text: the line number is a
+     ::before from data-n (generated content, never selectable or copied;
+     NOT a CSS counter — a counter skips display:none lines, which would
+     renumber everything below a collapsed fold) and the fold arrow is
+     user-select:none. Geometry is shared with the Filtered text rows
+     (.text-row): number column --text-num-w, fold column --text-fold-w, line
+     height --text-row-h, the same left padding as #tableRows — so a line in
+     both views sits at the same x and height. #textEditor lives inside
+     #highlightBody (the scroll container) next to #highlightSpacer; the
+     wrap's text-mode class swaps which of the two shows. Word-wrap
+     (state.wrapTextView / body.textview-wrap) is pure CSS: pre-wrap, the line
+     grows in whole --text-row-h steps, the number stays on the first line. */
+  #textEditor{
+    display:none; position:relative; box-sizing:border-box; min-width:100%; width:max-content;
+    --rows-pad-left: calc(26px + (var(--color-mark-w) - 3px));
+    padding:2px 16px 20px var(--rows-pad-left);
+    font-family:var(--font-log); font-size:calc(11.6px * var(--log-text-scale));
+    color:var(--text-primary); cursor:text;
   }
-  .textview-wrap #inlineTextViewer{white-space:pre-wrap; word-break:break-word;}
-  /* Bugfix (person-reported: the previously-open XML's fold arrows/text
-     still visibly showed "behind"/around a newly opened image): every
-     other `.hidden`-toggled element in this file gets its OWN `#id.hidden`
-     rule (there is deliberately no bare `.hidden{display:none}` — see the
-     stylesheet-audit comment near #sidebarResizer.hidden) — #inlineTextViewer
-     never had one, so the JS toggling its `hidden` class (renderInlineImageViewer/
-     renderInlineTextViewer) did nothing visually at all: the `<pre>` stayed
-     in normal flow, rendering underneath/around #inlineImageViewer's own
-     `position:absolute` box instead of actually disappearing. */
-  #inlineTextViewer.hidden{display:none;}
-  /* Line-number gutter, rearchitected (this session, person-reported copy/
-     select bug): numbers used to be a separate `.itv-line-num` SPAN sitting
-     next to `.itv-line-content` inside a block-level DIV per line, with a
-     JS `copy` handler (removed) reconstructing plain text from the source
-     string because the browser's own DOM->text serialization across those
-     block boundaries was unreliable (extra/missing line breaks, lost
-     leading whitespace on partial-line selections). Now each line is a
-     single real text node (inside inline `.itv-line` SPANs, so no
-     forced line breaks the browser has to invent) and the line number is a
-     CSS `::before` counter — content generated by CSS, never a DOM text
-     node, so it can categorically never enter a selection or a `copy`
-     event; no `user-select:none` guard needed, no JS copy interception
-     needed, no itvContentOffset needed. Native browser select/copy is now
-     always byte-identical to the source text, including leading tabs/
-     spaces, because there is nothing but the real text between selection
-     start and end. Hover-only reading aid stays pure CSS :hover (unchanged
-     from the earlier click-to-highlight revert — see the removed
-     .itv-line-selected class in the changelog). */
+  .textview-wrap #textEditor{width:auto;}
+  #highlightWrap.text-mode #textEditor{display:block;}
+  #highlightWrap.text-mode #highlightSpacer{display:none;}
+  .itv-fold{display:block;}
   .itv-line{
-    display:block; padding:0 16px 0 4.6em; position:relative;
-    counter-increment:itv-line;
+    display:block; position:relative; box-sizing:border-box; padding-left:var(--text-gutter-w);
+    height:var(--text-row-h); line-height:var(--text-row-h); white-space:pre; tab-size:4;
   }
+  .textview-wrap .itv-line{height:auto; min-height:var(--text-row-h); white-space:pre-wrap; word-break:break-all;}
   .itv-line::before{
-    content:counter(itv-line);
-    position:absolute; left:1.3em; width:2.6em; padding-right:12px; text-align:right;
-    color:var(--text-tertiary); user-select:none; pointer-events:none;
+    content:attr(data-n); position:absolute; left:0; top:0; width:var(--text-num-w); box-sizing:border-box;
+    padding-right:10px; text-align:right; color:var(--text-tertiary); user-select:none; pointer-events:none;
+    font-size:calc(11.3px * var(--log-text-scale)); font-variant-numeric:tabular-nums;
   }
   .itv-line:hover{background:var(--bg-elevated);}
-  /* Fold toggle (this session): a real, small, non-pseudo glyph — unlike the
-     line-number counter above, this needs to be clickable, so it can't be a
-     ::before. Sits only on lines that open a multi-line JSON/XML structure
-     (see findJsonFoldRanges/findXmlFoldRanges); user-select:none keeps it
-     out of copied text same as the old gutter guard did.
-     Bugfix (this session, person-reported: no toggle glyph ever visible):
-     `left` on an absolutely-positioned element is measured from its
-     containing block's (.itv-line's) own padding edge, i.e. left:0 is
-     .itv-line's OWN left edge — a negative left therefore pushed the glyph
-     entirely outside #inlineTextViewer's content box (and its clipped
-     viewport), not merely to the left of the line-number counter as
-     intended. Fixed by giving the toggle its own non-negative slot
-     (left:0, width:1.3em) immediately left of the counter (now shifted to
-     left:1.3em, see .itv-line::before above and .itv-line's own widened
-     4.6em gutter), both safely inside .itv-line's own box. */
+  /* Lines of the active filter's result (renderTextEditorView/applyEditorHits):
+     a subtle tint, updated in place. */
+  .itv-line.hit{background:color-mix(in srgb, var(--accent) 9%, transparent);}
+  .itv-line.hit::before{color:var(--accent);}
+  .itv-line.flash{background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent);}
   .itv-fold-toggle{
-    position:absolute; left:0; width:1.3em; text-align:center;
+    position:absolute; left:var(--text-num-w); top:0; width:var(--text-fold-w); text-align:center;
     color:var(--text-tertiary); user-select:none; cursor:pointer;
   }
   .itv-fold-toggle:hover{color:var(--text-primary);}
-  .itv-fold.collapsed > :not(:first-child):not(.itv-fold-ellipsis){display:none;}
-  /* Bugfix (person-requested): this used to sit flush at the fold's own
-     left edge (column 0) — the SAME column the (non-pseudo, real-DOM)
-     .itv-fold-toggle glyph occupies, since the ellipsis is a plain inline
-     element after the block-level opening .itv-line, not a descendant of
-     it, so it starts a fresh line back at the container's own left edge.
-     Shifted right by the same 1.3em .itv-line::before uses, so "…" reads
-     as a line-number PLACEHOLDER for the collapsed range (where a number
-     would be) instead of sitting under the fold arrow. */
-  .itv-fold-ellipsis{display:none; color:var(--text-tertiary); user-select:none; padding-left:1.3em;}
-  .itv-fold.collapsed > .itv-fold-ellipsis{display:inline;}
+  .itv-fold.collapsed > :not(:first-child){display:none;}
+  .itv-fold-ellipsis{display:none; color:var(--text-tertiary); user-select:none; padding-left:.6em;}
+  .itv-fold.collapsed > .itv-line:first-child .itv-fold-ellipsis{display:inline;}
   /* Reuses the same JSON/XML token classes highlightLogMessage's own markup
      already defines colors for elsewhere in the app (see renderHighlightView/
      the message-highlighting section) is a log-line concept, not a generic
@@ -4917,7 +4908,17 @@
                the column header stays the one thing directly over the log
                rows, instead of the toolbar sitting between header and rows. -->
           <div id="contextToolbar" class="hidden">
-            <div class="toolbar-group" data-toolbar-group="controls">
+            <!-- Plain-text root (editor): Pretty/Raw (JSON only), then Settings
+                 with just Wrap + Show matches; every log-only element hides
+                 (see #highlightWrap.text-mode) — renderTextEditorView. -->
+            <div class="toolbar-group" data-toolbar-group="textlayout" data-text-only>
+              <div class="seg-toggle" id="ctxTextLayout" role="group" aria-label="JSON layout">
+                <button type="button" id="ctxLayoutPretty" data-layout="pretty" title="Pretty-printed: one line per JSON token line">Pretty</button>
+                <button type="button" id="ctxLayoutRaw" data-layout="raw" title="Raw: the file's own text">Raw</button>
+              </div>
+            </div>
+            <span class="ctx-toolbar-sep" id="ctxTextLayoutSep" data-text-only></span>
+            <div class="toolbar-group" data-toolbar-group="controls" data-log-only>
               <div class="stepper stepper-compact stepper-nav">
                 <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
                 <span id="contextNavLabel" class="ctx-nav-label stepper-value"></span>
@@ -4927,18 +4928,18 @@
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Expand all"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all"></button>
             </div>
-            <span class="ctx-toolbar-sep"></span>
+            <span class="ctx-toolbar-sep" data-log-only></span>
             <div class="toolbar-group" data-toolbar-group="settings">
-              <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" title="Show/hide notes"></button>
-              <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" data-log-only title="Show/hide notes"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" data-log-only title="Multi-line messages"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
-              <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" title="Columns"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" data-log-only title="Columns"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
-              <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" title="Underline highlights"></button>
-              <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" title="Clickable file paths"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" data-log-only title="Underline highlights"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" data-log-only title="Clickable file paths"></button>
             </div>
-            <span class="ctx-toolbar-sep"></span>
-            <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
+            <span class="ctx-toolbar-sep" data-log-only></span>
+            <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions" data-log-only></div>
           </div>
           <div id="highlightHeader">
             <!-- Content is JS-built by renderColumnHeader (Custom Columns
@@ -4946,11 +4947,15 @@
                  fixed six) — see philogg.html's "Log view column
                  visibility / width" section. -->
             <div class="row-grid"></div>
+            <div class="text-header-bar"></div>
           </div>
           <div id="highlightBody">
             <div id="highlightSpacer">
               <div id="highlightRows"></div>
             </div>
+            <!-- The Context view of a plain-text root: see #textEditor's CSS
+                 and renderTextEditorView. -->
+            <div id="textEditor"></div>
           </div>
           <button type="button" id="tailJumpBtnHighlight" class="tail-jump-btn hidden" title="Jump to latest">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v10M3.5 8L8 12.5 12.5 8"/></svg>
@@ -16278,7 +16283,48 @@ function jumpToViewTab(n) {
 // is 0 while display:none, so a panel that was hidden needs one fresh
 // renderVisibleRows()/renderHighlightVisibleRows() pass now that it can
 // actually measure itself.
+// Context <-> Filtered on a plain-text root keeps the top visible line (by line
+// number == entry ts) at the same screen offset. Not while a render() runs (a
+// node switch brings its own view) and not for a reveal jump (which centres
+// its own target). Captured from the pane being left, applied to the one shown.
+function captureTextTabAnchor(fromTab) {
+  if (fromTab === "highlight") {
+    if (!textEditorShown()) return null;
+    const a = captureEditorAnchor();
+    return a ? { line: a.line, offset: a.offset } : null;
+  }
+  if (!filteredTextMode || !currentViewEntries.length || state.sortColumn) return null;
+  const scrollTop = physicalToLogicalScrollPx(tableBody.scrollTop);
+  let idx, rowTop;
+  if (needsRowOffsets() && tableRowOffsets) { idx = findOffsetIndex(tableRowOffsets, scrollTop); rowTop = tableRowOffsets[idx]; }
+  else { const h = tableRowH(); idx = Math.min(currentViewEntries.length - 1, Math.floor(scrollTop / h)); rowTop = idx * h; }
+  const e = currentViewEntries[idx];
+  return e ? { line: e.ts, offset: rowTop - scrollTop } : null;
+}
+function restoreTextTabAnchor(a, toTab) {
+  if (!a) return;
+  if (toTab === "highlight") {
+    if (textEditorShown()) restoreEditorAnchor({ line: a.line, offset: a.offset });
+    return;
+  }
+  const entries = currentViewEntries;
+  if (!entries.length || !filteredTextMode || state.sortColumn) return;
+  let idx = lowerBoundByTs(entries, a.line); // the line itself, else the next result line below it
+  if (!entries[idx] || entries[idx].ts !== a.line) {
+    // The line is not in this node's result: the selected line anchors instead.
+    const sel = state.selectedId ? entries.findIndex(e => e.id === state.selectedId) : -1;
+    if (sel !== -1) idx = sel;
+    else if (idx >= entries.length) idx = entries.length - 1;
+  }
+  const rowTop = needsRowOffsets() && tableRowOffsets ? tableRowOffsets[idx] : idx * tableRowH();
+  setTableScrollLogical(rowTop - a.offset);
+  renderVisibleRows();
+}
 function showFhTab(tab) {
+  const prevTab = fhActiveTab;
+  const tabAnchor = fhLayout === "tabs" && !renderDepth && prevTab !== tab && !state.highlightScrollTargetId &&
+    (tab === "highlight" || tab === "filter") && (prevTab === "highlight" || prevTab === "filter") && nodeIsPlainText(state.activeId)
+    ? captureTextTabAnchor(prevTab) : null;
   fhActiveTab = tab;
   // The tab buttons' own ".active" class is only (re)computed
   // by renderViewTabs(), which the Table/Plot and Stacked branches of
@@ -16334,6 +16380,7 @@ function showFhTab(tab) {
       if (state.tailFollow && isTailedLogViewActive()) setTableScroll(tableBody.scrollHeight);
       renderVisibleRows();
     }
+    restoreTextTabAnchor(tabAnchor, tab);
   }
   // Both minimap range boxes depend on fhLayout/fhActiveTab (the Full-view
   // opt-out toggle and the "which pane's scroll to reflect" branch — see
@@ -16437,7 +16484,7 @@ function applyFhView(view) {
   // renderMainView() directly).
   if (state.activeId) {
     const activeNode = state.nodes[state.activeId];
-    if (activeNode && activeNode.type === "filter") {
+    if (activeNode && (activeNode.type === "filter" || isTextFileNode(activeNode))) {
       const recorded = fhLayout === "stacked" && !isOffLogTab(fhActiveTab) ? "stacked" : fhActiveTab;
       nodeLastView.set(activeNode.id, recorded);
     }
@@ -16890,6 +16937,27 @@ function applyActivationView(activeNode) {
   }
 }
 
+// A file node that is (or, mid-load, is about to be) a plain-text file: the
+// format is pinned a moment after the node is created, so the name decides
+// until then.
+function isTextFileNode(node) {
+  return !!node && node.type === "file" && (node.formatId === undefined ? isTextFileName(node.name) : isPlainTextFormat(node.formatId));
+}
+// Activating a plain-text FILE node: no remembered view -> Context (the
+// editor); otherwise the remembered view, or Filtered under "always
+// Filtered" — applyActivationView's rules, with Context as the start tab.
+function applyTextFileActivationView(node) {
+  const remembered = nodeLastView.get(node.id);
+  let targetTab;
+  if (remembered === undefined) targetTab = "highlight";
+  else if (filterActivationView === "alwaysFiltered") targetTab = "filter";
+  else targetTab = (remembered === "table" || remembered === "plot") ? "filter" : remembered; // a file has nothing to tabulate/plot
+  if (targetTab === "patterns") { if (fhActiveTab !== "patterns") applyFhView("patterns"); }
+  else if (fhLayout === "stacked") { if (isOffLogTab(fhActiveTab)) applyFhView("stacked"); }
+  else if (targetTab === "highlight") { if (fhActiveTab !== "highlight") applyFhView("highlight"); }
+  else if (fhActiveTab !== "filter") applyFhView("filter");
+}
+
 function updateSortIndicators() {
   tableHeaderEl.querySelectorAll(".th-sortable").forEach(th => {
     const arrow = th.querySelector(".th-sort-arrow");
@@ -16916,6 +16984,7 @@ function renderInner() {
       if (state.showNotes !== notesFilterPrevShowNotes) { state.showNotes = notesFilterPrevShowNotes; updateNotesButton(); }
     }
     if (activeNode && activeNode.type === "filter") applyActivationView(activeNode);
+    else if (isTextFileNode(activeNode)) applyTextFileActivationView(activeNode);
     if (state.activeId) recordNavVisit();
   }
   renderTree();
@@ -16935,6 +17004,7 @@ function renderInner() {
     refreshColumnState();
   }
   renderMainView();
+  updateWrapMsgButton(); // the Wrap button follows the active root's kind (text root: the editor wrap)
   findRefresh(); // FEATURE_BACKLOG.md #3: re-scan the find bar's hits if the current view's list changed
   renderStatus();
   updateDetailPanel();
@@ -17117,6 +17187,7 @@ function renderMainView() {
     currentHighlightViewEntries = [];
     highlightRows.innerHTML = "";
     highlightSpacer.style.height = "0px";
+    leaveTextEditor();
     lastHighlightRootId = null;
     contextActive = false;
     contextGaps = [];
@@ -23190,11 +23261,19 @@ function msgCharWidth() {
 // when wrap is off or the body isn't measurable yet (e.g. jsdom, clientWidth
 // 0) — callers then fall back to the plain non-wrapped ROW_HEIGHT.
 function wrapColsForBody(bodyEl) {
-  if (!state.wrapMessages) return 0;
+  if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : state.wrapMessages)) return 0;
   const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
   if (!(track > 0)) return 0;
   const cw = msgCharWidth();
   return Math.max(1, Math.floor((track - cw) / cw));
+}
+// Visual line count of a plain-text row soft-wrapped (white-space:pre-wrap,
+// word-break:break-all) into `cols` columns: every character counts, a tab as 4.
+function textWrapLines(message, cols) {
+  if (cols < 1 || !message) return 1;
+  let len = message.length;
+  for (let i = message.indexOf("\t"); i !== -1; i = message.indexOf("\t", i + 1)) len += 3;
+  return Math.max(1, Math.ceil(len / cols));
 }
 // Visual line count for a message soft-wrapped into `cols` columns. Exact for
 // the .wrap-messages CSS (break-all packs each line to `cols` chars). Honors
@@ -23222,9 +23301,9 @@ function messageWrapLines(message, cols) {
 // .text-row's CSS).
 function baseRowHeightForEntry(e, cols, textRows) {
   const h = textRows ? TEXT_ROW_HEIGHT : ROW_HEIGHT;
-  const wrapOn = state.wrapMessages && cols >= 1;
-  if (!state.multilineMessages && !wrapOn) return h;
-  const n = wrapOn ? messageWrapLines(e.message, cols) : messageLineCount(e.message);
+  const wrapOn = (textRows ? state.wrapTextView : state.wrapMessages) && cols >= 1;
+  if (!wrapOn && (textRows || !state.multilineMessages)) return h;
+  const n = wrapOn ? (textRows ? textWrapLines(e.message, cols) : messageWrapLines(e.message, cols)) : messageLineCount(e.message);
   return n > 1 ? h + (n - 1) * (textRows ? TEXT_ROW_HEIGHT : MULTILINE_LINE_HEIGHT) : h;
 }
 // A row's TOTAL height in either virtualized view: the entry's own line(s)
@@ -23244,7 +23323,7 @@ function rowHeightForEntry(e, cols, textRows) {
 // differ from the fixed ROW_HEIGHT default: multiline messages, word-wrap, or
 // notes being shown at all (cheaper to always build the array while notes are
 // on than to track "does any currently-loaded entry actually have a note").
-function needsRowOffsets() { return state.multilineMessages || state.showNotes || state.wrapMessages; }
+function needsRowOffsets() { return filteredTextMode ? (state.showNotes || state.wrapTextView) : (state.multilineMessages || state.showNotes || state.wrapMessages); }
 function buildRowOffsets(entries) {
   // Recompute (and cache) the Filtered view's wrap column count here so the
   // heights summed below and the per-row heights renderVisibleRows sets from
@@ -23300,6 +23379,7 @@ function topVisibleEntryId(entries, offsets, scrollTop, rowH) {
    survive into the new list, restoreViewAnchor() returns false and the
    caller falls back to its own default (reset to top). */
 function captureViewAnchor(entries, offsets, scrollEl) {
+  if (scrollEl === highlightBody && textEditorShown()) return captureEditorAnchor(); // by line number, from the editor's own DOM
   if (!entries.length) return null;
   // Shared with highlightBody (never compressed — the ternary is a no-op
   // there); tableBody's own scrollTop is physical, converted to the same
@@ -23349,6 +23429,7 @@ function captureRowScreenOffset(rowEl, scrollEl) {
 
 function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
   if (!anchor) return false;
+  if (scrollEl === highlightBody && textEditorShown()) return restoreEditorAnchor(anchor);
   const idx = entries.findIndex(e => e.id === anchor.id);
   if (idx === -1) return false;
   const flatH = scrollEl === tableBody ? tableRowH() : ROW_HEIGHT;
@@ -24210,6 +24291,16 @@ function buildContextView(rootId) {
   if (!root || !root.entries) return [];
   const all = root.entries;
   const node = state.nodes[state.activeId];
+  // A plain-text root renders as the editor (renderTextEditorView): the whole
+  // file, no gaps — only the hit set (the active filter's result) is kept.
+  if (isPlainTextFormat(root.formatId)) {
+    if (node && node.type === "filter") {
+      const m = contextMatchesAndGaps(node, root);
+      contextMatchIds = m.matchIds;
+      contextMatchPos = m.matchPos;
+    }
+    return all;
+  }
   // A file node's getEntries() IS the whole entries array — no filter to be
   // outside of, so skip the whole gap machinery instead of building a match
   // set the size of the file on every render.
@@ -24387,6 +24478,7 @@ highlightBody.addEventListener("scroll", () => { highlightHeaderEl.scrollLeft = 
 // array is sized by the number of VISIBLE rows, which while collapsed is the
 // match count rather than the whole file.
 function rebuildHighlightOffsets() {
+  if (textEditorShown()) { highlightRowOffsets = null; return; } // the editor has no row offsets (real DOM layout)
   highlightRowOffsets = buildContextRowOffsets(currentHighlightViewEntries, contextStrips);
   highlightSpacer.style.height = (highlightRowOffsets[currentHighlightViewEntries.length] + 22) + "px";
   // Same place the list's height is recomputed is where its width is: one
@@ -24747,9 +24839,12 @@ function contextWouldBeIndex(entryId) {
 function updateContextToolbar() {
   highlightRows.classList.toggle("ctx-active", contextActive);
   highlightHeaderEl.classList.toggle("ctx-active", contextActive);
+  // A plain-text root: the bar is always there (file node included) and shows
+  // the editor's controls instead of the log ones.
+  const editorOn = nodeIsPlainText(state.activeId);
   const panelOnScreen = fhSplit.style.display !== "none" &&
     (fhLayout === "stacked" || fhActiveTab === "highlight");
-  const onScreen = contextActive && panelOnScreen;
+  const onScreen = (contextActive || editorOn) && panelOnScreen;
   // Compensate the scroll position only for a bar that appears/disappears
   // while the panel STAYS on screen (activating a file node, or a filter one,
   // without leaving the Context view) — that's the only case where a person
@@ -24759,6 +24854,7 @@ function updateContextToolbar() {
   setContextToolbarVisible(onScreen, panelOnScreen && contextToolbarPanelOnScreen);
   contextToolbarPanelOnScreen = panelOnScreen;
   if (!onScreen) return;
+  if (editorOn) { updateTextLayoutButtons(); return; }
 
   const matchCount = contextMatchRows.length;
   ctxPrevMatch.disabled = matchCount < 2;
@@ -24799,7 +24895,37 @@ function setContextToolbarVisible(visible, compensate = true) {
 // Icons and listeners, once — the buttons themselves are static markup, so
 // unlike the chip this replaces there is nothing to rebuild per render (and
 // nothing that could lose a listener mid-render).
+const ctxTextLayout = el("#ctxTextLayout");
+const ctxLayoutPretty = el("#ctxLayoutPretty");
+const ctxLayoutRaw = el("#ctxLayoutRaw");
+// "Pretty" is only possible for text that parses as JSON (cached per raw text:
+// the parse of a big document is not something to repeat on every render).
+function jsonPrettyPossible(root) {
+  if (root.textLayout === "pretty") return true;
+  const raw = root.textRaw;
+  if (typeof raw !== "string") return false;
+  if (root._prettyChecked !== raw) { root._prettyChecked = raw; root._prettyOk = prettyPrintedJsonOrNull(raw) !== null; }
+  return root._prettyOk;
+}
+// The Pretty/Raw switch of a JSON text file (Context toolbar): hidden for any
+// other root, Pretty disabled for text that isn't valid JSON.
+function updateTextLayoutButtons() {
+  const root = textRootNode(getRootFileId(state.activeId));
+  const isJson = !!root && root.textSyntax === "json";
+  const group = ctxTextLayout.parentElement, sep = el("#ctxTextLayoutSep");
+  group.style.display = sep.style.display = isJson ? "" : "none";
+  if (!isJson) return;
+  ctxLayoutPretty.classList.toggle("active", root.textLayout === "pretty");
+  ctxLayoutRaw.classList.toggle("active", root.textLayout === "raw");
+  ctxLayoutPretty.disabled = !jsonPrettyPossible(root);
+}
+function switchTextLayoutFromToolbar(layout) {
+  const root = textRootNode(getRootFileId(state.activeId));
+  if (root) setTextLayout(root.id, layout);
+}
 function initContextToolbar() {
+  ctxLayoutPretty.addEventListener("click", () => switchTextLayoutFromToolbar("pretty"));
+  ctxLayoutRaw.addEventListener("click", () => switchTextLayoutFromToolbar("raw"));
   ctxPrevMatch.innerHTML = ICON_CARET_LEFT;
   ctxNextMatch.innerHTML = ICON_CARET_RIGHT;
   ctxExpandAround.innerHTML = ICON_EXPAND_AROUND;
@@ -24817,6 +24943,296 @@ function setHighlightScroll(value) {
   highlightBody.scrollTop = Math.max(0, value);
 }
 
+/* ===================== Text editor: the Context view of a plain-text root =====
+   When the active node's ROOT is a plain-text file (.txt/.json/.xml — see
+   formatIdForLoad), the Context view is an editor over the node's parsed
+   lines instead of log rows: the WHOLE file (no gap strips — folding replaces
+   them), free native selection/copy, line numbers in the same --text-num-w
+   column and fold arrows in the --text-fold-w column the Filtered text rows
+   use, so a line in both views sits at the same x and height. A filter /
+   combined / link node's result lines get a `hit` class (and the filter's
+   text matches are marked, like the Filtered rows mark them).
+   DOM identity is the point of the cache below: the markup is built ONCE per
+   (root, layout, entries) and every other render() updates it in place (hit
+   classes, flash) — folds, a text selection and a native dblclick all
+   survive unrelated renders (CLAUDE.md "DOM identity" gotcha). The scroll
+   container is #highlightBody itself, so the minimap, nav history, tail
+   follow and every scroll listener keep working unchanged; only the row
+   virtualization (renderHighlightVisibleRows) steps aside. Anchors are by
+   LINE NUMBER (a plain-text entry's ts) — see captureEditorAnchor. */
+const textEditorEl = el("#textEditor");
+const editorView = {
+  rootId: null, key: null, lineEls: [], foldEls: [],
+  visible: null,        // ascending line indices NOT hidden by a collapsed fold; null = every line
+  tokenize: escapeHtml, syntax: null,
+  hitEls: [], hitKey: null, markedEls: new Set(),
+  flashEl: null, flashTimer: 0,
+};
+function textEditorShown() { return highlightWrap.classList.contains("text-mode"); }
+// The plain-text file node behind a root id, or null.
+function textRootNode(rootId) {
+  const r = rootId ? state.nodes[rootId] : null;
+  return r && r.type === "file" && isPlainTextFormat(r.formatId) ? r : null;
+}
+function leaveTextEditor() {
+  if (!textEditorShown() && editorView.key === null) return;
+  highlightWrap.classList.remove("text-mode");
+  clearTimeout(editorView.flashTimer);
+  textEditorEl.innerHTML = "";
+  editorView.rootId = null; editorView.key = null;
+  editorView.lineEls = []; editorView.foldEls = []; editorView.visible = null;
+  editorView.hitEls = []; editorView.hitKey = null; editorView.markedEls = new Set(); editorView.flashEl = null;
+  lastHighlightRootId = null; // the log view that follows treats this as a root switch
+}
+function editorMarkupKey(root) {
+  const es = root.entries;
+  return [root.id, root.textSyntax, root.textLayout, es.length, es.length ? es[0].id : "", es.length ? es[es.length - 1].id : ""].join("|");
+}
+// Builds the editor markup unless it already shows exactly this file. Returns
+// true when it (re)built. Mid-load ticks of the shown file keep what is there
+// (the load's last render rebuilds it once, instead of once per tick).
+function ensureEditorMarkup(root) {
+  if (root.loadFraction !== undefined && editorView.rootId === root.id && editorView.key !== null) return false;
+  const key = editorMarkupKey(root);
+  if (key === editorView.key) return false;
+  const entries = root.entries, n = entries.length;
+  const syntax = plainTextSyntaxOf(root);
+  const lines = new Array(n);
+  for (let i = 0; i < n; i++) lines[i] = entries[i].message;
+  let ranges = [];
+  if (syntax && n > 1) {
+    const text = lines.join("\n");
+    ranges = syntax === "json" ? findJsonFoldRanges(text) : findXmlFoldRanges(text);
+  }
+  const tokenize = syntax === "json" ? t => tokenRangesHtml(t, jsonTokenRanges(t))
+    : syntax === "xml" ? t => tokenRangesHtml(t, xmlTokenRanges(t)) : escapeHtml;
+  const tree = buildFoldTree(n, ranges);
+  const numberOf = i => entries[i].ts;
+  const parts = new Array(tree.length);
+  for (let i = 0; i < tree.length; i++) parts[i] = renderFoldNode(tree[i], lines, tokenize, numberOf);
+  clearTimeout(editorView.flashTimer);
+  textEditorEl.innerHTML = parts.join("");
+  editorView.lineEls = Array.from(textEditorEl.querySelectorAll(".itv-line"));
+  editorView.foldEls = Array.from(textEditorEl.querySelectorAll(".itv-fold"));
+  editorView.rootId = root.id; editorView.key = key; editorView.visible = null;
+  editorView.tokenize = tokenize; editorView.syntax = syntax;
+  editorView.hitEls = []; editorView.hitKey = null; editorView.markedEls = new Set(); editorView.flashEl = null;
+  return true;
+}
+// Sets a line's message HTML but keeps the fold toggle / "… N lines" marker of
+// a fold's opening line.
+function setEditorLineHtml(lineEl, html) {
+  const first = lineEl.firstElementChild, last = lineEl.lastElementChild;
+  const tg = first && first.classList.contains("itv-fold-toggle") ? first : null;
+  const ell = last && last.classList.contains("itv-fold-ellipsis") ? last : null;
+  lineEl.innerHTML = html || "<br>";
+  if (tg) lineEl.insertBefore(tg, lineEl.firstChild);
+  if (ell) lineEl.appendChild(ell);
+}
+// Marks the active node's result lines (`hit`) and the text-filter matches
+// inside them, in place. Skipped when neither the result nor the marking
+// context changed since the last call.
+function applyEditorHits(root) {
+  const node = state.nodes[state.activeId];
+  const matches = node && node.type === "filter" ? contextMatchesAndGaps(node, root) : null;
+  const mm = buildMatchMarkContext(textMatchHighlightInRows);
+  const fs = mm.findSpec;
+  const mmKey = mm.active ? mm.nodes.map(x => x.id + "\u0001" + x.value).join("\u0002") + "|" + mm.hlNodes.length + "|" +
+    (fs ? fs.value + "\u0003" + fs.caseSensitive + (fs.regex ? String(fs.regex) : "") : "") : "";
+  const key = state.activeId + "|" + mmKey;
+  if (editorView.hitKey && editorView.hitKey.matches === matches && editorView.hitKey.key === key) return;
+  editorView.hitKey = { matches, key };
+  const entries = root.entries, els = editorView.lineEls;
+  for (const el of editorView.hitEls) el.classList.remove("hit");
+  for (const el of editorView.markedEls) {
+    const e = entries[+el.dataset.line];
+    if (e) setEditorLineHtml(el, editorView.tokenize(e.message));
+  }
+  editorView.hitEls = []; editorView.markedEls = new Set();
+  if (!matches) return;
+  const ids = matches.matchIds;
+  const syntax = editorView.syntax;
+  for (let i = 0; i < entries.length; i++) {
+    const e = entries[i];
+    if (!ids.has(e.id)) continue;
+    const el = els[i];
+    if (!el) continue;
+    el.classList.add("hit");
+    editorView.hitEls.push(el);
+    if (mm.active) {
+      setEditorLineHtml(el, markFieldHtml(mm, e.message, "message", plainTextSyntaxRanges(e, syntax)));
+      editorView.markedEls.add(el);
+    }
+  }
+}
+// Recomputes which lines a collapsed fold hides.
+function recomputeEditorVisible() {
+  const collapsed = [];
+  for (const f of editorView.foldEls) if (f.classList.contains("collapsed")) collapsed.push([+f.dataset.start, +f.dataset.end]);
+  if (!collapsed.length) { editorView.visible = null; return; }
+  const n = editorView.lineEls.length, vis = [];
+  let ci = 0, i = 0;
+  while (i < n) {
+    vis.push(i);
+    while (ci < collapsed.length && collapsed[ci][0] < i) ci++;
+    if (ci < collapsed.length && collapsed[ci][0] === i) {
+      const end = collapsed[ci][1];
+      while (ci < collapsed.length && collapsed[ci][0] <= end) ci++;
+      i = end + 1;
+    } else i++;
+  }
+  editorView.visible = vis;
+}
+function editorVisibleCount() { return editorView.visible ? editorView.visible.length : editorView.lineEls.length; }
+function editorLineAtPos(p) { return editorView.lineEls[editorView.visible ? editorView.visible[p] : p]; }
+// The element of line index `idx`, or — when a collapsed fold hides it — of the
+// nearest visible line at or before it (the fold's opening line).
+function editorElForIdx(idx) {
+  const vis = editorView.visible;
+  if (!vis) return editorView.lineEls[Math.max(0, Math.min(idx, editorView.lineEls.length - 1))];
+  let lo = 0, hi = vis.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (vis[mid] <= idx) lo = mid; else hi = mid - 1; }
+  return editorView.lineEls[vis[lo]];
+}
+// The topmost visible line and its pixel offset from the scroll container's top.
+function captureEditorAnchor() {
+  const cnt = editorVisibleCount();
+  if (!cnt) return null;
+  const top = highlightBody.scrollTop;
+  let lo = 0, hi = cnt - 1;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1, el = editorLineAtPos(mid);
+    if (el.offsetTop + el.offsetHeight > top) hi = mid; else lo = mid + 1;
+  }
+  const el = editorLineAtPos(lo), idx = +el.dataset.line, e = currentHighlightViewEntries[idx];
+  return { idx, line: +el.dataset.n, id: e ? e.id : null, offset: el.offsetTop - top };
+}
+// Index of the editor line for a line number (or, failing that, an entry id).
+function editorIdxFor(anchor) {
+  const entries = currentHighlightViewEntries;
+  if (!entries.length) return -1;
+  if (anchor.line != null) return Math.min(entries.length - 1, lowerBoundByTs(entries, anchor.line));
+  const idx = anchor.id ? buildOrderIndexMap(editorView.rootId).get(anchor.id) : undefined;
+  return idx === undefined ? -1 : idx;
+}
+function restoreEditorAnchor(anchor) {
+  if (!anchor || !editorView.lineEls.length) return false;
+  const idx = editorIdxFor(anchor);
+  if (idx < 0) return false;
+  setHighlightScroll(editorElForIdx(idx).offsetTop - (anchor.offset || 0));
+  return true;
+}
+function setEditorFoldGlyph(foldEl, collapsed) {
+  const tg = foldEl.firstElementChild && foldEl.firstElementChild.firstElementChild;
+  if (tg && tg.classList.contains("itv-fold-toggle")) tg.textContent = collapsed ? "▸" : "▾";
+}
+function toggleEditorFold(foldEl) {
+  const anchor = captureEditorAnchor();
+  const collapse = !foldEl.classList.contains("collapsed");
+  foldEl.classList.toggle("collapsed", collapse);
+  setEditorFoldGlyph(foldEl, collapse);
+  recomputeEditorVisible();
+  restoreEditorAnchor(anchor);
+}
+textEditorEl.addEventListener("click", ev => {
+  const tg = ev.target.closest && ev.target.closest(".itv-fold-toggle");
+  if (tg) toggleEditorFold(tg.closest(".itv-fold"));
+});
+function flashEditorLine(el) {
+  if (editorView.flashEl) editorView.flashEl.classList.remove("flash");
+  clearTimeout(editorView.flashTimer);
+  el.classList.add("flash");
+  editorView.flashEl = el;
+  editorView.flashTimer = setTimeout(() => { el.classList.remove("flash"); if (editorView.flashEl === el) editorView.flashEl = null; }, 1400);
+}
+// Scrolls the editor so line index `idx` is centred, unfolding only the folds
+// that hide it (never the fold a line merely opens), and flashes it. opts.center
+// false = just bring it into view.
+function revealEditorLine(idx, opts) {
+  opts = opts || {};
+  const el = editorView.lineEls[idx];
+  if (!el) return false;
+  let child = el, f = el.parentElement, changed = false;
+  while (f && f !== textEditorEl) {
+    if (f.classList.contains("itv-fold") && f.classList.contains("collapsed") && f.firstElementChild !== child) {
+      f.classList.remove("collapsed");
+      setEditorFoldGlyph(f, false);
+      changed = true;
+    }
+    child = f; f = f.parentElement;
+  }
+  if (changed) recomputeEditorVisible();
+  const viewportH = highlightBody.clientHeight || 400;
+  const top = el.offsetTop, h = el.offsetHeight;
+  if (opts.center !== false) setHighlightScroll(top - viewportH / 2 + h / 2);
+  else if (top < highlightBody.scrollTop) setHighlightScroll(top);
+  else if (top + h > highlightBody.scrollTop + viewportH) setHighlightScroll(top + h - viewportH);
+  if (opts.flash) flashEditorLine(el);
+  return true;
+}
+// First/last visible line index in the viewport (the minimap's "rendered range").
+function editorVisibleRange() {
+  const cnt = editorVisibleCount();
+  if (!cnt) return null;
+  const top = highlightBody.scrollTop, bottom = top + (highlightBody.clientHeight || 400);
+  const posOf = y => {
+    let lo = 0, hi = cnt - 1;
+    while (lo < hi) { const mid = (lo + hi) >> 1, el = editorLineAtPos(mid); if (el.offsetTop + el.offsetHeight > y) hi = mid; else lo = mid + 1; }
+    return lo;
+  };
+  const a = posOf(top), b = Math.max(a, posOf(bottom));
+  return { first: +editorLineAtPos(a).dataset.line, last: +editorLineAtPos(b).dataset.line };
+}
+function syncEditorHeaderWidth() {
+  const bar = highlightHeaderEl.querySelector(".text-header-bar");
+  if (bar) bar.style.width = textEditorEl.scrollWidth + "px";
+}
+// renderHighlightView's branch for a plain-text root.
+function renderTextEditorView(root, colorMapIsFresh) {
+  const rootId = root.id;
+  const sameRoot = textEditorShown() && rootId === lastHighlightRootId;
+  const anchor = sameRoot ? captureEditorAnchor() : null;
+  highlightWrap.classList.add("text-mode");
+  // The whole file; buildContextView also leaves contextMatchIds/contextMatchPos
+  // set for a filter node (the hit set), contextActive false (no gap strips).
+  currentHighlightViewEntries = buildContextView(rootId);
+  highlightRowOffsets = null;
+  if (!colorMapIsFresh) { highlightColorMap = computeHighlightMap(rootId); updateColorMarkGutter(); }
+  renderTextHeaderBar(highlightHeaderEl.querySelector(".text-header-bar"), root);
+  const rebuilt = ensureEditorMarkup(root);
+  applyEditorHits(root);
+  syncEditorHeaderWidth();
+  updateContextToolbar();
+
+  if (state.highlightScrollTargetId) {
+    const targetId = state.highlightScrollTargetId;
+    state.highlightScrollTargetId = null;
+    state.highlightScrollTargetOffset = null;
+    const idx = buildOrderIndexMap(rootId).get(targetId);
+    if (idx !== undefined) {
+      lastHighlightRootId = rootId;
+      revealEditorLine(idx, { center: true, flash: true });
+      updateMinimapRenderedRange();
+      return;
+    }
+  }
+  if (!sameRoot) {
+    lastHighlightRootId = rootId;
+    setHighlightScroll(0);
+    updateMinimapRenderedRange();
+    return;
+  }
+  if (pendingHighlightScroll) {
+    const mode = pendingHighlightScroll;
+    pendingHighlightScroll = null;
+    if (mode === "bottom") setHighlightScroll(highlightBody.scrollHeight);
+    updateMinimapRenderedRange();
+    return;
+  }
+  if (rebuilt) restoreEditorAnchor(anchor);
+  updateMinimapRenderedRange();
+}
+
 // colorMapIsFresh: renderMainView computes highlightColorMap itself (before
 // either view renders) and passes true — building the same map twice per
 // render was a measurable cost with coloured rules on large files. Other
@@ -24831,6 +25247,9 @@ function setHighlightScroll(value) {
 function renderHighlightView(colorMapIsFresh) {
   contextViewStale = false;
   const rootId = getRootFileId(state.activeId);
+  const textRoot = textRootNode(rootId);
+  if (textRoot) { renderTextEditorView(textRoot, colorMapIsFresh); return; }
+  leaveTextEditor();
   const sameRoot = rootId === lastHighlightRootId;
   // Only worth trying to preserve scroll position within the SAME root
   // file's viewport — captured before currentHighlightViewEntries below
@@ -24904,6 +25323,7 @@ function renderHighlightView(colorMapIsFresh) {
 }
 
 function renderHighlightVisibleRows() {
+  if (textEditorShown()) return; // the editor is not virtualized — see renderTextEditorView
   const total = currentHighlightViewEntries.length;
   const viewportH = highlightBody.clientHeight || 400;
   // The filler rows centre their label on the VISIBLE area, which is this
@@ -26252,6 +26672,12 @@ function updateMinimapFullRange() {
 // branch below): startIdx used to only clamp at 0, so that scenario indexed
 // straight past the end of the array.
 function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
+  if (scrollEl === highlightBody && textEditorShown()) {
+    // The editor shows the lines its DOM puts in the viewport (no row window).
+    const r = editorVisibleRange();
+    if (!r || !entries[r.first] || !entries[r.last]) return null;
+    return { left: minimapBarSpan(entries[r.first].ts).left, right: minimapBarSpan(entries[r.last].ts).right };
+  }
   const viewportH = scrollEl.clientHeight || 400;
   const maxIdx = entries.length - 1;
   // Shared with highlightBody (never compressed — the ternary is a no-op
@@ -26691,6 +27117,14 @@ function scrollToIndex(index, opts) {
 // instead of #tableBody — a separate scroll container with its own position.
 function scrollToHighlightIndex(index, opts) {
   opts = opts || {};
+  if (textEditorShown()) {
+    // The editor: line index == entry index. A pixel offset (a jump that keeps
+    // the row's screen position) wins over centring; otherwise centre, or just
+    // bring the line into view.
+    if (!revealEditorLine(index, { center: !!opts.center && opts.offset == null, flash: !!opts.flash })) return;
+    if (opts.offset != null) setHighlightScroll(editorView.lineEls[index].offsetTop - opts.offset);
+    return;
+  }
   const viewportH = highlightBody.clientHeight || 400;
   // Always the offsets path — see renderHighlightVisibleRows for why this view
   // has no fixed-height fallback.
@@ -27821,7 +28255,11 @@ function updateMultilineMsgButton() {
 // Detail message) — same pattern as updateMultilineMsgButton. Called after
 // every toggle and after session restore.
 function updateWrapMsgButton() {
-  btnWrapMsg.forEach(b => b.classList.toggle("active", state.wrapMessages));
+  // The one Wrap button means "wrap this kind of view": for a plain-text root
+  // it is the editor/text-row wrap (state.wrapTextView — Context editor AND
+  // Filtered text rows), otherwise the log message wrap.
+  const on = nodeIsPlainText(state.activeId) ? state.wrapTextView : state.wrapMessages;
+  btnWrapMsg.forEach(b => b.classList.toggle("active", on));
   document.body.classList.toggle("wrap-messages", state.wrapMessages);
 }
 
@@ -27874,7 +28312,8 @@ btnMultilineMsg.forEach(b => b.addEventListener("click", () => {
 // and both views' visible windows, and flows through schedulePersistMeta() so
 // the flag survives reload. Independent of multiline — both can be on.
 btnWrapMsg.forEach(b => b.addEventListener("click", () => {
-  state.wrapMessages = !state.wrapMessages;
+  if (nodeIsPlainText(state.activeId)) { state.wrapTextView = !state.wrapTextView; updateWrapTextViewButton(); }
+  else state.wrapMessages = !state.wrapMessages;
   updateWrapMsgButton();
   render();
 }));
@@ -27895,6 +28334,7 @@ btnTextMatchHighlight.forEach(b => b.addEventListener("click", () => {
   localStorage.setItem(TEXT_MATCH_HIGHLIGHT_ENABLED_KEY, textMatchHighlightEnabled ? "1" : "0");
   updateTextMatchHighlightButton();
   renderVisibleRows();
+  if (textEditorShown()) { const r = textRootNode(getRootFileId(state.activeId)); if (r) applyEditorHits(r); }
   updateDetailPanel();
 }));
 
@@ -28215,7 +28655,7 @@ function syncTableRowsWidth() {
   // Word-wrap on: the message wraps within the viewport, so there is nothing
   // to scroll to horizontally — clear any forced width and let #tableRows
   // stretch-fill (left:0;right:0), same as a short-message file.
-  if (state.wrapMessages) { tableRows.style.width = ""; return; }
+  if (filteredTextMode ? state.wrapTextView : state.wrapMessages) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
     ? tableGutterW() + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
     : 0;
@@ -29151,9 +29591,8 @@ function updateInlineViewerToolbar(v) {
 }
 
 // Reflects state.wrapTextView on the body-level class the .textview-wrap CSS
-// keys off. The wrap toggle button itself lives in the editor toolbar (Step 3
-// of docs/text-files-implementation-plan.md); until then the setting is only
-// restored/persisted.
+// keys off (Context editor lines and Filtered text rows). The Wrap button
+// itself is the shared .toggle-wrap one (see updateWrapMsgButton).
 function updateWrapTextViewButton() {
   document.body.classList.toggle("textview-wrap", state.wrapTextView);
 }
@@ -29366,9 +29805,8 @@ function tokenRangesHtml(text, ranges) {
   }
   return out + escapeHtml(text.slice(last));
 }
-// Editor helpers below (highlight*Text, find*FoldRanges, buildFoldTree,
-// renderFoldNode) are unreferenced for now: Step 3 of
-// docs/text-files-implementation-plan.md (editor as Context view) reuses them.
+// Editor helpers below (find*FoldRanges, buildFoldTree, renderFoldNode,
+// *TokenRanges) feed the Context-view editor (ensureEditorMarkup).
 function highlightJsonText(text) { return tokenRangesHtml(text, jsonTokenRanges(text)); }
 function highlightXmlText(text) { return tokenRangesHtml(text, xmlTokenRanges(text)); }
 
@@ -29489,16 +29927,24 @@ function buildFoldTree(lineCount, ranges) {
   }
   return parseUntil(lineCount);
 }
-function renderFoldNode(node, lines, tokenize) {
-  if (node.type === "line") {
-    return '<span class="itv-line" data-line="' + node.index + '">' + tokenize(lines[node.index]) + '</span>';
-  }
+// One editor line: its display number (data-n, the plain-text entry's line
+// number) and tokenized text; an empty line holds a <br> so the block still
+// copies as a line. A fold's opening line also carries the toggle and the
+// "… N lines" marker shown while the fold is collapsed (see CSS .itv-fold).
+function editorLineHtml(index, lines, tokenize, numberOf, foldNode) {
+  const html = tokenize(lines[index]) || "<br>";
+  const open = '<span class="itv-line" data-line="' + index + '" data-n="' + numberOf(index) + '">';
+  if (!foldNode) return open + html + "</span>";
+  return open + '<span class="itv-fold-toggle">▾</span>' + html +
+    '<span class="itv-fold-ellipsis">… ' + (foldNode.end - foldNode.start - 1) + ' lines</span></span>';
+}
+function renderFoldNode(node, lines, tokenize, numberOf) {
+  numberOf = numberOf || (i => i + 1);
+  if (node.type === "line") return editorLineHtml(node.index, lines, tokenize, numberOf, null);
   const [openLine, ...rest] = node.children;
-  const openHtml = '<span class="itv-line" data-line="' + openLine.index + '">' +
-    '<span class="itv-fold-toggle">▾</span>' + tokenize(lines[openLine.index]) + '</span>';
-  const restHtml = rest.map(c => renderFoldNode(c, lines, tokenize)).join("");
   return '<span class="itv-fold" data-start="' + node.start + '" data-end="' + node.end + '">' +
-    openHtml + restHtml + '<span class="itv-fold-ellipsis"> … </span></span>';
+    editorLineHtml(openLine.index, lines, tokenize, numberOf, node) +
+    rest.map(c => renderFoldNode(c, lines, tokenize, numberOf)).join("") + '</span>';
 }
 // Pretty-printed form of a JSON text, or null when it isn't valid JSON. Used
 // by applyTextLayout (a JSON text file's default "pretty" layout).
@@ -42286,7 +42732,7 @@ document.addEventListener("keydown", ev => {
       if (logKeysActive() && state.selectedId) {
         const sel = window.getSelection();
         if (sel && sel.toString().length &&
-            detailPanel.contains(sel.anchorNode)) return;
+            (detailPanel.contains(sel.anchorNode) || textEditorEl.contains(sel.anchorNode))) return; // native copy: the editor's text is free-selectable
         ev.preventDefault();
         copyLogSelectionToClipboard();
       }
