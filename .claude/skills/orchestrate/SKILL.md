@@ -69,7 +69,8 @@ Spawning — see `delegation.md` for the brief template:
 Never forward an implementer's "done" unchecked. See `verification.md`:
 
 1. Read the diff (`git diff`) against the brief and CLAUDE.md gotchas.
-2. Full test suite, pass count noted.
+2. Full test suite, pass count and slowest groups noted; one `SHARDS=8`
+   stress run before the final push.
 3. Real-app screenshots of every changed view (simulator data), compared
    against the mockup / expected behavior; both themes if styling changed.
 4. Docs/CHANGELOG/README updated as CLAUDE.md requires.
