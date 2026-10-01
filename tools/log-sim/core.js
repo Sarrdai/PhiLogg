@@ -575,8 +575,34 @@
     plain: {
       label: "Plain text (no timestamps)",
       ext: ".txt",
-      hint: "Bare messages, one per line, continuation lines as their own lines. Inline text viewer -> 'Filter lines' (plain-text format, line-number time axis).",
+      hint: "Bare messages, one per line, continuation lines as their own lines. Loads as one plain-text file node (line-number time axis).",
       render: e => [oneLine(e.msg)].concat(e.cont || []),
+      exportFormat: () => null,
+    },
+    jsondoc: {
+      label: "JSON document (single minified document)",
+      ext: ".json",
+      hint: "ONE valid JSON document written minified on a single line: {service, entries:[{ts, level, thread, logger, msg, data}]} with nested objects/arrays from the scenarios' payloads. Loads as one plain-text file node; Pretty vs Raw layout, JSON folding/highlighting. Not tailable (--follow).",
+      document: { head: g => '{"service":"' + g.svc + '","format":1,"entries":[', sep: ",", tail: "]}" },
+      render(e) {
+        return [JSON.stringify({ ts: formatTs(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS"), level: e.level.toLowerCase(), thread: e.thread, logger: e.logger, msg: e.cont && !e.json.exception ? e.msg + "\n" + e.cont.join("\n") : e.msg, data: e.json })];
+      },
+      exportFormat: () => null,
+    },
+    xmldoc: {
+      label: "XML document (single document)",
+      ext: ".xml",
+      hint: "ONE well-formed XML document, one <entry> per line under <log service=...>, with the scenarios' payloads as nested elements. Loads as one plain-text file node; XML folding/highlighting. Not tailable (--follow).",
+      document: { head: g => '<?xml version="1.0" encoding="UTF-8"?>\n<log service="' + g.svc + '">\n', sep: "\n", tail: "\n</log>\n" },
+      render(e) {
+        const esc = v => String(v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+        const tag = k => String(k).replace(/[^A-Za-z0-9_.-]/g, "_").replace(/^([^A-Za-z_])/, "_$1");
+        const el = (k, v) => Array.isArray(v) ? v.map(x => el(k, x)).join("")
+          : v && typeof v === "object" ? "<" + tag(k) + ">" + Object.keys(v).map(kk => el(kk, v[kk])).join("") + "</" + tag(k) + ">"
+          : "<" + tag(k) + ">" + esc(v) + "</" + tag(k) + ">";
+        const msg = e.cont && !e.json.exception ? e.msg + "\n" + e.cont.join("\n") : e.msg;
+        return ['  <entry ts="' + formatTs(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS") + '" level="' + e.level + '" thread="' + esc(e.thread) + '"><message>' + esc(msg) + "</message>" + el("data", e.json) + "</entry>"];
+      },
       exportFormat: () => null,
     },
   };
@@ -697,8 +723,9 @@
     return {
       options: o,
       format: fmt,
+      generator: g,
       next,
-      render: e => fmt.render(e, g).join(o.eol) + o.eol,
+      render: e => fmt.document ? fmt.render(e, g).join("") : fmt.render(e, g).join(o.eol) + o.eol,
       get lastTs() { return lastTs; },
     };
   }
@@ -729,14 +756,16 @@
         gen = createGenerator(Object.assign({}, o, { seed: (o.seed || DEFAULTS.seed) + i * 7919, service: i, start: startMs + i * (+o.skew || 0) }));
       } else gen = shared = shared || createGenerator(o);
       yield { type: "file", name, index: i };
-      let buf = "", bytes = 0, n = 0;
+      const doc = fmt.document;
+      let buf = doc ? doc.head(gen.generator) : "", bytes = utf8Length(buf), n = 0;
       while (n < maxEntries && bytes < maxBytes) {
-        const text = gen.render(gen.next());
+        const text = (doc && n ? doc.sep : "") + gen.render(gen.next());
         buf += text;
         bytes += utf8Length(text);
         n++;
         if (buf.length >= 65536) { yield { type: "chunk", text: buf }; buf = ""; }
       }
+      if (doc) { buf += doc.tail; bytes += utf8Length(doc.tail); }
       if (buf) yield { type: "chunk", text: buf };
       yield { type: "end", name, entries: n, bytes };
     }
