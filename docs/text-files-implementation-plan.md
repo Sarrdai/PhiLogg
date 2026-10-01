@@ -16,7 +16,7 @@ All rules are in the concept's "Regeln" table; they are the spec.
 Decided defaults: Pretty is the default layout for valid JSON (invalid
 JSON silently loads raw); Patterns/Table/Plot stay visible; the minimap
 stays in Context; Ctrl+G works in the editor; no virtualization of the
-editor; no migration of saved text viewers / "(pretty)" text versions.
+editor until Step 5 (decided later the same day: virtualize); no migration of saved text viewers / "(pretty)" text versions.
 
 Non-goals: images (inline image viewer stays as is), XML pretty print,
 folder auto-open rules for text files (stay log-only), merging plain-text
@@ -123,6 +123,27 @@ files (stays refused).
   text, highlights and steps through matches (unfolding as needed); "Add
   as filter" works as in the log views.
 - Tests: GROUP for search/step/unfold.
+
+### Step 5 — Virtualize the editor (decided 2026-10-01)
+Measured: a 19 MB / 394k-line .txt took 23–33 s to show in the old text
+viewer and 29–32 s in the Step 3 editor (browser layout of every line).
+- Change: the Context editor renders only the lines in/near the viewport,
+  like the log table (fixed `TEXT_ROW_HEIGHT` rows, spacers, one-screen
+  overscan, render once per frame). Folding works on a "visible line list"
+  (fold tree → list of shown line indices with fold-toggle/ellipsis rows),
+  so collapsing/expanding only rebuilds that list. Wrap: either keep
+  variable heights out of the virtualized path (fall back to measured
+  heights) or define how wrap interacts — the implementer proposes, the
+  lead decides. Hit marks, find-bar marks, reveal/unfold/flash, tab-switch
+  anchor, nav waypoints, minimap scroll and Stacked keep working. Free
+  text selection + copy across more lines than are rendered must still
+  copy the right text (intercept copy and build the text from the line
+  model for the selected line range).
+- Tests: GROUP for the visible-line list with folds, windowed rendering,
+  copy across unrendered lines, reveal into a folded block on a large file.
+- Done when: the 19 MB simulator file shows Context in roughly the time
+  Filtered needs (parse) plus well under a second, measured in the real
+  app per `docs/performance-testing.md`.
 
 ## Docs to update at the end
 CHANGELOG.md entry; `docs/ui-and-views.md` ("Inline text/image viewer",

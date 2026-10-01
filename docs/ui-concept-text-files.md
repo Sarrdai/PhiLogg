@@ -68,7 +68,7 @@ ganze Datei ist dasselbe Doppelklick/Enter wie bei Logs.
 | Tabs | Patterns, Table und Plot bleiben sichtbar wie bei Logs. |
 | Minimap | Bleibt in Context sichtbar und zeigt die Trefferlage; ein Klick scrollt den Editor. |
 | Find-Leiste | Strg+G sucht in Context im Editor-Text und springt durch die Fundstellen. |
-| Große Dateien | Der Editor rendert weiterhin die ganze Datei; Virtualisierung erst bei einem echten Problem (Filtered ist virtualisiert). |
+| Große Dateien | Der Editor wird virtualisiert wie die Log-Tabelle (entschieden 2026-10-01 nach Messung: 19 MB brauchten im alten Viewer wie im ersten Editor 23–33 s). |
 | Alte Sessions | Gespeicherte Text-Viewer und „(pretty)“-Textversionen werden nicht migriert (unter 1.0.0 erlaubt); die Datei lädt beim nächsten Öffnen als normale Textdatei. |
 
 ## Verworfene Varianten
