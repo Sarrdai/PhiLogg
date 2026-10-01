@@ -2196,6 +2196,8 @@
      a subtle tint, updated in place. */
   .itv-line.hit{background:color-mix(in srgb, var(--accent) 9%, transparent);}
   .itv-line.hit::before{color:var(--accent);}
+  .itv-line.find-cur{background:var(--accent-soft);}
+  .itv-line.find-cur mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
   .itv-line.flash{background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent);}
   .itv-fold-toggle{
     position:absolute; left:var(--text-num-w); top:0; width:var(--text-fold-w); text-align:center;
@@ -24966,6 +24968,7 @@ const editorView = {
   visible: null,        // ascending line indices NOT hidden by a collapsed fold; null = every line
   tokenize: escapeHtml, syntax: null,
   hitEls: [], hitKey: null, markedEls: new Set(),
+  findEls: [], findKey: null, findCurEl: null, // the find bar's marks / current line (applyEditorFindMarks)
   flashEl: null, flashTimer: 0,
 };
 function textEditorShown() { return highlightWrap.classList.contains("text-mode"); }
@@ -24982,6 +24985,7 @@ function leaveTextEditor() {
   editorView.rootId = null; editorView.key = null;
   editorView.lineEls = []; editorView.foldEls = []; editorView.visible = null;
   editorView.hitEls = []; editorView.hitKey = null; editorView.markedEls = new Set(); editorView.flashEl = null;
+  editorView.findEls = []; editorView.findKey = null; editorView.findCurEl = null;
   lastHighlightRootId = null; // the log view that follows treats this as a root switch
 }
 function editorMarkupKey(root) {
@@ -25017,6 +25021,7 @@ function ensureEditorMarkup(root) {
   editorView.rootId = root.id; editorView.key = key; editorView.visible = null;
   editorView.tokenize = tokenize; editorView.syntax = syntax;
   editorView.hitEls = []; editorView.hitKey = null; editorView.markedEls = new Set(); editorView.flashEl = null;
+  editorView.findEls = []; editorView.findKey = null; editorView.findCurEl = null;
   return true;
 }
 // Sets a line's message HTML but keeps the fold toggle / "… N lines" marker of
@@ -25036,12 +25041,15 @@ function applyEditorHits(root) {
   const node = state.nodes[state.activeId];
   const matches = node && node.type === "filter" ? contextMatchesAndGaps(node, root) : null;
   const mm = buildMatchMarkContext(textMatchHighlightInRows);
-  const fs = mm.findSpec;
-  const mmKey = mm.active ? mm.nodes.map(x => x.id + "\u0001" + x.value).join("\u0002") + "|" + mm.hlNodes.length + "|" +
-    (fs ? fs.value + "\u0003" + fs.caseSensitive + (fs.regex ? String(fs.regex) : "") : "") : "";
+  // The find bar's marks are wrapped around the text in place by
+  // applyEditorFindMarks (not part of the line markup built here).
+  mm.findSpec = null;
+  mm.active = !!(mm.nodes.length || mm.hlNodes.length);
+  const mmKey = mm.active ? mm.nodes.map(x => x.id + "\u0001" + x.value).join("\u0002") + "|" + mm.hlNodes.length : "";
   const key = state.activeId + "|" + mmKey;
   if (editorView.hitKey && editorView.hitKey.matches === matches && editorView.hitKey.key === key) return;
   editorView.hitKey = { matches, key };
+  editorView.findKey = null; // lines re-rendered below lose their find marks: reapplied by applyEditorFindMarks
   const entries = root.entries, els = editorView.lineEls;
   for (const el of editorView.hitEls) el.classList.remove("hit");
   for (const el of editorView.markedEls) {
@@ -25064,6 +25072,90 @@ function applyEditorHits(root) {
       editorView.markedEls.add(el);
     }
   }
+}
+/* Find bar in the editor (docs/text-files-implementation-plan.md Step 4).
+   The find bar's hits are indices into the file's entries == editor line
+   indices (findState.entries is the editor's own entry list). Marks are added
+   IN PLACE — a <mark class="find-match-mark editor-find-mark"> wrapped around
+   the matched text nodes, never a line re-render — and removed by unwrapping
+   those marks and normalising, so the line's own nodes (and a text selection
+   in them) survive opening/closing the bar. Only lines with a hit are touched. */
+function editorFindValid(root) {
+  return !!activeFindSpec() && findState.done && !!findState.entries &&
+    (findState.entries === currentHighlightViewEntries || findState.entries === root.entries);
+}
+function unwrapEditorFindMarks(el) {
+  const marks = el.querySelectorAll("mark.editor-find-mark");
+  for (const m of marks) {
+    const p = m.parentNode;
+    while (m.firstChild) p.insertBefore(m.firstChild, m);
+    p.removeChild(m);
+    p.normalize();
+  }
+}
+// Wraps [start,end) character ranges of the line's MESSAGE text (the fold
+// toggle and the "… N lines" marker are not part of it).
+function wrapEditorLineRanges(el, ranges) {
+  if (!ranges.length) return;
+  const segs = [];
+  let pos = 0;
+  const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (n.parentNode.closest(".itv-fold-toggle, .itv-fold-ellipsis")) continue;
+    segs.push({ n, s: pos, e: pos + n.length });
+    pos += n.length;
+  }
+  for (let ri = ranges.length - 1; ri >= 0; ri--) {
+    const r0 = ranges[ri][0], r1 = ranges[ri][1];
+    for (let si = segs.length - 1; si >= 0; si--) {
+      const seg = segs[si];
+      if (seg.e <= r0 || seg.s >= r1) continue;
+      const a = Math.max(r0, seg.s) - seg.s, b = Math.min(r1, seg.e) - seg.s;
+      let node = seg.n;
+      if (b < node.length) node.splitText(b);
+      if (a > 0) node = node.splitText(a);
+      const mark = document.createElement("mark");
+      mark.className = "find-match-mark editor-find-mark";
+      node.parentNode.insertBefore(mark, node);
+      mark.appendChild(node);
+    }
+  }
+}
+function applyEditorFindMarks() {
+  const root = textEditorShown() ? textRootNode(getRootFileId(state.activeId)) : null;
+  if (!root) return;
+  // Only while the Context view is on screen (the editor stays in the DOM, hidden,
+  // behind Filtered): marking half a million hidden lines would be wasted work.
+  const onScreen = fhSplit.style.display !== "none" && (fhLayout === "stacked" || fhActiveTab === "highlight");
+  const on = onScreen && editorFindValid(root);
+  const key = on ? String(findState.gen) : "";
+  if (editorView.findKey === key) { updateEditorFindCurrent(); return; }
+  editorView.findKey = key;
+  for (const el of editorView.findEls) unwrapEditorFindMarks(el);
+  editorView.findEls = [];
+  if (on) {
+    const entries = root.entries, spec = findState.spec;
+    for (const idx of findState.hits) {
+      const el = editorView.lineEls[idx], e = entries[idx];
+      if (!el || !e) continue;
+      wrapEditorLineRanges(el, findMatchRanges(e.message, spec));
+      editorView.findEls.push(el);
+    }
+  }
+  updateEditorFindCurrent();
+}
+// The line of the hit the bar last stepped to gets .find-cur.
+function updateEditorFindCurrent() {
+  const root = textEditorShown() ? textRootNode(getRootFileId(state.activeId)) : null;
+  let el = null;
+  if (root && editorFindValid(root) && findState.cur >= 0) {
+    const idx = findState.hits[findState.cur];
+    el = idx === undefined ? null : editorView.lineEls[idx] || null;
+  }
+  if (editorView.findCurEl === el) return;
+  if (editorView.findCurEl) editorView.findCurEl.classList.remove("find-cur");
+  if (el) el.classList.add("find-cur");
+  editorView.findCurEl = el;
 }
 // Recomputes which lines a collapsed fold hides.
 function recomputeEditorVisible() {
@@ -25201,6 +25293,7 @@ function renderTextEditorView(root, colorMapIsFresh) {
   renderTextHeaderBar(highlightHeaderEl.querySelector(".text-header-bar"), root);
   const rebuilt = ensureEditorMarkup(root);
   applyEditorHits(root);
+  applyEditorFindMarks();
   syncEditorHeaderWidth();
   updateContextToolbar();
 
@@ -34389,6 +34482,7 @@ function refreshFindMarks() {
   if (!state.rootIds.length || fhSplit.style.display === "none") return;
   if (tableWrap.style.display !== "none") renderVisibleRows();
   renderHighlightVisibleRows();
+  if (textEditorShown()) applyEditorFindMarks();
   updateDetailPanel();
 }
 
@@ -34617,6 +34711,7 @@ function startFindScan() {
 }
 
 function onFindScanDone() {
+  if (textEditorShown()) applyEditorFindMarks(); // the whole scan is done: mark every hit line in the editor
   const delta = findState.pendingDelta;
   findState.pendingDelta = 0;
   if (findState.jumpFirst) {
@@ -34653,6 +34748,7 @@ function findRefresh() {
   // share the file's own entries array, so the hits stay valid — only which
   // view a step selects in changes.
   if (view) findState.kind = view.kind;
+  if (textEditorShown()) applyEditorFindMarks();
   updateFindCounter();
 }
 
@@ -34670,6 +34766,10 @@ function findAnchor(entries) {
   if (state.selectedId) {
     const idx = entries.findIndex(e => e.id === state.selectedId);
     if (idx !== -1) return { idx, fromSelection: true };
+  }
+  if (findState.kind === "highlight" && textEditorShown()) {
+    const a = captureEditorAnchor(); // the editor has its own line geometry
+    return { idx: a ? Math.max(0, Math.min(entries.length - 1, a.idx)) : 0, fromSelection: false };
   }
   const isHl = findState.kind === "highlight";
   const offsets = isHl ? highlightRowOffsets : (needsRowOffsets() ? tableRowOffsets : null);
@@ -34752,6 +34852,7 @@ function updateFindCounter() {
   }
   findCountEl.textContent = text;
   findCountEl.className = cls;
+  if (textEditorShown()) updateEditorFindCurrent();
   const xTitle = findXCounterTitle();
   if (xTitle) findCountEl.title = xTitle; else findCountEl.removeAttribute("title");
   const canStep = !!(findState.test && view && (!findState.done || hits.length));
