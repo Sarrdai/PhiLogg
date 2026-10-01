@@ -226,6 +226,26 @@ Errors (network/CORS failure, non-2xx HTTP status) show a toast (`showCopyToast`
 **Test coverage**: `tests/philogg.regression.test.js` Group 66 — successful load (name derived from the URL, text parsed into entries), an HTTP error status, and a rejected fetch (network/CORS), each via a fake `window.fetch` (jsdom ships none). The `file:` protocol guard itself has no jsdom coverage — jsdom treats every `file:` URL as an opaque origin and throws on the app's own boot-time `localStorage` access before `loadFromUrlParam` ever runs, for any URL shape (see `tests/README.md`'s "Known gaps") — verified instead with a real Chromium session (Playwright) against a local static server: a same-origin `?url=` load rendering the file, and an unreachable URL producing the expected error toast with zero tree rows.
 
 
+## Session deep link (`?session=`) and `?open=format`
+
+`philogg.html?session=<url>` opens a whole session file (the same `philogg-session-export` JSON as "Export session…") from a URL: files, filter trees, bookmarks, notes and settings. It is the entry point the planned homepage's tour and clickable screenshots use. `loadSessionAndOpenFromParams()` runs once the boot restore (`bootRestore`) has settled; `loadSessionFromUrl` fetches the file (same error toasts as `?url=`: file:// page, network/CORS, HTTP status, plus invalid JSON / not a session file / newer version) and calls `runSessionImport(data, { fresh: true, baseUrl })`.
+
+- **Fresh load, no matching**: each file record with a `url` or an embedded `text` is loaded as a new file (`loadSessionRecordFresh`). A record with neither still goes through tiers 1–2 against the open files and is otherwise skipped; there is never a tier-3 dialog. Failed records count as skipped in the summary toast (`Session: N files loaded, K skipped`).
+- **Reload**: root files that are byte-identical (tier-1 hash) to a file the link just loaded are removed (`removeDuplicatesOfFreshFiles`), so reloading a tour link (whose files the session cache restored first) shows them once.
+- `?open=format` opens the "Add log format" dialog (`openFormatEditDialog(null)`), after the session load when `?session=` is also given. Used by the homepage's "set up your format" link.
+
+Optional session-file fields (no version bump; the app's own export writes none of them):
+
+| Field | Where | Meaning |
+| --- | --- | --- |
+| `url` | file record | Where to fetch the log, resolved against the session file's own URL (`new URL(rec.url, sessionUrl)`), so a session next to its logs works with relative paths. gzip is decompressed; the node keeps it as `sourceUrl`. |
+| `logFormat` | file record | A log format in `.logformat.json` shape (validated by `normalizeLogFormatExport`). `ensureSessionLogFormat` reuses a non-meta format with the same name and identical exported fields, otherwise adds it as a new persisted format (silently, no filename rule); the file is pinned to it. Also honoured by the tier-3 "Load the embedded log" choice. |
+| `banner` | top level | Text of the tour banner (see `docs/ui-and-views.md` → "Tour banner"). |
+
+The log simulator's `-f tour` output (`tools/log-sim/README.md`) is the worked example of such a session file.
+
+**Test coverage**: Group 352 (relative/absolute urls, settings/notes/bookmarks/active node, banner, `logFormat` reuse vs. add, embedded text, matching without url/text, reload duplicates, error toasts, `?open=format` alone and after a session); Group 353d loads the simulator's tour session end to end.
+
 ## Folder watch + lazy loading
 
 FEATURE_BACKLOG.md item, built in two rounds this session (2026-08-16): the initial build, then a person-reported follow-up in the same session covering four refinements — a unified "Open…" menu, files rendered *inside* the folder listing instead of moved out below it, a browser-capability gate, and session-cache persistence. All four are folded into the description below rather than kept as a separate "what changed" appendix.
