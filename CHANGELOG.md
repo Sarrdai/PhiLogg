@@ -2,6 +2,12 @@
 
 Chronological, newest-first. Moved here from PROJECT.md's old "Status / changelog" section; see `PROJECT.md` for current-state architecture and `docs/*.md` for current-state feature descriptions.
 
+- **feat: product homepage on GitHub Pages — landing page, hosted app, tour, live downloads (2026-10-01, person-requested)**
+  - **`site/index.html`**: one self-contained static page (inline CSS/JS, system fonts, light/dark): hero with deep links into the hosted app (`app/`, demo log, tour, tour + Add-log-format dialog), a hero terminal replaying the first header lines of the simulator's `welcome.log`, facts, four feature cards with screenshots, three ways to run it, a **Download** section reading the GitHub Releases API in the browser (latest stable, plus a newer beta labelled Beta; assets grouped by variant; fallback link on any failure) and a footer with the license. All links relative, so it works under a project path and at a custom domain root.
+  - **`scripts/build-site.js`**: `--out <dir>` builds site + screenshots + `app/index.html` (comment-stripped `philogg.html`) + `app/LICENSE.md` + `app/tour/` (simulator `-f tour`) + `.nojekyll`; `{ buildSite }` for tests.
+  - **`.github/workflows/pages.yml`** ("Deploy Homepage", `workflow_dispatch` with `ref` + `workflow_call`) stamps the version, builds and deploys to Pages; `release-please.yml` got a `pages` job that redeploys from the tag after every stable release. One-time setup in `docs/homepage.md`.
+  - **Tests**: new GROUP 354 (build output, every relative link resolves, Download section and hero terminal in jsdom with stubbed fetch). Docs: new `docs/homepage.md`, PROJECT.md, README.
+
 - **test: rules and a report against slow or load-dependent tests (2026-10-01, person-requested)**
   - `run.js` lists the ten slowest groups above the total after every sharded run (wall time in the shard that ran them; children report it in a `##GROUPS` line next to `##SHARD`), so a group that got seconds slower stands out on the next run. `GROUP=…` combined with `SHARDS=…` now splits just those groups across shards instead of forcing one process.
   - `tests/README.md` → "Extending this suite" gets the timing rules as their own step (wait with `waitFor`, check "nothing happened" right after the step, no wall-clock-dependent paths, call the poll ticks yourself), plus a look at the slowest groups and one `SHARDS=8` stress run before the final push. The `implementer` agent and the `orchestrate` skill's verification point to the same rules.
