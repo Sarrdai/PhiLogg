@@ -6983,6 +6983,26 @@ const PHILOGG_VERSION = "0.1.0"; // x-release-please-version
 // touch source control.
 const PHILOGG_BUILD = "dev";
 
+/* ===================== Generic helpers ===================== */
+// Math.min(...arr) / Math.max(...arr) / push(...arr) pass every element as a
+// call argument, and engines cap that (V8 throws "Maximum call stack size
+// exceeded" above ~120k elements, JavaScriptCore — the Tauri WebView on macOS
+// and Linux — already above ~65k). Anything sized by the data (plot points,
+// selected rows, table cells) goes through these loops instead. Folding with
+// the two-argument Math.min/Math.max keeps the spread's exact semantics:
+// Infinity / -Infinity for an empty array, NaN as soon as one element is NaN,
+// the same ToNumber coercion and the same -0 handling.
+function arrayMin(arr) {
+  let m = Infinity;
+  for (let i = 0; i < arr.length; i++) m = Math.min(m, arr[i]);
+  return m;
+}
+function arrayMax(arr) {
+  let m = -Infinity;
+  for (let i = 0; i < arr.length; i++) m = Math.max(m, arr[i]);
+  return m;
+}
+
 /* ===================== Icons ===================== */
 // Icon sprite: one hidden <svg> at the top of <body> holds <symbol id="i-NAME">
 // drawings on a 16x16 grid; icon(name) references one via <use>. Every ICON_*
@@ -19306,7 +19326,7 @@ function applyArrayViews(node) {
           if (agg === "len") v = String(a.length);
           else if (nums.length) {
             const sum = nums.reduce((t, x) => t + x, 0);
-            v = String(agg === "min" ? Math.min(...nums) : agg === "max" ? Math.max(...nums) : agg === "sum" ? sum : sum / nums.length);
+            v = String(agg === "min" ? arrayMin(nums) : agg === "max" ? arrayMax(nums) : agg === "sum" ? sum : sum / nums.length);
           }
           r.values[ci] = v;
         });
@@ -19444,7 +19464,8 @@ function rangeCells(r0, c0, r1, c1) {
 function columnsRangeCells(c0, c1) {
   const cMin = Math.min(c0, c1), cMax = Math.max(c0, c1);
   const cells = [];
-  extractColumns.forEach(c => { if (c.colIndex >= cMin && c.colIndex <= cMax) cells.push(...columnCells(c.colIndex)); });
+  // A whole column is one cell per row: push in a loop, never push(...array).
+  extractColumns.forEach(c => { if (c.colIndex >= cMin && c.colIndex <= cMax) for (const cell of columnCells(c.colIndex)) cells.push(cell); });
   return cells;
 }
 function rowsRangeCells(r0, r1) {
@@ -21874,7 +21895,7 @@ function renderPlotChart() {
   if (plotConfig.type !== "scatter" && plotConfig.normalize && series.length > 1) {
     series = series.map(s => {
       const ys = s.pts.map(p => p.y);
-      const lo = Math.min(...ys), hi = Math.max(...ys);
+      const lo = arrayMin(ys), hi = arrayMax(ys);
       const span = hi - lo || 1;
       return { ...s, pts: s.pts.map(p => ({ ...p, y: (p.y - lo) / span, yOrig: p.y })) };
     });
@@ -21904,9 +21925,9 @@ function renderPlotChart() {
   // exact same way as the other two chart types (see xPix below, and the
   // bar-rendering block, which now goes through it instead of hand-rolling
   // row placement from plotW/rowCount directly).
-  const xRawLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : (isBarChart ? 0 : Math.min(...allX));
-  const xRawHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : (isBarChart ? rowCount : Math.max(...allX));
-  const yDataLo = Math.min(...allY), yDataHi = Math.max(...allY);
+  const xRawLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : (isBarChart ? 0 : arrayMin(allX));
+  const xRawHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : (isBarChart ? rowCount : arrayMax(allX));
+  const yDataLo = arrayMin(allY), yDataHi = arrayMax(allY);
   // Bar charts always include the zero baseline (so bar height is meaningful); line/scatter fit the data tightly.
   const yRawLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : (isBarChart ? Math.min(0, yDataLo) : yDataLo);
   const yRawHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : (isBarChart ? Math.max(0, yDataHi) : yDataHi);
@@ -22080,8 +22101,8 @@ function renderPlotChart() {
     scatterColorMin = 0; scatterColorMax = 1;
     if (hasColorScale) {
       const vals = s.pts.map(p => p.colorVal).filter(Number.isFinite);
-      scatterColorMin = vals.length ? Math.min(...vals) : 0;
-      scatterColorMax = vals.length ? Math.max(...vals) : 1;
+      scatterColorMin = vals.length ? arrayMin(vals) : 0;
+      scatterColorMax = vals.length ? arrayMax(vals) : 1;
     }
     s.pts.forEach(p => {
       const px = xPix(p.x), py = yPix(p.y);
@@ -22240,12 +22261,12 @@ function renderPlot3D() {
   // manual range still renders, just off-center/off-scale, since 3D has no
   // clip-path the way the 2D SVG chart does).
   const xs = pts.map(p => p.x), ys = pts.map(p => p.y), zs = pts.map(p => p.z);
-  const xLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : Math.min(...xs);
-  const xHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : Math.max(...xs);
-  const yLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : Math.min(...ys);
-  const yHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : Math.max(...ys);
-  const zLo = plotConfig.zMin !== "" ? parseFloat(plotConfig.zMin) : Math.min(...zs);
-  const zHi = plotConfig.zMax !== "" ? parseFloat(plotConfig.zMax) : Math.max(...zs);
+  const xLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : arrayMin(xs);
+  const xHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : arrayMax(xs);
+  const yLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : arrayMin(ys);
+  const yHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : arrayMax(ys);
+  const zLo = plotConfig.zMin !== "" ? parseFloat(plotConfig.zMin) : arrayMin(zs);
+  const zHi = plotConfig.zMax !== "" ? parseFloat(plotConfig.zMax) : arrayMax(zs);
   const xMid = (xLo + xHi) / 2, yMid = (yLo + yHi) / 2, zMid = (zLo + zHi) / 2;
   const xRange = (xHi - xLo) || 1, yRange = (yHi - yLo) || 1, zRange = (zHi - zLo) || 1;
 
@@ -22304,7 +22325,7 @@ function renderPlot3D() {
   projected.sort((a, b) => a.depth - b.depth);
 
   const colorVals = hasColorScale ? pts.filter(q => q.colorVal != null).map(q => q.colorVal) : [];
-  const colorLo = colorVals.length ? Math.min(...colorVals) : 0, colorHi = colorVals.length ? Math.max(...colorVals) : 1;
+  const colorLo = colorVals.length ? arrayMin(colorVals) : 0, colorHi = colorVals.length ? arrayMax(colorVals) : 1;
   const accentColor = styles.getPropertyValue("--accent-strong").trim() || "#4a90d9";
 
   const hoverPts = [];
@@ -27878,7 +27899,7 @@ function markRawHtml(mm, text) {
   if (!mm.active) return escapeHtml(text);
   const wholeLine = n => !(n.columns && n.columns.length);
   const ranges = [];
-  mm.nodes.forEach((n, i) => { if (mm.specs[i] && wholeLine(n)) ranges.push(...findMatchRanges(text, mm.specs[i])); });
+  mm.nodes.forEach((n, i) => { if (mm.specs[i] && wholeLine(n)) for (const r of findMatchRanges(text, mm.specs[i])) ranges.push(r); });
   const hlRanges = [];
   mm.hlNodes.forEach((n, i) => {
     if (mm.hlSpecs[i] && wholeLine(n)) for (const [s, e] of findMatchRanges(text, mm.hlSpecs[i])) hlRanges.push({ start: s, end: e, color: n.highlightColor });
@@ -30317,7 +30338,8 @@ function buildFoldTree(lineCount, ranges) {
         const range = sorted[ri]; ri++;
         const foldNode = { type: "fold", start: range.startLine, end: range.endLine, children: [] };
         foldNode.children.push({ type: "line", index: li }); li++;
-        foldNode.children.push(...parseUntil(range.endLine));
+        // Loop, not push(...): a flat JSON array / XML can have 100k+ siblings.
+        for (const child of parseUntil(range.endLine)) foldNode.children.push(child);
         if (li <= range.endLine) { foldNode.children.push({ type: "line", index: li }); li++; }
         nodes.push(foldNode);
       } else {
@@ -35403,8 +35425,8 @@ el("#ctxTimeRangeFromSelection").addEventListener("click", () => {
   const ids = [...state.logMultiSelect];
   const tsList = ids.map(id => entryIndex[id]).filter(Boolean).map(e => e.ts);
   if (tsList.length >= 2 && state.activeId) {
-    const from = Math.min(...tsList);
-    const to = Math.max(...tsList);
+    const from = arrayMin(tsList);
+    const to = arrayMax(tsList);
     createFilterNode(state.activeId, "timerange", { from, to });
     revealFilteredView();
   }
@@ -36232,7 +36254,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter after."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: Math.min(...entries.map(e => e.ts)), to: null });
+        createFilterNode(state.activeId, "timerange", { from: arrayMin(entries.map(e => e.ts)), to: null });
         revealFilteredView(); render();
       }
       break;
@@ -36241,7 +36263,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter before."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: null, to: Math.max(...entries.map(e => e.ts)) });
+        createFilterNode(state.activeId, "timerange", { from: null, to: arrayMax(entries.map(e => e.ts)) });
         revealFilteredView(); render();
       }
       break;
@@ -36267,7 +36289,7 @@ function handleRowActionClick(action, anchorBtn) {
         break;
       }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: Math.min(...tsList), to: Math.max(...tsList) });
+        createFilterNode(state.activeId, "timerange", { from: arrayMin(tsList), to: arrayMax(tsList) });
         revealFilteredView();
         render();
       }
