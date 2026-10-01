@@ -35,7 +35,9 @@ suite — this is the difference between a ~2s and a multi-minute edit/run loop:
 ```
 GROUP=58 npm test          # one group
 GROUP=58,127 npm test      # several
+GROUP=58,127 SHARDS=2 npm test   # several, split across shards like a full run
 SHARDS=1 npm test          # one process, no sharding (same as npm run test:single)
+SHARDS=8 npm test          # more shards than cores: the load that exposes flaky groups
 JSDOM_SELECTORS=verify npm test   # check the selector fast path against jsdom on every query
 JSDOM_SELECTORS=1 npm test        # fast path off: jsdom's own selector engine everywhere
 ```
@@ -48,7 +50,9 @@ PHILOGG_HTML=/path/to/philogg.html node philogg.regression.test.js
 
 `npm test` goes through `run.js`, which spawns one child per shard and sums
 their results back into the single `N passed, M failed` line the suite has
-always reported. **Always check that number** (8333 at the time of writing):
+always reported. Above it, a sharded run lists the ten slowest groups (wall
+time in the shard that ran them), so a group that got seconds slower shows
+up on the next run. **Always check that number** (8689 at the time of writing):
 a group that silently stopped running shows up as a lower count, not as a
 failure.
 
@@ -121,6 +125,14 @@ rename lets them through). Left running they fired in whichever group
 outlived 1.5s, which only happened under full-suite load, and re-read files
 or rescanned folders in the middle of assertions. A group that needs a tick
 calls `w.tailTick()` / `w.folderScanTick()` itself at the moment it asserts on.
+
+**Work a test leaves running doesn't end the shard.** A fire-and-forget
+render the test never awaited can still be waiting on fake-indexeddb, which
+lives outside the window, when `withApp` closes it; it then resumes, finds
+`document` gone and rejects. Unhandled, that killed the whole shard (no
+result line, every group in it lost). The suite's `unhandledRejection`
+handler drops a rejection whose error comes from a window `withApp` already
+closed (GROUP 346f); any other unhandled rejection still crashes the shard.
 
 **Assertions must not depend on how fast the machine is.** Besides the
 proxy-condition rule below, two patterns were flaky under load and must not
@@ -206,10 +218,28 @@ throwaway test from scratch. When a session adds a feature:
    that isn't the page itself may skip `withApp` entirely — GROUP 146
    (`scripts/strip-comments.js`, a plain Node module) is the one such case
    today, and uses a bare gated block instead.
-2. Run `npm test` and fix until green before delivering the feature.
-3. Add one line to the "TEST PROVENANCE" comment block at the end of the
+2. Make it independent of machine speed. Every rule here comes from a group
+   that was green alone and red under full-suite load (see "How it works"):
+   - Wait for async work with `waitFor(pred)` on the thing you are about to
+     assert (or `T.bootRestore` after a reload), never a fixed `sleep`.
+   - Assert that something did *not* happen right after the synchronous step
+     that could have caused it, never after a sleep an app timer (dwell,
+     debounce, poll) can outlast.
+   - Never let wall-clock time decide what the app does in the test: stub or
+     hide `performance.now`/`Date.now` when a code path is cost- or
+     time-based (GROUP 266b).
+   - Need a tail or folder tick? Call `w.tailTick()` / `w.folderScanTick()`
+     yourself; the background polls never run in a test window.
+3. Run `npm test` and fix until green before delivering the feature. Look at
+   the "Slowest groups" list above the total too: a new group in it needs a
+   reason (a big generated log, say), not just an unlucky selector or a
+   sleep. GROUP 346 sits at the top on purpose: it runs every checked query
+   through jsdom's own slow selector engine as well, and a nested `run.js`. Before the final push run `SHARDS=8 npm test` once: more shards
+   than cores is the load that exposes the rules above being broken, and a
+   failure there is a bug in the test, not a flake to re-run.
+4. Add one line to the "TEST PROVENANCE" comment block at the end of the
    file, noting the originating session/date and a one-line summary.
-4. If a session **removes or replaces** behavior an existing group tests
+5. If a session **removes or replaces** behavior an existing group tests
    (e.g. superseding a UI element, changing a function's semantics), update
    or delete that group's assertions in the same session — don't leave a
    green check that's silently testing dead code. Move a short note to the

@@ -124,6 +124,8 @@ function assert(cond, label) {
 //                          behind the fastest.
 //   GROUP=58,127           run only those groups — the dev loop's "re-run just
 //                          the thing I broke", ~1-2s instead of the full suite.
+//                          Combined with the two above it narrows what they
+//                          split (GROUP 346e runs two groups across shards).
 //
 // The unit is the GROUP, never the individual withApp: multi-window groups
 // (GROUP 20 and every other "reload" group) hand one IDBFactory and closure
@@ -138,20 +140,32 @@ const SHARD_CLAIMS = process.env.SHARD_CLAIMS || null;
 const ONLY = process.env.GROUP ? new Set(process.env.GROUP.split(",").map(g => g.trim())) : null;
 let currentGroup = null;
 const claimed = new Map(); // group -> this child's claim decision, made once
-function group(n) { currentGroup = String(n); }
+// Wall time from each group() marker to the next one, for the groups this
+// child ran, reported to run.js (`##GROUPS`), which lists the slowest groups
+// after every sharded run.
+const groupMs = {};
+const ranGroups = new Set();
+let groupStartedAt = 0;
+function closeGroupTiming() { if (ranGroups.has(currentGroup)) groupMs[currentGroup] = (groupMs[currentGroup] || 0) + Date.now() - groupStartedAt; }
+function group(n) { closeGroupTiming(); currentGroup = String(n); groupStartedAt = Date.now(); }
 function groupSelected() {
   if (currentGroup === null) return true; // not inside any group yet
-  if (ONLY) return ONLY.has(currentGroup);
+  const mine = isMine(currentGroup);
+  if (mine) ranGroups.add(currentGroup);
+  return mine;
+}
+function isMine(g) {
+  if (ONLY && !ONLY.has(g)) return false;
   if (SHARD_CLAIMS) {
-    if (!claimed.has(currentGroup)) {
+    if (!claimed.has(g)) {
       let mine = true;
-      try { fs.mkdirSync(path.join(SHARD_CLAIMS, currentGroup)); }
+      try { fs.mkdirSync(path.join(SHARD_CLAIMS, g)); }
       catch (err) { if (err.code !== "EEXIST") throw err; mine = false; }
-      claimed.set(currentGroup, mine);
+      claimed.set(g, mine);
     }
-    return claimed.get(currentGroup);
+    return claimed.get(g);
   }
-  if (SHARD) return Number(currentGroup) % SHARD[1] === SHARD[0];
+  if (SHARD) return Number(g) % SHARD[1] === SHARD[0];
   return true;
 }
 
@@ -199,6 +213,23 @@ async function waitFor(pred, { timeout = 3000, step = 5 } = {}) {
   while (!(await pred()) && Date.now() < deadline) await sleep(step);
   return await pred();
 }
+
+// App work a test started but didn't await (a click handler's
+// fire-and-forget render waiting on IndexedDB, say) can still be running when
+// withApp closes the window. fake-indexeddb lives outside the window, so that
+// work resumes afterwards, finds `document` gone and rejects — which used to
+// end the whole shard under load (no result line, every group in it lost).
+// Its test is over by then and can't see it, so a rejection whose error comes
+// from a window withApp already closed is dropped (counted for GROUP 346f).
+// Anything else still crashes the shard, loudly, as before.
+const closedWindowErrors = new WeakSet(); // closed windows' Error.prototype
+let lateRejectionsDropped = 0;
+process.on("unhandledRejection", err => {
+  for (let o = err; o && typeof o === "object"; o = Object.getPrototypeOf(o)) {
+    if (closedWindowErrors.has(o)) { lateRejectionsDropped++; return; }
+  }
+  throw err;
+});
 
 async function withApp(run, opts = {}) {
   if (!groupSelected()) return; // this group belongs to another shard
@@ -424,6 +455,7 @@ async function withApp(run, opts = {}) {
     // already returned, only delays teardown and never affects any
     // assertion.
     await window.__t.bootRestore.catch(() => {});
+    closedWindowErrors.add(window.Error.prototype); // see unhandledRejection above
     window.close();
   }
 }
@@ -499,7 +531,12 @@ await withApp(async (w, d, T) => {
   const selectors = ['[data-row-action="filterForMessage"], [data-row-action="extractMessage"]', "[data-row-action], [data-row-actions]", "[data-nope]", '[data-row-action="nope"]'];
   for (const [name, values] of pairs) {
     selectors.push("[" + name + "]");
-    for (const v of [...values].slice(0, 4)) if (!/["'\\]/.test(v)) selectors.push("[" + name + '="' + v + '"]', "[ " + name + " = '" + v + "' ]");
+    // Two values per name reach the index's value lookup; the other quoting
+    // only needs one (each extra selector costs jsdom's engine ~10 queries here).
+    [...values].filter(v => !/["'\\]/.test(v)).slice(0, 2).forEach((v, i) => {
+      selectors.push("[" + name + '="' + v + '"]');
+      if (i === 0) selectors.push("[ " + name + " = '" + v + "' ]");
+    });
   }
   const frag = d.createDocumentFragment();
   frag.appendChild(d.querySelector("#tree").cloneNode(true));
@@ -593,6 +630,41 @@ await withApp(async (w, d, T) => {
     "both background polls were caught by name (a rename would silently let them run again): " + w.__pausedBackgroundPolls);
   assert(typeof w.tailTick === "function" && typeof w.folderScanTick === "function", "...and stay callable by the groups that need a tick");
 });
+if (groupSelected()) {
+  section("346f. app work still running when its window closes doesn't end the shard");
+  let release;
+  const gate = new Promise(r => { release = r; }); // host-side, like fake-indexeddb's requests
+  await withApp(async (w, d) => {
+    w.__lateGate = () => gate;
+    const s = d.createElement("script");
+    s.textContent = "(async () => { await __lateGate(); document.createDocumentFragment(); })();";
+    d.body.appendChild(s);
+  });
+  const before = lateRejectionsDropped;
+  release();
+  await sleep(20);
+  assert(lateRejectionsDropped === before + 1, "the closed window's rejection was dropped instead of crashing this process");
+}
+if (groupSelected()) {
+  section("346e. run.js: groups split across shards run exactly once, the slowest are listed above the total");
+  const env = { ...process.env, GROUP: "1,2", SHARDS: "2" };
+  delete env.SHARD; delete env.SHARD_CLAIMS; // this shard's own, not the nested run's
+  const run = await new Promise(resolve => {
+    require("child_process").execFile(process.execPath, [path.join(__dirname, "run.js")], { env, maxBuffer: 16 * 2 ** 20 },
+      (err, stdout) => resolve({ code: err ? err.code : 0, out: stdout }));
+  });
+  const lines = run.out.split("\n");
+  const count = title => lines.filter(l => l === "== " + title + " ==").length;
+  const total = lines.findIndex(l => / passed, 0 failed across 2 shards in /.test(l));
+  const head = lines.indexOf("Slowest groups:");
+  const listed = head < 0 ? [] : lines.slice(head + 1, total).map(l => /^ {2}GROUP (\S+) +(\d+\.\d)s$/.exec(l));
+  assert(run.code === 0 && total > 0, "the nested sharded run of GROUP 1,2 passes: " + lines.slice(-3).join(" | "));
+  assert(count("1. Parsing & basic load") === 1 && count("2. Filter creation basics + live match + token chips") === 1,
+    "each group ran in exactly one of the two shards");
+  assert(head > 0 && head < total && listed.length === 2 && listed.every(Boolean) && listed.map(m => m[1]).sort().join() === "1,2",
+    "the two groups that ran, and only those, are listed above the total: " + lines.slice(head, total + 1).join(" | "));
+  assert(!/##SHARD |##GROUPS /.test(run.out), "the machine-readable lines stay out of the output");
+}
 
 /* ============================================================
    GROUP 1 — Parsing & basic load
@@ -21689,7 +21761,8 @@ await withApp(async (w, d, T) => {
   const pillAfterEmoji = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
   assert(pillAfterEmoji.querySelector(".row-action-hit").classList.contains("filter-library-icon-emoji"),
     "the pill renders an emoji icon via plain text, tagged with .filter-library-icon-emoji, not SVG markup");
-  assert(!d.querySelector("#filterLibraryList .filter-library-row-icon").innerHTML.includes("<svg"),
+  // The dialog row re-renders on its own IndexedDB read, after the pill's.
+  assert(await waitFor(() => !d.querySelector("#filterLibraryList .filter-library-row-icon").innerHTML.includes("<svg")),
     "the row's leading icon button also switches to plain emoji text, dropping the SVG markup");
 
   // A legacy bare-name icon (pre-existing records, no "svg:"/"emoji:" prefix)
@@ -34471,7 +34544,11 @@ await withApp(async (w, d, T) => {
   const sel = cd.getElementById("sessionSelect");
   sel.value = a;
   sel.dispatchEvent(new cw.Event("change"));
-  assert(await waitFor(() => T.llm.activeSessionId === a && cd.querySelectorAll(".round").length === 1), "switching shows the other session's rounds");
+  // Both sessions have one round, so the count alone also matches the view
+  // still showing b; wait for a's own round and its buttons before clicking one.
+  assert(await waitFor(() => T.llm.activeSessionId === a && cd.querySelectorAll(".round").length === 1 && cd.querySelector(".round .msg-user").textContent === "Sensoren"),
+    "switching shows the other session's rounds");
+  assert(await waitFor(() => cd.querySelectorAll("button.answer-opt").length === 3), "…with its question's answer buttons");
   cd.querySelectorAll("button.answer-opt")[0].click();
   assert(await waitFor(() => T.llm.sessions.find(s => s.id === a).rounds.length === 2), "an answer button sends its text as the next message");
   const last = fake.requests[fake.requests.length - 1];
@@ -41104,9 +41181,9 @@ if (groupSelected()) {
     await w.loadSessionFromUrl(SESSION_URL);
     assert(!isVisible(d.querySelector("#tourBanner"), w), "a session without banner clears it");
     w.setSessionBanner("x");
-    w.importSessionJson(JSON.stringify(makeSession()));
-    await sleep(100);
-    assert(!isVisible(d.querySelector("#tourBanner"), w), "a plain session import without a banner clears it too");
+    assert(isVisible(d.querySelector("#tourBanner"), w), "sanity: the banner is showing before the import");
+    w.importSessionJson(JSON.stringify(makeSession())); // fire-and-forget: wait for its effect, not a fixed time
+    assert(await waitFor(() => !isVisible(d.querySelector("#tourBanner"), w)), "a plain session import without a banner clears it too");
   }, { indexedDB: new IDBFactory() });
 
   await withApp(async (w, d, T) => {
@@ -41392,8 +41469,10 @@ if (groupSelected()) {
 
 console.log("\n" + "=".repeat(60));
 console.log(passed + " passed, " + failed + " failed" + (failed ? " (" + failures.length + " failures listed above)" : ""));
-// run.js parses this to sum the shards up into one total.
+// run.js parses these to sum the shards up into one total and list the slowest groups.
+closeGroupTiming();
 if (SHARD) console.log("##SHARD " + JSON.stringify({ shard: SHARD[0], passed, failed, failures }));
+if (SHARD) console.log("##GROUPS " + JSON.stringify(groupMs));
 // process.exitCode, NOT process.exit(): under run.js this process writes to a
 // PIPE, where stdout is asynchronous — process.exit() drops whatever is still
 // buffered, which intermittently swallowed the ##SHARD line above and made
@@ -45919,6 +45998,14 @@ process.exitCode = failed ? 1 : 0;
       back, index invalidation on every mutation kind), the stylesheet put back
       in full after the parse, both background polls caught by name. Same
       session: 266b, 332d/e, 334c made load-proof, 343h lost a fixed sleep.
+      346e (2026-10-01, person-requested): run.js lists the slowest groups
+      above the total, and GROUP= with SHARDS= splits just those groups. Same
+      session: 305a waits for session a's own round (the round count alone
+      matched b's stale view under load and crashed its whole shard). 346f:
+      a rejection from a window withApp already closed no longer ends the
+      shard (193b's fire-and-forget library render did, under load); 193b
+      waits for the dialog row's own re-render before asserting on it, 352a
+      for the session import instead of a fixed 100ms.
    Group 345 — 2026-09-30 (person-reported): one tree selection model (the active
       node is always selected; Ctrl+click toggles within it; selected rows look like
       the active one, no frame) + shortcuts scoped to the focused area (tree vs. log
