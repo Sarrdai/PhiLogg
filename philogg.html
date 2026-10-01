@@ -2156,9 +2156,9 @@
      separate control living on the viewer itself. See renderZipEntryRow. */
   #inlineViewerBody{flex:1 1 auto; min-height:0; overflow:auto; position:relative;}
   /* Text editor: the Context view of a plain-text root (.txt/.json/.xml —
-     renderTextEditorView). One inline-block-free tree of block-level
-     .itv-line spans (nested in .itv-fold wrappers for JSON/XML blocks), so
-     native selection and copy are the file's own text: the line number is a
+     renderTextEditorView). Virtualized: a flat run of block-level .itv-line
+     spans (only the lines near the viewport, between #teTop/#teBottom
+     spacers; copy is rebuilt from the line model): the line number is a
      ::before from data-n (generated content, never selectable or copied;
      NOT a CSS counter — a counter skips display:none lines, which would
      renumber everything below a collapsed fold) and the fold arrow is
@@ -2168,8 +2168,9 @@
      both views sits at the same x and height. #textEditor lives inside
      #highlightBody (the scroll container) next to #highlightSpacer; the
      wrap's text-mode class swaps which of the two shows. Word-wrap
-     (state.wrapTextView / body.textview-wrap) is pure CSS: pre-wrap, the line
-     grows in whole --text-row-h steps, the number stays on the first line. */
+     (state.wrapTextView / body.textview-wrap): pre-wrap, the line grows in
+     whole --text-row-h steps, the number stays on the first line; the row
+     heights are estimated from the character count for the scroll math. */
   #textEditor{
     display:none; position:relative; box-sizing:border-box; min-width:100%; width:max-content;
     --rows-pad-left: calc(26px + (var(--color-mark-w) - 3px));
@@ -2180,7 +2181,7 @@
   .textview-wrap #textEditor{width:auto;}
   #highlightWrap.text-mode #textEditor{display:block;}
   #highlightWrap.text-mode #highlightSpacer{display:none;}
-  .itv-fold{display:block;}
+  #teTop, #teBottom, #teRows{display:block;}
   .itv-line{
     display:block; position:relative; box-sizing:border-box; padding-left:var(--text-gutter-w);
     height:var(--text-row-h); line-height:var(--text-row-h); white-space:pre; tab-size:4;
@@ -2197,6 +2198,10 @@
   .itv-line.hit{background:color-mix(in srgb, var(--accent) 9%, transparent);}
   .itv-line.hit::before{color:var(--accent);}
   .itv-line.find-cur{background:var(--accent-soft);}
+  /* Marked text reads in the normal text colour: the JSON/XML token colours
+     (green strings, orange numbers) are unreadable on the mark fill. */
+  .itv-line mark.find-match-mark, .itv-line mark.find-match-mark *,
+  .itv-line mark.text-match-mark, .itv-line mark.text-match-mark *{color:var(--text-primary);}
   .itv-line.find-cur mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
   .itv-line.flash{background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent);}
   .itv-fold-toggle{
@@ -2204,9 +2209,8 @@
     color:var(--text-tertiary); user-select:none; cursor:pointer;
   }
   .itv-fold-toggle:hover{color:var(--text-primary);}
-  .itv-fold.collapsed > :not(:first-child){display:none;}
   .itv-fold-ellipsis{display:none; color:var(--text-tertiary); user-select:none; padding-left:.6em;}
-  .itv-fold.collapsed > .itv-line:first-child .itv-fold-ellipsis{display:inline;}
+  .itv-line.collapsed .itv-fold-ellipsis{display:inline;}
   /* Reuses the same JSON/XML token classes highlightLogMessage's own markup
      already defines colors for elsewhere in the app (see renderHighlightView/
      the message-highlighting section) is a log-line concept, not a generic
@@ -4957,7 +4961,7 @@
             </div>
             <!-- The Context view of a plain-text root: see #textEditor's CSS
                  and renderTextEditorView. -->
-            <div id="textEditor"></div>
+            <div id="textEditor"><div id="teTop"></div><div id="teRows"></div><div id="teBottom"></div></div>
           </div>
           <button type="button" id="tailJumpBtnHighlight" class="tail-jump-btn hidden" title="Jump to latest">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v10M3.5 8L8 12.5 12.5 8"/></svg>
@@ -24949,27 +24953,54 @@ function setHighlightScroll(value) {
    When the active node's ROOT is a plain-text file (.txt/.json/.xml — see
    formatIdForLoad), the Context view is an editor over the node's parsed
    lines instead of log rows: the WHOLE file (no gap strips — folding replaces
-   them), free native selection/copy, line numbers in the same --text-num-w
-   column and fold arrows in the --text-fold-w column the Filtered text rows
-   use, so a line in both views sits at the same x and height. A filter /
-   combined / link node's result lines get a `hit` class (and the filter's
-   text matches are marked, like the Filtered rows mark them).
-   DOM identity is the point of the cache below: the markup is built ONCE per
-   (root, layout, entries) and every other render() updates it in place (hit
-   classes, flash) — folds, a text selection and a native dblclick all
-   survive unrelated renders (CLAUDE.md "DOM identity" gotcha). The scroll
-   container is #highlightBody itself, so the minimap, nav history, tail
-   follow and every scroll listener keep working unchanged; only the row
-   virtualization (renderHighlightVisibleRows) steps aside. Anchors are by
+   them), line numbers in the same --text-num-w column and fold arrows in the
+   --text-fold-w column the Filtered text rows use, so a line in both views
+   sits at the same x and height. A filter / combined / link node's result
+   lines get a `hit` class (and the filter's text matches are marked, like the
+   Filtered rows mark them).
+
+   VIRTUALIZED (docs/text-files-implementation-plan.md Step 5), like the log
+   table: only the lines in/near the viewport are in the DOM (#teRows, between
+   the #teTop/#teBottom spacers), one screen of overscan each side, rendered
+   once per animation frame on scroll. The model is
+     - editorView.entries: the file's entries (line index == entry index),
+     - editorView.folds / foldIdAt / lineParent: the fold tree flattened (JSON/
+       XML only; each fold {start,end,collapsed,parent}),
+     - editorView.vis: the "visible line list" — ascending line indices not
+       hidden by a collapsed fold (null = every line). Rebuilt only when a fold
+       toggles or the markup key changes; rendering just slices it,
+     - editorView.tops: prefix row tops (only with Wrap on; every row is
+       TEXT_ROW_HEIGHT otherwise, like the Filtered text rows).
+   Wrap (state.wrapTextView) estimates a row's visual lines from its character
+   count (monospace, pre-wrap + break-all: textWrapLines — the same estimate
+   the Filtered text rows use), so the scroll math stays exact enough without
+   measuring rows.
+   DOM identity: the model is built ONCE per (root, layout, entries) and every
+   other render() only updates the mounted rows in place (hit classes, marks,
+   flash), the window update keeps rows that stay in range — folds, a text
+   selection and a native dblclick survive unrelated renders and scrolling
+   (CLAUDE.md "DOM identity" gotcha). A row holding a selection endpoint is
+   never unmounted while it scrolls away (it is pinned, absolutely positioned),
+   and `copy` is rebuilt from the line model (editorCopyText), so a selection
+   spanning more lines than are rendered still copies the file's own text.
+   The scroll container is #highlightBody itself, so the minimap, nav history,
+   tail follow and every scroll listener keep working unchanged. Anchors are by
    LINE NUMBER (a plain-text entry's ts) — see captureEditorAnchor. */
 const textEditorEl = el("#textEditor");
+const editorTopEl = el("#teTop"), editorRowsEl = el("#teRows"), editorBottomEl = el("#teBottom");
+const EDITOR_PAD_TOP = 2; // #textEditor's padding-top (CSS), part of every row's scroll position
 const editorView = {
-  rootId: null, key: null, lineEls: [], foldEls: [],
-  visible: null,        // ascending line indices NOT hidden by a collapsed fold; null = every line
-  tokenize: escapeHtml, syntax: null,
-  hitEls: [], hitKey: null, markedEls: new Set(),
-  findEls: [], findKey: null, findCurEl: null, // the find bar's marks / current line (applyEditorFindMarks)
-  flashEl: null, flashTimer: 0,
+  rootId: null, key: null, entries: [], n: 0,
+  syntax: null, tokenize: escapeHtml,
+  folds: [], foldIdAt: null, lineParent: null,
+  vis: null,            // ascending line indices NOT hidden by a collapsed fold; null = every line
+  maxLen: 0,
+  cols: 0, tops: null, geoKey: null, padLeft: 26,
+  mounted: [],          // [{pos, el}] ascending: the rows in the DOM (window rows + pinned ones)
+  winStart: 0, winEnd: 0,
+  hitIds: null, mm: null, hitKey: null,
+  findOn: false, findKey: null, findCurIdx: -1,
+  flashIdx: -1, flashTimer: 0,
 };
 function textEditorShown() { return highlightWrap.classList.contains("text-mode"); }
 // The plain-text file node behind a root id, or null.
@@ -24977,52 +25008,161 @@ function textRootNode(rootId) {
   const r = rootId ? state.nodes[rootId] : null;
   return r && r.type === "file" && isPlainTextFormat(r.formatId) ? r : null;
 }
+function resetEditorModel() {
+  clearTimeout(editorView.flashTimer);
+  editorTopEl.style.height = editorBottomEl.style.height = "0px";
+  editorRowsEl.textContent = "";
+  Object.assign(editorView, {
+    rootId: null, key: null, entries: [], n: 0, folds: [], foldIdAt: null, lineParent: null, vis: null, maxLen: 0,
+    cols: 0, tops: null, geoKey: null, mounted: [], winStart: 0, winEnd: 0,
+    hitIds: null, mm: null, hitKey: null, findOn: false, findKey: null, findCurIdx: -1, flashIdx: -1,
+  });
+  textEditorEl.style.width = "";
+}
 function leaveTextEditor() {
   if (!textEditorShown() && editorView.key === null) return;
   highlightWrap.classList.remove("text-mode");
-  clearTimeout(editorView.flashTimer);
-  textEditorEl.innerHTML = "";
-  editorView.rootId = null; editorView.key = null;
-  editorView.lineEls = []; editorView.foldEls = []; editorView.visible = null;
-  editorView.hitEls = []; editorView.hitKey = null; editorView.markedEls = new Set(); editorView.flashEl = null;
-  editorView.findEls = []; editorView.findKey = null; editorView.findCurEl = null;
+  resetEditorModel();
   lastHighlightRootId = null; // the log view that follows treats this as a root switch
 }
 function editorMarkupKey(root) {
   const es = root.entries;
   return [root.id, root.textSyntax, root.textLayout, es.length, es.length ? es[0].id : "", es.length ? es[es.length - 1].id : ""].join("|");
 }
-// Builds the editor markup unless it already shows exactly this file. Returns
-// true when it (re)built. Mid-load ticks of the shown file keep what is there
-// (the load's last render rebuilds it once, instead of once per tick).
+// Builds the editor model unless it already shows exactly this file. Returns
+// true when it (re)built (the window is then remounted by the caller). Mid-load
+// ticks of the shown file keep what is there (the load's last render rebuilds
+// it once, instead of once per tick).
 function ensureEditorMarkup(root) {
   if (root.loadFraction !== undefined && editorView.rootId === root.id && editorView.key !== null) return false;
   const key = editorMarkupKey(root);
   if (key === editorView.key) return false;
+  resetEditorModel();
   const entries = root.entries, n = entries.length;
   const syntax = plainTextSyntaxOf(root);
-  const lines = new Array(n);
-  for (let i = 0; i < n; i++) lines[i] = entries[i].message;
-  let ranges = [];
+  let maxLen = 0;
+  for (let i = 0; i < n; i++) { const l = entries[i].message.length; if (l > maxLen) maxLen = l; }
+  let folds = [], foldIdAt = null, lineParent = null;
   if (syntax && n > 1) {
-    const text = lines.join("\n");
-    ranges = syntax === "json" ? findJsonFoldRanges(text) : findXmlFoldRanges(text);
+    const text = entries.map(e => e.message).join("\n");
+    const ranges = syntax === "json" ? findJsonFoldRanges(text) : findXmlFoldRanges(text);
+    if (ranges.length) {
+      foldIdAt = new Int32Array(n).fill(-1);
+      lineParent = new Int32Array(n).fill(-1);
+      const walk = (node, parent) => {
+        if (node.type === "line") { lineParent[node.index] = parent; return; }
+        const id = folds.length;
+        folds.push({ start: node.start, end: node.end, collapsed: false, parent });
+        lineParent[node.start] = parent;
+        foldIdAt[node.start] = id;
+        for (let c = 1; c < node.children.length; c++) walk(node.children[c], id);
+      };
+      for (const node of buildFoldTree(n, ranges)) walk(node, -1);
+    }
   }
-  const tokenize = syntax === "json" ? t => tokenRangesHtml(t, jsonTokenRanges(t))
+  editorView.tokenize = syntax === "json" ? t => tokenRangesHtml(t, jsonTokenRanges(t))
     : syntax === "xml" ? t => tokenRangesHtml(t, xmlTokenRanges(t)) : escapeHtml;
-  const tree = buildFoldTree(n, ranges);
-  const numberOf = i => entries[i].ts;
-  const parts = new Array(tree.length);
-  for (let i = 0; i < tree.length; i++) parts[i] = renderFoldNode(tree[i], lines, tokenize, numberOf);
-  clearTimeout(editorView.flashTimer);
-  textEditorEl.innerHTML = parts.join("");
-  editorView.lineEls = Array.from(textEditorEl.querySelectorAll(".itv-line"));
-  editorView.foldEls = Array.from(textEditorEl.querySelectorAll(".itv-fold"));
-  editorView.rootId = root.id; editorView.key = key; editorView.visible = null;
-  editorView.tokenize = tokenize; editorView.syntax = syntax;
-  editorView.hitEls = []; editorView.hitKey = null; editorView.markedEls = new Set(); editorView.flashEl = null;
-  editorView.findEls = []; editorView.findKey = null; editorView.findCurEl = null;
+  Object.assign(editorView, { rootId: root.id, key, entries, n, syntax, folds, foldIdAt, lineParent, maxLen, vis: null });
   return true;
+}
+
+/* ---- the visible line list and row geometry ---- */
+function rebuildEditorVisible() {
+  const folds = editorView.folds, n = editorView.n;
+  if (!folds.some(f => f.collapsed)) { editorView.vis = null; return; }
+  const idAt = editorView.foldIdAt, vis = [];
+  for (let i = 0; i < n;) {
+    vis.push(i);
+    const fi = idAt[i];
+    i = fi >= 0 && folds[fi].collapsed ? folds[fi].end + 1 : i + 1;
+  }
+  editorView.vis = vis;
+}
+function editorVisibleCount() { return editorView.vis ? editorView.vis.length : editorView.n; }
+function editorLineAt(pos) { return editorView.vis ? editorView.vis[pos] : pos; }
+// Position (in the visible list) of line `idx`: its own, or — when a collapsed
+// fold hides it — the fold's opening line.
+function editorPosOf(idx) {
+  const vis = editorView.vis;
+  if (!vis) return Math.max(0, Math.min(idx, editorView.n - 1));
+  let lo = 0, hi = vis.length - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (vis[mid] <= idx) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+function editorTopOfPos(pos) { return editorView.tops ? editorView.tops[pos] : pos * TEXT_ROW_HEIGHT; }
+function editorHeightOfPos(pos) { return editorView.tops ? editorView.tops[pos + 1] - editorView.tops[pos] : TEXT_ROW_HEIGHT; }
+// Scroll-space top of a row (the editor's own top padding included).
+function editorRowScrollTop(pos) { return EDITOR_PAD_TOP + editorTopOfPos(pos); }
+// The topmost row whose bottom is below content-space y.
+function editorPosAtY(y) {
+  const cnt = editorVisibleCount();
+  if (cnt <= 0) return 0;
+  const tops = editorView.tops;
+  if (!tops) return Math.max(0, Math.min(cnt - 1, Math.floor(y / TEXT_ROW_HEIGHT)));
+  let lo = 0, hi = cnt - 1;
+  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (tops[mid] <= y) lo = mid; else hi = mid - 1; }
+  return lo;
+}
+// Wrap columns / row tops / content width — recomputed when wrap, the viewport
+// width or the text scale changes. Returns {changed, anchor}: the anchor (line
+// number + offset) captured with the OLD geometry for the caller to restore.
+function editorSyncGeometry() {
+  const wrap = !!state.wrapTextView, w = highlightBody.clientWidth || 0;
+  const key = (wrap ? 1 : 0) + "|" + (wrap ? w : 0) + "|" + TEXT_ROW_HEIGHT + "|" + editorView.n;
+  if (key === editorView.geoKey) return { changed: false, anchor: null };
+  const first = editorView.geoKey === null;
+  const anchor = first ? null : captureEditorAnchor();
+  editorView.geoKey = key;
+  const cw = msgCharWidth();
+  const pl = parseFloat(getComputedStyle(textEditorEl).paddingLeft);
+  editorView.padLeft = pl > 0 ? pl : 26;
+  let cols = 0;
+  if (wrap) {
+    const track = w - editorView.padLeft - 16 - TEXT_GUTTER_W;
+    if (track > 0) cols = Math.max(1, Math.floor((track - cw) / cw));
+  }
+  editorView.cols = cols;
+  if (cols) {
+    const cnt = editorVisibleCount(), tops = new Float64Array(cnt + 1), es = editorView.entries;
+    let y = 0;
+    for (let p = 0; p < cnt; p++) { tops[p] = y; y += TEXT_ROW_HEIGHT * textWrapLines(es[editorLineAt(p)].message, cols); }
+    tops[cnt] = y;
+    editorView.tops = tops;
+  } else editorView.tops = null;
+  // No wrap: the content is as wide as the longest line (rows are not all in the DOM to size it).
+  textEditorEl.style.width = wrap ? "" : Math.ceil(editorView.padLeft + TEXT_GUTTER_W + editorView.maxLen * cw + 20) + "px";
+  return { changed: true, anchor };
+}
+function editorRebuildTops() { editorView.geoKey = null; }
+
+/* ---- rows ---- */
+function editorRowHtml(pos) {
+  const idx = editorLineAt(pos), e = editorView.entries[idx];
+  const hit = editorView.hitIds !== null && editorView.hitIds.has(e.id);
+  const marked = hit && editorView.mm !== null;
+  let inner = (marked ? markFieldHtml(editorView.mm, e.message, "message", plainTextSyntaxRanges(e, editorView.syntax)) : editorView.tokenize(e.message)) || "<br>";
+  let cls = "itv-line";
+  if (hit) cls += " hit";
+  const fi = editorView.foldIdAt ? editorView.foldIdAt[idx] : -1;
+  if (fi >= 0) {
+    const f = editorView.folds[fi];
+    inner = '<span class="itv-fold-toggle">' + (f.collapsed ? "▸" : "▾") + "</span>" + inner +
+      '<span class="itv-fold-ellipsis">… ' + (f.end - f.start - 1) + " lines</span>";
+    if (f.collapsed) cls += " collapsed";
+  }
+  if (idx === editorView.flashIdx) cls += " flash";
+  if (idx === editorView.findCurIdx) cls += " find-cur";
+  return '<span class="' + cls + '" data-line="' + idx + '" data-n="' + e.ts + '"' + (marked ? ' data-marked="1"' : "") + ">" + inner + "</span>";
+}
+const editorTmpEl = document.createElement("div");
+function editorCreateRows(a, b) {
+  let html = "";
+  for (let p = a; p < b; p++) html += editorRowHtml(p);
+  editorTmpEl.innerHTML = html;
+  const els = Array.from(editorTmpEl.children);
+  editorTmpEl.textContent = "";
+  if (editorView.findOn) for (const el of els) applyEditorRowFindMarks(el);
+  return els;
 }
 // Sets a line's message HTML but keeps the fold toggle / "… N lines" marker of
 // a fold's opening line.
@@ -25034,52 +25174,153 @@ function setEditorLineHtml(lineEl, html) {
   if (tg) lineEl.insertBefore(tg, lineEl.firstChild);
   if (ell) lineEl.appendChild(ell);
 }
+// Re-derives a mounted row's hit class / filter-text marks from the current hit context.
+function editorRefreshRow(el) {
+  const idx = +el.dataset.line, e = editorView.entries[idx];
+  if (!e) return;
+  const hit = editorView.hitIds !== null && editorView.hitIds.has(e.id);
+  const marked = hit && editorView.mm !== null;
+  el.classList.toggle("hit", hit);
+  if (marked || el.dataset.marked === "1") {
+    setEditorLineHtml(el, marked ? markFieldHtml(editorView.mm, e.message, "message", plainTextSyntaxRanges(e, editorView.syntax)) : editorView.tokenize(e.message));
+    if (marked) el.dataset.marked = "1"; else delete el.dataset.marked;
+  }
+}
+function editorRowElForLine(idx) {
+  if (editorView.key === null || idx < 0 || idx >= editorView.n) return null;
+  const vis = editorView.vis;
+  let pos = idx;
+  if (vis) { pos = editorPosOf(idx); if (vis[pos] !== idx) return null; }
+  const m = editorView.mounted;
+  let lo = 0, hi = m.length - 1;
+  while (lo <= hi) { const mid = (lo + hi) >> 1; if (m[mid].pos === pos) return m[mid].el; if (m[mid].pos < pos) lo = mid + 1; else hi = mid - 1; }
+  return null;
+}
+// The rows holding a selection endpoint: never unmounted while they scroll away.
+function editorPinnedRows() {
+  const pins = new Set();
+  const sel = window.getSelection ? window.getSelection() : null;
+  if (!sel || !sel.rangeCount) return pins;
+  for (const node of [sel.anchorNode, sel.focusNode]) {
+    if (!node || !textEditorEl.contains(node)) continue;
+    const row = (node.nodeType === 1 ? node : node.parentElement).closest(".itv-line");
+    if (row && editorRowsEl.contains(row)) pins.add(row);
+  }
+  return pins;
+}
+function editorPinStyle(el, pos, pinned) {
+  if (pinned) {
+    el.classList.add("itv-pinned");
+    el.style.position = "absolute"; el.style.left = editorView.padLeft + "px"; el.style.right = "16px";
+    el.style.top = editorRowScrollTop(pos) + "px";
+  } else if (el.classList.contains("itv-pinned")) {
+    el.classList.remove("itv-pinned");
+    el.style.position = el.style.left = el.style.right = el.style.top = "";
+  }
+}
+// Mounts exactly the rows [start,end) (plus pinned selection-endpoint rows).
+// full: drop every old row first (positions changed: fold toggle, geometry).
+function editorMount(start, end, full) {
+  const pins = editorPinnedRows();
+  const retained = [];
+  for (const m of editorView.mounted) {
+    let keep = false;
+    if (full) {
+      if (pins.has(m.el)) { const p = editorPosOfExact(+m.el.dataset.line); if (p >= 0) { m.pos = p; keep = true; } }
+    } else keep = (m.pos >= start && m.pos < end) || pins.has(m.el);
+    if (keep) retained.push(m); else m.el.remove();
+  }
+  const out = [];
+  let ri = 0, pos = start;
+  const gap = (a, b, beforeEl) => {
+    if (a >= b) return;
+    const els = editorCreateRows(a, b), frag = document.createDocumentFragment();
+    els.forEach((el, i) => { frag.appendChild(el); out.push({ pos: a + i, el }); });
+    editorRowsEl.insertBefore(frag, beforeEl);
+  };
+  while (ri < retained.length || pos < end) {
+    const r = retained[ri];
+    if (r && r.pos < pos) { out.push(r); ri++; continue; }
+    const limit = r && r.pos < end ? r.pos : end;
+    if (pos < limit) { gap(pos, limit, r ? r.el : null); pos = limit; continue; }
+    if (r) { out.push(r); ri++; if (r.pos === pos) pos++; continue; }
+    break;
+  }
+  for (const m of out) editorPinStyle(m.el, m.pos, m.pos < start || m.pos >= end);
+  editorView.mounted = out;
+  editorView.winStart = start; editorView.winEnd = end;
+  const cnt = editorVisibleCount();
+  editorTopEl.style.height = editorTopOfPos(start) + "px";
+  editorBottomEl.style.height = (editorTopOfPos(cnt) - editorTopOfPos(end)) + "px";
+}
+// Exact visible position of a line, or -1 when a collapsed fold hides it.
+function editorPosOfExact(idx) {
+  if (!editorView.vis) return idx < editorView.n ? idx : -1;
+  const p = editorPosOf(idx);
+  return editorView.vis[p] === idx ? p : -1;
+}
+// Renders the window for the current scroll position (a no-op while the
+// mounted rows still cover the viewport, unless `full`).
+function editorRender(full) {
+  if (!textEditorShown() || editorView.key === null) return;
+  const geo = editorSyncGeometry();
+  if (geo.changed) full = true;
+  const cnt = editorVisibleCount();
+  const vh = highlightBody.clientHeight || 400;
+  const y0 = Math.max(0, highlightBody.scrollTop - EDITOR_PAD_TOP);
+  const sp = editorPosAtY(y0), ep = cnt ? editorPosAtY(y0 + vh) + 1 : 0;
+  if (!full && editorView.mounted.length && editorView.winStart <= sp && editorView.winEnd >= Math.min(ep, cnt)) return;
+  const start = cnt ? editorPosAtY(Math.max(0, y0 - vh)) : 0;
+  const end = cnt ? Math.min(cnt, editorPosAtY(y0 + 2 * vh) + 1) : 0;
+  editorMount(start, end, full);
+  if (geo.anchor) { restoreEditorAnchor(geo.anchor); editorRender(false); }
+}
+
+/* ---- hit marks, flash, anchors, folds ---- */
 // Marks the active node's result lines (`hit`) and the text-filter matches
-// inside them, in place. Skipped when neither the result nor the marking
-// context changed since the last call.
+// inside them, in place on the mounted rows (new rows pick the context up when
+// they are built). Skipped when neither the result nor the marking context
+// changed since the last call.
 function applyEditorHits(root) {
   const node = state.nodes[state.activeId];
   const matches = node && node.type === "filter" ? contextMatchesAndGaps(node, root) : null;
   const mm = buildMatchMarkContext(textMatchHighlightInRows);
-  // The find bar's marks are wrapped around the text in place by
-  // applyEditorFindMarks (not part of the line markup built here).
+  // The find bar's marks are wrapped around the text by applyEditorFindMarks
+  // (not part of the line markup built here).
   mm.findSpec = null;
   mm.active = !!(mm.nodes.length || mm.hlNodes.length);
   const mmKey = mm.active ? mm.nodes.map(x => x.id + "\u0001" + x.value).join("\u0002") + "|" + mm.hlNodes.length : "";
   const key = state.activeId + "|" + mmKey;
   if (editorView.hitKey && editorView.hitKey.matches === matches && editorView.hitKey.key === key) return;
   editorView.hitKey = { matches, key };
-  editorView.findKey = null; // lines re-rendered below lose their find marks: reapplied by applyEditorFindMarks
-  const entries = root.entries, els = editorView.lineEls;
-  for (const el of editorView.hitEls) el.classList.remove("hit");
-  for (const el of editorView.markedEls) {
-    const e = entries[+el.dataset.line];
-    if (e) setEditorLineHtml(el, editorView.tokenize(e.message));
-  }
-  editorView.hitEls = []; editorView.markedEls = new Set();
-  if (!matches) return;
-  const ids = matches.matchIds;
-  const syntax = editorView.syntax;
-  for (let i = 0; i < entries.length; i++) {
-    const e = entries[i];
-    if (!ids.has(e.id)) continue;
-    const el = els[i];
-    if (!el) continue;
-    el.classList.add("hit");
-    editorView.hitEls.push(el);
-    if (mm.active) {
-      setEditorLineHtml(el, markFieldHtml(mm, e.message, "message", plainTextSyntaxRanges(e, syntax)));
-      editorView.markedEls.add(el);
-    }
-  }
+  editorView.hitIds = matches ? matches.matchIds : null;
+  editorView.mm = matches && mm.active ? mm : null;
+  editorView.findKey = null; // re-rendered rows lose their find marks: reapplied by applyEditorFindMarks
+  for (const m of editorView.mounted) editorRefreshRow(m.el);
 }
+function flashEditorLine(idx) {
+  const old = editorRowElForLine(editorView.flashIdx);
+  if (old) old.classList.remove("flash");
+  clearTimeout(editorView.flashTimer);
+  editorView.flashIdx = idx;
+  const el = editorRowElForLine(idx);
+  if (el) el.classList.add("flash");
+  editorView.flashTimer = setTimeout(() => {
+    const cur = editorRowElForLine(idx);
+    if (cur) cur.classList.remove("flash");
+    if (editorView.flashIdx === idx) editorView.flashIdx = -1;
+  }, 1400);
+}
+
 /* Find bar in the editor (docs/text-files-implementation-plan.md Step 4).
    The find bar's hits are indices into the file's entries == editor line
    indices (findState.entries is the editor's own entry list). Marks are added
-   IN PLACE — a <mark class="find-match-mark editor-find-mark"> wrapped around
-   the matched text nodes, never a line re-render — and removed by unwrapping
-   those marks and normalising, so the line's own nodes (and a text selection
-   in them) survive opening/closing the bar. Only lines with a hit are touched. */
+   IN PLACE on the mounted rows — a <mark class="find-match-mark
+   editor-find-mark"> wrapped around the matched text nodes, never a line
+   re-render — and removed by unwrapping those marks and normalising, so the
+   line's own nodes (and a text selection in them) survive opening/closing the
+   bar. Rows mounted later (scrolling) are marked as they are built
+   (editorCreateRows), from findState.hits by binary search. */
 function editorFindValid(root) {
   return !!activeFindSpec() && findState.done && !!findState.entries &&
     (findState.entries === currentHighlightViewEntries || findState.entries === root.entries);
@@ -25121,145 +25362,109 @@ function wrapEditorLineRanges(el, ranges) {
     }
   }
 }
+// Marks a mounted row when its line is one of the find hits.
+function applyEditorRowFindMarks(el) {
+  const idx = +el.dataset.line, hits = findState.hits;
+  const k = findLowerBound(hits, idx);
+  if (hits[k] === idx) wrapEditorLineRanges(el, findMatchRanges(editorView.entries[idx].message, findState.spec));
+}
 function applyEditorFindMarks() {
   const root = textEditorShown() ? textRootNode(getRootFileId(state.activeId)) : null;
   if (!root) return;
   // Only while the Context view is on screen (the editor stays in the DOM, hidden,
-  // behind Filtered): marking half a million hidden lines would be wasted work.
+  // behind Filtered).
   const onScreen = fhSplit.style.display !== "none" && (fhLayout === "stacked" || fhActiveTab === "highlight");
   const on = onScreen && editorFindValid(root);
   const key = on ? String(findState.gen) : "";
   if (editorView.findKey === key) { updateEditorFindCurrent(); return; }
   editorView.findKey = key;
-  for (const el of editorView.findEls) unwrapEditorFindMarks(el);
-  editorView.findEls = [];
-  if (on) {
-    const entries = root.entries, spec = findState.spec;
-    for (const idx of findState.hits) {
-      const el = editorView.lineEls[idx], e = entries[idx];
-      if (!el || !e) continue;
-      wrapEditorLineRanges(el, findMatchRanges(e.message, spec));
-      editorView.findEls.push(el);
-    }
+  editorView.findOn = on;
+  for (const m of editorView.mounted) {
+    unwrapEditorFindMarks(m.el);
+    if (on) applyEditorRowFindMarks(m.el);
   }
   updateEditorFindCurrent();
 }
 // The line of the hit the bar last stepped to gets .find-cur.
 function updateEditorFindCurrent() {
   const root = textEditorShown() ? textRootNode(getRootFileId(state.activeId)) : null;
-  let el = null;
-  if (root && editorFindValid(root) && findState.cur >= 0) {
-    const idx = findState.hits[findState.cur];
-    el = idx === undefined ? null : editorView.lineEls[idx] || null;
+  let idx = -1;
+  if (root && editorView.findOn && editorFindValid(root) && findState.cur >= 0) {
+    const h = findState.hits[findState.cur];
+    if (h !== undefined) idx = h;
   }
-  if (editorView.findCurEl === el) return;
-  if (editorView.findCurEl) editorView.findCurEl.classList.remove("find-cur");
+  if (editorView.findCurIdx === idx) return;
+  const old = editorRowElForLine(editorView.findCurIdx);
+  if (old) old.classList.remove("find-cur");
+  editorView.findCurIdx = idx;
+  const el = editorRowElForLine(idx);
   if (el) el.classList.add("find-cur");
-  editorView.findCurEl = el;
 }
-// Recomputes which lines a collapsed fold hides.
-function recomputeEditorVisible() {
-  const collapsed = [];
-  for (const f of editorView.foldEls) if (f.classList.contains("collapsed")) collapsed.push([+f.dataset.start, +f.dataset.end]);
-  if (!collapsed.length) { editorView.visible = null; return; }
-  const n = editorView.lineEls.length, vis = [];
-  let ci = 0, i = 0;
-  while (i < n) {
-    vis.push(i);
-    while (ci < collapsed.length && collapsed[ci][0] < i) ci++;
-    if (ci < collapsed.length && collapsed[ci][0] === i) {
-      const end = collapsed[ci][1];
-      while (ci < collapsed.length && collapsed[ci][0] <= end) ci++;
-      i = end + 1;
-    } else i++;
-  }
-  editorView.visible = vis;
-}
-function editorVisibleCount() { return editorView.visible ? editorView.visible.length : editorView.lineEls.length; }
-function editorLineAtPos(p) { return editorView.lineEls[editorView.visible ? editorView.visible[p] : p]; }
-// The element of line index `idx`, or — when a collapsed fold hides it — of the
-// nearest visible line at or before it (the fold's opening line).
-function editorElForIdx(idx) {
-  const vis = editorView.visible;
-  if (!vis) return editorView.lineEls[Math.max(0, Math.min(idx, editorView.lineEls.length - 1))];
-  let lo = 0, hi = vis.length - 1;
-  while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (vis[mid] <= idx) lo = mid; else hi = mid - 1; }
-  return editorView.lineEls[vis[lo]];
-}
-// The topmost visible line and its pixel offset from the scroll container's top.
+
+// The topmost visible line and its offset from the scroll container's top. The
+// offset ignores the editor's own top padding (the Filtered rows' #tableRows
+// has the same one), so a file node's scrollTop transfers 1:1 between the views.
 function captureEditorAnchor() {
-  const cnt = editorVisibleCount();
-  if (!cnt) return null;
+  if (!editorVisibleCount()) return null;
   const top = highlightBody.scrollTop;
-  let lo = 0, hi = cnt - 1;
-  while (lo < hi) {
-    const mid = (lo + hi) >> 1, el = editorLineAtPos(mid);
-    if (el.offsetTop + el.offsetHeight > top) hi = mid; else lo = mid + 1;
-  }
-  const el = editorLineAtPos(lo), idx = +el.dataset.line, e = currentHighlightViewEntries[idx];
-  return { idx, line: +el.dataset.n, id: e ? e.id : null, offset: el.offsetTop - top };
+  const pos = editorPosAtY(Math.max(0, top - EDITOR_PAD_TOP)), idx = editorLineAt(pos), e = editorView.entries[idx];
+  return { idx, line: e ? e.ts : idx + 1, id: e ? e.id : null, offset: editorTopOfPos(pos) - top };
 }
 // Index of the editor line for a line number (or, failing that, an entry id).
 function editorIdxFor(anchor) {
-  const entries = currentHighlightViewEntries;
+  const entries = editorView.entries;
   if (!entries.length) return -1;
   if (anchor.line != null) return Math.min(entries.length - 1, lowerBoundByTs(entries, anchor.line));
   const idx = anchor.id ? buildOrderIndexMap(editorView.rootId).get(anchor.id) : undefined;
   return idx === undefined ? -1 : idx;
 }
 function restoreEditorAnchor(anchor) {
-  if (!anchor || !editorView.lineEls.length) return false;
+  if (!anchor || !editorView.n) return false;
   const idx = editorIdxFor(anchor);
   if (idx < 0) return false;
-  setHighlightScroll(editorElForIdx(idx).offsetTop - (anchor.offset || 0));
+  setHighlightScroll(editorTopOfPos(editorPosOf(idx)) - (anchor.offset || 0));
+  editorRender(false);
   return true;
 }
-function setEditorFoldGlyph(foldEl, collapsed) {
-  const tg = foldEl.firstElementChild && foldEl.firstElementChild.firstElementChild;
-  if (tg && tg.classList.contains("itv-fold-toggle")) tg.textContent = collapsed ? "▸" : "▾";
-}
-function toggleEditorFold(foldEl) {
+function toggleEditorFold(foldId) {
+  const f = editorView.folds[foldId];
+  if (!f) return;
   const anchor = captureEditorAnchor();
-  const collapse = !foldEl.classList.contains("collapsed");
-  foldEl.classList.toggle("collapsed", collapse);
-  setEditorFoldGlyph(foldEl, collapse);
-  recomputeEditorVisible();
+  f.collapsed = !f.collapsed;
+  rebuildEditorVisible();
+  editorRebuildTops();
+  editorRender(true);
   restoreEditorAnchor(anchor);
 }
 textEditorEl.addEventListener("click", ev => {
   const tg = ev.target.closest && ev.target.closest(".itv-fold-toggle");
-  if (tg) toggleEditorFold(tg.closest(".itv-fold"));
+  if (!tg) return;
+  const row = tg.closest(".itv-line");
+  const fi = row && editorView.foldIdAt ? editorView.foldIdAt[+row.dataset.line] : -1;
+  if (fi >= 0) toggleEditorFold(fi);
 });
-function flashEditorLine(el) {
-  if (editorView.flashEl) editorView.flashEl.classList.remove("flash");
-  clearTimeout(editorView.flashTimer);
-  el.classList.add("flash");
-  editorView.flashEl = el;
-  editorView.flashTimer = setTimeout(() => { el.classList.remove("flash"); if (editorView.flashEl === el) editorView.flashEl = null; }, 1400);
-}
 // Scrolls the editor so line index `idx` is centred, unfolding only the folds
 // that hide it (never the fold a line merely opens), and flashes it. opts.center
 // false = just bring it into view.
 function revealEditorLine(idx, opts) {
   opts = opts || {};
-  const el = editorView.lineEls[idx];
-  if (!el) return false;
-  let child = el, f = el.parentElement, changed = false;
-  while (f && f !== textEditorEl) {
-    if (f.classList.contains("itv-fold") && f.classList.contains("collapsed") && f.firstElementChild !== child) {
-      f.classList.remove("collapsed");
-      setEditorFoldGlyph(f, false);
-      changed = true;
+  if (editorView.key === null || idx < 0 || idx >= editorView.n) return false;
+  let changed = false;
+  if (editorView.lineParent) {
+    for (let f = editorView.lineParent[idx]; f >= 0; f = editorView.folds[f].parent) {
+      if (editorView.folds[f].collapsed) { editorView.folds[f].collapsed = false; changed = true; }
     }
-    child = f; f = f.parentElement;
   }
-  if (changed) recomputeEditorVisible();
+  if (changed) { rebuildEditorVisible(); editorRebuildTops(); }
+  editorRender(changed); // spacers first: the scroll below clamps to the new height
+  const pos = editorPosOf(idx);
   const viewportH = highlightBody.clientHeight || 400;
-  const top = el.offsetTop, h = el.offsetHeight;
+  const top = editorRowScrollTop(pos), h = editorHeightOfPos(pos);
   if (opts.center !== false) setHighlightScroll(top - viewportH / 2 + h / 2);
   else if (top < highlightBody.scrollTop) setHighlightScroll(top);
   else if (top + h > highlightBody.scrollTop + viewportH) setHighlightScroll(top + h - viewportH);
-  if (opts.flash) flashEditorLine(el);
+  editorRender(false);
+  if (opts.flash) flashEditorLine(idx);
   return true;
 }
 // First/last visible line index in the viewport (the minimap's "rendered range").
@@ -25267,23 +25472,59 @@ function editorVisibleRange() {
   const cnt = editorVisibleCount();
   if (!cnt) return null;
   const top = highlightBody.scrollTop, bottom = top + (highlightBody.clientHeight || 400);
-  const posOf = y => {
-    let lo = 0, hi = cnt - 1;
-    while (lo < hi) { const mid = (lo + hi) >> 1, el = editorLineAtPos(mid); if (el.offsetTop + el.offsetHeight > y) hi = mid; else lo = mid + 1; }
-    return lo;
-  };
-  const a = posOf(top), b = Math.max(a, posOf(bottom));
-  return { first: +editorLineAtPos(a).dataset.line, last: +editorLineAtPos(b).dataset.line };
+  const a = editorPosAtY(Math.max(0, top - EDITOR_PAD_TOP)), b = Math.max(a, editorPosAtY(Math.max(0, bottom - EDITOR_PAD_TOP)));
+  return { first: editorLineAt(a), last: editorLineAt(b) };
 }
 function syncEditorHeaderWidth() {
   const bar = highlightHeaderEl.querySelector(".text-header-bar");
   if (bar) bar.style.width = textEditorEl.scrollWidth + "px";
 }
+
+/* ---- copy from the line model ---- */
+// {line, off}: the line index and character offset (within the line's message
+// text, fold marker excluded) of a DOM selection endpoint inside a mounted row.
+function editorEndpoint(node, offset) {
+  if (!node || !textEditorEl.contains(node)) return null;
+  const row = (node.nodeType === 1 ? node : node.parentElement).closest(".itv-line");
+  if (!row || !editorRowsEl.contains(row)) return null;
+  const r = document.createRange();
+  r.setStart(row, 0);
+  r.setEnd(node, offset);
+  const frag = r.cloneContents();
+  frag.querySelectorAll(".itv-fold-toggle, .itv-fold-ellipsis").forEach(x => x.remove());
+  return { line: +row.dataset.line, off: frag.textContent.length };
+}
+// The text of the selection a..b (endpoints from editorEndpoint, any order).
+function editorCopyText(a, b) {
+  if (a.line > b.line || (a.line === b.line && a.off > b.off)) { const t = a; a = b; b = t; }
+  const es = editorView.entries;
+  if (a.line === b.line) return es[a.line].message.slice(a.off, b.off);
+  const parts = [es[a.line].message.slice(a.off)];
+  for (let i = a.line + 1; i < b.line; i++) parts.push(es[i].message);
+  parts.push(es[b.line].message.slice(0, b.off));
+  return parts.join("\n");
+}
+document.addEventListener("copy", ev => {
+  if (!textEditorShown() || editorView.key === null || !ev.clipboardData) return;
+  const sel = window.getSelection ? window.getSelection() : null;
+  if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+  const a = editorEndpoint(sel.anchorNode, sel.anchorOffset), f = editorEndpoint(sel.focusNode, sel.focusOffset);
+  if (!a || !f) return; // not (entirely) inside the editor rows: native copy
+  ev.clipboardData.setData("text/plain", editorCopyText(a, f));
+  ev.preventDefault();
+});
+// A collapsed selection frees a pinned (scrolled-away) row: remount drops it.
+document.addEventListener("selectionchange", () => {
+  if (!textEditorShown() || !editorView.mounted.some(m => m.el.classList.contains("itv-pinned"))) return;
+  const pins = editorPinnedRows();
+  if (editorView.mounted.some(m => m.el.classList.contains("itv-pinned") && !pins.has(m.el))) editorRender(true);
+});
+
 // renderHighlightView's branch for a plain-text root.
 function renderTextEditorView(root, colorMapIsFresh) {
   const rootId = root.id;
   const sameRoot = textEditorShown() && rootId === lastHighlightRootId;
-  const anchor = sameRoot ? captureEditorAnchor() : null;
+  const anchor = sameRoot && editorView.key !== null ? captureEditorAnchor() : null;
   highlightWrap.classList.add("text-mode");
   // The whole file; buildContextView also leaves contextMatchIds/contextMatchPos
   // set for a filter node (the hit set), contextActive false (no gap strips).
@@ -25294,6 +25535,7 @@ function renderTextEditorView(root, colorMapIsFresh) {
   const rebuilt = ensureEditorMarkup(root);
   applyEditorHits(root);
   applyEditorFindMarks();
+  editorRender(rebuilt); // spacers (and the window) first: every scroll below depends on the content height
   syncEditorHeaderWidth();
   updateContextToolbar();
 
@@ -25312,6 +25554,7 @@ function renderTextEditorView(root, colorMapIsFresh) {
   if (!sameRoot) {
     lastHighlightRootId = rootId;
     setHighlightScroll(0);
+    editorRender(false);
     updateMinimapRenderedRange();
     return;
   }
@@ -25319,6 +25562,7 @@ function renderTextEditorView(root, colorMapIsFresh) {
     const mode = pendingHighlightScroll;
     pendingHighlightScroll = null;
     if (mode === "bottom") setHighlightScroll(highlightBody.scrollHeight);
+    editorRender(false);
     updateMinimapRenderedRange();
     return;
   }
@@ -25416,7 +25660,7 @@ function renderHighlightView(colorMapIsFresh) {
 }
 
 function renderHighlightVisibleRows() {
-  if (textEditorShown()) return; // the editor is not virtualized — see renderTextEditorView
+  if (textEditorShown()) { editorRender(false); return; } // the editor has its own window — see editorRender
   const total = currentHighlightViewEntries.length;
   const viewportH = highlightBody.clientHeight || 400;
   // The filler rows centre their label on the VISIBLE area, which is this
@@ -27215,7 +27459,7 @@ function scrollToHighlightIndex(index, opts) {
     // the row's screen position) wins over centring; otherwise centre, or just
     // bring the line into view.
     if (!revealEditorLine(index, { center: !!opts.center && opts.offset == null, flash: !!opts.flash })) return;
-    if (opts.offset != null) setHighlightScroll(editorView.lineEls[index].offsetTop - opts.offset);
+    if (opts.offset != null) { setHighlightScroll(editorRowScrollTop(editorPosOf(index)) - opts.offset); editorRender(false); }
     return;
   }
   const viewportH = highlightBody.clientHeight || 400;
@@ -28409,6 +28653,7 @@ btnWrapMsg.forEach(b => b.addEventListener("click", () => {
   else state.wrapMessages = !state.wrapMessages;
   updateWrapMsgButton();
   render();
+  if (textEditorShown()) editorRender(false); // wrap changes the editor's row geometry
 }));
 
 // Master on/off for text-filter match highlighting — moved here from a
@@ -29931,8 +30176,8 @@ function highlightXmlText(text) { return tokenRangesHtml(text, xmlTokenRanges(te
 // "small and regex/stack-based" spirit as the tokenizers above) to find
 // multi-line {...}/[...] or <tag>...</tag> ranges, then buildFoldTree nests
 // those ranges (they never cross, since they come from a stack matcher) so
-// renderFoldNode can wrap the corresponding lines in a collapsible
-// <span class="itv-fold"> with a toggle glyph on the opening line.
+// ensureEditorMarkup can flatten them into the editor's fold list (a toggle
+// glyph on each opening line).
 function buildLineStarts(text) {
   const starts = [0];
   for (let i = 0; i < text.length; i++) if (text[i] === "\n") starts.push(i + 1);
@@ -30019,25 +30264,6 @@ function buildFoldTree(lineCount, ranges) {
     return nodes;
   }
   return parseUntil(lineCount);
-}
-// One editor line: its display number (data-n, the plain-text entry's line
-// number) and tokenized text; an empty line holds a <br> so the block still
-// copies as a line. A fold's opening line also carries the toggle and the
-// "… N lines" marker shown while the fold is collapsed (see CSS .itv-fold).
-function editorLineHtml(index, lines, tokenize, numberOf, foldNode) {
-  const html = tokenize(lines[index]) || "<br>";
-  const open = '<span class="itv-line" data-line="' + index + '" data-n="' + numberOf(index) + '">';
-  if (!foldNode) return open + html + "</span>";
-  return open + '<span class="itv-fold-toggle">▾</span>' + html +
-    '<span class="itv-fold-ellipsis">… ' + (foldNode.end - foldNode.start - 1) + ' lines</span></span>';
-}
-function renderFoldNode(node, lines, tokenize, numberOf) {
-  numberOf = numberOf || (i => i + 1);
-  if (node.type === "line") return editorLineHtml(node.index, lines, tokenize, numberOf, null);
-  const [openLine, ...rest] = node.children;
-  return '<span class="itv-fold" data-start="' + node.start + '" data-end="' + node.end + '">' +
-    editorLineHtml(openLine.index, lines, tokenize, numberOf, node) +
-    rest.map(c => renderFoldNode(c, lines, tokenize, numberOf)).join("") + '</span>';
 }
 // Pretty-printed form of a JSON text, or null when it isn't valid JSON. Used
 // by applyTextLayout (a JSON text file's default "pretty" layout).
