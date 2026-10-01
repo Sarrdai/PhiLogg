@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>PhiLogg</title>
+<meta name="description" content="A log viewer that runs in your browser tab. Nest filters, link start and end lines, extract numbers and plot them. One HTML file, nothing is uploaded.">
+<meta name="color-scheme" content="light dark">
+<!--
+  PhiLogg product homepage — one self-contained static file (inline CSS and JS,
+  system fonts, no external requests except the GitHub Releases API read by the
+  Download section). Built into the Pages artifact by scripts/build-site.js,
+  see docs/homepage.md. Every link is relative: the site runs at a
+  project path (https://<user>.github.io/PhiLogg/) and at a custom domain root.
+  The hosted app lives in app/, the guided tour data in app/tour/.
+-->
+<style>
+:root{
+  --bg-app:#f5f6f8; --bg-panel:#ffffff; --bg-elevated:#f0f1f4; --border:#dde1e8; --border-soft:#e7eaf0;
+  --text-primary:#1c2130; --text-secondary:#5b6474; --text-tertiary:#6b7385;
+  --accent:#1b8f8a; --accent-soft:rgba(27,143,138,.12); --accent-strong:#137672; --accent-on:#ffffff;
+  --lv-error:#c0392b; --lv-warn:#a06a1c;
+  --lv-what:#1f5fbf; --lv-how:#1b8f8a; --lv-try:#4a8f3c; --lv-gotcha:#a06a1c; --lv-dont:#c2185b; --lv-deep:#8e44ad;
+  --font-display:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono",Consolas,Menlo,monospace;
+  --font-body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-log:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono",Consolas,"Liberation Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg-app:#10131a; --bg-panel:#151924; --bg-elevated:#1c2130; --border:#262c3c; --border-soft:#1e2330;
+  --text-primary:#e7eaf1; --text-secondary:#8a92a8; --text-tertiary:#7d86a0;
+  --accent:#4fc7c3; --accent-soft:rgba(79,199,195,.14); --accent-strong:#7fe0dc; --accent-on:#08201f;
+  --lv-error:#f16565; --lv-warn:#e8a94a;
+  --lv-what:#6fa8ff; --lv-how:#4fc7c3; --lv-try:#8bd17c; --lv-gotcha:#e8a94a; --lv-dont:#f0708a; --lv-deep:#c792ea;
+  color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg-app:#10131a; --bg-panel:#151924; --bg-elevated:#1c2130; --border:#262c3c; --border-soft:#1e2330;
+  --text-primary:#e7eaf1; --text-secondary:#8a92a8; --text-tertiary:#7d86a0;
+  --accent:#4fc7c3; --accent-soft:rgba(79,199,195,.14); --accent-strong:#7fe0dc; --accent-on:#08201f;
+  --lv-error:#f16565; --lv-warn:#e8a94a;
+  --lv-what:#6fa8ff; --lv-how:#4fc7c3; --lv-try:#8bd17c; --lv-gotcha:#e8a94a; --lv-dont:#f0708a; --lv-deep:#c792ea;
+  color-scheme:dark }
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:12px}
+body{margin:0;background:var(--bg-app);color:var(--text-primary);font:15px/1.55 var(--font-body)}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+code,.mono{font-family:var(--font-log);font-size:.9em}
+a{color:var(--accent)}
+img{max-width:100%}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{max-width:1180px;margin:0 auto;border-inline:1px solid var(--border-soft);min-height:100vh;background:var(--bg-app)}
+
+.site-nav{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:14px 28px;border-bottom:1px solid var(--border-soft)}
+.brand{font:800 17px var(--font-display);color:var(--text-primary);text-decoration:none}
+.site-nav nav{display:flex;gap:18px;flex-wrap:wrap;margin-left:auto;font-size:14px}
+.site-nav nav a{color:var(--text-secondary);text-decoration:none}
+.site-nav nav a:hover{color:var(--text-primary)}
+
+.hero{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr);gap:36px;padding:44px 28px 36px;align-items:center}
+.hero h1{font:800 clamp(26px,3.6vw,40px)/1.12 var(--font-display);letter-spacing:-.01em}
+.hero h1 em{font-style:normal;color:var(--accent)}
+.hero p.lead{color:var(--text-secondary);margin:14px 0 22px;max-width:48ch;font-size:16px}
+.cta{display:flex;gap:10px;flex-wrap:wrap}
+.btn{display:inline-flex;align-items:center;gap:8px;border-radius:6px;padding:9px 16px;font-weight:600;font-size:14px;text-decoration:none;border:1px solid var(--border);background:var(--bg-panel);color:var(--text-primary)}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-on)}
+.btn .k{font:11px var(--font-log);opacity:.7}
+.fmt-link{display:inline-block;margin-top:14px;font:600 13px var(--font-body);color:var(--accent);text-decoration:none;border-bottom:1px dashed var(--accent)}
+
+.term{background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;min-width:0}
+.term-head{display:flex;justify-content:space-between;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border-soft);font:12px var(--font-log);color:var(--text-tertiary)}
+.term-body{padding:12px 0;font:12.5px/1.75 var(--font-log);overflow-x:auto;min-height:220px}
+.tl{display:grid;grid-template-columns:3px 92px 56px minmax(0,1fr);gap:10px;padding:0 12px 0 0;white-space:nowrap}
+.tl .bar{align-self:stretch}
+.tl .ts{color:var(--text-tertiary)}
+.tl .msg{overflow:hidden;text-overflow:ellipsis}
+.lv{font-weight:600;color:var(--c,var(--text-secondary))}
+.bar{background:var(--c,transparent)}
+.l-WHAT{--c:var(--lv-what)} .l-HOW{--c:var(--lv-how)} .l-TRY{--c:var(--lv-try)}
+.l-GOTCHA{--c:var(--lv-gotcha)} .l-DONT{--c:var(--lv-dont)} .l-DEEP{--c:var(--lv-deep)}
+.caret{display:inline-block;width:.6em;height:1.1em;vertical-align:-2px;background:var(--accent);animation:blink 1s steps(1) infinite;margin-left:105px}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion:reduce){.caret{animation:none}}
+
+.facts{display:flex;flex-wrap:wrap;border-block:1px solid var(--border-soft);font:13px var(--font-log)}
+.facts div{flex:1 1 180px;padding:14px 28px;display:flex;flex-direction:column;gap:2px;border-right:1px solid var(--border-soft)}
+.facts div:last-child{border-right:0}
+.facts b{font:800 18px var(--font-display);color:var(--text-primary)}
+.facts span{color:var(--text-secondary)}
+
+.sec{padding:36px 28px;display:flex;flex-direction:column;gap:18px}
+.sec-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap}
+.sec-head h2{font:800 20px var(--font-display)}
+.sec-head .mono{color:var(--text-tertiary);font-size:12px}
+.features{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.feat{background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;display:flex;flex-direction:column;min-width:0}
+.shot{display:block;aspect-ratio:16/10;overflow:hidden;background:var(--bg-elevated)}
+.shot img{width:100%;height:100%;object-fit:cover;object-position:top left;display:block;transition:transform .3s}
+.shot:hover img{transform:scale(1.02)}
+@media (prefers-reduced-motion:reduce){.shot img{transition:none}}
+.feat-body{padding:14px 16px 16px;display:flex;flex-direction:column;gap:6px}
+.feat-body h3{font:600 15px var(--font-body)}
+.feat-body p{margin:0;color:var(--text-secondary);font-size:14px}
+.feat-body .try{font:12px var(--font-log);color:var(--accent);margin-top:4px;text-decoration:none}
+
+.run{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
+.run div{border-top:2px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:6px;min-width:0}
+.run div:first-child{border-top-color:var(--accent)}
+.run h3{font:600 15px var(--font-body)}
+.run p{margin:0;color:var(--text-secondary);font-size:14px}
+
+.dl-status{margin:0;color:var(--text-secondary);font-size:14px}
+.releases{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:18px}
+.rel{background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.rel-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
+.rel-head h3{font:800 18px var(--font-display)}
+.rel-head .date{font:12px var(--font-log);color:var(--text-tertiary)}
+.tag{font:600 11px var(--font-log);padding:1px 7px;border-radius:3px;background:var(--accent-soft);color:var(--accent-strong)}
+.tag.beta{background:rgba(160,106,28,.14);color:var(--lv-warn)}
+.rel-notes{font-size:13px;margin-left:auto}
+.assets{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.assets li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 12px;padding:8px 0;border-top:1px solid var(--border-soft);align-items:baseline}
+.assets .variant{font-weight:600;font-size:14px}
+.assets .size{font:12px var(--font-log);color:var(--text-tertiary);text-align:right}
+.assets a{font:12px var(--font-log);word-break:break-all;grid-column:1/-1}
+
+.site-foot{padding:18px 28px;border-top:1px solid var(--border-soft);display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between;font:12px var(--font-log);color:var(--text-tertiary)}
+.site-foot a{color:var(--text-secondary)}
+.site-foot nav{display:flex;gap:16px}
+
+@media (max-width:860px){
+  .hero,.features,.run{grid-template-columns:minmax(0,1fr)}
+  .site-nav nav{margin-left:0}
+  .hero,.sec,.site-nav,.site-foot{padding-inline:16px}
+  .facts div{padding-inline:16px}
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="site-nav">
+    <a class="brand" href="./">PhiLogg</a>
+    <nav aria-label="Main">
+      <a href="app/?session=tour/welcome.session.json" id="nav-tour">Tour</a>
+      <a href="#features">Features</a>
+      <a href="#download">Download</a>
+      <a href="https://github.com/Sarrdai/PhiLogg/blob/main/LICENSE.md">License</a>
+      <a href="https://github.com/Sarrdai/PhiLogg">GitHub</a>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div>
+        <h1>A log viewer that runs <em>in this tab</em>.</h1>
+        <p class="lead">Open any line-based log, chain filters into a tree, pull numbers out of messages and plot them. One HTML file. Nothing is uploaded.</p>
+        <div class="cta">
+          <a class="btn primary" href="app/">Open PhiLogg</a>
+          <a class="btn" href="app/?url=tour/demo/app.log">Open with a demo log <span class="k">~2 MB</span></a>
+          <a class="btn" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a>
+        </div>
+        <a class="fmt-link" href="app/?session=tour/welcome.session.json&amp;open=format">Will it read my logs? Set up your format in 2 minutes &rarr;</a>
+      </div>
+      <div class="term" id="term" aria-label="First lines of the guided tour, shown as a log" hidden>
+        <div class="term-head"><span>welcome.log</span><span>tail -f</span></div>
+        <div class="term-body" id="term-body"></div>
+      </div>
+    </section>
+
+    <div class="facts">
+      <div><b>1 file</b><span>philogg.html, no build, no CDN</span></div>
+      <div><b>100% local</b><span>parsing, filters, sessions: all in your browser</span></div>
+      <div><b>offline</b><span>works from file://, too</span></div>
+      <div><b>any format</b><span>mark the fields in your own lines, export, reuse</span></div>
+    </div>
+
+    <section class="sec" id="features">
+      <div class="sec-head"><h2>What it does</h2><span class="mono">every screenshot opens the tour &rarr;</span></div>
+      <div class="features">
+        <article class="feat">
+          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/01-log-view.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Filters that nest</h3><p>Each filter narrows the result of the one above it. The tree is your investigation, readable later.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+        </article>
+        <article class="feat">
+          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/04-link-view.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Link start and end</h3><p>Pair &ldquo;job started&rdquo; with &ldquo;job finished&rdquo; by thread or captured id, then keep only the slow pairs.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+        </article>
+        <article class="feat">
+          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/09-patterns.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Patterns</h3><p>Numbers, GUIDs and paths become placeholders, so 40,000 lines turn into 60 message shapes with counts.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+        </article>
+        <article class="feat">
+          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/03-plot.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Extract &amp; plot</h3><p>Write <code>position [*:float] reached</code>, get a table column, plot it over time or against another value.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+        </article>
+      </div>
+    </section>
+
+    <section class="sec" id="run">
+      <div class="sec-head"><h2>Three ways to run it</h2></div>
+      <div class="run">
+        <div><h3>Here, in the browser</h3><p>This site serves the release build. Deep links work: link a log by URL straight into the app.</p><a href="app/">Open PhiLogg</a></div>
+        <div><h3>Download one file</h3><p>Save philogg.html, double-click it. No install, no server, fully offline.</p><a href="#download">Get the single HTML file</a></div>
+        <div><h3>Desktop app</h3><p>Tauri wrapper with .log file association, native parsing on all cores, tray and picture-in-picture. Windows, macOS, Linux.</p><a href="#download">Get the desktop app</a></div>
+      </div>
+    </section>
+
+    <section class="sec" id="download">
+      <div class="sec-head"><h2>Download</h2><span class="mono">read live from GitHub Releases</span></div>
+      <p class="dl-status" id="dl-status">Loading releases&hellip;</p>
+      <div class="releases" id="releases"></div>
+    </section>
+  </main>
+
+  <footer class="site-foot">
+    <span>Source-available &middot; free for personal use (PolyForm Noncommercial 1.0.0)</span>
+    <nav aria-label="Footer">
+      <a href="app/LICENSE.md">License</a>
+      <a href="https://github.com/Sarrdai/PhiLogg">GitHub</a>
+    </nav>
+  </footer>
+</div>
+
+<script>
+// Homepage behavior: the hero terminal (first lines of the real tour log) and the
+// Download section (GitHub Releases API). Everything is a named function on
+// window.PhiloggSite so tests can drive it; DOM from fetched data is built with
+// textContent only.
+(function () {
+  "use strict";
+  var RELEASES_URL = "https://api.github.com/repos/Sarrdai/PhiLogg/releases?per_page=20";
+  var RELEASES_PAGE = "https://github.com/Sarrdai/PhiLogg/releases";
+  var TOUR_LOG_URL = "app/tour/welcome.log";
+  var TOUR_LINE = /^(\d{2}:\d{2}:\d{2}\.\d{3}) (\w+)\s+\[(\w+)\] (.*)$/;
+
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text != null) e.textContent = text;
+    return e;
+  }
+  function prefersReducedMotion() {
+    return !window.matchMedia || window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  }
+
+  /* ---------- hero terminal ---------- */
+
+  // Header lines of the first `max` tour entries. Indented continuation lines and
+  // DEEP entries (hidden in the tour's reading view) are skipped.
+  function parseTourLines(text, max) {
+    var out = [];
+    String(text).split(/\r?\n/).forEach(function (line) {
+      var m = out.length < max && TOUR_LINE.exec(line);
+      if (m && m[2] !== "DEEP") out.push({ ts: m[1], level: m[2], thread: m[3], message: m[4] });
+    });
+    return out;
+  }
+
+  function terminalRow(r) {
+    var row = el("div", "tl l-" + r.level);
+    row.appendChild(el("span", "bar"));
+    row.appendChild(el("span", "ts", r.ts));
+    row.appendChild(el("span", "lv", r.level));
+    var msg = el("span", "msg", "[" + r.thread + "] " + r.message);
+    msg.title = r.message;
+    row.appendChild(msg);
+    return row;
+  }
+
+  // Renders the rows into #term-body: one by one as a tail, or at once when
+  // `animate` is false. Returns a promise resolved when all rows are shown.
+  function renderTerminal(rows, animate) {
+    var body = document.getElementById("term-body");
+    body.textContent = "";
+    var caret = el("span", "caret");
+    caret.setAttribute("aria-hidden", "true");
+    return new Promise(function (resolve) {
+      var i = 0;
+      (function step() {
+        if (i < rows.length) {
+          body.appendChild(terminalRow(rows[i++]));
+          body.appendChild(caret);
+          if (animate) return setTimeout(step, 420);
+          return step();
+        }
+        resolve();
+      })();
+    });
+  }
+
+  function initTerminal(fetchFn) {
+    var term = document.getElementById("term");
+    return fetchFn(TOUR_LOG_URL)
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.text();
+      })
+      .then(function (text) {
+        var rows = parseTourLines(text, 6);
+        if (!rows.length) throw new Error("no tour lines");
+        term.hidden = false;
+        return renderTerminal(rows, !prefersReducedMotion());
+      })
+      .catch(function () { term.hidden = true; });
+  }
+
+  /* ---------- downloads ---------- */
+
+  function stripV(tag) { return String(tag || "").replace(/^v/, ""); }
+
+  // [label, test] in display order.
+  var VARIANTS = [
+    ["Single HTML file", /^philogg-.*\.html$/i],
+    ["Windows portable", /^PhiLogg-.*_portable\.zip$/i],
+    ["Windows installer", /^PhiLogg-.*\.exe$/i],
+    ["macOS", /\.dmg$/i],
+    ["Linux", /\.AppImage$/i]
+  ];
+  function variantOf(name) {
+    for (var i = 0; i < VARIANTS.length; i++) if (VARIANTS[i][1].test(name)) return { rank: i, label: VARIANTS[i][0] };
+    return { rank: VARIANTS.length, label: name };
+  }
+
+  function formatSize(bytes) {
+    if (!(bytes >= 0)) return "";
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + " MB";
+    return Math.max(1, Math.round(bytes / 1024)) + " KB";
+  }
+
+  // The latest stable release and, when newer than it, the latest pre-release.
+  function pickReleases(list) {
+    var sorted = (Array.isArray(list) ? list : [])
+      .filter(function (r) { return r && !r.draft; })
+      .sort(function (a, b) { return Date.parse(b.published_at || b.created_at) - Date.parse(a.published_at || a.created_at); });
+    var stable = sorted.filter(function (r) { return !r.prerelease; })[0] || null;
+    var beta = sorted.filter(function (r) { return r.prerelease; })[0] || null;
+    if (beta && stable && Date.parse(beta.published_at || beta.created_at) <= Date.parse(stable.published_at || stable.created_at)) beta = null;
+    return [stable, beta].filter(Boolean).map(function (r) { return { release: r, isBeta: r === beta }; });
+  }
+
+  function safeUrl(u) { return /^https:\/\//.test(u) ? u : RELEASES_PAGE; }
+
+  function releaseCard(entry) {
+    var r = entry.release;
+    var card = el("article", "rel");
+    var head = el("div", "rel-head");
+    head.appendChild(el("h3", null, stripV(r.tag_name)));
+    if (entry.isBeta) head.appendChild(el("span", "tag beta", "Beta"));
+    else head.appendChild(el("span", "tag", "Latest"));
+    var date = (r.published_at || r.created_at || "").slice(0, 10);
+    if (date) head.appendChild(el("span", "date", date));
+    var notes = el("a", "rel-notes", "Release notes");
+    notes.href = safeUrl(r.html_url);
+    head.appendChild(notes);
+    card.appendChild(head);
+
+    var list = el("ul", "assets");
+    (r.assets || []).map(function (a) { return { a: a, v: variantOf(String(a.name)) }; })
+      .sort(function (x, y) { return x.v.rank - y.v.rank || x.a.name.localeCompare(y.a.name); })
+      .forEach(function (x) {
+        var li = el("li");
+        li.appendChild(el("span", "variant", x.v.label));
+        li.appendChild(el("span", "size", formatSize(x.a.size)));
+        var link = el("a", null, x.a.name);
+        link.href = safeUrl(x.a.browser_download_url);
+        li.appendChild(link);
+        list.appendChild(li);
+      });
+    card.appendChild(list);
+    return card;
+  }
+
+  function showFallback(message) {
+    var status = document.getElementById("dl-status");
+    document.getElementById("releases").textContent = "";
+    status.textContent = message + " ";
+    var a = el("a", null, "All releases on GitHub");
+    a.href = RELEASES_PAGE;
+    status.appendChild(a);
+  }
+
+  function renderReleases(list) {
+    var picked = pickReleases(list);
+    if (!picked.length) return showFallback("No release found.");
+    var host = document.getElementById("releases");
+    host.textContent = "";
+    picked.forEach(function (p) { host.appendChild(releaseCard(p)); });
+    var status = document.getElementById("dl-status");
+    status.textContent = "";
+    var a = el("a", null, "All releases on GitHub");
+    a.href = RELEASES_PAGE;
+    status.appendChild(a);
+  }
+
+  function loadReleases(fetchFn) {
+    return fetchFn(RELEASES_URL, { headers: { Accept: "application/vnd.github+json" } })
+      .then(function (res) {
+        if (!res.ok) throw new Error("HTTP " + res.status);
+        return res.json();
+      })
+      .then(renderReleases)
+      .catch(function () { showFallback("Could not load the release list."); });
+  }
+
+  window.PhiloggSite = {
+    parseTourLines: parseTourLines, renderTerminal: renderTerminal, initTerminal: initTerminal,
+    variantOf: variantOf, formatSize: formatSize, pickReleases: pickReleases,
+    renderReleases: renderReleases, loadReleases: loadReleases
+  };
+
+  if (typeof window.fetch === "function") {
+    var f = window.fetch.bind(window);
+    window.PhiloggSite.ready = Promise.all([initTerminal(f), loadReleases(f)]);
+  } else {
+    document.getElementById("term").hidden = true;
+    showFallback("Could not load the release list.");
+  }
+})();
+</script>
+</body>
+</html>

@@ -487,10 +487,18 @@ custom one alike.
 See [`examples/bracket-format.log`](examples/bracket-format.log) for a sample
 in a different shape to try the Format Manager against.
 
+## Homepage
+
+A product homepage (`site/`) is deployed to GitHub Pages together with a
+hosted copy of the app and a guided tour that opens PhiLogg on its own manual
+as a log; its download section reads the latest releases live. How it is
+built and set up: [`docs/homepage.md`](docs/homepage.md).
+
 ## Repository layout
 
 ```
 philogg.html                            the application — everything lives here
+site/                                   the product homepage (static landing page); `scripts/build-site.js` builds it with the hosted app + tour, `.github/workflows/pages.yml` deploys it to GitHub Pages (see docs/homepage.md)
 LICENSE.md                              license terms (PolyForm Noncommercial 1.0.0 + commercial evaluation), shipped with every build
 tests/
   philogg.regression.test.js            jsdom regression suite (drives the real file via DOM events)

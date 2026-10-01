@@ -1,0 +1,79 @@
+name: Deploy Homepage
+
+# Builds the homepage (site/) plus the hosted app and the guided tour into one
+# static site and deploys it to GitHub Pages — see docs/homepage.md.
+#
+# The hosted app (<site>/app/) is the build of `ref`: philogg.html with the
+# version stamped and the comments stripped, like a release asset. The site
+# redeploys on every stable release (release-please.yml calls this workflow
+# with the new tag) and by hand (Actions -> Deploy Homepage -> Run workflow,
+# e.g. after editing site/ on main).
+#
+# Downloads are NOT part of the build: the page reads the GitHub Releases API
+# in the visitor's browser, so new releases and betas show up without a
+# redeploy.
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Branch, tag or commit to deploy
+        type: string
+        default: main
+  workflow_call:
+    inputs:
+      ref:
+        description: Branch, tag or commit to deploy
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      # Version: the tag without "v" for a v* ref, else the committed
+      # PHILOGG_VERSION. Build: the short SHA.
+      - name: Stamp version
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          if [[ "$REF" =~ ^v[0-9] ]]; then
+            VERSION="${REF#v}"
+          else
+            VERSION=$(sed -n 's/^const PHILOGG_VERSION = "\([^"]*\)".*/\1/p' philogg.html)
+          fi
+          node scripts/release-version.js stamp "$VERSION" "$(git rev-parse --short HEAD)"
+
+      - name: Build site
+        run: node scripts/build-site.js --out _site
+
+      - uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
