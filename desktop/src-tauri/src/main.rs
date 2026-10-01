@@ -15,6 +15,7 @@
 mod commands;
 mod fonts;
 mod inject;
+mod pathguard;
 mod protocol;
 mod settings;
 mod state;
