@@ -38330,7 +38330,8 @@ await withApp(async (w, d, T) => {
    rewrites the version in all four files release-please keeps in sync and
    the build hash. The workflows wire it up: beta-release.yml is main-only
    and publishes a pre-release, both release workflows share
-   build-release-assets.yml, and the old tester workflow is gone.
+   build-release-assets.yml, and the old tester workflow is gone. Each
+   desktop file (installer, portable zip, ...) is its own unzipped artifact.
    ============================================================ */
 group(340);
 if (groupSelected()) {
@@ -38384,8 +38385,14 @@ if (groupSelected()) {
   }
   const build = wf("build-release-assets.yml");
   assert((build.match(/release-version\.js stamp "\$VERSION"/g) || []).length === 2, "both build jobs stamp the version");
-  assert(/7z a -tzip "\.\.\/dist\/\$\{STAGE\}\.zip" \./.test(build) && /name: release-\$\{\{ runner\.os \}\}\n\s+path: dist\//.test(build),
-    "portable zip is a file inside the artifact, unzipped again by the publish job's download");
+  assert(/7z a -tzip "\.\.\/\$\{STAGE\}\.zip" \./.test(build), "portable build is zipped once");
+  const rawUploads = build.match(/uses: actions\/upload-artifact@v7\n\s+if: steps\.(installer|portable)\.outputs\.file != ''\n\s+with:\n\s+path: \$\{\{ steps\.\1\.outputs\.file \}\}\n\s+archive: false/g) || [];
+  assert(rawUploads.length === 2, "installer and portable zip are separate, unzipped artifacts");
+  for (const f of ["beta-release.yml", "release-please.yml"]) {
+    assert(/pattern: release-html\n\s+path: dist\n\s+merge-multiple: true\n/.test(wf(f)) &&
+      /pattern: PhiLogg-\*\n\s+path: dist\n\s+merge-multiple: true\n\s+skip-decompress: true/.test(wf(f)),
+      f + ": HTML artifact unpacked, desktop files kept as-is (portable zip stays a zip)");
+  }
 
   section("340c. Variant selection: checkboxes on beta, everything on stable");
   const variants = ["html", "windows", "windows_portable", "mac", "linux"];
@@ -45904,7 +45911,8 @@ process.exitCode = failed ? 1 : 0;
       shared build-release-assets.yml wiring, tester workflow removed; 340c
       variant checkboxes on beta, all five variants on stable. Updated
       GROUP 271e (LICENSE/notices now asserted on the shared build) and 218's
-      message.
+      message. 2026-10-01 (person-requested): 340b now asserts one unzipped
+      artifact per desktop file and the two-step download in both publish jobs.
    Group 346 — 2026-09-30 (person-requested, suite speed-up): the harness's own
       speed-ups stay exact — tests/jsdom-fast-selectors.js against jsdom's
       selector engine (page-wide, edge cases, odd-shaped data-* names handed
