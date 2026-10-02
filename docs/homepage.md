@@ -14,7 +14,7 @@ domain root alike.
   - Open PhiLogg: `app/`
   - Open with a demo log: `app/?url=tour/demo/app.log`
   - Take the tour: `app/?session=tour/welcome.session.json`
-  - "Will it read my logs?": `app/?session=tour/welcome.session.json&open=format`
+  - "Will it read my logs?": `app/?session=tour/welcome.session.json&open=format` — hidden below 600px (the app's phone layout has no format dialog)
     (the tour session plus the Add-log-format dialog)
 
   See `docs/persistence-and-sync.md` → "Session deep link" for the app side;
