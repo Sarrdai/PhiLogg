@@ -7,7 +7,7 @@
    GROUP responsive-phone — the phone shell (layout-phone, < 600px)
    Origin: 2026-10-02 (responsive layout, step 2). Reader mode: header reduced
    to drawer / title / find / settings, one-line tour banner with more/less,
-   only the Patterns + Filtered tabs, the entry detail as a bottom sheet,
+   no view tabs (Filtered only), the entry detail as a bottom sheet,
    no editing (no tree drag, no column resize, no format editor), Ctrl+B =
    drawer in compact/phone. Visibility is asserted through getComputedStyle
    (class-based rules, so jsdom's cascade handles them).
@@ -79,7 +79,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("responsive-phone c. View tabs: only Patterns + Filtered, hidden tab falls back to Filtered");
+  section("responsive-phone c. No view tabs on phone: #fhTabs hidden, everything falls back to Filtered");
   const f = await w.addFile("a.log", makeLog(0, 30), () => {});
   T.state.activeId = f.id;
   w.render();
@@ -88,10 +88,14 @@ await withApp(async (w, d, T) => {
   assert(T.fhActiveTab === "highlight", "sanity: desktop on the Context tab");
   phoneWidth(w, 390);
   assert(T.fhActiveTab === "filter" && T.fhLayout === "tabs", "switching to phone while on Context lands on Filtered, got " + T.fhActiveTab);
-  const shown = [...d.querySelectorAll("#fhTabs .view-tab")].filter(b => w.getComputedStyle(b).display !== "none").map(b => b.dataset.fhTab);
-  assert(shown.join() === "patterns,filter", "only Patterns and Filtered tabs shown, got " + shown.join());
-  d.querySelector('#fhTabs [data-fh-tab="patterns"]').click();
-  assert(T.fhActiveTab === "patterns", "Patterns stays reachable and is not forced away");
+  assert(!vis(d, w, "#fhTabs"), "phone: the whole tab group is hidden");
+  assert(vis(d, w, "#levelBar"), "phone: the level bar stays");
+  w.applyFhView("patterns");
+  w.render();
+  assert(T.fhActiveTab === "filter", "a render that lands on Patterns falls back to Filtered, got " + T.fhActiveTab);
+  w.applyFhView("patterns");
+  w.jumpToViewTab(1);
+  assert(T.fhActiveTab === "filter", "Ctrl+1 (Patterns slot) stays on Filtered on phone, got " + T.fhActiveTab);
   w.applyFhView("table");
   w.render();
   assert(T.fhActiveTab === "filter", "a render that lands on Table falls back to Filtered, got " + T.fhActiveTab);
@@ -99,8 +103,13 @@ await withApp(async (w, d, T) => {
   w.render();
   assert(T.fhActiveTab === "filter", "...and Context too");
   phoneWidth(w, 820);
-  const shown2 = [...d.querySelectorAll("#fhTabs .view-tab")].filter(b => w.getComputedStyle(b).display !== "none").map(b => b.dataset.fhTab);
-  assert(shown2.includes("highlight"), "compact shows the Context tab again");
+  assert(vis(d, w, "#fhTabs"), "compact shows the tab group again");
+  const shown2 = [...d.querySelectorAll("#fhTabs .view-tab")].map(b => b.dataset.fhTab);
+  assert(shown2.includes("highlight") && shown2.includes("patterns"), "compact lists Patterns and Context again, got " + shown2.join());
+  w.jumpToViewTab(1);
+  assert(T.fhActiveTab === "patterns", "compact: Ctrl+1 reaches Patterns");
+  phoneWidth(w, 1440);
+  assert(vis(d, w, "#fhTabs"), "desktop shows the tab group");
 });
 
 await withApp(async (w, d, T) => {
