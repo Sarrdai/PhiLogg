@@ -23,8 +23,8 @@
    switches to "table" and the matching row is selected/scrolled there; from
    there that row's own double-click already goes on into Filtered, so one
    more click gets you the same place a direct plot-to-Filtered jump used to.
-   jumpToFullLog itself is unchanged and still directly tested (Group 10) —
-   it's simply no longer wired to any UI action.
+   jumpToFullLog itself was left in place un-wired at the time and has since
+   been removed as dead code.
    ============================================================ */
 group(159);
 await withApp(async (w, d, T) => {

@@ -77,14 +77,11 @@ await withApp(async (w, d, T) => {
   assert(T.extractRowsData.every(r => r.values.length === 3), "row.values still holds all 3 raw captured values — matching itself is untouched by ignoring a column (Index/t(ms) ride along as negative-index expandos, outside this .length)");
 
   /* ---------- Export excludes the ignored column from both header and body ---------- */
-  let copied = null;
-  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
-  w.copyWholeExtractTable();
-  const copiedLines = copied.split("\n");
+  const copiedLines = w.buildExtractCsv("\t", ".", true, false).split("\r\n");
   // Leads with Index/t(ms) (t(ms)=0 on the first row — elapsed since itself),
   // then the two visible pattern columns; "name" (ignored) stays excluded.
-  assert(copiedLines[0] === "Index\tt (ms)\tid\tscore", "copy-whole-table header includes only the visible columns' names, got " + JSON.stringify(copiedLines[0]));
-  assert(copiedLines[1] === "0\t0\t0\t0.5", "copy-whole-table body row includes only the visible columns' values (ignored 'name' column dropped), got " + JSON.stringify(copiedLines[1]));
+  assert(copiedLines[0] === "Index\tt (ms)\tid\tscore", "export header includes only the visible columns' names, got " + JSON.stringify(copiedLines[0]));
+  assert(copiedLines[1] === "0\t0\t0\t0.5", "export body row includes only the visible columns' values (ignored 'name' column dropped), got " + JSON.stringify(copiedLines[1]));
 
   /* ---------- Edit mode pre-populates the preview from node.ignoredColumns ---------- */
   w.openEditFilterPopup(node.id);

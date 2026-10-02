@@ -67,7 +67,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("118c. jumpToFullLog (extraction table double-click) preserves the source row's on-screen offset into the Filter view too");
+  section("118c. revealInFilteredView (extraction table double-click) preserves the source row's on-screen offset into the Filter view too");
 
   const f = await w.addFile("a.log", makeLog(0, 60), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -85,10 +85,10 @@ await withApp(async (w, d, T) => {
   assert(tr, "sanity: entry 30's extraction row is rendered");
   tr.getBoundingClientRect = () => ({ top: 80, left: 0, right: 800, bottom: 108, width: 800, height: 28, x: 0, y: 80 });
 
-  w.jumpToFullLog(entry, tr, extractScroll);
-  assert(T.state.activeId === f.id, "sanity: jumped to the plain file (Full log), losing the extract filter");
+  w.revealInFilteredView(entry, tr, extractScroll);
+  assert(T.state.activeId === extractNode.id, "sanity: stayed on the extraction node (its own Filtered pane), no jump to the plain file");
   const newIdx = T.currentViewEntries.findIndex(e => e.id === entry.id);
-  assert(newIdx === 30, "sanity: entry 30 is at index 30 in the unfiltered file");
+  assert(newIdx === 30, "sanity: entry 30 is at index 30 in the node's own filtered view (the pattern matches every row)");
   const expectedScrollTop = 30 * 28 - 80;
   assert(tableBody.scrollTop === expectedScrollTop,
     "Filter view scrolled so entry 30 keeps its 80px on-screen offset from the extraction table, got " + tableBody.scrollTop + " expected " + expectedScrollTop);

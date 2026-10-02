@@ -79,13 +79,10 @@ await withApp(async (w, d, T) => {
   assert(T.extractRowsData[0].values[-1] === "3500" && T.extractRowsData[1].values[-1] === "1500" && T.extractRowsData[2].values[-1] === "0",
     "sorting by t(ms) descending reverses row order numerically, got [" + T.extractRowsData.map(r => r.values[-1]).join(",") + "]");
 
-  /* ---------- Copy whole table includes both synthetic columns ---------- */
-  let copied = null;
-  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
-  w.copyWholeExtractTable();
-  const lines = copied.split("\n");
-  assert(lines[0] === "Index\tt (ms)\tn", "copy-whole-table header includes Index/t(ms) ahead of the pattern column, got " + JSON.stringify(lines[0]));
-  assert(lines.includes("2\t3500\t9"), "copy-whole-table body includes a cumulative (not per-step) t(ms) value, got " + JSON.stringify(lines));
+  /* ---------- Whole-table export (the CSV dialog's builder) includes both synthetic columns ---------- */
+  const lines = w.buildExtractCsv("\t", ".", true, false).split("\r\n");
+  assert(lines[0] === "Index\tt (ms)\tn", "export header includes Index/t(ms) ahead of the pattern column, got " + JSON.stringify(lines[0]));
+  assert(lines.includes("2\t3500\t9"), "export body includes a cumulative (not per-step) t(ms) value, got " + JSON.stringify(lines));
 
   /* ---------- Plot tab: Index is the default X axis on every extraction, a real column defaults for Y ---------- */
   w.applyFhView("plot");

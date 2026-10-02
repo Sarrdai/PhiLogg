@@ -1,0 +1,4 @@
+- **fix: live tailing no longer corrupts a character that a poll cuts in half (2026-10-02, code review)**
+  - When the writer flushed only part of a multi-byte UTF-8 character (ü, €, CJK, an emoji) before a poll, both halves decoded as U+FFFD and stayed that way ("Grüße" became "Gr��ße"). The tail now decodes whole characters only, advances its offset by the bytes it consumed and reads the held-back 1-3 bytes again on the next poll; invalid bytes in a broken file still show as U+FFFD.
+  - The folder minimap's windowed load had the same flaw at its fixed 2 MB chunk boundaries and uses the same helper now.
+  - **Tests**: GROUP tail-utf8-boundary. Docs: docs/persistence-and-sync.md "Tailing".

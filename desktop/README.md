@@ -177,6 +177,12 @@ like any other.
   native drag-drop, native folder listing) and the path is known before the
   page ever sees them. Nothing user-visible is missing; it is only why the
   file-opening routes look the way they do.
+- **A path in log text is clickable only when it is local and not executable.**
+  A network path (`\\server\share\…`, `//server/…`) is never offered as a
+  link — checking it would make Windows contact that host and send the user's
+  credentials — and "Open file" / "open externally" (ZIP entry) refuse
+  executable and script types (`.exe`, `.bat`, `.ps1`, `.lnk`, …) with a toast
+  naming the reason. See `docs/desktop.md` → "Hostile log text".
 - **IDE Integration (Settings → IDE Integration, "jump from a log entry into
   Visual Studio/Rider") is Windows-only** — hidden entirely on macOS/Linux
   and in the plain browser build. See `docs/desktop.md` → "IDE Integration"

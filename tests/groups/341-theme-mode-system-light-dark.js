@@ -64,7 +64,7 @@ if (groupSelected()) {
   {
     const os = osStub(false);
     await withApp(async (w, d, T) => {
-      assert(w.themeMode() === "system", "the default mode is system, got " + w.themeMode());
+      assert(T.themeModeChoice === "system", "the default mode is system, got " + T.themeModeChoice);
       assert(themeOf(d) === "catppuccin-mocha", "OS not light -> Catppuccin Mocha, got " + themeOf(d));
       assert(selVal(d, "settingsThemeLightSelect") === "catppuccin-latte" && selVal(d, "settingsThemeDarkSelect") === "catppuccin-mocha",
         "the slots default to Latte (light) and Mocha (dark), got " + selVal(d, "settingsThemeLightSelect") + " / " + selVal(d, "settingsThemeDarkSelect"));
@@ -150,7 +150,7 @@ if (groupSelected()) {
         "sub-rows are indented (34px) relative to the Theme row (18px)");
 
       fireClick(d.querySelector("#settingsThemeModeLight"), w);
-      assert(w.themeMode() === "light" && w.localStorage.getItem("philogg-theme-mode") === "light", "clicking Light sets and persists the mode");
+      assert(T.themeModeChoice === "light" && w.localStorage.getItem("philogg-theme-mode") === "light", "clicking Light sets and persists the mode");
       assert(JSON.stringify(activeModes(d)) === JSON.stringify(["light"]), "only Light is active, got " + JSON.stringify(activeModes(d)));
       assert(themeOf(d) === "catppuccin-latte", "Light shows the light slot even though the OS is dark, got " + themeOf(d));
 
@@ -164,7 +164,7 @@ if (groupSelected()) {
       assert(themeOf(d) === "catppuccin-latte", "System follows the (now light) OS");
 
       w.setThemeMode("nonsense");
-      assert(w.themeMode() === "system" && w.localStorage.getItem("philogg-theme-mode") === "system", "an unknown mode is ignored");
+      assert(T.themeModeChoice === "system" && w.localStorage.getItem("philogg-theme-mode") === "system", "an unknown mode is ignored");
     }, themeApp(os));
   }
 
@@ -216,7 +216,7 @@ if (groupSelected()) {
       assert(themeOf(d) === "catppuccin-macchiato", "the theme is applied, got " + themeOf(d));
       assert(w.localStorage.getItem("philogg-theme-dark") === "catppuccin-macchiato", "OS dark -> it went into the dark slot");
       assert(w.localStorage.getItem("philogg-theme-light") === null && w.themeSlot("light") === "catppuccin-latte", "the light slot is untouched");
-      assert(w.themeMode() === "system" && w.localStorage.getItem("philogg-theme-mode") === null, "the mode is untouched");
+      assert(T.themeModeChoice === "system" && w.localStorage.getItem("philogg-theme-mode") === null, "the mode is untouched");
       os.set(true);
       assert(themeOf(d) === "catppuccin-latte", "the light side still shows Latte after the OS flips");
       w.setTheme("catppuccin-frappe");
@@ -239,7 +239,7 @@ if (groupSelected()) {
       fireClick(d.querySelector("#btnSettings"), w);
       const a = addCustomTheme(w, d, T, "Slot A");
       assert(themeOf(d) === a.id && w.localStorage.getItem("philogg-theme-dark") === a.id, "the saved custom theme is active in the dark slot");
-      assert(w.themeMode() === "system", "saving a custom theme does not change the mode");
+      assert(T.themeModeChoice === "system", "saving a custom theme does not change the mode");
       assert(w.getComputedStyle(d.documentElement).getPropertyValue("--bg-app").trim() === "#123456", "its colors are applied inline");
       ["settingsThemeLightSelect", "settingsThemeDarkSelect"].forEach(id => {
         assert([...d.querySelectorAll("#" + id + " optgroup[label='Custom'] option")].some(o => o.value === a.id && o.textContent === "Slot A"),
@@ -280,7 +280,7 @@ if (groupSelected()) {
   {
     // A fresh stub per window: a previous window's os.set() must not leak into the next boot.
     await withApp(async (w, d, T) => {
-      assert(w.themeMode() === "light", "a persisted mode is restored");
+      assert(T.themeModeChoice === "light", "a persisted mode is restored");
       assert(themeOf(d) === "catppuccin-macchiato", "mode Light + a persisted light slot shows that theme although the OS is dark, got " + themeOf(d));
       assert(JSON.stringify(activeModes(d)) === JSON.stringify(["light"]), "the Light button is active after boot");
       assert(selVal(d, "settingsThemeLightSelect") === "catppuccin-macchiato" && selVal(d, "settingsThemeDarkSelect") === "catppuccin-frappe", "the dropdowns show the persisted slots");
@@ -296,14 +296,14 @@ if (groupSelected()) {
     }, themeApp(osStale, { "philogg-theme-light": "custom:gone", "philogg-theme-dark": "custom:also-gone" }));
 
     await withApp(async (w, d, T) => {
-      assert(w.themeMode() === "system", "an unknown persisted mode reads as system");
+      assert(T.themeModeChoice === "system", "an unknown persisted mode reads as system");
       assert(themeOf(d) === "catppuccin-mocha", "...so the OS (dark) decides, got " + themeOf(d));
     }, themeApp(osStub(false), { "philogg-theme-mode": "sepia" }));
 
     // The old single key is never read: no migration below 1.0.
     await withApp(async (w, d, T) => {
       assert(themeOf(d) === "catppuccin-mocha", "the old philogg-theme key (light) is ignored, got " + themeOf(d));
-      assert(w.themeMode() === "system" && w.themeSlot("dark") === "catppuccin-mocha" && w.themeSlot("light") === "catppuccin-latte", "mode and slots are the defaults");
+      assert(T.themeModeChoice === "system" && w.themeSlot("dark") === "catppuccin-mocha" && w.themeSlot("light") === "catppuccin-latte", "mode and slots are the defaults");
     }, themeApp(osStub(false), { "philogg-theme": "light" }));
   }
 

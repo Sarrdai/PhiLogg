@@ -176,9 +176,11 @@
     },
     // Clickable-local-path feature: pathExists gates the hover popup,
     // openPath is its "Open file" action (revealPath above already covers
-    // "Open containing folder"). See commands.rs.
-    pathExists: function (path) {
-      return invoke("path_exists", { path: path });
+    // "Open containing folder"). See commands.rs. A network (UNC) path
+    // answers false unless the caller passes `{ allowRemote: true }`, so a
+    // path taken from log text never makes the OS contact a remote host.
+    pathExists: function (path, opts) {
+      return invoke("path_exists", { path: path, allowRemote: !!(opts && opts.allowRemote) });
     },
     openPath: function (path) {
       return invoke("open_path", { path: path });

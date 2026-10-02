@@ -25,7 +25,7 @@ await withApp(async (w, d, T) => {
   assert(w.icon("x", "icon-xs").includes('class="icon icon-xs"'), "icon(name, cls) appends the class");
   const use = n => (w.eval(n).match(/href="#i-([a-z-]+)"/) || [])[1];
   const expect = { ICON_FILE: "file", ICON_FILTER: "filter", ICON_RENAME: "rename", ICON_EDIT: "edit", ICON_INVERT: "not", ICON_LINK: "link",
-    ICON_MERGE: "merge", ICON_CLOCK: "clock", ICON_BOOK: "book", ICON_DISK: "bookplus", ICON_GEAR: "gear", ICON_CLOSE: "x",
+    ICON_MERGE: "merge", ICON_CLOCK: "clock", ICON_DISK: "bookplus", ICON_CLOSE: "x",
     ICON_ELLIPSIS: "more", ICON_AND: "and", ICON_OR: "or" };
   Object.keys(expect).forEach(k => assert(use(k) === expect[k], k + " -> #i-" + expect[k] + ", got " + use(k)));
   assert(w.eval("typeof ICON_COMBINE") === "undefined", "ICON_COMBINE is gone (split into ICON_AND / ICON_OR)");
@@ -56,7 +56,6 @@ await withApp(async (w, d, T) => {
   const symHtml = n => sprite.querySelector("symbol#i-" + n).innerHTML;
   [["file-auto", ">A<"], ["file-partial", ">P<"], ["merge-window", ">W<"]].forEach(([n, t]) =>
     assert(symHtml(n).includes("<text") && symHtml(n).includes(t) && symHtml(n).includes('fill="var(--bg-panel)"'), "badge symbol i-" + n + " keeps its circled letter"));
-  assert(symHtml("filter-plus").includes("var(--bg-panel)") && symHtml("filter-plus").includes("#i-filter"), "filter-plus is the funnel plus a circled + badge");
   assert(symHtml("bookmark-filled").includes('fill="currentColor"'), "bookmark-filled is a filled glyph");
   // Distinct glyphs stay distinct symbols (caret vs panel chevron, load vs save, before/after arrows).
   assert(use("ICON_CARET_LEFT") !== use("ICON_CHEVRON_LEFT") && use("ICON_SAVE") !== use("ICON_LOAD") && use("ICON_TIME_BEFORE") !== use("ICON_TIME_AFTER"), "distinct glyphs keep distinct symbols");

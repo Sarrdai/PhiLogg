@@ -367,6 +367,7 @@ async function withApp(run, opts = {}) {
       get BUILTIN_SYNTAX_SCHEMES() { return BUILTIN_SYNTAX_SCHEMES; },
       get customSyntaxSchemes() { return customSyntaxSchemes; },
       get syntaxSchemeChoice() { return syntaxSchemeChoice; },
+      get themeModeChoice() { return themeModeChoice; },
       get detailView() { return detailView; },
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },
@@ -411,6 +412,8 @@ async function withApp(run, opts = {}) {
       // The boot restore promise (restoreSessionFromCache + restoreWatchedFolders),
       // awaited by every "reload" group instead of polling state.rootIds.
       get bootRestore() { return bootRestore; },
+      // The filter-node copy table (GROUP filter-node-carriers checks it against its fixtures).
+      get filterNodeFields() { return FILTER_NODE_FIELDS; },
       get navHistory() { return navHistory; },
       get navHistoryIndex() { return navHistoryIndex; },
       get nodeLastView() { return nodeLastView; },

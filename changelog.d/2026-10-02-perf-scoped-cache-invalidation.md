@@ -1,0 +1,4 @@
+- **perf: bookmark toggles, note edits and single-filter edits no longer recompute every filter (2026-10-02, code review)**
+  - Toggling a bookmark or editing a note on a 300k-entry file took ~0.6 s (real app, 11 nodes), because every such change threw away every node's cached result and the next repaint recomputed all filter chains. It now drops only the nodes that really depend on it: ~17 ms per bookmark toggle, ~27 ms per note edit. Editing, muting, inverting or moving one filter likewise only recomputes that filter and what hangs below it.
+  - Also fixes a stale result: removing the last bookmark (or note) deleted the auto node but left AND/OR/link filters that had baked it showing the old matches until the next full invalidation.
+  - **Tests**: GROUP cache-scope (differential check against a forced full recompute after every operation, plus which caches survive). Docs: PROJECT.md "Memoization".
