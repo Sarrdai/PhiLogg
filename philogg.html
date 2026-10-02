@@ -4545,7 +4545,7 @@
      (body.sheet-open is kept by updateDetailPanel), ~62% high otherwise. */
   body.layout-phone #detailResizer{display:none !important;}
   body.layout-phone #detailPanel{
-    position:fixed; left:0; right:0; bottom:0; z-index:50; height:62% !important; min-height:0;
+    position:fixed; left:0; right:0; bottom:0; z-index:50; height:var(--sheet-h) !important; min-height:0;
     border-radius:16px 16px 0 0; border-top:1px solid var(--border); overflow:hidden;
     box-shadow:0 -10px 30px rgba(0,0,0,.4);
     transform:translateY(100%); visibility:hidden;
@@ -4563,6 +4563,43 @@
   body.layout-phone #detailViewTabs{order:3; flex:1 0 100%; height:34px;}
   body.layout-phone #detailViewTabs .view-tab{flex:1; font-size:12.5px;}
 
+  /* Card rows (layout-phone): the same .log-row element, restyled. Heights
+     are computed in JS (CARD_* constants, see "Card rows") and must match:
+     10px padding, 20px head row + 4px row gap, 14px/19px message clamped to
+     4 lines, 1px border-bottom. */
+  body.layout-phone { --sheet-h:62vh; }
+  body.layout-phone #tableWrap:not(.text-mode) #tableHeader{display:none;}
+  body.layout-phone #tableRows{--rows-pad-left:0px; padding:2px 0 20px 0;}
+  body.layout-phone #tableRows .log-row.row-grid{
+    display:grid; grid-template-columns:4px auto auto minmax(0,1fr); grid-template-rows:20px auto;
+    column-gap:10px; row-gap:4px; align-items:center; align-content:start;
+    padding:10px 10px 10px 0; background-clip:padding-box;
+  }
+  body.layout-phone #tableRows .log-row.row-grid > .col-bar{
+    grid-column:1; grid-row:1 / 3; align-self:stretch; margin:-10px 0; border-radius:0 3px 3px 0;
+  }
+  body.layout-phone #tableRows .log-row.row-grid > .col-time{grid-column:2; grid-row:1; font-size:12px;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-level{grid-column:3; grid-row:1;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-thread{grid-column:4; grid-row:1; font-size:12px; min-width:0;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-delta,
+  body.layout-phone #tableRows .log-row.row-grid > .col-location,
+  body.layout-phone #tableRows .log-row.row-grid > .col-method,
+  body.layout-phone #tableRows .log-row.row-grid > .col-custom{display:none;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-msg{
+    grid-column:2 / -1; grid-row:2; min-width:0; align-self:start;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden;
+    white-space:normal; word-break:break-all; text-overflow:ellipsis;
+    font-size:14px; line-height:19px;
+  }
+  body.layout-phone.multiline-messages #tableRows .log-row.row-grid > .col-msg{white-space:pre-wrap;}
+  /* msgCharWidth() measures with a bare body > .col-msg probe: it must carry the card font size. */
+  body.layout-phone > .col-msg{font-size:14px;}
+  body.layout-phone #tableRows .hl-markers, body.layout-phone #tableRows .ctx-bracket,
+  body.layout-phone #tableRows .ctx-anchor-dot{display:none;}
+  body.layout-phone #tableRows .col-bookmark-icon{left:auto; right:6px; top:6px; bottom:auto; height:12px;}
+  /* The bottom sheet takes its height out of the list so the selected card
+     can always be scrolled above it (selectEntry -> scrollToIndex). */
+  body.layout-phone.sheet-open #content{padding-bottom:var(--sheet-h);}
   :focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 
   /* ---------- Picture-in-picture (desktop build) ----------
@@ -23469,6 +23506,28 @@ function noteHeightForEntry(e) {
   if (!note) return 0;
   return messageLineCount(note) * NOTE_LINE_HEIGHT + NOTE_ROW_VPAD;
 }
+/* ---------- Card rows (layout-phone) ----------
+   On phone the Filtered view's log rows are cards (CSS on the same .log-row
+   element, see "Phone shell" in the stylesheet): line 1 = time, level badge,
+   thread; line 2+ = the message, soft-wrapped (word-break:break-all, so the
+   line count is exactly messageWrapLines(), same contract as word-wrap) and
+   clamped to CARD_MAX_LINES. The height is CARD_HEAD + lines * CARD_LINE +
+   CARD_VPAD — pure arithmetic, never measured. The constants mirror the CSS:
+   head row 20px + 4px row gap; 14px mono message at line-height 19px; 10px
+   padding top/bottom + 1px border-bottom. CARD_TRACK_INSET is the card's
+   horizontal non-message width (4px stripe + 10px gap on the left, 10px
+   padding on the right). Not scaled by the log text size (fixed px in CSS).
+   Plain-text files keep their text rows (filteredTextMode). */
+const CARD_HEAD = 24;
+const CARD_LINE = 19;
+const CARD_VPAD = 21;
+const CARD_MAX_LINES = 4;
+const CARD_TRACK_INSET = 24;
+function cardMode() { return currentLayoutTier === "phone" && !filteredTextMode; }
+function cardHeightForEntry(e, cols) {
+  const n = cols >= 1 ? messageWrapLines(e.message, cols) : (state.multilineMessages ? messageLineCount(e.message) : 1);
+  return CARD_HEAD + Math.min(n, CARD_MAX_LINES) * CARD_LINE + CARD_VPAD;
+}
 /* ---------- Word-wrap message height support (state.wrapMessages) ----------
    Word-wrap is folded into the exact-height virtualization the multiline
    feature already established: a wrapped row's height is ROW_HEIGHT plus one
@@ -23496,6 +23555,11 @@ function msgCharWidth() {
 // when wrap is off or the body isn't measurable yet (e.g. jsdom, clientWidth
 // 0) — callers then fall back to the plain non-wrapped ROW_HEIGHT.
 function wrapColsForBody(bodyEl) {
+  if (bodyEl === tableBody && cardMode()) {
+    const cw = msgCharWidth();
+    const track = (bodyEl.clientWidth || 0) - CARD_TRACK_INSET;
+    return track > 0 ? Math.max(1, Math.floor((track - cw) / cw)) : 0;
+  }
   if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : state.wrapMessages)) return 0;
   const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
   if (!(track > 0)) return 0;
@@ -23534,7 +23598,8 @@ function messageWrapLines(message, cols) {
 // `textRows` (the Filtered view in text mode only): TEXT_ROW_HEIGHT rows whose
 // extra lines are TEXT_ROW_HEIGHT each (the cells' line-height, see
 // .text-row's CSS).
-function baseRowHeightForEntry(e, cols, textRows) {
+function baseRowHeightForEntry(e, cols, textRows, card) {
+  if (card) return cardHeightForEntry(e, cols);
   const h = textRows ? TEXT_ROW_HEIGHT : ROW_HEIGHT;
   const wrapOn = (textRows ? state.wrapTextView : state.wrapMessages) && cols >= 1;
   if (!wrapOn && (textRows || !state.multilineMessages)) return h;
@@ -23549,8 +23614,8 @@ function baseRowHeightForEntry(e, cols, textRows) {
 // buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e, cols) +
 // noteHeightForEntry(e) exactly, or the two DOM elements' real heights drift
 // out of sync with the virtualization math.
-function rowHeightForEntry(e, cols, textRows) {
-  return baseRowHeightForEntry(e, cols, textRows) + noteHeightForEntry(e);
+function rowHeightForEntry(e, cols, textRows, card) {
+  return baseRowHeightForEntry(e, cols, textRows, card) + noteHeightForEntry(e);
 }
 // Whether the offsets-array virtualization path (tableRowOffsets/
 // highlightRowOffsets, built via buildRowOffsets) is needed instead of the
@@ -23558,7 +23623,7 @@ function rowHeightForEntry(e, cols, textRows) {
 // differ from the fixed ROW_HEIGHT default: multiline messages, word-wrap, or
 // notes being shown at all (cheaper to always build the array while notes are
 // on than to track "does any currently-loaded entry actually have a note").
-function needsRowOffsets() { return filteredTextMode ? (state.showNotes || state.wrapTextView) : (state.multilineMessages || state.showNotes || state.wrapMessages); }
+function needsRowOffsets() { return filteredTextMode ? (state.showNotes || state.wrapTextView) : (cardMode() || state.multilineMessages || state.showNotes || state.wrapMessages); }
 function buildRowOffsets(entries) {
   // Recompute (and cache) the Filtered view's wrap column count here so the
   // heights summed below and the per-row heights renderVisibleRows sets from
@@ -23566,7 +23631,7 @@ function buildRowOffsets(entries) {
   tableWrapCols = wrapColsForBody(tableBody);
   const cols = tableWrapCols;
   const offsets = new Float64Array(entries.length + 1);
-  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols, filteredTextMode);
+  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols, filteredTextMode, cardMode());
   return offsets;
 }
 // Largest i such that offsets[i] <= y, clamped to a valid row index (offsets
@@ -24061,7 +24126,7 @@ function appendLogRow(frag, i, rc) {
   const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
   row.className = cls;
-  row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode) + "px";
+  row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode()) + "px";
   row.dataset.entryId = e.id;
   // Text mode: no level stripe/Δt/Level/columns — line number, the (empty)
   // fold slot, the message. A text file has no other columns.
@@ -27916,6 +27981,12 @@ function selectEntry(entryId, opts) {
   // full re-render here would break native double-click detection.
   updateSelectedRowClass(previousId);
   updateDetailPanel();
+  // Phone: the bottom sheet just shrank the list (see body.sheet-open in the
+  // stylesheet), so bring the selected card into the part above it.
+  if (currentLayoutTier === "phone" && entryId) {
+    const si = currentViewEntries.findIndex(x => x.id === entryId);
+    if (si !== -1) scrollToIndex(si);
+  }
   findRefresh(); // the find bar's "n / m" follows the selection
 }
 
@@ -28346,7 +28417,12 @@ function formatMessageWithHighlight(text) {
 // filtered view.
 function updateDetailPanel() {
   const entry = selectedEntry();
-  document.body.classList.toggle("sheet-open", !!entry); // phone: the bottom sheet (CSS only acts in layout-phone)
+  // phone: the bottom sheet (CSS only acts in layout-phone). It takes its
+  // height out of the list's (body.sheet-open pads #content), so the visible
+  // rows are re-rendered when it opens/closes.
+  const sheetWas = document.body.classList.contains("sheet-open");
+  document.body.classList.toggle("sheet-open", !!entry);
+  if (sheetWas !== !!entry && currentLayoutTier === "phone") renderVisibleRows();
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -28387,12 +28463,10 @@ function updateDetailPanel() {
     detailMeta.innerHTML =
       levelBadgeHtml(entry) +
       '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
-      '<span class="detail-sep">·</span>' +
-      '<span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' +
-      '<span class="detail-sep">·</span>' +
-      '<span class="detail-loc" title="' + escapeHtml(entry.location) + '"><bdi dir="ltr">' + markField(entry.location, "location") + '</bdi></span>' +
-      '<span class="detail-sep">·</span>' +
-      '<span class="detail-method">' + markField(entry.method, "method") + '</span>';
+      // Empty fields (thread/location/method) print neither a span nor a separator.
+      (entry.thread ? '<span class="detail-sep">·</span><span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' : "") +
+      (entry.location ? '<span class="detail-sep">·</span><span class="detail-loc" title="' + escapeHtml(entry.location) + '"><bdi dir="ltr">' + markField(entry.location, "location") + '</bdi></span>' : "") +
+      (entry.method ? '<span class="detail-sep">·</span><span class="detail-method">' + markField(entry.method, "method") + '</span>' : "");
   }
   // Plain textContent (message can never be interpreted as markup) unless
   // there's actually something to mark or format, in which case both
@@ -29040,6 +29114,11 @@ function applyLayoutTier() {
   render(); // also runs phoneEnforceTab()
 }
 window.addEventListener("resize", applyLayoutTier);
+// Card heights depend on the message track's character capacity: a resize
+// inside the phone tier (rotation) that changes it rebuilds the offsets.
+window.addEventListener("resize", () => {
+  if (currentLayoutTier === "phone" && cardMode() && wrapColsForBody(tableBody) !== tableWrapCols) render();
+});
 btnDrawer.addEventListener("click", () => setDrawerOpen(!isDrawerOpen()));
 
 // ---- Phone shell (layout-phone) ----
@@ -29315,7 +29394,7 @@ function syncTableRowsWidth() {
   // Word-wrap on: the message wraps within the viewport, so there is nothing
   // to scroll to horizontally — clear any forced width and let #tableRows
   // stretch-fill (left:0;right:0), same as a short-message file.
-  if (filteredTextMode ? state.wrapTextView : state.wrapMessages) { tableRows.style.width = ""; return; }
+  if (cardMode() || (filteredTextMode ? state.wrapTextView : state.wrapMessages)) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
     ? tableGutterW() + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
     : 0;
