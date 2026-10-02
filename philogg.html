@@ -47,6 +47,7 @@
     --level-custom-6:#d0b45a;
     --level-custom-on:#0d1016;
     --warn:#e8a94a;
+    --status-ok:#5fd38d;
     /* Text/label color for the level-quick-filter buttons (see
        .level-btn.active.lvl-* below — checked/solid-filled only; unchecked
        is an unfilled ring, so this only matters once a level is on) — sits
@@ -167,6 +168,7 @@
     --accent-soft:rgba(27,143,138,.12);
     --accent-strong:#137672;
     --warn:#a06a1c;
+    --status-ok:#1e8a4c;
     --level-error:#c0392b;
     --level-error-soft:rgba(192,57,43,.12);
     --level-warn:#a06a1c;
@@ -254,6 +256,7 @@
     --accent-soft:rgba(148,226,213,.14);
     --accent-strong:#89dceb;
     --warn:#fab387;
+    --status-ok:#a6e3a1;
     --level-error:#f38ba8;
     --level-error-soft:rgba(243,139,168,.14);
     --level-warn:#fab387;
@@ -296,6 +299,7 @@
     --accent-soft:rgba(139,213,202,.14);
     --accent-strong:#91d7e3;
     --warn:#f5a97f;
+    --status-ok:#a6da95;
     --level-error:#ed8796;
     --level-error-soft:rgba(237,135,150,.14);
     --level-warn:#f5a97f;
@@ -334,6 +338,7 @@
     --accent-soft:rgba(129,200,190,.14);
     --accent-strong:#99d1db;
     --warn:#ef9f76;
+    --status-ok:#a6d189;
     --level-error:#e78284;
     --level-error-soft:rgba(231,130,132,.14);
     --level-warn:#ef9f76;
@@ -372,6 +377,7 @@
     --accent-soft:rgba(32,159,181,.12);
     --accent-strong:#179299;
     --warn:#fe640b;
+    --status-ok:#40a02b;
     --level-error:#d20f39;
     --level-error-soft:rgba(210,15,57,.12);
     --level-warn:#fe640b;
@@ -649,11 +655,12 @@
     flex:0 0 auto; position:relative; display:flex; color:var(--text-tertiary);
   }
   .folder-watch-icon.live{color:var(--text-secondary);}
-  /* Status dot at the icon's bottom-right: accent = watching, error = the
+  /* Status dot at the icon's bottom-right: --status-ok (green, not the accent —
+     a reddish accent read as a problem) = watching, error = the
      folder is unreachable. The ring (box-shadow) separates it from the glyph. */
   .folder-watch-dot{
     position:absolute; right:-2px; bottom:-1px; width:6px; height:6px;
-    border-radius:50%; background:var(--accent);
+    border-radius:50%; background:var(--status-ok);
     box-shadow:0 0 0 1.5px var(--bg-elevated);
   }
   .folder-watch-icon.failed .folder-watch-dot{background:var(--level-error);}
