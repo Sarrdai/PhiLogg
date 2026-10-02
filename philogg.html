@@ -12632,15 +12632,6 @@ function isBakedList(list) {
   return Array.isArray(list) && list.length >= 2 && list.every(b => b && typeof b === "object");
 }
 
-// Copies whichever baked fields src carries (baked / bakedA / bakedB) onto
-// dst as deep copies — the one place every persistence carrier (clone,
-// snapshot, filter JSON, session cache) goes through for them.
-function copyBakedFields(src, dst) {
-  if (src.baked) dst.baked = JSON.parse(JSON.stringify(src.baked));
-  if (src.bakedA) dst.bakedA = JSON.parse(JSON.stringify(src.bakedA));
-  if (src.bakedB) dst.bakedB = JSON.parse(JSON.stringify(src.bakedB));
-}
-
 // Evaluates an N-ary AND/OR over baked conditions against one entry pool:
 // AND = entries matching every condition, OR = entries matching any (sorted
 // chronologically by the file's order).
@@ -12986,6 +12977,104 @@ function copyLinkOptions(src, dst) {
   if (dt) dst.linkDt = dt; else delete dst.linkDt;
   const key = sanitizeLinkKey(src.linkKey);
   if (key) dst.linkKey = key; else delete dst.linkKey;
+}
+
+/* ===== The filter-node field table =====
+   The one list of a filter node's own data fields (everything except the
+   header every carrier writes by hand: id/type/name/parentId/children,
+   filterType, value, inverted) and how four carriers copy them:
+     clone      cloneSubtree (copy/paste): fresh containers, text/extraction gates
+     snapshot   snapshotSubtree (undo/redo capture): fresh containers, NO gates
+     restore    restoreSubtree (inverse of snapshot): re-uses the snapshot's containers
+     serialize  serializeFilterNodeFields (filter JSON, library, session cache): the live
+                node's containers go out as they are (the JSON round trip copies them),
+                text/extraction gates
+   A new filter-node field is one row here (plus its readers: materializeFilterNode,
+   which sanitizes foreign data, and the other hand-written carriers listed in
+   PROJECT.md -> "Known gotchas"); the regression group filter-node-carriers fails
+   until the row, a fixture and its COVERED_FIELDS entry exist. Row fields:
+     key      the node property
+     kind     flag      truthy -> true
+              scalar    truthy -> the same value
+              bool      always !!value                        (link flags)
+              raw       always the value as it is             (link/context numbers)
+              sanitized always a fresh object from row.sanitize(value), when it yields one
+              json      truthy -> a deep (JSON) copy          (assertions, plotConfig, baked)
+              array     truthy -> slice()
+              object    truthy -> a shallow copy              (arrayViews)
+     type     only for nodes of this filterType, in every carrier
+     gate     "text" / "extraction" (nodeIsExtractionView: plotConfig/arrayViews are per VIEW, so a
+              timerange that inherits Table/Plot from a wildcard ancestor carries them; a MUTED
+              node is not an extraction view): applied by the gated carriers only (clone,
+              serialize). snapshot and restore keep the field whatever the node is, so an undone
+              delete of a muted extraction node brings its plot back.
+     skipEmpty  the gated carriers leave out an empty array (columns); snapshot/restore copy it
+     byRef    the carriers that pass a json/array/object container through instead of copying it
+              (default: restore, serialize; baked is copied by every carrier but restore)
+   Never copied by any carrier: locked (only the auto-managed Bookmarks/Notes/Sources nodes
+   have it; a copy of one is a plain node), collapsed (display-only), selectionOrdinal and
+   the _-prefixed runtime caches. Row order = the key order of a serialized node in the files. */
+const FILTER_NODE_FIELD_MODES = {
+  clone: { gated: true },
+  snapshot: { gated: false },
+  restore: { gated: false },
+  serialize: { gated: true },
+};
+const FILTER_NODE_FIELD_DEFAULT_BY_REF = ["restore", "serialize"];
+const FILTER_NODE_FIELDS = [
+  { key: "baked", kind: "json", byRef: ["restore"] },
+  { key: "bakedA", kind: "json", byRef: ["restore"] },
+  { key: "bakedB", kind: "json", byRef: ["restore"] },
+  { key: "linkDirection", kind: "raw", type: "link" },
+  { key: "linkN", kind: "raw", type: "link" },
+  { key: "linkOrderEnforced", kind: "bool", type: "link" },
+  { key: "linkExclusive", kind: "bool", type: "link" },
+  { key: "linkDt", kind: "sanitized", sanitize: sanitizeLinkDt, type: "link" },
+  { key: "linkKey", kind: "sanitized", sanitize: sanitizeLinkKey, type: "link" },
+  { key: "contextBefore", kind: "raw", type: "context" },
+  { key: "contextAfter", kind: "raw", type: "context" },
+  { key: "countBefore", kind: "raw", type: "countContext" },
+  { key: "countAfter", kind: "raw", type: "countContext" },
+  { key: "assertions", kind: "json", gate: "text" },
+  { key: "columnRenames", kind: "json", gate: "text" },
+  { key: "ignoredColumns", kind: "array", gate: "text" },
+  { key: "plotConfig", kind: "json", gate: "extraction" },
+  { key: "arrayViews", kind: "object", gate: "extraction" },
+  { key: "caseSensitive", kind: "flag", gate: "text" },
+  { key: "columns", kind: "array", gate: "text", skipEmpty: true },
+  { key: "isRegex", kind: "flag", gate: "text" },
+  { key: "wholeWord", kind: "flag", gate: "text" },
+  { key: "highlightColor", kind: "scalar" },
+  { key: "label", kind: "scalar" },
+  { key: "muted", kind: "flag" },
+  { key: "selectionFilter", kind: "flag" },
+];
+
+// Copies src's table fields onto dst the way carrier `mode` does (see the table
+// above). src is a live node, or the snapshot for mode "restore".
+function copyFilterNodeFields(src, dst, mode) {
+  const gated = FILTER_NODE_FIELD_MODES[mode].gated;
+  const type = src.filterType;
+  let extraction; // nodeIsExtractionView walks the ancestors: only asked once a gated row has a value
+  for (const row of FILTER_NODE_FIELDS) {
+    if (row.type && row.type !== type) continue;
+    const key = row.key, v = src[key];
+    if (row.kind === "bool") { dst[key] = !!v; continue; }
+    if (row.kind === "raw") { dst[key] = v; continue; }
+    if (row.kind === "sanitized") { const clean = row.sanitize(v); if (clean) dst[key] = clean; continue; }
+    if (!v) continue;
+    if (gated && row.gate) {
+      if (row.gate === "text") { if (type !== "text") continue; }
+      else { if (extraction === undefined) extraction = nodeIsExtractionView(src); if (!extraction) continue; }
+    }
+    if (gated && row.skipEmpty && !v.length) continue;
+    if (row.kind === "flag") dst[key] = true;
+    else if (row.kind === "scalar") dst[key] = v;
+    else if ((row.byRef || FILTER_NODE_FIELD_DEFAULT_BY_REF).includes(mode)) dst[key] = v;
+    else if (row.kind === "json") dst[key] = JSON.parse(JSON.stringify(v));
+    else if (row.kind === "array") dst[key] = v.slice();
+    else dst[key] = Object.assign({}, v);
+  }
 }
 function linkDtPasses(dt, ms) { return dt.op === ">" ? ms > dt.ms : ms < dt.ms; }
 function linkOptionsNameSuffix(node) {
@@ -13588,40 +13677,7 @@ function cloneSubtree(nodeId, newParentId) {
     value: orig.value,
     inverted: !!orig.inverted,
   };
-  if (orig.muted) clone.muted = true;
-  copyBakedFields(orig, clone);
-  if (orig.filterType === "link") {
-    clone.linkDirection = orig.linkDirection;
-    clone.linkN = orig.linkN;
-    clone.linkOrderEnforced = !!orig.linkOrderEnforced;
-    clone.linkExclusive = !!orig.linkExclusive;
-    copyLinkOptions(orig, clone);
-  } else if (orig.filterType === "context") {
-    clone.contextBefore = orig.contextBefore;
-    clone.contextAfter = orig.contextAfter;
-  } else if (orig.filterType === "countContext") {
-    clone.countBefore = orig.countBefore;
-    clone.countAfter = orig.countAfter;
-  }
-  if (orig.filterType === "text" && orig.assertions) clone.assertions = JSON.parse(JSON.stringify(orig.assertions));
-  if (orig.filterType === "text" && orig.columnRenames) clone.columnRenames = JSON.parse(JSON.stringify(orig.columnRenames));
-  if (orig.filterType === "text" && orig.ignoredColumns) clone.ignoredColumns = orig.ignoredColumns.slice();
-  // Gated on nodeIsExtractionView (not filterType === "text" like the fields
-  // around it) because plotConfig itself is per-VIEW, not per-pattern — a
-  // timerange/idset/... node that only inherits Table/Plot from an
-  // extraction ancestor (findExtractionAncestor) has its own real
-  // node.plotConfig too (see loadPlotConfigForNode/renderExtractTable's
-  // "plotConfig deliberately stay per-node"), and needs it copy/pasted same
-  // as a wildcard "text" node's does.
-  if (nodeIsExtractionView(orig) && orig.plotConfig) clone.plotConfig = JSON.parse(JSON.stringify(orig.plotConfig));
-  if (nodeIsExtractionView(orig) && orig.arrayViews) clone.arrayViews = Object.assign({}, orig.arrayViews);
-  if (orig.filterType === "text" && orig.caseSensitive) clone.caseSensitive = true;
-  if (orig.filterType === "text" && orig.columns && orig.columns.length) clone.columns = orig.columns.slice();
-  if (orig.filterType === "text" && orig.isRegex) clone.isRegex = true;
-  if (orig.filterType === "text" && orig.wholeWord) clone.wholeWord = true;
-  if (orig.highlightColor) clone.highlightColor = orig.highlightColor;
-  if (orig.label) clone.label = orig.label;
-  if (orig.selectionFilter) clone.selectionFilter = true;
+  copyFilterNodeFields(orig, clone, "clone"); // the table's fields, gated like the other persisted carriers
   // Deliberately NOT copying orig.locked: a copy/paste of the auto-managed
   // "Bookmarks" node produces a plain, unlocked filter node (still matching
   // the same bookmarked rows) — only syncBookmarksFilterNode's own original
@@ -15195,26 +15251,7 @@ function snapshotSubtree(nodeId) {
     return copy;
   }
   copy.filterType = node.filterType; copy.value = node.value; copy.inverted = !!node.inverted;
-  if (node.muted) copy.muted = true;
-  copyBakedFields(node, copy);
-  if (node.filterType === "link") {
-    copy.linkDirection = node.linkDirection; copy.linkN = node.linkN;
-    copy.linkOrderEnforced = !!node.linkOrderEnforced; copy.linkExclusive = !!node.linkExclusive;
-    copyLinkOptions(node, copy);
-  } else if (node.filterType === "context") { copy.contextBefore = node.contextBefore; copy.contextAfter = node.contextAfter; }
-  else if (node.filterType === "countContext") { copy.countBefore = node.countBefore; copy.countAfter = node.countAfter; }
-  if (node.assertions) copy.assertions = JSON.parse(JSON.stringify(node.assertions));
-  if (node.columnRenames) copy.columnRenames = JSON.parse(JSON.stringify(node.columnRenames));
-  if (node.ignoredColumns) copy.ignoredColumns = node.ignoredColumns.slice();
-  if (node.plotConfig) copy.plotConfig = JSON.parse(JSON.stringify(node.plotConfig));
-  if (node.arrayViews) copy.arrayViews = Object.assign({}, node.arrayViews);
-  if (node.caseSensitive) copy.caseSensitive = true;
-  if (node.columns) copy.columns = node.columns.slice();
-  if (node.isRegex) copy.isRegex = true;
-  if (node.wholeWord) copy.wholeWord = true;
-  if (node.highlightColor) copy.highlightColor = node.highlightColor;
-  if (node.label) copy.label = node.label;
-  if (node.selectionFilter) copy.selectionFilter = true;
+  copyFilterNodeFields(node, copy, "snapshot"); // not gated: whatever the node carries comes back
   return copy;
 }
 
@@ -15263,28 +15300,7 @@ function restoreSubtree(snap) {
     filterType: snap.filterType, value: snap.value, inverted: !!snap.inverted,
     children: [],
   };
-  if (snap.muted) node.muted = true;
-  if (snap.baked) node.baked = snap.baked;
-  if (snap.bakedA) node.bakedA = snap.bakedA;
-  if (snap.bakedB) node.bakedB = snap.bakedB;
-  if (snap.filterType === "link") {
-    node.linkDirection = snap.linkDirection; node.linkN = snap.linkN;
-    node.linkOrderEnforced = !!snap.linkOrderEnforced; node.linkExclusive = !!snap.linkExclusive;
-    copyLinkOptions(snap, node);
-  } else if (snap.filterType === "context") { node.contextBefore = snap.contextBefore; node.contextAfter = snap.contextAfter; }
-  else if (snap.filterType === "countContext") { node.countBefore = snap.countBefore; node.countAfter = snap.countAfter; }
-  if (snap.assertions) node.assertions = snap.assertions;
-  if (snap.columnRenames) node.columnRenames = snap.columnRenames;
-  if (snap.ignoredColumns) node.ignoredColumns = snap.ignoredColumns;
-  if (snap.plotConfig) node.plotConfig = snap.plotConfig;
-  if (snap.arrayViews) node.arrayViews = snap.arrayViews;
-  if (snap.caseSensitive) node.caseSensitive = true;
-  if (snap.columns) node.columns = snap.columns;
-  if (snap.isRegex) node.isRegex = true;
-  if (snap.wholeWord) node.wholeWord = true;
-  if (snap.highlightColor) node.highlightColor = snap.highlightColor;
-  if (snap.label) node.label = snap.label;
-  if (snap.selectionFilter) node.selectionFilter = true;
+  copyFilterNodeFields(snap, node, "restore"); // the snapshot's containers are re-used, not copied
   state.nodes[node.id] = node;
   node.children = snap.children.map(c => restoreSubtree(c).id);
   return node;
@@ -38686,33 +38702,13 @@ const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or
 // cache) — read back by materializeFilterNode. `ref` and `children` are the
 // caller's envelope (its own ref numbering and child selection); they take
 // the first slots so a node's key order in the files stays what it always
-// was. and/or/link's baked sides are plain data (copyBakedFields), nothing
-// to remap. A new filter-node field is added here, in materializeFilterNode
-// and in the other carriers listed in PROJECT.md -> "Known gotchas".
+// was. The optional fields come from FILTER_NODE_FIELDS (and/or/link's baked
+// sides are plain data there, nothing to remap): a new filter-node field is one
+// row of that table plus its reader in materializeFilterNode.
 function serializeFilterNodeFields(node, ref, children) {
   const out = { ref, filterType: node.filterType, name: node.name, inverted: !!node.inverted, children };
   if (node.value !== null && node.value !== undefined) out.value = node.value;
-  copyBakedFields(node, out);
-  if (node.filterType === "link") {
-    out.linkDirection = node.linkDirection; out.linkN = node.linkN;
-    out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
-    copyLinkOptions(node, out);
-  }
-  if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
-  if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
-  if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
-  if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
-  if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-  if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
-  if (nodeIsExtractionView(node) && node.arrayViews) out.arrayViews = node.arrayViews;
-  if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
-  if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
-  if (node.filterType === "text" && node.isRegex) out.isRegex = true;
-  if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
-  if (node.highlightColor) out.highlightColor = node.highlightColor;
-  if (node.label) out.label = node.label;
-  if (node.muted) out.muted = true;
-  if (node.selectionFilter) out.selectionFilter = true;
+  copyFilterNodeFields(node, out, "serialize");
   return out;
 }
 

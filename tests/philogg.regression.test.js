@@ -412,6 +412,8 @@ async function withApp(run, opts = {}) {
       // The boot restore promise (restoreSessionFromCache + restoreWatchedFolders),
       // awaited by every "reload" group instead of polling state.rootIds.
       get bootRestore() { return bootRestore; },
+      // The filter-node copy table (GROUP filter-node-carriers checks it against its fixtures).
+      get filterNodeFields() { return FILTER_NODE_FIELDS; },
       get navHistory() { return navHistory; },
       get navHistoryIndex() { return navHistoryIndex; },
       get nodeLastView() { return nodeLastView; },

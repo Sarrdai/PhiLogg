@@ -160,6 +160,16 @@ await withApp(async (w, d, T) => {
   assert(unexercised.length === 0, "every covered field is present on at least one fixture (a fixture stopped exercising: " + unexercised.join(", ") + ")");
   const deadAllow = Object.keys(NOT_CARRIED).filter(k => !seenKeys.has(k));
   assert(deadAllow.length === 0, "every NOT_CARRIED entry is still produced by something (drop the dead entry: " + deadAllow.join(", ") + ")");
+  // The copy table (philogg.html FILTER_NODE_FIELDS: the one list clone / undo / serialize copy by).
+  const HEADER_FIELDS = ["name", "filterType", "value", "inverted"]; // written by hand by every carrier, not table rows
+  const tableKeys = T.filterNodeFields.map(r => r.key);
+  const notCovered = tableKeys.filter(k => !COVERED_FIELDS.includes(k));
+  assert(notCovered.length === 0, "every row of FILTER_NODE_FIELDS is a covered field (add it to COVERED_FIELDS, or drop the row): " + notCovered.join(", "));
+  const noFixture = tableKeys.filter(k => !ALL_KEYS.some(fk => at(fk)[k] !== undefined));
+  assert(noFixture.length === 0, "every row of FILTER_NODE_FIELDS is exercised by a fixture (add one, or the row is dead): " + noFixture.join(", "));
+  const noRow = COVERED_FIELDS.filter(k => !HEADER_FIELDS.includes(k) && !tableKeys.includes(k));
+  assert(noRow.length === 0, "every covered field has a row in FILTER_NODE_FIELDS (new filter-node field: add the row in philogg.html): " + noRow.join(", "));
+  assert(new Set(tableKeys).size === tableKeys.length, "no field has two rows in FILTER_NODE_FIELDS");
   // The guard and the comparison have teeth.
   assert(unknownKeys({ ...at("lit"), brandNew: 1 }).join() === "brandNew", "the guard names an unregistered field");
   assert(diffTree(treeBag(at("lit")), { bag: { ...bagOf(at("lit")), wholeWord: undefined }, kids: [] }).length === 1, "the comparison notices a field that went missing");
@@ -314,6 +324,39 @@ await withApp(async (w, d, T) => {
   assert(gateRestored.plotConfig && gateRestored.arrayViews, "...and restoreSubtree puts them back");
   dropSubtree(gateClone.id);
   dropSubtree(gate.id);
+
+  // The text gate: clone, filter JSON and session cache carry assertions / ignoredColumns /
+  // caseSensitive / wholeWord only for a TEXT node; the undo snapshot keeps whatever the node has.
+  const tg = w.createFilterNode(f.id, "timerange", { from: 1705312800000, to: 1705312860000 });
+  tg.name = "fx text gate";
+  Object.assign(tg, { assertions: { 0: { mode: "range", min: 1, max: 2 } }, ignoredColumns: [0], caseSensitive: true, wholeWord: true });
+  const TEXT_ONLY = ["assertions", "ignoredColumns", "caseSensitive", "wholeWord"];
+  const hasAny = o => TEXT_ONLY.filter(k => k in o);
+  const tgClone = w.cloneSubtree(tg.id, f.id);
+  const tgWire = JSON.parse(JSON.stringify(w.serializeFilterBranch(tg.id, false))).roots[0];
+  const tgCache = JSON.parse(JSON.stringify(w.serializeFilterTreeForCache(f))).roots.find(r => r.name === tg.name);
+  assert(hasAny(tgClone).length === 0 && hasAny(tgWire).length === 0 && tgCache && hasAny(tgCache).length === 0,
+    "clone, filter JSON and session cache leave the text-only fields off a non-text node (" + [tgClone, tgWire, tgCache || {}].map(o => hasAny(o).join("+") || "-").join(" / ") + ")");
+  const tgSnap = w.snapshotSubtree(tg.id);
+  const tgRestored = w.restoreSubtree(tgSnap);
+  assert(hasAny(tgSnap).length === 4 && hasAny(tgRestored).length === 4, "the undo snapshot is not gated: all four come back");
+  dropSubtree(tgClone.id);
+  dropSubtree(tg.id);
+
+  // An empty array: the gated carriers leave a column list out, the undo snapshot keeps it.
+  const ec = w.createFilterNode(f.id, "text", "empty columns");
+  ec.name = "fx empty columns";
+  ec.columns = []; // what materializing a column list of only unknown keys leaves behind
+  ec.ignoredColumns = [];
+  const ecClone = w.cloneSubtree(ec.id, f.id);
+  const ecWire = JSON.parse(JSON.stringify(w.serializeFilterBranch(ec.id, false))).roots[0];
+  assert(!("columns" in ecClone) && !("columns" in ecWire) && Array.isArray(ecClone.ignoredColumns) && Array.isArray(ecWire.ignoredColumns),
+    "clone and JSON leave an empty columns list off (an empty ignoredColumns list stays)");
+  const ecSnap = w.snapshotSubtree(ec.id);
+  const ecRestored = w.restoreSubtree(ecSnap);
+  assert(Array.isArray(ecSnap.columns) && Array.isArray(ecRestored.columns) && ecSnap.columns !== ec.columns, "the undo snapshot copies an empty columns list");
+  dropSubtree(ecClone.id);
+  dropSubtree(ec.id);
 
   const bookmarksNode = f.children.map(id => S.nodes[id]).find(n => n.filterType === "bookmarks");
   assert(bookmarksNode && bookmarksNode.locked === true, "precondition: the auto-managed Bookmarks node is locked");
