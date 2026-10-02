@@ -9497,8 +9497,8 @@ function activeMessageVisible() {
 // filter's column restriction on a format that isn't loaded right now
 // (cache-restored session before that file's re-added, or an imported
 // filter authored against a different format) should survive rather than
-// being silently dropped. See materializeSerializedRoots/
-// materializeCachedFilters, which validate node.columns against this.
+// being silently dropped. See materializeFilterNode (shared by both filter
+// loaders), which validates node.columns against this.
 function knownTextFilterColumnKeys() {
   const out = new Set(["time", "level", "thread", "location", "method", "message"]);
   state.logFormats.forEach(f => formatColumnDefs(f.id).forEach(d => out.add(d.key)));
@@ -38681,6 +38681,41 @@ const FILTER_FILE_FORMAT = "philogg-filters";
 const FILTER_FILE_VERSION = 2;
 const FILTER_TYPES = new Set(["text", "after", "before", "timerange", "and", "or", "link", "context", "countContext", "level", "bookmarks", "notes", "sources", "idset", "gap"]);
 
+// The one per-node field list of both filter serializers — serializeFilterBranch
+// (filter JSON file / library preset) and serializeFilterTreeForCache (session
+// cache) — read back by materializeFilterNode. `ref` and `children` are the
+// caller's envelope (its own ref numbering and child selection); they take
+// the first slots so a node's key order in the files stays what it always
+// was. and/or/link's baked sides are plain data (copyBakedFields), nothing
+// to remap. A new filter-node field is added here, in materializeFilterNode
+// and in the other carriers listed in PROJECT.md -> "Known gotchas".
+function serializeFilterNodeFields(node, ref, children) {
+  const out = { ref, filterType: node.filterType, name: node.name, inverted: !!node.inverted, children };
+  if (node.value !== null && node.value !== undefined) out.value = node.value;
+  copyBakedFields(node, out);
+  if (node.filterType === "link") {
+    out.linkDirection = node.linkDirection; out.linkN = node.linkN;
+    out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
+    copyLinkOptions(node, out);
+  }
+  if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
+  if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
+  if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
+  if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
+  if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
+  if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
+  if (nodeIsExtractionView(node) && node.arrayViews) out.arrayViews = node.arrayViews;
+  if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
+  if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
+  if (node.filterType === "text" && node.isRegex) out.isRegex = true;
+  if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
+  if (node.highlightColor) out.highlightColor = node.highlightColor;
+  if (node.label) out.label = node.label;
+  if (node.muted) out.muted = true;
+  if (node.selectionFilter) out.selectionFilter = true;
+  return out;
+}
+
 function serializeFilterBranch(nodeId, includeAncestors) {
   const clicked = state.nodes[nodeId];
   if (!clicked || clicked.type !== "filter") return null;
@@ -38705,38 +38740,7 @@ function serializeFilterBranch(nodeId, includeAncestors) {
   function serializeSubtree(id) {
     const node = state.nodes[id];
     const kids = node.children.filter(cid => needed.has(cid)).map(serializeSubtree);
-    const out = {
-      ref: refs[id],
-      filterType: node.filterType,
-      name: node.name,
-      inverted: !!node.inverted,
-      children: kids,
-    };
-    if (node.value !== null && node.value !== undefined) out.value = node.value;
-    // and/or/link's baked condition snapshots — plain data, copied as-is,
-    // no ref/remapping needed (see the module comment above).
-    copyBakedFields(node, out);
-    if (node.filterType === "link") {
-      out.linkDirection = node.linkDirection; out.linkN = node.linkN;
-      out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
-      copyLinkOptions(node, out);
-    }
-    if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
-    if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
-    if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
-    if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
-    if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
-    if (nodeIsExtractionView(node) && node.arrayViews) out.arrayViews = node.arrayViews;
-    if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
-    if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
-    if (node.filterType === "text" && node.isRegex) out.isRegex = true;
-    if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
-    if (node.highlightColor) out.highlightColor = node.highlightColor;
-    if (node.label) out.label = node.label;
-    if (node.muted) out.muted = true;
-    if (node.selectionFilter) out.selectionFilter = true;
-    return out;
+    return serializeFilterNodeFields(node, refs[id], kids);
   }
 
   if (!includeAncestors) {
@@ -38946,6 +38950,77 @@ function importFilterBranchJson(text) {
   importFilterJson(text, "Filter imported under " + nodeDisplayName(target));
 }
 
+// Rebuilds ONE serialized node (and its children, recursively) as a live
+// filter node with a FRESH id under parentId, registers it in state.nodes and
+// records ref -> new id in refMap — the one reader of
+// serializeFilterNodeFields's output, shared by both loaders
+// (materializeSerializedRoots for filter files / library presets,
+// materializeCachedFilters for the session cache). Does not attach the node to
+// its parent's children (each caller does that) and does not validate (see
+// serializedFilterNodeValid). The sanitizers below (column renames, array views,
+// plot config, link options, column keys) are what a hand-edited or foreign
+// file/cache record goes through.
+function materializeFilterNode(sn, parentId, refMap) {
+  const node = {
+    id: uid("n"), type: "filter", name: String(sn.name || ""),
+    parentId, children: [],
+    filterType: sn.filterType,
+    value: sn.value !== undefined ? sn.value : null,
+    inverted: !!sn.inverted,
+  };
+  if (sn.filterType === "link") {
+    node.linkDirection = sn.linkDirection === "after" ? "after" : "before";
+    node.linkN = Math.max(1, parseInt(sn.linkN, 10) || 1);
+    // Additive fields (see REQUIREMENTS-link-chaining-and-multiway.md) —
+    // absent in files saved before this feature, so this stays backward
+    // compatible without a FILTER_FILE_VERSION bump: an old file simply
+    // materializes both as false, matching its actual old behavior.
+    node.linkOrderEnforced = !!sn.linkOrderEnforced;
+    node.linkExclusive = !!sn.linkExclusive;
+    copyLinkOptions(sn, node);
+  } else if (sn.filterType === "context") {
+    node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
+    node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
+  } else if (sn.filterType === "countContext") {
+    node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
+    node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
+  } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
+    node.assertions = sn.assertions;
+  }
+  if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
+    node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
+  }
+  if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
+    const renames = sanitizeColumnRenames(sn.columnRenames);
+    if (renames) node.columnRenames = renames;
+  }
+  if (nodeIsExtractionView(node) && sn.arrayViews && typeof sn.arrayViews === "object") {
+    const av = sanitizeArrayViews(sn.arrayViews);
+    if (av) node.arrayViews = av;
+  }
+  if (nodeIsExtractionView(node) && sn.plotConfig) {
+    const pc = sanitizePlotConfig(sn.plotConfig);
+    if (pc) node.plotConfig = pc;
+  }
+  if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
+  if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
+    node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
+  }
+  if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
+  if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
+  if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
+  if (sn.label && typeof sn.label === "string") node.label = sn.label;
+  if (sn.muted === true) node.muted = true;
+  if (sn.selectionFilter) node.selectionFilter = true;
+  if (sn.baked) node.baked = sn.baked;
+  if (sn.bakedA) node.bakedA = sn.bakedA;
+  if (sn.bakedB) node.bakedB = sn.bakedB;
+  state.nodes[node.id] = node;
+  if (sn.ref != null) refMap[sn.ref] = node.id;
+  (sn.children || []).forEach(c => node.children.push(materializeFilterNode(c, node.id, refMap).id));
+  return node;
+}
+
 // Shared rebuild step behind serializeFilterBranch()'s roots — used by
 // importFilterJson (Save/Load filter JSON) and the reusable filter
 // library's apply step (same JSON shape, see below). Materializes every
@@ -38960,71 +39035,10 @@ function importFilterBranchJson(text) {
 function materializeSerializedRoots(roots, resolveParentId) {
   const refMap = {}; // serialized ref -> new uid
 
-  function materialize(sn, parentId) {
-    const node = {
-      id: uid("n"), type: "filter", name: String(sn.name || ""),
-      parentId, children: [],
-      filterType: sn.filterType,
-      value: sn.value !== undefined ? sn.value : null,
-      inverted: !!sn.inverted,
-    };
-    if (sn.filterType === "link") {
-      node.linkDirection = sn.linkDirection === "after" ? "after" : "before";
-      node.linkN = Math.max(1, parseInt(sn.linkN, 10) || 1);
-      // Additive fields (see REQUIREMENTS-link-chaining-and-multiway.md) —
-      // absent in files saved before this feature, so this stays backward
-      // compatible without a FILTER_FILE_VERSION bump: an old file simply
-      // materializes both as false, matching its actual old behavior.
-      node.linkOrderEnforced = !!sn.linkOrderEnforced;
-      node.linkExclusive = !!sn.linkExclusive;
-      copyLinkOptions(sn, node);
-    } else if (sn.filterType === "context") {
-      node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
-      node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
-    } else if (sn.filterType === "countContext") {
-      node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
-      node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
-    } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
-      node.assertions = sn.assertions;
-    }
-    if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
-      node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
-    }
-    if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
-      const renames = sanitizeColumnRenames(sn.columnRenames);
-      if (renames) node.columnRenames = renames;
-    }
-    if (nodeIsExtractionView(node) && sn.arrayViews && typeof sn.arrayViews === "object") {
-      const av = sanitizeArrayViews(sn.arrayViews);
-      if (av) node.arrayViews = av;
-    }
-    if (nodeIsExtractionView(node) && sn.plotConfig) {
-      const pc = sanitizePlotConfig(sn.plotConfig);
-      if (pc) node.plotConfig = pc;
-    }
-    if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
-    if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
-      node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
-    }
-    if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
-    if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
-    if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
-    if (sn.label && typeof sn.label === "string") node.label = sn.label;
-    if (sn.muted === true) node.muted = true;
-    if (sn.selectionFilter) node.selectionFilter = true;
-    if (sn.baked) node.baked = sn.baked;
-    if (sn.bakedA) node.bakedA = sn.bakedA;
-    if (sn.bakedB) node.bakedB = sn.bakedB;
-    state.nodes[node.id] = node;
-    if (sn.ref != null) refMap[sn.ref] = node.id;
-    (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
-    return node;
-  }
-
   const created = roots.map(r => {
     const parentId = resolveParentId(r.attach);
     const parent = state.nodes[parentId];
-    const node = materialize(r, parentId);
+    const node = materializeFilterNode(r, parentId, refMap);
     if (parent) parent.children.push(node.id);
     return node;
   });
@@ -39032,26 +39046,32 @@ function materializeSerializedRoots(roots, resolveParentId) {
   return { created, refMap };
 }
 
+// Whether one serialized node and its whole subtree can be materialized —
+// the one validity rule of both loaders: serializedFilterRootsValid (filter
+// file / library preset: reject the whole file) and materializeCachedFilters
+// (session cache: drop just this root, keep the rest).
+function serializedFilterNodeValid(sn) {
+  // filterType "bookmarks" is deliberately rejected here: it's the
+  // auto-managed per-file node (see syncBookmarksFilterNode) and is never
+  // written to a saved filter file or the cache in the first place — an
+  // imported one (hand-edited file, or an old export from before this
+  // restriction existed) would just be an unlocked look-alike with a stale
+  // match set. Same for "notes" and "sources".
+  if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
+  // and/or carry a baked list (2+ conditions), link its two baked sides. A file,
+  // library preset or cache record written before that model carries node-id
+  // references instead, which mean nothing here — materializing it would
+  // produce a filter that silently matches nothing, so it is rejected.
+  if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !hasBakedSides(sn)) return false;
+  return (sn.children || []).every(serializedFilterNodeValid);
+}
+
 // Validates a whole serialized branch (serializeFilterBranch's roots)
 // before anything is created, so a corrupt file never leaves half-built
-// nodes behind. Shared by importFilterJson and the filter-library preset
+// nodes behind. Used by importFilterJson and the filter-library preset
 // import (parseFilterLibraryExport).
 function serializedFilterRootsValid(roots) {
-  function validate(sn) {
-    // filterType "bookmarks" is deliberately rejected here: it's the
-    // auto-managed per-file node (see syncBookmarksFilterNode) and is never
-    // written to a saved filter file in the first place — an imported one
-    // (hand-edited file, or an old export from before this restriction
-    // existed) would just be an unlocked look-alike with a stale match set.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
-    // and/or carry a baked list (2+ conditions), link its two baked sides. A file
-    // or library preset written before that model carries node-id references
-    // instead, which mean nothing here — importing it would produce a filter
-    // that silently matches nothing, so reject it with a message instead.
-    if ((sn.filterType === "and" || sn.filterType === "or" || sn.filterType === "link") && !hasBakedSides(sn)) return false;
-    return (sn.children || []).every(validate);
-  }
-  return Array.isArray(roots) && roots.every(validate);
+  return Array.isArray(roots) && roots.every(serializedFilterNodeValid);
 }
 
 function importFilterJson(text, successToast) {
@@ -43573,9 +43593,9 @@ async function cacheDeleteFolder(folderId) {
 }
 
 // Serializes a file's COMPLETE filter tree with the same per-node field set
-// as the filter save/load JSON (see serializeFilterBranch) — bakedA/bakedB
-// (for and/or/link nodes) travel as a plain deep copy, same as every other
-// field; there's no ref/remapping to do for them since they hold no node id.
+// as the filter save/load JSON — both go through serializeFilterNodeFields;
+// only the ref numbering and the child selection (persistableChildren here)
+// are this function's own. Read back by materializeCachedFilters.
 function serializeFilterTreeForCache(fileNode) {
   let refCounter = 0;
   const refs = {}; // runtime id -> serialized ref number
@@ -43596,36 +43616,7 @@ function serializeFilterTreeForCache(fileNode) {
 
   function ser(id) {
     const node = state.nodes[id];
-    const out = {
-      ref: refs[id],
-      filterType: node.filterType,
-      name: node.name,
-      inverted: !!node.inverted,
-      children: persistableChildren(node.children).map(ser),
-    };
-    if (node.value !== null && node.value !== undefined) out.value = node.value;
-    copyBakedFields(node, out);
-    if (node.filterType === "link") {
-      out.linkDirection = node.linkDirection; out.linkN = node.linkN;
-      out.linkOrderEnforced = !!node.linkOrderEnforced; out.linkExclusive = !!node.linkExclusive;
-      copyLinkOptions(node, out);
-    }
-    if (node.filterType === "context") { out.contextBefore = node.contextBefore; out.contextAfter = node.contextAfter; }
-    if (node.filterType === "countContext") { out.countBefore = node.countBefore; out.countAfter = node.countAfter; }
-    if (node.filterType === "text" && node.assertions) out.assertions = node.assertions;
-    if (node.filterType === "text" && node.columnRenames) out.columnRenames = node.columnRenames;
-    if (node.filterType === "text" && node.ignoredColumns) out.ignoredColumns = node.ignoredColumns;
-    if (nodeIsExtractionView(node) && node.plotConfig) out.plotConfig = node.plotConfig;
-    if (nodeIsExtractionView(node) && node.arrayViews) out.arrayViews = node.arrayViews;
-    if (node.filterType === "text" && node.caseSensitive) out.caseSensitive = true;
-    if (node.filterType === "text" && node.columns && node.columns.length) out.columns = node.columns;
-    if (node.filterType === "text" && node.isRegex) out.isRegex = true;
-    if (node.filterType === "text" && node.wholeWord) out.wholeWord = true;
-    if (node.highlightColor) out.highlightColor = node.highlightColor;
-    if (node.label) out.label = node.label;
-    if (node.muted) out.muted = true;
-    if (node.selectionFilter) out.selectionFilter = true;
-    return out;
+    return serializeFilterNodeFields(node, refs[id], persistableChildren(node.children).map(ser));
   }
 
   return { roots: persistableChildren(fileNode.children).map(ser), refs };
@@ -43742,82 +43733,19 @@ function schedulePersistMeta() {
   metaPersistTimer = setTimeout(() => { metaPersistTimer = null; persistMetaNow(); }, CACHE_META_DEBOUNCE_MS);
 }
 
-// Mirror of importFilterJson's materialize pass, without the file-format
-// envelope handling (the cache trusts its own writer more than a
-// hand-editable JSON file, but still validates types). bakedA/bakedB (for
-// and/or/link nodes) copy straight across as plain data — nothing to
-// remap. Returns ref -> new runtime id.
+// Session-cache counterpart of importFilterJson's materialize pass, without
+// the file-format envelope handling (the cache trusts its own writer more than
+// a hand-editable JSON file, but runs the same validity rule and the same
+// materializeFilterNode). bakedA/bakedB (for and/or/link nodes) copy straight
+// across as plain data — nothing to remap. A root that is not valid
+// (serializedFilterNodeValid: foreign/stale type, a combiner without baked
+// sides) is dropped together with its subtree, the rest is kept. Returns
+// ref -> new runtime id.
 function materializeCachedFilters(fileNode, roots) {
   const refMap = {};
-
-  function valid(sn) {
-    // Same "bookmarks" exclusion as importFilterJson's validate() — the
-    // cache never writes this type either (see serializeFilterTreeForCache's
-    // persistableChildren), so any that show up here are stale/foreign.
-    if (!sn || typeof sn !== "object" || !FILTER_TYPES.has(sn.filterType) || sn.filterType === "bookmarks" || sn.filterType === "notes" || sn.filterType === "sources") return false;
-    return (sn.children || []).every(valid);
-  }
-
-  function materialize(sn, parentId) {
-    const node = {
-      id: uid("n"), type: "filter", name: String(sn.name || ""),
-      parentId, children: [],
-      filterType: sn.filterType,
-      value: sn.value !== undefined ? sn.value : null,
-      inverted: !!sn.inverted,
-    };
-    if (sn.filterType === "link") {
-      node.linkDirection = sn.linkDirection === "after" ? "after" : "before";
-      node.linkN = Math.max(1, parseInt(sn.linkN, 10) || 1);
-      node.linkOrderEnforced = !!sn.linkOrderEnforced;
-      node.linkExclusive = !!sn.linkExclusive;
-      copyLinkOptions(sn, node);
-    } else if (sn.filterType === "context") {
-      node.contextBefore = Math.max(0, Math.round(+sn.contextBefore) || 0);
-      node.contextAfter = Math.max(0, Math.round(+sn.contextAfter) || 0);
-    } else if (sn.filterType === "countContext") {
-      node.countBefore = Math.max(0, Math.round(+sn.countBefore) || 0);
-      node.countAfter = Math.max(0, Math.round(+sn.countAfter) || 0);
-    } else if (sn.filterType === "text" && sn.assertions && typeof sn.assertions === "object") {
-      node.assertions = sn.assertions;
-    }
-    if (sn.filterType === "text" && Array.isArray(sn.ignoredColumns) && sn.ignoredColumns.length) {
-      node.ignoredColumns = sn.ignoredColumns.filter(n => Number.isInteger(n) && n >= 0);
-    }
-    if (sn.filterType === "text" && sn.columnRenames && typeof sn.columnRenames === "object") {
-      const renames = sanitizeColumnRenames(sn.columnRenames);
-      if (renames) node.columnRenames = renames;
-    }
-    if (nodeIsExtractionView(node) && sn.arrayViews && typeof sn.arrayViews === "object") {
-      const av = sanitizeArrayViews(sn.arrayViews);
-      if (av) node.arrayViews = av;
-    }
-    if (nodeIsExtractionView(node) && sn.plotConfig) {
-      const pc = sanitizePlotConfig(sn.plotConfig);
-      if (pc) node.plotConfig = pc;
-    }
-    if (sn.filterType === "text" && sn.caseSensitive) node.caseSensitive = true;
-    if (sn.filterType === "text" && Array.isArray(sn.columns) && sn.columns.length) {
-      node.columns = sn.columns.filter(c => knownTextFilterColumnKeys().has(c));
-    }
-    if (sn.filterType === "text" && sn.isRegex) node.isRegex = true;
-    if (sn.filterType === "text" && sn.wholeWord) node.wholeWord = true;
-    if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
-    if (sn.label && typeof sn.label === "string") node.label = sn.label;
-    if (sn.muted === true) node.muted = true;
-    if (sn.selectionFilter) node.selectionFilter = true;
-    if (sn.baked) node.baked = sn.baked;
-    if (sn.bakedA) node.bakedA = sn.bakedA;
-    if (sn.bakedB) node.bakedB = sn.bakedB;
-    state.nodes[node.id] = node;
-    if (sn.ref != null) refMap[sn.ref] = node.id;
-    (sn.children || []).forEach(c => node.children.push(materialize(c, node.id).id));
-    return node;
-  }
-
   roots.forEach(r => {
-    if (!valid(r)) return; // drop a corrupt subtree, keep the rest
-    const node = materialize(r, fileNode.id);
+    if (!serializedFilterNodeValid(r)) return; // drop a corrupt subtree, keep the rest
+    const node = materializeFilterNode(r, fileNode.id, refMap);
     fileNode.children.push(node.id);
   });
   return refMap;

@@ -27,13 +27,14 @@
         written to disk must not change when the carriers are refactored);
      g  pins the subtle gates: a muted extraction node is not an extraction
         view (clone/serializers drop plotConfig + arrayViews, the undo
-        snapshot keeps them), a copy of a locked node is unlocked, and the one
-        KNOWN DRIFT between the two loaders (see the last section).
-   ORDERING NOTE: this group is green on the UNCHANGED production code. The
-   later steps of the plan (one serializer/materializer, one copy table) must
-   keep it green WITHOUT edits, except (1) flipping the one assertion labelled
-   KNOWN DRIFT in section g, and (2) adding the table-driven "every table key
-   is exercised by a fixture" check.
+        snapshot keeps them), a copy of a locked node is unlocked, and both
+        loaders drop a combiner without baked sides (they once differed).
+   ORDERING NOTE: written green on the UNCHANGED production code, then kept green
+   through the refactoring steps: Step 2 (one serializer, one materializer, one
+   validity rule) flipped exactly one assertion - the cache loader used to keep an
+   and/or/link node without baked sides (labelled KNOWN DRIFT) and now drops it
+   like the JSON import - and Step 3 (one copy table) may add only the
+   table-driven "every table key is exercised by a fixture" check.
    ============================================================ */
 group("filter-node-carriers");
 await withApp(async (w, d, T) => {
@@ -185,7 +186,8 @@ await withApp(async (w, d, T) => {
     const wire = JSON.parse(JSON.stringify(w.serializeFilterBranch(orig.id, false)));
     assert(w.serializedFilterRootsValid(wire.roots), "json " + k + ": the import accepts what the export wrote");
     // Attached under the real parent, so an extraction view keeps inheriting from its ancestor like a paste at the same spot.
-    const { created } = w.materializeSerializedRoots(wire.roots, () => orig.parentId);
+    const { created, refMap } = w.materializeSerializedRoots(wire.roots, () => orig.parentId);
+    assert(refMap[wire.activeRef] === created[0].id, "json " + k + " (just this filter): the written activeRef resolves to the new node");
     const diffs = diffTree({ bag: treeBag(orig).bag, kids: [] }, treeBag(created[0]));
     assert(created.length === 1 && diffs.length === 0, "json " + k + " (just this filter): every field survives (" + showDiff(diffs) + ")");
     dropSubtree(created[0].id);
@@ -207,7 +209,7 @@ await withApp(async (w, d, T) => {
   assert(cacheWire.roots.length === TOP_KEYS.length && origRoots.length === TOP_KEYS.length,
     "cache: one root per top-level fixture, the locked Bookmarks/Notes nodes are not written (" + cacheWire.roots.length + " roots)");
   const childrenBefore = f.children.slice();
-  w.materializeCachedFilters(f, cacheWire.roots);
+  const cacheRefMap = w.materializeCachedFilters(f, cacheWire.roots);
   const loadedRoots = f.children.slice(childrenBefore.length).map(id => S.nodes[id]);
   assert(loadedRoots.length === origRoots.length, "cache: every root is materialized again (" + loadedRoots.length + "/" + origRoots.length + ")");
   origRoots.forEach((id, i) => {
@@ -215,6 +217,14 @@ await withApp(async (w, d, T) => {
     const diffs = loadedRoots[i] ? diffTree(treeBag(S.nodes[id]), treeBag(loadedRoots[i])) : ["missing"];
     assert(diffs.length === 0, "cache " + key + " (with its whole subtree): every field survives (" + showDiff(diffs) + ")");
   });
+  const refMisses = [];
+  (function checkRefs(sers, nodes) {
+    sers.forEach((sn, i) => {
+      if (!nodes[i] || cacheRefMap[sn.ref] !== nodes[i].id) refMisses.push(sn.name);
+      else checkRefs(sn.children || [], nodes[i].children.map(id => S.nodes[id]));
+    });
+  })(cacheWire.roots, loadedRoots);
+  assert(refMisses.length === 0, "cache: every written ref resolves to the node materialized for it, nested ones included (" + refMisses.join(", ") + ")");
   loadedRoots.forEach(n => dropSubtree(n.id));
   assert(f.children.length === childrenBefore.length, "sanity: the loaded copies are removed again");
 
@@ -311,13 +321,11 @@ await withApp(async (w, d, T) => {
   assert(bmClone.filterType === "bookmarks" && bmClone.locked === undefined, "a copy of the locked Bookmarks node is a plain, unlocked node");
   dropSubtree(bmClone.id);
 
-  // KNOWN DRIFT, pinned and not fixed here: the two loaders validate differently.
-  // importFilterJson / library presets reject an and/or/link node that carries no
-  // baked sides (serializedFilterRootsValid -> hasBakedSides); the session-cache
-  // loader's own valid() has no such check and happily materializes one - a
-  // combiner that silently matches nothing. Step 2 of the carriers plan routes
-  // both loaders through one predicate: FLIP the `cacheKeepsBakeless` expectation
-  // below to false (the cached node is dropped, f.children does not grow).
+  // Both loaders share one validity rule (serializedFilterNodeValid -> hasBakedSides):
+  // an and/or/link node that carries no baked sides is dropped by the filter-file
+  // import AND by the session-cache loader (it used to be materialized by the
+  // cache loader - the drift this group pinned before the two loaders were
+  // merged). The cache loader still drops only the corrupt ROOT and keeps the rest.
   for (const type of ["and", "or", "link"]) {
     const bakeless = { ref: 1, filterType: type, name: "no baked sides", inverted: false, children: [] };
     assert(w.serializedFilterRootsValid([bakeless]) === false, "JSON import rejects an " + type + " node without baked sides");
@@ -325,6 +333,18 @@ await withApp(async (w, d, T) => {
     w.materializeCachedFilters(f, [bakeless]);
     const cacheKeepsBakeless = f.children.length === n0 + 1;
     f.children.slice(n0).forEach(dropSubtree);
-    assert(cacheKeepsBakeless === true, "KNOWN DRIFT (Step 2 flips this to false): the session-cache loader still materializes an " + type + " node without baked sides");
+    assert(cacheKeepsBakeless === false, "the session-cache loader drops an " + type + " node without baked sides, like the JSON import");
+  }
+  {
+    const good = { ref: 7, filterType: "level", name: "kept", inverted: false, value: ["ERROR"], children: [] };
+    const badChild = { ref: 8, filterType: "and", name: "bakeless child", inverted: false, children: [] };
+    const badTree = { ref: 9, filterType: "level", name: "dropped with its subtree", inverted: false, value: ["WARN"], children: [badChild] };
+    const foreign = { ref: 10, filterType: "bookmarks", name: "foreign", inverted: false, children: [] };
+    const n0 = f.children.length;
+    const refMap = w.materializeCachedFilters(f, [badTree, good, foreign]);
+    const kept = f.children.slice(n0).map(id => S.nodes[id]);
+    assert(kept.length === 1 && kept[0].name === "kept" && refMap[7] === kept[0].id && !(9 in refMap) && !(8 in refMap) && !(10 in refMap),
+      "cache: a corrupt root is dropped with its whole subtree (a bakeless combiner below it, a foreign type), the other roots are kept (" + kept.map(n => n.name).join(", ") + ")");
+    kept.forEach(n => dropSubtree(n.id));
   }
 });
