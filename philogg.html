@@ -36697,18 +36697,18 @@ fpPathMenu.addEventListener("click", ev => {
   closeFpPathMenu();
 });
 
-// "Open here": loads a detected path straight into PhiLogg itself instead of
-// handing it to the OS. openLocalPath (commands.rs) registers the path the
-// same way pickFiles/listFolder already do, handing back the philogg://local/…
-// URL loadDesktopLocalFiles needs; only reached for a path openFpPathMenu
-// already gated on isCompatibleFolderFile, but the file can still have been
-// deleted/moved since path_exists last checked it, hence the catch.
 // A desktop-bridge command that fails with `Err(String)` rejects with that
 // plain string (no Error object, hence no `.message`).
 function ipcErrorText(err) {
   return err && err.message ? err.message : String(err);
 }
 
+// "Open here": loads a detected path straight into PhiLogg itself instead of
+// handing it to the OS. openLocalPath (commands.rs) registers the path the
+// same way pickFiles/listFolder already do, handing back the philogg://local/…
+// URL loadDesktopLocalFiles needs; only reached for a path openFpPathMenu
+// already gated on isCompatibleFolderFile, but the file can still have been
+// deleted/moved since path_exists last checked it, hence the catch.
 async function openFpPathHere(path) {
   if (!window.philogg || typeof window.philogg.openLocalPath !== "function") return;
   try {
