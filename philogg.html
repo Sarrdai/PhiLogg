@@ -3516,11 +3516,11 @@
     cursor:pointer; transition:background .15s, box-shadow .15s;
   }
   .pill-toggle::after{
-    content:""; position:absolute; top:50%; margin-top:-7px; left:3px; width:14px; height:14px;
+    content:""; position:absolute; top:50%; left:0; width:14px; height:14px; transform:translate(3px,-50%);
     border-radius:50%; background:var(--text-tertiary); transition:transform .15s, background .15s;
   }
   .pill-toggle[aria-checked="true"]{background:var(--accent); box-shadow:inset 0 0 0 1px var(--accent);}
-  .pill-toggle[aria-checked="true"]::after{transform:translateX(14px); background:var(--accent-on);}
+  .pill-toggle[aria-checked="true"]::after{transform:translate(17px,-50%); background:var(--accent-on);}
   .pill-toggle:disabled{opacity:.4; cursor:default;}
   .pill-toggle:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
   .settings-inline-panel{

@@ -1,5 +1,5 @@
 - **fix: UI scale no longer pushes Settings off screen; pill toggles align; tree Reconnect/load look like the hit badge (2026-10-02, person-reported)**
   - Dialog cards and `#app` were sized in `vh`/`vw`, which ignore the root `zoom` of UI scale, so at >100% the Settings card outgrew the window. They now size in % of their fixed overlay.
-  - `.pill-toggle` drew a 1px border whose rounding under fractional zoom shifted the knob up or down; the ring is now an inset shadow and the knob is centered with `top:50%`.
+  - `.pill-toggle` drew a 1px border whose rounding under fractional zoom shifted the knob up or down; the ring is now an inset shadow and the knob is centered with `top:50%` and positioned by `transform` (not pixel-snapped), so its height no longer varies from row to row.
   - The folder "Reconnect" button and the "→ load" badge reuse the `.tree-hit-badge` pill look.
   - **Tests**: GROUP ui-scale-toggle-treebadges (CSS-source checks; layout itself is not measurable in jsdom).

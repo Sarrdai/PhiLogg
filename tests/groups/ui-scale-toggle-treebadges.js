@@ -11,7 +11,7 @@ await withApp(async (w, d, T) => {
 
   const pill = body(".pill-toggle") || "";
   assert(/border:none/.test(pill) && /box-sizing:border-box/.test(pill), ".pill-toggle has no border (ring is an inset shadow, so zoom rounding can't shift the knob)");
-  assert(/top:50%/.test(body(".pill-toggle::after") || ""), "pill knob is vertically centered with top:50%");
+  assert(/top:50%/.test(body(".pill-toggle::after") || ""), "pill knob is centered with top:50% + translateY(-50%) (a transform is not pixel-snapped, so the knob height stays equal across rows under fractional zoom)");
 
   for (const sel of [".folder-watch-reconnect", ".tree-load-badge"]) {
     const b = body(sel) || "";
