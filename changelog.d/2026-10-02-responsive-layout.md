@@ -1,0 +1,4 @@
+- **feat: PhiLogg is usable in narrow windows and on tablets/phones (2026-10-02, person-requested)**
+  - Layout tiers by window width: desktop >= 1024px unchanged; 600-1023px ("compact") turns the tree into a drawer and always wraps the message; < 600px ("phone") is a read-only reader mode (slim header, level pills, entry-detail bottom sheet, log entries as cards with exact measurement-free heights). Touch devices get ~40px hit targets and long-press = context menu.
+  - Replaces the old 760px media rule; the homepage hides its "Will it read my logs?" block below 600px.
+  - **Tests**: GROUP responsive-layout, responsive-phone, responsive-cards. Docs: docs/ui-and-views.md, README.

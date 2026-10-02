@@ -312,6 +312,11 @@ deployments possible:
   your currently running instances — the Settings dialog shows which
   solution each has open) or "Open in Rider" (via a `jetbrains://` deep
   link — no connection step, Rider resolves the right window itself).
+- **Works in narrow windows and on tablets and phones** — the layout follows
+  the window width: below 1024px the file/filter tree becomes a slide-in
+  drawer, below 600px log entries become readable cards with an entry-detail
+  sheet (read-only: no editing), and touch devices get larger hit targets and
+  long-press for the context menu.
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
 - **Per-file clock offset** — a file's tree context menu ("Adjust clock…")
   applies a manual clock correction to one file's timestamps, for when one

@@ -4568,6 +4568,8 @@
      10px padding, 20px head row + 4px row gap, 14px/19px message clamped to
      4 lines, 1px border-bottom. */
   body.layout-phone { --sheet-h:62vh; }
+  /* compact: the wrap button is locked on (always wrapped) but keeps its tooltip */
+  body.layout-compact .toggle-wrap:disabled{pointer-events:auto; cursor:default; opacity:.7;}
   body.layout-phone #tableWrap:not(.text-mode) #tableHeader{display:none;}
   body.layout-phone #tableRows{--rows-pad-left:0px; padding:2px 0 20px 0;}
   body.layout-phone #tableRows .log-row.row-grid{
@@ -4588,7 +4590,7 @@
   body.layout-phone #tableRows .log-row.row-grid > .col-msg{
     grid-column:2 / -1; grid-row:2; min-width:0; align-self:start;
     display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden;
-    white-space:normal; word-break:break-all; text-overflow:ellipsis;
+    white-space:normal; word-break:normal; overflow-wrap:anywhere; text-overflow:ellipsis; tab-size:4;
     font-size:14px; line-height:19px;
   }
   body.layout-phone.multiline-messages #tableRows .log-row.row-grid > .col-msg{white-space:pre-wrap;}
@@ -23509,9 +23511,12 @@ function noteHeightForEntry(e) {
 /* ---------- Card rows (layout-phone) ----------
    On phone the Filtered view's log rows are cards (CSS on the same .log-row
    element, see "Phone shell" in the stylesheet): line 1 = time, level badge,
-   thread; line 2+ = the message, soft-wrapped (word-break:break-all, so the
-   line count is exactly messageWrapLines(), same contract as word-wrap) and
-   clamped to CARD_MAX_LINES. The height is CARD_HEAD + lines * CARD_LINE +
+   thread; line 2+ = the message, soft-wrapped at spaces (overflow-wrap:anywhere: a
+   word longer than the line breaks anywhere) and clamped to CARD_MAX_LINES.
+   The line count is a greedy word wrap over the monospace column count
+   (cardWrapPartLines); each row also carries its predicted count as its own
+   -webkit-line-clamp, so a rare misprediction shows an ellipsis instead of
+   overflowing the fixed height. The height is CARD_HEAD + lines * CARD_LINE +
    CARD_VPAD — pure arithmetic, never measured. The constants mirror the CSS:
    head row 20px + 4px row gap; 14px mono message at line-height 19px; 10px
    padding top/bottom + 1px border-bottom. CARD_TRACK_INSET is the card's
@@ -23524,9 +23529,46 @@ const CARD_VPAD = 21;
 const CARD_MAX_LINES = 4;
 const CARD_TRACK_INSET = 24;
 function cardMode() { return currentLayoutTier === "phone" && !filteredTextMode; }
+// Visual lines of one message part in a card: greedy word wrap over `cols`
+// monospace characters, exactly what white-space:normal / pre-wrap with
+// overflow-wrap:anywhere does. Tokens are words and whitespace runs; a word
+// that does not fit moves to the next line first and is only split into
+// cols-sized chunks when it is longer than a whole line; a whitespace run that
+// does not fit hangs at the line end (never causes a break by itself).
+function cardWrapPartLines(text, cols) {
+  if (!text) return 1;
+  let lines = 1, used = 0;
+  const re = /(\s+)|(\S+)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m[1]) {
+      let n = 0;
+      for (const ch of m[1]) n += ch === "\t" ? 4 : 1;
+      used = Math.min(used + n, cols); // hangs at the end of a full line
+      continue;
+    }
+    const len = m[2].length;
+    if (used + len <= cols) { used += len; continue; }
+    if (used > 0) { lines++; used = 0; }
+    if (len > cols) { lines += Math.ceil(len / cols) - 1; used = len % cols || cols; }
+    else used = len;
+  }
+  return lines;
+}
+// Visible card message lines: wrapped line count clamped to CARD_MAX_LINES.
+// multiline on: literal "\n"s split first and each part wraps; off: runs of
+// whitespace collapse to one space first (white-space:normal).
+function cardLinesForEntry(e, cols) {
+  let n;
+  if (cols < 1) n = state.multilineMessages ? messageLineCount(e.message) : 1;
+  else if (state.multilineMessages) {
+    n = 0;
+    for (const part of (e.message ? e.message.split("\n") : [""])) n += cardWrapPartLines(part, cols);
+  } else n = cardWrapPartLines(e.message ? e.message.replace(/\s+/g, " ").trim() : "", cols);
+  return Math.min(n, CARD_MAX_LINES);
+}
 function cardHeightForEntry(e, cols) {
-  const n = cols >= 1 ? messageWrapLines(e.message, cols) : (state.multilineMessages ? messageLineCount(e.message) : 1);
-  return CARD_HEAD + Math.min(n, CARD_MAX_LINES) * CARD_LINE + CARD_VPAD;
+  return CARD_HEAD + cardLinesForEntry(e, cols) * CARD_LINE + CARD_VPAD;
 }
 /* ---------- Word-wrap message height support (state.wrapMessages) ----------
    Word-wrap is folded into the exact-height virtualization the multiline
@@ -23539,6 +23581,10 @@ function cardHeightForEntry(e, cols) {
    from data alone (no per-row DOM measurement). The two views can be different
    widths (Stacked shows both at once), so each stores its own column count,
    set when its offsets are built and reused by its render pass. */
+// Effective word-wrap of the log message column: the stored setting, or always
+// on in the compact tier (a narrow window must not scroll sideways). The stored
+// state.wrapMessages is never changed by this.
+function wrapMessagesEff() { return state.wrapMessages || currentLayoutTier === "compact"; }
 let tableWrapCols = 0;      // Filtered view's message-track char capacity when wrap on (0 = wrap off / unmeasurable)
 let highlightWrapCols = 0;  // Context view's, same contract
 // One real measurement of a 10-char monospace run (the log font is monospace),
@@ -23560,7 +23606,7 @@ function wrapColsForBody(bodyEl) {
     const track = (bodyEl.clientWidth || 0) - CARD_TRACK_INSET;
     return track > 0 ? Math.max(1, Math.floor((track - cw) / cw)) : 0;
   }
-  if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : state.wrapMessages)) return 0;
+  if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : wrapMessagesEff())) return 0;
   const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
   if (!(track > 0)) return 0;
   const cw = msgCharWidth();
@@ -23601,7 +23647,7 @@ function messageWrapLines(message, cols) {
 function baseRowHeightForEntry(e, cols, textRows, card) {
   if (card) return cardHeightForEntry(e, cols);
   const h = textRows ? TEXT_ROW_HEIGHT : ROW_HEIGHT;
-  const wrapOn = (textRows ? state.wrapTextView : state.wrapMessages) && cols >= 1;
+  const wrapOn = (textRows ? state.wrapTextView : wrapMessagesEff()) && cols >= 1;
   if (!wrapOn && (textRows || !state.multilineMessages)) return h;
   const n = wrapOn ? (textRows ? textWrapLines(e.message, cols) : messageWrapLines(e.message, cols)) : messageLineCount(e.message);
   return n > 1 ? h + (n - 1) * (textRows ? TEXT_ROW_HEIGHT : MULTILINE_LINE_HEIGHT) : h;
@@ -23623,7 +23669,7 @@ function rowHeightForEntry(e, cols, textRows, card) {
 // differ from the fixed ROW_HEIGHT default: multiline messages, word-wrap, or
 // notes being shown at all (cheaper to always build the array while notes are
 // on than to track "does any currently-loaded entry actually have a note").
-function needsRowOffsets() { return filteredTextMode ? (state.showNotes || state.wrapTextView) : (cardMode() || state.multilineMessages || state.showNotes || state.wrapMessages); }
+function needsRowOffsets() { return filteredTextMode ? (state.showNotes || state.wrapTextView) : (cardMode() || state.multilineMessages || state.showNotes || wrapMessagesEff()); }
 function buildRowOffsets(entries) {
   // Recompute (and cache) the Filtered view's wrap column count here so the
   // heights summed below and the per-row heights renderVisibleRows sets from
@@ -24144,6 +24190,10 @@ function appendLogRow(frag, i, rc) {
     levelCellHtml(e, levelHtml) +
     middleHtml +
     (rc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' : "");
+  if (!rc.textMode && cardMode()) {
+    const msgEl = row.querySelector(":scope > .col-msg");
+    if (msgEl) msgEl.style.webkitLineClamp = String(cardLinesForEntry(e, tableWrapCols));
+  }
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
@@ -24750,7 +24800,7 @@ function buildContextRowOffsets(entries, strips) {
 let cachedMaxHighlightMsgPixelWidth = 0;
 function syncHighlightRowsWidth() {
   // See syncTableRowsWidth: wrap on -> no horizontal overflow to scroll to.
-  if (state.wrapMessages) { highlightRows.style.width = ""; return; }
+  if (wrapMessagesEff()) { highlightRows.style.width = ""; return; }
   const cs = getComputedStyle(highlightRows);
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
   const contentW = cachedMaxHighlightMsgPixelWidth > 0
@@ -28876,9 +28926,16 @@ function updateWrapMsgButton() {
   // The one Wrap button means "wrap this kind of view": for a plain-text root
   // it is the editor/text-row wrap (state.wrapTextView — Context editor AND
   // Filtered text rows), otherwise the log message wrap.
-  const on = nodeIsPlainText(state.activeId) ? state.wrapTextView : state.wrapMessages;
-  btnWrapMsg.forEach(b => b.classList.toggle("active", on));
-  document.body.classList.toggle("wrap-messages", state.wrapMessages);
+  const plain = nodeIsPlainText(state.activeId);
+  const locked = !plain && currentLayoutTier === "compact"; // compact: always wrapped, the button shows that
+  const on = plain ? state.wrapTextView : wrapMessagesEff();
+  btnWrapMsg.forEach(b => {
+    b.classList.toggle("active", on);
+    if (b.dataset.baseTitle === undefined) b.dataset.baseTitle = b.title;
+    b.disabled = locked;
+    b.title = locked ? "Always wrapped in a narrow window" : b.dataset.baseTitle;
+  });
+  document.body.classList.toggle("wrap-messages", wrapMessagesEff());
 }
 
 // A plain persistent toggle, not a popup — full render() (rather than the
@@ -29110,6 +29167,7 @@ function applyLayoutTier() {
   setDrawerOpen(false);
   if (tier === "phone") cancelLongPress();
   if (first) return; // boot: render() has not run yet / applyRowGrid already read the tier
+  updateWrapMsgButton(); // compact = always wrapped (wrapMessagesEff)
   applyRowGrid();
   render(); // also runs phoneEnforceTab()
 }
@@ -29394,7 +29452,7 @@ function syncTableRowsWidth() {
   // Word-wrap on: the message wraps within the viewport, so there is nothing
   // to scroll to horizontally — clear any forced width and let #tableRows
   // stretch-fill (left:0;right:0), same as a short-message file.
-  if (cardMode() || (filteredTextMode ? state.wrapTextView : state.wrapMessages)) { tableRows.style.width = ""; return; }
+  if (cardMode() || (filteredTextMode ? state.wrapTextView : wrapMessagesEff())) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
     ? tableGutterW() + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
     : 0;
