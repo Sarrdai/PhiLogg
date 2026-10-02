@@ -18,6 +18,14 @@
 const EXECUTABLE_EXTENSIONS: &[&str] = &[
     "exe", "com", "bat", "cmd", "scr", "pif", "msi", "msp", "msc", "cpl", "dll", "ps1", "psm1", "psd1", "vbs", "vbe",
     "js", "jse", "wsf", "wsh", "hta", "lnk", "url", "reg", "jar", "sh", "command", "app", "appimage", "desktop", "run",
+    // Further Windows types that run code, install it or follow a payload:
+    // compiled help, ClickOnce, MSIX/APPX, Java Web Start, Windows Script
+    // Component, Excel add-in, search-connector/settings shells, PowerShell
+    // format files, gadgets, setup information and Explorer commands.
+    "chm", "appref-ms", "application", "msix", "appx", "jnlp", "wsc", "xll", "settingcontent-ms", "ps1xml", "gadget",
+    "inf", "scf",
+    // Deliberately NOT here: py/pl/rb and other interpreted source files —
+    // they are common in stack traces and the OS does not run them on open.
 ];
 
 /// URI schemes `open_path` may pass to the OS: the IDE integration's Rider
@@ -169,6 +177,28 @@ mod tests {
         for ext in EXECUTABLE_EXTENSIONS {
             assert!(is_executable_content(&format!("C:\\tmp\\x.{ext}")), "{ext}");
             assert!(is_executable_content(&format!("/tmp/x.{}", ext.to_uppercase())), "{ext} upper");
+        }
+        for name in [
+            "help.chm",
+            "x.appref-ms",
+            "x.application",
+            "x.msix",
+            "x.appx",
+            "x.jnlp",
+            "x.wsc",
+            "x.xll",
+            "x.SettingContent-ms",
+            "x.ps1xml",
+            "x.gadget",
+            "setup.inf",
+            "x.scf",
+            r"C:\tmp\x.chm:$DATA",
+        ] {
+            assert!(is_executable_content(name), "{name}");
+        }
+        // Interpreted source files appear in stack traces and are not run on open.
+        for name in ["/srv/app/main.py", "lib/Foo.pm", "lib/foo.pl", "app/model.rb", "src/x.ts", "x.cs"] {
+            assert!(!is_executable_content(name), "{name}");
         }
         assert!(is_executable_content("evil.Exe"));
         assert!(is_executable_content("a.b.c.ps1"));

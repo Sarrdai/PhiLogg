@@ -9,6 +9,7 @@
 - [Windows Explorer context-menu integration](#windows-explorer-context-menu-integration)
 - ["Open File Location" and "Copy Path"](#open-file-location-and-copy-path)
 - [Clickable local file paths in log lines](#clickable-local-file-paths-in-log-lines)
+  - [Hostile log text](#hostile-log-text)
 - [System font list for the UI font and Log font pickers](#system-font-list-for-the-ui-font-and-log-font-pickers)
 - [IDE Integration: jump from a log entry into a running Visual Studio (Windows only), Rider fast-follow](#ide-integration-jump-from-a-log-entry-into-a-running-visual-studio-windows-only-rider-fast-follow)
 - [Settings: mirrored into a human-editable settings.json](#settings-mirrored-into-a-human-editable-settingsjson)
@@ -679,7 +680,8 @@ message field's HTML for absolute Windows (`C:\…`), UNC (`\\server\share\…`)
 (`/…`) paths via `FILE_PATH_RE` and wraps each match in
 `<span class="fp-candidate" data-fp="…">` — skipping existing tags (e.g. a `<mark>` from
 match/highlight marking) rather than matching across them, since the input is already
-HTML, not raw text. This runs identically in the browser build, so a candidate span
+HTML, not raw text. A *remote* match (UNC, device namespace — `isRemoteFilePath`) is left
+as plain text instead: see "Hostile log text" below. This runs identically in the browser build, so a candidate span
 appears there too — it just never becomes fully clickable (see below). No relative-path
 support yet; a bare filename or a relative path is too ambiguous to resolve against (which
 directory? the log's own location isn't tracked generically enough — see `PROJECT.md`'s
@@ -736,7 +738,7 @@ plus `fpPathPending` so an in-flight check for the same path is never started tw
 shared across the two views), and calls the new `window.philogg.pathExists(path)` exactly
 once per unique path ever seen across BOTH views combined, backed by `path_exists`
 (`commands.rs`, `std::fs::metadata(&path).is_ok()` — a single syscall, no new plugin
-needed). This was originally hover-triggered (a 180ms debounce, one IPC call per hover) —
+needed — but never for a remote path, see "Hostile log text"). This was originally hover-triggered (a 180ms debounce, one IPC call per hover) —
 moved to eager per-render checking because success shouldn't depend on how long the cursor
 happens to sit still, and because the same path routinely recurs across many rows in one
 file (a config path logged on every save, say) — now also across both views at once, if
@@ -765,7 +767,10 @@ offering up to three actions:
   ingestion path needed. A rejected `openLocalPath()` (the re-check failing) surfaces a
   toast naming the path instead of throwing or leaving anything stuck.
 - **Open file** — `philogg.openPath` → new `open_path` command, `app.opener().open_path(…)`
-  (same `tauri_plugin_opener::OpenerExt` the reveal commands already use).
+  (same `tauri_plugin_opener::OpenerExt` the reveal commands already use). The command
+  refuses executable/script types, so a rejected call shows a toast with the wrapper's
+  reason (`Couldn't open "<path>" (Refusing to open executable content: …)`) instead of
+  doing nothing — see "Hostile log text".
 - **Open containing folder** — `philogg.revealPath`, the same command "Open File Location"
   above already uses.
 
@@ -796,6 +801,54 @@ Group 200 covers the toggle itself (both button copies, default on, a click flip
 persisting the shared state and updating both copies), that it actually gates rendering in
 both `#tableRows` and `#highlightRows`, and that a path appearing in both views still
 resolves through one shared `pathExists()` call.
+
+### Hostile log text
+
+Everything above acts on strings a log file can contain, and a log file may be hostile (a
+log from someone else's machine, an extracted archive). One attack needed no click at all
+(the remote-path probe), the other a single click on an "open" action, so the guard lives in
+the wrapper (`src-tauri/src/pathguard.rs`: pure functions with their own `cargo test` unit
+tests) and the page mirrors the first rule:
+
+- **Remote paths are never checked.** Asking Windows whether `\\attacker.example\share\x`
+  exists opens an SMB/WebDAV connection and authenticates with the user's NTLM credentials
+  — and `verifyVisibleFpCandidates` asks about every path in every rendered row, so merely
+  scrolling the line into view would leak the hash (or probe an internal host). `is_remote_path`
+  is true for UNC (`\\server\share`, also `//server/share` and mixed separators —
+  Windows accepts either), `\\?\UNC\…`, the device namespace `\\.\…` and `\??\…`; a local
+  extended-length `\\?\C:\…`, drive paths, POSIX and relative paths are not remote. The
+  page has the same predicate (`isRemoteFilePath`): `linkifyPaths` leaves a remote match as
+  plain text (the quoted `FILE_PATH_RE` alternatives can capture `//server/x` or `\\host\x`
+  too), `verifyVisibleFpCandidates` skips a remote `data-fp` anyway, and `path_exists` itself
+  answers `false` without touching the filesystem unless it is called with
+  `allow_remote` — the bridge's `pathExists(path, { allowRemote: true })`
+  (`allowRemote` on the wire, Tauri's camelCase → snake_case). The one caller that passes it is
+  the Visual Studio jump, whose path comes from the connected IDE's own solution directory
+  (which may sit on a share), never from log text.
+- **Executable types are never opened.** The OS opener *runs* `.exe`/`.bat`/`.ps1`/`.lnk`…
+  instead of showing them. `open_path` ("Open file") and `open_extracted_entry` (a ZIP
+  entry's "open externally", checked before the temp file is written) refuse a name whose
+  extension is on the denylist in `pathguard.rs` (`EXECUTABLE_EXTENSIONS`: the Windows
+  executable/script/installer/shortcut types plus `sh`, `command`, `app`, `appimage`,
+  `desktop`, `run`; deliberately not `py`/`pl`/`rb`, which are everyday stack-trace
+  files). The name is normalised first, so `x.exe `, `x.exe.`, `x.exe::$DATA`,
+  `x.txt:evil.exe` and either path separator don't slip past. The error text reaches the
+  page as a plain string (a rejected `invoke` carries the `Err(String)` itself, not an
+  `Error`), which `ipcErrorText` turns into the toast. A remote path is still *openable*
+  (the user chose that file); only the unprompted probe is cut off.
+- **`open_path` takes only paths and one URI scheme.** The IDE integration sends the Rider
+  deep link through it, so `jetbrains://…` is allow-listed; every other string with a URI
+  scheme of two or more characters (`file:`, `ms-msdt:`, `search-ms:`, `http:` …) is refused
+  — a single letter before the `:` is a drive (`C:\x`), not a scheme. An allow-listed link
+  skips the executable check, since its `path=` query may name a `.sh` source file the IDE
+  merely navigates to.
+
+`reveal_path`, `open_local_path`, `list_folder`, `list_subfolders` and `reveal_local_url`
+are deliberately unguarded: they serve routes the user started (an opened file, a restored
+session, a watched folder — which may well be a network share). Extensionless names are
+not blocked either: ShellExecute may resolve `calc` to `calc.exe`, but refusing every
+extensionless file would break real logs; that is an accepted, documented residual risk.
+Tests: GROUP desktop-path-hostile-input (page side), `cargo test -p philogg-desktop` (guard).
 
 ## System font list for the UI font and Log font pickers
 
@@ -932,8 +985,11 @@ open (or launching one). `buildRiderUri` (`philogg.html`, next to the
 context-menu wiring) builds that URI from the same `resolveIdeSourcePath`
 result and hands it to the existing `window.philogg.openPath` bridge method
 — the same one the clickable-local-path feature already uses to open a
-plain file — which resolves an arbitrary registered URI scheme through the
-OS the same way a browser or `Win+R` would, no new Rust command needed.
+plain file — which resolves a registered URI scheme through the
+OS the same way a browser or `Win+R` would, no new Rust command needed. `open_path`
+allow-lists exactly the `jetbrains` scheme and refuses any other (see "Hostile log text"
+under "Clickable local file paths"); the Visual Studio jump's own `pathExists` check is the
+one that passes `{ allowRemote: true }`.
 Settings → IDE Integration's "Rider" group is just an enable toggle + the
 project name the link's `project=` parameter needs (not derivable from
 anything else PhiLogg knows) — no connection step, no instance picker: the
@@ -1001,7 +1057,7 @@ leaves the previous file intact.
 
 **Main-thread rule for commands.** The same applies to every command that does file I/O
 on a page-supplied path — `list_folder`, `list_subfolders` (the folder watch's rescan,
-every few seconds), `path_exists` (clickable local paths, on hover), `open_local_path`,
+every few seconds), `path_exists` (clickable local paths, once per rendered path), `open_local_path`,
 `open_extracted_entry`: they are `#[tauri::command(async)]`, so a slow share delays only
 their own result. A new command that touches the filesystem (or anything else that can
 block) must be `async` too.

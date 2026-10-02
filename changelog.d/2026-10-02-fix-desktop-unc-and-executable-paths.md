@@ -1,0 +1,4 @@
+- **fix: a hostile log can no longer make the desktop app contact a remote host or run an executable (2026-10-02, code review)**
+  - A UNC/device path in a log line (`\\attacker.example\share\x`) was checked for existence on every render, which makes Windows connect and send the user's NTLM credentials. Remote paths are now plain text in the page and `path_exists` answers `false` for them without touching the filesystem; only the Visual Studio jump passes `allowRemote`.
+  - "Open file" and a ZIP entry's "open externally" refuse executable/script types and every URI scheme except the Rider `jetbrains://` link (new `pathguard.rs`); the refusal shows up as a toast (a rejected `invoke` is a plain string, which the ZIP toast used to print as "undefined").
+  - **Tests**: GROUP desktop-path-hostile-input, `cargo test -p philogg-desktop`. Docs: docs/desktop.md ("Hostile log text"), desktop/README.md.
