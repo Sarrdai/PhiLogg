@@ -317,12 +317,13 @@ group(199);
 
 
   await withApp(async (w, d, T) => {
-    section("199i-2. .json/.xml zip entries get JSON/XML token highlighting (highlightJsonText/highlightXmlText) in the inline text viewer");
+    section("199i-2. .json/.xml zip entries get JSON/XML token highlighting (tokenRangesHtml over jsonTokenRanges/xmlTokenRanges) in the inline text viewer");
 
-    assert(w.highlightJsonText('{"a":1}').includes('class="tok-key"'), "JSON object keys are tokenized");
-    assert(w.highlightJsonText('{"a":1}').includes('class="tok-number"'), "JSON numbers are tokenized");
-    assert(w.highlightXmlText('<a b="c"/>').includes('class="tok-tag"'), "XML tags are tokenized");
-    assert(w.highlightXmlText('<a b="c"/>').includes('class="tok-attr"'), "XML attributes are tokenized");
+    const jsonHtml = t => w.tokenRangesHtml(t, w.jsonTokenRanges(t)), xmlHtml = t => w.tokenRangesHtml(t, w.xmlTokenRanges(t));
+    assert(jsonHtml('{"a":1}').includes('class="tok-key"'), "JSON object keys are tokenized");
+    assert(jsonHtml('{"a":1}').includes('class="tok-number"'), "JSON numbers are tokenized");
+    assert(xmlHtml('<a b="c"/>').includes('class="tok-tag"'), "XML tags are tokenized");
+    assert(xmlHtml('<a b="c"/>').includes('class="tok-attr"'), "XML attributes are tokenized");
   });
 
   await withApp(async (w, d, T) => {

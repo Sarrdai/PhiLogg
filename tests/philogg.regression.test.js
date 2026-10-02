@@ -367,6 +367,7 @@ async function withApp(run, opts = {}) {
       get BUILTIN_SYNTAX_SCHEMES() { return BUILTIN_SYNTAX_SCHEMES; },
       get customSyntaxSchemes() { return customSyntaxSchemes; },
       get syntaxSchemeChoice() { return syntaxSchemeChoice; },
+      get themeModeChoice() { return themeModeChoice; },
       get detailView() { return detailView; },
       get colorPickerMode() { return colorPickerMode; },
       get HIGHLIGHT_PRESETS() { return HIGHLIGHT_PRESETS; },

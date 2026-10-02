@@ -314,7 +314,7 @@ await withApp(async (w, d, T) => {
   w.render();
   assert(T.contextGaps.length === 2 && T.contextGaps.every(g => revealed(g.start) === g.start + "-" + g.end),
     "Stacked seeds every gap fully revealed the first time a node becomes active there, regardless of contextInitialExpansion");
-  w.setGapOpen(T.contextGaps[0].start, false); // manually re-hide one
+  w.collapseContextRun(T.contextRuns.find(r => r.gapStart === T.contextGaps[0].start)); // manually re-hide one (a click on the run's connecting line)
   T.state.selectedId = null; // landing on the Context tab opens the selection's window (GROUP 276)
   w.applyFhView("highlight"); // flip to tabs...
   w.applyFhView("stacked");   // ...and back

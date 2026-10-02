@@ -12,7 +12,7 @@
    color); (B) the color-mark gutter (.hl-markers) now sizes itself
    (--color-mark-w CSS var) to the TRUE max number of simultaneous
    colored-filter matches any one row reaches across the whole file, cached
-   as maxSimultaneousColorCount and recomputed alongside highlightColorMap
+   by updateColorMarkGutter and recomputed alongside highlightColorMap
    rather than per row; (C) toggleBookmark/syncBookmarksFilterNode now
    recompute highlightColorMap (and the gutter width) themselves, so a
    bookmark add/remove updates the Bookmarks node's own color-mark

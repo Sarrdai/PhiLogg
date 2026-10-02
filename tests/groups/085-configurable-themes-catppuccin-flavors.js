@@ -118,7 +118,7 @@ await withApp(async (w, d, T) => {
       "the imported theme appears as an option in #" + sel.id);
   });
   assert(select.value === imported.id, "the effective slot's dropdown reflects the newly-active custom theme");
-  assert(w.localStorage.getItem("philogg-theme-dark") === imported.id && w.themeMode() === "system",
+  assert(w.localStorage.getItem("philogg-theme-dark") === imported.id && T.themeModeChoice === "system",
     "saving the imported theme fills the effective slot and does not switch the mode");
 
   const listRow = d.querySelector("#customThemeList .filter-library-row");

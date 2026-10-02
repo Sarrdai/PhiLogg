@@ -55,7 +55,7 @@ await withApp(async (w, d, T) => {
 
   // --- Bugfix (this session, person-reported): a new selection is named as
   // a plain ordinal ("Selection 1", "Selection 2", ...) via
-  // nextSelectionFilterName(), not the initial entry count (idSetFilterName's
+  // nextSelectionFilterOrdinal(), not the initial entry count (idSetFilterName's
   // "N entries (selection)"), which used to go stale the moment "Add to
   // selection" grew the set. ---
   assert(sel1.name === "Selection 1", "a new selection filter is named \"Selection 1\", not by its initial entry count, got " + sel1.name);
@@ -96,7 +96,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#ctxAddToSelection"), w);
   const existingItem = menuAction('data-selection-id="' + sel1.id + '"');
   assert(existingItem && existingItem.textContent === sel1.name,
-    "the submenu now lists the existing selection filter by its name (nextSelectionFilterName's \"Selection N\" auto-name)");
+    "the submenu now lists the existing selection filter by its name (createSelectionFilterNode's \"Selection N\" auto-name)");
 
   const childCountBeforeAdd = f.children.length;
   fireClick(existingItem, w);

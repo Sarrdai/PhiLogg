@@ -2237,8 +2237,8 @@
      already defines colors for elsewhere in the app (see renderHighlightView/
      the message-highlighting section) is a log-line concept, not a generic
      text-syntax one — there was nothing to literally reuse for JSON/XML, so
-     these are new, minimal, regex-based tokenizers (highlightJsonText/
-     highlightXmlText) using the app's own existing color tokens so a
+     these are new, minimal, regex-based tokenizers (jsonTokenRanges/
+     xmlTokenRanges) using the app's own existing color tokens so a
      JSON/XML preview reads consistently with the rest of the UI. */
   .tok-key{color:var(--accent);}
   .tok-string{color:#3fa860;}
@@ -4562,7 +4562,6 @@
     <symbol id="i-zip" viewBox="0 0 16 16"><rect x="2" y="2.25" width="12" height="11.5" rx="1.25"/><path d="M8 2.25v1.5M8 5.25v1.5M8 8.25v1"/><rect x="6.75" y="9.5" width="2.5" height="2.5" rx=".5"/></symbol>
     <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.25" y="7.25" width="9.5" height="6.25" rx="1.25"/><path d="M5.25 7.25V5a2.75 2.75 0 0 1 5.5 0v2.25"/></symbol>
     <symbol id="i-message-extract" viewBox="0 0 16 16"><path d="M2.5 3.25h11v7.5H7.25L4.5 13v-2.25h-2Z"/><path d="M6 6.5l-1.25 1 1.25 1M10 6.5l1.25 1-1.25 1"/></symbol>
-    <symbol id="i-filter-plus" viewBox="0 0 16 16"><use href="#i-filter"/><circle cx="12.25" cy="4" r="2.75" fill="var(--bg-panel)" stroke-width="1"/><path d="M12.25 2.75v2.5M11 4h2.5" stroke-width="1"/></symbol>
     <symbol id="i-bookmark-filled" viewBox="0 0 16 16"><path d="M4 2.5h8v11l-4-2.6-4 2.6Z" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-table" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="11.5" rx="1.5"/><path d="M2.25 6h11.5M2.25 10h11.5M6 2.25v11.5M10 2.25v11.5"/></symbol>
     <symbol id="i-time-before" viewBox="0 0 16 16"><path d="M8 13V3M5 6l3-3 3 3"/></symbol>
@@ -7010,7 +7009,7 @@ function arrayMax(arr) {
 // stroke), so all icons share one look: sized/stroked by the .icon CSS class
 // (md 14px by default; containers such as .tree-icon/.ctx-item scope
 // --icon-md down to sm 12px, .icon-xs is the 10px close glyph). Badge symbols
-// (file-auto/-partial, filter-plus, merge-window) and filled glyphs
+// (file-auto/-partial, merge-window) and filled glyphs
 // (bookmark-filled, info's dot) carry their own fill/stroke attributes inside
 // the symbol.
 function icon(name, cls = "") {
@@ -7031,7 +7030,6 @@ const ICON_FOLDER = icon("folder");
 // replaces): an archive box with a "zipper" strip down the middle, so a ZIP
 // source reads as visually distinct from a watched folder at a glance.
 const ICON_ZIP = icon("zip");
-const ICON_GEAR = icon("gear");
 // Folder-watch settings button: the app Settings button's cog glyph (24-unit
 // viewBox, stroke-width 2 set on the symbol in the sprite).
 const ICON_COG = icon("cog");
@@ -7043,11 +7041,6 @@ const ICON_FILTER = icon("filter");
 // with two small bracket-like accents standing in for the "extract the
 // numbers out of this text" behavior the action actually performs.
 const ICON_MESSAGE_EXTRACT = icon("message-extract");
-// "New filter" row-action's icon: the same funnel as ICON_FILTER with a
-// small "+" badge overlaid in the corner, same badge-overlay technique as
-// ICON_FILE_AUTO's circled "A" (the circle's fill hides the funnel path
-// behind it so the "+" reads cleanly instead of visually merging).
-const ICON_FILTER_PLUS = icon("filter-plus");
 const ICON_CLOCK = icon("clock");
 // Recovered from the old per-row bookmark marker (removed in the "Bookmarks
 // rework" — see PROJECT.md) and reused as the "Bookmarks" filter-tree node's
@@ -7074,8 +7067,6 @@ const ICON_CHECK = icon("check");
 // library…" action (a disk, distinct from ICON_SAVE's download-to-tray
 // arrow used by "Save filter…").
 const ICON_DISK = icon("bookplus");
-// Open book — the "Library ▾" button of #viewBar.
-const ICON_BOOK = icon("book");
 const ICON_MERGE = icon("merge");
 // Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
 // MergeWindow's three explicit actions): two overlapping file glyphs for
@@ -7323,8 +7314,6 @@ function effectiveScheme() {
   if (themeModeChoice === "light" || themeModeChoice === "dark") return themeModeChoice;
   return osPrefersLight() ? "light" : "dark";
 }
-
-function themeMode() { return themeModeChoice; }
 
 // The theme id held by a slot ("light" | "dark"); a stale id (its custom
 // theme is gone) reads as that slot's default.
@@ -7586,7 +7575,7 @@ document.getElementById("settingsThemeDarkSelect").addEventListener("change", ev
 // included), no reload. Modes "light"/"dark" ignore OS changes. Skipped
 // silently where there is no matchMedia.
 (function watchOsColorScheme() {
-  let mql = null;
+  let mql;
   try { mql = window.matchMedia && window.matchMedia("(prefers-color-scheme: light)"); } catch { mql = null; }
   if (!mql) return;
   const onChange = () => { if (themeModeChoice === "system") applyActiveTheme(); };
@@ -9694,7 +9683,7 @@ function resolveIdeSourcePath(location, anchorPattern, solutionDir) {
   if (!parsed) return { error: "no-location" };
   if (!anchorPattern) return { error: "anchor-not-found" };
   const re = compileIdeAnchorPattern(anchorPattern);
-  let match = null;
+  let match;
   let lastMatch = null;
   while ((match = re.exec(parsed.path))) {
     lastMatch = match;
@@ -10359,7 +10348,7 @@ function compileJsonFormat(fmt) {
   return {
     isHeaderLine: line => /^\s*\{/.test(line),
     parseHeader: line => {
-      let obj = null;
+      let obj;
       try { obj = JSON.parse(line); } catch (e) { obj = null; }
       if (!obj || typeof obj !== "object" || Array.isArray(obj)) {
         const e = applyFormatMatch({}, line, null);
@@ -12759,14 +12748,12 @@ function createAndOrNode(ids, mode) {
 // with loadFraction 0 — instead of being computed synchronously in one
 // blocking call, which could otherwise freeze the UI for a noticeable
 // moment on a merge of several very large files, with nothing on screen to
-// show it's working. COPY_WEIGHT covers gathering every source file's
-// entries in chunks (mirrors READ_WEIGHT/PARSE_WEIGHT's split); the final
-// chronological sort isn't itself chunkable, so it's a single blocking call
-// at the end, but it only ever runs after the copy phase's last progress
-// tick has already had a chance to paint (the loop's own yield below).
+// show it's working. The copy phase gathers every source file's entries in
+// chunks; the final chronological sort isn't itself chunkable, so it's a
+// single blocking call at the end, but it only ever runs after the copy
+// phase's last progress tick has already had a chance to paint (the loop's
+// own yield below).
 const MERGE_CHUNK_ENTRIES = 20000;
-const MERGE_COPY_WEIGHT = 0.6;
-const MERGE_SORT_WEIGHT = 0.4;
 // Fixed, deliberately simple reservation for the merge-copy/sort step's
 // own share of a create-first merge's single combined progress bar
 // (person-confirmed: not worth modeling exact relative effort — merge-copy
@@ -15679,7 +15666,6 @@ const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
 const extractToolbar = el("#extractToolbar");
 const statsPanel = el("#statsPanel");
-const statsPanelBody = el("#statsPanelBody");
 const statsToggleBtn = el("#statsToggle");
 const extractStatsContent = el("#extractStatsContent");
 
@@ -16297,7 +16283,6 @@ const plotControls = el("#plotControls");
 const plotChartArea = el("#plotChartArea");
 const plotSvg = el("#plotSvg");
 const plot3dCanvas = el("#plot3dCanvas");
-const plotToolbar = el("#plotToolbar");
 const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
 const plotZoomOutBtn = el("#plotZoomOutBtn");
@@ -16745,8 +16730,7 @@ let notesFilterPrevShowNotes = false;
           Filtered view; revealInTableView() — plot mark into that same
           node's Table row instead (person-requested, this session:
           previously plot marks also went straight to Filtered).
-          jumpToFullLog, the destructive full-log jump this replaced here,
-          is no longer wired to any UI action, see its own comment).
+          (The destructive full-log jump these two replaced is gone.)
       A4  jumpToEntry() — jump to an entry from outside the log views.
       A5  the timeline minimap's click-to-jump.
       A6  jumpToTailedNewest() — "jump to newest" on a tailed file.
@@ -17429,8 +17413,7 @@ function renderMainView() {
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
-    // No entry-detail companion here (see jumpToFullLog's own comment) —
-    // same as before this rework.
+    // No entry-detail companion here — same as before this rework.
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
     // Unlike before this rework, the minimap is no longer hidden while an
@@ -18899,11 +18882,6 @@ function expandPathTreeTo(owner, relPath) {
   const parts = relPath.split("/");
   for (let i = 1; i < parts.length; i++) expandedDirsOf(owner).add(parts.slice(0, i).join("/"));
 }
-function isPathTreeVisible(owner, relPath) {
-  const parts = relPath.split("/");
-  for (let i = 1; i < parts.length; i++) if (!expandedDirsOf(owner).has(parts.slice(0, i).join("/"))) return false;
-  return true;
-}
 function countPathTreeItems(level) {
   let n = level.items.length;
   level.dirs.forEach(dir => { n += countPathTreeItems(dir); });
@@ -19343,12 +19321,6 @@ const ARRAY_COL_BASE = 1000;
 const ARRAY_AGG_SLOT = 900;
 const ARRAY_ELEM_INDEX_SLOT = 990;
 function arrayDerivedColIndex(base, slot) { return -(ARRAY_COL_BASE * (base + 1) + slot); }
-// { base, slot } for a derived colIndex, else null.
-function arrayDerivedColParts(colIndex) {
-  if (!(colIndex <= -ARRAY_COL_BASE)) return null;
-  const v = -colIndex;
-  return { base: Math.floor(v / ARRAY_COL_BASE) - 1, slot: v % ARRAY_COL_BASE };
-}
 function parseArrayCell(text) {
   const t = String(text == null ? "" : text).trim();
   if (!t.startsWith("[")) return null;
@@ -19493,12 +19465,6 @@ function applyArrayViews(node) {
     });
   });
   extractRowsData = out;
-}
-
-function hexToRgba(hex, alpha) {
-  const h = hex.replace("#", "");
-  const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
-  return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
 }
 
 // `html`, when given, is written ALONGSIDE the plain text as a second
@@ -19744,12 +19710,11 @@ function extractClipboardCell(rawValue, decimalSep) {
    TSV (still built alongside, from `value`/localizeNumericCell) remains
    the fallback for anything that ignores text/html or lacks the
    ClipboardItem API. */
-function buildExtractClipboardHtml(rows, header) {
+function buildExtractClipboardHtml(rows) {
   const cellHtml = c => c.numeric
     ? '<td x:num="' + escapeHtml(c.raw) + '">' + escapeHtml(c.value) + "</td>"
     : "<td>" + escapeHtml(c.value) + "</td>";
   const trs = [];
-  if (header) trs.push("<tr>" + header.map(h => "<td><b>" + escapeHtml(h) + "</b></td>").join("") + "</tr>");
   rows.forEach(row => trs.push("<tr>" + row.map(cellHtml).join("") + "</tr>"));
   return '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">'
     + "<head><meta charset=\"utf-8\"></head><body><table>" + trs.join("") + "</table></body></html>";
@@ -19776,25 +19741,6 @@ function copyTableSelection() {
   const text = grid.map(row => row.map(c => c.value).join("\t")).join("\n");
   copyTextToClipboard(text, buildExtractClipboardHtml(grid));
   showCopyToast("Copied " + s.size.toLocaleString("de-DE") + " cell" + (s.size === 1 ? "" : "s"));
-}
-
-// Person-requested removal of #btnCopySelection/#btnCopyAllExtract (this
-// session) took out this function's only UI trigger — kept anyway (same
-// precedent as jumpToFullLog, see PROJECT.md), still directly tested, in
-// case a future entry point wants "copy the whole extraction table incl.
-// header" specifically (copyTableSelection's Ctrl+C path only ever copies
-// a cell range, with no header row).
-function copyWholeExtractTable() {
-  if (!extractRowsData.length) { showCopyToast("Nothing to copy"); return; }
-  const decimalSep = resolveClipboardDecimalSeparator();
-  const headerLabels = extractColumns.map(c => c.name);
-  // row.values always holds every compiled column (matching stays untouched
-  // by the ignore feature, see isColumnIgnored) — export only the visible
-  // ones, same set the header line above already reflects.
-  const bodyGrid = extractRowsData.map(r => extractColumns.map(c => extractClipboardCell(r.values[c.colIndex], decimalSep)));
-  const text = headerLabels.join("\t") + "\n" + bodyGrid.map(row => row.map(c => c.value).join("\t")).join("\n");
-  copyTextToClipboard(text, buildExtractClipboardHtml(bodyGrid, headerLabels));
-  showCopyToast("Copied " + extractRowsData.length.toLocaleString("de-DE") + " rows");
 }
 
 /* ---------- CSV export dialog (right-click on the extraction table) ---------- */
@@ -22021,8 +21967,6 @@ function renderPlotChart() {
     return { col: yCol, name: findExtractColumn(yCol).name, color: columnColor(yCol), pts };
   });
 
-  const skipped = extractRowsData.length - Math.max(...series.map(s => s.pts.length), 0);
-
   if (plotConfig.type !== "scatter" && plotConfig.normalize && series.length > 1) {
     series = series.map(s => {
       const ys = s.pts.map(p => p.y);
@@ -23082,7 +23026,7 @@ function renderExtractVisibleRows() {
     });
     tr.innerHTML = rowHtml;
     // Reveals into the SAME node's Filtered pane (this session's follow-up
-    // feature) rather than jumpToFullLog's destructive jump to the raw file
+    // feature) rather than a destructive jump to the raw file
     // — an extraction-capable node now has an ordinary Filtered view of its
     // own matched entries (see nodeHasExtractableWildcards), so that's what
     // double-clicking a row here lands on.
@@ -24089,20 +24033,16 @@ let currentHighlightViewEntries = [];
 let highlightColorMap = new Map(); // entry id -> [colours...], recomputed each render, see computeHighlightMap
 let lastHighlightRootId = null;
 
-// Cached "current max simultaneous color count for this file" (Task B) —
-// the highest number of distinct colored-filter matches any single entry in
-// highlightColorMap reaches. Row rendering never scans the whole map itself
-// (that would mean an O(entries) pass on every single virtualized row
-// render, same reasoning invalidateAllCaches's own comment gives for not
-// recomputing per-row); instead this is recomputed once, right alongside
-// highlightColorMap itself, and rows just read the cached value + CSS var to
-// size their own color-mark lane consistently (see --color-mark-w/.hl-markers).
-let maxSimultaneousColorCount = 0;
-
-// Recomputes maxSimultaneousColorCount from the just-(re)computed
-// highlightColorMap and pushes it out as the --color-mark-w CSS var, which
-// both #tableRows/#highlightRows (left padding) and .hl-markers (lane width)
-// key off — so the gutter rescales live wherever this is called from:
+// Sizes the color-mark gutter (Task B) to the highest number of distinct
+// colored-filter matches any single entry in the just-(re)computed
+// highlightColorMap reaches, and pushes it out as the --color-mark-w CSS
+// var, which both #tableRows/#highlightRows (left padding) and .hl-markers
+// (lane width) key off, so every row sizes its color-mark lane consistently.
+// Row rendering never scans the whole map itself (that would mean an
+// O(entries) pass on every single virtualized row render, same reasoning
+// invalidateAllCaches's own comment gives for not recomputing per-row); it
+// is recomputed once, right alongside highlightColorMap itself — so the
+// gutter rescales live wherever this is called from:
 // whenever highlightColorMap itself is (re)computed (renderMainView,
 // renderHighlightView) and from toggleBookmark (Task C: a bookmark add/
 // remove changes the auto-managed Bookmarks node's membership, which is
@@ -24110,7 +24050,6 @@ let maxSimultaneousColorCount = 0;
 function updateColorMarkGutter() {
   let max = 0;
   highlightColorMap.forEach(colors => { if (colors.length > max) max = colors.length; });
-  maxSimultaneousColorCount = max;
   const w = max > 0 ? (max * 3 + (max - 1) * 1) : 3; // 3px per mark + 1px gap, matches .hl-marker/.hl-markers
   document.documentElement.style.setProperty("--color-mark-w", w + "px");
 }
@@ -24794,18 +24733,6 @@ function collapseContextRun(run) {
   }, run.firstRow - 1);
 }
 
-// Whole-gap open/shut. Still the shape the jump-correctness path and the
-// tests want ("make this entire gap visible"), expressed over the range list.
-function setGapOpen(gapStart, open) {
-  const gap = contextGaps.find(g => g.start === gapStart);
-  if (!gap) return;
-  commitContextExpansionChange(() => {
-    if (open) revealContextRange(gap.start, gap.start, gap.end);
-    else contextExpansions.delete(gap.start);
-    forgetAutoRangesForGap(gap.start);
-  });
-}
-
 // How far one expansion step reaches from root index `idx` in direction `dir`
 // (-1 up, +1 down), as the root index of the last entry it covers — may lie
 // outside the file, callers clip against their gap. "entries" mode is a plain
@@ -24958,7 +24885,7 @@ function moveContextMatchSelection(delta) {
   // That changes the row list underneath `target`, so rebuild before selecting
   // and let selectHighlightEntry look the row up in the NEW list rather than
   // passing a now-stale index. No captureViewAnchor/restoreViewAnchor pair here
-  // (unlike setGapOpen): centering the target is what positions this view, so
+  // (unlike commitContextExpansionChange): centering the target is what positions this view, so
   // there is no reading position to preserve.
   if (applyContextJumpExpansion(targetId)) {
     currentHighlightViewEntries = buildContextView(getRootFileId(state.activeId));
@@ -27930,15 +27857,14 @@ function jumpAfterPip(fn, args) {
 }
 
 // What a Filter-view (or link-view) row double-click does now, in place of
-// the old jumpToFullLog: select the entry and centre the Highlight view on
-// it, WITHOUT jumping the Filter view itself to a different node or
-// touching the level filter (see "the jumpToFullLog collision" below —
-// this strictly subsumes what jumpToFullLog used
-// to do here, minus the destructive part of losing the Filter view's own
-// position/filter). Deliberately avoids a full render(): that would reset
-// the Filter view's own scroll to the top (see renderTable's "any other
-// change... starts back at the top" comment), exactly what this is meant to
-// preserve. Reveals the Highlight panel first (in tabs layout) so its
+// the old destructive full-log jump: select the entry and centre the
+// Highlight view on it, WITHOUT jumping the Filter view itself to a
+// different node or touching the level filter (this strictly subsumes what
+// that jump used to do here, minus the destructive part of losing the
+// Filter view's own position/filter). Deliberately avoids a full render():
+// that would reset the Filter view's own scroll to the top (see renderTable's
+// "any other change... starts back at the top" comment), exactly what this is
+// meant to preserve. Reveals the Highlight panel first (in tabs layout) so its
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
 function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
@@ -28460,43 +28386,10 @@ function moveHighlightSelection(delta) {
   selectHighlightEntry(entries[idx].id, { scroll: true, index: idx });
 }
 
-// Switches to the full (unfiltered-by-tree) file view that the current node
-// belongs to, clears the quick level filter, and scrolls/highlights the
-// entry. No longer wired to any UI action (this session's double-click/
-// plot-click follow-up feature moved the extraction table row / plot mark
-// jump to revealInFilteredView instead, which stays on the same
-// extraction-capable node's own Filtered pane rather than jumping away to
-// the raw file) — kept as a function anyway, same precedent as
-// copyWholeExtractTable (see "Extraction table: synthetic Index + t(ms)
-// columns" in docs/extraction-and-plotting.md), in case a future entry
-// point wants this more destructive full-log jump; still directly tested.
-function jumpToFullLog(entry, sourceRowEl, sourceScrollEl) {
-  const chain = getChain(state.activeId);
-  const fileNode = chain.find(n => n.type === "file");
-  if (!fileNode) return;
-  commitCurrentNavPosition(); // A3, see the nav-history tier list
-  state.activeId = fileNode.id;
-  state.levelFilter.clear();
-  state.selectedId = entry.id;
-  state.scrollTargetId = entry.id;
-  // Preserve the entry's on-screen position from wherever it was jumped
-  // from (extraction table row, plot mark) instead of centering it.
-  state.scrollTargetOffset = sourceRowEl && sourceScrollEl
-    ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
-  // The scroll+flash below happens inside the Filter view (renderTable's
-  // scrollTargetId path) — invisible while the Full tab is showing, so
-  // reveal the Filtered panel first.
-  revealFilteredView();
-  render();
-  // render()'s own A1 push already recorded this destination — the
-  // same-place merge (isSameNavPlace) keeps this from doubling it.
-  pushNavWaypoint();
-}
-
 // Extraction table row / Plot mark -> reveal that entry in the Filtered
 // view (this session's follow-up feature request, alongside the filterType
-// merge). Unlike jumpToFullLog (the extraction table's own row double-click,
-// unchanged), this does NOT jump away to the root file's unfiltered log —
+// merge). Unlike the old full-log jump (the extraction table's former row
+// double-click), this does NOT jump away to the root file's unfiltered log —
 // the active node itself already has an ordinary Filtered pane showing
 // exactly its own matched entries (see nodeHasExtractableWildcards/
 // docs/archive/ui-implementation-plan.md's follow-up note), so staying on the same
@@ -28509,7 +28402,7 @@ function revealInFilteredView(entry, sourceRowEl, sourceScrollEl) {
   const previousId = applySelection(entry.id);
   state.scrollTargetId = entry.id;
   // Preserve the row's/mark's current on-screen position instead of
-  // centering it, same courtesy jumpToFullLog/revealInHighlightView extend.
+  // centering it, same courtesy revealInHighlightView extends.
   state.scrollTargetOffset = sourceRowEl && sourceScrollEl
     ? captureRowScreenOffset(sourceRowEl, sourceScrollEl) : null;
   // Stacked layout has no separate "filter" tab to switch to — Table/Plot's
@@ -28560,8 +28453,8 @@ function revealInTableView(entry) {
    entries selected in the plain log view (state.selectedId) — not pair
    entries (link view) or extraction rows, which have their own synthetic/
    derived ids not tracked in entryIndex.
-   Jumping reuses the same activeId/scrollTargetId mechanism as
-   jumpToFullLog, but resolves the entry's root file itself (see
+   Jumping (jumpToEntry) uses the activeId/scrollTargetId mechanism, but
+   resolves the entry's root file itself (see
    findRootIdForEntry) rather than assuming it belongs to whatever chain is
    currently active — a bookmark can be, and often is, clicked while a
    completely different file/filter is on screen. */
@@ -28577,7 +28470,7 @@ function findRootIdForEntry(entryId) {
   return null;
 }
 
-// Generalized jumpToFullLog: jumps to an arbitrary entry regardless of which
+// Jumps to an arbitrary entry regardless of which
 // node/file is currently active, by resolving the entry's own root file
 // rather than trusting the current chain — used wherever an entry id is
 // known without knowing (or wanting to disturb) whatever chain is currently
@@ -28593,8 +28486,8 @@ function jumpToEntry(entryId) {
   state.selectedId = entry.id;
   state.scrollTargetId = entry.id;
   state.scrollTargetOffset = null; // no meaningful "previous screen position" — jumps in from outside the log views entirely (e.g. a bookmark panel click)
-  // Same reasoning as jumpToFullLog: the scroll+flash targets the Filter
-  // view, which is hidden while the Full tab is active in tabs layout.
+  // The scroll+flash targets the Filter view, which is hidden while the Full
+  // tab is active in tabs layout.
   revealFilteredView();
   render();
   pushNavWaypoint(); // A4, merged into render()'s own A1 push when it landed in the same place
@@ -28742,7 +28635,7 @@ function toggleBookmark(entryId) {
   // are matches and therefore where the gaps fall, so its entry list has to be
   // rebuilt here too instead of waiting for an unrelated full render. Routed
   // through captureViewAnchor/restoreViewAnchor for the same reason
-  // setGapOpen is: a bookmark toggle must never yank the reading position.
+  // commitContextExpansionChange does: a bookmark toggle must never yank the reading position.
   if (rootId && rootId === getRootFileId(state.activeId)) {
     highlightColorMap = computeHighlightMap(rootId);
     updateColorMarkGutter();
@@ -30293,15 +30186,6 @@ async function restoreViewersFromCache(meta) {
   if (active) activateInlineViewer(active);
   if (keep.size) render();
 }
-// No longer wired to a header button (this session, lifecycle unification —
-// see #inlineViewerHeader's own comment); kept as a plain function since
-// nothing else calls it internally any more, but harmless/still correct if
-// something needs to force-clear the viewer later.
-function closeInlineViewer() {
-  state.inlineViewer = null;
-  render();
-}
-
 // Closes one listed ZIP/folder entry that is open as an inline (image)
 // viewer: its persisted viewer record, the cached viewer itself and — if it
 // is the one shown — the main view's inlineViewer. The ONE implementation
@@ -30364,11 +30248,9 @@ function tokenRangesHtml(text, ranges) {
 }
 // Editor helpers below (find*FoldRanges, buildFoldTree, renderFoldNode,
 // *TokenRanges) feed the Context-view editor (ensureEditorMarkup).
-function highlightJsonText(text) { return tokenRangesHtml(text, jsonTokenRanges(text)); }
-function highlightXmlText(text) { return tokenRangesHtml(text, xmlTokenRanges(text)); }
 
 // Line-number gutter (this session): tokenizing is done PER LINE (splitting
-// v.text first, then running highlightJsonText/highlightXmlText on each
+// v.text first, then running the JSON/XML tokenizer on each
 // line individually) rather than on the whole text followed by splitting
 // the highlighted HTML on "\n" — a match that spans a raw newline (e.g. a
 // literal newline inside a JSON string) would otherwise leave an unclosed
@@ -34501,7 +34383,7 @@ function evaluateLiveMatch() {
     // hitRe: finds the hit inside a sample row's message for the <mark>
     // (see renderLiveResults) — null where the match isn't a single
     // message substring worth marking.
-    let test, hitRe = null, captures = null;
+    let test, hitRe, captures = null;
     if (isFilterRegexMode()) {
       // Regex mode has no wildcard-token pattern preview to show — the
       // preview box stays hidden the whole time (see updateRegexModeUI).
@@ -35299,7 +35181,7 @@ function updateFindCounter() {
   if (!findBarOpen()) return;
   const view = findTargetView();
   const hits = findState.hits;
-  let text = "", cls = "find-count";
+  let text, cls = "find-count";
   if (!findInput.value) text = "";
   else if (findState.invalid) { text = findState.isRegex ? "Invalid regex" : "Invalid pattern"; cls += " error"; }
   else if (!view) { text = "Not in this view"; cls += " warn"; }
@@ -35967,15 +35849,12 @@ function selectionFilterNodesForRoot(rootId) {
 function nextSelectionFilterOrdinal() {
   return Object.values(state.nodes).filter(node => node.selectionFilter).length + 1;
 }
-function nextSelectionFilterName() {
-  return "Selection " + nextSelectionFilterOrdinal();
-}
 
 // Creates a brand-new top-level selection filter under `rootId` — same
 // "top-level, alongside Bookmarks/Notes/Sources" placement
 // syncBookmarksFilterNode uses (insertSpecialChild), NOT a child of
 // state.activeId like every other context-menu filter action. Named as an
-// ordinal ("Selection 1", "Selection 2", ...) via nextSelectionFilterName(),
+// ordinal ("Selection 1", "Selection 2", ...) via nextSelectionFilterOrdinal(),
 // not the entry count idSetFilterName gives plot-created idset filters —
 // renaming afterward goes through the standard "Rename…" tree action like
 // any other filter node. The ordinal is ALSO captured onto the node itself

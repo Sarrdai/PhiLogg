@@ -61,6 +61,15 @@ await withApp(async (w, d, T) => {
   const openRanges = () => [...T.contextExpansions.keys()].sort((a, b) => a - b)
     .map(k => T.contextExpansions.get(k).map(r => r.from + "-" + r.to).join(",")).join("|");
   const rowFor = id => d.querySelector('#highlightRows [data-entry-id="' + id + '"]');
+  // The two whole-gap gestures by hand, run through the handlers the DOM wires up: a click on a revealed run's connecting line
+  // (collapseContextRun) and a click on a stretch's "… N lines" row (revealContextLines).
+  const hideGapByHand = start => w.collapseContextRun(T.contextRuns.find(r => r.gapStart === start));
+  const revealGapByHand = start => {
+    for (const [key, fillers] of T.contextStrips) {
+      const f = fillers.find(x => x.kind === "gap" && x.gapStart === start);
+      if (f) { w.revealContextLines(f, key); return; }
+    }
+  };
   assert(T.contextInitialExpansion === "aroundJump", "sanity: the auto-expand default is what this group is about");
   assert(T.contextGaps.map(g => g.start).join(",") === "1,11,21,31,41,51",
     "fixture sanity: six matches, six gaps, got " + T.contextGaps.map(g => g.start).join(","));
@@ -94,7 +103,7 @@ await withApp(async (w, d, T) => {
   assert(openRanges() === "1-10|11-20", "walking back reveals above and takes back below, got " + openRanges());
 
   // --- (d) a hand-revealed stretch is never the jump's to take back -------
-  w.setGapOpen(51, true); // far away from anything the jumps below touch
+  revealGapByHand(51); // far away from anything the jumps below touch
   w.moveContextMatchSelection(1); // -> 20
   w.moveContextMatchSelection(1); // -> 30
   assert(T.state.selectedId === f.entries[30].id, "sanity: two matches further on");
@@ -103,8 +112,8 @@ await withApp(async (w, d, T) => {
   assert(openRanges() === "21-30|31-40|51-60", "…alongside the current jump's own window, got " + openRanges());
 
   // --- (e) hiding and re-revealing an AUTO stretch by hand claims it ------
-  w.setGapOpen(21, false); // 21 is the current jump's own gap
-  w.setGapOpen(21, true);  // …re-revealed by hand, which is what transfers ownership
+  hideGapByHand(21); // 21 is the current jump's own gap
+  revealGapByHand(21);  // …re-revealed by hand, which is what transfers ownership
   w.moveContextMatchSelection(1); // -> 40, whose own window is 31 + 41
   assert(T.state.selectedId === f.entries[40].id, "sanity: on to the next match");
   assert(T.contextExpansions.has(21),

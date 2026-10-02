@@ -6,7 +6,7 @@
    GROUP 155 — Person-reported (2026-09-02): pasting extracted floats into
    Excel produced garbage because the clipboard TSV always used "." as the
    decimal point regardless of the OS/browser locale. Two fixes:
-   1. Ctrl+C / copyTableSelection / copyWholeExtractTable now re-localize
+   1. Ctrl+C / copyTableSelection now re-localize
       numeric cells (via localizeNumericCell/systemDecimalSeparator) to
       whatever Intl reports as the system decimal separator BEFORE writing
       to the clipboard — the on-screen table itself is untouched.
@@ -51,10 +51,6 @@ await withApp(async (w, d, T) => {
   w.copyTableSelection();
   assert(copied.includes("0,5") && copied.includes("1,5"), "Ctrl+C path (copyTableSelection) re-localizes float cells to the stubbed comma separator, got " + JSON.stringify(copied));
   assert(!copied.includes("0.5") && !copied.includes("1.5"), "no leftover dot-decimal floats in the copied TSV");
-
-  copied = null;
-  w.copyWholeExtractTable();
-  assert(copied.includes("0,5") && copied.includes("1,5"), "copyWholeExtractTable (header+body TSV) applies the same localization");
 
   w.systemDecimalSeparator = () => ".";
   copied = null;
@@ -207,13 +203,6 @@ await withApp(async (w, d, T) => {
 
   const text = await written["text/plain"].text();
   assert(text.includes("27,7120"), "the text/plain flavor (fallback for anything ignoring text/html) still carries the localized TSV, got " + JSON.stringify(text));
-
-  // copyWholeExtractTable goes through the same path, header row included.
-  written = null;
-  w.copyWholeExtractTable();
-  const wholeHtml = await written["text/html"].text();
-  assert(wholeHtml.includes('x:num="27.7120"') && wholeHtml.includes("<td><b>score</b></td>"),
-    "copyWholeExtractTable's HTML flavor also carries x:num on the numeric cell and a header row, got " + wholeHtml);
 
   // Falls back to the old writeText-only path when ClipboardItem is unavailable.
   delete w.ClipboardItem;

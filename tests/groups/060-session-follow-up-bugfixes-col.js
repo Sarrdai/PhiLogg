@@ -123,7 +123,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("60c. Extraction view: #btnCopySelection/#btnCopyAllExtract removed (person-requested), underlying copy functions kept (jumpToFullLog precedent)");
+  section("60c. Extraction view: #btnCopySelection/#btnCopyAllExtract removed (person-requested)");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const extractNode = w.createFilterNode(f.id, "text", "message [*:int]");
@@ -138,13 +138,4 @@ await withApp(async (w, d, T) => {
   // — its Table/Plot switch is now part of the main #fhTabs group instead).
   assert(d.querySelector("#extractViewTabs") === null, "the old sub-toolbar Table/Plot switch is gone, superseded by the main #fhTabs group");
   assert(d.querySelector("#extractPatternView"), "sanity: the rest of the extraction toolbar (pattern view) is untouched");
-
-  // The underlying functions still work when called directly — only their
-  // button trigger is gone, same as jumpToFullLog surviving un-wired to a
-  // double-click (see PROJECT.md).
-  let copied = null;
-  w.navigator.clipboard.writeText = text => { copied = text; return Promise.resolve(); };
-  w.copyWholeExtractTable();
-  assert(copied && copied.startsWith("Index\tt (ms)\tmessage") && copied.split("\n").length === 6,
-    "copyWholeExtractTable still works when called directly (header + 5 data rows), got " + JSON.stringify(copied && copied.split("\n")[0]));
 });
