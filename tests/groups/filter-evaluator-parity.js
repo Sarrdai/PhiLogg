@@ -38,6 +38,14 @@
      exactly the slice it is given and never touches the cache.
    - g. inversion: applied to every plain type, withheld for link/context/
      countContext (their result is not a subset of the pool).
+   - h. entries sharing one millisecond (the simulator's "ties" scenario): or
+     lists them in log order, a link picks the nearest match in log order.
+   - i. a file NOT sorted by timestamp (the binary-searched spans are not
+     meaningful windows there): the window still keeps file order and lists
+     no entry twice, exactly what filtering the file through the span ids gives.
+   With one implementation behind both paths (evaluateFilterCondition) the
+   node-versus-baked comparisons cannot see a fault both share, so the
+   independent oracles (a, c, d, e, h) carry that part.
    ============================================================ */
 group("filter-evaluator-parity");
 
@@ -84,7 +92,8 @@ await withApp(async (w, d, T) => {
   pools.forEach(pl => { pl.fileId = f.id; });
   // A second file: the baked evaluator is handed the root file by its caller, so
   // the nodes under test have to find THEIR file's entries, not the first one's.
-  const [simFile2] = LOGSIM.generateToStrings({ scenarios: ["basic", "motion", "bursts", "gaps"], entries: 200, seed: 23 });
+  // ("ties": clusters of steps logged in the very same millisecond, see section h)
+  const [simFile2] = LOGSIM.generateToStrings({ scenarios: ["basic", "motion", "bursts", "gaps", "ties"], entries: 400, seed: 23 });
   const f2 = await w.addFile("second-" + simFile2.name, simFile2.text, () => {});
   pools.push({ name: "file2", node: f2, fileId: f2.id });
   pools.push({ name: "file2-filtered", node: mkText(f2.id, "axis|retry|queue depth|scheduler tick", { re: true }), fileId: f2.id });
@@ -106,6 +115,14 @@ await withApp(async (w, d, T) => {
   let unplaced = 0;
   const place = (node, parentId) => { if (parentId !== f.id && !w.moveNode(node.id, parentId)) unplaced++; return node; };
   const withInverted = node => { node.inverted = true; return node; };
+  // The big loops drop each node as soon as it is compared: a link's result is
+  // synthetic pair entries (two raw lines each), and thousands of them kept alive
+  // until the window closes would need more heap than a shard has.
+  const drop = node => {
+    const p = S.nodes[node.parentId];
+    if (p) p.children = p.children.filter(c => c !== node.id);
+    delete S.nodes[node.id];
+  };
 
   // One entry per filter type and option. make(parentId) creates a fresh node
   // of that condition as a child of parentId. `empty`: expected to match
@@ -123,6 +140,9 @@ await withApp(async (w, d, T) => {
     { name: "regexInvalid", make: p => mkText(p, "(unclosed", { re: true }), empty: true },
     { name: "wildcard", make: p => mkText(p, "Scheduler tick, [*:int>=8] jobs pending") },
     { name: "wildcardCols", make: p => mkText(p, "axis-[*:int>=2]", { cols: ["thread"] }) },
+    // lowercase pattern: only the case-insensitive one finds "Order O-<n>"
+    { name: "wildcardCI", make: p => mkText(p, "order O-[*:int]") },
+    { name: "wildcardCS", make: p => mkText(p, "order O-[*:int]", { cs: true }), empty: true },
     { name: "timerange", make: p => w.createFilterNode(p, "timerange", { from: tsFrom, to: tsTo }) },
     { name: "timerangeFrom", make: p => w.createFilterNode(p, "timerange", { from: tsLateFrom, to: null }) },
     { name: "timerangeTo", make: p => w.createFilterNode(p, "timerange", { from: null, to: tsEarlyTo }) },
@@ -133,6 +153,9 @@ await withApp(async (w, d, T) => {
     { name: "levelEmpty", make: p => w.createFilterNode(p, "level", []), empty: true },
     { name: "bookmarks", make: p => w.createFilterNode(p, "bookmarks", "Bookmarks") },
     { name: "notes", make: p => w.createFilterNode(p, "notes", "Notes") },
+    // pass-through types: the pool unchanged
+    { name: "sources", make: p => w.createFilterNode(p, "sources", "Sources") },
+    { name: "unknownType", make: p => w.createFilterNode(p, "no-such-type", "x") },
     { name: "gap", make: p => w.createGapNode(p, { ms: 142, per: null }) },
     { name: "gapPerThread", make: p => w.createGapNode(p, { ms: 605, per: "thread" }) },
     { name: "context", make: p => w.createContextNode(p, 400, 600) },
@@ -196,6 +219,7 @@ await withApp(async (w, d, T) => {
       ["regexCS", e => /order/.test(e.raw)],
       ["regexCols", e => /axis-[12]$/i.test(e.thread)],
       ["wildcard", e => { const m = /Scheduler tick, (-?\d+) jobs pending/i.exec(e.message); return !!m && +m[1] >= 8; }],
+      ["wildcardCI", e => /order O-\d+/i.test(e.message)],
       ["wildcardCols", e => { const m = /axis-(-?\d+)/i.exec(e.thread); return !!m && +m[1] >= 2; }],
       ["timerange", e => e.ts >= tsFrom && e.ts <= tsTo],
       ["timerangeFrom", e => e.ts >= tsLateFrom],
@@ -218,8 +242,9 @@ await withApp(async (w, d, T) => {
       if (want.length === 0 || want.length === E.length) bad.push(name + " is vacuous on this log (" + want.length + ")");
     }
     assert(bad.length === 0, "every plain filter type equals its hand-rolled predicate over the file" + (bad.length ? ": " + bad.join(", ") : ""));
-    assert(under("levelEmpty").length === 0 && under("regexInvalid").length === 0,
-      "an empty level list and an invalid regex match nothing");
+    assert(under("levelEmpty").length === 0 && under("regexInvalid").length === 0 && under("wildcardCS").length === 0,
+      "an empty level list, an invalid regex and a case-sensitive wildcard that differs only in case match nothing");
+    assert(under("sources") === E && under("unknownType") === E, "a sources node and an unknown filter type pass their input pool through unchanged");
     // The same anchors one level deeper: input is the pool's result, not the file
     const mixIds = new Set(ids(w.getEntries(poolMix.id)));
     const deepBad = [];
@@ -246,6 +271,7 @@ await withApp(async (w, d, T) => {
       if (pool.name === "file" && !spec.empty && viaNode.length === 0) bad.push(spec.name + " matched nothing on the file (vacuous)");
       if (pool.name === "file" && spec.empty && viaNode.length !== 0) bad.push(spec.name + " expected to match nothing");
       if (pool.name === "empty" && viaNode.length !== 0) bad.push(spec.name + " produced entries from an empty pool");
+      drop(node);
     }
     assert(bad.length === 0, "pool '" + pool.name + "': baked evaluation equals the node for all " + specs.length + " specs" + (bad.length ? ": " + bad.join(", ") : ""));
     if (pool.name !== "empty") assert(nonEmpty >= specs.length / 2, "pool '" + pool.name + "': most specs produce entries, so the comparison is not vacuous (" + nonEmpty + "/" + specs.length + ")");
@@ -275,6 +301,7 @@ await withApp(async (w, d, T) => {
           const node = place(w.createAndOrNode([src[i].id, src[j].id], mode), pool.node.id);
           const got = w.getEntries(node.id);
           if (!sameList(got, want)) bad.push(label + " (" + got.length + " vs " + want.length + ")");
+          drop(node);
         }
         pairs++;
         if (wantAnd.length > 0 && wantAnd.length < wantOr.length) nonTrivial++;
@@ -337,6 +364,7 @@ await withApp(async (w, d, T) => {
         pairs++;
         if (want.length) withPairs++;
         if (!sameList(got, want)) bad.push(plainSpecs[i].name + " -> " + plainSpecs[j].name + " " + dir + " " + n + " (" + got.length + " vs " + want.length + ")");
+        drop(node);
       }
       assert(bad.length === 0, "pool '" + pool.name + "': " + pairs + " ordered type pairs as link sides equal the standalone nodes' pairing" + (bad.length ? ": " + bad.slice(0, 12).join(", ") : ""));
       assert(withPairs > pairs / 4, "pool '" + pool.name + "': many of those links produce pairs (" + withPairs + "/" + pairs + ")");
@@ -361,9 +389,16 @@ await withApp(async (w, d, T) => {
         const want = w.computeLinkPairs(node, refs, tgts, f.id);
         if (!sameList(got, want)) optBad.push(pool.name + " " + label + " (" + got.length + " vs " + want.length + ")");
         if (pool.name === "file" && label !== "dt <" && label !== "orderEnforced before" && want.length === 0) optBad.push(label + " paired nothing (vacuous)");
+        drop(node);
       }
     }
     assert(optBad.length === 0, "every link option gives the same pairs through the node as through computeLinkPairs" + (optBad.length ? ": " + optBad.join(", ") : ""));
+    // a combiner/link materialized without its baked sides (a pre-baking filter file) keeps nothing
+    const noSide = specByName.link.make(f.id);
+    delete noSide.bakedB;
+    const noList = w.createAndOrNode([base.move.id, base.reach.id], "and");
+    delete noList.baked;
+    assert(w.getEntries(noSide.id).length === 0 && w.getEntries(noList.id).length === 0, "a link without its target side and an and without its baked list keep nothing");
     // a link whose reference side is itself a link (multi-hop): baked nested
     const chain = specByName.linkChain.make(f.id);
     const chainBaked = w.getEntriesFromBaked(w.bakeNodeCondition(chain), w.getEntries(f.id), f.id);
@@ -373,11 +408,11 @@ await withApp(async (w, d, T) => {
   /* ------------------------------------------------------------ e. */
   section("filter-evaluator-parity e. node-only side data (_gapMs, _contextRanges, _anchorIds)");
   {
-    const level = w.createFilterNode(f.id, "level", ["INFO", "WARN"]);
-    const parent = w.getEntries(level.id);
-    const parentIdx = parent.map(e => rank.get(e.id));
-
-    // gap, measured between consecutive PARENT entries
+    // Brute-force oracles, run against BOTH files: with one evaluator for node and
+    // baked alike, only an independent recomputation can tell a wrong window,
+    // threshold or file from a right one. The reference filter is sparse so that
+    // neighbouring windows stay apart and a before/after slip changes the result;
+    // gap thresholds are real gaps of the data, so a >= / > or off-by-one slip does.
     const bruteGaps = (list, ms, key) => {
       const m = new Map(), last = new Map();
       let prev;
@@ -390,67 +425,85 @@ await withApp(async (w, d, T) => {
       return m;
     };
     const sameMap = (a, b) => isMap(a) && a.size === b.size && [...b].every(([k, v]) => a.get(k) === v);
-    for (const [label, val, key] of [["whole stream", { ms: 150, per: null }, null], ["per thread", { ms: 600, per: "thread" }, "thread"]]) {
-      const gap = w.createGapNode(level.id, val);
-      const got = w.getEntries(gap.id);
-      const want = bruteGaps(parent, val.ms, key);
-      assert(want.size > 0 && sameList(got, parent.filter(e => want.has(e.id))), "gap (" + label + "): result is the parent entries preceded by a long enough gap");
-      assert(sameMap(gap._gapMs, want), "gap (" + label + "): _gapMs maps each kept entry to its measured gap");
-      const baked = w.bakeNodeCondition(gap);
-      const before = JSON.stringify(baked), keys = Object.keys(baked).join();
-      const viaBaked = w.getEntriesFromBaked(baked, parent, f.id);
-      assert(sameList(viaBaked, got) && JSON.stringify(baked) === before && Object.keys(baked).join() === keys && sameMap(gap._gapMs, want),
-        "gap (" + label + "): evaluating the baked snapshot writes nothing onto the snapshot and leaves the node's _gapMs alone");
-    }
-    const gapEmpty = w.createGapNode(poolNone.id, { ms: 150, per: null });
-    assert(w.getEntries(gapEmpty.id).length === 0 && isMap(gapEmpty._gapMs) && gapEmpty._gapMs.size === 0, "gap over an empty pool: no entries, an empty _gapMs");
+    for (const file of [f, f2]) {
+      const FE = file.entries;
+      const frank = new Map(FE.map((e, i) => [e.id, i]));
+      const tg = file === f ? "file" : "file2";
+      const none = file === f ? poolNone : mkText(file.id, "zzz-no-such-text");
 
-    // time context: windows around the parent entries, merged when they touch
-    const bruteTimeCtx = (anchors, before, after) => {
-      const wins = anchors.map(e => ({ start: e.ts - before, end: e.ts + after })).sort((a, b) => a.start - b.start);
-      const merged = [];
-      for (const win of wins) {
-        const last = merged[merged.length - 1];
-        if (last && win.start <= last.end) last.end = Math.max(last.end, win.end); else merged.push({ ...win });
+      // gap, measured between consecutive PARENT entries
+      const level = w.createFilterNode(file.id, "level", ["INFO", "WARN"]);
+      const parentLv = w.getEntries(level.id);
+      for (const [label, key] of [["whole stream", null], ["per thread", "thread"]]) {
+        const real = [...bruteGaps(parentLv, 1, key).values()].sort((a, b) => a - b);
+        const val = { ms: real[Math.floor(real.length * 0.7)], per: key };
+        const gap = w.createGapNode(level.id, val);
+        const got = w.getEntries(gap.id);
+        const want = bruteGaps(parentLv, val.ms, key);
+        assert(val.ms > 0 && want.size > 1 && want.size < parentLv.length - 1 && sameList(got, parentLv.filter(e => want.has(e.id))), tg + " gap (" + label + ", " + val.ms + " ms): result is the parent entries preceded by a gap of at least that");
+        assert(sameMap(gap._gapMs, want), tg + " gap (" + label + "): _gapMs maps each kept entry to its measured gap");
+        const baked = w.bakeNodeCondition(gap);
+        const before = JSON.stringify(baked), keys = Object.keys(baked).join();
+        const viaBaked = w.getEntriesFromBaked(baked, parentLv, file.id);
+        assert(sameList(viaBaked, got) && JSON.stringify(baked) === before && Object.keys(baked).join() === keys && sameMap(gap._gapMs, want),
+          tg + " gap (" + label + "): evaluating the baked snapshot writes nothing onto the snapshot and leaves the node's _gapMs alone");
       }
-      return { merged, kept: E.filter(e => anchors.some(a => e.ts >= a.ts - before && e.ts <= a.ts + after)) };
-    };
-    for (const [before, after] of [[400, 600], [900, 0], [0, 500]]) {
-      const ctx = w.createContextNode(level.id, before, after);
-      const got = w.getEntries(ctx.id);
-      const want = bruteTimeCtx(parent, before, after);
-      assert(sameList(got, want.kept) && got.length > parent.length, "context -" + before + "/+" + after + ": the whole file's entries inside any window around a parent entry");
-      assert(JSON.stringify(ctx._contextRanges) === JSON.stringify(want.merged), "context -" + before + "/+" + after + ": _contextRanges are the merged windows");
-      assert(isSet(ctx._anchorIds) && ctx._anchorIds.size === parent.length && parent.every(e => ctx._anchorIds.has(e.id)),
-        "context -" + before + "/+" + after + ": _anchorIds are exactly the parent's entry ids");
-    }
+      const gapEmpty = w.createGapNode(none.id, { ms: 150, per: null });
+      assert(w.getEntries(gapEmpty.id).length === 0 && isMap(gapEmpty._gapMs) && gapEmpty._gapMs.size === 0, tg + " gap over an empty pool: no entries, an empty _gapMs");
 
-    // count context: index windows in the FILE's order, merged when adjacent
-    const bruteCountCtx = (anchorIdx, before, after) => {
-      const keep = new Set();
-      for (const k of anchorIdx) for (let i = Math.max(0, k - before); i <= Math.min(E.length - 1, k + after); i++) keep.add(i);
-      const runs = [];
-      for (let i = 0; i < E.length; i++) {
-        if (!keep.has(i)) continue;
-        const last = runs[runs.length - 1];
-        if (last && last.end === i - 1) last.end = i; else runs.push({ start: i, end: i });
+      // context windows around a sparse reference filter
+      const ref = mkText(file.id, "Slow query detected");
+      const parent = w.getEntries(ref.id);
+      const parentIdx = parent.map(e => frank.get(e.id));
+      assert(parent.length >= 5 && parent.length < FE.length / 4, tg + ": the reference filter is sparse (" + parent.length + " of " + FE.length + ")");
+
+      // time context: windows around the parent entries, merged when they touch
+      const bruteTimeCtx = (anchors, before, after) => {
+        const wins = anchors.map(e => ({ start: e.ts - before, end: e.ts + after })).sort((a, b) => a.start - b.start);
+        const merged = [];
+        for (const win of wins) {
+          const last = merged[merged.length - 1];
+          if (last && win.start <= last.end) last.end = Math.max(last.end, win.end); else merged.push({ ...win });
+        }
+        return { merged, kept: FE.filter(e => anchors.some(a => e.ts >= a.ts - before && e.ts <= a.ts + after)) };
+      };
+      for (const [before, after] of [[400, 600], [900, 0], [0, 500]]) {
+        const ctx = w.createContextNode(ref.id, before, after);
+        const got = w.getEntries(ctx.id);
+        const want = bruteTimeCtx(parent, before, after);
+        const lbl = tg + " context -" + before + "/+" + after;
+        assert(sameList(got, want.kept) && got.length > parent.length && got.length < FE.length, lbl + ": the whole file's entries inside any window around a parent entry");
+        assert(JSON.stringify(ctx._contextRanges) === JSON.stringify(want.merged), lbl + ": _contextRanges are the merged windows");
+        assert(isSet(ctx._anchorIds) && ctx._anchorIds.size === parent.length && parent.every(e => ctx._anchorIds.has(e.id)), lbl + ": _anchorIds are exactly the parent's entry ids");
       }
-      return { kept: E.filter((e, i) => keep.has(i)), ranges: runs.map(r => ({ start: E[r.start].ts, end: E[r.end].ts })) };
-    };
-    for (const [before, after] of [[2, 1], [0, 3], [5, 0]]) {
-      const cc = w.createCountContextNode(level.id, before, after);
-      const got = w.getEntries(cc.id);
-      const want = bruteCountCtx(parentIdx, before, after);
-      assert(sameList(got, want.kept) && got.length > parent.length, "countContext -" + before + "/+" + after + ": the whole file's entries within N positions of a parent entry");
-      assert(JSON.stringify(cc._contextRanges) === JSON.stringify(want.ranges), "countContext -" + before + "/+" + after + ": _contextRanges are the merged index windows expressed as timestamps");
-      assert(isSet(cc._anchorIds) && cc._anchorIds.size === parent.length && parent.every(e => cc._anchorIds.has(e.id)),
-        "countContext -" + before + "/+" + after + ": _anchorIds are exactly the parent's entry ids");
-    }
-    // empty pool: both context kinds leave empty side data (not stale or missing)
-    for (const mk of [() => w.createContextNode(poolNone.id, 400, 600), () => w.createCountContextNode(poolNone.id, 2, 1)]) {
-      const n = mk();
-      assert(w.getEntries(n.id).length === 0 && Array.isArray(n._contextRanges) && n._contextRanges.length === 0 && isSet(n._anchorIds) && n._anchorIds.size === 0,
-        n.filterType + " over an empty pool: no entries, empty _contextRanges and _anchorIds");
+
+      // count context: index windows in the FILE's order, merged when adjacent
+      const bruteCountCtx = (anchorIdx, before, after) => {
+        const keep = new Set();
+        for (const k of anchorIdx) for (let i = Math.max(0, k - before); i <= Math.min(FE.length - 1, k + after); i++) keep.add(i);
+        const runs = [];
+        for (let i = 0; i < FE.length; i++) {
+          if (!keep.has(i)) continue;
+          const last = runs[runs.length - 1];
+          if (last && last.end === i - 1) last.end = i; else runs.push({ start: i, end: i });
+        }
+        return { kept: FE.filter((e, i) => keep.has(i)), ranges: runs.map(r => ({ start: FE[r.start].ts, end: FE[r.end].ts })) };
+      };
+      for (const [before, after] of [[2, 1], [0, 3], [5, 0]]) {
+        const cc = w.createCountContextNode(ref.id, before, after);
+        const got = w.getEntries(cc.id);
+        const want = bruteCountCtx(parentIdx, before, after);
+        const lbl = tg + " countContext -" + before + "/+" + after;
+        assert(sameList(got, want.kept) && got.length > parent.length && got.length < FE.length, lbl + ": the whole file's entries within N positions of a parent entry");
+        assert(JSON.stringify(cc._contextRanges) === JSON.stringify(want.ranges), lbl + ": _contextRanges are the merged index windows expressed as timestamps");
+        assert(isSet(cc._anchorIds) && cc._anchorIds.size === parent.length && parent.every(e => cc._anchorIds.has(e.id)), lbl + ": _anchorIds are exactly the parent's entry ids");
+      }
+      // empty pool: both context kinds leave empty side data (not stale or missing)
+      for (const mk of [() => w.createContextNode(none.id, 400, 600), () => w.createCountContextNode(none.id, 2, 1)]) {
+        const n = mk();
+        assert(w.getEntries(n.id).length === 0 && Array.isArray(n._contextRanges) && n._contextRanges.length === 0 && isSet(n._anchorIds) && n._anchorIds.size === 0,
+          tg + " " + n.filterType + " over an empty pool: no entries, empty _contextRanges and _anchorIds");
+      }
     }
 
     // The baked path never writes node-only side data: a combiner holding gap
@@ -495,6 +548,7 @@ await withApp(async (w, d, T) => {
       if (!sameList(viaOverride, want)) bad.push(spec.name + " override (" + viaOverride.length + " vs " + want.length + ")");
       if (!sameList(viaOverride, viaBaked)) bad.push(spec.name + " override vs baked");
       if (cachedAfterOverride) bad.push(spec.name + " wrote _cache during an override evaluation");
+      if (!cached || cached !== full || w.getEntries(fresh.id) !== full) bad.push(spec.name + " getEntries did not cache its result on the node");
       if (fresh._cache !== cached || again === cached) bad.push(spec.name + " an override evaluation replaced or returned the cached array");
     }
     assert(bad.length === 0, "an override evaluation equals the full result restricted to the slice, equals the baked evaluation, and never touches _cache" + (bad.length ? ": " + bad.join(", ") : ""));
@@ -536,6 +590,79 @@ await withApp(async (w, d, T) => {
     const sideInv = place(w.createAndOrNode([specByName.textInv.make(f.id).id, base.warn.id], "or"), poolMix.id);
     const wantSide = poolEntries.filter(e => !/heartbeat/i.test(e.raw) || e.level === "WARN");
     assert(sameList(w.getEntries(sideInv.id), wantSide), "an or node with an inverted text side: pool entries without 'heartbeat', plus the WARN ones");
+  }
+
+  /* ------------------------------------------------------------ h. */
+  section("filter-evaluator-parity h. entries sharing one millisecond (second file): log order decides");
+  {
+    const FE = f2.entries;
+    const tied = FE.filter((e, i) => i > 0 && e.ts === FE[i - 1].ts).length;
+    assert(tied >= 20, "the second log has clusters of entries sharing one millisecond (" + tied + ")");
+    const s1 = mkText(f2.id, "step 1/"), s2 = mkText(f2.id, "step 2/"), s3 = mkText(f2.id, "step 3/");
+    // or: the union is chronological, entries of one millisecond in LOG order whichever side lists first
+    const orNode = w.createAndOrNode([s2.id, s1.id], "or");
+    const wantOr = FE.filter(e => /step [12]\//.test(e.message));
+    assert(wantOr.length >= 20 && sameList(w.getEntries(orNode.id), wantOr), "or over two filters hitting the same millisecond lists them in log order, not side order");
+    const bakedOr = w.getEntriesFromBaked(w.bakeNodeCondition(orNode), FE, f2.id);
+    assert(sameList(bakedOr, wantOr), "... and so does its baked snapshot");
+    // link: the nearest match in LOG order, an entry of the same millisecond included
+    const nearest = (refPred, tgtPred, dir) => FE.flatMap((e, i) => {
+      if (!refPred(e)) return [];
+      for (let j = dir === "after" ? i + 1 : i - 1; j >= 0 && j < FE.length; j += dir === "after" ? 1 : -1) if (tgtPred(FE[j])) return ["pair:" + e.id + ":" + FE[j].id];
+      return [];
+    });
+    const isStep = k => e => new RegExp("step " + k + "/").test(e.message);
+    for (const [label, ref, tgt, dir] of [["step 1 -> step 3 after", s1, s3, "after"], ["step 3 -> step 1 before", s3, s1, "before"]]) {
+      const link = w.createLinkNode(ref.id, tgt.id, dir, 1);
+      const want = nearest(isStep(ref === s1 ? 1 : 3), isStep(tgt === s1 ? 1 : 3), dir);
+      const got = w.getEntries(link.id);
+      assert(want.length >= 8 && ids(got).join() === want.join(), "link " + label + " pairs each reference with the nearest match in log order (" + got.length + " of " + want.length + ")");
+      assert(ids(w.getEntriesFromBaked(w.bakeNodeCondition(link), FE, f2.id)).join() === want.join(), "... and so does its baked snapshot");
+    }
+  }
+
+  /* ------------------------------------------------------------ i. */
+  section("filter-evaluator-parity i. a file that is NOT sorted by timestamp: the context window keeps file order and lists no entry twice");
+  {
+    // The windows are located by binary search on ts, which assumes a file sorted
+    // by ts. On an out-of-order log the located index spans are not meaningful
+    // time windows, but the result must stay what filtering the file through the
+    // set of ids in those spans gives: file order, each entry once.
+    const [simFile3] = LOGSIM.generateToStrings({ scenarios: ["basic", "motion", "bursts", "gaps"], entries: 260, seed: 5 });
+    const f3 = await w.addFile("third-" + simFile3.name, simFile3.text, () => {});
+    // simulator output, written out of order: a fixed permutation of the entries (37 is coprime to 260)
+    const permuted = f3.entries.map((e, i) => [(i * 37) % f3.entries.length, e]).sort((x, y) => x[0] - y[0]).map(x => x[1]);
+    f3.entries.splice(0, f3.entries.length, ...permuted);
+    w.invalidateOrderIndexMap(f3.id);
+    w.invalidateAllCaches();
+    const pool = f3.entries;
+    const descents = pool.filter((e, i) => i > 0 && e.ts < pool[i - 1].ts).length;
+    assert(descents > 20, "the file really is out of order (" + descents + " timestamps run backwards)");
+    const viaSet = (ranges, byTs) => {
+      const keep = new Set();
+      for (const r of ranges) {
+        const lo = byTs ? w.lowerBoundByTs(pool, r.start) : r.start;
+        const hi = byTs ? w.upperBoundByTs(pool, r.end) : r.end + 1;
+        for (let i = lo; i < hi; i++) keep.add(pool[i].id);
+      }
+      return pool.filter(e => keep.has(e.id));
+    };
+    const ref = mkText(f3.id, "heartbeat|scheduler tick|queue depth", { re: true });
+    const parent = w.getEntries(ref.id);
+    assert(parent.length >= 30, "the unsorted file has reference entries (" + parent.length + ")");
+    const badTime = [], badCount = [];
+    for (const [before, after] of [[20, 20], [100, 100], [400, 600], [3000, 0]]) {
+      const want = viaSet(w.mergeContextRanges(parent, before, after), true);
+      const got = w.getEntries(w.createContextNode(ref.id, before, after).id);
+      if (!sameList(got, want) || new Set(ids(got)).size !== got.length || want.length === 0) badTime.push("-" + before + "/+" + after + " (" + got.length + " vs " + want.length + ")");
+    }
+    for (const [before, after] of [[2, 1], [0, 3], [10, 10]]) {
+      const want = viaSet(w.mergeCountContextRanges(parent, w.buildOrderIndexMap(f3.id), pool.length, before, after), false);
+      const got = w.getEntries(w.createCountContextNode(ref.id, before, after).id);
+      if (!sameList(got, want) || new Set(ids(got)).size !== got.length || want.length <= parent.length) badCount.push("-" + before + "/+" + after + " (" + got.length + " vs " + want.length + ")");
+    }
+    assert(badTime.length === 0, "time context over an unsorted file equals filtering the file through the ids in the located spans" + (badTime.length ? ": " + badTime.join(", ") : ""));
+    assert(badCount.length === 0, "count context over an unsorted file equals filtering the file through the ids in the index spans" + (badCount.length ? ": " + badCount.join(", ") : ""));
   }
 
   assert(unplaced === 0, "every combiner/link was placed under its pool (moveNode accepted all of them)");

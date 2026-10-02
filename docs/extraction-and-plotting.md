@@ -39,7 +39,7 @@ whose pattern contains `[*:...]`/`[*]` wildcards is now simultaneously:
 - an ordinary filter — Context/Filtered/Stacked behave exactly like any
   other `"text"` node, matched via the same `textFilterMatches`/wildcard
   code path a plain "wildcard-as-filter-shape" `"text"` node already used
-  before this merge (see `getEntriesUncached`'s `isExtractPattern(value)`
+  before this merge (see `evaluateFilterCondition`'s `isExtractPattern(value)`
   branch) — so the rows a wildcard `"text"` filter's Context/Filtered/
   Stacked views show are, by construction, identical to what a plain text
   filter with that same pattern would show;

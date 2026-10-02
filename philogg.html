@@ -12323,8 +12323,8 @@ function compileExtractPattern(pattern) {
     // literal newline inside e.message, or a pattern spanning a multi-line
     // message (a stack trace, a wrapped log line) silently finds nothing —
     // person-reported. Every other place that recompiles a RegExp from this
-    // regexStr (textFilterMatchSpec, getEntriesUncached's two "text"
-    // branches, evaluateLiveMatch, updateFilterPatternPreview) must append
+    // regexStr (textFilterMatchSpec, evaluateFilterCondition's "text"
+    // branch, evaluateLiveMatch, updateFilterPatternPreview) must append
     // the same flag, since they don't reuse this compiled `regex` object.
     return { regex: new RegExp(regexStr, "is"), columns, regexStr };
   } catch (e) {
@@ -13337,6 +13337,24 @@ function mergeCountContextRanges(refEntries, orderIndexMap, poolLen, beforeCount
   return merged;
 }
 
+// The result of a "context"/"countContext" filter: the entries of `pool` (the
+// root file's own entries) inside the given merged ranges, in the file's
+// natural chronological order. `ranges` come from mergeContextRanges
+// (timestamp bounds, byTs = true: [r.start, r.end] located by binary search)
+// or mergeCountContextRanges (inclusive indices into `pool`, byTs = false).
+// Filtering `pool` through an id Set — rather than concatenating per-range
+// slices — keeps that order for free, same as the "text"/"after"/"before"
+// branches of evaluateFilterCondition.
+function contextWindowEntries(pool, ranges, byTs) {
+  const keepIds = new Set();
+  for (const r of ranges) {
+    const lo = byTs ? lowerBoundByTs(pool, r.start) : r.start;
+    const hi = byTs ? upperBoundByTs(pool, r.end) : r.end + 1;
+    for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
+  }
+  return pool.filter(e => keepIds.has(e.id));
+}
+
 /* ===================== Gap filter: time distance to the previous entry
    (FEATURE_BACKLOG.md #24) ===================== */
 
@@ -13564,8 +13582,8 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
   };
 }
 
-// The pairing loop behind every link — a real "link" node
-// (getEntriesUncached) and a baked one (getEntriesFromBaked) alike; `cfg`
+// The pairing loop behind every link — a real "link" node and a baked one
+// alike (both go through evaluateFilterCondition); `cfg`
 // is either, both carry the same link* fields. For each reference entry:
 // find the Nth target before/after it, then apply the opt-in conditions in
 // order — order enforcement, the Δt condition — and only a pair that
@@ -14159,8 +14177,8 @@ function getTextMatchHighlightNodes() {
 }
 
 // Same "does this text filter carry a wildcard/value-token pattern"
-// compilation getEntries performs for a "text" node (see its own comment
-// above getEntries), mirrored here since getEntries doesn't expose the
+// compilation evaluateFilterCondition performs for a "text" condition (see its
+// own comment), mirrored here since the evaluator doesn't expose the
 // compiled pieces. Recomputed fresh per render call (the chain is a handful
 // of nodes at most) rather than cached on the node, so an in-place filter
 // edit (updateFilterNode/applyNodeFields) can never leave a stale spec
@@ -14168,7 +14186,7 @@ function getTextMatchHighlightNodes() {
 function textFilterMatchSpec(node) {
   const value = String(node.value);
   const caseSensitive = !!node.caseSensitive;
-  // isRegex wins over isExtractPattern, exactly as getEntriesUncached's own
+  // isRegex wins over isExtractPattern, exactly as evaluateFilterCondition's
   // "text" branch orders the two — without this branch a regex filter's
   // source was searched as a LITERAL substring here, so a node that matched
   // rows perfectly well marked nothing at all in them (the pattern text
@@ -14563,92 +14581,196 @@ function getEntries(nodeId) {
     getEntriesInProgress.delete(nodeId);
   }
 }
-// Evaluates a BAKED condition snapshot (see bakeNodeCondition) as a
-// standalone predicate over `poolEntries`, mirroring getEntriesUncached's
-// own per-filterType branches exactly (same matching functions:
-// textFilterMatches/wildcardMatch/compileRegexFilter/compileExtractPattern/
-// the time-range checks/findNthOccurrence(Excluding)/buildPairEntry) so
-// behavior for each filterType stays byte-identical to a real standalone
-// filter of that type — just parameterized from a flat data snapshot
-// instead of a live node. `fileId` is the root file of the AND/OR/LINK node
-// doing the evaluating (needed by "context"/"countContext", which look at
-// the whole file's entries, and by "link", whose order-index map is
-// per-file). and/or/link baked conditions nest (see bakeNodeCondition's
-// "and"/"or"/"link" branch), so this recurses into baked.baked / baked.bakedA/bakedB —
-// exactly how a multi-hop chained link keeps working through this model.
-function getEntriesFromBaked(baked, poolEntries, fileId) {
-  if (!baked) return [];
-  const parentEntries = poolEntries;
+// The ONE evaluator of a single filter condition. `cond` is either a live
+// filter node (getEntriesUncached) or a BAKED condition snapshot (see
+// bakeNodeCondition — every side of an and/or/link node): both carry the same
+// field names, so one function serves both and a new filter type or option is
+// added here, once. Returns what `cond` keeps of `parentEntries`, inversion
+// included (context/countContext: the root file's entries around them; link:
+// synthetic pair entries), and caches nothing.
+// `fileId` is the root file of the node doing the evaluating (needed by
+// "context"/"countContext", which look at the whole file's entries, and by
+// "link" and the "or" sort, which use the file's order-index map).
+// `meta` is the node-only side data: an object passed by getEntriesUncached
+// gets meta.gaps ("gap") and meta.contextRanges/meta.anchorIds ("context",
+// "countContext"), which it copies onto the node; a baked side passes null and
+// never computes any of it.
+// and/or/link conditions nest (see bakeNodeCondition's "and"/"or"/"link"
+// branch), so those recurse into cond.baked / cond.bakedA/bakedB through
+// getEntriesFromBaked — exactly how a multi-hop chained link keeps working
+// through this model.
+function evaluateFilterCondition(cond, parentEntries, fileId, meta) {
   let result;
-  if (baked.filterType === "text") {
-    const value = String(baked.value);
-    if (baked.isRegex) {
-      const re = compileRegexFilter(value, !!baked.caseSensitive);
-      result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, re)) : [];
+  if (cond.filterType === "text") {
+    const value = String(cond.value);
+    // read once, not per entry: a node and a baked snapshot have different
+    // shapes, and the closures below run once per entry of the whole file
+    const caseSensitive = !!cond.caseSensitive, columns = cond.columns;
+    if (cond.isRegex) {
+      // Real RegExp mode (FEATURE_BACKLOG.md #16) — an alternative to the
+      // wildcard-token language, toggled per-node via the filter popup's
+      // "Interpret input as regex" checkbox. An invalid pattern fails
+      // gracefully to an empty result (matching the "Invalid pattern"
+      // inline state the popup already shows) rather than throwing.
+      const re = compileRegexFilter(value, caseSensitive);
+      result = re ? parentEntries.filter(e => textFilterMatches(e, value, caseSensitive, columns, null, null, re)) : [];
     } else if (isExtractPattern(value)) {
+      // A "text" filter's value can contain [*:...]/[*] tokens — there
+      // is no separate "extract" filterType to route to instead (this
+      // session's filterType merge, docs/archive/ui-implementation-plan.md's
+      // follow-up note). The same node both filters/highlights on this
+      // match AND, via nodeHasExtractableWildcards, unlocks Table/Plot,
+      // which build their own rows from renderExtractTable's own
+      // compileExtractPattern call over these exact same entries. Compiled
+      // here to the same regex compileExtractPattern would use for
+      // extraction, just tested rather than captured.
       const spec = compileExtractPattern(value);
-      const wildcardRegex = spec && new RegExp(spec.regexStr, (baked.caseSensitive ? "" : "i") + "s");
-      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, wildcardRegex, spec.columns)) : [];
+      const wildcardRegex = spec && new RegExp(spec.regexStr, (caseSensitive ? "" : "i") + "s");
+      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, spec.columns)) : [];
     } else {
-      result = parentEntries.filter(e => textFilterMatches(e, value, !!baked.caseSensitive, baked.columns, null, null, null, !!baked.wholeWord));
+      const wholeWord = !!cond.wholeWord;
+      result = parentEntries.filter(e => textFilterMatches(e, value, caseSensitive, columns, null, null, null, wholeWord));
     }
-  } else if (baked.filterType === "after") {
-    result = parentEntries.filter(e => e.ts >= baked.value);
-  } else if (baked.filterType === "before") {
-    result = parentEntries.filter(e => e.ts <= baked.value);
-  } else if (baked.filterType === "timerange") {
-    const from = baked.value && baked.value.from, to = baked.value && baked.value.to;
+  } else if (cond.filterType === "after") {
+    const from = cond.value;
+    result = parentEntries.filter(e => e.ts >= from);
+  } else if (cond.filterType === "before") {
+    const to = cond.value;
+    result = parentEntries.filter(e => e.ts <= to);
+  } else if (cond.filterType === "timerange") {
+    // value = { from, to }, either bound possibly null (unbounded on that
+    // side) — the unified replacement for "after"/"before" above, which stay
+    // readable (old saved sessions/exports) but are no longer created by any
+    // UI path. Plain object under the existing generic `value` field, so
+    // every persistence carrier (clone/snapshot/serialize/import) already
+    // threads it through with no extra field to add — see CLAUDE.md's
+    // "Known gotchas" note on filter-node fields.
+    const from = cond.value && cond.value.from, to = cond.value && cond.value.to;
     result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
-  } else if (baked.filterType === "idset") {
-    const idSet = new Set(Array.isArray(baked.value) ? baked.value : []);
+  } else if (cond.filterType === "idset") {
+    // value = array of entry ids — an explicit, pre-computed match set
+    // rather than a rule evaluated per entry. Built by "Create filter from
+    // plot view" (see openPlotViewportFilterMenu/createIdSetFilterFromPlot)
+    // to pin down exactly the entries currently visible in the Plot tab's
+    // zoomed/panned viewport. Kept generic (not plot-specific) so any other
+    // future "exact entry set" producer could reuse it the same way
+    // "timerange" is generic rather than tied to the minimap that first
+    // created it.
+    const idSet = new Set(Array.isArray(cond.value) ? cond.value : []);
     result = parentEntries.filter(e => idSet.has(e.id));
-  } else if (baked.filterType === "bookmarks") {
+  } else if (cond.filterType === "bookmarks") {
+    // Auto-managed per-file node (see syncBookmarksFilterNode) — its match
+    // set is exactly "this file's entries currently in state.bookmarks",
+    // not a text/regex pattern. state.bookmarks is the single source of
+    // truth (also read directly by getPinnedBookmarkEntries/the row
+    // bookmark dot), so this just mirrors it through the normal filter-node
+    // matching path instead of inventing a parallel one.
     result = parentEntries.filter(e => state.bookmarks.has(e.id));
-  } else if (baked.filterType === "notes") {
+  } else if (cond.filterType === "notes") {
+    // Auto-managed per-file node (see syncNotesFilterNode) — same shape as
+    // "bookmarks" just above, mirroring state.notes instead of
+    // state.bookmarks.
     result = parentEntries.filter(e => state.notes.has(e.id));
-  } else if (baked.filterType === "sources") {
+  } else if (cond.filterType === "sources") {
+    // Auto-managed per-merged-file node (see createMergeShell) — purely a
+    // label/anchor for the tree's "Sources" breakdown; it doesn't filter
+    // anything of its own (the actual per-source entries/colors live on
+    // the owning file's own `sources` array, read directly by
+    // renderSourcesNode/computeHighlightMap), so its own result is just
+    // its parent's (the merged file's) full entries, same as clicking the
+    // file itself.
     result = parentEntries;
-  } else if (baked.filterType === "level") {
+  } else if (cond.filterType === "level") {
+    // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
+    // tree-node counterpart of the level bar's own quick-filter (see
+    // applyLevelFilter/FEATURE_BACKLOG.md #10). An empty array never lives
+    // in the tree (see applyLevelSelectionToTree, which deletes the node
+    // instead), but is treated as "match nothing" here for safety.
     const bucketOf = makeLevelBucketer();
-    result = parentEntries.filter(e => baked.value.includes(bucketOf(e.level, e.formatId)));
-  } else if (baked.filterType === "and" || baked.filterType === "or") {
-    result = combineBakedEntries(baked.filterType, baked.baked, poolEntries, fileId);
-  } else if (baked.filterType === "link") {
-    const refEntries = getEntriesFromBaked(baked.bakedA, poolEntries, fileId);
-    const targetEntries = getEntriesFromBaked(baked.bakedB, poolEntries, fileId);
-    result = computeLinkPairs(baked, refEntries, targetEntries, fileId);
-  } else if (baked.filterType === "gap") {
-    result = computeGapEntries(baked.value, parentEntries).result;
-  } else if (baked.filterType === "context" || baked.filterType === "countContext") {
+    const levels = cond.value;
+    result = parentEntries.filter(e => levels.includes(bucketOf(e.level, e.formatId)));
+  } else if (cond.filterType === "and" || cond.filterType === "or") {
+    // Self-contained: cond.baked holds flat condition snapshots (see
+    // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
+    // over THIS node's own ordinary input entries (parentEntries, exactly
+    // like every other filter type) — no second entry stream, no reference
+    // to another node anywhere.
+    result = combineBakedEntries(cond.filterType, cond.baked, parentEntries, fileId);
+  } else if (cond.filterType === "link") {
+    // Self-contained, same as and/or: bakedA is the reference's own baked
+    // condition, bakedB the target's — both evaluated as predicates over
+    // this node's own ordinary parentEntries pool (reference-side =
+    // entries matching bakedA, target-side = entries matching bakedB), then
+    // the usual nearest-occurrence pairing machinery runs over those two
+    // entry sets exactly as before.
+    const refEntries = getEntriesFromBaked(cond.bakedA, parentEntries, fileId);
+    const targetEntries = getEntriesFromBaked(cond.bakedB, parentEntries, fileId);
+    result = computeLinkPairs(cond, refEntries, targetEntries, fileId);
+  } else if (cond.filterType === "gap") {
+    const gap = computeGapEntries(cond.value, parentEntries);
+    result = gap.result;
+    if (meta) meta.gaps = gap.gaps; // becomes node._gapMs, read by appendLogRow's Δt column, see computeGapEntries
+  } else if (cond.filterType === "context" || cond.filterType === "countContext") {
     const file = fileId && state.nodes[fileId];
     if (!file || parentEntries.length === 0) {
       result = [];
-    } else if (baked.filterType === "context") {
-      const ranges = mergeContextRanges(parentEntries, baked.contextBefore || 0, baked.contextAfter || 0);
-      const pool = file.entries;
-      const keepIds = new Set();
-      for (const r of ranges) {
-        const lo = lowerBoundByTs(pool, r.start);
-        const hi = upperBoundByTs(pool, r.end);
-        for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
-      }
-      result = pool.filter(e => keepIds.has(e.id));
+      if (meta) { meta.contextRanges = []; meta.anchorIds = new Set(); }
     } else {
-      const pool = file.entries;
-      const orderIndexMap = buildOrderIndexMap(fileId);
-      const idxRanges = mergeCountContextRanges(parentEntries, orderIndexMap, pool.length, baked.countBefore || 0, baked.countAfter || 0);
-      const keepIds = new Set();
-      for (const r of idxRanges) { for (let i = r.start; i <= r.end; i++) keepIds.add(pool[i].id); }
-      result = pool.filter(e => keepIds.has(e.id));
+      const pool = file.entries; // sorted ascending by .ts, see the file branch of getEntries
+      let ranges; // what renderVisibleRows draws the bracket from (node._contextRanges)
+      if (cond.filterType === "context") {
+        ranges = mergeContextRanges(parentEntries, cond.contextBefore || 0, cond.contextAfter || 0);
+        result = contextWindowEntries(pool, ranges, true);
+      } else {
+        const idxRanges = mergeCountContextRanges(parentEntries, buildOrderIndexMap(fileId), pool.length, cond.countBefore || 0, cond.countAfter || 0);
+        result = contextWindowEntries(pool, idxRanges, false);
+        // _contextRanges is read by the SAME renderer as the "context" (time)
+        // filter above, via the ts-based binary search in contextRangeIndex —
+        // so index ranges are re-expressed here in ts-space (the pool's own
+        // boundary entries' timestamps) rather than teaching the renderer a
+        // second, index-based range format. This is exact for the actual
+        // result (computed above from real indices, not from these ts
+        // bounds) — the only edge case is purely cosmetic bracket rendering
+        // when a range boundary entry shares its exact timestamp with an
+        // entry just outside the window (a tie); same accepted trade-off as
+        // the time-context bracket's own tie edge cases (see PROJECT.md).
+        if (meta) ranges = idxRanges.map(r => ({ start: pool[r.start].ts, end: pool[r.end].ts }));
+      }
+      if (meta) {
+        meta.contextRanges = ranges;
+        meta.anchorIds = new Set(parentEntries.map(e => e.id)); // which rows are the reference entries themselves
+      }
     }
   } else {
     result = parentEntries;
   }
-  if (baked.inverted && baked.filterType !== "link" && baked.filterType !== "context" && baked.filterType !== "countContext") {
+
+  // "link" results are synthetic pair entries (see buildPairEntry) whose ids
+  // never match parentEntries' ids, so a parent-relative set difference
+  // wouldn't mean "unmatched refs" — it would just be all of parentEntries.
+  // "context"/"countContext" have the opposite problem: every reference
+  // entry's own window always contains itself, so result is a strict
+  // superset of parentEntries and a parent-relative difference would always
+  // be empty. Inversion is therefore only offered in the UI for the other
+  // filter types, but this guard keeps getEntries() correct even if
+  // inverted were ever set on one of these nodes some other way.
+  if (cond.inverted && cond.filterType !== "link" && cond.filterType !== "context" && cond.filterType !== "countContext") {
+    // and/or is no special case here: its input entries ARE parentEntries
+    // (the node's own ordinary parentId chain), so the universe to invert
+    // against is just parentEntries like every other filter type.
     const keptIds = new Set(result.map(e => e.id));
     result = parentEntries.filter(e => !keptIds.has(e.id));
   }
   return result;
+}
+
+// A BAKED condition (see bakeNodeCondition) evaluated over `poolEntries` as a
+// standalone predicate, with no node-only side data — evaluateFilterCondition
+// is the single implementation, so behavior for each filterType is the same
+// as for a real standalone filter of that type by construction. A missing
+// side (a combiner materialized without its baked list) keeps nothing.
+function getEntriesFromBaked(baked, poolEntries, fileId) {
+  return baked ? evaluateFilterCondition(baked, poolEntries, fileId, null) : [];
 }
 
 // Filter types whose result is a plain per-entry test over parentEntries
@@ -14680,188 +14802,18 @@ function extendCachedEntries(node, tailBase) {
 
 // parentOverride: evaluate over these entries instead of the parent's full
 // result, and don't cache — extendCachedEntries' delta evaluation.
+// The evaluation itself is evaluateFilterCondition's; this is the node-only
+// part: where the input comes from, the side data the renderer reads off the
+// node (the baked path computes none of it), and the cache.
 function getEntriesUncached(node, parentOverride) {
-  const nodeId = node.id;
   const parentEntries = parentOverride || getEntries(node.parentId);
-  let result;
-  if (node.filterType === "text") {
-    const value = String(node.value);
-    if (node.isRegex) {
-      // Real RegExp mode (FEATURE_BACKLOG.md #16) — an alternative to the
-      // wildcard-token language, toggled per-node via the filter popup's
-      // "Interpret input as regex" checkbox. An invalid pattern fails
-      // gracefully to an empty result (matching the "Invalid pattern"
-      // inline state the popup already shows) rather than throwing.
-      const re = compileRegexFilter(value, !!node.caseSensitive);
-      result = re ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, re)) : [];
-    } else if (isExtractPattern(value)) {
-      // A "text" filter's value can contain [*:...]/[*] tokens — there
-      // is no separate "extract" filterType to route to instead (this
-      // session's filterType merge, docs/archive/ui-implementation-plan.md's
-      // follow-up note). The same node both filters/highlights on this
-      // match AND, via nodeHasExtractableWildcards, unlocks Table/Plot,
-      // which build their own rows from renderExtractTable's own
-      // compileExtractPattern call over these exact same entries. Compiled
-      // here to the same regex compileExtractPattern would use for
-      // extraction, just tested rather than captured.
-      const spec = compileExtractPattern(value);
-      const wildcardRegex = spec && new RegExp(spec.regexStr, (node.caseSensitive ? "" : "i") + "s");
-      result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, wildcardRegex, spec.columns)) : [];
-    } else {
-      result = parentEntries.filter(e => textFilterMatches(e, value, !!node.caseSensitive, node.columns, null, null, null, !!node.wholeWord));
-    }
-  } else if (node.filterType === "after") {
-    result = parentEntries.filter(e => e.ts >= node.value);
-  } else if (node.filterType === "before") {
-    result = parentEntries.filter(e => e.ts <= node.value);
-  } else if (node.filterType === "timerange") {
-    // value = { from, to }, either bound possibly null (unbounded on that
-    // side) — the unified replacement for "after"/"before" above, which stay
-    // readable (old saved sessions/exports) but are no longer created by any
-    // UI path. Plain object under the existing generic `value` field, so
-    // every persistence carrier (clone/snapshot/serialize/import) already
-    // threads it through with no extra field to add — see CLAUDE.md's
-    // "Known gotchas" note on filter-node fields.
-    const from = node.value && node.value.from, to = node.value && node.value.to;
-    result = parentEntries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
-  } else if (node.filterType === "idset") {
-    // value = array of entry ids — an explicit, pre-computed match set
-    // rather than a rule evaluated per entry. Built by "Create filter from
-    // plot view" (see openPlotViewportFilterMenu/createIdSetFilterFromPlot)
-    // to pin down exactly the entries currently visible in the Plot tab's
-    // zoomed/panned viewport. Kept generic (not plot-specific) so any other
-    // future "exact entry set" producer could reuse it the same way
-    // "timerange" is generic rather than tied to the minimap that first
-    // created it.
-    const idSet = new Set(Array.isArray(node.value) ? node.value : []);
-    result = parentEntries.filter(e => idSet.has(e.id));
-  } else if (node.filterType === "bookmarks") {
-    // Auto-managed per-file node (see syncBookmarksFilterNode) — its match
-    // set is exactly "this file's entries currently in state.bookmarks",
-    // not a text/regex pattern. state.bookmarks is the single source of
-    // truth (also read directly by getPinnedBookmarkEntries/the row
-    // bookmark dot), so this just mirrors it through the normal filter-node
-    // matching path instead of inventing a parallel one.
-    result = parentEntries.filter(e => state.bookmarks.has(e.id));
-  } else if (node.filterType === "notes") {
-    // Auto-managed per-file node (see syncNotesFilterNode) — same shape as
-    // "bookmarks" just above, mirroring state.notes instead of
-    // state.bookmarks.
-    result = parentEntries.filter(e => state.notes.has(e.id));
-  } else if (node.filterType === "sources") {
-    // Auto-managed per-merged-file node (see createMergeShell) — purely a
-    // label/anchor for the tree's "Sources" breakdown; it doesn't filter
-    // anything of its own (the actual per-source entries/colors live on
-    // the owning file's own `sources` array, read directly by
-    // renderSourcesNode/computeHighlightMap), so its own result is just
-    // its parent's (the merged file's) full entries, same as clicking the
-    // file itself.
-    result = parentEntries;
-  } else if (node.filterType === "level") {
-    // value = array of active level names (e.g. ["ERROR", "WARN"]) — the
-    // tree-node counterpart of the level bar's own quick-filter (see
-    // applyLevelFilter/FEATURE_BACKLOG.md #10). An empty array never lives
-    // in the tree (see applyLevelSelectionToTree, which deletes the node
-    // instead), but is treated as "match nothing" here for safety.
-    const bucketOf = makeLevelBucketer();
-    result = parentEntries.filter(e => node.value.includes(bucketOf(e.level, e.formatId)));
-  } else if (node.filterType === "and" || node.filterType === "or") {
-    // Self-contained: node.baked holds flat condition snapshots (see
-    // bakeNodeCondition/createAndOrNode), evaluated as predicates directly
-    // over THIS node's own ordinary input entries (parentEntries, exactly
-    // like every other filter type) — no second entry stream, no reference
-    // to another node anywhere.
-    const fileId = getRootFileId(nodeId);
-    result = combineBakedEntries(node.filterType, node.baked, parentEntries, fileId);
-  } else if (node.filterType === "link") {
-    // Self-contained, same as and/or: bakedA is the reference's own baked
-    // condition, bakedB the target's — both evaluated as predicates over
-    // this node's own ordinary parentEntries pool (reference-side =
-    // entries matching bakedA, target-side = entries matching bakedB), then
-    // the usual nearest-occurrence pairing machinery runs over those two
-    // entry sets exactly as before.
-    const fileId = getRootFileId(nodeId);
-    const refEntries = getEntriesFromBaked(node.bakedA, parentEntries, fileId);
-    const targetEntries = getEntriesFromBaked(node.bakedB, parentEntries, fileId);
-    result = computeLinkPairs(node, refEntries, targetEntries, fileId);
-  } else if (node.filterType === "gap") {
-    const gap = computeGapEntries(node.value, parentEntries);
-    result = gap.result;
-    node._gapMs = gap.gaps; // read by appendLogRow's Δt column, see computeGapEntries
-  } else if (node.filterType === "context") {
-    const fileId = getRootFileId(node.parentId);
-    const file = fileId && state.nodes[fileId];
-    if (!file || parentEntries.length === 0) {
-      result = [];
-      node._contextRanges = [];
-      node._anchorIds = new Set();
-    } else {
-      const ranges = mergeContextRanges(parentEntries, node.contextBefore || 0, node.contextAfter || 0);
-      const pool = file.entries; // sorted ascending by .ts, see the file branch above
-      const keepIds = new Set();
-      for (const r of ranges) {
-        const lo = lowerBoundByTs(pool, r.start);
-        const hi = upperBoundByTs(pool, r.end);
-        for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
-      }
-      // Filtering `pool` (not concatenating per-range slices) keeps the
-      // result in the file's natural chronological order for free, same as
-      // the "text"/"after"/"before" branches above.
-      result = pool.filter(e => keepIds.has(e.id));
-      node._contextRanges = ranges; // used by renderVisibleRows to draw the bracket
-      node._anchorIds = new Set(parentEntries.map(e => e.id)); // which rows are the reference entries themselves
-    }
-  } else if (node.filterType === "countContext") {
-    const fileId = getRootFileId(node.parentId);
-    const file = fileId && state.nodes[fileId];
-    if (!file || parentEntries.length === 0) {
-      result = [];
-      node._contextRanges = [];
-      node._anchorIds = new Set();
-    } else {
-      const pool = file.entries; // sorted ascending by .ts, see the file branch above
-      const orderIndexMap = buildOrderIndexMap(fileId);
-      const idxRanges = mergeCountContextRanges(parentEntries, orderIndexMap, pool.length, node.countBefore || 0, node.countAfter || 0);
-      const keepIds = new Set();
-      for (const r of idxRanges) {
-        for (let i = r.start; i <= r.end; i++) keepIds.add(pool[i].id);
-      }
-      result = pool.filter(e => keepIds.has(e.id));
-      // _contextRanges is read by the SAME renderer as the "context" (time)
-      // filter above, via the ts-based binary search in contextRangeIndex —
-      // so index ranges are re-expressed here in ts-space (the pool's own
-      // boundary entries' timestamps) rather than teaching the renderer a
-      // second, index-based range format. This is exact for the actual
-      // result (computed above from real indices, not from these ts
-      // bounds) — the only edge case is purely cosmetic bracket rendering
-      // when a range boundary entry shares its exact timestamp with an
-      // entry just outside the window (a tie); same accepted trade-off as
-      // the time-context bracket's own tie edge cases (see PROJECT.md).
-      node._contextRanges = idxRanges.map(r => ({ start: pool[r.start].ts, end: pool[r.end].ts }));
-      node._anchorIds = new Set(parentEntries.map(e => e.id));
-    }
-  } else {
-    result = parentEntries;
+  const meta = {};
+  const result = evaluateFilterCondition(node, parentEntries, getRootFileId(node.id), meta);
+  if (meta.gaps) node._gapMs = meta.gaps; // read by appendLogRow's Δt column, see computeGapEntries
+  if (meta.contextRanges) {
+    node._contextRanges = meta.contextRanges; // used by renderVisibleRows to draw the bracket
+    node._anchorIds = meta.anchorIds; // which rows are the reference entries themselves
   }
-
-  // "link" results are synthetic pair entries (see buildPairEntry) whose ids
-  // never match parentEntries' ids, so a parent-relative set difference
-  // wouldn't mean "unmatched refs" — it would just be all of parentEntries.
-  // "context"/"countContext" have the opposite problem: every reference
-  // entry's own window always contains itself, so result is a strict
-  // superset of parentEntries and a parent-relative difference would always
-  // be empty. Inversion is therefore only offered in the UI for the other
-  // filter types, but this guard keeps getEntries() correct even if
-  // inverted were ever set on one of these nodes some other way.
-  if (node.inverted && node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext") {
-    // and/or is no longer a special case here: its input entries ARE
-    // parentEntries (the node's own ordinary parentId chain, see above), so
-    // the universe to invert against is just parentEntries like every other
-    // filter type.
-    const keptIds = new Set(result.map(e => e.id));
-    result = parentEntries.filter(e => !keptIds.has(e.id));
-  }
-
   if (!parentOverride) node._cache = result;
   return result;
 }
