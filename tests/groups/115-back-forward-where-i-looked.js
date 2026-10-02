@@ -38,7 +38,8 @@ await withApp(async (w, d, T) => {
   assert(!!d.querySelector(".brand .brand-row .brand-name"), "the wordmark itself stays in its own row, unmoved");
   // Nav group must come right after .brand and before the spacer that
   // pushes the rest of the toolbar's controls to the far right.
-  const toolbarChildren = [...d.querySelector("#toolbar").children].map(c => c.className || c.id);
+  // (#btnDrawer, the hamburger for the compact/phone tiers, is the very first child — skipped here.)
+  const toolbarChildren = [...d.querySelector("#toolbar").children].filter(c => c.id !== "btnDrawer").map(c => c.className || c.id);
   const brandIdx = toolbarChildren.findIndex(c => c === "brand");
   const navIdx = toolbarChildren.findIndex(c => c === "toolbar-group" || c.includes("toolbar-group"));
   const spacerIdx = toolbarChildren.findIndex(c => c === "toolbar-spacer");

@@ -87,7 +87,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("58d. Narrow viewport forces Thread/Location/Method hidden regardless of state.columnVisible (replaces the old @media rule)");
+  section("58d. Phone-width viewport forces Δt/Thread/Location/Method hidden regardless of state.columnVisible (replaces the old @media rule)");
 
   const f = await w.addFile("a.log", makeLog(0, 3), () => {});
   T.state.activeId = f.id;
@@ -95,11 +95,11 @@ await withApp(async (w, d, T) => {
   assert(T.state.columnVisible.thread === true, "sanity: Thread is visible by default");
   assert(d.documentElement.style.getPropertyValue("--row-grid").includes("92px"), "sanity: Thread's track is non-zero at the default (wide) viewport");
 
-  w.innerWidth = 600; // below COLUMN_MOBILE_BREAKPOINT (760)
+  w.innerWidth = 500; // phone tier (< 600): Δt and every middle column forced to 0px
   w.dispatchEvent(new w.Event("resize"));
   assert(T.state.columnVisible.thread === true, "narrow viewport does NOT mutate the stored preference...");
-  assert(d.documentElement.style.getPropertyValue("--row-grid") === "5px 178px 72px 66px 0px 0px 0px 1fr",
-    "...but --row-grid forces Thread/Location/Method to 0px anyway, got " + d.documentElement.style.getPropertyValue("--row-grid"));
+  assert(d.documentElement.style.getPropertyValue("--row-grid") === "5px 178px 0px 66px 0px 0px 0px 1fr",
+    "...but --row-grid forces Δt/Thread/Location/Method to 0px anyway, got " + d.documentElement.style.getPropertyValue("--row-grid"));
 
   w.innerWidth = 1024;
   w.dispatchEvent(new w.Event("resize"));

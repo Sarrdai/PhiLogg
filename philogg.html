@@ -4437,29 +4437,50 @@
     *{transition:none !important; animation:none !important;}
   }
 
-  @media (max-width:760px){
-    #main{flex-direction:column;}
-    #sidebar{width:100%; max-height:38vh; border-right:none; border-bottom:1px solid var(--border);}
-    /* #sidebarResizer stays a fixed 7px COLUMN-resize strip even here (a
-       pre-existing quirk, not something this session's fix changes) — its
-       own new background/border-right (see its own comment) would show as
-       a small stray colored box unrelated to the now-horizontal
-       sidebar/content seam #sidebar's border-bottom above already carries,
-       so neutralize just that, same as #sidebar's own border-right:none
-       right above. */
-    #sidebarResizer{background:none; border-right:none;}
-    /* Thread/Location/Method's hide-on-narrow-viewport behavior moved into
-       applyRowGrid() (see its own comment) — it now shares the same 0px-
-       track mechanism as the column-visibility toggle instead of a separate
-       :root{--row-grid:...} + display:none pair here, which would otherwise
-       both fight applyRowGrid()'s own inline --row-grid (an inline style
-       always wins over a media-query rule, breaking this block outright)
-       AND — independently of that — silently corrupt CSS Grid's row
-       auto-placement (a display:none grid item doesn't reserve its track,
-       so "Message" would land in whichever earlier track the removed
-       items freed up instead of the real one --row-grid meant for it). */
-    #timelineMinimap{height:36px;}
-    #timelineMinimapMeta{display:none;}
+  /* ---------- Responsive layout tiers (docs/ui-and-views.md) ----------
+     Tiers come from the WINDOW width (layoutTier() sets body.layout-compact
+     600-1023px / body.layout-phone <600px; none = desktop >= 1024px), never
+     from the user agent. Compact + phone share the drawer: #sidebar becomes
+     an overlay opened by #btnDrawer (body.drawer-open). Which row columns
+     each tier hides lives in applyRowGrid() (0px tracks), not here. */
+  #btnDrawer, #drawerScrim{display:none;}
+  body.layout-compact #btnDrawer, body.layout-phone #btnDrawer{display:flex;}
+  body.layout-compact #sidebar, body.layout-phone #sidebar{
+    position:fixed; top:0; left:0; bottom:0; z-index:60;
+    width:min(340px, 86vw) !important; max-width:none;
+    border-right:1px solid var(--border);
+    transform:translateX(-100%); visibility:hidden;
+    transition:transform .18s ease, visibility 0s linear .18s;
+  }
+  body.layout-compact.drawer-open #sidebar, body.layout-phone.drawer-open #sidebar{
+    transform:none; visibility:visible; box-shadow:14px 0 34px rgba(0,0,0,.45);
+    transition:transform .18s ease, visibility 0s;
+  }
+  /* The desktop collapse state (rail / hover peek) has no meaning in the
+     drawer: always show the full content, never the rail. */
+  body.layout-compact #sidebar.collapsed, body.layout-phone #sidebar.collapsed{overflow:hidden;}
+  body.layout-compact #sidebar.collapsed #sidebarNormalContent, body.layout-phone #sidebar.collapsed #sidebarNormalContent{
+    display:flex; position:relative; width:100%; max-width:none; box-shadow:none;
+  }
+  body.layout-compact #sidebarRail, body.layout-phone #sidebarRail{display:none !important;}
+  body.layout-compact #sidebarResizer, body.layout-phone #sidebarResizer,
+  body.layout-compact #sidebarToggle, body.layout-phone #sidebarToggle{display:none;}
+  body.layout-compact.drawer-open #drawerScrim, body.layout-phone.drawer-open #drawerScrim{
+    display:block; position:fixed; inset:0; z-index:55; background:rgba(0,0,0,.45);
+  }
+  body.layout-compact #toolbar, body.layout-phone #toolbar{gap:10px; padding:0 10px;}
+  body.layout-compact .toolbar-right{gap:10px; min-width:0;}
+  body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+
+  /* Touch devices (any tier): ~40px hit targets. */
+  @media (pointer:coarse){
+    .toolbar-icon-btn, .panel-toggle-btn, .level-btn{width:40px; height:40px;}
+    .view-tabs{height:40px;}
+    .view-tab{padding:0 14px; font-size:12px;}
+    #detailViewTabs{height:36px;}
+    #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
+    .tree-row{min-height:40px;}
+    .tree-row, .log-row{-webkit-touch-callout:none;}
   }
 
   :focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
@@ -4631,6 +4652,9 @@
 <div id="app">
 
   <header id="toolbar">
+    <button type="button" id="btnDrawer" class="toolbar-icon-btn" aria-label="Files and filters" aria-expanded="false" title="Files &amp; filters">
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
+    </button>
     <div class="brand">
       <div class="brand-row">
         <span class="brand-mark">L</span>
@@ -4718,6 +4742,7 @@
     </aside>
 
     <div id="sidebarResizer" title="Drag to resize"></div>
+    <div id="drawerScrim"></div>
 
     <section id="content">
 
@@ -18715,6 +18740,7 @@ function renderNode(id, depth, opts) {
     // here too; revealFilteredView() itself no-ops when already revealed.
     if (activateNode && activateNode.type === "filter") revealFilteredView();
     render();
+    setDrawerOpen(false); // compact/phone: picking a node dismisses the drawer
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
   // Middle-click (FEATURE_BACKLOG #17): same delete as the row's own ✕
@@ -28807,14 +28833,17 @@ const DEFAULT_CUSTOM_COLUMN_WIDTH = 120; // initial width for a column this dict
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_GRID_GAP = 12; // must match .row-grid's column-gap
 const COLUMN_BAR_WIDTH = 5; // must match --row-grid's first (bar) track
-// Below this viewport width, the dynamic middle columns are always hidden
-// regardless of state.columnVisible — same breakpoint the old
-// @media (max-width:760px) rule used to hide directly in CSS, folded in
-// here instead now that this function is the single place --row-grid gets
-// computed (see the @media block's own comment for why living in both
-// places at once broke things). Δt/Message stay visible (just narrower/
-// unaffected) on mobile, same as before this feature.
-const COLUMN_MOBILE_BREAKPOINT = 760;
+// Responsive tiers (window width; see "Responsive layout" in docs/ui-and-views.md).
+// applyRowGrid() is the single place --row-grid is computed, so the tier's
+// column hiding lives there as 0px tracks regardless of state.columnVisible:
+// compact hides Δt and every middle column except Thread, phone hides Δt and
+// every middle column.
+const LAYOUT_COMPACT_MIN = 600;
+const LAYOUT_DESKTOP_MIN = 1024;
+function layoutTierFor(width) {
+  return width >= LAYOUT_DESKTOP_MIN ? "desktop" : width >= LAYOUT_COMPACT_MIN ? "compact" : "phone";
+}
+function layoutTier() { return layoutTierFor(window.innerWidth); }
 
 // Width/visibility lookups fall back to a sane default for a key that
 // state.columnWidths/columnVisible has no entry for yet — a freshly
@@ -28845,18 +28874,17 @@ function collectColumnResizeHandles() {
 // handles to match (see the handles' own CSS comment for why they're
 // positioned via JS instead of nested in .th).
 function applyRowGrid() {
-  const mobile = window.innerWidth <= COLUMN_MOBILE_BREAKPOINT;
+  const tier = layoutTier();
   const parts = [COLUMN_BAR_WIDTH + "px"];
   let x = COLUMN_BAR_WIDTH;
-  // mobileForce: forced hidden below COLUMN_MOBILE_BREAKPOINT regardless of
-  // state.columnVisible — only the dynamic middle columns (Thread/Location/
-  // Method/custom); Δt stays visible (just narrower), same as before this
-  // feature's mobile rule.
+  // middle: a dynamic middle column (Thread/Location/Method/custom); the
+  // tier hides it (and Δt) regardless of state.columnVisible, see above.
   // Only plain-text files loaded: the Time track shows line numbers under
   // its own width key ("line") and Δt/Level, meaningless there, collapse.
   const plainText = allRootsPlainText();
-  const pushTrack = (key, hideable, mobileForce) => {
-    const hidden = (mobile && mobileForce) || (hideable && !columnVisibleFor(key)) || (plainText && (key === "delta" || key === "level"));
+  const pushTrack = (key, hideable, middle) => {
+    const tierHidden = tier !== "desktop" && (key === "delta" || (middle && (tier === "phone" || key !== "thread")));
+    const hidden = tierHidden || (hideable && !columnVisibleFor(key)) || (plainText && (key === "delta" || key === "level"));
     const w = hidden ? 0 : columnWidthFor(key);
     parts.push(w + "px");
     x += COLUMN_GRID_GAP + w;
@@ -28887,6 +28915,76 @@ function applyRowGrid() {
   syncTableRowsWidth();
 }
 window.addEventListener("resize", applyRowGrid);
+
+// Tier body classes + drawer + long-press (Responsive layout, step 1).
+let currentLayoutTier = null;
+const btnDrawer = el("#btnDrawer");
+function setDrawerOpen(open) {
+  open = !!open && currentLayoutTier !== "desktop";
+  document.body.classList.toggle("drawer-open", open);
+  btnDrawer.setAttribute("aria-expanded", open ? "true" : "false");
+}
+function isDrawerOpen() { return document.body.classList.contains("drawer-open"); }
+function applyLayoutTier() {
+  const tier = layoutTier();
+  if (tier === currentLayoutTier) return;
+  const first = currentLayoutTier === null;
+  currentLayoutTier = tier;
+  document.body.classList.toggle("layout-compact", tier === "compact");
+  document.body.classList.toggle("layout-phone", tier === "phone");
+  setDrawerOpen(false);
+  if (tier === "phone") cancelLongPress();
+  if (first) return; // boot: render() has not run yet / applyRowGrid already read the tier
+  applyRowGrid();
+  render();
+}
+window.addEventListener("resize", applyLayoutTier);
+btnDrawer.addEventListener("click", () => setDrawerOpen(!isDrawerOpen()));
+el("#drawerScrim").addEventListener("click", () => setDrawerOpen(false));
+
+// Long-press → context menu for touch pointers (iOS never fires
+// "contextmenu"). One global helper: no per-handler changes. The synthetic
+// event goes to the original target, so every existing contextmenu handler
+// (tree rows, log rows, ...) runs unchanged; the click that follows the
+// release is swallowed so it cannot select the row or close the new popup.
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_PX = 10;
+let longPress = null;
+let longPressFired = false;
+function cancelLongPress() {
+  if (longPress) clearTimeout(longPress.timer);
+  longPress = null;
+}
+document.addEventListener("pointerdown", ev => {
+  longPressFired = false;
+  cancelLongPress();
+  if (ev.pointerType !== "touch" || ev.isPrimary === false || currentLayoutTier === "phone") return;
+  const press = { x: ev.clientX, y: ev.clientY, target: ev.target, timer: 0 };
+  press.timer = setTimeout(() => {
+    if (longPress !== press) return;
+    longPress = null;
+    longPressFired = true;
+    press.target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: press.x, clientY: press.y }));
+  }, LONG_PRESS_MS);
+  longPress = press;
+}, true);
+document.addEventListener("pointermove", ev => {
+  if (!longPress || ev.pointerType !== "touch") return;
+  if (Math.hypot(ev.clientX - longPress.x, ev.clientY - longPress.y) > LONG_PRESS_MOVE_PX) cancelLongPress();
+}, true);
+["pointerup", "pointercancel"].forEach(t => document.addEventListener(t, cancelLongPress, true));
+document.addEventListener("click", ev => {
+  if (!longPressFired) return;
+  longPressFired = false;
+  ev.stopPropagation();
+  ev.preventDefault();
+}, true);
+// A browser's own long-press contextmenu (Android Chrome) would double the
+// synthetic one: while a touch press is tracked, swallow trusted ones.
+document.addEventListener("contextmenu", ev => {
+  if (ev.isTrusted && (longPress || longPressFired)) { ev.preventDefault(); ev.stopImmediatePropagation(); }
+}, true);
+applyLayoutTier();
 
 // Called whenever "which formats are currently loaded" or "a loaded
 // format's own column list" changes — from render() itself (see its own
@@ -42789,6 +42887,7 @@ document.addEventListener("keydown", ev => {
       return;
     }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
+    setDrawerOpen(false);
     closePlotFullscreen();
     closeSettingsDialog();
     closeFilterPopup();
