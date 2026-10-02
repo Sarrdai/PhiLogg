@@ -427,7 +427,7 @@ Tested: **GROUP 289**.
 
 ## Muting a filter node
 
-`FEATURE_BACKLOG.md` #14 (2026-09-29). A filter node can carry `muted: true` (absent = false): `getEntries` then returns its parent's result untouched, so the step is effectively switched off while it stays in the tree with its colour, assertions, NOT flag and children. Children keep evaluating, against the muted node's (= its parent's) result, i.e. against the nearest non-muted ancestor. A muted node is never cached on itself (the check sits before `node._cache`, one property read), and toggling goes through `toggleMuteWithUndo(ids)` -> `invalidateAllCaches()` like the NOT toggle. NOT is ignored while muted and comes back on unmute.
+`FEATURE_BACKLOG.md` #14 (2026-09-29). A filter node can carry `muted: true` (absent = false): `getEntries` then returns its parent's result untouched, so the step is effectively switched off while it stays in the tree with its colour, assertions, NOT flag and children. Children keep evaluating, against the muted node's (= its parent's) result, i.e. against the nearest non-muted ancestor. A muted node is never cached on itself (the check sits before `node._cache`, one property read), and toggling goes through `toggleMuteWithUndo(ids)` -> `invalidateNodeSubtreeCaches(id)` per toggled node (its descendants' caches derive from its result), like the NOT toggle. NOT is ignored while muted and comes back on unmute.
 
 Not mutable: file nodes and locked nodes (Bookmarks/Sources) — `isMutableNode`. Every other filter type (text, time, level, idset, gap, context, and/or, link, ...) can be muted; there is no subtree muting.
 

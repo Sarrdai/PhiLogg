@@ -12505,7 +12505,7 @@ function idSetFilterName(ids, origin = "plot view") {
 // tokens into a plain text filter, or removing them, flips which one
 // applies), inverted flag and display name. Every other node's cache is
 // derived from this one's result if it sits below it in the tree, so the
-// same global invalidation used for move/delete/invert is needed here too.
+// node's whole subtree is invalidated (and nothing outside it).
 // The plain mutator — callers that should be undoable go through
 // updateFilterNodeWithUndo (see the undo/redo section) instead.
 function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord) {
@@ -12533,7 +12533,7 @@ function updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, c
     delete node.isRegex;
     delete node.wholeWord;
   }
-  invalidateAllCaches();
+  invalidateNodeSubtreeCaches(nodeId);
 }
 
 // Edits an existing time filter in place — same "plain mutator, wrap with
@@ -12550,7 +12550,7 @@ function updateTimeRangeFilterNode(nodeId, from, to) {
   node.filterType = "timerange";
   node.value = { from, to };
   node.name = timeRangeFilterName(node.value, node.parentId);
-  invalidateAllCaches();
+  invalidateNodeSubtreeCaches(nodeId);
 }
 
 // Normalizes any of the three time-filter node shapes into a plain
@@ -13162,7 +13162,9 @@ function applyClockOffset(fileId, deltaMs) {
   if (!deltaMs || !Number.isFinite(deltaMs)) return false;
   shiftFileEntriesTs(node, deltaMs);
   node.clockOffset = (node.clockOffset || 0) + deltaMs;
-  invalidateAllCaches(); // structural-equivalent change: every filter chain under this file (and any merged view) is now stale
+  // Stays on the global sweep on purpose: every entry's ts of this file moved, so every
+  // filter chain under it (and under any merged view sharing the entries) is stale.
+  invalidateAllCaches();
   pushUndo({ kind: "clockOffset", nodeId: fileId, delta: deltaMs });
   persistFileNode(node); // clockOffset is now part of the file's cache record
   return true;
@@ -13352,7 +13354,7 @@ function updateGapNodeWithUndo(nodeId, value) {
   withFieldEditUndo(nodeId, node => {
     node.value = value;
     node.name = gapFilterName(value);
-    invalidateAllCaches();
+    invalidateNodeSubtreeCaches(nodeId);
   });
 }
 
@@ -13688,7 +13690,9 @@ function moveNode(nodeId, newParentId) {
   if (oldParent) oldParent.children = oldParent.children.filter(id => id !== nodeId);
   newParent.children.push(nodeId);
   node.parentId = newParentId;
-  invalidateAllCaches();
+  // Only the moved subtree gets a new parent chain; the old and new parent
+  // and everything else keep their caches.
+  invalidateNodeSubtreeCaches(nodeId);
   return true;
 }
 
@@ -14481,10 +14485,12 @@ function linkifyPaths(html) {
   ).join("");
 }
 
-// Filter results only ever change for a node when it (or an ancestor) gets
-// re-parented — a filter's own type/value never change after creation. So we
-// can safely cache each node's computed entries and only clear the cache for
-// the moved subtree, instead of recomputing the whole chain on every render.
+// A node's result depends only on its own fields and its parentId chain —
+// plus, for a "bookmarks"/"notes" node and any and/or/link node baking one,
+// state.bookmarks/state.notes. So each node's computed entries are cached,
+// and a mutation clears exactly what it affects (invalidateNodeSubtreeCaches
+// for one edited/moved node, invalidateCachesDependingOnState for a
+// bookmark/note change) instead of recomputing every chain on every render.
 // Belt-and-braces guard against an infinite recursion on a corrupt/
 // hand-edited node's parentId chain (ordinary parentId-based nesting can't
 // normally cycle — moveNode's isDescendantOrSelf guard already prevents
@@ -14817,13 +14823,75 @@ function getEntriesUncached(node, parentOverride) {
   return result;
 }
 
-// Clears every node's cached entries. Used after structural changes that
-// affect a surviving node's own result (move, invert, field-edit) —
-// simplest-correct sweep after such a mutation. NOT used by deleteNode()
-// any more: a deletion never changes any surviving node's parentId, so no
-// surviving node's cache needs clearing at all (see deleteNode's comment).
+// Clears every node's cached entries — the trivially-correct sweep. Only the
+// rare whole-file / whole-tree changes still use it (undo/redo, unpack, a
+// clock offset; each says so at its call site). Everything that changes ONE
+// node or one entry's bookmark/note goes through the scoped variants below.
 function invalidateAllCaches() {
   Object.values(state.nodes).forEach(n => { n._cache = null; n._tailBase = null; n._levelCounts = null; });
+}
+
+// Clears the cached entries of one node and every descendant (walk over
+// `children`, iterative). The scoped counterpart of invalidateAllCaches for
+// an action that changes ONE node's own result (edit, mute, invert, move,
+// gap/time-range/selection edit): a node's result depends only on its own
+// parentId chain, so its ancestors, its siblings and every other subtree
+// keep theirs. The `seen` set only guards against a corrupt children cycle.
+function invalidateNodeSubtreeCaches(nodeId) {
+  const seen = new Set();
+  const stack = [nodeId];
+  while (stack.length) {
+    const id = stack.pop();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = state.nodes[id];
+    if (!n) continue;
+    n._cache = null; n._tailBase = null; n._levelCounts = null;
+    for (const c of n.children) stack.push(c);
+  }
+}
+
+// True when `cond` — a node, or a baked condition (see bakeNodeCondition) —
+// is of the given filterType, or contains a baked condition of that type at
+// any depth: through and/or lists (`baked`), link sides (`bakedA`/`bakedB`)
+// and any nesting of those. A node and a baked condition have the same shape
+// here (filterType + baked/bakedA/bakedB), so one walk serves both.
+function bakedMentions(cond, kind) {
+  if (!cond) return false;
+  if (cond.filterType === kind) return true;
+  if (Array.isArray(cond.baked) && cond.baked.some(b => bakedMentions(b, kind))) return true;
+  return bakedMentions(cond.bakedA, kind) || bakedMentions(cond.bakedB, kind);
+}
+
+// A bookmark/note change is the one input of a node's result that does NOT
+// come from its parentId chain: a "bookmarks"/"notes" node reads
+// state.bookmarks/state.notes directly, and so does any and/or/link node
+// whose baked conditions mention one (getEntriesFromBaked). `kind` is
+// "bookmarks" | "notes". Drops the cached entries of exactly those nodes
+// under the root file plus their descendants (a descendant's result derives
+// from theirs), and nothing else — a chain of ordinary filters over the same
+// file keeps its cache. Called after every state.bookmarks/state.notes change
+// (syncBookmarksFilterNode/syncNotesFilterNode), including when the auto node
+// is created or deleted: a combiner that baked it matches differently either
+// way.
+// Merged roots are always included: a merge shares its sources' entry
+// objects (same ids), so a bookmark on one of them is a change for the nodes
+// under the merge as well, yet findRootIdForEntry names only one root.
+function invalidateCachesDependingOnState(rootId, kind) {
+  const stack = [];
+  const push = id => { const r = state.nodes[id]; if (r) for (const c of r.children) stack.push(c); };
+  push(rootId);
+  for (const id of state.rootIds) { const r = state.nodes[id]; if (id !== rootId && r && r.merged) push(id); }
+  const seen = new Set();
+  while (stack.length) {
+    const id = stack.pop();
+    if (seen.has(id)) continue;
+    seen.add(id);
+    const n = state.nodes[id];
+    if (!n) continue;
+    if (bakedMentions(n, kind)) invalidateNodeSubtreeCaches(id); // covers every descendant too
+    else for (const c of n.children) stack.push(c);
+  }
 }
 
 // Scoped variant used by onTailChange only: a tail tick knows exactly which
@@ -14835,8 +14903,9 @@ function invalidateAllCaches() {
 // poll cleared EVERY node's cache, and the next render recomputed every
 // filter chain in the tree (renderTree reads every node's count), which is
 // what made tailing feel sluggish with several large files loaded.
-// Structural changes (move/delete/invert/edit) still use the global sweep
-// above — they're rare user actions and the sweep is trivially correct.
+// User actions on one node use invalidateNodeSubtreeCaches, a bookmark/note
+// change invalidateCachesDependingOnState (both above); the global sweep is
+// left for the whole-tree changes that say so at their call sites.
 //
 // appendedFrom (optional, tail ticks only): root id -> that file's entry
 // count before this tick, for a root that only GREW (no rotation). A
@@ -14911,9 +14980,9 @@ function invalidateCachesForRoots(changedRootIds, appendedFrom) {
       n._levelCounts = null;
       // The session-export content fingerprint (see getFileFullHash) is
       // derived from the file's rebuilt text, which only ever changes via
-      // tail growth/rotation — exactly what lands here. Structural filter
-      // changes go through invalidateAllCaches and leave the text (and
-      // therefore the fingerprint) untouched.
+      // tail growth/rotation — exactly what lands here. Filter changes
+      // (the scoped invalidations and invalidateAllCaches alike) leave the
+      // text (and therefore the fingerprint) untouched.
       if (n.type === "file") n._fullHash = null;
     }
   }
@@ -15337,11 +15406,9 @@ function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
 function toggleInvertWithUndo(nodeId) {
   withFieldEditUndo(nodeId, node => {
     node.inverted = !node.inverted;
-    // A node's own cache is keyed on its filterType/value, which didn't
-    // change — only the inverted flag did — but every descendant's cache
-    // is derived from this node's result, so the same global invalidation
-    // used for move/delete is needed here too.
-    invalidateAllCaches();
+    // The node's own result changed with the flag, and every descendant's
+    // cache is derived from it: the node's whole subtree, nothing else.
+    invalidateNodeSubtreeCaches(nodeId);
   });
 }
 
@@ -15362,9 +15429,9 @@ function toggleMuteWithUndo(ids, forceMuted) {
     const before = captureNodeFields(node);
     if (target) node.muted = true; else delete node.muted;
     entries.push({ kind: "edit", nodeId: node.id, before, after: captureNodeFields(node) });
+    invalidateNodeSubtreeCaches(node.id); // descendants' caches derive from this node's (pass-through or own) result
   });
   if (!entries.length) return;
-  invalidateAllCaches();
   const label = target ? "mute" : "unmute";
   pushUndo(entries.length === 1 ? { ...entries[0], label } : { kind: "batch", actions: entries, label });
 }
@@ -15423,6 +15490,8 @@ function undo() {
   undoAction(action);
   redoStack.push(action);
   updateUndoRedoButtons();
+  // Global sweep on purpose: an action can be a restored subtree, a re-parent, a field edit
+  // or a whole batch of them, and undo is rare enough that the trivially-correct sweep is fine.
   invalidateAllCaches();
   render();
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
@@ -15502,7 +15571,7 @@ function redo() {
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
   updateUndoRedoButtons();
-  invalidateAllCaches();
+  invalidateAllCaches(); // global sweep on purpose, same reasoning as undo()
   render();
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " redone");
 }
@@ -28584,6 +28653,7 @@ function syncBookmarksFilterNode(rootId) {
   if (!root || root.type !== "file") return;
   const existing = root.children.map(id => state.nodes[id]).find(n => n && n.filterType === "bookmarks");
   const hasAny = root.entries.some(e => state.bookmarks.has(e.id));
+  let switchToContext = false;
   if (hasAny && !existing) {
     const node = {
       id: uid("n"), type: "filter", name: "Bookmarks", parentId: rootId,
@@ -28591,7 +28661,6 @@ function syncBookmarksFilterNode(rootId) {
     };
     state.nodes[node.id] = node;
     insertSpecialChild(root, node.id, 1);
-    invalidateAllCaches();
   } else if (!hasAny && existing) {
     // If this node is the one currently active AND the Filtered tab is what's
     // showing, deleting it would leave the tabs-layout Filtered view pointing
@@ -28600,17 +28669,18 @@ function syncBookmarksFilterNode(rootId) {
     // file's own — nonsensical — "filter" result). Switch to the Context tab,
     // which on the resulting file node shows the plain whole file. Stacked
     // layout shows both panes already, nothing to fix.
-    const wasActiveAndShowing = state.activeId === existing.id
+    switchToContext = state.activeId === existing.id
       && fhLayout === "tabs" && fhActiveTab === "filter";
     deleteNode(existing.id);
-    if (wasActiveAndShowing) applyFhView("highlight");
-  } else if (hasAny && existing) {
-    // Node already exists and still should: membership within it may have
-    // changed anyway (a bookmark added/removed without crossing the "any
-    // bookmarks at all" threshold) — invalidate so its match count (and any
-    // downstream and/or/link node reading it) recomputes on next renderTree.
-    invalidateAllCaches();
   }
+  // Every branch — a node created or deleted (deleteNode drops its subtree
+  // and invalidates nothing), or an existing node whose membership changed
+  // without crossing the "any bookmarks at all" threshold — changes what the
+  // nodes reading state.bookmarks match: the Bookmarks node itself and every
+  // and/or/link node that baked a bookmarks condition, plus their
+  // descendants. Nothing else depends on the Set, so nothing else is dropped.
+  invalidateCachesDependingOnState(rootId, "bookmarks");
+  if (switchToContext) applyFhView("highlight"); // after the invalidation: it renders
 }
 
 // Same auto-managed shape as syncBookmarksFilterNode right above, mirroring
@@ -28625,6 +28695,7 @@ function syncNotesFilterNode(rootId) {
   if (!root || root.type !== "file") return;
   const existing = root.children.map(id => state.nodes[id]).find(n => n && n.filterType === "notes");
   const hasAny = root.entries.some(e => state.notes.has(e.id));
+  let switchToContext = false;
   if (hasAny && !existing) {
     const node = {
       id: uid("n"), type: "filter", name: "Notes", parentId: rootId,
@@ -28632,17 +28703,17 @@ function syncNotesFilterNode(rootId) {
     };
     state.nodes[node.id] = node;
     insertSpecialChild(root, node.id, 2);
-    invalidateAllCaches();
   } else if (!hasAny && existing) {
     // Same "don't strand the Filtered tab on a node that's about to vanish"
     // guard as syncBookmarksFilterNode's own delete branch.
-    const wasActiveAndShowing = state.activeId === existing.id
+    switchToContext = state.activeId === existing.id
       && fhLayout === "tabs" && fhActiveTab === "filter";
     deleteNode(existing.id);
-    if (wasActiveAndShowing) applyFhView("highlight");
-  } else if (hasAny && existing) {
-    invalidateAllCaches();
   }
+  // Same every-branch invalidation as syncBookmarksFilterNode, for the nodes
+  // reading state.notes.
+  invalidateCachesDependingOnState(rootId, "notes");
+  if (switchToContext) applyFhView("highlight");
 }
 
 function toggleBookmark(entryId) {
@@ -35940,7 +36011,7 @@ function addRowsToSelectionFilter(nodeId, ids) {
   // also grew every copy/paste duplicate of this node and retroactively
   // rewrote the undo stack's "before" snapshot. Same immutable-value
   // convention "timerange" already follows — see docs/filters.md.
-  if (added.length) { node.value = node.value.concat(added); invalidateAllCaches(); }
+  if (added.length) { node.value = node.value.concat(added); invalidateNodeSubtreeCaches(nodeId); }
   state.activeId = node.id;
 }
 
@@ -38891,6 +38962,8 @@ function unpackAndOrLinkNode(nodeId) {
   parent.children.splice(Math.max(0, insertIndex), 0, ...clones.map(c => c.id));
 
   state.activeId = nodeId;
+  // Left on the global sweep on purpose: unpack is rare (the new nodes have no cache, so it is
+  // not needed for correctness, only kept as the trivially-safe default).
   invalidateAllCaches();
   return nodeId;
 }
@@ -44466,6 +44539,7 @@ function applyImportedClockOffset(rec, fileNode) {
   const target = +rec.clockOffset || 0;
   const current = fileNode.clockOffset || 0;
   const delta = target - current;
+  // Global sweep on purpose, same as applyClockOffset: every ts of the file moved.
   if (delta) { shiftFileEntriesTs(fileNode, delta); invalidateAllCaches(); }
   if (target) fileNode.clockOffset = target; else delete fileNode.clockOffset;
 }
