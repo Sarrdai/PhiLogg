@@ -33,14 +33,14 @@ await withApp(async (w, d, T) => {
   // --- Unchecked = full-strength colored ring; checked = solid fill (person-requested follow-up) ---
   const css = d.querySelector("style").textContent;
   const ruleFor = sel => { const m = css.match(new RegExp(sel.replace(/[.:#()]/g, "\\$&") + "\\{[^}]*\\}")); return m && m[0]; };
-  assert((ruleFor(".level-btn.lvl-error") || "").includes("border-color:var(--level-error)"),
+  assert((ruleFor(".level-btn.lvl-error") || "").includes("box-shadow:inset 0 0 0 2px var(--level-error)"),
     ".level-btn.lvl-error sets the ring color regardless of .active, got " + ruleFor(".level-btn.lvl-error"));
   assert(!/\.level-btn\.lvl-error\{[^}]*background/.test(css),
     "unchecked .level-btn.lvl-error has no background set (transparent ring, not a dimmed fill)");
   assert((ruleFor(".level-btn.active.lvl-error") || "").includes("background:var(--level-error)"),
     ".level-btn.active.lvl-error fills the ring's own color solid once checked, got " + ruleFor(".level-btn.active.lvl-error"));
-  assert((ruleFor(".level-btn") || "").includes("border:2px solid transparent") && (ruleFor(".level-btn") || "").includes("box-sizing:border-box"),
-    ".level-btn reserves a 2px ring inside its own box (box-sizing:border-box, so the ring never grows the 28x28 footprint)");
+  assert((ruleFor(".level-btn") || "").includes("border:0"),
+    ".level-btn has no border (ring is an inset box-shadow, see GROUP clean-circle-rings)");
 
   // --- Hover label picks up the level's own color instead of the neutral default (regardless of checked state) ---
   assert((ruleFor(".level-btn.lvl-error .row-action-label") || "").includes("background:var(--level-error)"),
