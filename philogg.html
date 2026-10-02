@@ -4483,6 +4483,86 @@
     .tree-row, .log-row{-webkit-touch-callout:none;}
   }
 
+  /* ---------- Phone shell (layout-phone, < 600px) ----------
+     Reader mode: header reduced to drawer / title / find / settings, one-line
+     tour banner, only the Patterns + Filtered tabs, one scrolling row of
+     level pills, a slim minimap, and the entry detail as a bottom sheet.
+     Editing is off (see PROJECT.md / docs/ui-and-views.md "Responsive layout"). */
+  #phoneTitle, #btnFindPhone, #tourBannerMore, .tour-banner-hint, #detailGrab{display:none;}
+  body:not(.layout-phone) .detail-phone-btn{display:none;}
+  body.layout-phone #toolbar{height:52px;}
+  body.layout-phone .brand-name, body.layout-phone .brand-version, body.layout-phone #navHistoryGroup,
+  body.layout-phone #statusText, body.layout-phone #btnUndo, body.layout-phone #btnRedo,
+  body.layout-phone #btnExport, body.layout-phone #btnAssistant, body.layout-phone .toolbar-spacer,
+  body.layout-phone .toolbar-right .toolbar-group{display:none !important;}
+  body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
+  body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  body.layout-phone #btnFindPhone{display:flex;}
+  body.layout-phone .toolbar-right{flex:0 0 auto; gap:6px;}
+  body.layout-phone #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
+
+  body.layout-phone #tourBanner{flex-wrap:wrap; gap:4px 8px; padding:6px 10px; font-size:12.5px;}
+  body.layout-phone .tour-banner-text{flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  body.layout-phone #tourBanner.expanded .tour-banner-text{flex-basis:100%; white-space:normal;}
+  body.layout-phone #tourBannerMore{
+    display:block; flex:0 0 auto; background:none; border:0; padding:4px 2px; font:inherit; font-size:12px;
+    color:var(--accent-strong); cursor:pointer;
+  }
+  body.layout-phone #tourBanner.expanded .tour-banner-hint{display:block; flex:1 0 100%; font-size:12px; color:var(--text-tertiary);}
+  body.layout-phone #tourBannerClose{margin-left:0; padding:4px 2px;}
+  body.layout-phone #tourBanner.expanded .tour-banner-hint{order:1;}
+  body.layout-phone #tourBanner.expanded #tourBannerMore, body.layout-phone #tourBanner.expanded #tourBannerClose{order:2;}
+
+  body.layout-phone #timelineMinimap{height:14px;}
+  body.layout-phone #timelineMinimapMeta{display:none;}
+
+  body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
+  body.layout-phone #viewBar > :not(#fhTabs):not(#levelBar){display:none !important;}
+  body.layout-phone #fhTabs{float:none; margin:0;}
+  body.layout-phone #fhTabs .view-tab:not([data-fh-tab="patterns"]):not([data-fh-tab="filter"]){display:none;}
+  body.layout-phone #levelBar{
+    float:none; margin:0; flex:1 1 100%; min-width:0; flex-wrap:nowrap; overflow-x:auto;
+    scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  body.layout-phone #levelBar::-webkit-scrollbar{display:none;}
+  body.layout-phone .level-btn{
+    width:auto; height:32px; padding:0 12px; border-radius:16px; gap:6px;
+    color:var(--text-primary); font-size:12.5px; font-weight:600;
+  }
+  body.layout-phone .level-btn .row-action-hit{display:none;}
+  body.layout-phone .level-btn .row-action-label{
+    position:static; transform:none; opacity:1; padding:0; border:0; background:none; box-shadow:none;
+    color:inherit; font-family:inherit; font-size:12.5px; font-weight:600; letter-spacing:0; z-index:auto;
+  }
+  body.layout-phone #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
+
+  body.layout-phone #contextToolbar, body.layout-phone #filteredToolbar{display:none !important;}
+  body.layout-phone .col-resize-handle{display:none !important;}
+  body.layout-phone #openMenu .ctx-item[data-action="folder"], body.layout-phone #openMenu .ctx-item[data-action="zip"]{display:none;}
+
+  /* Entry detail = bottom sheet: hidden while nothing is selected
+     (body.sheet-open is kept by updateDetailPanel), ~62% high otherwise. */
+  body.layout-phone #detailResizer{display:none !important;}
+  body.layout-phone #detailPanel{
+    position:fixed; left:0; right:0; bottom:0; z-index:50; height:62% !important; min-height:0;
+    border-radius:16px 16px 0 0; border-top:1px solid var(--border); overflow:hidden;
+    box-shadow:0 -10px 30px rgba(0,0,0,.4);
+    transform:translateY(100%); visibility:hidden;
+    transition:transform .18s ease, visibility 0s linear .18s;
+  }
+  body.layout-phone.sheet-open #detailPanel{transform:none; visibility:visible; transition:transform .18s ease, visibility 0s;}
+  body.layout-phone #detailPanel.collapsed:not(.peeking) #detailBody{display:block;}
+  body.layout-phone #detailPanel.collapsed.peeking #detailPanelInner{position:static; max-height:none; height:100%; box-shadow:none;}
+  body.layout-phone #detailGrab{display:block; flex:0 0 auto; width:40px; height:4px; border-radius:2px; background:var(--bg-elevated-2); margin:8px auto 2px;}
+  body.layout-phone #detailPanelHeader{height:auto; flex-wrap:wrap; gap:2px 4px; padding:2px 6px 6px 14px;}
+  body.layout-phone #detailPanelHeaderLabel, body.layout-phone #detailToggle{display:none;}
+  body.layout-phone #detailMeta{order:1; flex:1 1 0;}
+  body.layout-phone .detail-phone-btn{display:flex; order:2; width:40px; height:40px;}
+  body.layout-phone #detailMessage{white-space:pre-wrap; overflow-wrap:anywhere;}
+  body.layout-phone #detailViewTabs{order:3; flex:1 0 100%; height:34px;}
+  body.layout-phone #detailViewTabs .view-tab{flex:1; font-size:12.5px;}
+
   :focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
 
   /* ---------- Picture-in-picture (desktop build) ----------
@@ -4671,6 +4751,8 @@
       </button>
     </div>
     <div class="toolbar-spacer"></div>
+    <!-- Phone header title block (layout-phone only): active node + "<file> · <n> entries", see updatePhoneTitle(). -->
+    <div id="phoneTitle"><b></b><span></span></div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
       <div class="toolbar-group">
@@ -4686,6 +4768,10 @@
            initLlmAssistantUi when window.philogg.llmChat exists. Opens the chat. -->
       <button type="button" id="btnAssistant" class="toolbar-icon-btn hidden" title="Assistant (local LLM)">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/><path d="M5.5 7h.01M8 7h.01M10.5 7h.01"/></svg>
+      </button>
+      <!-- Phone only: opens the same find bar as Ctrl+F. -->
+      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -4749,6 +4835,8 @@
       <!-- Tour banner: set by a session file's `banner` (see setSessionBanner). -->
       <div id="tourBanner" class="hidden" role="note">
         <span class="tour-banner-text"></span>
+        <button type="button" id="tourBannerMore" aria-expanded="false">more</button>
+        <span class="tour-banner-hint">Hands-on steps (TRY) need a desktop or tablet.</span>
         <button type="button" id="tourBannerClose" aria-label="Close the tour hint">× close tour</button>
       </div>
 
@@ -5324,6 +5412,7 @@
       <div id="detailResizer" title="Drag to resize"></div>
       <div id="detailPanel">
         <div id="detailPanelInner">
+          <div id="detailGrab" aria-hidden="true"></div>
           <div id="detailPanelHeader">
             <div id="detailPanelHeaderLabel">Entry detail</div>
             <div id="detailMeta"></div>
@@ -5332,6 +5421,15 @@
               <button type="button" class="view-tab" data-detail-view="parsed" aria-pressed="false" title="The parsed message, fields in the header line">Parsed</button>
               <button type="button" class="view-tab active" data-detail-view="pretty" aria-pressed="true" title="Parsed, with embedded XML/JSON pretty-printed and highlighted">Pretty</button>
             </div>
+            <button type="button" id="detailPrev" class="panel-toggle-btn detail-phone-btn" aria-label="Previous entry" title="Previous entry">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 8 5.5l4 4"/></svg>
+            </button>
+            <button type="button" id="detailNext" class="panel-toggle-btn detail-phone-btn" aria-label="Next entry" title="Next entry">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/></svg>
+            </button>
+            <button type="button" id="detailClose" class="panel-toggle-btn detail-phone-btn" aria-label="Close entry detail" title="Close">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+            </button>
             <button type="button" id="detailToggle" class="panel-toggle-btn" title="Collapse (Ctrl+J)">
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
             </button>
@@ -17138,6 +17236,7 @@ let renderDepth = 0; // > 0 while render() runs — see showFhTab's lazy Context
 function render() {
   renderDepth++;
   try { renderInner(); } finally { renderDepth--; }
+  if (renderDepth === 0) phoneEnforceTab();
 }
 function renderInner() {
   if (state.activeId !== lastActiveIdForReveal) {
@@ -17485,6 +17584,7 @@ function renderStatus() {
   // No "no files loaded" hint here anymore — that message lives solely in
   // #emptyState now (person-requested consolidation: one hint, center
   // screen, instead of duplicating it in the toolbar and the tree sidebar).
+  updatePhoneTitle();
   if (fileCount === 0) { statusText.textContent = ""; return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
   statusText.textContent = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
@@ -18764,7 +18864,7 @@ function renderNode(id, depth, opts) {
   if (node.type === "filter" && !node.locked) {
     row.classList.add("tree-draggable");
     row.addEventListener("mousedown", ev => {
-      if (ev.button !== 0 || ev.target.closest("input, textarea")) return;
+      if (ev.button !== 0 || ev.target.closest("input, textarea") || currentLayoutTier === "phone") return;
       treeDrag = { id, x: ev.clientX, y: ev.clientY, active: false, targetId: null };
     });
   }
@@ -28246,6 +28346,7 @@ function formatMessageWithHighlight(text) {
 // filtered view.
 function updateDetailPanel() {
   const entry = selectedEntry();
+  document.body.classList.toggle("sheet-open", !!entry); // phone: the bottom sheet (CSS only acts in layout-phone)
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -28936,10 +29037,53 @@ function applyLayoutTier() {
   if (tier === "phone") cancelLongPress();
   if (first) return; // boot: render() has not run yet / applyRowGrid already read the tier
   applyRowGrid();
-  render();
+  render(); // also runs phoneEnforceTab()
 }
 window.addEventListener("resize", applyLayoutTier);
 btnDrawer.addEventListener("click", () => setDrawerOpen(!isDrawerOpen()));
+
+// ---- Phone shell (layout-phone) ----
+// Phone only shows the Patterns + Filtered tabs; wherever a render lands on
+// another one (Context/Stacked/Table/Plot, e.g. after activating an
+// extraction node) fall back to Filtered. Called from render() once the
+// outermost render finished.
+function phoneEnforceTab() {
+  if (currentLayoutTier !== "phone") return;
+  if ((fhActiveTab === "patterns" || fhActiveTab === "filter") && fhLayout !== "stacked") return;
+  applyFhView("filter");
+}
+function updatePhoneTitle() {
+  const titleEl = el("#phoneTitle");
+  const node = state.nodes[state.activeId];
+  const b = titleEl.querySelector("b"), sub = titleEl.querySelector("span");
+  if (!node) {
+    b.textContent = "PhiLogg";
+    sub.textContent = state.rootIds.length ? "" : "no file open";
+    return;
+  }
+  let root = node;
+  while (root.parentId && state.nodes[root.parentId]) root = state.nodes[root.parentId];
+  const n = getEntries(node.id).length.toLocaleString("de-DE") + " entries";
+  if (root === node) { b.textContent = nodeDisplayName(node); sub.textContent = n; }
+  else { b.textContent = nodeDisplayName(node); sub.textContent = nodeDisplayName(root) + " · " + n; }
+}
+function closePhoneSheet() {
+  const prev = state.selectedId;
+  if (!prev) return;
+  state.selectedId = null;
+  updateSelectedRowClass(prev);
+  updateDetailPanel();
+}
+el("#btnFindPhone").addEventListener("click", ev => { ev.stopPropagation(); openFindBar(); });
+el("#detailClose").addEventListener("click", closePhoneSheet);
+el("#detailPrev").addEventListener("click", () => moveSelection(-1));
+el("#detailNext").addEventListener("click", () => moveSelection(1));
+el("#tourBannerMore").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const open = tourBannerEl.classList.toggle("expanded");
+  ev.currentTarget.textContent = open ? "less" : "more";
+  ev.currentTarget.setAttribute("aria-expanded", open ? "true" : "false");
+});
 el("#drawerScrim").addEventListener("click", () => setDrawerOpen(false));
 
 // Long-press → context menu for touch pointers (iOS never fires
@@ -41655,6 +41799,7 @@ function fwzNextHue() {
 // null) prefills a NEW format the same way from an imported file, plus the
 // file's filename patterns as checkboxes (renderFormatImportRules).
 function openFormatEditDialog(id, importData) {
+  if (currentLayoutTier === "phone") { showCopyToast("The log format editor needs a wider window. Open PhiLogg on a desktop or tablet."); return; }
   formatEditId = id;
   const fmt = id ? state.logFormats.find(f => f.id === id) : (importData ? importData.logFormat : null);
   const isMeta = !!(fmt && fmt.mode === "meta");
@@ -43205,7 +43350,8 @@ document.addEventListener("keydown", ev => {
   // own header chevron and resizer double-click.
   if (matchesShortcut(ev, "toggleSidebar")) {
     ev.preventDefault();
-    toggleSidebarCollapsed();
+    if (currentLayoutTier !== "desktop") setDrawerOpen(!isDrawerOpen()); // compact/phone: the sidebar is the drawer
+    else toggleSidebarCollapsed();
     return;
   }
   if (matchesShortcut(ev, "toggleDetail")) {
@@ -44775,6 +44921,10 @@ async function loadSessionFromUrlImpl(url) {
 const tourBannerEl = el("#tourBanner");
 function setSessionBanner(text) {
   const textEl = tourBannerEl.querySelector(".tour-banner-text");
+  tourBannerEl.classList.remove("expanded");
+  const moreBtn = el("#tourBannerMore");
+  moreBtn.textContent = "more";
+  moreBtn.setAttribute("aria-expanded", "false");
   if (!text) {
     textEl.innerHTML = "";
     tourBannerEl.classList.add("hidden");
