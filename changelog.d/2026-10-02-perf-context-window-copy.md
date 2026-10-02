@@ -1,0 +1,4 @@
+- **perf: time-context and count-context filters build their result 3-4x faster (2026-10-02, code review)**
+  - The window around the reference entries used to be collected into an id Set of up to the whole file and then filtered out of the file in a second pass. Merged ranges are disjoint and a binary search is monotone, so the located index spans are now simply copied out in order (also on a file whose timestamps are out of order: same entries, file order, each once).
+  - Real Chromium, 300k entries: time-context 20.6 -> 7.4 ms, count-context 19.2 -> 4.8 ms per recompute (without vs with this change, median of 4 launches). Separate change on top of the single-evaluator refactor: `contextWindowEntries` only.
+  - **Tests**: GROUP filter-evaluator-parity (section i: an out-of-order file). Docs: docs/filters.md.

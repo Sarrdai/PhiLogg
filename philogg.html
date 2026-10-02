@@ -13342,17 +13342,19 @@ function mergeCountContextRanges(refEntries, orderIndexMap, poolLen, beforeCount
 // natural chronological order. `ranges` come from mergeContextRanges
 // (timestamp bounds, byTs = true: [r.start, r.end] located by binary search)
 // or mergeCountContextRanges (inclusive indices into `pool`, byTs = false).
-// Filtering `pool` through an id Set — rather than concatenating per-range
-// slices — keeps that order for free, same as the "text"/"after"/"before"
-// branches of evaluateFilterCondition.
+// Merged ranges are sorted and disjoint, and a binary search is monotone in
+// its key (even on a pool that is not sorted by ts), so the index spans come
+// out ascending and disjoint and the result is just those spans copied out in
+// order — each entry once, in the pool's own order, with no id Set and no
+// second pass over the whole file.
 function contextWindowEntries(pool, ranges, byTs) {
-  const keepIds = new Set();
+  const result = [];
   for (const r of ranges) {
     const lo = byTs ? lowerBoundByTs(pool, r.start) : r.start;
     const hi = byTs ? upperBoundByTs(pool, r.end) : r.end + 1;
-    for (let i = lo; i < hi; i++) keepIds.add(pool[i].id);
+    for (let i = lo; i < hi; i++) result.push(pool[i]);
   }
-  return pool.filter(e => keepIds.has(e.id));
+  return result;
 }
 
 /* ===================== Gap filter: time distance to the previous entry
