@@ -1,0 +1,4 @@
+- **fix: circular buttons and swatches render without colour fringes (2026-10-02, person-requested)**
+  - Level buttons drew a border and a background on the same curved edge (two antialiased layers, fringing at the seam and under `filter:brightness` on hover). The ring is now an inset box-shadow, hover tints/lightens the fill instead of a brightness filter.
+  - Tree swatches are borderless with an inset hairline (empty ones a solid ring instead of dashed); swatch hover rings are 2px outlines with a 2px gap; the 1.5px rings on the status dot, ping and rail marker are integer widths.
+  - **Tests**: GROUP clean-circle-rings (GROUP 214 updated).

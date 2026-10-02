@@ -1,0 +1,3 @@
+- **fix: folder-watch status dot is green instead of the theme accent (2026-10-02, person-requested)**
+  - A reddish accent made the "watching" dot look like a folder problem. The dot now uses a new per-theme `--status-ok` green; a failed folder keeps `--level-error`.
+  - **Tests**: GROUP folder-watch-dot-status-colors. Docs: docs/persistence-and-sync.md.
