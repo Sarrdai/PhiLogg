@@ -2732,6 +2732,12 @@
   .facet-more:hover{text-decoration:underline;}
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
   #btnFacets{float:right;}
+  /* Tablet tier: the Facets toggle carries its text label (independent of the label-mode setting). */
+  #btnFacets .facets-btn-label{display:none; font-size:11.5px; font-weight:600; white-space:nowrap;}
+  body.layout-compact #btnFacets{width:auto; gap:3px; padding:0 4px;}
+  body.layout-compact #btnFacets .facets-btn-label{display:inline;}
+  /* Path-like values keep their end visible: shortened from the left in JS (fitFacetPathNames). */
+  .facet-value-name.facet-path{text-overflow:clip;}
   #extractToolbar{
     flex:0 0 auto; display:flex; flex-direction:column; gap:8px;
     padding:9px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
@@ -4305,13 +4311,15 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu, #plotRoleMenu{
+  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
   }
   #openMenu{min-width:180px;}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden{display:none;}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden, #facetValueMenu.hidden{display:none;}
+  /* Touch long-press menu on a facet value: the full value (wrapping, selectable) on top. */
+  #facetValueMenu .ctx-meta{user-select:text; -webkit-user-select:text; font-size:11.5px; color:var(--text-primary);}
   #extractContextMenu .ctx-item.hidden{display:none;}
   .ctx-item{
     display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px;
@@ -5309,6 +5317,7 @@
              display toggle rather than a filter-creating action. -->
         <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+Shift+F)">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 3.5h11M2.5 8h7M2.5 12.5h4"/></svg>
+          <span class="facets-btn-label">Facets</span>
         </button>
         <!-- The library management group (#libraryManageBar: "Add to
              Library"/"Library", pinned far-right) that used to live here is
@@ -5765,6 +5774,15 @@
          Created by llmDock, only in the desktop build. -->
     <aside id="llmDockPanel" class="hidden"></aside>
 
+  </div>
+
+  <!-- Touch long-press menu on a facet value (see openFacetValueMenu). -->
+  <div id="facetValueMenu" class="hidden">
+    <div class="ctx-meta" id="facetValueMenuValue"></div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" data-act="only">Show only this</div>
+    <div class="ctx-item" data-act="exclude">Exclude this</div>
+    <div class="ctx-item" data-act="copy">Copy value</div>
   </div>
 
   <div id="contextMenu" class="hidden">
@@ -16542,7 +16560,7 @@ function renderFacetPanel() {
         const [value, count, lvlCls] = col.values[i];
         const pct = count / total * 100;
         html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
-          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
+          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
           '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
           '<span class="facet-pct">' + (pct > 0 && pct < 1 ? "<1" : Math.round(pct)) + "%</span></div>";
@@ -16557,6 +16575,41 @@ function renderFacetPanel() {
   });
   facetPanelBody.innerHTML = html;
   facetPanelBody._facetResult = c.result;
+  fitFacetPathNames();
+}
+
+// Path-like facet values (contain \ or /) are shortened to start at the last
+// path segment so the file name stays visible: "…\Scheduler.cs line 219". Plain JS (a CSS
+// direction:rtl trick mangles \, : and . at the ends). The full value stays
+// in the row's title. No layout (hidden panel, jsdom) → left untouched.
+function fitFacetPathNames() {
+  facetPanelBody.querySelectorAll(".facet-value-name.facet-path").forEach(nameEl => {
+    const full = nameEl.dataset.full != null ? nameEl.dataset.full : (nameEl.dataset.full = nameEl.textContent);
+    nameEl.textContent = full;
+    if (!nameEl.clientWidth || nameEl.scrollWidth <= nameEl.clientWidth) return;
+    // Start at the last path segment ("…\Scheduler.cs line 219" — the file
+    // name is the distinguishing part); if that still doesn't fit, cut it on
+    // the right ("…\Scheduler.cs li…").
+    const sepAt = Math.max(full.lastIndexOf("\\", full.length - 2), full.lastIndexOf("/", full.length - 2));
+    const tail = "…" + full.slice(Math.max(0, sepAt));
+    nameEl.textContent = tail;
+    if (nameEl.scrollWidth <= nameEl.clientWidth) return;
+    const head = "…" + full.charAt(sepAt), seg = full.slice(sepAt + 1);
+    let lo = 0, hi = seg.length - 1; // chars of the segment kept
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      nameEl.textContent = head + seg.slice(0, mid) + "…";
+      if (nameEl.scrollWidth <= nameEl.clientWidth) lo = mid; else hi = mid - 1;
+    }
+    nameEl.textContent = head + seg.slice(0, lo) + "…";
+  });
+}
+if (typeof ResizeObserver === "function") {
+  let facetFitFrame = 0;
+  new ResizeObserver(() => {
+    if (facetFitFrame) return;
+    facetFitFrame = requestAnimationFrame(() => { facetFitFrame = 0; if (facetsOpen) fitFacetPathNames(); });
+  }).observe(el("#facetPanelBody"));
 }
 
 // Filter node for one facet value, under the active node: Level → a level
@@ -16668,7 +16721,32 @@ facetPanelBody.addEventListener("contextmenu", ev => {
   ev.stopPropagation();
   const col = result.columns.find(c => c.key === section.dataset.col);
   const entry = col && col.values[+row.dataset.idx];
-  if (entry) createFacetFilter(col, entry[0], true);
+  if (!entry) return;
+  // A touch long-press (synthesized by the global helper above, it sets
+  // longPressFired first) opens a menu instead of silently excluding.
+  if (longPressFired) openFacetValueMenu(col, entry[0], ev.clientX, ev.clientY);
+  else createFacetFilter(col, entry[0], true);
+});
+const facetValueMenu = el("#facetValueMenu");
+let facetValueMenuTarget = null;
+function closeFacetValueMenu() { facetValueMenu.classList.add("hidden"); facetValueMenuTarget = null; }
+function openFacetValueMenu(col, value, x, y) {
+  closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu();
+  facetValueMenuTarget = { col, value };
+  el("#facetValueMenuValue").textContent = value || "(empty)";
+  facetValueMenu.classList.remove("hidden");
+  const r = facetValueMenu.getBoundingClientRect();
+  facetValueMenu.style.left = Math.max(8, Math.min(x, window.innerWidth - (r.width || 280) - 8)) + "px";
+  facetValueMenu.style.top = Math.max(8, Math.min(y, window.innerHeight - (r.height || 160) - 8)) + "px";
+}
+facetValueMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".ctx-item");
+  const t = facetValueMenuTarget;
+  if (!item || !t) return;
+  closeFacetValueMenu();
+  if (item.dataset.act === "copy") { copyTextToClipboard(t.value); showCopyToast("Copied"); }
+  else createFacetFilter(t.col, t.value, item.dataset.act === "exclude");
 });
 // These six log-display toggles now exist TWICE in the DOM (once in
 // #contextToolbar, once in #filteredToolbar — see "Unified toolbar" HTML
@@ -17913,7 +17991,7 @@ function renderStatus() {
   const active = currentLayoutTier === "compact" && state.activeId ? state.nodes[state.activeId] : null;
   if (active && !state.rootIds.includes(active.id)) {
     const shown = (getEntries(active.id) || []).length;
-    statusText.textContent = `${nodeDisplayName(active)} · ${shown.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} entries`;
+    statusText.textContent = `${active.inverted ? "¬ " : ""}${nodeDisplayName(active)} · ${shown.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} entries`;
   } else {
     statusText.textContent = filesText;
   }
@@ -43668,6 +43746,7 @@ document.addEventListener("pointerdown", ev => {
   if (!contextMenu.contains(ev.target) && !addToSelectionMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
+  if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
 }, true);
 
 /* ===================== Keyboard shortcuts ===================== */
@@ -43714,6 +43793,7 @@ document.addEventListener("keydown", ev => {
     closeContextMenu();
     closeTreeContextMenu();
     closeExtractContextMenu();
+    closeFacetValueMenu();
     closeCsvExportDialog();
     closeExportDialog();
     closeLinkDialog();

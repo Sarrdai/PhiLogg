@@ -58,6 +58,10 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   assert(status.textContent === rootText, "back on the root file: plain text again");
+  const notNode = w.createFilterNode(f.id, "text", "entry", true);
+  T.state.activeId = notNode.id;
+  w.render();
+  assert(status.textContent.startsWith("¬ " + w.nodeDisplayName(notNode) + " · "), "tablet + inverted filter: header carries the ¬ prefix, got " + status.textContent);
   thSetWidth(w, 1400);
   T.state.activeId = flt.id;
   w.render();

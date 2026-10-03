@@ -763,6 +763,18 @@ state and PiP, and reads "Not available for a link filter" on a `link` node
   inverted (NOT). One undo step each (`"create"`); the tab stays Patterns if
   that was on screen, otherwise the new node opens as usual. Panel clicks
   never take keyboard focus from the log view.
+- **Tablet/touch** (step 3 of the tablet UX round): on the compact tier
+  `#btnFacets` shows a "Facets" text label (`.facets-btn-label`, independent
+  of the label-mode setting). Values containing `\` or `/` get
+  `.facet-path` and start at their last path segment in JS (`fitFacetPathNames`,
+  "…\Scheduler.cs line 219", cut on the right as "…\Scheduler.cs li…"; re-run on render and by a `ResizeObserver` on
+  the panel body; the full value stays in the row `title`). A touch
+  long-press on a value (the synthetic `contextmenu` of the global
+  long-press helper, `longPressFired`) opens `#facetValueMenu` instead of
+  excluding: the full value (wrapping, selectable), "Show only this" (= tap),
+  "Exclude this" (= right-click), "Copy value" (toast "Copied"). It closes on
+  an outside press, Esc or an item; desktop right-click still excludes
+  directly.
 
 ## Context view (Context/Filtered split)
 
