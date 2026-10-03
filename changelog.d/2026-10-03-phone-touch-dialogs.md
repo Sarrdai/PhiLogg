@@ -1,0 +1,4 @@
+- **feat: long-press menus and touch-sized dialogs on the phone (2026-10-03, person-requested)**
+  - Long-press (500ms) now opens the row and tree context menus on the phone too; the menus stay inside the screen and scrolling or tapping behave as before.
+  - Phone menus, dialogs and the filter popup get shared touch sizes: 40px rows and buttons (44px on touch), 16px inputs so iOS does not zoom, wrapping link-dialog rows, no horizontal overflow in the filter popup, the library menu on screen.
+  - **Tests**: GROUP phone-dialog-touch, responsive-layout, responsive-touch. Docs: docs/ui-and-views.md.

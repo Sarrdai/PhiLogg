@@ -4567,6 +4567,91 @@
   body.layout-phone .col-resize-handle{display:none !important;}
   body.layout-phone #openMenu .ctx-item[data-action="folder"], body.layout-phone #openMenu .ctx-item[data-action="zip"]{display:none;}
 
+  /* Find bar (phone): spans the whole #fhSplit width and becomes a two-row grid,
+     row 1 = input (all remaining width) + hit count + close, row 2 = Aa / .* on
+     the left, prev / next / Add as filter on the right. Pure CSS, the markup
+     order stays the desktop one. 40px controls (44 under pointer:coarse, see
+     Touch targets); the input is 16px so iOS Safari does not zoom on focus. The
+     recent-filters dropdown hangs below the bar: taller rows, an always-visible
+     remove x (no hover on touch) and no keyboard hint. */
+  body.layout-phone #findBar{
+    left:8px; right:8px; max-width:none; box-sizing:border-box;
+    display:grid; gap:6px; padding:6px; align-items:center;
+    grid-template-columns:auto auto minmax(0,1fr) auto auto auto auto;
+    grid-template-areas:
+      "input input input input input count close"
+      "case  regex gap   prev  next  add   add";
+  }
+  body.layout-phone #findBar.hidden{display:none;}
+  body.layout-phone #findInput{grid-area:input; box-sizing:border-box; width:auto; min-width:0; height:40px; font-size:16px; padding:0 10px;}
+  body.layout-phone #findCount{grid-area:count; min-width:0; justify-self:center;}
+  body.layout-phone #findCloseBtn{grid-area:close; justify-self:end; box-sizing:border-box; width:40px; height:40px; padding:0; display:flex; align-items:center; justify-content:center;}
+  body.layout-phone #findCaseBtn{grid-area:case;}
+  body.layout-phone #findRegexBtn{grid-area:regex;}
+  body.layout-phone #findPrevBtn{grid-area:prev;}
+  body.layout-phone #findNextBtn{grid-area:next;}
+  body.layout-phone #findAddFilterBtn{grid-area:add; justify-self:end; box-sizing:border-box; height:40px; padding:0 10px;}
+  body.layout-phone #findBar .find-opt{box-sizing:border-box; height:40px; min-width:40px; font-size:13px;}
+  body.layout-phone #findBar .find-nav-btn{box-sizing:border-box; width:40px; height:40px;}
+  body.layout-phone #findBar .recent-dd .rd-row{min-height:40px; box-sizing:border-box;}
+  body.layout-phone #findBar .recent-dd .rd-x{opacity:1; display:flex; align-items:center; justify-content:center; align-self:stretch; width:32px; padding:0; font-size:18px;}
+  body.layout-phone #findBar .recent-dd .rd-hint{display:none;}
+
+  /* Menus + dialogs (phone): one shared set of touch rules instead of per-dialog
+     ones. Menu rows (.ctx-item = row/tree/add-to-selection/info menus,
+     .lib-it = library menu) and dialog/popup buttons are 40px (44 under
+     pointer:coarse, Touch targets); every text/number/datetime input, select
+     and textarea is 16px (iOS does not zoom on focus) and 40px tall; steppers,
+     the time-range clear and filter-library icon buttons are 40x40. Dialog
+     cards fill the width and scroll inside the screen height; the link
+     dialog's option rows wrap their controls under the label; the filter
+     popup's live result rows wrap/clip inside the popup instead of widening
+     the page. Popups opened at a point are clamped by fitPopupToViewport(). */
+  body.layout-phone .ctx-item, body.layout-phone #libraryMenu .lib-it{min-height:40px; box-sizing:border-box; font-size:14px;}
+  body.layout-phone #libraryMenu .lib-search input{font-size:16px; min-height:40px;}
+  body.layout-phone #libraryMenu{left:8px; top:60px; width:calc(100vw - 16px);}
+  body.layout-phone .link-dialog-card{width:calc(100% - 16px); box-sizing:border-box; max-height:calc(100vh - 32px); overflow-y:auto; padding:16px;}
+  body.layout-phone #timeRangeDialog, body.layout-phone #noteDialog, body.layout-phone #clockOffsetDialog, body.layout-phone #assertDialog,
+  body.layout-phone #contextDialog, body.layout-phone #countContextDialog, body.layout-phone #exportScopeDialog{padding-top:16px;}
+  body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"],
+  body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){
+    box-sizing:border-box; height:40px; font-size:16px;
+  }
+  body.layout-phone #noteDialogInput, body.layout-phone .link-dialog-card textarea{font-size:16px;}
+  body.layout-phone .link-dialog-card .btn-mini, body.layout-phone .link-dialog-card .btn-mini-secondary, body.layout-phone .link-dialog-card .btn-mini-outline,
+  body.layout-phone #filterPopup .btn-mini, body.layout-phone #filterPopup .btn-mini-secondary, body.layout-phone #filterPopup .btn-mini-outline{
+    min-height:40px; padding-inline:14px;
+  }
+  body.layout-phone .link-dialog-card .stepper{height:40px;}
+  body.layout-phone .link-dialog-card .stepper .stepper-btn{width:40px; height:40px;}
+  body.layout-phone .link-dialog-card input.stepper-value{align-self:stretch; height:auto; font-size:16px;}
+  body.layout-phone .time-range-clear, body.layout-phone .filter-library-row-icon, body.layout-phone #filterLibraryList .filter-library-row-del{width:40px; height:40px;}
+  body.layout-phone .link-hop-row input[type="number"]{width:56px;}
+  body.layout-phone .link-toggle-row{flex-wrap:wrap; row-gap:6px;}
+  body.layout-phone .link-option-controls{flex:1 1 100%; flex-wrap:wrap;}
+  body.layout-phone .link-option-controls select, body.layout-phone .link-option-controls input[type="number"]{flex:1 1 70px; min-width:0; width:auto;}
+  body.layout-phone .link-option-controls .pill-toggle{margin-left:auto;}
+  body.layout-phone .link-dialog-actions{flex-wrap:wrap;}
+  /* Sticky action rows: when a popup/dialog scrolls internally, Add filter / Save /
+     Cancel+Create stay pinned to its bottom edge (the container's own bottom padding
+     moves into the row, so scrolled content never shows below it). */
+  body.layout-phone #filterPopup{padding-bottom:0;}
+  body.layout-phone #filterPopup .filter-footer-row{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); padding-bottom:10px;}
+  body.layout-phone .link-dialog-card{padding-bottom:0;}
+  body.layout-phone .link-dialog-card .link-dialog-actions{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); margin-top:8px; padding:10px 0 16px;}
+  body.layout-phone #filterPopup{width:calc(100% - 16px); overflow-x:hidden; max-height:calc(100vh - 124px);}
+  body.layout-phone #filterPopup #btnCloseFilterPopup{width:40px; height:40px; flex:0 0 auto; align-items:center; justify-content:center; padding:0;}
+  body.layout-phone #filterInput{font-size:16px; min-height:40px; padding:0 10px 0 0;}
+  body.layout-phone .filter-scope-hint{max-width:38%; overflow:hidden; text-overflow:ellipsis;}
+  body.layout-phone #filterPopup .token-chip, body.layout-phone #filterPopup .label-toggle{height:40px;}
+  body.layout-phone #filterPopup .token-chip{min-width:40px;}
+  body.layout-phone .link-dialog-card .assert-mode-btn{min-height:40px;}
+  body.layout-phone #filterPopup .filter-section-label{width:auto; flex:1 0 100%;}
+  body.layout-phone .filter-results-head{flex-wrap:wrap; gap:8px;}
+  body.layout-phone .live-match{flex:1 1 auto; min-width:0;}
+  body.layout-phone .filter-live-meta{min-width:0; overflow-wrap:anywhere;}
+  body.layout-phone .filter-sample-row{min-width:0;}
+
   /* Entry detail = bottom sheet: hidden while nothing is selected
      (body.sheet-open is kept by updateDetailPanel), ~62% high otherwise. */
   body.layout-phone #detailResizer{display:none !important;}
@@ -4698,6 +4783,22 @@
     body.layout-phone .tree-swatch{pointer-events:none;}
     body.layout-compact .tree-row.active .tree-mute, body.layout-compact .tree-row.active .tree-del{opacity:1; width:44px; height:44px; margin-block:-4px; padding:0; align-items:center; justify-content:center;}
     body.layout-phone .tree-mute, body.layout-phone .tree-del{display:none;}
+    body.layout-phone #findInput, body.layout-phone #findCloseBtn, body.layout-phone #findAddFilterBtn, body.layout-phone #findBar .find-opt, body.layout-phone #findBar .find-nav-btn{height:44px;}
+    body.layout-phone #findCloseBtn, body.layout-phone #findBar .find-opt, body.layout-phone #findBar .find-nav-btn{min-width:44px;}
+    body.layout-phone #findCloseBtn, body.layout-phone #findBar .find-nav-btn{width:44px;}
+    body.layout-phone #findBar .recent-dd .rd-row{min-height:44px;}
+    body.layout-phone .ctx-item, body.layout-phone #libraryMenu .lib-it, body.layout-phone #libraryMenu .lib-search input{min-height:44px;}
+    body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"], body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){height:44px;}
+    body.layout-phone .link-dialog-card .btn-mini, body.layout-phone .link-dialog-card .btn-mini-secondary, body.layout-phone .link-dialog-card .btn-mini-outline, body.layout-phone #filterPopup .btn-mini, body.layout-phone #filterPopup .btn-mini-secondary, body.layout-phone #filterPopup .btn-mini-outline{min-height:44px;}
+    body.layout-phone .link-dialog-card .stepper{height:44px;}
+    body.layout-phone .link-dialog-card .stepper .stepper-btn{width:44px; height:44px;}
+    body.layout-phone .time-range-clear, body.layout-phone .filter-library-row-icon, body.layout-phone #filterLibraryList .filter-library-row-del{width:44px; height:44px;}
+    body.layout-phone #filterPopup #btnCloseFilterPopup{width:44px; height:44px;}
+    body.layout-phone #filterInput{min-height:44px;}
+    body.layout-phone #filterPopup .token-chip, body.layout-phone #filterPopup .label-toggle{height:44px;}
+    body.layout-phone #filterPopup .token-chip{min-width:44px;}
+    body.layout-phone .link-dialog-card .assert-mode-btn{min-height:44px;}
+    body.layout-phone .link-dialog-card .pill-toggle::before{content:""; position:absolute; inset:-12px -6px;}
     body.layout-compact .tree-mute .icon{width:18px; height:18px;}
     body.layout-phone #settingsDialog .settings-nav-item, body.layout-compact #settingsDialog .settings-nav-item{min-height:44px;}
     body.layout-phone #settingsDialog .assert-mode-btn, body.layout-compact #settingsDialog .assert-mode-btn, body.layout-phone #settingsDialog .btn-mini, body.layout-compact #settingsDialog .btn-mini, body.layout-phone #settingsDialog .btn-mini-outline, body.layout-compact #settingsDialog .btn-mini-outline, body.layout-phone #settingsDialog .btn-mini-secondary, body.layout-compact #settingsDialog .btn-mini-secondary, body.layout-phone #settingsDialog .settings-row-control select, body.layout-compact #settingsDialog .settings-row-control select, body.layout-phone #settingsDialog .settings-row-control input[type="text"], body.layout-compact #settingsDialog .settings-row-control input[type="text"], body.layout-phone #settingsDialog .settings-row-control input[type="number"], body.layout-compact #settingsDialog .settings-row-control input[type="number"]{box-sizing:border-box; height:44px;}
@@ -29340,7 +29441,7 @@ el("#tourBannerMore").addEventListener("click", ev => {
 });
 el("#drawerScrim").addEventListener("click", () => setDrawerOpen(false));
 
-// Long-press → context menu for touch pointers (iOS never fires
+// Long-press → context menu for touch pointers in the compact and phone tiers (iOS never fires
 // "contextmenu"). One global helper: no per-handler changes. The synthetic
 // event goes to the original target, so every existing contextmenu handler
 // (tree rows, log rows, ...) runs unchanged; the click that follows the
@@ -29356,7 +29457,7 @@ function cancelLongPress() {
 document.addEventListener("pointerdown", ev => {
   longPressFired = false;
   cancelLongPress();
-  if (ev.pointerType !== "touch" || ev.isPrimary === false || currentLayoutTier !== "compact") return;
+  if (ev.pointerType !== "touch" || ev.isPrimary === false || currentLayoutTier === "desktop") return;
   const press = { x: ev.clientX, y: ev.clientY, target: ev.target, timer: 0 };
   press.timer = setTimeout(() => {
     if (longPress !== press) return;
@@ -33460,6 +33561,7 @@ function openFolderFileContextMenu(ev, folder, rec) {
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
   treeContextMenu.classList.remove("hidden");
+  fitPopupToViewport(treeContextMenu);
 }
 
 /* ===================== Folder-watch minimap: per-file time-range
@@ -35684,7 +35786,7 @@ function openFindBar() {
   findInput.focus();
   findInput.select();
   if (!wasOpen || prefill) applyFindQuery(false);
-  findRecentDropdown.open();
+  if (!findInput.value) findRecentDropdown.open(); // recent list only over an empty input (not over a prefill / the previous query)
   return true;
 }
 
@@ -35848,6 +35950,19 @@ function resolveContextFilterColumn(ev) {
 }
 let ctxFilterColumn = { key: "message", label: "Message" }; // matches the fallback above
 
+// Phone: keep a just-opened popup fully inside the viewport (8px margin) and
+// scroll inside it when it is taller than the screen. The menus' own placement
+// only clamps with fixed guesses (260/170/250px), too crude for 40px rows.
+function fitPopupToViewport(menu) {
+  if (currentLayoutTier !== "phone") return;
+  const m = 8, vw = document.documentElement.clientWidth, vh = window.innerHeight;
+  menu.style.maxHeight = (vh - 2 * m) + "px";
+  menu.style.overflowY = "auto";
+  const r = menu.getBoundingClientRect();
+  if (!r.width) return;
+  menu.style.left = Math.max(m, Math.min(r.left, vw - r.width - m)) + "px";
+  menu.style.top = Math.max(m, Math.min(r.top, vh - r.height - m)) + "px";
+}
 function openContextMenu(ev, entry) {
   ctxEntry = entry;
   ctxFilterColumn = resolveContextFilterColumn(ev);
@@ -35890,6 +36005,7 @@ function openContextMenu(ev, entry) {
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   contextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 170) + "px";
   contextMenu.classList.remove("hidden");
+  fitPopupToViewport(contextMenu);
 }
 function closeContextMenu() { contextMenu.classList.add("hidden"); closeAddToSelectionMenu(); ctxEntry = null; }
 
@@ -36037,6 +36153,7 @@ function openFilterForEntryColumn(entry, column) {
   const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
   openFilterPopup();
   filterInput.value = pattern;
+  recentFilterDropdown.hide(); // openFilterPopup() drew the empty-input list; the input is prefilled now
   filterPopupColumns = new Set([column.key]);
   renderFilterColumnChips();
   updateFilterAvailability();
@@ -36378,6 +36495,7 @@ function openAddToSelectionMenu(anchorEl) {
   addToSelectionMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
   addToSelectionMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
   addToSelectionMenu.classList.remove("hidden");
+  fitPopupToViewport(addToSelectionMenu);
 }
 
 ctxAddToSelection.addEventListener("mouseenter", () => openAddToSelectionMenu(ctxAddToSelection));
@@ -36954,6 +37072,7 @@ function openTreeCtxInfoMenu(anchorEl, text) {
   treeCtxInfoMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
   treeCtxInfoMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
   treeCtxInfoMenu.classList.remove("hidden");
+  fitPopupToViewport(treeCtxInfoMenu);
 }
 // treeContextMenu's own content is rebuilt fresh on every open (innerHTML =
 // html in openTreeContextMenu below), so the "Info" trigger's hover/click
@@ -37507,6 +37626,7 @@ function openTreeContextMenu(ev, clickedId) {
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
   treeContextMenu.classList.remove("hidden");
+  fitPopupToViewport(treeContextMenu);
 }
 
 treeContextMenu.addEventListener("click", ev => {
@@ -40274,8 +40394,9 @@ function openLibraryMenu() {
   libraryMenuSearch.value = "";
   libraryMenuKb = 0;
   const rect = btnLibrary.getBoundingClientRect();
-  libraryMenu.style.top = (rect.bottom + 6) + "px";
-  libraryMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 328)) + "px";
+  // Phone: #btnLibrary is hidden there (no rect to anchor to), so sit at the top with 8px margins.
+  libraryMenu.style.top = (currentLayoutTier === "phone" ? 60 : rect.bottom + 6) + "px";
+  libraryMenu.style.left = (currentLayoutTier === "phone" ? 8 : Math.max(8, Math.min(rect.left, window.innerWidth - 328))) + "px";
   libraryMenu.classList.remove("hidden");
   btnLibrary.setAttribute("aria-expanded", "true");
   renderLibraryMenu();

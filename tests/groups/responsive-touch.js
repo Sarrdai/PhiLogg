@@ -5,7 +5,7 @@
    GROUP responsive-touch — 44px touch targets in the phone + compact tiers
    Origin: 2026-10-03 (touch targets). Every @media (pointer:coarse) rule is
    scoped to body.layout-phone / body.layout-compact, so the desktop tier
-   (also on touch laptops) is untouched; the long-press helper is compact-only.
+   (also on touch laptops) is untouched; the long-press helper is compact + phone.
    jsdom has no layout: sizes are asserted on the CSS text, not measured.
    ============================================================ */
 group("responsive-touch");
@@ -63,7 +63,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("responsive-touch c. Long-press: compact only");
+  section("responsive-touch c. Long-press: compact + phone, not desktop");
   const f = await w.addFile("a.log", makeLog(0, 3), () => {});
   T.state.activeId = f.id;
   w.render();
@@ -96,5 +96,8 @@ await withApp(async (w, d, T) => {
   t.release();
   setWidthT(w, 390);
   t = press();
-  assert(t.length === 0 && menus.length === 0, "phone: no timer, no contextmenu");
+  assert(t.length === 1, "phone: touch press arms the timer");
+  t[0].fn();
+  assert(menus.length === 1, "phone: fires one contextmenu");
+  t.release();
 });

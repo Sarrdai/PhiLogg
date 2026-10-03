@@ -1,0 +1,4 @@
+- **fix: recent-filters list no longer shows over a prefilled input (2026-10-03, person-requested)**
+  - "Filter for this message/..." and the find bar opened with a selection or the previous query drew the full recent list over the already filled input.
+  - The list now auto-opens only when the input is empty after opening; typing still shows matching suggestions.
+  - **Tests**: GROUP recent-filters-prefill. Docs: docs/filters.md, docs/ui-and-views.md.

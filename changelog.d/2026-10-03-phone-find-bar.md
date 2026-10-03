@@ -1,0 +1,4 @@
+- **feat: phone find bar is a full-width two-row bar (2026-10-03, person-requested)**
+  - On the phone tier the input used to be squeezed to ~90px between the buttons. Now the bar spans the screen: input + hit count + close on top, Aa / `.*` / prev / next / Add as filter below.
+  - Controls are 40px (44px on touch), the input uses a 16px font so iOS does not zoom, and the recent-filters dropdown has bigger rows and a visible remove button. Desktop and compact are unchanged.
+  - **Tests**: GROUP find-bar-phone-layout. Docs: docs/ui-and-views.md.
