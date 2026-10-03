@@ -115,7 +115,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("responsive-layout d. Long-press dispatches exactly one contextmenu after 500ms (touch only, compact tier only)");
+  section("responsive-layout d. Long-press dispatches exactly one contextmenu after 500ms (touch only, compact + phone tiers)");
   const f = await w.addFile("a.log", makeLog(0, 3), () => {});
   T.state.activeId = f.id;
   w.render();
@@ -178,5 +178,16 @@ await withApp(async (w, d, T) => {
 
   setWidth(w, 390);
   t = press();
-  assert(t.length === 0, "phone tier: no long-press (no editing there)");
+  assert(t.length === 1, "phone tier: a touch press arms the 500ms timer too");
+  t[0].fn();
+  assert(menus.length === 1, "phone: fires exactly one contextmenu, got " + menus.length);
+  target.dispatchEvent(ptr("pointerup", 40, 50));
+  const phoneBefore = clicks;
+  getTarget().dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true }));
+  assert(clicks === phoneBefore, "phone: the click after the long press is swallowed (no row selection)");
+  t = press();
+  target.dispatchEvent(ptr("pointermove", 40, 65)); // a scroll gesture
+  assert(t[0].cleared, "phone: moving > 10px (scrolling) cancels the press");
+  t[0].fn();
+  assert(menus.length === 0, "phone: ...no contextmenu while scrolling");
 });
