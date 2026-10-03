@@ -824,6 +824,15 @@
      row: one selection style, no frame. The active node is always part of the
      selection (treeSelectionIds). */
   .tree-row.multi-selected{background:var(--accent-soft); color:var(--text-primary); border-left-color:var(--accent);}
+  /* Tree select mode: a checkbox per row; the active row is not highlighted unless it is checked. */
+  .tree-row.select-mode.active:not(.multi-selected){background:transparent; border-left-color:transparent;}
+  .link-intro{font-size:12px; color:var(--text-secondary); margin:-2px 0 10px; line-height:1.4;}
+  .tree-check{flex:0 0 auto; width:18px; height:18px; box-sizing:border-box; border-radius:4px; border:2px solid var(--text-tertiary); display:flex; align-items:center; justify-content:center; margin-right:6px; color:var(--bg-base); position:relative; z-index:2; background:var(--bg-panel);}
+  .tree-check svg{width:12px; height:12px; display:none;}
+  .tree-row.multi-selected .tree-check{background:var(--accent); border-color:var(--accent);}
+  .tree-row.multi-selected .tree-check svg{display:block;}
+  #sidebarToolbar .stb-btn:disabled{opacity:.4; pointer-events:none;}
+  #sidebarToolbar .stb-done{color:var(--accent-strong); font-weight:600;}
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
   .tree-row.tree-draggable{cursor:grab;}
@@ -4573,6 +4582,14 @@
   body.layout-compact.drawer-open #drawerScrim, body.layout-phone.drawer-open #drawerScrim{
     display:block; position:fixed; inset:0; z-index:55; background:rgba(0,0,0,.45);
   }
+  /* Popups opened from inside the drawer (z-index 60) must paint above it —
+     their desktop z-indexes (40-55) put them under the open drawer. */
+  body.layout-compact #treeContextMenu, body.layout-phone #treeContextMenu,
+  body.layout-compact #libraryMenu, body.layout-phone #libraryMenu,
+  body.layout-compact #filterPopup, body.layout-phone #filterPopup{z-index:62;}
+  body.layout-compact #treeCtxInfoMenu, body.layout-phone #treeCtxInfoMenu,
+  body.layout-compact #addToSelectionMenu, body.layout-phone #addToSelectionMenu{z-index:63;}
+  body.layout-compact #colorPickerPopup, body.layout-phone #colorPickerPopup{z-index:64;}
   body.layout-compact #toolbar, body.layout-phone #toolbar{gap:10px; padding:0 10px;}
   body.layout-compact .toolbar-right{gap:10px; min-width:0;}
   body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;}
@@ -5901,6 +5918,7 @@
   <div id="linkDialog" class="hidden">
     <div class="link-dialog-card link-dialog-card-wide">
       <div class="link-dialog-title">Link filters</div>
+      <div class="link-intro">Example: pair each "Move requested" with the next "Position reached" to measure how long moves take.</div>
       <div class="link-field">
         <label for="linkRefSelect">Reference (anchor)</label>
         <select id="linkRefSelect"></select>
@@ -12882,7 +12900,20 @@ function timeRangeFilterName(value, nodeId) {
 // The tree selection: state.multiSelect plus the active node, which is always
 // part of it (creators/file loads leave multiSelect empty while activeId is
 // set). Every reader of the selection goes through this, never multiSelect.
+// Tree select mode (touch-friendly multi-select, tablet UX step 4): a plain
+// variable, not DOM state — renderTree rebuilds every row. While on, a row
+// tap toggles the node in state.multiSelect instead of activating it, every
+// row shows a checkbox, and the selection is exactly multiSelect (the active
+// node is NOT implicitly part of it, a tap must be able to leave it out).
+let treeSelectMode = false;
+function setTreeSelectMode(on, seedId) {
+  on = !!on;
+  if (on === treeSelectMode && !on) return;
+  treeSelectMode = on;
+  state.multiSelect = new Set(on && seedId && state.nodes[seedId] ? [seedId] : []);
+}
 function treeSelectionIds() {
+  if (treeSelectMode) return new Set([...state.multiSelect].filter(id => state.nodes[id]));
   const sel = new Set(state.multiSelect);
   if (state.activeId && state.nodes[state.activeId]) sel.add(state.activeId);
   return sel;
@@ -18975,7 +19006,8 @@ function renderNode(id, depth, opts) {
   const muteClass = node.muted ? " muted" : "";
   const kbLoadId = kbLoadNavIdOf(node); // being loaded from the keyboard: the cursor's row while it loads
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + (kbLoadId && treeCursorId() === kbLoadId ? " tree-cursor" : "") + clipClass + multiClass + invertClass + muteClass +
-    (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "");
+    (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "") +
+    (treeSelectMode ? " select-mode" : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
   // to the RIGHT of its file's icon column instead of visually overlapping
@@ -19001,6 +19033,13 @@ function renderNode(id, depth, opts) {
   // reported: it used to shift the icon whenever it appeared/disappeared).
   // Toggles node.collapsed (display-only, not persisted) for any node with
   // real children.
+  if (treeSelectMode) {
+    const check = document.createElement("span");
+    check.className = "tree-check";
+    check.setAttribute("aria-hidden", "true");
+    check.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>';
+    row.appendChild(check);
+  }
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
   const hasRealChildren = nodeHasCollapsibleChildren(node);
@@ -19187,6 +19226,16 @@ function renderNode(id, depth, opts) {
   }
 
   row.addEventListener("click", ev => {
+    if (treeSelectMode) {
+      // Select mode: a tap toggles the node's checkbox; it never activates the
+      // node, switches the view or closes the drawer.
+      const sel = new Set(state.multiSelect);
+      if (!sel.delete(id)) sel.add(id);
+      state.multiSelect = sel;
+      lastTreeRowClickId = null;
+      render();
+      return;
+    }
     let activateId = id; // the node this click makes active (differs only when Ctrl+click deselects the active one)
     if (ev.ctrlKey || ev.metaKey) {
       // The active node is part of the selection, so Ctrl+click extends/shrinks
@@ -29651,6 +29700,8 @@ const btnDrawer = el("#btnDrawer");
 function setDrawerOpen(open) {
   open = !!open && currentLayoutTier !== "desktop";
   document.body.classList.toggle("drawer-open", open);
+  // Closing the drawer on compact/phone ends tree select mode (nothing visible to act on).
+  if (!open && treeSelectMode && currentLayoutTier !== "desktop") { setTreeSelectMode(false); if (typeof render === "function") render(); }
   btnDrawer.setAttribute("aria-expanded", open ? "true" : "false");
 }
 function isDrawerOpen() { return document.body.classList.contains("drawer-open"); }
@@ -37664,6 +37715,7 @@ function describeBulkActions(nodes) {
 // Runs a bulk action (shared by the context menu and the sidebar toolbar —
 // see describeSidebarToolbarActions/handleSidebarToolbarActionClick below).
 function performBulkAction(action, ids) {
+  treeSelectMode = false; // the action consumes the selection (see setTreeSelectMode)
   if (action === "mute") {
     toggleMuteWithUndo(ids);
     state.multiSelect = new Set();
@@ -37973,7 +38025,8 @@ function openTreeContextMenu(ev, clickedId) {
     html = '<div class="ctx-item ctx-submenu-trigger" data-action="info" data-info-text="' + escapeHtml(nodeDisplayName(node)) + '">' +
       ICON_INFO + " Info" +
       '<svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
-      "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
+      '</div><div class="ctx-item" data-action="selectMultiple">' + ICON_CHECKLIST + " Select multiple</div>" +
+      "<div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
   treeContextMenu.innerHTML = html;
@@ -37994,6 +38047,10 @@ treeContextMenu.addEventListener("click", ev => {
   // item here does.
   if (action === "info") { openTreeCtxInfoMenu(item, item.dataset.infoText || ""); return; }
   closeTreeContextMenu();
+  if (action === "selectMultiple") {
+    if (treeCtxId && state.nodes[treeCtxId]) { setTreeSelectMode(true, treeCtxId); render(); }
+    return;
+  }
 
   if (action === "loadFolderFile") {
     const target = folderCtxTarget;
@@ -38140,7 +38197,25 @@ function renderSidebarToolbar() {
   // "" restores the CSS class's own display:flex rather than hardcoding a
   // value — same convention #viewBar's own hasFiles gating uses.
   sidebarToolbarEl.style.display = hasFiles ? "" : "none";
-  if (!hasFiles) return;
+  if (!hasFiles) { treeSelectMode = false; return; }
+
+  if (treeSelectMode) {
+    // Select mode bar (mockup 8A): "N selected", the bulk actions (disabled
+    // placeholders below 2 selected) and "Done".
+    sidebarToolbarEl.classList.add("multi");
+    const info = describeSidebarToolbarMultiActions();
+    const n = treeSelectionIds().size;
+    const actions = info ? info.actions : [{ action: "and", label: "AND", icon: ICON_AND, disabled: true }, { action: "or", label: "OR", icon: ICON_OR, disabled: true }, { action: "link", label: "Link…", icon: ICON_LINK, disabled: true }];
+    const key = ["sel", n, info && info.short, actions.map(a => a.action + ":" + a.label + ":" + !!a.disabled).join(",")].join("|");
+    if (key !== sidebarToolbarMultiKey) {
+      sidebarToolbarMultiKey = key;
+      sidebarToolbarEl.innerHTML = '<span class="stb-cnt"' + (info && info.note ? ' title="' + escapeHtml(info.note) + '"' : "") + ">" + n + " selected</span>" +
+        actions.map(a => '<button type="button" class="stb-btn stb-' + a.action + '" data-multi-action="' + a.action + '"' + (a.disabled ? " disabled" : "") + ' title="' + escapeHtml(a.label) + '">' + a.icon + escapeHtml(a.label) + "</button>").join("") +
+        (info && info.short ? '<span class="stb-msg" title="' + escapeHtml(info.note || info.short) + '">' + escapeHtml(info.short) + "</span>" : '<span class="stb-sp"></span>') +
+        '<button type="button" class="stb-btn stb-done" data-multi-action="done" title="Leave select mode (Esc)">Done</button>';
+    }
+    return;
+  }
 
   const info = describeSidebarToolbarMultiActions();
   sidebarToolbarEl.classList.toggle("multi", !!info);
@@ -38188,6 +38263,7 @@ sidebarToolbarEl.addEventListener("click", ev => {
     ev.stopPropagation();
     const action = multiBtn.dataset.multiAction;
     if (action === "close") { state.multiSelect = new Set(); render(); return; }
+    if (action === "done") { setTreeSelectMode(false); render(); return; }
     // Re-derive rather than trust anything cached on the button.
     const info = describeSidebarToolbarMultiActions();
     if (!info || !info.actions.some(a => a.action === action)) return;
@@ -43812,6 +43888,7 @@ document.addEventListener("keydown", ev => {
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
+    if (treeSelectMode) { setTreeSelectMode(false); needsRender = true; }
     // Clearing selections is scoped to the focused area (tree vs. log views);
     // never while typing in an input.
     if (state.focusRegion === "tree") {
