@@ -1,0 +1,4 @@
+- **feat: touch input plumbing for tablets (2026-10-03, person-requested)**
+  - Minimap drag-select and the Entry-detail splitter use pointer events, so they work with touch as well as the mouse; a touch long-press on the minimap opens the time-range dialog.
+  - "Add to selection ›" opens on tap only and its submenu never covers the tapped item; floating toolbar labels stay 8px inside the screen; the tree delete x has a 44px hit area on touch.
+  - **Tests**: GROUP tablet-touch-input (new); 031/047/226/221 adapted to pointer events and the 8px label margin. Docs: docs/ui-and-views.md, docs/filters.md.

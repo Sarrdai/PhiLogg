@@ -1221,7 +1221,7 @@
      that mechanism's flicker-avoidance is reused as-is, only what it
      reveals changed. */
   .row-action-label{
-    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%) translateY(4px);
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
     width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
     background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
@@ -1229,7 +1229,7 @@
     transition:opacity .12s ease, transform .12s ease;
   }
   .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
-    opacity:1; transform:translateX(-50%) translateY(0);
+    opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);
   }
   /* Library preset pills (#libraryPresetBar) drive the floating label off
      plain :hover instead of the JS setupHitExpandGroups mechanism — the
@@ -1240,7 +1240,7 @@
      #libraryManageBar — Add to Library/Library — were removed this session,
      relocated into #sidebarToolbar's "Add to library…"/"Apply from
      library…" actions; see describeSidebarToolbarActions' own comment.) */
-  #libraryPresetBar .row-action-btn:hover .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  #libraryPresetBar .row-action-btn:hover .row-action-label{opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);}
   /* The "Library Filter" group and its leading "|" collapse out entirely when
      nothing is pinned (id+[hidden] beats the .row-actions flex display). */
   #libraryPresetBar[hidden], #libraryPresetSep[hidden]{display:none;}
@@ -1253,7 +1253,7 @@
   .toolbar-icon-btn:has(.tb-hit){position:relative;}
   .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .tb-label{
-    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%) translateY(4px);
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
     width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
     background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
@@ -1261,7 +1261,7 @@
     transition:opacity .12s ease, transform .12s ease;
   }
   .toolbar-icon-btn.expanded .tb-label, .toolbar-icon-btn:focus-visible .tb-label{
-    opacity:1; transform:translateX(-50%) translateY(0);
+    opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);
   }
   /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
      button labels" (person-requested, 2026-09-05; redesigned 2026-09-08) —
@@ -1374,7 +1374,7 @@
      label via plain :hover instead, same fix already used for
      #libraryPresetBar above. :focus-visible keyboard support still comes
      from the generic .row-action-btn:focus-visible rule above. */
-  #levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  #levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);}
 
   /* ---------- Filter/Highlight split ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0; position:relative;}
@@ -1576,7 +1576,7 @@
      `.level-btn`/etc. already use elsewhere in this file. */
   .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
   .minimap-meta-level:hover{filter:brightness(1.35);}
-  #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block;}
+  #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block; touch-action:pan-y;}
   .minimap-bg-bar{fill:var(--text-tertiary); opacity:.3;}
   .minimap-ov-bar{opacity:.95;}
   .minimap-lvl-error{fill:var(--level-error);}
@@ -2408,6 +2408,11 @@
     background:var(--border-hover); transition:background .12s;
   }
   #detailResizer:hover::after, #detailResizer.dragging::after{ background:var(--accent); }
+  /* Touch (compact tier): invisible >=44px tall grab area centred on the 7px
+     strip; no visual change. */
+  body.layout-compact #detailResizer::before{
+    content:""; position:absolute; left:0; right:0; top:-19px; height:44px;
+  }
 
   #detailPanel{
     flex:0 0 auto; height:190px; min-height:80px; position:relative;
@@ -4792,6 +4797,14 @@
     body.layout-phone .tree-swatch{pointer-events:none;}
     body.layout-compact .tree-row.active .tree-mute, body.layout-compact .tree-row.active .tree-del{opacity:1; width:44px; height:44px; margin-block:-4px; padding:0; align-items:center; justify-content:center;}
     body.layout-phone .tree-mute, body.layout-phone .tree-del{display:none;}
+    /* Delete x on touch: every row that shows it gets a >=44px hit area. The
+       active tree row grows the button itself (rule above); a hovered tree
+       row and an opened folder-watch/ZIP entry row (always shows it) get an
+       invisible ::before instead, so the row layout is untouched. Hidden
+       (opacity 0) buttons get none, so a stray tap can't delete. */
+    body.layout-compact .tree-row:not(.active):hover .tree-del, body.layout-compact .folder-watch-file .tree-del{position:relative;}
+    body.layout-compact .tree-row:not(.active):hover .tree-del::before, body.layout-compact .folder-watch-file .tree-del::before{content:""; position:absolute; inset:-12px;}
+    body.layout-compact .folder-watch-file .tree-del{opacity:1;}
     body.layout-phone #findInput, body.layout-phone #findCloseBtn, body.layout-phone #findAddFilterBtn, body.layout-phone #findBar .find-opt, body.layout-phone #findBar .find-nav-btn{height:44px;}
     body.layout-phone #findCloseBtn, body.layout-phone #findBar .find-opt, body.layout-phone #findBar .find-nav-btn{min-width:44px;}
     body.layout-phone #findCloseBtn, body.layout-phone #findBar .find-nav-btn{width:44px;}
@@ -26537,9 +26550,13 @@ let resizing = false;
 let resizeStartY = 0;
 let resizeStartHeight = 0;
 
-detailResizer.addEventListener("mousedown", ev => {
+detailResizer.addEventListener("pointerdown", ev => {
+  if (ev.button !== undefined && ev.button !== 0) return;
   resizing = true;
   resizeStartY = ev.clientY;
+  if (typeof detailResizer.setPointerCapture === "function" && ev.pointerId !== undefined) {
+    try { detailResizer.setPointerCapture(ev.pointerId); } catch (_) { /* pointer already gone */ }
+  }
   resizeStartHeight = detailPanel.getBoundingClientRect().height;
   detailResizer.classList.add("dragging");
   document.body.style.cursor = "row-resize";
@@ -26556,7 +26573,7 @@ detailResizer.addEventListener("mousedown", ev => {
 // the throttle so the panel visibly tracks the cursor with no added latency
 // — only the expensive re-render is deferred.
 let detailResizeTicking = false;
-window.addEventListener("mousemove", ev => {
+window.addEventListener("pointermove", ev => {
   if (!resizing) return;
   const deltaY = ev.clientY - resizeStartY; // dragging down (positive) shrinks the panel
   const maxHeight = Math.max(150, window.innerHeight - 260); // leave room for header/table
@@ -26567,13 +26584,15 @@ window.addEventListener("mousemove", ev => {
   requestAnimationFrame(() => { renderVisibleRows(); detailResizeTicking = false; }); // the table viewport just changed size
 });
 
-window.addEventListener("mouseup", () => {
+const endDetailResize = () => {
   if (!resizing) return;
   resizing = false;
   detailResizer.classList.remove("dragging");
   document.body.style.cursor = "";
   document.body.style.userSelect = "";
-});
+};
+window.addEventListener("pointerup", endDetailResize);
+window.addEventListener("pointercancel", endDetailResize);
 
 /* ---------- Sidebar resizer (drag the handle right of the tree) ---------- */
 let sidebarResizing = false;
@@ -27805,6 +27824,7 @@ timelineMinimapMetaEl.addEventListener("click", ev => {
 // silently moving the (invisible) Filtered view in the background.
 timelineMinimapSvg.addEventListener("click", ev => {
   if (minimapDragSuppressClick) { minimapDragSuppressClick = false; return; }
+  if (minimapLongPressDone) return; // the long-press already opened the time-range dialog
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
   const ts = minimapXToTs(x);
@@ -27927,35 +27947,105 @@ function createTimeRangeFilterFromDrag(fromTs, toTs) {
   render();
 }
 
-timelineMinimapSvg.addEventListener("mousedown", ev => {
-  if (!minimapInteractive || ev.button !== 0) return;
+// Pointer events (mouse, touch, pen alike): pointerdown + setPointerCapture on
+// the svg, pointermove/up/cancel on window (captured events bubble there, and
+// a mouse released outside the svg still ends the drag). CSS `touch-action:
+// pan-y` on the svg lets a horizontal swipe select while a vertical swipe
+// still scrolls the page; when the browser takes such a pan it sends
+// pointercancel, which aborts the gesture without creating a filter.
+const MINIMAP_LONG_PRESS_MS = 500;
+const MINIMAP_LONG_PRESS_SLOP_PX = 10; // finger travel (client px) that turns a press into a swipe/scroll
+const MINIMAP_TOUCH_DRAG_THRESHOLD_PX = 8; // touch jitter is larger than a mouse's
+let minimapPointerType = "mouse";
+let minimapPointerId = null;
+let minimapDragThreshold = MINIMAP_DRAG_THRESHOLD_PX;
+let minimapPressClientX = 0;
+let minimapLongPressTimer = null;
+let minimapLongPressAt = -Infinity; // performance.now() of the last long-press firing (see the contextmenu handler)
+
+function minimapOwnsPointer(ev) {
+  return minimapPointerId === null || ev.pointerId === undefined || ev.pointerId === minimapPointerId;
+}
+function clearMinimapLongPress() {
+  if (minimapLongPressTimer !== null) { clearTimeout(minimapLongPressTimer); minimapLongPressTimer = null; }
+}
+function endMinimapDrag() {
+  minimapDragging = false;
+  minimapPointerId = null;
+  document.body.style.userSelect = "";
+  hideMinimapDragOverlay();
+}
+// Long-press (touch) or contextmenu: open the time-range dialog prefilled
+// with the pressed point as both bounds. Fires at most once per gesture.
+function openMinimapTimeRangeAt(clientX) {
+  if (!minimapInteractive || !state.activeId) return;
+  const rect = timelineMinimapSvg.getBoundingClientRect();
+  const ts = Math.round(minimapXToTs(minimapEventUnitX({ clientX }, rect)));
+  openTimeRangeDialog("create", state.activeId, { from: ts, to: ts });
+}
+function fireMinimapLongPress(clientX) {
+  clearMinimapLongPress();
+  if (minimapLongPressDone) return;
+  minimapLongPressDone = true;
+  minimapLongPressAt = performance.now();
+  endMinimapDrag();
+  openMinimapTimeRangeAt(clientX);
+}
+let minimapLongPressDone = false; // set per gesture; also makes the trailing click (if any) a no-op
+
+timelineMinimapSvg.addEventListener("pointerdown", ev => {
+  minimapPointerType = ev.pointerType || "mouse"; // also for a right-click, so the contextmenu handler sees the right type
+  if (!minimapInteractive || ev.button !== 0 || ev.isPrimary === false) return;
+  minimapPointerId = ev.pointerId === undefined ? null : ev.pointerId;
+  minimapLongPressDone = false;
+  minimapPressClientX = ev.clientX;
+  const touch = minimapPointerType === "touch";
+  minimapDragThreshold = touch ? MINIMAP_TOUCH_DRAG_THRESHOLD_PX : MINIMAP_DRAG_THRESHOLD_PX;
   minimapDragSvgRect = timelineMinimapSvg.getBoundingClientRect();
   minimapDragStartTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   minimapDragging = true;
   minimapDragMoved = false;
   document.body.style.userSelect = "none";
-  ev.preventDefault();
+  if (typeof timelineMinimapSvg.setPointerCapture === "function" && ev.pointerId !== undefined) {
+    try { timelineMinimapSvg.setPointerCapture(ev.pointerId); } catch (_) { /* pointer already gone */ }
+  }
+  clearMinimapLongPress();
+  if (touch) {
+    const x = ev.clientX;
+    minimapLongPressTimer = setTimeout(() => fireMinimapLongPress(x), MINIMAP_LONG_PRESS_MS);
+  }
 });
+// pointerdown's own preventDefault would not stop the browser's compat
+// mousedown default (text selection / focus), so keep the old one for mouse.
+timelineMinimapSvg.addEventListener("mousedown", ev => { if (minimapInteractive && ev.button === 0) ev.preventDefault(); });
 
-window.addEventListener("mousemove", ev => {
-  if (!minimapDragging) return;
+window.addEventListener("pointermove", ev => {
+  if (!minimapDragging || !minimapOwnsPointer(ev)) return;
+  if (minimapLongPressTimer !== null && Math.abs(ev.clientX - minimapPressClientX) > MINIMAP_LONG_PRESS_SLOP_PX) clearMinimapLongPress();
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const xStart = minimapTsToX(minimapDragStartTs), xNow = minimapTsToX(curTs);
-  if (!minimapDragMoved && Math.abs(xNow - xStart) < MINIMAP_DRAG_THRESHOLD_PX) return;
+  if (!minimapDragMoved && Math.abs(xNow - xStart) < minimapDragThreshold) return;
   minimapDragMoved = true;
+  clearMinimapLongPress(); // a swipe, not a long-press
   showMinimapDragOverlay(xStart, xNow);
 });
 
-window.addEventListener("mouseup", ev => {
-  if (!minimapDragging) return;
-  minimapDragging = false;
-  document.body.style.userSelect = "";
-  hideMinimapDragOverlay();
-  if (!minimapDragMoved) return; // a plain click — the svg's own "click" listener handles jump-to
+window.addEventListener("pointerup", ev => {
+  if (!minimapDragging || !minimapOwnsPointer(ev)) return;
+  clearMinimapLongPress();
+  endMinimapDrag();
+  if (!minimapDragMoved) return; // a plain click/tap — the svg's own "click" listener handles jump-to
   minimapDragSuppressClick = true;
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const fromTs = Math.round(Math.min(minimapDragStartTs, curTs)), toTs = Math.round(Math.max(minimapDragStartTs, curTs));
   if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
+});
+
+// The browser took the gesture (vertical pan, system gesture): abort, no filter.
+window.addEventListener("pointercancel", ev => {
+  if (!minimapDragging || !minimapOwnsPointer(ev)) return;
+  clearMinimapLongPress();
+  endMinimapDrag();
 });
 
 // Right-click: open the time-range dialog directly (see "Time range dialog"
@@ -27963,12 +28053,17 @@ window.addEventListener("mouseup", ev => {
 // the clicked point as both bounds (a zero-width starting range), so the
 // dialog opens on an already-valid selection the person can then widen
 // either side of. Withheld during a column sort, same as click/drag above.
+// A touch long-press opens it through fireMinimapLongPress; the browser may
+// ALSO fire contextmenu for the same press (before or after our timer), so
+// that case is folded into the one open instead of opening twice.
 timelineMinimapSvg.addEventListener("contextmenu", ev => {
   if (!minimapInteractive || !state.activeId) return;
   ev.preventDefault();
-  const rect = timelineMinimapSvg.getBoundingClientRect();
-  const ts = Math.round(minimapXToTs(minimapEventUnitX(ev, rect)));
-  openTimeRangeDialog("create", state.activeId, { from: ts, to: ts });
+  if (minimapPointerType === "touch" && (minimapLongPressTimer !== null || performance.now() - minimapLongPressAt < 1500)) {
+    if (minimapLongPressTimer !== null) fireMinimapLongPress(ev.clientX);
+    return;
+  }
+  openMinimapTimeRangeAt(ev.clientX);
 });
 
 // Scrolls the virtual list so that the entry at `index` is in view (and
@@ -36523,14 +36618,40 @@ function openAddToSelectionMenu(anchorEl) {
   if (existing.length) html += '<div class="ctx-sep"></div>';
   html += '<div class="ctx-item" data-selection-action="create">Create new selection filter</div>';
   addToSelectionMenu.innerHTML = html;
-  const anchorRect = anchorEl.getBoundingClientRect();
-  addToSelectionMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
-  addToSelectionMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
   addToSelectionMenu.classList.remove("hidden");
+  const pos = placeSubmenuBesideAnchor(anchorEl.getBoundingClientRect(),
+    addToSelectionMenu.offsetWidth || 260, addToSelectionMenu.offsetHeight || 200, window.innerWidth, window.innerHeight);
+  addToSelectionMenu.style.left = pos.left + "px";
+  addToSelectionMenu.style.top = pos.top + "px";
   fitPopupToViewport(addToSelectionMenu);
 }
 
-ctxAddToSelection.addEventListener("mouseenter", () => openAddToSelectionMenu(ctxAddToSelection));
+// Pure placement for a submenu next to the item that opens it, so the
+// submenu never covers its anchor (on touch it would receive the tap's click
+// instead of the anchor): right of the anchor if it fits, else left of it,
+// else below it (above if that fits better). Always clamped into the viewport.
+function placeSubmenuBesideAnchor(anchor, w, h, vw, vh) {
+  const M = 4;
+  const clampTop = t => Math.max(M, Math.min(t, vh - h - M));
+  if (anchor.right + w <= vw - M) return { left: anchor.right, top: clampTop(anchor.top) };
+  if (anchor.left - w >= M) return { left: anchor.left - w, top: clampTop(anchor.top) };
+  const left = Math.max(M, Math.min(anchor.left, vw - w - M));
+  if (anchor.bottom + h <= vh - M) return { left, top: anchor.bottom };
+  if (anchor.top - h >= M) return { left, top: anchor.top - h };
+  return { left, top: clampTop(anchor.bottom) };
+}
+
+// A tap synthesizes mouseenter right before its click; opening on that
+// mouseenter put the submenu on top of the tapped item. The pointer type of
+// the hover/press (pointerenter/pointerdown precede mouseenter) tells which.
+let ctxAddToSelectionPointerType = "mouse";
+const noteCtxAddPointerType = ev => { ctxAddToSelectionPointerType = ev.pointerType || "mouse"; };
+ctxAddToSelection.addEventListener("pointerenter", noteCtxAddPointerType);
+ctxAddToSelection.addEventListener("pointerdown", noteCtxAddPointerType);
+ctxAddToSelection.addEventListener("mouseenter", () => {
+  if (ctxAddToSelectionPointerType === "touch") return; // touch opens on tap (click) only
+  openAddToSelectionMenu(ctxAddToSelection);
+});
 
 ctxAddToSelection.addEventListener("click", ev => {
   ev.stopPropagation();
@@ -36750,7 +36871,7 @@ elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.inner
 // and therefore NOT covered by the regression suite, same as every other
 // entry in that "no layout engine" gap.
 function clampLabelOffset(rect, viewportWidth) {
-  const EDGE_MARGIN = 4; // small breathing room, matching the row's own 4px button gap
+  const EDGE_MARGIN = 8; // breathing room so the pill never touches the screen edge (also the touch-tablet case)
   if (rect.left < EDGE_MARGIN) return EDGE_MARGIN - rect.left; // overflowing the left edge -> shift right
   if (rect.right > viewportWidth - EDGE_MARGIN) return (viewportWidth - EDGE_MARGIN) - rect.right; // overflowing the right edge -> shift left
   return 0; // already fits, no correction needed
@@ -36772,13 +36893,26 @@ function setupHitExpandGroups(hitSelector) {
       .map(hit => ({ hit, btn: hit.closest(".toolbar-icon-btn") }))
       .filter(e => e.btn);
     const collapseAll = entries => entries.forEach(e => e.btn.classList.remove("expanded"));
-    // Clears a button's inline clamp override (see below) so it never leaks
-    // into the next hover at a different position — the CSS class-driven
-    // `translateX(-50%)` (unexpanded) or (via .expanded) `translateX(-50%)
-    // translateY(0)` takes back over once the inline style is cleared.
+    // The label's x-offset lives in the --label-dx CSS custom property (added
+    // to its translateX(-50%) in the .row-action-label/.tb-label rules).
+    // Cleared on collapse so it never leaks into the next hover at a
+    // different position.
+    const labelOf = btn => btn.querySelector(".row-action-label, .tb-label");
     const resetLabelClamp = btn => {
-      const label = btn.querySelector(".row-action-label");
-      if (label && label.style.transform) label.style.transform = "";
+      const label = labelOf(btn);
+      if (label && label.style.getPropertyValue("--label-dx")) label.style.removeProperty("--label-dx");
+    };
+    // Idempotent: measured from the BUTTON's centre + the label's layout
+    // width (offsetWidth ignores transforms), not from the label's own
+    // (mid-transition, already shifted) rect, so repeated calls agree.
+    const clampLabel = btn => {
+      const label = labelOf(btn);
+      if (!label) return;
+      const w = label.offsetWidth;
+      if (!w) return; // no layout (jsdom / hidden)
+      const b = btn.getBoundingClientRect(), cx = (b.left + b.right) / 2;
+      const shift = clampLabelOffset({ left: cx - w / 2, right: cx + w / 2 }, window.innerWidth);
+      if (shift) label.style.setProperty("--label-dx", shift + "px"); else label.style.removeProperty("--label-dx");
     };
     container.addEventListener("mousemove", ev => {
       const entries = liveEntries();
@@ -36791,16 +36925,17 @@ function setupHitExpandGroups(hitSelector) {
         const isExpanded = !!hovered && e.btn === hovered.btn;
         e.btn.classList.toggle("expanded", isExpanded);
         if (!isExpanded) { resetLabelClamp(e.btn); return; }
-        // Just expanded (or already was, re-measured every move — cheap
-        // relative to the getBoundingClientRect() calls above it, and
-        // idempotent either way): measure the label AS RENDERED (already
-        // reflecting the default centering transform) and nudge it back
-        // within the viewport if it overflows either edge.
-        const label = e.btn.querySelector(".row-action-label");
-        if (!label) return;
-        const shift = clampLabelOffset(label.getBoundingClientRect(), window.innerWidth);
-        label.style.transform = shift ? "translateX(calc(-50% + " + shift + "px)) translateY(0)" : "";
+        clampLabel(e.btn); // keep the floating pill inside the screen (re-measured every move, idempotent)
       });
+    });
+    // Keyboard / touch focus reveals the same pill via :focus-visible.
+    container.addEventListener("focusin", ev => {
+      const btn = ev.target.closest && ev.target.closest(".toolbar-icon-btn");
+      if (btn && container.contains(btn)) clampLabel(btn);
+    });
+    container.addEventListener("focusout", ev => {
+      const btn = ev.target.closest && ev.target.closest(".toolbar-icon-btn");
+      if (btn && !btn.classList.contains("expanded")) resetLabelClamp(btn);
     });
     container.addEventListener("mouseleave", () => {
       const entries = liveEntries();
