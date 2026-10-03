@@ -4507,17 +4507,6 @@
   body.layout-compact .toolbar-right{gap:10px; min-width:0;}
   body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
-  /* Touch devices (any tier): ~40px hit targets. */
-  @media (pointer:coarse){
-    .toolbar-icon-btn, .panel-toggle-btn, .level-btn{width:40px; height:40px;}
-    .view-tabs{height:40px;}
-    .view-tab{padding:0 14px; font-size:12px;}
-    #detailViewTabs{height:36px;}
-    #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
-    .tree-row{min-height:40px;}
-    .tree-row, .log-row{-webkit-touch-callout:none;}
-  }
-
   /* ---------- Phone shell (layout-phone, < 600px) ----------
      Reader mode: header reduced to drawer / title / find / settings, one-line
      tour banner, only the Patterns + Filtered tabs, one scrolling row of
@@ -4592,7 +4581,7 @@
     padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
   body.layout-phone #settingsDialog .settings-page-header{padding:6px 8px 6px 14px;}
-  body.layout-phone #settingsClose{width:40px; height:40px;}
+  body.layout-phone #settingsClose{width:40px; height:40px;} /* 44 under pointer:coarse, see Touch targets */
   body.layout-phone #settingsDialog .settings-page-main{flex-direction:column;}
   body.layout-phone #settingsDialog .settings-nav{
     flex:0 0 auto; flex-direction:row; gap:4px; padding:4px 8px; overflow-x:auto; overflow-y:hidden;
@@ -4677,6 +4666,45 @@
      can always be scrolled above it (selectEntry -> scrollToIndex). */
   body.layout-phone.sheet-open #content{padding-bottom:var(--sheet-h);}
   :focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+
+  /* ---------- Touch targets (phone + compact tiers, coarse pointer only) ----------
+     44px hit targets (Apple guideline). EVERY selector is scoped to a tier
+     class, so the desktop tier (>= 1024px, also on touch laptops) and a
+     narrow desktop window with a mouse keep their sizes (GROUP responsive-touch
+     walks this block). Placed last so it wins on source order. */
+  @media (pointer:coarse){
+    body.layout-phone .toolbar-icon-btn, body.layout-compact .toolbar-icon-btn, body.layout-phone .panel-toggle-btn, body.layout-compact .panel-toggle-btn{width:44px; height:44px;}
+    body.layout-phone #settingsClose, body.layout-compact #settingsClose, body.layout-phone .detail-phone-btn, body.layout-compact .detail-phone-btn{width:44px; height:44px;}
+    body.layout-phone .level-btn{height:44px;}
+    body.layout-compact .level-btn{width:44px; height:44px;}
+    body.layout-phone .view-tab, body.layout-compact .view-tab{padding:0 14px; font-size:12px;}
+    body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
+    body.layout-compact #btnLibrary{height:44px;}
+    body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
+    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
+    body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
+    body.layout-phone #sidebarToolbar .stb-btn, body.layout-compact #sidebarToolbar .stb-btn{height:44px; min-width:44px;}
+    body.layout-phone .view-tabs, body.layout-compact .view-tabs, body.layout-phone #detailViewTabs, body.layout-compact #detailViewTabs{height:auto;}
+    body.layout-phone .view-tab, body.layout-compact .view-tab, body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{height:44px;}
+    body.layout-phone .tree-row, body.layout-compact .tree-row{min-height:48px;}
+    body.layout-phone .tree-row, body.layout-compact .tree-row, body.layout-phone .log-row, body.layout-compact .log-row{-webkit-touch-callout:none;}
+    body.layout-phone .tree-swatch, body.layout-compact .tree-swatch{position:relative; width:18px; height:18px;}
+    body.layout-phone .tree-swatch::before, body.layout-compact .tree-swatch::before{content:""; position:absolute; inset:-13px;}
+    body.layout-phone .tree-swatch{pointer-events:none;}
+    body.layout-compact .tree-row.active .tree-mute, body.layout-compact .tree-row.active .tree-del{opacity:1; width:44px; height:44px; margin-block:-4px; padding:0; align-items:center; justify-content:center;}
+    body.layout-phone .tree-mute, body.layout-phone .tree-del{display:none;}
+    body.layout-compact .tree-mute .icon{width:18px; height:18px;}
+    body.layout-phone #settingsDialog .settings-nav-item, body.layout-compact #settingsDialog .settings-nav-item{min-height:44px;}
+    body.layout-phone #settingsDialog .assert-mode-btn, body.layout-compact #settingsDialog .assert-mode-btn, body.layout-phone #settingsDialog .btn-mini, body.layout-compact #settingsDialog .btn-mini, body.layout-phone #settingsDialog .btn-mini-outline, body.layout-compact #settingsDialog .btn-mini-outline, body.layout-phone #settingsDialog .btn-mini-secondary, body.layout-compact #settingsDialog .btn-mini-secondary, body.layout-phone #settingsDialog .settings-row-control select, body.layout-compact #settingsDialog .settings-row-control select, body.layout-phone #settingsDialog .settings-row-control input[type="text"], body.layout-compact #settingsDialog .settings-row-control input[type="text"], body.layout-phone #settingsDialog .settings-row-control input[type="number"], body.layout-compact #settingsDialog .settings-row-control input[type="number"]{box-sizing:border-box; height:44px;}
+    body.layout-phone #settingsDialog .stepper, body.layout-compact #settingsDialog .stepper{height:44px;}
+    body.layout-phone #settingsDialog .stepper .stepper-btn, body.layout-compact #settingsDialog .stepper .stepper-btn{width:44px; height:44px;}
+    body.layout-phone #settingsDialog .filter-library-row-del, body.layout-compact #settingsDialog .filter-library-row-del, body.layout-phone #settingsDialog .filter-library-row-icon, body.layout-compact #settingsDialog .filter-library-row-icon, body.layout-phone #settingsDialog .filter-library-row-order, body.layout-compact #settingsDialog .filter-library-row-order{width:44px; height:44px;}
+    body.layout-phone #settingsDialog .pill-toggle, body.layout-compact #settingsDialog .pill-toggle{width:52px; height:32px; border-radius:16px;}
+    body.layout-phone #settingsDialog .pill-toggle::after, body.layout-compact #settingsDialog .pill-toggle::after{width:24px; height:24px; transform:translate(4px,-50%);}
+    body.layout-phone #settingsDialog .pill-toggle[aria-checked="true"]::after, body.layout-compact #settingsDialog .pill-toggle[aria-checked="true"]::after{transform:translate(24px,-50%);}
+    body.layout-phone #settingsDialog .accent-swatch, body.layout-compact #settingsDialog .accent-swatch{width:32px; height:32px;}
+    body.layout-phone #settingsDialog .accent-picker, body.layout-compact #settingsDialog .accent-picker{gap:12px;}
+  }
 
   /* ---------- Picture-in-picture (desktop build) ----------
      Toggled by philoggSetPip (driven from the wrapper's enter_pip/exit_pip):
@@ -29323,7 +29351,7 @@ function cancelLongPress() {
 document.addEventListener("pointerdown", ev => {
   longPressFired = false;
   cancelLongPress();
-  if (ev.pointerType !== "touch" || ev.isPrimary === false || currentLayoutTier === "phone") return;
+  if (ev.pointerType !== "touch" || ev.isPrimary === false || currentLayoutTier !== "compact") return;
   const press = { x: ev.clientX, y: ev.clientY, target: ev.target, timer: 0 };
   press.timer = setTimeout(() => {
     if (longPress !== press) return;

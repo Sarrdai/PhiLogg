@@ -115,7 +115,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("responsive-layout d. Long-press dispatches exactly one contextmenu after 500ms (touch only)");
+  section("responsive-layout d. Long-press dispatches exactly one contextmenu after 500ms (touch only, compact tier only)");
   const f = await w.addFile("a.log", makeLog(0, 3), () => {});
   T.state.activeId = f.id;
   w.render();
@@ -138,9 +138,9 @@ await withApp(async (w, d, T) => {
   };
   const press = (x = 40, y = 50, type = "touch") => { timers.length = 0; menus = []; target = getTarget(); target.dispatchEvent(ptr("pointerdown", x, y, type)); return timers.filter(t => t.ms === 500); };
 
-  setWidth(w, 1440);
+  setWidth(w, 820);
   let t = press();
-  assert(t.length === 1, "desktop tier: a touch press arms one 500ms timer");
+  assert(t.length === 1, "compact tier: a touch press arms one 500ms timer");
   t[0].fn();
   assert(menus.length === 1, "fires exactly one contextmenu, got " + menus.length);
   assert(menus[0].target === target && menus[0].clientX === 40 && menus[0].clientY === 50 && menus[0].bubbles && menus[0].cancelable,
@@ -172,12 +172,9 @@ await withApp(async (w, d, T) => {
   t = press(40, 50, "pen");
   assert(t.length === 0, "neither do pens");
 
-  setWidth(w, 820);
+  setWidth(w, 1440);
   t = press();
-  assert(t.length === 1, "compact tier: active");
-  t[0].fn();
-  assert(menus.length === 1, "compact: fires");
-  target.dispatchEvent(ptr("pointerup", 40, 50));
+  assert(t.length === 0, "desktop tier: no long-press helper (even for touch pointers)");
 
   setWidth(w, 390);
   t = press();
