@@ -27,7 +27,7 @@ if (groupSelected()) {
     d.dispatchEvent(ev);
     return { text: got, prevented: ev.defaultPrevented };
   };
-  const search351 = async (w, d, q) => { const input = d.getElementById("findInput"); input.value = q; fireInput(input, w); await sleep(400); };
+  const search351 = async (w, d, q) => { const input = d.getElementById("findInput"); input.value = q; fireInput(input, w); await waitFor(() => w.__find.state.done && w.__find.state.query === q, { timeout: 10000 }); };
   const textNodeOf = row => { const wk = d => d.ownerDocument.createTreeWalker(row, 4); const t = wk(row).nextNode(); return t; };
 
   await withApp(async (w, d, T) => {
@@ -190,7 +190,7 @@ if (groupSelected()) {
     assert(hits.length > 100 && w.__find.state.done, "the scan covers the whole file (" + hits.length + " hits)");
     assert(!d.querySelector("#textEditor mark.editor-find-mark") || [...d.querySelectorAll("#textEditor mark.editor-find-mark")].length < 40, "only rendered rows carry marks");
     const lastHit = hits[hits.length - 1];
-    while (w.__find.state.cur !== hits.length - 1) { fireKeydown(d, w, "F3", { shiftKey: true }); if (hits.length - 1 - w.__find.state.cur > 1 && w.__find.state.cur > 3) break; } // Shift+F3 from the top wraps to the last hit
+    for (let guard = 0; guard < 10 && w.__find.state.cur !== hits.length - 1; guard++) { fireKeydown(d, w, "F3", { shiftKey: true }); if (hits.length - 1 - w.__find.state.cur > 1 && w.__find.state.cur > 3) break; } // Shift+F3 from the top wraps to the last hit
     await sleep(30);
     const row = rowOf(d, txt.entries[lastHit].ts);
     assert(!!row && row.classList.contains("find-cur") && row.querySelector("mark.editor-find-mark") && / \/ /.test(d.getElementById("findCount").textContent), "the last hit (line " + txt.entries[lastHit].ts + ", far outside the first window) is mounted, current and marked");
