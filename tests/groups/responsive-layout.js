@@ -40,6 +40,18 @@ await withApp(async (w, d, T) => {
   assert(cls().join() === "false,true", "390 → layout-phone");
   setWidth(w, 1440);
   assert(cls().join() === "false,false", "back to desktop removes both classes");
+
+  // A mobile browser widens innerWidth to fit overflowing content (e.g. the
+  // compact layout at first paint, 461px on a 390px phone) while the layout
+  // viewport (documentElement.clientWidth) stays at the meta-viewport width:
+  // the tier must follow the latter, or a phone never reaches layout-phone.
+  Object.defineProperty(d.documentElement, "clientWidth", { configurable: true, get: () => 390 });
+  setWidth(w, 461);
+  assert(w.layoutTier() === "phone" && cls().join() === "false,true", "innerWidth 461 / clientWidth 390 (overflowed phone) → layout-phone");
+  Object.defineProperty(d.documentElement, "clientWidth", { configurable: true, get: () => 0 });
+  setWidth(w, 1440);
+  assert(cls().join() === "false,false", "clientWidth 0 (no layout engine) falls back to innerWidth");
+  Object.defineProperty(d.documentElement, "clientWidth", { configurable: true, get: () => w.innerWidth });
 });
 
 await withApp(async (w, d, T) => {

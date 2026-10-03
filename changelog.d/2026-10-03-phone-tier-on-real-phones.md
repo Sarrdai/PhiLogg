@@ -1,0 +1,4 @@
+- **fix: real phones get the phone layout (2026-10-03, person-requested)**
+  - The tier was read from `window.innerWidth`, which a mobile browser widens to fit overflowing content (the compact layout at first paint), so a 390px phone stayed in the compact layout, zoomed out. The tier now follows the layout viewport (`documentElement.clientWidth`).
+  - `tools/log-sim/screenshot.js --touch` emulates a phone (touch, `pointer:coarse`, 3x DPR) so shots show what a phone renders.
+  - **Tests**: GROUP responsive-layout. Docs: docs/ui-and-views.md, tools/log-sim/README.md.

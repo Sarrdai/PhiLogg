@@ -29150,7 +29150,15 @@ const LAYOUT_DESKTOP_MIN = 1024;
 function layoutTierFor(width) {
   return width >= LAYOUT_DESKTOP_MIN ? "desktop" : width >= LAYOUT_COMPACT_MIN ? "compact" : "phone";
 }
-function layoutTier() { return layoutTierFor(window.innerWidth); }
+// The layout viewport width, not innerWidth: a mobile browser widens
+// innerWidth to fit overflowing content (the wider compact/desktop layout at
+// first paint), which would keep a phone out of the phone tier for good.
+// clientWidth stays at the meta-viewport width; 0 (no layout engine) falls
+// back to innerWidth.
+function layoutTier() {
+  const cw = document.documentElement.clientWidth;
+  return layoutTierFor(cw ? Math.min(cw, window.innerWidth) : window.innerWidth);
+}
 
 // Width/visibility lookups fall back to a sane default for a key that
 // state.columnWidths/columnVisible has no entry for yet — a freshly

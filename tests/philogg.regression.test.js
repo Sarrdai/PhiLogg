@@ -278,6 +278,9 @@ async function withApp(run, opts = {}) {
       if (opts.beforeParse) opts.beforeParse(window);
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });
+      // The layout viewport (layoutTier()) follows the stubbed window width,
+      // like a real browser whose content does not overflow.
+      Object.defineProperty(window.HTMLHtmlElement.prototype, "clientWidth", { get() { return window.innerWidth; }, configurable: true });
       window.Element.prototype.getBoundingClientRect = function () {
         return { top: 0, left: 0, right: 800, bottom: 400, width: 800, height: 400, x: 0, y: 0 };
       };

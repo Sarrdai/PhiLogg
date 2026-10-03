@@ -7,7 +7,10 @@
 //
 //   node tools/log-sim/screenshot.js [--out shot.png] [--size 1440x900]
 //        [--theme <mode|theme id>] [--eval "<js run in the page before the shot>"]
-//        [--wait <ms>] [--url <page url>] <log files and *.logformat.json files...>
+//        [--wait <ms>] [--url <page url>] [--touch] <log files and *.logformat.json files...>
+//
+// --touch emulates a phone (touch events, pointer:coarse, isMobile, 3x DPR);
+// combine with a phone --size such as 390x844.
 //
 // --url opens an http(s) page URL instead of file://.../philogg.html — for the
 // deep links (e.g. http://localhost:8123/philogg.html?session=tour.session.json,
@@ -30,11 +33,12 @@ const { chromium } = require("playwright");
 
 async function main() {
   const args = process.argv.slice(2);
-  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500, url: null };
+  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500, url: null, touch: false };
   const files = [];
   for (let i = 0; i < args.length; i++) {
     const m = /^--(out|size|theme|eval|wait|url)$/.exec(args[i]);
     if (m) opt[m[1]] = args[++i];
+    else if (args[i] === "--touch") opt.touch = true;
     else files.push(path.resolve(args[i]));
   }
   const formats = files.filter(f => f.endsWith(".logformat.json"));
@@ -47,7 +51,9 @@ async function main() {
   const browser = await chromium.launch(process.env.PLAYWRIGHT_BROWSERS_PATH ? {} : { executablePath: "/opt/pw-browsers/chromium" });
   const errors = [];
   try {
-    const page = await browser.newPage({ viewport: { width, height } });
+    // --touch emulates a phone: touch events, pointer:coarse, 3x pixel density.
+    const page = await browser.newPage(Object.assign({ viewport: { width, height } },
+      opt.touch ? { hasTouch: true, isMobile: true, deviceScaleFactor: 3 } : {}));
     page.on("pageerror", e => errors.push(e.message));
     await page.goto(opt.url || "file://" + path.resolve(__dirname, "..", "..", "philogg.html"));
     await page.waitForFunction(() => state.logFormats.length > 0);
