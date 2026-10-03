@@ -4472,32 +4472,244 @@
     *{transition:none !important; animation:none !important;}
   }
 
-  @media (max-width:760px){
-    #main{flex-direction:column;}
-    #sidebar{width:100%; max-height:38vh; border-right:none; border-bottom:1px solid var(--border);}
-    /* #sidebarResizer stays a fixed 7px COLUMN-resize strip even here (a
-       pre-existing quirk, not something this session's fix changes) — its
-       own new background/border-right (see its own comment) would show as
-       a small stray colored box unrelated to the now-horizontal
-       sidebar/content seam #sidebar's border-bottom above already carries,
-       so neutralize just that, same as #sidebar's own border-right:none
-       right above. */
-    #sidebarResizer{background:none; border-right:none;}
-    /* Thread/Location/Method's hide-on-narrow-viewport behavior moved into
-       applyRowGrid() (see its own comment) — it now shares the same 0px-
-       track mechanism as the column-visibility toggle instead of a separate
-       :root{--row-grid:...} + display:none pair here, which would otherwise
-       both fight applyRowGrid()'s own inline --row-grid (an inline style
-       always wins over a media-query rule, breaking this block outright)
-       AND — independently of that — silently corrupt CSS Grid's row
-       auto-placement (a display:none grid item doesn't reserve its track,
-       so "Message" would land in whichever earlier track the removed
-       items freed up instead of the real one --row-grid meant for it). */
-    #timelineMinimap{height:36px;}
-    #timelineMinimapMeta{display:none;}
+  /* ---------- Responsive layout tiers (docs/ui-and-views.md) ----------
+     Tiers come from the WINDOW width (layoutTier() sets body.layout-compact
+     600-1023px / body.layout-phone <600px; none = desktop >= 1024px), never
+     from the user agent. Compact + phone share the drawer: #sidebar becomes
+     an overlay opened by #btnDrawer (body.drawer-open). Which row columns
+     each tier hides lives in applyRowGrid() (0px tracks), not here. */
+  #btnDrawer, #drawerScrim{display:none;}
+  body.layout-compact #btnDrawer, body.layout-phone #btnDrawer{display:flex;}
+  body.layout-compact #sidebar, body.layout-phone #sidebar{
+    position:fixed; top:0; left:0; bottom:0; z-index:60;
+    width:min(340px, 86vw) !important; max-width:none;
+    border-right:1px solid var(--border);
+    transform:translateX(-100%); visibility:hidden;
+    transition:transform .18s ease, visibility 0s linear .18s;
   }
+  body.layout-compact.drawer-open #sidebar, body.layout-phone.drawer-open #sidebar{
+    transform:none; visibility:visible; box-shadow:14px 0 34px rgba(0,0,0,.45);
+    transition:transform .18s ease, visibility 0s;
+  }
+  /* The desktop collapse state (rail / hover peek) has no meaning in the
+     drawer: always show the full content, never the rail. */
+  body.layout-compact #sidebar.collapsed, body.layout-phone #sidebar.collapsed{overflow:hidden;}
+  body.layout-compact #sidebar.collapsed #sidebarNormalContent, body.layout-phone #sidebar.collapsed #sidebarNormalContent{
+    display:flex; position:relative; width:100%; max-width:none; box-shadow:none;
+  }
+  body.layout-compact #sidebarRail, body.layout-phone #sidebarRail{display:none !important;}
+  body.layout-compact #sidebarResizer, body.layout-phone #sidebarResizer,
+  body.layout-compact #sidebarToggle, body.layout-phone #sidebarToggle{display:none;}
+  body.layout-compact.drawer-open #drawerScrim, body.layout-phone.drawer-open #drawerScrim{
+    display:block; position:fixed; inset:0; z-index:55; background:rgba(0,0,0,.45);
+  }
+  body.layout-compact #toolbar, body.layout-phone #toolbar{gap:10px; padding:0 10px;}
+  body.layout-compact .toolbar-right{gap:10px; min-width:0;}
+  body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
+  /* ---------- Phone shell (layout-phone, < 600px) ----------
+     Reader mode: header reduced to drawer / title / find / settings, one-line
+     tour banner, only the Patterns + Filtered tabs, one scrolling row of
+     level pills, a slim minimap, and the entry detail as a bottom sheet.
+     Editing is off (see PROJECT.md / docs/ui-and-views.md "Responsive layout"). */
+  #phoneTitle, #btnFindPhone, #tourBannerMore, .tour-banner-hint, #detailGrab{display:none;}
+  body:not(.layout-phone) .detail-phone-btn{display:none;}
+  body.layout-phone #toolbar{height:52px;}
+  body.layout-phone .brand-name, body.layout-phone .brand-version, body.layout-phone #navHistoryGroup,
+  body.layout-phone #statusText, body.layout-phone #btnUndo, body.layout-phone #btnRedo,
+  body.layout-phone #btnExport, body.layout-phone #btnAssistant, body.layout-phone .toolbar-spacer,
+  body.layout-phone .toolbar-right .toolbar-group{display:none !important;}
+  body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
+  body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  body.layout-phone #btnFindPhone{display:flex;}
+  body.layout-phone .toolbar-right{flex:0 0 auto; gap:6px;}
+  body.layout-phone #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
+
+  body.layout-phone #tourBanner{flex-wrap:wrap; gap:4px 8px; padding:6px 10px; font-size:12.5px;}
+  body.layout-phone .tour-banner-text{flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  body.layout-phone #tourBanner.expanded .tour-banner-text{flex-basis:100%; white-space:normal;}
+  body.layout-phone #tourBannerMore{
+    display:block; flex:0 0 auto; background:none; border:0; padding:4px 2px; font:inherit; font-size:12px;
+    color:var(--accent-strong); cursor:pointer;
+  }
+  body.layout-phone #tourBanner.expanded .tour-banner-hint{display:block; flex:1 0 100%; font-size:12px; color:var(--text-tertiary);}
+  body.layout-phone #tourBannerClose{margin-left:0; padding:4px 2px;}
+  body.layout-phone #tourBanner.expanded .tour-banner-hint{order:1;}
+  body.layout-phone #tourBanner.expanded #tourBannerMore, body.layout-phone #tourBanner.expanded #tourBannerClose{order:2;}
+
+  body.layout-phone #timelineMinimap{height:14px;}
+  body.layout-phone #timelineMinimapMeta{display:none;}
+
+  body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
+  body.layout-phone #viewBar > :not(#fhTabs):not(#levelBar){display:none !important;}
+  /* Phone has no view tabs at all (only Filtered, see phoneEnforceTab());
+     !important because renderMainView() sets fhTabs.style.display inline.
+     #viewBar then holds only #levelBar — no gap beyond its own padding. */
+  body.layout-phone #fhTabs{display:none !important;}
+  body.layout-phone #levelBar{
+    float:none; margin:0; flex:1 1 100%; min-width:0; flex-wrap:nowrap; overflow-x:auto;
+    scrollbar-width:none; -webkit-overflow-scrolling:touch;
+  }
+  body.layout-phone #levelBar::-webkit-scrollbar{display:none;}
+  body.layout-phone .level-btn{
+    width:auto; height:32px; padding:0 12px; border-radius:16px; gap:6px;
+    color:var(--text-primary); font-size:12.5px; font-weight:600;
+  }
+  body.layout-phone .level-btn .row-action-hit{display:none;}
+  body.layout-phone .level-btn .row-action-label{
+    position:static; transform:none; opacity:1; padding:0; border:0; background:none; box-shadow:none;
+    color:inherit; font-family:inherit; font-size:12.5px; font-weight:600; letter-spacing:0; z-index:auto;
+  }
+  body.layout-phone #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
+
+  body.layout-phone #contextToolbar, body.layout-phone #filteredToolbar{display:none !important;}
+  body.layout-phone .col-resize-handle{display:none !important;}
+  body.layout-phone #openMenu .ctx-item[data-action="folder"], body.layout-phone #openMenu .ctx-item[data-action="zip"]{display:none;}
+
+  /* Entry detail = bottom sheet: hidden while nothing is selected
+     (body.sheet-open is kept by updateDetailPanel), ~62% high otherwise. */
+  body.layout-phone #detailResizer{display:none !important;}
+
+  /* Settings dialog (phone): full screen, nav as one scrolling tab row,
+     rows stacked (label above control). No keyboard -> no Shortcuts; no
+     editing -> no theme/scheme/format editors (the lists stay as read-only
+     info). Placed after the base Settings rules so it wins on source order. */
+  body.layout-phone #settingsDialog{align-items:stretch; justify-content:stretch;}
+  body.layout-phone #settingsDialog .settings-page-card{
+    width:100%; max-width:none; height:100%; max-height:none; border:none; border-radius:0; box-shadow:none;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  body.layout-phone #settingsDialog .settings-page-header{padding:6px 8px 6px 14px;}
+  body.layout-phone #settingsClose{width:40px; height:40px;} /* 44 under pointer:coarse, see Touch targets */
+  body.layout-phone #settingsDialog .settings-page-main{flex-direction:column;}
+  body.layout-phone #settingsDialog .settings-nav{
+    flex:0 0 auto; flex-direction:row; gap:4px; padding:4px 8px; overflow-x:auto; overflow-y:hidden;
+    border-right:none; border-bottom:1px solid var(--border); scrollbar-width:none;
+  }
+  body.layout-phone #settingsDialog .settings-nav::-webkit-scrollbar{display:none;}
+  body.layout-phone #settingsDialog .settings-nav-item{flex:0 0 auto; min-height:40px; white-space:nowrap; padding:6px 12px;}
+  body.layout-phone #settingsDialog .settings-nav-footnote{display:none;}
+  body.layout-phone #settingsNavItemShortcuts, body.layout-phone #settingsSectionShortcuts,
+  body.layout-phone #settingsCustomThemesTitle, body.layout-phone #customThemeListCard,
+  body.layout-phone #settingsCustomSyntaxTitle, body.layout-phone #customSyntaxSchemeListCard,
+  body.layout-phone #btnAddFormat, body.layout-phone #btnAddFormatRule, body.layout-phone #formatRuleEditPanel,
+  body.layout-phone #formatListCard .filter-library-row > button, body.layout-phone #formatRuleListCard .filter-library-row > button{display:none !important;}
+  body.layout-phone #formatListCard .settings-card-footer, body.layout-phone #formatRuleListCard .settings-card-footer{display:none;}
+  body.layout-phone #settingsDialog .settings-page-body{padding:0 14px 28px; overflow-x:hidden;}
+  body.layout-phone #settingsDialog .settings-section{padding:16px 0;}
+  body.layout-phone #settingsDialog .settings-row{grid-template-columns:minmax(0, 1fr); gap:10px; padding:14px;}
+  /* Phone: sub-rows are not indented and every select / text input spans the
+     row, so all dropdowns share one left and right edge. */
+  body.layout-phone #settingsDialog .settings-row.settings-row-sub{padding-left:14px;}
+  body.layout-phone #settingsDialog .settings-row-control{justify-self:stretch; max-width:100%; min-width:0; flex-wrap:wrap;}
+  body.layout-phone #settingsDialog .settings-row-control.assert-mode-row{width:auto;}
+  body.layout-phone #settingsDialog .settings-row-control select,
+  body.layout-phone #settingsDialog .settings-row-control input[type="text"]{width:100%; max-width:100%; min-width:0;}
+  /* Compact: one fixed width for the right-aligned selects, so their left
+     edges line up too (desktop keeps content-sized selects). */
+  body.layout-compact #settingsDialog .settings-row-control select{width:240px;}
+  body.layout-phone #settingsThemeLightSelect, body.layout-phone #settingsThemeDarkSelect, body.layout-phone #settingsLlmModel{min-width:0;}
+  body.layout-phone #settingsDialog .accent-picker{max-width:100%; justify-content:flex-start;}
+  body.layout-phone #settingsDialog .license-holder, body.layout-phone #licenseContent{overflow-wrap:anywhere;}
+  body.layout-phone #detailPanel{
+    position:fixed; left:0; right:0; bottom:0; z-index:50; height:var(--sheet-h) !important; min-height:0;
+    border-radius:16px 16px 0 0; border-top:1px solid var(--border); overflow:hidden;
+    box-shadow:0 -10px 30px rgba(0,0,0,.4);
+    transform:translateY(100%); visibility:hidden;
+    transition:transform .18s ease, visibility 0s linear .18s;
+  }
+  body.layout-phone.sheet-open #detailPanel{transform:none; visibility:visible; transition:transform .18s ease, visibility 0s;}
+  body.layout-phone #detailPanel.collapsed:not(.peeking) #detailBody{display:block;}
+  body.layout-phone #detailPanel.collapsed.peeking #detailPanelInner{position:static; max-height:none; height:100%; box-shadow:none;}
+  body.layout-phone #detailGrab{display:block; flex:0 0 auto; width:40px; height:4px; border-radius:2px; background:var(--bg-elevated-2); margin:8px auto 2px;}
+  body.layout-phone #detailPanelHeader{height:auto; flex-wrap:wrap; gap:2px 4px; padding:2px 6px 6px 14px;}
+  body.layout-phone #detailPanelHeaderLabel, body.layout-phone #detailToggle{display:none;}
+  body.layout-phone #detailMeta{order:1; flex:1 1 0;}
+  body.layout-phone .detail-phone-btn{display:flex; order:2; width:40px; height:40px;}
+  body.layout-phone #detailMessage{white-space:pre-wrap; overflow-wrap:anywhere;}
+  body.layout-phone #detailViewTabs{order:3; flex:1 0 100%; height:34px;}
+  body.layout-phone #detailViewTabs .view-tab{flex:1; font-size:12.5px;}
+
+  /* Card rows (layout-phone): the same .log-row element, restyled. Heights
+     are computed in JS (CARD_* constants, see "Card rows") and must match:
+     10px padding, 20px head row + 4px row gap, 14px/19px message clamped to
+     4 lines, 1px border-bottom. */
+  body.layout-phone { --sheet-h:62vh; }
+  /* compact: the wrap button is locked on (always wrapped) but keeps its tooltip */
+  body.layout-compact .toggle-wrap:disabled{pointer-events:auto; cursor:default; opacity:.7;}
+  body.layout-phone #tableWrap:not(.text-mode) #tableHeader{display:none;}
+  body.layout-phone #tableRows{--rows-pad-left:0px; padding:2px 0 20px 0;}
+  body.layout-phone #tableRows .log-row.row-grid{
+    display:grid; grid-template-columns:4px auto auto minmax(0,1fr); grid-template-rows:20px auto;
+    column-gap:10px; row-gap:4px; align-items:center; align-content:start;
+    padding:10px 10px 10px 0; background-clip:padding-box;
+  }
+  body.layout-phone #tableRows .log-row.row-grid > .col-bar{
+    grid-column:1; grid-row:1 / 3; align-self:stretch; margin:-10px 0; border-radius:0 3px 3px 0;
+  }
+  body.layout-phone #tableRows .log-row.row-grid > .col-time{grid-column:2; grid-row:1; font-size:12px;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-level{grid-column:3; grid-row:1;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-thread{grid-column:4; grid-row:1; font-size:12px; min-width:0;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-delta,
+  body.layout-phone #tableRows .log-row.row-grid > .col-location,
+  body.layout-phone #tableRows .log-row.row-grid > .col-method,
+  body.layout-phone #tableRows .log-row.row-grid > .col-custom{display:none;}
+  body.layout-phone #tableRows .log-row.row-grid > .col-msg{
+    grid-column:2 / -1; grid-row:2; min-width:0; align-self:start;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:4; overflow:hidden;
+    white-space:normal; word-break:normal; overflow-wrap:anywhere; text-overflow:ellipsis; tab-size:4;
+    font-size:14px; line-height:19px;
+  }
+  body.layout-phone.multiline-messages #tableRows .log-row.row-grid > .col-msg{white-space:pre-wrap;}
+  /* msgCharWidth() measures with a bare body > .col-msg probe: it must carry the card font size. */
+  body.layout-phone > .col-msg{font-size:14px;}
+  body.layout-phone #tableRows .hl-markers, body.layout-phone #tableRows .ctx-bracket,
+  body.layout-phone #tableRows .ctx-anchor-dot{display:none;}
+  body.layout-phone #tableRows .col-bookmark-icon{left:auto; right:6px; top:6px; bottom:auto; height:12px;}
+  /* The bottom sheet takes its height out of the list so the selected card
+     can always be scrolled above it (selectEntry -> scrollToIndex). */
+  body.layout-phone.sheet-open #content{padding-bottom:var(--sheet-h);}
   :focus-visible{outline:2px solid var(--accent); outline-offset:1px;}
+
+  /* ---------- Touch targets (phone + compact tiers, coarse pointer only) ----------
+     44px hit targets (Apple guideline). EVERY selector is scoped to a tier
+     class, so the desktop tier (>= 1024px, also on touch laptops) and a
+     narrow desktop window with a mouse keep their sizes (GROUP responsive-touch
+     walks this block). Placed last so it wins on source order. */
+  @media (pointer:coarse){
+    body.layout-phone .toolbar-icon-btn, body.layout-compact .toolbar-icon-btn, body.layout-phone .panel-toggle-btn, body.layout-compact .panel-toggle-btn{width:44px; height:44px;}
+    body.layout-phone #settingsClose, body.layout-compact #settingsClose, body.layout-phone .detail-phone-btn, body.layout-compact .detail-phone-btn{width:44px; height:44px;}
+    body.layout-phone .level-btn{height:44px;}
+    body.layout-compact .level-btn{width:44px; height:44px;}
+    body.layout-phone .view-tab, body.layout-compact .view-tab{padding:0 14px; font-size:12px;}
+    body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
+    body.layout-compact #btnLibrary{height:44px;}
+    body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
+    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
+    body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
+    body.layout-phone #sidebarToolbar .stb-btn, body.layout-compact #sidebarToolbar .stb-btn{height:44px; min-width:44px;}
+    body.layout-phone .view-tabs, body.layout-compact .view-tabs, body.layout-phone #detailViewTabs, body.layout-compact #detailViewTabs{height:auto;}
+    body.layout-phone .view-tab, body.layout-compact .view-tab, body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{height:44px;}
+    body.layout-phone .tree-row, body.layout-compact .tree-row{min-height:48px;}
+    body.layout-phone .tree-row, body.layout-compact .tree-row, body.layout-phone .log-row, body.layout-compact .log-row{-webkit-touch-callout:none;}
+    body.layout-phone .tree-swatch, body.layout-compact .tree-swatch{position:relative; width:18px; height:18px;}
+    body.layout-phone .tree-swatch::before, body.layout-compact .tree-swatch::before{content:""; position:absolute; inset:-13px;}
+    body.layout-phone .tree-swatch{pointer-events:none;}
+    body.layout-compact .tree-row.active .tree-mute, body.layout-compact .tree-row.active .tree-del{opacity:1; width:44px; height:44px; margin-block:-4px; padding:0; align-items:center; justify-content:center;}
+    body.layout-phone .tree-mute, body.layout-phone .tree-del{display:none;}
+    body.layout-compact .tree-mute .icon{width:18px; height:18px;}
+    body.layout-phone #settingsDialog .settings-nav-item, body.layout-compact #settingsDialog .settings-nav-item{min-height:44px;}
+    body.layout-phone #settingsDialog .assert-mode-btn, body.layout-compact #settingsDialog .assert-mode-btn, body.layout-phone #settingsDialog .btn-mini, body.layout-compact #settingsDialog .btn-mini, body.layout-phone #settingsDialog .btn-mini-outline, body.layout-compact #settingsDialog .btn-mini-outline, body.layout-phone #settingsDialog .btn-mini-secondary, body.layout-compact #settingsDialog .btn-mini-secondary, body.layout-phone #settingsDialog .settings-row-control select, body.layout-compact #settingsDialog .settings-row-control select, body.layout-phone #settingsDialog .settings-row-control input[type="text"], body.layout-compact #settingsDialog .settings-row-control input[type="text"], body.layout-phone #settingsDialog .settings-row-control input[type="number"], body.layout-compact #settingsDialog .settings-row-control input[type="number"]{box-sizing:border-box; height:44px;}
+    body.layout-phone #settingsDialog .stepper, body.layout-compact #settingsDialog .stepper{height:44px;}
+    body.layout-phone #settingsDialog .stepper .stepper-btn, body.layout-compact #settingsDialog .stepper .stepper-btn{width:44px; height:44px;}
+    body.layout-phone #settingsDialog .filter-library-row-del, body.layout-compact #settingsDialog .filter-library-row-del, body.layout-phone #settingsDialog .filter-library-row-icon, body.layout-compact #settingsDialog .filter-library-row-icon, body.layout-phone #settingsDialog .filter-library-row-order, body.layout-compact #settingsDialog .filter-library-row-order{width:44px; height:44px;}
+    body.layout-phone #settingsDialog .pill-toggle, body.layout-compact #settingsDialog .pill-toggle{width:52px; height:32px; border-radius:16px;}
+    body.layout-phone #settingsDialog .pill-toggle::after, body.layout-compact #settingsDialog .pill-toggle::after{width:24px; height:24px; transform:translate(4px,-50%);}
+    body.layout-phone #settingsDialog .pill-toggle[aria-checked="true"]::after, body.layout-compact #settingsDialog .pill-toggle[aria-checked="true"]::after{transform:translate(24px,-50%);}
+    body.layout-phone #settingsDialog .accent-swatch, body.layout-compact #settingsDialog .accent-swatch{width:32px; height:32px;}
+    body.layout-phone #settingsDialog .accent-picker, body.layout-compact #settingsDialog .accent-picker{gap:12px;}
+  }
 
   /* ---------- Picture-in-picture (desktop build) ----------
      Toggled by philoggSetPip (driven from the wrapper's enter_pip/exit_pip):
@@ -4666,6 +4878,9 @@
 <div id="app">
 
   <header id="toolbar">
+    <button type="button" id="btnDrawer" class="toolbar-icon-btn" aria-label="Files and filters" aria-expanded="false" title="Files &amp; filters">
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
+    </button>
     <div class="brand">
       <div class="brand-row">
         <span class="brand-mark">L</span>
@@ -4682,6 +4897,8 @@
       </button>
     </div>
     <div class="toolbar-spacer"></div>
+    <!-- Phone header title block (layout-phone only): active node + "<file> · <n> entries", see updatePhoneTitle(). -->
+    <div id="phoneTitle"><b></b><span></span></div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
       <div class="toolbar-group">
@@ -4697,6 +4914,10 @@
            initLlmAssistantUi when window.philogg.llmChat exists. Opens the chat. -->
       <button type="button" id="btnAssistant" class="toolbar-icon-btn hidden" title="Assistant (local LLM)">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/><path d="M5.5 7h.01M8 7h.01M10.5 7h.01"/></svg>
+      </button>
+      <!-- Phone only: opens the same find bar as Ctrl+F. -->
+      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -4753,12 +4974,15 @@
     </aside>
 
     <div id="sidebarResizer" title="Drag to resize"></div>
+    <div id="drawerScrim"></div>
 
     <section id="content">
 
       <!-- Tour banner: set by a session file's `banner` (see setSessionBanner). -->
       <div id="tourBanner" class="hidden" role="note">
         <span class="tour-banner-text"></span>
+        <button type="button" id="tourBannerMore" aria-expanded="false">more</button>
+        <span class="tour-banner-hint">Hands-on steps (TRY) need a desktop or tablet.</span>
         <button type="button" id="tourBannerClose" aria-label="Close the tour hint">× close tour</button>
       </div>
 
@@ -5334,6 +5558,7 @@
       <div id="detailResizer" title="Drag to resize"></div>
       <div id="detailPanel">
         <div id="detailPanelInner">
+          <div id="detailGrab" aria-hidden="true"></div>
           <div id="detailPanelHeader">
             <div id="detailPanelHeaderLabel">Entry detail</div>
             <div id="detailMeta"></div>
@@ -5342,6 +5567,15 @@
               <button type="button" class="view-tab" data-detail-view="parsed" aria-pressed="false" title="The parsed message, fields in the header line">Parsed</button>
               <button type="button" class="view-tab active" data-detail-view="pretty" aria-pressed="true" title="Parsed, with embedded XML/JSON pretty-printed and highlighted">Pretty</button>
             </div>
+            <button type="button" id="detailPrev" class="panel-toggle-btn detail-phone-btn" aria-label="Previous entry" title="Previous entry">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5 8 5.5l4 4"/></svg>
+            </button>
+            <button type="button" id="detailNext" class="panel-toggle-btn detail-phone-btn" aria-label="Next entry" title="Next entry">
+              <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/></svg>
+            </button>
+            <button type="button" id="detailClose" class="panel-toggle-btn detail-phone-btn" aria-label="Close entry detail" title="Close">
+              <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="m4 4 8 8M12 4l-8 8"/></svg>
+            </button>
             <button type="button" id="detailToggle" class="panel-toggle-btn" title="Collapse (Ctrl+J)">
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
             </button>
@@ -5967,7 +6201,7 @@
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2.6" width="12" height="10.8" rx="1.4"/><path d="M2 6.2h12M5.6 6.2v7.2"/></svg>
             Log Formats
           </button>
-          <button type="button" class="settings-nav-item" data-nav-target="settingsSectionShortcuts">
+          <button type="button" class="settings-nav-item" id="settingsNavItemShortcuts" data-nav-target="settingsSectionShortcuts">
             <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="1.6" y="4" width="12.8" height="8" rx="1.4"/><path d="M4 7h.01M6.4 7h.01M8.8 7h.01M11.2 7h.01M4.8 9.4h6.4"/></svg>
             Shortcuts
           </button>
@@ -6076,7 +6310,7 @@
             </div>
           </div>
 
-          <div class="settings-subsection-title">Custom themes — your own color palettes</div>
+          <div class="settings-subsection-title" id="settingsCustomThemesTitle">Custom themes — your own color palettes</div>
           <div class="settings-card" id="customThemeListCard">
             <div id="customThemeList"></div>
             <div class="settings-card-footer">
@@ -6084,7 +6318,7 @@
             </div>
           </div>
 
-          <div class="settings-subsection-title">Custom syntax schemes — your own highlight colors</div>
+          <div class="settings-subsection-title" id="settingsCustomSyntaxTitle">Custom syntax schemes — your own highlight colors</div>
           <div class="settings-card" id="customSyntaxSchemeListCard">
             <div id="customSyntaxSchemeList"></div>
             <div class="settings-card-footer">
@@ -16451,6 +16685,7 @@ function jumpToViewTab(n) {
   const t = tabs[n - 1];
   if (!t || t.disabled) return; // a disabled Table/Plot slot is a silent no-op, same as before it was omitted
   clearSidebarForcedPeek();
+  if (currentLayoutTier === "phone") { applyFhView("filter"); state.entriesView = "filter"; state.focusRegion = "entries"; return; } // phone: Filtered only
   applyFhView(t.tab);
   state.entriesView = t.tab === "highlight" ? "highlight" : "filter";
   state.focusRegion = "entries";
@@ -17148,6 +17383,7 @@ let renderDepth = 0; // > 0 while render() runs — see showFhTab's lazy Context
 function render() {
   renderDepth++;
   try { renderInner(); } finally { renderDepth--; }
+  if (renderDepth === 0) phoneEnforceTab();
 }
 function renderInner() {
   if (state.activeId !== lastActiveIdForReveal) {
@@ -17495,6 +17731,7 @@ function renderStatus() {
   // No "no files loaded" hint here anymore — that message lives solely in
   // #emptyState now (person-requested consolidation: one hint, center
   // screen, instead of duplicating it in the toolbar and the tree sidebar).
+  updatePhoneTitle();
   if (fileCount === 0) { statusText.textContent = ""; return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
   statusText.textContent = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
@@ -18750,6 +18987,7 @@ function renderNode(id, depth, opts) {
     // here too; revealFilteredView() itself no-ops when already revealed.
     if (activateNode && activateNode.type === "filter") revealFilteredView();
     render();
+    setDrawerOpen(false); // compact/phone: picking a node dismisses the drawer
   });
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openTreeContextMenu(ev, id); });
   // Middle-click (FEATURE_BACKLOG #17): same delete as the row's own ✕
@@ -18773,7 +19011,7 @@ function renderNode(id, depth, opts) {
   if (node.type === "filter" && !node.locked) {
     row.classList.add("tree-draggable");
     row.addEventListener("mousedown", ev => {
-      if (ev.button !== 0 || ev.target.closest("input, textarea")) return;
+      if (ev.button !== 0 || ev.target.closest("input, textarea") || currentLayoutTier === "phone") return;
       treeDrag = { id, x: ev.clientX, y: ev.clientY, active: false, targetId: null };
     });
   }
@@ -23378,6 +23616,68 @@ function noteHeightForEntry(e) {
   if (!note) return 0;
   return messageLineCount(note) * NOTE_LINE_HEIGHT + NOTE_ROW_VPAD;
 }
+/* ---------- Card rows (layout-phone) ----------
+   On phone the Filtered view's log rows are cards (CSS on the same .log-row
+   element, see "Phone shell" in the stylesheet): line 1 = time, level badge,
+   thread; line 2+ = the message, soft-wrapped at spaces (overflow-wrap:anywhere: a
+   word longer than the line breaks anywhere) and clamped to CARD_MAX_LINES.
+   The line count is a greedy word wrap over the monospace column count
+   (cardWrapPartLines); each row also carries its predicted count as its own
+   -webkit-line-clamp, so a rare misprediction shows an ellipsis instead of
+   overflowing the fixed height. The height is CARD_HEAD + lines * CARD_LINE +
+   CARD_VPAD — pure arithmetic, never measured. The constants mirror the CSS:
+   head row 20px + 4px row gap; 14px mono message at line-height 19px; 10px
+   padding top/bottom + 1px border-bottom. CARD_TRACK_INSET is the card's
+   horizontal non-message width (4px stripe + 10px gap on the left, 10px
+   padding on the right). Not scaled by the log text size (fixed px in CSS).
+   Plain-text files keep their text rows (filteredTextMode). */
+const CARD_HEAD = 24;
+const CARD_LINE = 19;
+const CARD_VPAD = 21;
+const CARD_MAX_LINES = 4;
+const CARD_TRACK_INSET = 24;
+function cardMode() { return currentLayoutTier === "phone" && !filteredTextMode; }
+// Visual lines of one message part in a card: greedy word wrap over `cols`
+// monospace characters, exactly what white-space:normal / pre-wrap with
+// overflow-wrap:anywhere does. Tokens are words and whitespace runs; a word
+// that does not fit moves to the next line first and is only split into
+// cols-sized chunks when it is longer than a whole line; a whitespace run that
+// does not fit hangs at the line end (never causes a break by itself).
+function cardWrapPartLines(text, cols) {
+  if (!text) return 1;
+  let lines = 1, used = 0;
+  const re = /(\s+)|(\S+)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m[1]) {
+      let n = 0;
+      for (const ch of m[1]) n += ch === "\t" ? 4 : 1;
+      used = Math.min(used + n, cols); // hangs at the end of a full line
+      continue;
+    }
+    const len = m[2].length;
+    if (used + len <= cols) { used += len; continue; }
+    if (used > 0) { lines++; used = 0; }
+    if (len > cols) { lines += Math.ceil(len / cols) - 1; used = len % cols || cols; }
+    else used = len;
+  }
+  return lines;
+}
+// Visible card message lines: wrapped line count clamped to CARD_MAX_LINES.
+// multiline on: literal "\n"s split first and each part wraps; off: runs of
+// whitespace collapse to one space first (white-space:normal).
+function cardLinesForEntry(e, cols) {
+  let n;
+  if (cols < 1) n = state.multilineMessages ? messageLineCount(e.message) : 1;
+  else if (state.multilineMessages) {
+    n = 0;
+    for (const part of (e.message ? e.message.split("\n") : [""])) n += cardWrapPartLines(part, cols);
+  } else n = cardWrapPartLines(e.message ? e.message.replace(/\s+/g, " ").trim() : "", cols);
+  return Math.min(n, CARD_MAX_LINES);
+}
+function cardHeightForEntry(e, cols) {
+  return CARD_HEAD + cardLinesForEntry(e, cols) * CARD_LINE + CARD_VPAD;
+}
 /* ---------- Word-wrap message height support (state.wrapMessages) ----------
    Word-wrap is folded into the exact-height virtualization the multiline
    feature already established: a wrapped row's height is ROW_HEIGHT plus one
@@ -23389,6 +23689,10 @@ function noteHeightForEntry(e) {
    from data alone (no per-row DOM measurement). The two views can be different
    widths (Stacked shows both at once), so each stores its own column count,
    set when its offsets are built and reused by its render pass. */
+// Effective word-wrap of the log message column: the stored setting, or always
+// on in the compact tier (a narrow window must not scroll sideways). The stored
+// state.wrapMessages is never changed by this.
+function wrapMessagesEff() { return state.wrapMessages || currentLayoutTier === "compact"; }
 let tableWrapCols = 0;      // Filtered view's message-track char capacity when wrap on (0 = wrap off / unmeasurable)
 let highlightWrapCols = 0;  // Context view's, same contract
 // One real measurement of a 10-char monospace run (the log font is monospace),
@@ -23405,7 +23709,12 @@ function msgCharWidth() {
 // when wrap is off or the body isn't measurable yet (e.g. jsdom, clientWidth
 // 0) — callers then fall back to the plain non-wrapped ROW_HEIGHT.
 function wrapColsForBody(bodyEl) {
-  if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : state.wrapMessages)) return 0;
+  if (bodyEl === tableBody && cardMode()) {
+    const cw = msgCharWidth();
+    const track = (bodyEl.clientWidth || 0) - CARD_TRACK_INSET;
+    return track > 0 ? Math.max(1, Math.floor((track - cw) / cw)) : 0;
+  }
+  if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : wrapMessagesEff())) return 0;
   const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
   if (!(track > 0)) return 0;
   const cw = msgCharWidth();
@@ -23443,9 +23752,10 @@ function messageWrapLines(message, cols) {
 // `textRows` (the Filtered view in text mode only): TEXT_ROW_HEIGHT rows whose
 // extra lines are TEXT_ROW_HEIGHT each (the cells' line-height, see
 // .text-row's CSS).
-function baseRowHeightForEntry(e, cols, textRows) {
+function baseRowHeightForEntry(e, cols, textRows, card) {
+  if (card) return cardHeightForEntry(e, cols);
   const h = textRows ? TEXT_ROW_HEIGHT : ROW_HEIGHT;
-  const wrapOn = (textRows ? state.wrapTextView : state.wrapMessages) && cols >= 1;
+  const wrapOn = (textRows ? state.wrapTextView : wrapMessagesEff()) && cols >= 1;
   if (!wrapOn && (textRows || !state.multilineMessages)) return h;
   const n = wrapOn ? (textRows ? textWrapLines(e.message, cols) : messageWrapLines(e.message, cols)) : messageLineCount(e.message);
   return n > 1 ? h + (n - 1) * (textRows ? TEXT_ROW_HEIGHT : MULTILINE_LINE_HEIGHT) : h;
@@ -23458,8 +23768,8 @@ function baseRowHeightForEntry(e, cols, textRows) {
 // buildRowOffsets sums over — it MUST equal baseRowHeightForEntry(e, cols) +
 // noteHeightForEntry(e) exactly, or the two DOM elements' real heights drift
 // out of sync with the virtualization math.
-function rowHeightForEntry(e, cols, textRows) {
-  return baseRowHeightForEntry(e, cols, textRows) + noteHeightForEntry(e);
+function rowHeightForEntry(e, cols, textRows, card) {
+  return baseRowHeightForEntry(e, cols, textRows, card) + noteHeightForEntry(e);
 }
 // Whether the offsets-array virtualization path (tableRowOffsets/
 // highlightRowOffsets, built via buildRowOffsets) is needed instead of the
@@ -23467,7 +23777,7 @@ function rowHeightForEntry(e, cols, textRows) {
 // differ from the fixed ROW_HEIGHT default: multiline messages, word-wrap, or
 // notes being shown at all (cheaper to always build the array while notes are
 // on than to track "does any currently-loaded entry actually have a note").
-function needsRowOffsets() { return filteredTextMode ? (state.showNotes || state.wrapTextView) : (state.multilineMessages || state.showNotes || state.wrapMessages); }
+function needsRowOffsets() { return filteredTextMode ? (state.showNotes || state.wrapTextView) : (cardMode() || state.multilineMessages || state.showNotes || wrapMessagesEff()); }
 function buildRowOffsets(entries) {
   // Recompute (and cache) the Filtered view's wrap column count here so the
   // heights summed below and the per-row heights renderVisibleRows sets from
@@ -23475,7 +23785,7 @@ function buildRowOffsets(entries) {
   tableWrapCols = wrapColsForBody(tableBody);
   const cols = tableWrapCols;
   const offsets = new Float64Array(entries.length + 1);
-  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols, filteredTextMode);
+  for (let i = 0; i < entries.length; i++) offsets[i + 1] = offsets[i] + rowHeightForEntry(entries[i], cols, filteredTextMode, cardMode());
   return offsets;
 }
 // Largest i such that offsets[i] <= y, clamped to a valid row index (offsets
@@ -23970,7 +24280,7 @@ function appendLogRow(frag, i, rc) {
   const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
 
   row.className = cls;
-  row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode) + "px";
+  row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode()) + "px";
   row.dataset.entryId = e.id;
   // Text mode: no level stripe/Δt/Level/columns — line number, the (empty)
   // fold slot, the message. A text file has no other columns.
@@ -23988,6 +24298,10 @@ function appendLogRow(frag, i, rc) {
     levelCellHtml(e, levelHtml) +
     middleHtml +
     (rc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' : "");
+  if (!rc.textMode && cardMode()) {
+    const msgEl = row.querySelector(":scope > .col-msg");
+    if (msgEl) msgEl.style.webkitLineClamp = String(cardLinesForEntry(e, tableWrapCols));
+  }
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
@@ -24594,7 +24908,7 @@ function buildContextRowOffsets(entries, strips) {
 let cachedMaxHighlightMsgPixelWidth = 0;
 function syncHighlightRowsWidth() {
   // See syncTableRowsWidth: wrap on -> no horizontal overflow to scroll to.
-  if (state.wrapMessages) { highlightRows.style.width = ""; return; }
+  if (wrapMessagesEff()) { highlightRows.style.width = ""; return; }
   const cs = getComputedStyle(highlightRows);
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
   const contentW = cachedMaxHighlightMsgPixelWidth > 0
@@ -27825,6 +28139,12 @@ function selectEntry(entryId, opts) {
   // full re-render here would break native double-click detection.
   updateSelectedRowClass(previousId);
   updateDetailPanel();
+  // Phone: the bottom sheet just shrank the list (see body.sheet-open in the
+  // stylesheet), so bring the selected card into the part above it.
+  if (currentLayoutTier === "phone" && entryId) {
+    const si = currentViewEntries.findIndex(x => x.id === entryId);
+    if (si !== -1) scrollToIndex(si);
+  }
   findRefresh(); // the find bar's "n / m" follows the selection
 }
 
@@ -28255,6 +28575,12 @@ function formatMessageWithHighlight(text) {
 // filtered view.
 function updateDetailPanel() {
   const entry = selectedEntry();
+  // phone: the bottom sheet (CSS only acts in layout-phone). It takes its
+  // height out of the list's (body.sheet-open pads #content), so the visible
+  // rows are re-rendered when it opens/closes.
+  const sheetWas = document.body.classList.contains("sheet-open");
+  document.body.classList.toggle("sheet-open", !!entry);
+  if (sheetWas !== !!entry && currentLayoutTier === "phone") renderVisibleRows();
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -28295,12 +28621,10 @@ function updateDetailPanel() {
     detailMeta.innerHTML =
       levelBadgeHtml(entry) +
       '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
-      '<span class="detail-sep">·</span>' +
-      '<span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' +
-      '<span class="detail-sep">·</span>' +
-      '<span class="detail-loc" title="' + escapeHtml(entry.location) + '"><bdi dir="ltr">' + markField(entry.location, "location") + '</bdi></span>' +
-      '<span class="detail-sep">·</span>' +
-      '<span class="detail-method">' + markField(entry.method, "method") + '</span>';
+      // Empty fields (thread/location/method) print neither a span nor a separator.
+      (entry.thread ? '<span class="detail-sep">·</span><span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' : "") +
+      (entry.location ? '<span class="detail-sep">·</span><span class="detail-loc" title="' + escapeHtml(entry.location) + '"><bdi dir="ltr">' + markField(entry.location, "location") + '</bdi></span>' : "") +
+      (entry.method ? '<span class="detail-sep">·</span><span class="detail-method">' + markField(entry.method, "method") + '</span>' : "");
   }
   // Plain textContent (message can never be interpreted as markup) unless
   // there's actually something to mark or format, in which case both
@@ -28710,9 +29034,16 @@ function updateWrapMsgButton() {
   // The one Wrap button means "wrap this kind of view": for a plain-text root
   // it is the editor/text-row wrap (state.wrapTextView — Context editor AND
   // Filtered text rows), otherwise the log message wrap.
-  const on = nodeIsPlainText(state.activeId) ? state.wrapTextView : state.wrapMessages;
-  btnWrapMsg.forEach(b => b.classList.toggle("active", on));
-  document.body.classList.toggle("wrap-messages", state.wrapMessages);
+  const plain = nodeIsPlainText(state.activeId);
+  const locked = !plain && currentLayoutTier === "compact"; // compact: always wrapped, the button shows that
+  const on = plain ? state.wrapTextView : wrapMessagesEff();
+  btnWrapMsg.forEach(b => {
+    b.classList.toggle("active", on);
+    if (b.dataset.baseTitle === undefined) b.dataset.baseTitle = b.title;
+    b.disabled = locked;
+    b.title = locked ? "Always wrapped in a narrow window" : b.dataset.baseTitle;
+  });
+  document.body.classList.toggle("wrap-messages", wrapMessagesEff());
 }
 
 // A plain persistent toggle, not a popup — full render() (rather than the
@@ -28842,14 +29173,25 @@ const DEFAULT_CUSTOM_COLUMN_WIDTH = 120; // initial width for a column this dict
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_GRID_GAP = 12; // must match .row-grid's column-gap
 const COLUMN_BAR_WIDTH = 5; // must match --row-grid's first (bar) track
-// Below this viewport width, the dynamic middle columns are always hidden
-// regardless of state.columnVisible — same breakpoint the old
-// @media (max-width:760px) rule used to hide directly in CSS, folded in
-// here instead now that this function is the single place --row-grid gets
-// computed (see the @media block's own comment for why living in both
-// places at once broke things). Δt/Message stay visible (just narrower/
-// unaffected) on mobile, same as before this feature.
-const COLUMN_MOBILE_BREAKPOINT = 760;
+// Responsive tiers (window width; see "Responsive layout" in docs/ui-and-views.md).
+// applyRowGrid() is the single place --row-grid is computed, so the tier's
+// column hiding lives there as 0px tracks regardless of state.columnVisible:
+// compact hides Δt and every middle column except Thread, phone hides Δt and
+// every middle column.
+const LAYOUT_COMPACT_MIN = 600;
+const LAYOUT_DESKTOP_MIN = 1024;
+function layoutTierFor(width) {
+  return width >= LAYOUT_DESKTOP_MIN ? "desktop" : width >= LAYOUT_COMPACT_MIN ? "compact" : "phone";
+}
+// The layout viewport width, not innerWidth: a mobile browser widens
+// innerWidth to fit overflowing content (the wider compact/desktop layout at
+// first paint), which would keep a phone out of the phone tier for good.
+// clientWidth stays at the meta-viewport width; 0 (no layout engine) falls
+// back to innerWidth.
+function layoutTier() {
+  const cw = document.documentElement.clientWidth;
+  return layoutTierFor(cw ? Math.min(cw, window.innerWidth) : window.innerWidth);
+}
 
 // Width/visibility lookups fall back to a sane default for a key that
 // state.columnWidths/columnVisible has no entry for yet — a freshly
@@ -28880,18 +29222,17 @@ function collectColumnResizeHandles() {
 // handles to match (see the handles' own CSS comment for why they're
 // positioned via JS instead of nested in .th).
 function applyRowGrid() {
-  const mobile = window.innerWidth <= COLUMN_MOBILE_BREAKPOINT;
+  const tier = layoutTier();
   const parts = [COLUMN_BAR_WIDTH + "px"];
   let x = COLUMN_BAR_WIDTH;
-  // mobileForce: forced hidden below COLUMN_MOBILE_BREAKPOINT regardless of
-  // state.columnVisible — only the dynamic middle columns (Thread/Location/
-  // Method/custom); Δt stays visible (just narrower), same as before this
-  // feature's mobile rule.
+  // middle: a dynamic middle column (Thread/Location/Method/custom); the
+  // tier hides it (and Δt) regardless of state.columnVisible, see above.
   // Only plain-text files loaded: the Time track shows line numbers under
   // its own width key ("line") and Δt/Level, meaningless there, collapse.
   const plainText = allRootsPlainText();
-  const pushTrack = (key, hideable, mobileForce) => {
-    const hidden = (mobile && mobileForce) || (hideable && !columnVisibleFor(key)) || (plainText && (key === "delta" || key === "level"));
+  const pushTrack = (key, hideable, middle) => {
+    const tierHidden = tier !== "desktop" && (key === "delta" || (middle && (tier === "phone" || key !== "thread")));
+    const hidden = tierHidden || (hideable && !columnVisibleFor(key)) || (plainText && (key === "delta" || key === "level"));
     const w = hidden ? 0 : columnWidthFor(key);
     parts.push(w + "px");
     x += COLUMN_GRID_GAP + w;
@@ -28922,6 +29263,126 @@ function applyRowGrid() {
   syncTableRowsWidth();
 }
 window.addEventListener("resize", applyRowGrid);
+
+// Tier body classes + drawer + long-press (Responsive layout, step 1).
+let currentLayoutTier = null;
+const btnDrawer = el("#btnDrawer");
+function setDrawerOpen(open) {
+  open = !!open && currentLayoutTier !== "desktop";
+  document.body.classList.toggle("drawer-open", open);
+  btnDrawer.setAttribute("aria-expanded", open ? "true" : "false");
+}
+function isDrawerOpen() { return document.body.classList.contains("drawer-open"); }
+function applyLayoutTier() {
+  const tier = layoutTier();
+  if (tier === currentLayoutTier) return;
+  const first = currentLayoutTier === null;
+  currentLayoutTier = tier;
+  document.body.classList.toggle("layout-compact", tier === "compact");
+  document.body.classList.toggle("layout-phone", tier === "phone");
+  setDrawerOpen(false);
+  if (tier === "phone") cancelLongPress();
+  if (first) return; // boot: render() has not run yet / applyRowGrid already read the tier
+  updateWrapMsgButton(); // compact = always wrapped (wrapMessagesEff)
+  applyRowGrid();
+  render(); // also runs phoneEnforceTab()
+  if (typeof settingsEnsureNavItemVisible === "function") settingsEnsureNavItemVisible();
+}
+window.addEventListener("resize", applyLayoutTier);
+// Card heights depend on the message track's character capacity: a resize
+// inside the phone tier (rotation) that changes it rebuilds the offsets.
+window.addEventListener("resize", () => {
+  if (currentLayoutTier === "phone" && cardMode() && wrapColsForBody(tableBody) !== tableWrapCols) render();
+});
+btnDrawer.addEventListener("click", () => setDrawerOpen(!isDrawerOpen()));
+
+// ---- Phone shell (layout-phone) ----
+// Phone only shows the Filtered view (no tab bar); wherever a render lands on
+// another one (Patterns/Context/Stacked/Table/Plot, e.g. after activating an
+// extraction node) fall back to Filtered. Called from render() once the
+// outermost render finished.
+function phoneEnforceTab() {
+  if (currentLayoutTier !== "phone") return;
+  if (fhActiveTab === "filter" && fhLayout !== "stacked") return;
+  applyFhView("filter");
+}
+function updatePhoneTitle() {
+  const titleEl = el("#phoneTitle");
+  const node = state.nodes[state.activeId];
+  const b = titleEl.querySelector("b"), sub = titleEl.querySelector("span");
+  if (!node) {
+    b.textContent = "PhiLogg";
+    sub.textContent = state.rootIds.length ? "" : "no file open";
+    return;
+  }
+  let root = node;
+  while (root.parentId && state.nodes[root.parentId]) root = state.nodes[root.parentId];
+  const n = getEntries(node.id).length.toLocaleString("de-DE") + " entries";
+  if (root === node) { b.textContent = nodeDisplayName(node); sub.textContent = n; }
+  else { b.textContent = nodeDisplayName(node); sub.textContent = nodeDisplayName(root) + " · " + n; }
+}
+function closePhoneSheet() {
+  const prev = state.selectedId;
+  if (!prev) return;
+  state.selectedId = null;
+  updateSelectedRowClass(prev);
+  updateDetailPanel();
+}
+el("#btnFindPhone").addEventListener("click", ev => { ev.stopPropagation(); openFindBar(); });
+el("#detailClose").addEventListener("click", closePhoneSheet);
+el("#detailPrev").addEventListener("click", () => moveSelection(-1));
+el("#detailNext").addEventListener("click", () => moveSelection(1));
+el("#tourBannerMore").addEventListener("click", ev => {
+  ev.stopPropagation();
+  const open = tourBannerEl.classList.toggle("expanded");
+  ev.currentTarget.textContent = open ? "less" : "more";
+  ev.currentTarget.setAttribute("aria-expanded", open ? "true" : "false");
+});
+el("#drawerScrim").addEventListener("click", () => setDrawerOpen(false));
+
+// Long-press → context menu for touch pointers (iOS never fires
+// "contextmenu"). One global helper: no per-handler changes. The synthetic
+// event goes to the original target, so every existing contextmenu handler
+// (tree rows, log rows, ...) runs unchanged; the click that follows the
+// release is swallowed so it cannot select the row or close the new popup.
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_PX = 10;
+let longPress = null;
+let longPressFired = false;
+function cancelLongPress() {
+  if (longPress) clearTimeout(longPress.timer);
+  longPress = null;
+}
+document.addEventListener("pointerdown", ev => {
+  longPressFired = false;
+  cancelLongPress();
+  if (ev.pointerType !== "touch" || ev.isPrimary === false || currentLayoutTier !== "compact") return;
+  const press = { x: ev.clientX, y: ev.clientY, target: ev.target, timer: 0 };
+  press.timer = setTimeout(() => {
+    if (longPress !== press) return;
+    longPress = null;
+    longPressFired = true;
+    press.target.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: press.x, clientY: press.y }));
+  }, LONG_PRESS_MS);
+  longPress = press;
+}, true);
+document.addEventListener("pointermove", ev => {
+  if (!longPress || ev.pointerType !== "touch") return;
+  if (Math.hypot(ev.clientX - longPress.x, ev.clientY - longPress.y) > LONG_PRESS_MOVE_PX) cancelLongPress();
+}, true);
+["pointerup", "pointercancel"].forEach(t => document.addEventListener(t, cancelLongPress, true));
+document.addEventListener("click", ev => {
+  if (!longPressFired) return;
+  longPressFired = false;
+  ev.stopPropagation();
+  ev.preventDefault();
+}, true);
+// A browser's own long-press contextmenu (Android Chrome) would double the
+// synthetic one: while a touch press is tracked, swallow trusted ones.
+document.addEventListener("contextmenu", ev => {
+  if (ev.isTrusted && (longPress || longPressFired)) { ev.preventDefault(); ev.stopImmediatePropagation(); }
+}, true);
+applyLayoutTier();
 
 // Called whenever "which formats are currently loaded" or "a loaded
 // format's own column list" changes — from render() itself (see its own
@@ -29108,7 +29569,7 @@ function syncTableRowsWidth() {
   // Word-wrap on: the message wraps within the viewport, so there is nothing
   // to scroll to horizontally — clear any forced width and let #tableRows
   // stretch-fill (left:0;right:0), same as a short-message file.
-  if (filteredTextMode ? state.wrapTextView : state.wrapMessages) { tableRows.style.width = ""; return; }
+  if (cardMode() || (filteredTextMode ? state.wrapTextView : wrapMessagesEff())) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
     ? tableGutterW() + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
     : 0;
@@ -39870,6 +40331,7 @@ const formatRuleList = el("#formatRuleList");
 function closeSettingsDialog() { settingsDialog.classList.add("hidden"); stopShortcutRecording(); }
 function openSettingsDialog() {
   settingsDialog.classList.remove("hidden");
+  settingsEnsureNavItemVisible();
   renderFormatList();
   renderFormatRuleList();
   renderShortcutBindingsList();
@@ -39895,6 +40357,17 @@ settingsNavItems.forEach(btn => {
     if (target && target.scrollIntoView) target.scrollIntoView({ block: "start" });
   });
 });
+// Phone: the Shortcuts section is hidden (no keyboard) — if it was the active
+// nav item (e.g. the window shrank while it was open) fall back to Appearance.
+function settingsEnsureNavItemVisible() {
+  if (currentLayoutTier !== "phone") return;
+  const active = settingsNavItems.find(b => b.classList.contains("active"));
+  if (!active || active.id !== "settingsNavItemShortcuts") return;
+  active.classList.remove("active");
+  const first = settingsNavItems.find(b => b.dataset.navTarget === "settingsSectionAppearance");
+  first.classList.add("active");
+  settingsPageBody.scrollTop = 0;
+}
 // jsdom (the regression suite's DOM) has no IntersectionObserver — the nav
 // still works without it, just without the scroll-driven active highlight.
 if (typeof IntersectionObserver !== "undefined") {
@@ -41592,6 +42065,7 @@ function fwzNextHue() {
 // null) prefills a NEW format the same way from an imported file, plus the
 // file's filename patterns as checkboxes (renderFormatImportRules).
 function openFormatEditDialog(id, importData) {
+  if (currentLayoutTier === "phone") { showCopyToast("The log format editor needs a wider window. Open PhiLogg on a desktop or tablet."); return; }
   formatEditId = id;
   const fmt = id ? state.logFormats.find(f => f.id === id) : (importData ? importData.logFormat : null);
   const isMeta = !!(fmt && fmt.mode === "meta");
@@ -42824,6 +43298,7 @@ document.addEventListener("keydown", ev => {
       return;
     }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
+    setDrawerOpen(false);
     closePlotFullscreen();
     closeSettingsDialog();
     closeFilterPopup();
@@ -43141,7 +43616,8 @@ document.addEventListener("keydown", ev => {
   // own header chevron and resizer double-click.
   if (matchesShortcut(ev, "toggleSidebar")) {
     ev.preventDefault();
-    toggleSidebarCollapsed();
+    if (currentLayoutTier !== "desktop") setDrawerOpen(!isDrawerOpen()); // compact/phone: the sidebar is the drawer
+    else toggleSidebarCollapsed();
     return;
   }
   if (matchesShortcut(ev, "toggleDetail")) {
@@ -44711,6 +45187,10 @@ async function loadSessionFromUrlImpl(url) {
 const tourBannerEl = el("#tourBanner");
 function setSessionBanner(text) {
   const textEl = tourBannerEl.querySelector(".tour-banner-text");
+  tourBannerEl.classList.remove("expanded");
+  const moreBtn = el("#tourBannerMore");
+  moreBtn.textContent = "more";
+  moreBtn.setAttribute("aria-expanded", "false");
   if (!text) {
     textEl.innerHTML = "";
     tourBannerEl.classList.add("hidden");
