@@ -1282,7 +1282,7 @@
   body.filter-toolbar-labels-never .row-action-btn:not(.rect) .row-action-label{display:none !important;}
   body.filter-toolbar-labels-always .row-action-btn:not(.rect){border-radius:20px; width:auto; padding-right:10px; overflow:hidden;}
   body.filter-toolbar-labels-always .row-action-btn:not(.rect) .row-action-label{
-    position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
+    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
 
@@ -1292,7 +1292,7 @@
   body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit){width:auto; padding-right:10px; overflow:hidden;}
   body.view-toolbar-labels-always .row-action-btn.rect .row-action-label,
   body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit) .tb-label{
-    position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
+    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
   /* person-reported, 2026-09-15: a disabled button's label is the only
@@ -1963,6 +1963,15 @@
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
+  /* "View Toolbar button labels: Always" makes the buttons inline pills, so a
+     toolbar row can outgrow the viewport: scroll inside the row instead of
+     widening the page. Scoped to the always mode because overflow would clip
+     the floating "On hover" label pills (they sit above the button). Heights
+     stay fixed (CONTEXT_TOOLBAR_HEIGHT). */
+  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
+    min-width:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin;
+  }
+  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > *{flex-shrink:0;}
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
@@ -23816,7 +23825,7 @@ function wrapColsForBody(bodyEl) {
     return track > 0 ? Math.max(1, Math.floor((track - cw) / cw)) : 0;
   }
   if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : wrapMessagesEff())) return 0;
-  const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
+  const track = (bodyEl.clientWidth || 0) - rowsHPadding(bodyEl === tableBody ? tableRows : highlightRows) - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
   if (!(track > 0)) return 0;
   const cw = msgCharWidth();
   return Math.max(1, Math.floor((track - cw) / cw));
@@ -25003,7 +25012,7 @@ function buildContextRowOffsets(entries, strips) {
    overflow, and the header — a flex SIBLING of the scrolling body, not a
    descendant — gets its own width and has its scrollLeft driven by the body's
    scroll event. Padding is read off the element rather than hardcoded the way
-   TABLE_ROWS_H_PADDING is: this one changes with ctx-active (the marker lane)
+   the old fixed TABLE_ROWS_H_PADDING was: this one changes with ctx-active (the marker lane)
    as well as with --color-mark-w, and one style read per rebuild is cheaper
    than a constant that silently drifts out of sync with the CSS. */
 let cachedMaxHighlightMsgPixelWidth = 0;
@@ -29630,7 +29639,7 @@ function measureMsgWidth(text) {
   // offsetWidth specifically, NOT getBoundingClientRect().width: verified
   // directly (Playwright, document.documentElement.style.zoom set to 1.5)
   // that offsetWidth/clientWidth/scrollWidth stay in the same "unscaled
-  // CSS px" space state.columnWidths/lastColumnEdgeX/TABLE_ROWS_H_PADDING
+  // CSS px" space state.columnWidths/lastColumnEdgeX/rowsHPadding()
   // already use regardless of state.fontScale's whole-UI zoom, while
   // getBoundingClientRect() returns the zoomed VISUAL size instead — mixing
   // that in here would put contentW off by the zoom factor at any scale
@@ -29671,18 +29680,25 @@ function computeMaxMessageWidth(entries) {
   }
   return longest ? measureMsgWidth(longest) : 0;
 }
-// #tableRows' own left+right padding (padding:2px 16px 20px 14px, box-
-// sizing:border-box — see its CSS comment) — added on top of the grid
-// content width below since box-sizing:border-box means an explicit
-// .style.width here is the OUTER (border-box) size.
-const TABLE_ROWS_H_PADDING = 14 + 16;
+// #tableRows'/#highlightRows' real left+right padding, read off the element:
+// it varies with --color-mark-w (--rows-pad-left), the ctx-active marker lane
+// and the phone layout, so a constant drifts out of sync with the CSS. Added on
+// top of the grid content width below since box-sizing:border-box means an
+// explicit .style.width here is the OUTER (border-box) size. Fallback (old
+// default padding) when styles can't be resolved (jsdom).
+const ROWS_H_PADDING_FALLBACK = 14 + 16;
+function rowsHPadding(rowsEl) {
+  const cs = getComputedStyle(rowsEl);
+  const l = parseFloat(cs.paddingLeft), r = parseFloat(cs.paddingRight);
+  return Number.isFinite(l) && Number.isFinite(r) ? l + r : ROWS_H_PADDING_FALLBACK;
+}
 function syncTableRowsWidth() {
   // Word-wrap on: the message wraps within the viewport, so there is nothing
   // to scroll to horizontally — clear any forced width and let #tableRows
   // stretch-fill (left:0;right:0), same as a short-message file.
   if (cardMode() || (filteredTextMode ? state.wrapTextView : wrapMessagesEff())) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
-    ? tableGutterW() + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
+    ? tableGutterW() + cachedMaxMsgPixelWidth + rowsHPadding(tableRows)
     : 0;
   // Only override when content genuinely needs more than the viewport
   // already gives it for free — otherwise clear the inline style so
@@ -36098,10 +36114,16 @@ el("#ctxCopyTicket").addEventListener("click", ev => {
 // if none were found — "Filter for this ___" (below) then falls back to
 // the exact literal text instead, so a message/method/thread with no
 // numbers in it is still filterable for its exact value.
+// The lookbehind keeps a token from starting right after an ASCII letter/digit/
+// underscore/dot, or a sign/digit right after "<letter>-" (identifiers like
+// "J-00004", "worker-3"). ASCII only on purpose: CJK text ("注文70328") must
+// still extract. Exception: a clock time right after "<digit>T" (ISO timestamp).
 const NUMERIC_TOKEN_RE = new RegExp(
+  "(?:(?<=\\dT)\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?|(?<![A-Za-z0-9_.]|[A-Za-z]-)(?:" +
   "\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
   "|\\d+(?:\\.\\d+)?\\s?(?:ms|s|sec|secs|seconds|min|mins|minutes|h|hrs|hours)\\b" + // duration + unit
-  "|[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?)",     // standalone number (grouped only with both separators)
+  "|[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?)" +     // standalone number (grouped only with both separators)
+  "))",
   "g"
 );
 function buildNumericExtractPattern(message) {
@@ -43392,6 +43414,17 @@ document.addEventListener("click", ev => {
   // deliberately NOT treated as "outside" (still navigating the tree).
   if (sidebarForcedPeek && !sidebarEl.contains(ev.target)) clearSidebarForcedPeek();
 });
+
+// The row/tree/extract context menus also close on a press outside them: many
+// controls stopPropagation() their click (popup openers must), so the document
+// click handler above never sees taps on them. Capture phase + pointerdown, so
+// it runs before any handler and the opening press (right-click / long-press)
+// is already over by the time its menu exists.
+document.addEventListener("pointerdown", ev => {
+  if (!contextMenu.contains(ev.target) && !addToSelectionMenu.contains(ev.target)) closeContextMenu();
+  if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
+  if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
+}, true);
 
 /* ===================== Keyboard shortcuts ===================== */
 

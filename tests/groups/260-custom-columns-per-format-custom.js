@@ -167,17 +167,17 @@ await withApp(async (w, d, T) => {
     messageVisible: true, builtin: false, edited: false, createdAt: Date.now(),
   };
   T.state.logFormats.push(reqIdFmt);
-  const reqIdLines = [0, 1, 2].map(i => `2024-01-15 10:00:0${i},000\t${i === 0 ? "ERROR" : "INFO"}\treq-${i}\t"hello ${i}"`).join("\n") + "\n";
+  const reqIdLines = [0, 1, 2].map(i => `2024-01-15 10:00:0${i},000\t${i === 0 ? "ERROR" : "INFO"}\treq=${i}\t"hello ${i}"`).join("\n") + "\n";
   const f = await w.addFile("reqid.log", reqIdLines, () => {}, "fmt-reqid");
   T.state.activeId = f.id;
   w.render();
 
-  assert(f.entries[0].fields.reqId === "req-0", "sanity: the custom column's value is captured on each entry");
+  assert(f.entries[0].fields.reqId === "req=0", "sanity: the custom column's value is captured on each entry");
   assert(w.activeColumnDefs().map(c => c.key).join(",") === "reqId", "activeColumnDefs() for this lone loaded format is just its own custom column (Thread/Location/Method all dropped)");
-  assert(w.entryColumnValue(f.entries[1], "reqId") === "req-1", "entryColumnValue reads a custom column's value the same way as a built-in one");
+  assert(w.entryColumnValue(f.entries[1], "reqId") === "req=1", "entryColumnValue reads a custom column's value the same way as a built-in one");
 
-  const reqIdCell = [...d.querySelectorAll('#tableRows .col-custom[data-col="reqId"]')][1]; // row for entries[1] ("req-1")
-  assert(reqIdCell && reqIdCell.textContent.trim() === "req-1", "the rendered row shows the custom column, tagged data-col and the shared .col-custom class");
+  const reqIdCell = [...d.querySelectorAll('#tableRows .col-custom[data-col="reqId"]')][1]; // row for entries[1] ("req=1")
+  assert(reqIdCell && reqIdCell.textContent.trim() === "req=1", "the rendered row shows the custom column, tagged data-col and the shared .col-custom class");
   assert(!d.querySelector("#tableRows .col-thread") && !d.querySelector("#tableRows .col-location") && !d.querySelector("#tableRows .col-method"),
     "the three default columns this format dropped render nothing at all");
 
@@ -196,7 +196,7 @@ await withApp(async (w, d, T) => {
   fireContextMenu(reqIdCell, w, 50, 50);
   assert(d.querySelector("#ctxFilterForColumnLabel").textContent === "Filter for this Request Id", "right-clicking the custom column's cell labels the action for it");
   fireClick(d.querySelector("#ctxFilterForColumn"), w);
-  assert(d.querySelector("#filterInput").value === "req[*:int]", "the custom column's value fills the filter input, numeric content auto-wildcarded same as any other column (openFilterForEntryColumn) — got " + d.querySelector("#filterInput").value);
+  assert(d.querySelector("#filterInput").value === "req=[*:int]", "the custom column's value fills the filter input, numeric content auto-wildcarded same as any other column (openFilterForEntryColumn) — got " + d.querySelector("#filterInput").value);
   assert(d.querySelector('.column-chip[data-col="reqId"]').classList.contains("active"), "the custom column's own chip is pre-selected in the filter popup");
   assert(!d.querySelector('.column-chip[data-col="thread"]'), "a column this format doesn't define (Thread) has no chip at all");
   w.closeFilterPopup();

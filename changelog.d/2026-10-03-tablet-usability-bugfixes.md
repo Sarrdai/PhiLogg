@@ -1,0 +1,6 @@
+- **fix: five tablet usability bugs (2026-10-03)**
+  - "View Toolbar button labels: Always" no longer widens the page: the four view toolbars scroll inside themselves; Always-mode labels no longer paint over the "+" filter popup.
+  - Wrapped rows no longer overlap: the message-track width uses the rows element's real computed padding (color-mark width, phone layout) instead of a fixed 30px.
+  - The row/tree/extract context menus close on any press outside them (capture-phase `pointerdown`), also on controls that stop click propagation.
+  - Extraction auto-patterns leave identifiers like `job=J-00004`, `worker-3`, `v2` literal instead of turning them into int columns.
+  - **Tests**: GROUP toolbar-always-overflow, wrap-rows-padding, context-menu-pointerdown-dismiss, extract-pattern-identifiers, toolbar-labels-always-zindex. Docs: docs/ui-and-views.md, docs/filters.md.
