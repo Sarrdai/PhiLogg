@@ -2627,6 +2627,10 @@
      (updateDetailPanel) rather than a CSS-only rule (no stable class to key
      an :empty-style selector off here — a note's own text could legitimately
      be blank while being edited, so absence has to be tracked, not inferred). */
+  /* Selected entry outside the active filter (the italic ghost row, .not-in-filter-chip). */
+  #detailOutside{
+    margin:0 0 10px; font-family:var(--font-ui); font-size:11.5px; color:var(--text-tertiary); font-style:italic;
+  }
   #detailNote{
     margin:10px 0 0; padding-top:10px; border-top:1px dashed var(--border-soft);
     font-family:var(--font-ui); font-size:12px; line-height:1.6; font-style:italic;
@@ -4470,6 +4474,10 @@
      surrounding rows close up by exactly one row's worth of space instead
      of a full re-render yanking the scroll position elsewhere. */
   .log-row.temp-anchor-row{border-left:3px dashed var(--text-secondary); font-style:italic; opacity:.85;}
+  .not-in-filter-chip{
+    display:inline-block; margin-right:6px; padding:0 5px; border:1px solid var(--border-soft); border-radius:8px;
+    font-size:10px; line-height:14px; font-style:normal; color:var(--text-tertiary); vertical-align:1px;
+  }
   .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
   /* ---------- Log view columns popup (#btnColumns) — own fixed-position/
@@ -5779,6 +5787,7 @@
           </div>
           <div id="detailBody">
             <div id="detailPlaceholder"><span class="dp-desktop">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</span><span class="dp-touch">Tap a row to see its full message here.</span></div>
+            <div id="detailOutside" style="display:none">This entry is not part of the current filter.</div>
             <div id="detailMessage"></div>
             <div id="detailNote"></div>
           </div>
@@ -16120,6 +16129,7 @@ const detailPanel = el("#detailPanel");
 const detailMeta = el("#detailMeta");
 const detailMessageEl = el("#detailMessage");
 const detailNoteEl = el("#detailNote");
+const detailOutsideEl = el("#detailOutside");
 const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
@@ -16255,7 +16265,7 @@ function finishAnalysisFilter(node, tab) {
    inside the group key (never present in real log text), so the key can be
    split back into literal text and placeholders without ambiguity when a
    filter pattern is built from it. One regex pass per message, alternatives
-   in priority order: GUID, IPv4[:port], a "quoted string" (its content), a
+   in priority order: GUID, IPv4[:port], a "double" or 'single' quoted string (its content; quotes kept), a
    Windows/UNC or multi-segment Unix path, a hex literal/hash (0x…, or 8+
    hex digits mixing letters and digits), then any number — a sign only
    when it isn't glued to a word ("Worker-3" keeps its dash), and grouped
@@ -16268,7 +16278,7 @@ const PATTERN_PH_SPLIT_RE = /([-])/;
 const PATTERN_TOKEN_RE = new RegExp(
   "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})" +
   "|((?<![\\w.])\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d{1,5})?(?![\\w.]))" +
-  '|("[^"\\n]*")' +
+  '|("[^"\\n]*"|(?<![\\w\'])\'[^\'\\n]*\'(?![\\w\']))' +
   "|((?:\\b[A-Za-z]:\\\\|\\\\\\\\)[^\\s\"'<>|,;]+|(?<![\\w.:/])\\/[\\w.-]+(?:\\/[\\w.-]*)+)" +
   "|(\\b0[xX][0-9a-fA-F]+\\b|\\b(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{8,}\\b)" +
   "|((?:(?<![\\w.])[-+])?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?))",
@@ -16288,7 +16298,7 @@ function patternTokenReplacer(m, guid, ip, quoted, path, hex, num) {
   }
   if (guid !== undefined) return "";
   if (ip !== undefined) return "";
-  if (quoted !== undefined) return '""';
+  if (quoted !== undefined) { const q = quoted[0]; return q + "" + q; }
   if (path !== undefined) return "";
   return "";
 }
@@ -17094,6 +17104,28 @@ function showFhTab(tab) {
   // The bar is only shown while the Context panel is actually on screen, and
   // that's exactly what just changed.
   updateContextToolbar();
+  // After the toolbar settled (showing it changes the viewport), so the
+  // measurement below is the final one.
+  if (fhLayout === "tabs" && tab === "highlight" && !tabAnchor && !renderDepth) revealSelectedInContextTab();
+}
+
+// The Context pane can't scroll while it is display:none, so a selection made
+// on the Filtered tab leaves it wherever it was (often above the fold of the
+// small tablet viewport). When the tab becomes visible, bring the selected
+// entry into view (centered) if it isn't fully visible. Not while tail-follow
+// owns the scroll position, not for the plain-text editor (its tab anchor), and
+// not when revealInHighlightView already has a scroll target of its own.
+function revealSelectedInContextTab() {
+  if (!state.selectedId || state.highlightScrollTargetId || textEditorShown()) return;
+  if (state.tailFollow && isTailedHighlightViewActive()) return;
+  const idx = currentHighlightViewEntries.findIndex(e => e.id === state.selectedId);
+  const offsets = highlightRowOffsets;
+  if (idx === -1 || !offsets || offsets[idx + 1] == null) return;
+  const viewportH = highlightBody.clientHeight;
+  if (!viewportH) return; // not laid out (jsdom / hidden): nothing to measure
+  const top = offsets[idx], bottom = offsets[idx + 1];
+  if (top >= highlightBody.scrollTop && bottom <= highlightBody.scrollTop + viewportH) return;
+  scrollToHighlightIndex(idx, { center: true });
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
@@ -17574,11 +17606,14 @@ tableHeaderEl.addEventListener("click", ev => {
   const th = ev.target.closest(".th-sortable");
   if (!th) return;
   const col = th.dataset.sort;
+  const firstDir = col === "delta" ? "desc" : "asc"; // Δt: largest first — "where is the time lost"
   if (state.sortColumn === col) {
-    state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+    // Third tap: first direction -> opposite -> off (back to log order); no sort = sortColumn null.
+    if (state.sortDir === firstDir) state.sortDir = firstDir === "asc" ? "desc" : "asc";
+    else { state.sortColumn = null; state.sortDir = "asc"; }
   } else {
     state.sortColumn = col;
-    state.sortDir = col === "delta" ? "desc" : "asc"; // Δt: largest first — "where is the time lost"
+    state.sortDir = firstDir;
   }
   renderTable();
   findRefresh(); // a re-sort reorders the list the find bar's hit indices point into
@@ -18451,6 +18486,7 @@ function applyTempAnchorOnActiveNodeSwitch(nodeId) {
   const entry = state.selectedId ? entryIndex[state.selectedId] : null;
   state.tempAnchor = entry ? computeTempAnchorForNode(nodeId, entry) : null;
   if (state.tempAnchor && tempAnchorMode === "fade") scheduleTempAnchorFade();
+  renderDetailOutsideNotice(entry);
 }
 
 // Which occurrence (nth) of its id the last keyboard move landed on. A merge's
@@ -19706,6 +19742,7 @@ function getVisibleEntries() {
    a small buffer) actually become <tr> nodes — see renderExtractVisibleRows. */
 
 let extractRowsData = []; // [{ entry, values: [...] }]
+let extractTimeBase = null; // ts of the first row (null for plain text / no rows): ELAPSED_COL + this = the row's clock time
 let extractColumns = [];  // [{ name, type }]
 let extractNodeId = null;
 let extractSortCol = null; // index into extractColumns, or null (natural/chronological order)
@@ -22156,6 +22193,43 @@ window.addEventListener("mouseup", ev => {
   renderPlotChart();
 });
 
+// Y default helper: the first float, else int, pattern column (colIndex >= 0,
+// not the X column) with at least two distinct finite values in the rows.
+function plotVaryingNumericColumn(plottable, xCol) {
+  const varies = c => {
+    let first;
+    for (const row of extractRowsData) {
+      const v = parseValueForPlot(row.values[c.index], c.type);
+      if (!Number.isFinite(v)) continue;
+      if (first === undefined) first = v;
+      else if (v !== first) return true;
+    }
+    return false;
+  };
+  for (const type of ["float", "int"]) {
+    const hit = plottable.find(c => c.type === type && c.index >= 0 && c.index !== xCol && varies(c));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// The time column as plot X is drawn as clock time: t (ms since the first row)
+// + extractTimeBase. Not for plain text (its ELAPSED_COL is the line number).
+function plotXIsClock() {
+  return plotConfig.xCol === ELAPSED_COL && extractTimeBase != null;
+}
+// "08:12:30"; ".mmm" added while the visible span is < 2 s; the date is
+// prepended when the visible span crosses midnight.
+function formatPlotClockTick(t, lo, hi) {
+  const abs = extractTimeBase + t;
+  const d = new Date(abs), p2 = n => String(n).padStart(2, "0");
+  const crossesMidnight = new Date(extractTimeBase + lo).toDateString() !== new Date(extractTimeBase + hi).toDateString();
+  let out = p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds());
+  if (hi - lo < 2000) out += "." + String(d.getMilliseconds()).padStart(3, "0");
+  if (crossesMidnight) out = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + " " + out;
+  return out;
+}
+
 function renderPlotControls() {
   // plotConfig itself is now loaded per-node by loadPlotConfigForNode
   // (called from renderExtractTable on every genuine node switch) — nothing
@@ -22169,16 +22243,14 @@ function renderPlotControls() {
     return;
   }
   // X always has a valid selection (it's a dropdown, never empty) — re-pick if the
-  // pattern changed underneath it. extractColumns always starts with the
-  // synthetic Index column (see INDEX_COL), so plottable[0] here IS Index —
-  // that's what makes it the default X axis for every extraction's plot,
-  // with no extra logic needed. Y defaults are only auto-picked ONCE per
+  // pattern changed underneath it. The default is the time column (ELAPSED_COL,
+  // drawn with clock-time ticks — see plotXIsClock; for a plain-text file it is
+  // the Line column), not Index. Y defaults are only auto-picked ONCE per
   // extraction (first time its plot tab is opened); after that, unchecking every
   // box is a valid state (the chart just shows a "pick a column" placeholder)
   // instead of the box being silently re-checked out from under the user.
-  // A plain-text file's plot defaults to its Line column instead.
   if (plotConfig.xCol == null || !plottable.some(c => c.index === plotConfig.xCol)) {
-    plotConfig.xCol = nodeIsPlainText(extractNodeId) && plottable.some(c => c.index === ELAPSED_COL) ? ELAPSED_COL : plottable[0].index;
+    plotConfig.xCol = plottable.some(c => c.index === ELAPSED_COL) ? ELAPSED_COL : plottable[0].index;
   }
   // Z axis (3D scatter only): re-pick if the pattern changed underneath it,
   // same fallback shape as X — default to the second plottable column so it
@@ -22189,8 +22261,11 @@ function renderPlotControls() {
   if (!plotConfig.yColsInit) {
     // Prefer a real pattern-extracted column over the synthetic Index/t(ms)
     // ones for the Y default — those are more useful defaults to look at
-    // than "t(ms) plotted against Index".
-    const firstOther = plottable.find(c => c.index !== plotConfig.xCol && c.index >= 0)
+    // than "t(ms) plotted against Index". Among them: the first numeric column
+    // whose values actually vary, float columns before int ones (a constant
+    // column is a flat line); none varying -> the first pattern column.
+    const firstOther = plotVaryingNumericColumn(plottable, plotConfig.xCol)
+      || plottable.find(c => c.index !== plotConfig.xCol && c.index >= 0)
       || plottable.find(c => c.index !== plotConfig.xCol)
       || plottable[0];
     plotConfig.yCols = [firstOther.index];
@@ -22662,7 +22737,7 @@ function renderPlotChart() {
       if (t < xDomainMin - 1e-9 || t > xDomainMax + 1e-9) return;
       const px = xPix(t);
       parts.push('<line class="plot-grid-line" x1="' + px + '" y1="' + top + '" x2="' + px + '" y2="' + (top + plotH) + '"/>');
-      parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + formatAxisNumber(t) + "</text>");
+      parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + (plotXIsClock() ? formatPlotClockTick(t, xDomainMin, xDomainMax) : formatAxisNumber(t)) + "</text>");
     });
   }
   // Axes
@@ -22676,8 +22751,9 @@ function renderPlotChart() {
   // one Y series — with several, the per-series legend below already names
   // each one by its own color, and one shared Y title couldn't describe
   // them all anyway.
-  parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="x" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.xCol))) + "</text>");
-  parts.push(plotAxisCaret("x", left + plotW / 2, top + plotH + 34, columnAxisLabel(findExtractColumn(plotConfig.xCol)), "middle", ""));
+  const xAxisLabel = plotXIsClock() && findExtractColumn(ELAPSED_COL).name === "t (ms)" ? "Time" : columnAxisLabel(findExtractColumn(plotConfig.xCol));
+  parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="x" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(xAxisLabel) + "</text>");
+  parts.push(plotAxisCaret("x", left + plotW / 2, top + plotH + 34, xAxisLabel, "middle", ""));
   if (series.length === 1) {
     const yTitleX = 14, yTitleY = top + plotH / 2;
     parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="y" x="' + yTitleX + '" y="' + yTitleY + '" text-anchor="middle" transform="rotate(-90 ' + yTitleX + ' ' + yTitleY + ')">' + escapeHtml(columnAxisLabel(findExtractColumn(series[0].col))) + "</text>");
@@ -23339,6 +23415,7 @@ function renderExtractTable(node) {
   const plainText = nodeIsPlainText(node.id);
   const entries = applyLevelFilter(getEntries(node.id));
   const pairs = entries.length > 0 && !!entries[0].isPair;
+  extractTimeBase = !plainText && entries.length ? entries[0].ts : null;
   extractColumns = [
     { name: "Index", type: "int", colIndex: INDEX_COL },
     { name: plainText ? "Line" : "t (ms)", type: "int", colIndex: ELAPSED_COL },
@@ -24209,6 +24286,7 @@ function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
   return true;
 }
 
+let viewMembers = []; // the Filtered view's real members (chronological, no temp anchor) — membership check of the detail notice
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
 /* ===================== Temporary anchor rendering (FEATURE_BACKLOG #18) ===
@@ -24588,7 +24666,8 @@ function appendLogRow(frag, i, rc) {
     middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
   }
   const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message", plainTextSyntaxRanges(e, rc.syntax));
-  const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
+  const msgHtml = (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
+    (filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase);
 
   row.className = cls;
   row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode()) + "px";
@@ -25638,9 +25717,13 @@ let contextToolbarPanelOnScreen = false;
 function setContextToolbarVisible(visible, compensate = true) {
   if (visible === contextToolbarVisible) return;
   contextToolbarVisible = visible;
+  // The bar's real height (the compact tier's min-height:52px differs from the
+  // desktop 36px), measured while it is displayed: after showing, before hiding.
+  const hBefore = contextToolbar.offsetHeight;
   contextToolbar.classList.toggle("hidden", !visible);
   if (compensate) {
-    setHighlightScroll(highlightBody.scrollTop + (visible ? CONTEXT_TOOLBAR_HEIGHT : -CONTEXT_TOOLBAR_HEIGHT));
+    const h = (visible ? contextToolbar.offsetHeight : hBefore) || CONTEXT_TOOLBAR_HEIGHT; // jsdom: 0 -> the CSS constant
+    setHighlightScroll(highlightBody.scrollTop + (visible ? h : -h));
   }
 }
 
@@ -29019,6 +29102,7 @@ function updateDetailPanel() {
     detailMessageEl.textContent = "";
     detailNoteEl.style.display = "none";
     detailNoteEl.textContent = "";
+    detailOutsideEl.style.display = "none";
     return;
   }
 
@@ -29086,6 +29170,23 @@ function updateDetailPanel() {
     detailMessageEl.textContent = entry.message;
   }
   renderDetailNote(entry);
+  renderDetailOutsideNotice(entry);
+}
+
+// One-line notice while the entry shown in the detail panel is not part of
+// the active view (node + level filter), whether or not a temp-anchor ghost
+// row exists — refreshed by updateDetailPanel and after every table build.
+function renderDetailOutsideNotice(entry) {
+  detailOutsideEl.style.display = entry && entryOutsideActiveView(entry) ? "block" : "none";
+}
+// True when `entry` is not a member of the view the Filtered pane shows
+// (active node + level filter). Binary search by ts in the chronological
+// member list, then the same-ts run: no scan, no copy.
+function entryOutsideActiveView(entry) {
+  const list = viewMembers;
+  if (list.length && list[0].isPair) return false; // link pair view: its rows are pair objects, no verdict
+  for (let i = lowerBoundByTs(list, entry.ts); i < list.length && list[i].ts === entry.ts; i++) if (list[i].id === entry.id) return false;
+  return true;
 }
 
 // Full note text, always shown here regardless of state.showNotes/
@@ -29418,7 +29519,8 @@ function toggleBookmark(entryId) {
   // the Filtered view showing the stale pre-change set until some UNRELATED
   // full render happened to run.
   if (state.pinBookmarksInFilteredView) {
-    currentViewEntries = spliceTempAnchor(getVisibleEntries());
+    viewMembers = getVisibleEntries();
+    currentViewEntries = spliceTempAnchor(viewMembers);
     viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
     tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
@@ -29427,6 +29529,7 @@ function toggleBookmark(entryId) {
       tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
     }
     cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+    renderDetailOutsideNotice(selectedEntry());
     syncTableRowsWidth();
   }
   // Repaint the visible row windows of BOTH views so the bookmark dot
@@ -30230,6 +30333,7 @@ function renderTable() {
   // (bugfix — person-reported: an anchor from far outside the filter's real
   // span made the minimap's highlighted range balloon to cover it).
   const minimapViewEntries = getVisibleEntries();
+  viewMembers = minimapViewEntries;
   currentViewEntries = spliceTempAnchor(minimapViewEntries);
   viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
@@ -30239,6 +30343,7 @@ function renderTable() {
     tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
   }
   cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  renderDetailOutsideNotice(selectedEntry());
   syncTableRowsWidth();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
   // Table-view-specific ("what's actually got a DOM row right now") — see

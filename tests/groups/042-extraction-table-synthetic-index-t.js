@@ -84,12 +84,12 @@ await withApp(async (w, d, T) => {
   assert(lines[0] === "Index\tt (ms)\tn", "export header includes Index/t(ms) ahead of the pattern column, got " + JSON.stringify(lines[0]));
   assert(lines.includes("2\t3500\t9"), "export body includes a cumulative (not per-step) t(ms) value, got " + JSON.stringify(lines));
 
-  /* ---------- Plot tab: Index is the default X axis on every extraction, a real column defaults for Y ---------- */
+  /* ---------- Plot tab: the time column is the default X axis on every extraction, a real column defaults for Y ---------- */
   w.applyFhView("plot");
-  assert(d.querySelector("#plotXSelect").value === "-2", "Index is the default X-axis selection for a freshly opened extraction's plot, got " + d.querySelector("#plotXSelect").value);
+  assert(d.querySelector("#plotXSelect").value === "-1", "the time column is the default X-axis selection for a freshly opened extraction's plot, got " + d.querySelector("#plotXSelect").value);
   const yChecked = [...d.querySelectorAll('#plotYList input[type="checkbox"]:checked')].map(cb => cb.dataset.col);
   assert(yChecked.length === 1 && yChecked[0] === "0", "Y defaults to the real extracted column, not the synthetic t(ms) one, got " + JSON.stringify(yChecked));
-  const elapsedSwatch = d.querySelector('#plotYList input[data-col="-1"]').nextElementSibling;
-  assert(elapsedSwatch.style.background !== "", "t(ms) still gets a valid swatch color in the Y-column list (columnColor's negative-index modulo fix)");
+  const elapsedSwatch = d.querySelector('#plotYList input[data-col="-2"]').nextElementSibling;
+  assert(elapsedSwatch.style.background !== "", "Index (negative colIndex) still gets a valid swatch color in the Y-column list (columnColor's negative-index modulo fix)");
   w.switchExtractView("table");
 });
