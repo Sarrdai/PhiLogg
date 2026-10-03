@@ -28165,6 +28165,9 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
     updateLogMultiSelectClasses();
   }
   logMultiSelectAnchorId = entryId;
+  // Phone: tapping a card is the one explicit way to open the entry-detail
+  // sheet (see phoneSheetOpen); find steps / minimap clicks only select.
+  if (currentLayoutTier === "phone") phoneSheetOpen = true;
   selectFn(entryId);
 }
 
@@ -28240,9 +28243,9 @@ function selectEntry(entryId, opts) {
   // full re-render here would break native double-click detection.
   updateSelectedRowClass(previousId);
   updateDetailPanel();
-  // Phone: the bottom sheet just shrank the list (see body.sheet-open in the
-  // stylesheet), so bring the selected card into the part above it.
-  if (currentLayoutTier === "phone" && entryId) {
+  // Phone: an open bottom sheet just shrank the list (see body.sheet-open in
+  // the stylesheet), so bring the selected card into the part above it.
+  if (currentLayoutTier === "phone" && phoneSheetOpen && entryId) {
     const si = currentViewEntries.findIndex(x => x.id === entryId);
     if (si !== -1) scrollToIndex(si);
   }
@@ -28674,14 +28677,23 @@ function formatMessageWithHighlight(text) {
 // line-break-preserved message) into the bottom panel. Looks the entry up
 // via the global index, so it works even if it isn't part of the current
 // filtered view.
+// Phone: whether the entry-detail bottom sheet is shown. Plain UI flag, not
+// persisted. Set only by tapping a card (handleLogRowClick), so find steps,
+// minimap clicks and other programmatic selections select + highlight without
+// opening the sheet; once open, the sheet follows the selection (prev/next,
+// find, minimap). Closing hides it but keeps the selection; clearing the
+// selection resets it (updateDetailPanel).
+let phoneSheetOpen = false;
 function updateDetailPanel() {
   const entry = selectedEntry();
+  if (!entry) phoneSheetOpen = false;
   // phone: the bottom sheet (CSS only acts in layout-phone). It takes its
   // height out of the list's (body.sheet-open pads #content), so the visible
   // rows are re-rendered when it opens/closes.
+  const sheetNow = !!entry && phoneSheetOpen;
   const sheetWas = document.body.classList.contains("sheet-open");
-  document.body.classList.toggle("sheet-open", !!entry);
-  if (sheetWas !== !!entry && currentLayoutTier === "phone") renderVisibleRows();
+  document.body.classList.toggle("sheet-open", sheetNow);
+  if (sheetWas !== sheetNow && currentLayoutTier === "phone") renderVisibleRows();
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -29422,11 +29434,9 @@ function updatePhoneTitle() {
   if (root === node) { b.textContent = nodeDisplayName(node); sub.textContent = n; }
   else { b.textContent = nodeDisplayName(node); sub.textContent = nodeDisplayName(root) + " · " + n; }
 }
+// Hides the sheet only; the selection (highlighted card, find counter) stays.
 function closePhoneSheet() {
-  const prev = state.selectedId;
-  if (!prev) return;
-  state.selectedId = null;
-  updateSelectedRowClass(prev);
+  phoneSheetOpen = false;
   updateDetailPanel();
 }
 el("#btnFindPhone").addEventListener("click", ev => { ev.stopPropagation(); openFindBar(); });
