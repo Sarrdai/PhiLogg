@@ -20,15 +20,16 @@ await withApp(async (w, d, T) => {
   const fileTotals = w.getLevelCounts(f.id) || {};
   spans().forEach(s => {
     const lvl = s.dataset.level;
-    assert(Number(s.textContent.replace(/\./g, "")) === (fileTotals[lvl] || 0),
+    assert(Number(s.textContent.replace(/^[A-Z] /, "").replace(/\./g, "")) === (fileTotals[lvl] || 0),
       "span for " + lvl + " shows the whole file's raw total (" + (fileTotals[lvl] || 0) + "), got " + s.textContent);
     const expectedColor = w.levelColorVar(lvl) || "var(--text-secondary)";
     assert(s.getAttribute("style").includes("color:" + expectedColor),
       "span for " + lvl + " is colored via levelColorVar(), got " + s.getAttribute("style"));
   });
 
-  // No label text (e.g. "Error") alongside the number — just the digits.
-  assert(!spans().some(s => /[A-Za-z]/.test(s.textContent)), "level segments show only the number, no level-name label");
+  // Tablet UX round, step 2: the number is prefixed with the level's letter ("E 149"),
+  // never the full name (that is the tooltip's job).
+  assert(spans().every(s => /^[A-Z] [\d.]+$/.test(s.textContent)), "level segments read '<letter> <number>', no full level name");
 
   // --- Follow-up, person-requested: the whole meta line is "global state" (Start/End/
   // Duration always describe the WHOLE file), so the level counts must too — they must

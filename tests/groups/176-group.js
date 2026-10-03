@@ -68,8 +68,10 @@ await withApp(async (w, d, T) => {
   const byAction = action => actions.find(b => b.dataset.rowAction === action);
 
   // --- No selection: single-row actions disabled, time-range disabled ---
+  // "Time range" is the exception since the tablet UX round: in the log views it
+  // is never disabled (no 2+ selection -> a dialog prefilled with the visible span).
   expectedActions.forEach(action => {
-    assert(byAction(action).disabled === true, action + " starts disabled with no selection");
+    assert(byAction(action).disabled === (action !== "timeRangeFromSelection"), action + (action === "timeRangeFromSelection" ? " is never disabled in the log views" : " starts disabled with no selection"));
   });
   // "New" only needs an active filter tree (state.activeId, already set above),
   // not a selected row, so it's enabled from the start (see Group 186b). It's
@@ -81,7 +83,7 @@ await withApp(async (w, d, T) => {
   ["filterAfter", "filterBefore", "filterForMessage", "extractMessage"].forEach(action => {
     assert(byAction(action).disabled === false, action + " enabled with exactly one row selected");
   });
-  assert(byAction("timeRangeFromSelection").disabled === true, "timeRangeFromSelection stays disabled with only one row selected");
+  assert(byAction("timeRangeFromSelection").disabled === false, "timeRangeFromSelection stays enabled with only one row selected (opens the dialog)");
 
   // --- Expand/collapse keys off the .row-action-hit circle's position AS
   // MEASURED WHILE THE GROUP IS COLLAPSED (setupHitExpandGroups), not off a

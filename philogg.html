@@ -1368,6 +1368,49 @@
   .level-btn.lvl-custom-4 .row-action-label{background:var(--level-custom-4); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-5 .row-action-label{background:var(--level-custom-5); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-6 .row-action-label{background:var(--level-custom-6); color:var(--level-custom-on); border-color:transparent;}
+  /* Count inside the level circle (compact tier only, "On hover" label mode —
+     "Always" pills already carry name + count in their label). Inactive circle:
+     the level's own color on the transparent ring; checked: the fill's "on" color. */
+  .level-btn .level-count{display:none;}
+  body.layout-compact:not(.filter-toolbar-labels-always) .level-btn .level-count{
+    display:flex; position:absolute; inset:0; align-items:center; justify-content:center;
+    font:600 10px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
+  }
+  body.layout-compact .level-btn.lvl-error .level-count{color:var(--level-error);}
+  body.layout-compact .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
+  body.layout-compact .level-btn.lvl-warn .level-count{color:var(--level-warn);}
+  body.layout-compact .level-btn.active.lvl-warn .level-count{color:var(--level-warn-on);}
+  body.layout-compact .level-btn.lvl-info .level-count{color:var(--level-info);}
+  body.layout-compact .level-btn.active.lvl-info .level-count{color:var(--level-info-on);}
+  body.layout-compact .level-btn.lvl-debug .level-count{color:var(--level-debug);}
+  body.layout-compact .level-btn.active.lvl-debug .level-count{color:var(--level-debug-on);}
+  body.layout-compact .level-btn.lvl-trace .level-count{color:var(--level-trace);}
+  body.layout-compact .level-btn.active.lvl-trace .level-count{color:var(--level-trace-on);}
+  body.layout-compact .level-btn.lvl-custom-1 .level-count{color:var(--level-custom-1);}
+  body.layout-compact .level-btn.active.lvl-custom-1 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-2 .level-count{color:var(--level-custom-2);}
+  body.layout-compact .level-btn.active.lvl-custom-2 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-3 .level-count{color:var(--level-custom-3);}
+  body.layout-compact .level-btn.active.lvl-custom-3 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-4 .level-count{color:var(--level-custom-4);}
+  body.layout-compact .level-btn.active.lvl-custom-4 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-5 .level-count{color:var(--level-custom-5);}
+  body.layout-compact .level-btn.active.lvl-custom-5 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-6 .level-count{color:var(--level-custom-6);}
+  body.layout-compact .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
+  /* "Always" pills: an unchecked pill is a transparent ring, so its label takes the
+     level's own color (the -on color is meant for the solid fill and was white on light). */
+  body.filter-toolbar-labels-always .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
+  body.filter-toolbar-labels-always .level-btn.lvl-warn:not(.active) .row-action-label{color:var(--level-warn);}
+  body.filter-toolbar-labels-always .level-btn.lvl-info:not(.active) .row-action-label{color:var(--level-info);}
+  body.filter-toolbar-labels-always .level-btn.lvl-debug:not(.active) .row-action-label{color:var(--level-debug);}
+  body.filter-toolbar-labels-always .level-btn.lvl-trace:not(.active) .row-action-label{color:var(--level-trace);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-1:not(.active) .row-action-label{color:var(--level-custom-1);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-2:not(.active) .row-action-label{color:var(--level-custom-2);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-3:not(.active) .row-action-label{color:var(--level-custom-3);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-4:not(.active) .row-action-label{color:var(--level-custom-4);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-5:not(.active) .row-action-label{color:var(--level-custom-5);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-6:not(.active) .row-action-label{color:var(--level-custom-6);}
   /* #levelBar is rebuilt on every level toggle/file change (renderLevelBar),
      so the JS setupHitExpandGroups binding (done once at boot, against
      elements that don't exist yet) never reaches these buttons — reveal the
@@ -2542,6 +2585,11 @@
     color:var(--text-primary); white-space:pre; word-break:normal;
   }
   .wrap-messages #detailMessage{white-space:pre-wrap; word-break:break-word;}
+  /* Touch tiers (tablet/phone; the coarse-pointer rules are tier-scoped, see Touch targets): no keyboard, so the hint says "Tap". */
+  #detailPlaceholder .dp-touch{display:none;}
+  body.layout-compact #detailPlaceholder .dp-touch, body.layout-phone #detailPlaceholder .dp-touch{display:inline;}
+  body.layout-compact #detailPlaceholder .dp-desktop, body.layout-phone #detailPlaceholder .dp-desktop{display:none;}
+  body.layout-compact .recent-dd .rd-hint, body.layout-phone .recent-dd .rd-hint{display:none;}
   #detailPanel.empty #detailPlaceholder{display:flex;}
   #detailPanel.empty #detailMessage{display:none;}
   #detailPanel:not(.empty) #detailPlaceholder{display:none;}
@@ -4519,7 +4567,7 @@
   }
   body.layout-compact #toolbar, body.layout-phone #toolbar{gap:10px; padding:0 10px;}
   body.layout-compact .toolbar-right{gap:10px; min-width:0;}
-  body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;}
 
   /* ---------- Phone shell (layout-phone, < 600px) ----------
      Reader mode: header reduced to drawer / title / find / settings, one-line
@@ -4536,7 +4584,7 @@
   body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
   body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  body.layout-phone #btnFindPhone{display:flex;}
+  body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone{display:flex;}
   body.layout-phone .toolbar-right{flex:0 0 auto; gap:6px;}
   body.layout-phone #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
 
@@ -4785,7 +4833,7 @@
     body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
     body.layout-compact #btnLibrary{height:44px;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
-    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
+    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
     body.layout-phone #sidebarToolbar .stb-btn, body.layout-compact #sidebarToolbar .stb-btn{height:44px; min-width:44px;}
     body.layout-phone .view-tabs, body.layout-compact .view-tabs, body.layout-phone #detailViewTabs, body.layout-compact #detailViewTabs{height:auto;}
@@ -5118,7 +5166,7 @@
                    it replaced the old "Filter on:" pill-chain header row. -->
               <div class="filter-input-wrap">
                 <span id="filterScopeHint" class="filter-scope-hint"></span>
-                <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [*:float]" autocomplete="off">
+                <input type="text" id="filterInput" placeholder="Text contains… or a pattern with [*:float]" autocomplete="off">
               </div>
               <button type="button" class="btn-icon" id="btnCloseFilterPopup" title="Close">
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
@@ -5704,7 +5752,7 @@
             </button>
           </div>
           <div id="detailBody">
-            <div id="detailPlaceholder">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</div>
+            <div id="detailPlaceholder"><span class="dp-desktop">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</span><span class="dp-touch">Tap a row to see its full message here.</span></div>
             <div id="detailMessage"></div>
             <div id="detailNote"></div>
           </div>
@@ -17857,7 +17905,18 @@ function renderStatus() {
   updatePhoneTitle();
   if (fileCount === 0) { statusText.textContent = ""; return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
-  statusText.textContent = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
+  const filesText = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
+  // Compact tier (tablet): the sidebar is a drawer, so the header names the
+  // active filter and its result size ("<filter> · <count> / <total> entries");
+  // tapping it opens the drawer. A root file (or nothing) active keeps the
+  // plain files text. Desktop shows the plain text, phone hides #statusText.
+  const active = currentLayoutTier === "compact" && state.activeId ? state.nodes[state.activeId] : null;
+  if (active && !state.rootIds.includes(active.id)) {
+    const shown = (getEntries(active.id) || []).length;
+    statusText.textContent = `${nodeDisplayName(active)} · ${shown.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} entries`;
+  } else {
+    statusText.textContent = filesText;
+  }
 }
 
 // Short type label shown next to each tree node's name (FILE/TXT/TIME/TBL/AND/OR/LNK).
@@ -19418,7 +19477,9 @@ function renderLevelBar() {
     btn.dataset.level = lvl; // queried directly by name elsewhere (tests, format editor rows) without needing a rebuild
     const label = lvl + " " + (counts[lvl] || 0).toLocaleString("de-DE");
     btn.title = label; // accessible name, since the button itself carries no visible text
-    btn.innerHTML = '<span class="row-action-hit"></span><span class="row-action-label">' + escapeHtml(label) + '</span>';
+    const n = counts[lvl] || 0;
+    const countText = n >= 100000 ? Math.round(n / 1000) + "k" : n.toLocaleString("de-DE"); // fits the 44px circle
+    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => {
       if (levelFilterTreeMode === "auto") {
         const current = currentTreeLevelSelection();
@@ -27368,14 +27429,30 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // so the level counts should match that same "whole file" scope instead of
   // silently changing meaning with the active node.
   const minimapLvlCounts = getLevelCounts(rootId) || {};
+  // Each count carries its level letter ("E 149 · W 256 · ..."). FATAL/TRACE
+  // appear only when present. A format that does not list FATAL as a level of
+  // its own folds FATAL lines into the ERROR bucket (levelBucket), so the E
+  // count includes them — the tooltip says how many ("incl. N Fatal").
+  let foldedFatal = 0;
+  const rootNode = state.nodes[rootId];
+  if (rootNode && rootNode.type === "file") {
+    const bucketOf = makeLevelBucketer();
+    for (const rec of fileAggregate(rootNode).levelOrder) {
+      if (normalizeLevelName(rec.level).startsWith("FATAL") && bucketOf(rec.level, rec.formatId) === "ERROR") foldedFatal += rec.n;
+    }
+  }
   activeLevelOrder().forEach(lvl => {
+    const n = minimapLvlCounts[lvl] || 0;
+    if (n === 0 && (lvl === "FATAL" || lvl === "TRACE")) return;
     const colorVar = levelColorVar(lvl) || "var(--text-secondary)";
+    const fullName = lvl.charAt(0) + lvl.slice(1).toLowerCase();
+    const fatalNote = lvl === "ERROR" && foldedFatal ? " (incl. " + foldedFatal.toLocaleString("de-DE") + " Fatal)" : "";
     // Clickable (person-requested, this session): attaches/reveals a
     // single-level filter node for this level directly under the ROOT file
     // — see the delegated click listener on timelineMinimapMetaEl below.
     minimapMeta.push('<span class="minimap-meta-level" data-level="' + escapeHtml(lvl) + '" style="color:' + colorVar +
-      '" title="' + escapeHtml(lvl) + ': add/show a level filter for this file">' +
-      (minimapLvlCounts[lvl] || 0).toLocaleString("de-DE") + '</span>');
+      '" title="' + escapeHtml(fullName + fatalNote) + ': add/show a level filter for this file">' +
+      escapeHtml(lvl.charAt(0)) + " " + n.toLocaleString("de-DE") + '</span>');
   });
   timelineMinimapMetaEl.innerHTML = minimapMeta.join(" · ");
   minimapInteractive = !state.sortColumn;
@@ -27599,12 +27676,21 @@ function updateMinimapFullRange() {
 // branch below): startIdx used to only clamp at 0, so that scenario indexed
 // straight past the end of the array.
 function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
+  const r = visibleEntryRange(entries, scrollEl, rowOffsets);
+  return r ? { left: minimapBarSpan(r.first.ts).left, right: minimapBarSpan(r.last.ts).right } : null;
+}
+
+// First/last real entry inside the scroll container's viewport ({first, last}),
+// or null when nothing real is in view. Shared by the minimap's rendered-range
+// box and the toolbar's "Time range" fallback (visible span of the log view).
+function visibleEntryRange(entries, scrollEl, rowOffsets) {
   if (scrollEl === highlightBody && textEditorShown()) {
     // The editor shows the lines its DOM puts in the viewport (no row window).
     const r = editorVisibleRange();
     if (!r || !entries[r.first] || !entries[r.last]) return null;
-    return { left: minimapBarSpan(entries[r.first].ts).left, right: minimapBarSpan(entries[r.last].ts).right };
+    return { first: entries[r.first], last: entries[r.last] };
   }
+  if (!entries.length) return null;
   const viewportH = scrollEl.clientHeight || 400;
   const maxIdx = entries.length - 1;
   // Shared with highlightBody (never compressed — the ternary is a no-op
@@ -27634,7 +27720,7 @@ function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
   while (s <= e && entries[s]._tempAnchor) s++;
   while (e >= s && entries[e]._tempAnchor) e--;
   if (s > e) return null; // only the anchor row is in view — nothing real to bound
-  return { left: minimapBarSpan(entries[s].ts).left, right: minimapBarSpan(entries[e].ts).right };
+  return { first: entries[s], last: entries[e] };
 }
 
 // Repositions the "currently rendered" sub-rectangle to match what actually
@@ -29512,6 +29598,8 @@ window.addEventListener("resize", () => {
   if (currentLayoutTier === "phone" && cardMode() && wrapColsForBody(tableBody) !== tableWrapCols) render();
 });
 btnDrawer.addEventListener("click", () => setDrawerOpen(!isDrawerOpen()));
+// Compact tier: the header status line names the active filter; tapping it opens the drawer.
+statusText.addEventListener("click", () => { if (currentLayoutTier === "compact") setDrawerOpen(true); });
 
 // ---- Phone shell (layout-phone) ----
 // Phone only shows the Filtered view (no tab bar); wherever a render lands on
@@ -34832,8 +34920,16 @@ function createRecentDropdown({ input, host, apply, hideOnBlur }) {
     const hint = document.createElement("div");
     hint.className = "rd-hint";
     hint.textContent = "\u2191\u2193 select \u00b7 Enter apply \u00b7 Shift+Del remove";
-    box.appendChild(hint);
+    box.appendChild(hint); // hidden on touch by CSS (no keyboard)
     box.hidden = false;
+    // In the filter popup, stop above the Syntax options row so it stays reachable
+    // while the list is open (scrolls instead). No-op where there is no such row.
+    box.style.maxHeight = "";
+    const syntaxRow = host.closest("#filterPopup") && document.querySelector("#filterPopup .filter-settings-row");
+    if (syntaxRow) {
+      const room = syntaxRow.getBoundingClientRect().top - box.getBoundingClientRect().top - 4;
+      if (room > 0) { box.style.maxHeight = Math.max(56, room) + "px"; box.style.overflowY = "auto"; }
+    }
   }
   function open() { sel = -1; draw(); }
   function removeAt(i) {
@@ -36976,7 +37072,9 @@ function updateRowActionButtons() {
   // time with a toast, since it changes with every zoom/pan without
   // necessarily going through updateRowActionButtons().
   const markedRows = markedRowEntries().length;
-  const timeRangeEnabled = onTable ? markedRows >= 2 : onPlot ? plot2dToolsAvailable : rangeEnabled;
+  // Log views: never disabled — with fewer than 2 multi-selected rows the
+  // click falls back to the time range dialog prefilled with the visible span.
+  const timeRangeEnabled = onTable ? markedRows >= 2 : onPlot ? plot2dToolsAvailable : true;
   const selectEnabled = onTable ? markedRows >= 1 : onPlot ? plot2dToolsAvailable : addToSelectionEnabled;
   // "Filter after/before" resolve the same per-view way as Time range/Select
   // (see afterBeforeActionEntries), but a single entry is enough (unlike
@@ -37058,6 +37156,17 @@ function handleRowActionClick(action, anchorBtn) {
       break;
     case "timeRangeFromSelection": {
       const tsList = timeRangeActionEntries().map(e => e.ts);
+      if (tsList.length < 2 && fhActiveTab !== "table" && fhActiveTab !== "plot") {
+        // Log views: no 2+ selection -> open the dialog prefilled with the time
+        // span of the rows currently on screen (same pane the minimap box tracks).
+        if (!state.activeId) break;
+        const onContext = fhLayout === "tabs" && fhActiveTab === "highlight";
+        const vis = onContext
+          ? visibleEntryRange(currentHighlightViewEntries, highlightBody, highlightRowOffsets)
+          : visibleEntryRange(currentViewEntries, tableBody, tableRowOffsets);
+        openTimeRangeDialog("create", state.activeId, vis ? { from: vis.first.ts, to: vis.last.ts } : null);
+        break;
+      }
       if (tsList.length < 2) {
         const what = fhActiveTab === "table" ? "two marked rows" : fhActiveTab === "plot" ? "two visible entries" : "two selected rows";
         showCopyToast("Need " + what + " to create a time-range filter.");

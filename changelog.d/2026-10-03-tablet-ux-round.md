@@ -1,4 +1,5 @@
 - **feat: touch input plumbing for tablets (2026-10-03, person-requested)**
   - Minimap drag-select and the Entry-detail splitter use pointer events, so they work with touch as well as the mouse; a touch long-press on the minimap opens the time-range dialog.
   - "Add to selection ›" opens on tap only and its submenu never covers the tapped item; floating toolbar labels stay 8px inside the screen; the tree delete x has a 44px hit area on touch.
-  - **Tests**: GROUP tablet-touch-input (new); 031/047/226/221 adapted to pointer events and the 8px label margin. Docs: docs/ui-and-views.md, docs/filters.md.
+  - Tablet header: Find button, header names the active filter (`<filter> · n / total entries`, tap opens the drawer), level circles show their count, unchecked "Always" pills use the level color; minimap strip reads `E 149 · W 256 …` (E includes FATAL unless the format lists it). "Time range" is never disabled in the log views (dialog prefilled with the visible span); English placeholders, touch hints.
+  - **Tests**: GROUP tablet-touch-input, tablet-header-find (new); 031/047/226/221 adapted to pointer events and the 8px label margin, 176/216/responsive-phone to the always-enabled Time range, level letters and tablet Find button. Docs: docs/ui-and-views.md, docs/filters.md.
