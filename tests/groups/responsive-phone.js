@@ -113,7 +113,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("responsive-phone d. Entry detail is a bottom sheet: opens on selection, closes = deselect, prev/next");
+  section("responsive-phone d. Entry detail is a bottom sheet: opens on a card tap, close keeps the selection, prev/next");
   const f = await w.addFile("a.log", makeLog(0, 30), () => {});
   T.state.activeId = f.id;
   w.render();
@@ -126,7 +126,10 @@ await withApp(async (w, d, T) => {
 
   const entries = T.currentViewEntries;
   w.selectEntry(entries[3].id, { scroll: true, index: 3 });
-  assert(open() && T.state.selectedId === entries[3].id, "selecting an entry opens the sheet");
+  assert(!open() && T.state.selectedId === entries[3].id, "a programmatic selection does not open the sheet");
+  const card = id => d.querySelector('#tableRows .log-row[data-entry-id="' + id + '"]');
+  card(entries[3].id).click();
+  assert(open() && T.state.selectedId === entries[3].id, "tapping a card opens the sheet");
   btn("detailNext").click();
   assert(T.state.selectedId === entries[4].id, "next selects the following entry");
   btn("detailPrev").click();
@@ -134,8 +137,8 @@ await withApp(async (w, d, T) => {
   assert(T.state.selectedId === entries[2].id, "prev steps back");
   assert(open(), "still open while stepping");
   btn("detailClose").click();
-  assert(!open() && T.state.selectedId == null, "close deselects and hides the sheet");
-  assert(!d.querySelector("#tableRows .log-row.selected"), "no row keeps the selected class");
+  assert(!open() && T.state.selectedId === entries[2].id, "close hides the sheet and keeps the selection");
+  assert(d.querySelector("#tableRows .log-row.selected"), "the card keeps the selected class");
 
   phoneWidth(w, 1440);
   assert(!vis(d, w, "#detailPrev") && vis(d, w, "#detailToggle"), "desktop: the sheet buttons are gone, the collapse toggle is back");

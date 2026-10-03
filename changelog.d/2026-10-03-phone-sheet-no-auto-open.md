@@ -1,0 +1,4 @@
+- **fix: the phone entry-detail sheet opens only when you tap a card (2026-10-03, person-requested)**
+  - Stepping through Quick Search hits (and minimap clicks, other programmatic selections) used to pop the bottom sheet open on every hit. They now only select and highlight the card; tapping a card (including the current hit) opens the sheet, and while it is open, find steps and prev/next keep it open and follow the selection.
+  - The sheet's close button now only hides it and keeps the selection (card highlighted, find counter "n / m" kept); clearing the selection resets it. Desktop and compact are unchanged.
+  - **Tests**: GROUP phone-sheet-explicit (new), responsive-phone d and responsive-cards d updated. Docs: docs/ui-and-views.md, README.

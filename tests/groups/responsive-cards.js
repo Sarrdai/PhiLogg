@@ -122,8 +122,10 @@ await withApp(async (w, d, T) => {
     return o[i] >= st - 0.5 && o[i + 1] <= st + ch + 0.5;
   };
   const entries = T.currentViewEntries;
-  w.selectEntry(entries[40].id, { scroll: false });
-  assert(d.body.classList.contains("sheet-open"), "sheet open");
+  w.selectEntry(entries[40].id, { scroll: true, index: 40 });
+  assert(!d.body.classList.contains("sheet-open"), "a programmatic selection leaves the sheet closed");
+  d.querySelector('#tableRows .log-row[data-entry-id="' + entries[40].id + '"]').click();
+  assert(d.body.classList.contains("sheet-open"), "tapping the card opens the sheet");
   assert(inView(entries[40].id), "the selected card sits inside the area above the sheet (view height 150)");
   d.getElementById("detailNext").click();
   assert(T.state.selectedId === entries[41].id && inView(entries[41].id), "next keeps the new selection above the sheet");
