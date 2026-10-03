@@ -2,4 +2,5 @@
   - With a coarse pointer, every tappable control in the phone and compact tiers is 44px (tree rows 48px): header/panel buttons, level pills, view tabs, library button, bottom-sheet buttons, tree swatches (44px hit area) and Settings controls (selects, steppers, switches 52x32, accent swatches 32px).
   - The desktop tier (also on touch laptops) and a narrow window with a mouse are unchanged: every `pointer:coarse` rule is scoped to `body.layout-phone` / `body.layout-compact`. Compact shows mute/delete on the active tree row; phone swatches are display-only.
   - The long-press helper is now compact-only (no longer on desktop).
+  - Settings dropdowns line up: full width without sub-row indent on phone, one shared 240px width in compact.
   - **Tests**: GROUP responsive-touch (new), responsive-layout. Docs: docs/ui-and-views.md.

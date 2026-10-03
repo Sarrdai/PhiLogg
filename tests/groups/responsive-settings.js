@@ -61,3 +61,25 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector('[data-nav-target="settingsSectionAppearance"]').classList.contains("active")
     && !d.querySelector("#settingsNavItemShortcuts").classList.contains("active"), "opening Settings on phone never shows Shortcuts active");
 });
+
+await withApp(async (w, d, T) => {
+  section("responsive-settings c. Dropdowns share one edge (phone: full width, no sub-row indent; compact: one width)");
+  const f = await w.addFile("a.log", makeLog(0, 10), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.openSettingsDialog();
+  const cs = sel => w.getComputedStyle(d.querySelector(sel));
+  const sub = d.querySelector("#settingsThemeLightSelect").closest(".settings-row");
+  const top = d.querySelector("#settingsUiFontSelect").closest(".settings-row");
+  assert(sub.classList.contains("settings-row-sub"), "sanity: the Light theme row is a sub-row");
+  setWidth(w, 390);
+  assert(w.getComputedStyle(sub).paddingLeft === w.getComputedStyle(top).paddingLeft, "phone: sub-row has the same left padding as a normal row, got "
+    + w.getComputedStyle(sub).paddingLeft + " vs " + w.getComputedStyle(top).paddingLeft);
+  ["#settingsThemeLightSelect", "#settingsUiFontSelect", "#settingsLogFontSelect", "#settingsFhLayout"].forEach(sel =>
+    assert(cs(sel).width === "100%", "phone: " + sel + " spans the row, got " + cs(sel).width));
+  setWidth(w, 820);
+  ["#settingsThemeLightSelect", "#settingsUiFontSelect", "#settingsLogFontSelect"].forEach(sel =>
+    assert(cs(sel).width === "240px", "compact: " + sel + " has the shared 240px width, got " + cs(sel).width));
+  setWidth(w, 1440);
+  assert(cs("#settingsUiFontSelect").width !== "240px" && cs("#settingsUiFontSelect").width !== "100%", "desktop: selects stay content-sized");
+});

@@ -4599,11 +4599,16 @@
   body.layout-phone #settingsDialog .settings-page-body{padding:0 14px 28px; overflow-x:hidden;}
   body.layout-phone #settingsDialog .settings-section{padding:16px 0;}
   body.layout-phone #settingsDialog .settings-row{grid-template-columns:minmax(0, 1fr); gap:10px; padding:14px;}
-  body.layout-phone #settingsDialog .settings-row.settings-row-sub{padding-left:26px;}
-  body.layout-phone #settingsDialog .settings-row-control{justify-self:start; max-width:100%; min-width:0; flex-wrap:wrap;}
+  /* Phone: sub-rows are not indented and every select / text input spans the
+     row, so all dropdowns share one left and right edge. */
+  body.layout-phone #settingsDialog .settings-row.settings-row-sub{padding-left:14px;}
+  body.layout-phone #settingsDialog .settings-row-control{justify-self:stretch; max-width:100%; min-width:0; flex-wrap:wrap;}
   body.layout-phone #settingsDialog .settings-row-control.assert-mode-row{width:auto;}
   body.layout-phone #settingsDialog .settings-row-control select,
-  body.layout-phone #settingsDialog .settings-row-control input[type="text"]{max-width:100%; min-width:0;}
+  body.layout-phone #settingsDialog .settings-row-control input[type="text"]{width:100%; max-width:100%; min-width:0;}
+  /* Compact: one fixed width for the right-aligned selects, so their left
+     edges line up too (desktop keeps content-sized selects). */
+  body.layout-compact #settingsDialog .settings-row-control select{width:240px;}
   body.layout-phone #settingsThemeLightSelect, body.layout-phone #settingsThemeDarkSelect, body.layout-phone #settingsLlmModel{min-width:0;}
   body.layout-phone #settingsDialog .accent-picker{max-width:100%; justify-content:flex-start;}
   body.layout-phone #settingsDialog .license-holder, body.layout-phone #licenseContent{overflow-wrap:anywhere;}
