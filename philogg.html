@@ -17144,6 +17144,7 @@ function revealSelectedInContextTab() {
 // Ctrl+1/2/3 shortcuts, the #fhTabs click listener) clears it — see those
 // call sites instead.
 function applyFhView(view) {
+  if (currentLayoutTier === "phone") view = "filter"; // phone shows Filtered only; no caller may land elsewhere
   if (view === "stacked") {
     // Only reached while fhLayout is ALREADY "stacked" (the "Stacked" button
     // only renders in that layout — see renderViewTabs) — this click means
@@ -28704,6 +28705,7 @@ function jumpAfterPip(fn, args) {
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
 function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
+  if (currentLayoutTier === "phone") return; // no Context view on phone (Filtered only)
   commitCurrentNavPosition(); // A2: freeze the Filtered-pane spot we are jumping out of
   state.entriesView = "highlight";
   const previousId = applySelection(entry.id);
@@ -43930,11 +43932,38 @@ document.addEventListener("click", ev => {
 // click handler above never sees taps on them. Capture phase + pointerdown, so
 // it runs before any handler and the opening press (right-click / long-press)
 // is already over by the time its menu exists.
+//
+// A non-mouse press that actually closed a menu is consumed: its follow-up
+// click (and a dblclick right after it) must not also act on the element
+// under the finger (card -> detail sheet / selection), which would otherwise
+// turn dismiss-tap + card-tap into a double-tap.
+let dismissTapPending = false;   // the current touch/pen press closed a menu: swallow its click
+let dismissTapSwallowedAt = 0;   // time of the last swallowed dismiss click, for the dblclick guard
+const DISMISS_DBLCLICK_MS = 600;
+function anyPointerMenuOpen() {
+  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu]
+    .some(m => !m.classList.contains("hidden"));
+}
 document.addEventListener("pointerdown", ev => {
+  dismissTapPending = false; // a press that never became a click (scroll) must not swallow a later tap
+  const wasOpen = ev.pointerType !== "mouse" && anyPointerMenuOpen();
   if (!contextMenu.contains(ev.target) && !addToSelectionMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
+  if (wasOpen && !anyPointerMenuOpen()) dismissTapPending = true;
+}, true);
+document.addEventListener("click", ev => {
+  if (!dismissTapPending) return;
+  dismissTapPending = false;
+  dismissTapSwallowedAt = Date.now();
+  ev.stopPropagation();
+  ev.preventDefault();
+}, true);
+document.addEventListener("dblclick", ev => {
+  if (Date.now() - dismissTapSwallowedAt > DISMISS_DBLCLICK_MS) return;
+  ev.stopPropagation();
+  ev.preventDefault();
 }, true);
 
 /* ===================== Keyboard shortcuts ===================== */

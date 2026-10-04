@@ -1,0 +1,4 @@
+- **fix: no Context view on phone, and a tap that dismisses a context menu no longer also hits the card underneath (2026-10-04, usability test)**
+  - Phone shows Filtered only, but a card double-click / Enter reached `revealInHighlightView` directly and left the Context table on screen. `revealInHighlightView` now returns on phone and `applyFhView` coerces every view to Filtered there.
+  - A touch/pen press that closes a context menu (row, tree incl. Info, extraction, facet value) now consumes its follow-up click and a double-click within 600 ms, so dismiss-tap + card-tap can no longer open the sheet or form a double-tap. Mouse behavior is unchanged.
+  - **Tests**: GROUP phone-no-context-view, touch-dismiss-tap-consumed (new). Docs: docs/ui-and-views.md.
