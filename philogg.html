@@ -4599,6 +4599,10 @@
   body.layout-compact #addToSelectionMenu, body.layout-phone #addToSelectionMenu{z-index:63;}
   body.layout-compact #colorPickerPopup, body.layout-phone #colorPickerPopup{z-index:64;}
   body.layout-compact #toolbar, body.layout-phone #toolbar{gap:10px; padding:0 10px;}
+  /* Header above the scrim while the drawer is open: one tap on Undo/Find/... acts
+     (a capture listener on #toolbar closes the drawer); the drawer (z 60) still
+     covers the header's left part. */
+  body.layout-compact.drawer-open #toolbar, body.layout-phone.drawer-open #toolbar{position:relative; z-index:56;}
   body.layout-compact .toolbar-right{gap:10px; min-width:0;}
   body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;}
 
@@ -4865,6 +4869,16 @@
     body.layout-phone .view-tab, body.layout-compact .view-tab{padding:0 14px; font-size:12px;}
     body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
     body.layout-compact #btnLibrary{height:44px;}
+    /* Tablet touch: #viewBar is one non-wrapping, horizontally scrollable row (the floated
+       children would wrap onto a 2nd line, e.g. the "+" alone). Hover label pills do not
+       exist on touch, so clipping them is harmless. Phone has its own rule above. */
+    body.layout-compact #viewBar{
+      display:flex; flex-wrap:nowrap; align-items:center; overflow-x:auto; overflow-y:hidden;
+      scrollbar-width:none; -webkit-overflow-scrolling:touch;
+    }
+    body.layout-compact #viewBar::-webkit-scrollbar{display:none;}
+    body.layout-compact #viewBar > *{float:none; flex:0 0 auto;}
+    body.layout-compact #viewBar > #btnFacets{margin-left:auto;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
@@ -5832,11 +5846,11 @@
     </div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctxAfter">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 13l-3-3M8 13l3-3"/></svg>
       Filter after this (incl.)
     </div>
     <div class="ctx-item" id="ctxBefore">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 13l-3-3M8 13l3-3"/></svg>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>
       Filter before this (incl.)
     </div>
     <div class="ctx-item" id="ctxTimeRangeFromSelection">
@@ -19293,7 +19307,13 @@ function renderNode(id, depth, opts) {
     del.title = node.type === "file"
       ? (node.folderId ? "Close file (stays listed in its watched folder)" : "Remove file")
       : "Remove filter";
-    del.addEventListener("click", ev => { ev.stopPropagation(); deleteFilterNodeWithUndo(id); render(); });
+    del.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const prevTop = undoStack[undoStack.length - 1];
+      deleteFilterNodeWithUndo(id);
+      render();
+      offerPhoneUndoToast(prevTop);
+    });
     row.appendChild(del);
   }
 
@@ -19394,8 +19414,10 @@ function renderNode(id, depth, opts) {
   row.addEventListener("auxclick", ev => {
     if (ev.button !== 1 || node.locked || (opts && opts.mergeSourceColor)) return;
     ev.preventDefault();
+    const prevTop = undoStack[undoStack.length - 1];
     deleteFilterNodeWithUndo(id);
     render();
+    offerPhoneUndoToast(prevTop);
   });
 
   // Drag-and-drop reparenting (mouse-event based — see treeDrag's comment):
@@ -30005,6 +30027,11 @@ el("#tourBannerMore").addEventListener("click", ev => {
   ev.currentTarget.setAttribute("aria-expanded", open ? "true" : "false");
 });
 el("#drawerScrim").addEventListener("click", () => setDrawerOpen(false));
+// The header sits above the scrim while the drawer is open: any tap on it closes the
+// drawer and continues to its button (#btnDrawer keeps toggling itself).
+el("#toolbar").addEventListener("click", ev => {
+  if (isDrawerOpen() && !ev.target.closest("#btnDrawer")) setDrawerOpen(false);
+}, true);
 
 // Long-press → context menu for touch pointers in the compact and phone tiers (iOS never fires
 // "contextmenu"). One global helper: no per-handler changes. The synthetic
@@ -38721,6 +38748,14 @@ linkDialog.addEventListener("input", updateLinkPreview);
 // the first hop, "the previous match" for every hop after that — since the
 // old single-hop "before/after TargetName" phrasing read ambiguously about
 // what was before/after what (see requirements doc's optional UX polish).
+// 1 -> "st", 2 -> "nd", 3 -> "rd", 4 -> "th", 11-13 -> "th", 21 -> "st", 101 -> "st", 111 -> "th"
+function ordinalSuffix(n) {
+  const m100 = n % 100;
+  if (m100 >= 11 && m100 <= 13) return "th";
+  const m10 = n % 10;
+  return m10 === 1 ? "st" : m10 === 2 ? "nd" : m10 === 3 ? "rd" : "th";
+}
+
 function renderLinkHops() {
   const refId = linkRefSelect.value;
   const refNode = state.nodes[refId];
@@ -38734,10 +38769,12 @@ function renderLinkHops() {
     row.className = "link-hop-row";
     row.innerHTML =
       '<span class="link-hop-desc">Find the <input type="number" class="link-hop-n" min="1" value="1">' +
-      'th <b>' + escapeHtml(target ? nodeDisplayName(target) : "") + '</b> entry ' +
+      '<span class="link-hop-ord">st</span> <b>' + escapeHtml(target ? nodeDisplayName(target) : "") + '</b> entry ' +
       '<select class="link-hop-dir"><option value="before">before</option><option value="after">after</option></select> ' +
       '<span class="link-hop-anchor">' + anchorText + '</span></span>';
     row.querySelector(".link-hop-dir").value = "before";
+    const nIn = row.querySelector(".link-hop-n"), ordEl = row.querySelector(".link-hop-ord");
+    nIn.addEventListener("input", () => { ordEl.textContent = ordinalSuffix(Math.max(1, parseInt(nIn.value, 10) || 1)); });
     const dirSelect = row.querySelector(".link-hop-dir");
     dirSelect.addEventListener("change", updateLinkOrderEnforceAvailability);
     return { targetId, nInput: row.querySelector(".link-hop-n"), dirSelect, row };
@@ -39664,6 +39701,10 @@ const timeRangeDialogSubmit = el("#timeRangeDialogSubmit");
 let timeRangeDialogMode = null; // "create" | "edit"
 let timeRangeDialogTargetId = null; // create: parentId · edit: the node's own id
 
+function isCoarsePointer() {
+  try { return !!(window.matchMedia && matchMedia("(pointer: coarse)").matches); } catch { return false; }
+}
+
 function openTimeRangeDialog(mode, targetId, prefill) {
   const target = state.nodes[targetId];
   if (!target) return;
@@ -39676,7 +39717,7 @@ function openTimeRangeDialog(mode, targetId, prefill) {
   timeRangeDialogTitle.textContent = mode === "edit" ? "Edit time filter" : `Time filter on “${target.name}”`;
   timeRangeDialogSubmit.textContent = mode === "edit" ? "Save" : "Create";
   timeRangeDialog.classList.remove("hidden");
-  timeRangeFromInput.focus();
+  if (!isCoarsePointer()) timeRangeFromInput.focus(); // touch: no autofocus, the keyboard would pop up
 }
 function closeTimeRangeDialog() {
   timeRangeDialog.classList.add("hidden");
@@ -44068,7 +44109,9 @@ el("#formatRuleEditSave").addEventListener("click", saveFormatRuleEdit);
 el("#btnAddFormat").addEventListener("click", () => openFormatEditDialog(null));
 el("#btnAddFormatRule").addEventListener("click", () => openFormatRuleEditDialog(null));
 
-document.addEventListener("click", ev => {
+// Click-timed dismissal of the popups below. Also called from the capture-phase dismiss-tap
+// swallow further down, because a swallowed touch click never reaches the bubble listener.
+function closeClickDismissedPopups(ev) {
   if (!contextMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
@@ -44082,7 +44125,8 @@ document.addEventListener("click", ev => {
   // on a click anywhere outside the sidebar itself — a click ON a tree row is
   // deliberately NOT treated as "outside" (still navigating the tree).
   if (sidebarForcedPeek && !sidebarEl.contains(ev.target)) clearSidebarForcedPeek();
-});
+}
+document.addEventListener("click", closeClickDismissedPopups);
 
 // The row/tree/extract context menus also close on a press outside them: many
 // controls stopPropagation() their click (popup openers must), so the document
@@ -44097,6 +44141,15 @@ document.addEventListener("click", ev => {
 let dismissTapPending = false;   // the current touch/pen press closed a menu: swallow its click
 let dismissTapSwallowedAt = 0;   // time of the last swallowed dismiss click, for the dblclick guard
 const DISMISS_DBLCLICK_MS = 600;
+// True when a click-dismissed popup is open and `target` is outside it (and outside its opener).
+function clickDismissedPopupHit(target) {
+  const open = p => !p.classList.contains("hidden");
+  return (open(openMenu) && !openMenu.contains(target) && !btnOpen.contains(target))
+    || (libraryMenuOpen() && !libraryMenu.contains(target) && !btnLibrary.contains(target))
+    || (open(filterPopup) && !filterPopup.contains(target))
+    || (open(columnsPanel) && !columnsPanel.contains(target) && !btnColumns.some(b => b.contains(target)))
+    || (open(colorPickerPopup) && !colorPickerPopup.contains(target));
+}
 function anyPointerMenuOpen() {
   return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu]
     .some(m => !m.classList.contains("hidden"));
@@ -44104,16 +44157,20 @@ function anyPointerMenuOpen() {
 document.addEventListener("pointerdown", ev => {
   dismissTapPending = false; // a press that never became a click (scroll) must not swallow a later tap
   const wasOpen = ev.pointerType !== "mouse" && anyPointerMenuOpen();
+  // Click-dismissed popups stay open here (their close is click-timed) but a touch press outside
+  // one must still consume its click, or the tap also acts on the row underneath.
+  const clickPopupHit = ev.pointerType !== "mouse" && clickDismissedPopupHit(ev.target);
   if (!contextMenu.contains(ev.target) && !addToSelectionMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
-  if (wasOpen && !anyPointerMenuOpen()) dismissTapPending = true;
+  if ((wasOpen && !anyPointerMenuOpen()) || clickPopupHit) dismissTapPending = true;
 }, true);
 document.addEventListener("click", ev => {
   if (!dismissTapPending) return;
   dismissTapPending = false;
   dismissTapSwallowedAt = Date.now();
+  closeClickDismissedPopups(ev);
   ev.stopPropagation();
   ev.preventDefault();
 }, true);
@@ -44258,8 +44315,10 @@ document.addEventListener("keydown", ev => {
     const node = state.nodes[state.activeId];
     if (node && node.type === "filter") {
       ev.preventDefault();
+      const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(state.activeId);
       render();
+      offerPhoneUndoToast(prevTop);
     }
     return;
   }
@@ -44422,8 +44481,10 @@ document.addEventListener("keydown", ev => {
     const rootId = getRootFileId(state.activeId);
     if (rootId) {
       ev.preventDefault();
+      const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(rootId);
       render();
+      offerPhoneUndoToast(prevTop);
     }
     return;
   }
