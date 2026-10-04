@@ -4871,6 +4871,15 @@
     scrollbar-width:none; -webkit-overflow-scrolling:touch;
   }
   body.layout-phone #levelBar::-webkit-scrollbar{display:none;}
+  /* Right-edge fade, only while more chips are hidden to the right (JS toggles .has-more-right). */
+  body.layout-phone #levelBar.has-more-right{
+    -webkit-mask-image:linear-gradient(to right, #000 calc(100% - 28px), transparent);
+    mask-image:linear-gradient(to right, #000 calc(100% - 28px), transparent);
+  }
+  /* Phone chip text is the short form ("F 15", "Other 33") from .level-short; the full name stays in the title. */
+  .level-btn .level-short{display:none;}
+  body.layout-phone .level-btn .level-short{display:inline;}
+  body.layout-phone .level-btn .row-action-label{display:none;}
   body.layout-phone .level-btn{
     width:auto; height:32px; padding:0 12px; border-radius:16px; gap:6px;
     color:var(--text-primary); font-size:12.5px; font-weight:600;
@@ -5114,6 +5123,12 @@
     body.layout-compact #viewBar::-webkit-scrollbar{display:none;}
     body.layout-compact #viewBar > *{float:none; flex:0 0 auto;}
     body.layout-compact #viewBar > #btnFacets{margin-left:auto;}
+    /* Tablet: when the toolbar does not fit one row (JS: updateLevelBarLayout), the level bar
+       gets its own full-width row under the tabs and the toolbar wraps instead of scrolling. */
+    body.layout-compact #viewBar.level-own-row{flex-wrap:wrap; overflow-x:visible; overflow-y:visible;}
+    body.layout-compact #viewBar.level-own-row > #levelBar{order:1; flex:1 1 calc(100% - 100px); min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:6px;}
+    /* The Facets button follows the chips on THAT row (chips left, Facets right) instead of wrapping onto a row of its own. */
+    body.layout-compact #viewBar.level-own-row > #btnFacets{order:2;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
@@ -20224,7 +20239,9 @@ function renderLevelBar() {
     btn.title = label; // accessible name, since the button itself carries no visible text
     const n = counts[lvl] || 0;
     const countText = n >= 100000 ? Math.round(n / 1000) + "k" : n.toLocaleString("de-DE"); // fits the 44px circle
-    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
+    // .level-short: the phone chip text ("F 15", "Other 33"); hidden on the other tiers.
+    const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + countText;
+    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => {
       if (state.levelFilter.has(lvl)) state.levelFilter.delete(lvl);
       else state.levelFilter.add(lvl);
@@ -20242,7 +20259,34 @@ function renderLevelBar() {
     levelBarEl.appendChild(btn);
   });
   updateApplyLevelToTreeButtonVisibility();
+  updateLevelBarLayout();
 }
+
+// Touch layout of the level bar. Phone: the single scrolling row gets a
+// right-edge fade (.has-more-right) only while chips are hidden to the right.
+// Tablet (compact): when #viewBar's content does not fit one row, #levelBar
+// moves to its own full-width row under the tabs (#viewBar.level-own-row)
+// instead of making the whole toolbar scroll. The "fits" test measures the
+// chips' natural width (never the current row), so toggling the class cannot
+// change the answer — no oscillation. Desktop: both classes are always off.
+function updateLevelBarLayout() {
+  const tier = typeof currentLayoutTier === "undefined" ? null : currentLayoutTier;
+  const viewBar = document.getElementById("viewBar");
+  levelBarEl.classList.toggle("has-more-right", tier === "phone" && levelBarEl.scrollWidth - levelBarEl.clientWidth - levelBarEl.scrollLeft > 1);
+  if (!viewBar) return;
+  let own = false;
+  if (tier === "compact") {
+    const chips = [...levelBarEl.children];
+    const chipsW = chips.reduce((a, c) => a + c.offsetWidth, 0) + Math.max(0, chips.length - 1) * 6;
+    const others = [...viewBar.children].filter(c => c !== levelBarEl).reduce((a, c) => a + c.offsetWidth, 0);
+    const cs = getComputedStyle(viewBar);
+    const avail = viewBar.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
+    own = chips.length > 0 && others + chipsW > avail;
+  }
+  viewBar.classList.toggle("level-own-row", own);
+}
+levelBarEl.addEventListener("scroll", updateLevelBarLayout, { passive: true });
+window.addEventListener("resize", updateLevelBarLayout);
 
 
 function applyLevelFilter(entries) {
@@ -30979,6 +31023,7 @@ function applyLayoutTier() {
   document.body.classList.toggle("layout-phone", tier === "phone");
   setDrawerOpen(false);
   if (tier === "phone") cancelLongPress();
+  updateLevelBarLayout();
   if (first) return; // boot: render() has not run yet / applyRowGrid already read the tier
   updateWrapMsgButton(); // compact = always wrapped (wrapMessagesEff)
   applyRowGrid();
