@@ -184,7 +184,7 @@ if (groupSelected()) {
     const f = w.createFilterNode(txt.id, "text", "Heartbeat");
     T.state.activeId = f.id; w.render(); w.applyFhView("highlight");
     const ev = T.editorView;
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     await search351(w, d, "Spectrum");
     const hits = w.__find.state.hits;
     assert(hits.length > 100 && w.__find.state.done, "the scan covers the whole file (" + hits.length + " hits)");

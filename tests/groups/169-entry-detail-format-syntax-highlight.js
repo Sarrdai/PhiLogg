@@ -121,7 +121,7 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d, T) => {
   section("169f. Theme export/import: optional syntaxHighlightColors round trip");
   const captured = [];
-  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  w.downloadBlobFallback = (blob, name) => { const e = { name, json: null }; captured.push(e); blob.text().then(t => { e.json = t; }); };
   const cs0 = w.getComputedStyle(d.documentElement);
   const colors = {};
   T.THEME_COLOR_KEYS.forEach(k => { colors[k] = cs0.getPropertyValue("--" + k).trim(); });
@@ -157,6 +157,7 @@ await withApp(async (w, d, T) => {
   // Export carries the block only when the theme has it.
   await w.exportCustomThemeToFile(T.customThemes[0].id);
   await w.exportCustomThemeToFile(imported.id);
+  await waitFor(() => captured.length === 2 && captured[1].json !== null);
   assert(captured.length === 2, "two exports written, got " + captured.length);
   const withBlock = JSON.parse(captured[0].json), withoutBlock = JSON.parse(captured[1].json);
   assert(withBlock.format === "philogg-theme" && withBlock.syntaxHighlightColors["syntax-tag"] === "#ff00ff", "the export of a theme with syntax colors carries them");

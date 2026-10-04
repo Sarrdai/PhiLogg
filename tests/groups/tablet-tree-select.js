@@ -78,13 +78,13 @@ await withApp(async (w, d, T) => {
   assert(d.querySelectorAll(".tree-check").length === 0, "select mode ended after the action");
   assert(T.state.multiSelect.size <= 1, "selection consumed");
 
-  section("tablet-tree-select f. Link… opens the dialog with the example sentence, mode ended");
+  section("tablet-tree-select f. Link… opens the dialog with the picked filters as Start/End, mode ended");
   ttsEnter(w, d, t1.id);
   ttsRow(d, "message 3").click();
   ttsBtn(d, "link").click();
   const dlg = d.querySelector("#linkDialog");
   assert(!dlg.classList.contains("hidden"), "link dialog open");
-  assert(dlg.textContent.includes('Example: pair each "Move requested" with the next "Position reached" to measure how long moves take.'), "example sentence in the link dialog");
+  assert(dlg.querySelector("#linkDialogTitle").textContent === "Link events" && dlg.querySelectorAll("#linkSides .link-side-chip").length === 2, "link dialog: title and the two picked filters as Start/End chips");
   assert(d.querySelectorAll(".tree-check").length === 0, "select mode ended");
   w.closeLinkDialog();
 

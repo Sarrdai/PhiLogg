@@ -158,9 +158,9 @@ await withApp(async (w, d, T) => {
 
   // Export button on the row: the file re-imports to the same colors.
   const captured = [];
-  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  w.downloadBlobFallback = (blob, name) => { const e = { name, json: null }; captured.push(e); blob.text().then(t => { e.json = t; }); };
   fireClick([...listRow.querySelectorAll("button")].find(b => b.textContent === "Export"), w);
-  await waitFor(() => captured.length === 1);
+  await waitFor(() => captured.length === 1 && captured[0].json !== null);
   const file = JSON.parse(captured[0].json);
   assert(file.format === "philogg-syntax-scheme" && file.name === "My Neon Syntax" && file.colors["syntax-string"] === "#00ffcc", "Export writes the scheme as a philogg-syntax-scheme file");
   assert(captured[0].name.endsWith(".syntax.json"), "suggested file name, got " + captured[0].name);

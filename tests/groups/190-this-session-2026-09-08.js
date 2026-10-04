@@ -55,27 +55,20 @@ group(190);
 
     // Two hops, same direction (after/after) -> still hidden.
     w.openLinkDialog([first.id, second.id, third.id]);
-    d.querySelector("#linkRefSelect").value = first.id;
-    d.querySelector("#linkRefSelect").dispatchEvent(new w.Event("change"));
-    let hopRows = d.querySelectorAll("#linkHopsList .link-hop-row");
-    hopRows[0].querySelector(".link-hop-dir").value = "after";
-    hopRows[0].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
-    hopRows[1].querySelector(".link-hop-dir").value = "after";
-    hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
+    linkDlgSetDir(w, d, 0, "after");
+    linkDlgSetDir(w, d, 1, "after");
     const row = d.querySelector("#linkOrderEnforceRow");
     const checkbox = d.querySelector("#linkOrderEnforceInput");
     assert(row.classList.contains("hidden"), "two hops, same direction (after/after): row stays hidden");
 
     // Switching one hop to a different direction (after/before) -> row shown.
-    hopRows[1].querySelector(".link-hop-dir").value = "before";
-    hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
+    linkDlgSetDir(w, d, 1, "before");
     assert(!row.classList.contains("hidden"), "two hops, mixed direction (after/before): row is shown");
 
     // Check it, then switch back to a single (same) direction -> auto
     // hidden AND unchecked, no stale checked-but-hidden state.
     setPill(checkbox, true);
-    hopRows[1].querySelector(".link-hop-dir").value = "after";
-    hopRows[1].querySelector(".link-hop-dir").dispatchEvent(new w.Event("change"));
+    linkDlgSetDir(w, d, 1, "after");
     assert(row.classList.contains("hidden"), "reverting to same direction while checked: row becomes hidden again");
     assert(pillChecked(checkbox) === false, "reverting to same direction while on: toggle is auto-cleared, not left stale");
   });

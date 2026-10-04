@@ -93,7 +93,7 @@ await withApp(async (w, d, T) => {
   // flow too (not just Save to library), and never at startup. jsdom has no
   // showSaveFilePicker/URL.createObjectURL, so stub the download fallback
   // (same technique GROUP 21 uses). ---
-  w.downloadJsonFallback = () => {};
+  w.downloadBlobFallback = () => {};
   const savePromise = w.saveFilterToFile(plainFilter.id);
   await new Promise(r => setTimeout(r, 0));
   assert(!d.querySelector("#exportScopeDialog").classList.contains("hidden"), "saveFilterToFile also asks the general export-scope question");

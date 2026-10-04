@@ -99,24 +99,25 @@ deployments possible:
   hides behind the others' chatter); the Filtered view shows each row's
   measured gap, and sorting the Δt column (largest first) ranks where the
   most time is lost — no threshold needed. The **Link filter** can pair only entries that belong
-  together ("match only same Thread", or the same captured value such as
-  `axis [*:int]`) and keep only pairs with Δt above/below a limit, with a
-  live "12 of 3.418 pairs" preview; an extraction on link pairs gets a
-  Δt column to plot durations over time. See `docs/filters.md`.
+  together ("Same" chips suggest the fields both events share, e.g. `job`, with
+  the ID-like one preselected, or a column such as Thread) and show only pairs
+  with Δt above/below a limit, with a live "192 pairs · 13 without end" preview;
+  the Link view sorts pairs by Δt and shows the starts that never got an end.
+  An extraction on link pairs gets a Δt column to plot durations over time. See `docs/filters.md`.
 - **Text-filter match highlighting** — see exactly which substring an active
   text filter matched, marked inline in the Filter view's rows and/or the
   entry-detail panel. Toggle it on/off from the view bar (next to the
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
-- **Find in the current view without creating a filter** — `Ctrl+G` opens a
-  small find bar over the log view: it searches only the rows the current
+- **Find in the current view without creating a filter** — `Ctrl+F` opens a
+  small find bar (also the magnifier button in the header) over the log view: it searches only the rows the current
   view (Context or Filtered) shows, marks every hit as you type, jumps to
-  the first one, and counts them ("3 / 41"). `F3`/`Shift+F3` (or
+  the first one, and counts them ("3 / 41"). `F3`/`Shift+F3` (or `Ctrl+G`/`Ctrl+Shift+G`,
   `Enter`/`Shift+Enter`) walk the hits with wrap-around; match-case and
   regex toggles use the same query language as a text filter. When a search
   turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
-  into a real filter node — `Ctrl+F` still opens the filter popup directly.
+  into a real filter node — `Ctrl+Shift+F` opens the filter popup directly.
   With two or more files open, every file in the tree also shows how many
   entries of the whole file match; click a count to jump to that file's
   first hit. Stays fast on views with hundreds of thousands of rows.
@@ -136,7 +137,7 @@ deployments possible:
   typed columns, or jump to its first entry. Stays responsive on 100 MB
   logs (one pass, computed in the background, cached per filter result).
 - **Facet panel: who/what produces these entries?** — a toggleable side
-  panel (`Ctrl+Shift+F`, or the button at the right end of the view bar;
+  panel (`Ctrl+I`, or the button at the right end of the view bar;
   drag its left edge to resize) shows the value distribution of every column (Thread, Location, Method,
   custom columns, Level, and Source for a merged file) over the current
   filter result: the top values with count, share and a bar, each value coloured by the most
@@ -196,9 +197,12 @@ deployments possible:
   the entries whose value actually satisfies it. Numbers with thousands separators
   (`1,234.5`, `1.234,5`) are read as one value; `[*:float@en]` /
   `[*:float@de]` pin the number format where it is ambiguous (`12,345`).
-- **Link filter** — pair up nearest-preceding/following entries across two
-  filters (e.g. "the last position reading before each error"), chainable
-  into multi-hop tuples via a guided dialog.
+- **Link filter** — pair up nearest-preceding/following entries (e.g. each
+  "Move requested" with its "Position reached") to measure how long things take.
+  Right-click a row → **Pair with…**, click the end row: the Δt between the two
+  rows shows at once, and **Pair all like these…** opens the link dialog
+  prefilled. Also reachable from the new-filter popup ("Link two events…") and
+  the tree menu ("Link with…", "Edit link…"); chainable into multi-hop tuples.
 - **Context/Filtered split** — the narrowed "Filtered" view plus a
   "Context" view showing the same result *with the log around it*: the
   matches, and everything the filter rejected hidden between them,
@@ -265,7 +269,7 @@ deployments possible:
   copying behaves like a normal text pane even for huge files (a 19 MB,
   390k-line file opens in about a second). Filtered shows the same lines with
   the line number in place of the timestamp, so text, regex and wildcard
-  filters, the extraction Table and Plot, and the find bar (Ctrl+G) all work
+  filters, the extraction Table and Plot, and the find bar (Ctrl+F) all work
   on it, and a filter's matching lines are marked in the editor.
 - **View common image files right in the app** — `.jpg`/`.jpeg`/`.png`/
   `.tiff`/`.tif` open in an image viewer with pan/zoom/reset (drag-to-select
@@ -343,7 +347,10 @@ deployments possible:
   use to create it, prefilled — nothing is added until you save. A filter
   file lands under the active node.
 - **Session export/import** — package an analysis (files, filters,
-  bookmarks, notes) to share with a colleague.
+  bookmarks, notes) to share with a colleague. Also reachable from Export /
+  Share ("Session & filters": save the session or the active filter), and
+  from the phone's Save button. Every save says what happened: "Saved",
+  "Downloaded", "Not saved" or why it couldn't be saved.
 - **Export / Share for tickets** (toolbar button or `Ctrl+Shift+E`) —
   "Copy for ticket" puts a compact excerpt on the clipboard, ready to paste
   into Jira, GitHub, GitLab, Azure DevOps or an e-mail: one short header

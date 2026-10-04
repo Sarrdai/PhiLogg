@@ -15,10 +15,13 @@ group(290);
     assert(pairSummary(w.getEntries(gt.id)) === "p2@300" && gt.name.endsWith("(Δt > 200ms)"), "Δt > 200 ms keeps only the 300 ms pair, name carries the condition: " + gt.name);
     const lt = w.createLinkNode(move.id, reached.id, "after", 1, { dt: { op: "<", ms: 200 } });
     assert(w.getEntries(lt.id).length === 2, "Δt < 200 ms keeps the two 100 ms pairs");
-    // Exclusive: the 300 ms pair is dropped by the condition BEFORE it could
-    // claim 'position reached axis 2 @0.300', so the next move still gets it.
+    // Exclusive: Δt is a pure post-filter — the 300 ms pair is dropped by the
+    // condition but still claims 'position reached axis 2 @0.300', so the
+    // pairing is the same as without Δt and only the 5.0 → 5.1 pair is left.
     const exLt = w.createLinkNode(move.id, reached.id, "after", 1, { exclusive: true, dt: { op: "<", ms: 200 } });
-    assert(pairSummary(w.getEntries(exLt.id)) === "p2@100|p2@100", "exclusive + Δt: a dropped pair leaves its target free, got " + pairSummary(w.getEntries(exLt.id)));
+    const exAll = w.createLinkNode(move.id, reached.id, "after", 1, { exclusive: true });
+    assert(pairSummary(w.getEntries(exLt.id)) === "p2@100" && w.getEntries(exAll.id).length === 3,
+      "exclusive + Δt: a dropped pair still claims its target (1 of 3 exclusive pairs survive), got " + pairSummary(w.getEntries(exLt.id)));
     // Baked (the same condition inside an AND-free chain: a link of the Δt link).
     const baked = w.bakeNodeCondition(gt);
     assert(baked.linkDt && baked.linkDt.op === ">" && baked.linkDt.ms === 200, "bakeNodeCondition carries linkDt");
@@ -40,11 +43,8 @@ group(290);
     const reached = w.createFilterNode(f.id, "text", "position reached");
     w.render();
     w.openLinkDialog([move.id, reached.id]);
-    const hop = d.querySelector("#linkHopsList .link-hop-row .link-hop-dir");
-    hop.value = "after";
-    hop.dispatchEvent(new w.Event("change", { bubbles: true }));
     await sleep(200);
-    assert(d.querySelector("#linkLiveMatch").textContent.replace(/\s+/g, " ").trim() === "3 pairs", "preview without Δt: plain pair count, got " + d.querySelector("#linkLiveMatch").textContent);
+    assert(d.querySelector("#linkLiveMatch").textContent.replace(/\s+/g, " ").trim().startsWith("3 pairs"), "preview without Δt: plain pair count, got " + d.querySelector("#linkLiveMatch").textContent);
     assert(d.querySelector("#linkDtValue").disabled, "Δt controls are greyed out while the switch is off");
     fireClick(d.querySelector("#linkDtInput"), w);
     assert(!d.querySelector("#linkDtValue").disabled, "switching Δt on enables its controls");
@@ -64,9 +64,6 @@ group(290);
     // sits on the last hop only and tests the whole tuple's span.
     const axis1Move = w.createFilterNode(f.id, "text", "move requested axis 1");
     w.openLinkDialog([move.id, reached.id, axis1Move.id]);
-    d.querySelector("#linkRefSelect").value = move.id;
-    d.querySelector("#linkRefSelect").dispatchEvent(new w.Event("change", { bubbles: true }));
-    [...d.querySelectorAll("#linkHopsList .link-hop-dir")].forEach(s => { s.value = "after"; s.dispatchEvent(new w.Event("change", { bubbles: true })); });
     fireClick(d.querySelector("#linkDtInput"), w);
     d.querySelector("#linkDtValue").value = "4.9";
     d.querySelector("#linkDtUnit").value = "s";
@@ -77,9 +74,8 @@ group(290);
     fireClick(d.querySelector("#linkDialogCreate"), w);
     const created = f.children.filter(id => !before.has(id)).map(id => T.state.nodes[id]);
     const last = T.state.nodes[T.state.activeId];
-    const first = created.find(n => n.id !== last.id);
-    assert(created.length === 2 && first && !first.linkDt && last.linkDt && last.linkDt.ms === 4900,
-      "multi-hop: only the last hop carries the Δt condition (4.9 s = 4900 ms)");
+    assert(created.length === 1 && created[0].id === last.id && !last.bakedA.linkDt && last.linkDt && last.linkDt.ms === 4900,
+      "multi-hop: ONE node; only the last hop carries the Δt condition (4.9 s = 4900 ms)");
     const tuples = w.getEntries(last.id);
     assert(tuples.length === 1 && tuples[0].dtMs === 5000 && w.getTupleEntries(tuples[0]).length === 3,
       "the condition tests the whole 3-entry tuple's span (move 0.000 → … → move 5.000)");

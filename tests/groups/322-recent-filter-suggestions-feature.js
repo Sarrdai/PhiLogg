@@ -207,7 +207,7 @@ await withApp(async (w, d, T) => {
   section("322f. find bar: Enter and 'Add as filter' record source find with case/regex only; the list applies value + case + regex; not recorded per keystroke");
   const f = await w.addFile("a.log", makeLog(0, 60, { suffix: i => (i % 7 === 0 ? "Needle" : "hay") }), () => {});
   T.state.activeId = f.id; w.render();
-  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireKeydown(d, w, "f", { ctrlKey: true });
   const input = d.getElementById("findInput");
   assert(rfList(w).length === 0, "nothing recorded by opening the bar");
   input.value = "needle"; fireInput(input, w);
@@ -226,7 +226,7 @@ await withApp(async (w, d, T) => {
   assert(l[0].value === "Need.e" && l[0].caseSensitive === true && l[0].isRegex === true && l[0].source === "find", "'Add as filter' records with its case/regex flags");
   assert(d.getElementById("findBar").classList.contains("hidden"), "sanity: Add as filter closed the bar");
   // reopen: list + apply
-  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireKeydown(d, w, "f", { ctrlKey: true });
   const dd = d.querySelector("#findBar .recent-dd");
   assert(dd && dd.hidden, "reopening with the previous query (no other entry contains it) shows no list");
   input.value = ""; fireInput(input, w);

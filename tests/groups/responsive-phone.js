@@ -25,7 +25,7 @@ await withApp(async (w, d, T) => {
 
   phoneWidth(w, 1440);
   assert(vis(d, w, "#btnExport") && vis(d, w, "#btnUndo") && vis(d, w, "#navHistoryGroup") && vis(d, w, "#statusText"), "desktop: export/undo/nav/status visible");
-  assert(!vis(d, w, "#btnFindPhone") && !vis(d, w, "#phoneTitle") && !vis(d, w, "#btnDrawer"), "desktop: no find button, no title block, no drawer button");
+  assert(vis(d, w, "#btnFindPhone") && !vis(d, w, "#phoneTitle") && !vis(d, w, "#btnDrawer"), "desktop: find button shown, no title block, no drawer button");
   phoneWidth(w, 820);
   assert(vis(d, w, "#btnExport") && vis(d, w, "#navHistoryGroup") && vis(d, w, "#btnDrawer") && vis(d, w, "#btnFindPhone") && !vis(d, w, "#phoneTitle"),
     "compact: header keeps its items, drawer + find buttons added, no phone title block");

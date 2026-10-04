@@ -1,0 +1,4 @@
+- **feat: every save tells you what happened; Save session/filter in Export / Share (2026-10-04, person-requested)**
+  - One shared save flow (`saveFileWithFeedback`) replaces the copy-pasted picker blocks: toasts "Saved <file>", "Downloaded <file>", "Not saved" (cancelled) or a red "Couldn't save <file> — <reason>" (a failed write no longer silently turns into a download). Plot images now use the save picker too.
+  - Export / Share has a "Session & filters" bar with Save session… / Save filter…; on the phone the Save button opens a "Save your work" menu (desktop and tablet unchanged).
+  - **Tests**: GROUP save-feedback-toasts, export-share-your-work. Docs: docs/export.md, docs/ui-and-views.md, README.

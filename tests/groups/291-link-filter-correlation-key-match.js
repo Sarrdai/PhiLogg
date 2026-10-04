@@ -65,17 +65,13 @@ group(291);
     const reached = w.createFilterNode(f.id, "text", "position reached");
     w.render();
     w.openLinkDialog([move.id, reached.id]);
-    const hop = d.querySelector("#linkHopsList .link-hop-dir");
-    hop.value = "after";
-    hop.dispatchEvent(new w.Event("change", { bubbles: true }));
-    const sel = d.querySelector("#linkKeySelect");
-    assert([...sel.options].map(o => o.value).includes("thread") && [...sel.options].some(o => o.value === "@pattern"),
-      "key choices: the format's columns plus 'value of pattern…'");
-    assert(sel.disabled && !isVisible(d.querySelector("#linkKeyPatternRow"), w), "off by default: select greyed out, pattern row hidden");
-    fireClick(d.querySelector("#linkKeyInput"), w);
-    sel.value = "@pattern";
-    sel.dispatchEvent(new w.Event("change", { bubbles: true }));
-    assert(isVisible(d.querySelector("#linkKeyPatternRow"), w), "'value of pattern…' shows the pattern input");
+    const chipOf = id => d.querySelector('#linkKeyChips [data-key-chip="' + id + '"]');
+    const chips = [...d.querySelectorAll("#linkKeyChips [data-key-chip]")].map(c => c.dataset.keyChip);
+    assert(chips.includes("c:thread") && chips.includes("none") && chips.includes("pattern"),
+      "key choices: the format's columns plus none and 'pattern…', got " + chips);
+    assert(chipOf("none").getAttribute("aria-pressed") === "true" && !isVisible(d.querySelector("#linkKeyPatternRow"), w), "none by default (no shared name=value field): pattern row hidden");
+    fireClick(chipOf("pattern"), w);
+    assert(isVisible(d.querySelector("#linkKeyPatternRow"), w), "'pattern…' shows the pattern input");
     d.querySelector("#linkKeyPattern").value = "axis";
     d.querySelector("#linkKeyPattern").dispatchEvent(new w.Event("input", { bubbles: true }));
     await sleep(200);
@@ -86,13 +82,13 @@ group(291);
     d.querySelector("#linkKeyPattern").value = "axis [*:int]";
     d.querySelector("#linkKeyPattern").dispatchEvent(new w.Event("input", { bubbles: true }));
     await sleep(200);
-    assert(d.querySelector("#linkLiveMatch").textContent.replace(/\s+/g, " ").trim() === "3 pairs", "preview with a valid key, got " + d.querySelector("#linkLiveMatch").textContent);
+    assert(d.querySelector("#linkLiveMatch").textContent.replace(/\s+/g, " ").trim().startsWith("3 pairs"), "preview with a valid key, got " + d.querySelector("#linkLiveMatch").textContent);
     fireClick(d.querySelector("#linkDialogCreate"), w);
     const node = T.state.nodes[T.state.activeId];
     assert(node.linkKey && node.linkKey.pattern === "axis [*:int]" && pairSummary(w.getEntries(node.id)) === "p1@500|p2@100|p1@900",
       "Create stores the captured-value key");
     w.openLinkDialog([move.id, reached.id]);
-    assert(!pillChecked(d.querySelector("#linkKeyInput")) && !pillChecked(d.querySelector("#linkDtInput")), "reopening starts with both options off");
+    assert(d.querySelector('#linkKeyChips [data-key-chip="none"]').getAttribute("aria-pressed") === "true" && !pillChecked(d.querySelector("#linkDtInput")), "reopening starts with no key and Δt off");
     w.closeLinkDialog();
   });
 

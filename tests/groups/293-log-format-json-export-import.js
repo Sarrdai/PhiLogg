@@ -12,7 +12,7 @@ await withApp(async (w, d, T) => {
   section("293. Log format JSON export/import (Export button, drop → prefilled format wizard, pattern choice)");
   await waitForFormatConfig(T);
   const captured = [];
-  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  w.downloadBlobFallback = (blob, name) => { const e = { name, json: null }; captured.push(e); blob.text().then(t => { e.json = t; }); };
   const src = T.state.logFormats.find(f => f.id === "fmt-demo-app");
   T.state.formatRules.push({ id: "rule-a", order: 0, createdAt: 0, glob: "app-*.log", formatId: src.id },
                            { id: "rule-b", order: 1, createdAt: 0, glob: "shared-*.log", formatId: "fmt-default" },
@@ -24,7 +24,7 @@ await withApp(async (w, d, T) => {
   const exportBtn = row => [...row.querySelectorAll("button")].find(b => b.textContent === "Export");
   assert(!exportBtn(rowFor("App + Syslog (meta)")), "a meta-format has no Export button");
   fireClick(exportBtn(rowFor(src.name)), w);
-  await waitFor(() => captured.length === 1);
+  await waitFor(() => captured.length === 1 && captured[0].json !== null);
   const file = JSON.parse(captured[0].json);
   assert(file.format === "philogg-log-format" && file.version === 1, "export carries the log-format file marker, got " + file.format);
   assert(captured[0].name.endsWith(".logformat.json"), "suggested file name, got " + captured[0].name);

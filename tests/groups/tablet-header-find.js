@@ -30,7 +30,7 @@ await withApp(async (w, d, T) => {
   w.render();
   const find = d.querySelector("#btnFindPhone");
   const status = d.querySelector("#statusText");
-  assert(w.getComputedStyle(find).display === "none", "desktop: the header Find button is hidden");
+  assert(w.getComputedStyle(find).display !== "none", "desktop: the header Find button is shown too (Ctrl+F button)");
   const rootText = status.textContent;
   assert(/^1 file · [\d.]+ entries$/.test(rootText), "desktop: status text unchanged, got " + rootText);
 

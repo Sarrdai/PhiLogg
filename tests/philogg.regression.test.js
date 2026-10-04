@@ -718,6 +718,15 @@ function linkKeyLog() {
   return rows.map(([t, th, msg]) => `2024-01-15 10:00:${t}\tINFO\t"${th}"\tFoo.cs\tline 0\t[DoWork]\t"${msg}"`).join("\n") + "\n";
 }
 
+// Link dialog v2 helpers: the direction is a segmented control per step, the sides are text fields.
+function linkDlgSetDir(w, d, hopIndex, dir) {
+  const row = d.querySelectorAll("#linkSides .link-hop-row")[hopIndex];
+  fireClick(row.querySelector('.link-hop-dir button[data-dir="' + dir + '"]'), w);
+}
+function linkDlgType(w, d, input, value) {
+  input.value = value;
+  input.dispatchEvent(new w.Event("input", { bubbles: true }));
+}
 const pairSummary = pairs => pairs.map(p => p.second.message.replace("position reached axis ", "p") + "@" + p.dtMs).join("|");
 
 const ARR_298_FMT = {

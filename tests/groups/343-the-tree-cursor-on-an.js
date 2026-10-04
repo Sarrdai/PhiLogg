@@ -223,12 +223,12 @@ if (groupSelected()) {
     const nodesBefore = Object.keys(T.state.nodes).length, undoBefore = T.undoStack.length;
 
     // keys
-    const keys = [["f", { ctrlKey: true }], ["g", { ctrlKey: true }], ["F3"], ["F3", { shiftKey: true }], ["F2"], ["Delete"], ["Enter"], ["c", { ctrlKey: true }],
+    const keys = [["f", { ctrlKey: true }], ["F", { ctrlKey: true, shiftKey: true }], ["g", { ctrlKey: true }], ["F3"], ["F3", { shiftKey: true }], ["F2"], ["Delete"], ["Enter"], ["c", { ctrlKey: true }],
       ["c", { ctrlKey: true, shiftKey: true }], ["v", { ctrlKey: true }], ["x", { ctrlKey: true }], ["z", { ctrlKey: true }], ["y", { ctrlKey: true }], ["w", { ctrlKey: true }],
       ["d", { ctrlKey: true }], ["e", { ctrlKey: true }], ["1", { ctrlKey: true }], ["Escape"]];
     keys.forEach(([k, o]) => { key(k, o); toCursor(); });
     assert(errs.length === 0, "none of the keys threw, got " + JSON.stringify(errs));
-    assert(d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+F opened no filter popup (nothing to filter)");
+    assert(d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+Shift+F opened no filter popup (nothing to filter)");
     assert(Object.keys(T.state.nodes).length === nodesBefore && T.undoStack.length === undoBefore, "Delete / Ctrl+W / paste created or removed nothing");
     assert(T.state.activeId === null && w.treeCursorId() === navId, "still nothing selected, the cursor stays on b.log");
 

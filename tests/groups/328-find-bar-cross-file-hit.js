@@ -28,7 +28,7 @@ await withApp(async (w, d, T) => {
   w.render();
 
   section("328a. Badges on every file root, whole-file counts (even under a narrowing filter)");
-  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireKeydown(d, w, "f", { ctrlKey: true });
   await type("heartbeat");
   await settle();
   assert(badge(fa.id) && badge(fb.id), "both file roots show a badge");

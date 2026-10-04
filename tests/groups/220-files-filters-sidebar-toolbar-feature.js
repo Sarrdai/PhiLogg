@@ -20,11 +20,11 @@
    ============================================================ */
 group(220);
 
-const SB_FIXED = "rename,edit,invert,mute,clockOffset,addToLibrary";
+const SB_FIXED = "rename,edit,linkWith,invert,mute,clockOffset,addToLibrary";
 const sbState = actions => actions.filter(a => !a.group).map(a => a.action + (a.disabled ? ":off" : ":on")).join(",");
 
 await withApp(async (w, d, T) => {
-  section("220a. describeSidebarToolbarActions: nothing selected -> the six fixed buttons, all disabled");
+  section("220a. describeSidebarToolbarActions: nothing selected -> the seven fixed buttons, all disabled");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.multiSelect = new Set();
   T.state.activeId = null; // the active node is always selected, so "nothing selected" means no active node either
@@ -44,7 +44,7 @@ await withApp(async (w, d, T) => {
   T.state.multiSelect = new Set([fa.id]);
   T.state.activeId = fa.id;
   let { actions } = w.describeSidebarToolbarActions();
-  assert(sbState(actions) === "rename:off,edit:off,invert:off,mute:off,clockOffset:on,addToLibrary:off", "got " + sbState(actions));
+  assert(sbState(actions) === "rename:off,edit:off,linkWith:off,invert:off,mute:off,clockOffset:on,addToLibrary:off", "got " + sbState(actions));
   assert(actions.find(a => a.action === "clockOffset").target === fa.id, "Adjust clock… targets the selected file");
 
   const merged = await w.mergeFiles([fa.id, fb.id]);
@@ -52,7 +52,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = merged.id;
   ({ actions } = w.describeSidebarToolbarActions());
   assert(actions.every(a => a.disabled), "a merged file has no clock of its own: everything disabled (buttons stay), got " + sbState(actions));
-  assert(actions.length === 6, "...and the button set is unchanged");
+  assert(actions.length === 7, "...and the button set is unchanged");
 
   const emptyFileId = "syntheticEmptyFile";
   T.state.nodes[emptyFileId] = { id: emptyFileId, type: "file", merged: false, entries: [], children: [] };
@@ -63,13 +63,13 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("220c. 2+ files selected: describeSidebarToolbarActions reports the six fixed buttons all disabled (Merge lives in multi mode)");
+  section("220c. 2+ files selected: describeSidebarToolbarActions reports the seven fixed buttons all disabled (Merge lives in multi mode)");
   const fa = await w.addFile("a.log", makeLog(0, 5), () => {});
   const fb = await w.addFile("b.log", makeLog(10, 5), () => {});
   T.state.multiSelect = new Set([fa.id, fb.id]);
   T.state.activeId = fa.id;
   const { actions } = w.describeSidebarToolbarActions();
-  assert(actions.length === 6 && actions.every(a => a.disabled), "all six buttons disabled for 2+ selected");
+  assert(actions.length === 7 && actions.every(a => a.disabled), "all seven buttons disabled for 2+ selected");
   assert(!actions.some(a => a.action === "merge" || a.action === "and" || a.action === "or" || a.action === "link"), "no bulk action on the toolbar");
 });
 
@@ -80,19 +80,19 @@ await withApp(async (w, d, T) => {
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   const pick = id => { T.state.multiSelect = new Set([id]); T.state.activeId = id; return w.describeSidebarToolbarActions().actions; };
   let actions = pick(t1.id);
-  assert(sbState(actions) === "rename:on,edit:on,invert:on,mute:on,clockOffset:off,addToLibrary:on", "text filter, got " + sbState(actions));
+  assert(sbState(actions) === "rename:on,edit:on,linkWith:on,invert:on,mute:on,clockOffset:off,addToLibrary:on", "text filter, got " + sbState(actions));
   assert(actions.filter(a => a.target !== t1.id).length === 0, "every action targets the selected filter");
 
   const andNode = w.createAndOrNode([t1.id, t2.id], "and");
   actions = pick(andNode.id);
-  assert(sbState(actions) === "rename:on,edit:off,invert:on,mute:on,clockOffset:off,addToLibrary:on", "AND node: no Edit, got " + sbState(actions));
+  assert(sbState(actions) === "rename:on,edit:off,linkWith:on,invert:on,mute:on,clockOffset:off,addToLibrary:on", "AND node: no Edit, got " + sbState(actions));
 
   const f2 = await w.addFile("b.log", makeLog(0, 20), () => {});
   const l1 = w.createFilterNode(f2.id, "text", "message 1");
   const l2 = w.createFilterNode(f2.id, "text", "message 2");
   const linkNode = w.createLinkNode(l1.id, l2.id, "after", 1);
   actions = pick(linkNode.id);
-  assert(sbState(actions) === "rename:on,edit:off,invert:off,mute:on,clockOffset:off,addToLibrary:on", "link node: Rename + Add to library only, got " + sbState(actions));
+  assert(sbState(actions) === "rename:on,edit:on,linkWith:on,invert:off,mute:on,clockOffset:off,addToLibrary:on", "link node: Rename, Edit link, Link with, Mute, Add to library only, got " + sbState(actions));
 
   t1.inverted = true;
   assert(pick(t1.id).find(a => a.action === "invert").label === "Remove NOT", "an inverted filter's button reads 'Remove NOT'");
@@ -107,7 +107,7 @@ await withApp(async (w, d, T) => {
   T.state.multiSelect = new Set([bmNode.id]);
   T.state.activeId = bmNode.id;
   const { actions } = w.describeSidebarToolbarActions();
-  assert(actions.length === 6 && actions.every(a => a.disabled), "locked node: six buttons, all disabled, got " + sbState(actions));
+  assert(actions.length === 7 && actions.every(a => a.disabled), "locked node: seven buttons, all disabled, got " + sbState(actions));
 });
 
 await withApp(async (w, d, T) => {
@@ -135,7 +135,7 @@ await withApp(async (w, d, T) => {
   const tb = w.createFilterNode(fb.id, "text", "message 1");
   T.state.multiSelect = new Set([ta.id, tb.id]);
   T.state.activeId = ta.id;
-  assert(w.describeSidebarToolbarActions().actions.length === 6, "different roots: only the disabled fixed set");
+  assert(w.describeSidebarToolbarActions().actions.length === 7, "different roots: only the disabled fixed set");
   let bulk = w.describeBulkActions([ta, tb]);
   assert(bulk.actions.map(a => a.action).join() === "mute" && !!bulk.note && bulk.short === "Filters from different files", "different roots: only Mute (no combine actions), note + short text kept");
   bulk = w.describeBulkActions([fa, ta]);
@@ -207,18 +207,18 @@ await withApp(async (w, d, T) => {
   const t2 = w.createFilterNode(f.id, "text", "message 2");
   const btns = () => [...d.querySelectorAll('#sidebarToolbar > [data-row-action]')];
   T.state.multiSelect = new Set(); T.state.activeId = null; w.render();
-  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED, "six fixed buttons rendered, got " + btns().map(b => b.dataset.rowAction).join(","));
+  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED, "seven fixed buttons rendered, got " + btns().map(b => b.dataset.rowAction).join(","));
   assert(btns().every(b => b.disabled), "all disabled with nothing selected");
   assert(btns().every(b => b.querySelector("svg.icon use")), "every button draws a sprite icon");
   const before = btns();
   T.state.multiSelect = new Set([t1.id]); T.state.activeId = t1.id; w.render();
   const after = btns();
   assert(before.every((b, i) => b === after[i]), "the same button elements survive a render (no rebuild)");
-  assert(after.map(b => b.disabled ? "0" : "1").join("") === "111101", "text filter: Adjust clock… disabled, rest enabled");
+  assert(after.map(b => b.disabled ? "0" : "1").join("") === "1111101", "text filter: Adjust clock… disabled, rest enabled");
   T.state.multiSelect = new Set([t1.id, t2.id]); w.render();
   const tbEl = d.querySelector("#sidebarToolbar");
   assert(btns().length === 0 && tbEl.classList.contains("multi"), "2 filters selected: the single-node buttons are not rendered, toolbar is in multi mode");
   T.state.multiSelect = new Set([t1.id]); w.render();
-  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED && !tbEl.classList.contains("multi"), "back to one node: the six buttons return, multi class gone");
+  assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED && !tbEl.classList.contains("multi"), "back to one node: the seven buttons return, multi class gone");
   assert(tbEl.querySelector('[data-multi-action]') === null, "...and no multi-mode content is left");
 });

@@ -128,7 +128,7 @@ await withApp(async (w, d, T) => {
   const t3 = w.createFilterNode(f.id, "text", "message 3");
   const tb = w.createFilterNode(fb.id, "text", "message 3");
   selectTree([]);
-  assert(!bar.classList.contains("multi") && acts() === "" && bar.querySelectorAll("[data-row-action]").length === 6, "no selection: normal row, no multi mode");
+  assert(!bar.classList.contains("multi") && acts() === "" && bar.querySelectorAll("[data-row-action]").length === 7, "no selection: normal row, no multi mode");
   selectTree([t1.id]);
   assert(!bar.classList.contains("multi") && acts() === "", "single node: normal row");
   assert(d.querySelector("#selectionBar") === null && !d.querySelector("#sidebarScroll").classList.contains("has-selbar"), "the floating #selectionBar is gone");
@@ -160,7 +160,7 @@ await withApp(async (w, d, T) => {
   assert(acts() === "close" && msg().textContent === "Select only files or only filters" && msg().title.includes("not both"), "mixed files+filters: short message + tooltip");
   assert(bar.querySelector(".stb-cnt") === null, "mixed: no count label");
   selectTree([]);
-  assert(!bar.classList.contains("multi") && bar.querySelectorAll("[data-row-action]").length === 6 && !msg(), "back to the normal row, message gone");
+  assert(!bar.classList.contains("multi") && bar.querySelectorAll("[data-row-action]").length === 7 && !msg(), "back to the normal row, message gone");
 });
 
 await withApp(async (w, d, T) => {

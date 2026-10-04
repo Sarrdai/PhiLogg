@@ -47,9 +47,9 @@ group(287);
     T.state.levelFilter.add("ERROR"); w.render();
     assert(d.querySelector("#facetPanelCount").textContent === "4 entries", "level quick-filter applies");
     T.state.levelFilter.clear(); w.render();
-    // Ctrl+Shift+F closes it again
-    fireKeydown(d, w, "F", { ctrlKey: true, shiftKey: true });
-    assert(!isVisible(panel, w), "Ctrl+Shift+F toggles the panel");
+    // Ctrl+I closes it again
+    fireKeydown(d, w, "i", { ctrlKey: true });
+    assert(!isVisible(panel, w), "Ctrl+I toggles the panel");
   });
 
   await withApp(async (w, d, T) => {

@@ -29,10 +29,11 @@ await withApp(async (w, d, T) => {
   assert(pillChecked(d.querySelector("#csvExportFullEntryInput")) === false, "the toggle defaults to off");
 
   let saved = null;
-  w.downloadCsvFallback = (text, name) => { saved = { text, name }; };
+  w.downloadBlobFallback = (blob, name) => { const e = { name, text: undefined }; saved = e; blob.text().then(t => { e.text = t; }); };
 
   // Left unchecked (default): no extra column.
   fireClick(d.querySelector("#csvExportConfirm"), w);
+  await waitFor(() => saved !== null && saved.text !== undefined);
   const noEntryLines = saved.text.split("\r\n");
   assert(!noEntryLines[0].includes("Log entry"), "with the checkbox off (its default), no 'Log entry' column is appended");
 
@@ -46,6 +47,7 @@ await withApp(async (w, d, T) => {
   d.querySelector("#csvExportDelimiterSelect").value = ",";
   setPill(d.querySelector("#csvExportFullEntryInput"), true);
   fireClick(d.querySelector("#csvExportConfirm"), w);
+  await waitFor(() => saved !== null && saved.text !== undefined);
   const fullEntryLines = saved.text.split("\r\n");
   assert(fullEntryLines[0].split(",").pop() === "Log entry", "header row gets an appended 'Log entry' column when the checkbox is on, got " + JSON.stringify(fullEntryLines[0]));
   assert(fullEntryLines[1].includes('2024-01-15 10:00:00,000\tINFO\t""main""') && fullEntryLines[1].includes("id=0 score=0.5"), "the appended column carries the entry's full raw line — timestamp, level, thread, everything — not just the matched message, got " + JSON.stringify(fullEntryLines[1]));

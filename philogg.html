@@ -2895,11 +2895,26 @@
   /* ---------- Link filter: paired-results view ---------- */
   #linkWrap{flex:1 1 auto; display:none; flex-direction:column; min-height:0;}
   #linkToolbar{
-    flex:0 0 auto; display:flex; align-items:center; justify-content:space-between; gap:14px;
+    flex:0 0 auto; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px;
     padding:9px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
   }
   #linkInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
-  .link-hint{font-size:10.8px; color:var(--text-tertiary); text-align:right;}
+  #linkStats{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
+  .link-toolbar-sp{flex:1 1 0;}
+  .link-sort-lab{font-size:11px; color:var(--text-tertiary);}
+  .link-un-chip{
+    font:inherit; font-size:11.5px; border:1px solid var(--warn); color:var(--warn); background:transparent;
+    border-radius:999px; padding:2px 10px; cursor:pointer;
+  }
+  .link-un-chip[aria-pressed="true"]{background:color-mix(in srgb, var(--warn) 18%, transparent);}
+  .link-un-chip.hidden{display:none;}
+  #linkToolbar .link-hint{flex:1 1 100%; font-size:10.8px; color:var(--text-tertiary); text-align:left;}
+  .pair-block.pair-unmatched .pair-brace{border-left-style:dashed; border-left-color:var(--warn);}
+  .pair-missing{
+    box-sizing:border-box; height:18px; line-height:18px; padding:0 8px; font-size:11px; color:var(--warn);
+    overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  body.layout-phone .link-un-chip, body.layout-phone #linkSortSeg button{min-height:36px;}
   #linkScroll{flex:1 1 auto; overflow-y:auto; padding:12px 16px 24px;}
   /* Virtualized: #linkSpacer is given the full (analytically computed, see
      computeLinkBlockOffsets) content height so the scrollbar behaves
@@ -2996,6 +3011,86 @@
   .link-hop-row select{margin:0 4px;}
   .link-hop-anchor{color:var(--text-tertiary); font-style:italic;}
 
+  /* Link dialog v2: Start / End side rows, the sentence between them, the
+     "Same" key chips, the "▾" filter picker menu. */
+  #linkDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
+  .link-side{display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;}
+  .link-side-lab{flex:0 0 40px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
+  .link-side input.link-side-input{flex:1 1 auto; min-width:0; width:auto;}
+  .link-side-chip{
+    flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:6px; background:var(--accent-soft); color:var(--accent);
+    border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-family:var(--font-mono); font-size:12px;
+  }
+  .link-side-chip span{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .link-side-btn, .link-addstep{
+    font:inherit; font-size:12px; background:var(--bg-app); border:1px solid var(--border); color:var(--text-secondary);
+    border-radius:6px; cursor:pointer; padding:5px 9px; flex:0 0 auto;
+  }
+  .link-side-btn:hover, .link-addstep:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  .link-side-chip .link-side-btn{padding:0 5px; border:0; background:transparent; color:inherit;}
+  .link-addstep{display:block; margin:2px 0 12px 46px; border-style:dashed;}
+  .link-sentence{font-size:12px; color:var(--text-secondary); margin:2px 0 6px 46px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .link-sentence.link-hop-row{background:none; border:0; padding:0; line-height:1.4;}
+  .link-sentence input[type="number"]{width:48px !important; margin:0;}
+  .link-sentence .link-hop-ord{margin-left:-4px;}
+  .link-dialog-card .link-side input.link-side-input[type="text"]:not(.stepper-value){width:auto; flex:1 1 0;}
+  .link-seg{display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden;}
+  .link-seg button{font:inherit; font-size:11.5px; font-weight:600; border:0; background:transparent; color:var(--text-secondary); padding:0 10px; height:26px; cursor:pointer;}
+  .link-seg button + button{border-left:1px solid var(--border);}
+  .link-seg button[aria-pressed="true"]{background:var(--accent-soft); color:var(--accent);}
+  .link-fieldrow{display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; font-size:11.5px; color:var(--text-secondary);}
+  .link-fieldrow.hidden{display:none;}
+  .link-fieldlab{flex:0 0 40px; padding-top:5px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
+  .link-chips{display:flex; flex-wrap:wrap; gap:6px; flex:1 1 auto; min-width:0;}
+  .link-chip{
+    font:inherit; font-size:11.5px; background:var(--bg-app); border:1px solid var(--border); color:var(--text-secondary);
+    border-radius:999px; padding:3px 10px; cursor:pointer;
+  }
+  .link-chip small{color:var(--text-tertiary); font-size:10.5px;}
+  .link-chip[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent);}
+  .link-more{margin:0 0 10px; font-size:11.5px; color:var(--text-secondary);}
+  .link-more summary{cursor:pointer; margin-bottom:6px;}
+  .link-hint{font-size:11.5px; color:var(--text-tertiary); margin:0 0 6px;}
+  .link-hint.warn{color:var(--warn, #d29922);}
+  .link-hint.hidden{display:none;}
+  .link-side-menu{
+    position:absolute; z-index:5; min-width:200px; max-width:calc(100% - 16px); max-height:240px; overflow-y:auto;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:4px;
+    box-shadow:0 10px 28px rgba(0,0,0,.45);
+  }
+  .link-side-menu.hidden{display:none;}
+  .link-side-menu .ctx-item{display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .link-side-menu .ctx-note{padding:4px 10px; font-size:11px; color:var(--text-tertiary);}
+  .filter-link-btn{
+    font:inherit; font-size:11.5px; background:none; border:0; padding:0 4px; color:var(--text-secondary); cursor:pointer; text-decoration:underline;
+  }
+  .filter-link-btn:hover{color:var(--accent);}
+  .filter-link-btn.hidden{display:none;}
+
+  /* "Pair with…" pick mode: banner, start/end row markers. */
+  :root{--pair-pick:#a58cf0;}
+  :root[data-theme="light"], :root[data-theme="catppuccin-latte"]{--pair-pick:#7a5ad8;} /* readable on a light background */
+  #pairPickBanner{
+    flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; font-size:12.5px;
+    background:color-mix(in srgb, var(--pair-pick) 16%, var(--bg-elevated)); border-bottom:1px solid var(--pair-pick); color:var(--text-primary);
+  }
+  #pairPickBanner.hidden{display:none;}
+  #pairPickBanner .pp-text{flex:1 1 220px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #pairPickBanner b{font-weight:600; font-family:var(--font-mono); font-size:12px;}
+  #pairPickBanner .pp-dt{font-family:var(--font-mono); font-weight:700; color:var(--pair-pick);}
+  #pairPickBanner .pp-actions{display:flex; gap:8px; flex:0 0 auto;}
+  body.layout-phone #pairPickBanner{
+    position:fixed; left:0; right:0; bottom:0; z-index:70; border-bottom:0; border-top:1px solid var(--pair-pick);
+    padding:12px 12px calc(12px + env(safe-area-inset-bottom)); box-shadow:0 -6px 18px rgba(0,0,0,.35);
+  }
+  body.layout-phone #pairPickBanner .pp-text{white-space:normal; flex:1 1 100%;}
+  body.layout-phone #pairPickBanner .btn-mini, body.layout-phone #pairPickBanner .btn-mini-secondary{min-height:40px;}
+  body.layout-phone.pair-picking #content{padding-bottom:var(--pp-h, 96px);}
+  body.pair-picking .log-row, body.pair-picking .pair-row{cursor:crosshair;}
+  body.pair-picking .log-row:hover, body.pair-picking .pair-row:hover{box-shadow:inset 3px 0 0 var(--pair-pick);}
+  .log-row.pair-start, .pair-row.pair-start{box-shadow:inset 3px 0 0 var(--accent); background:var(--accent-soft);}
+  .log-row.pair-end, .pair-row.pair-end{box-shadow:inset 3px 0 0 var(--pair-pick); background:color-mix(in srgb, var(--pair-pick) 14%, transparent);}
+
   /* ---------- Time context dialog ---------- */
   #contextDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
@@ -3031,6 +3126,7 @@
   .export-toggles{display:flex; flex-wrap:wrap; gap:8px 28px; padding:10px 2px; border-bottom:1px solid var(--border-soft);}
   .export-toggle{display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--text-primary);}
   .export-summary{font-size:12px; color:var(--text-secondary);}
+  #exportDialog .export-work-btns{display:flex; flex-wrap:wrap; gap:8px;}
   #exportPreview, #exportPreviewRich{
     width:100%; height:200px; box-sizing:border-box; resize:vertical; margin-top:8px;
     background:var(--bg-app); border:1px solid var(--border); border-radius:8px; color:var(--text-secondary);
@@ -4119,6 +4215,17 @@
   }
   #copyToast.show{opacity:1; transform:translateX(-50%) translateY(0);}
   #copyToast.hidden{display:none;}
+  /* Outcome toasts (showCopyToast kind: ok / download / neutral / error): a
+     leading icon, a border per outcome, a long file name ellipsizes. */
+  #copyToast[data-kind]{display:flex; align-items:center; gap:8px; max-width:calc(100vw - 24px);}
+  #copyToast[data-kind]::before{flex:none; font-weight:700; line-height:1;}
+  #copyToast[data-kind="ok"]::before{content:"\2713"; color:var(--accent-strong);}
+  #copyToast[data-kind="download"]::before{content:"\2193"; color:var(--accent-strong);}
+  #copyToast[data-kind="neutral"]{border-color:var(--border);}
+  #copyToast[data-kind="neutral"]::before{content:"\00d7"; color:var(--text-tertiary);}
+  #copyToast[data-kind="error"]{border-color:var(--level-error);}
+  #copyToast[data-kind="error"]::before{content:"!"; color:var(--level-error);}
+  #copyToast .toast-text{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
   /* ---------- Filter popup ---------- */
   /* max-height/overflow-y (person-reported: content below the fold was
@@ -4286,6 +4393,7 @@
      Link dialog's pair Δt (renderLiveResults' opts.badge). */
   .filter-sample-row.has-badge{grid-template-columns:3px auto auto minmax(0,1fr);}
   .filter-sample-badge{color:var(--accent-strong); white-space:nowrap; text-align:right;}
+  .filter-sample-badge.warn{color:var(--warn);}
   .filter-sample-row .col-bar{margin:2px 0; height:16px;}
   .filter-sample-time{color:var(--text-tertiary); white-space:nowrap;}
   .filter-sample-msg{color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -4324,13 +4432,17 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu{
+  #contextMenu, #treeContextMenu, #openMenu, #saveMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
   }
-  #openMenu{min-width:180px;}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden, #facetValueMenu.hidden{display:none;}
+  #openMenu, #saveMenu{min-width:180px;}
+  #saveMenu .ctx-item.disabled{color:var(--text-tertiary); cursor:not-allowed;}
+  #saveMenu .ctx-note{max-width:none;}
+  #saveMenu .ctx-note.hidden{display:none;}
+  #saveMenu .ctx-item.disabled:hover{background:none; color:var(--text-tertiary);}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #saveMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden, #facetValueMenu.hidden{display:none;}
   /* Touch long-press menu on a facet value: the full value (wrapping, selectable) on top. */
   #facetValueMenu .ctx-meta{user-select:text; -webkit-user-select:text; font-size:11.5px; color:var(--text-primary);}
   #extractContextMenu .ctx-item.hidden{display:none;}
@@ -4611,7 +4723,7 @@
      tour banner, only the Patterns + Filtered tabs, one scrolling row of
      level pills, a slim minimap, and the entry detail as a bottom sheet.
      Editing is off (see PROJECT.md / docs/ui-and-views.md "Responsive layout"). */
-  #phoneTitle, #btnFindPhone, #tourBannerMore, .tour-banner-hint, #detailGrab{display:none;}
+  #phoneTitle, #tourBannerMore, .tour-banner-hint, #detailGrab{display:none;}
   body:not(.layout-phone) .detail-phone-btn{display:none;}
   body.layout-phone #toolbar{height:52px;}
   body.layout-phone .brand-name, body.layout-phone .brand-version, body.layout-phone #navHistoryGroup,
@@ -4621,7 +4733,6 @@
   body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
   body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone{display:flex;}
   body.layout-phone .toolbar-right{flex:0 0 auto; gap:6px;}
   body.layout-phone #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
 
@@ -4738,6 +4849,21 @@
   body.layout-phone #filterPopup .filter-footer-row{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); padding-bottom:10px;}
   body.layout-phone .link-dialog-card{padding-bottom:0;}
   body.layout-phone .link-dialog-card .link-dialog-actions{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); margin-top:8px; padding:10px 0 16px;}
+  /* Link dialog v2 on the phone: a full-screen sheet (the sticky action row above stays
+     pinned to its bottom), 40px controls, rows stacked under their labels. */
+  body.layout-phone #linkDialog{align-items:stretch; justify-content:stretch;}
+  body.layout-phone #linkDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
+  body.layout-phone .link-side{flex-wrap:wrap;}
+  body.layout-phone .link-side-lab{flex:1 0 100%;}
+  body.layout-phone .link-sentence, body.layout-phone .link-addstep{margin-left:0;}
+  body.layout-phone .link-sentence input[type="number"]{width:56px !important;}
+  body.layout-phone .link-side-btn, body.layout-phone .link-addstep{min-height:40px; min-width:40px;}
+  body.layout-phone .link-side-chip{min-height:40px; box-sizing:border-box;}
+  body.layout-phone .link-seg button, body.layout-phone .link-chip{min-height:40px;}
+  body.layout-phone .link-fieldrow{flex-wrap:wrap;}
+  body.layout-phone .link-fieldlab{flex:1 0 100%; padding-top:0;}
+  body.layout-phone .link-more summary{line-height:40px; margin-bottom:0;} /* stays display:list-item: keeps the ▸/▾ marker */
+  body.layout-phone .link-side-menu .ctx-item{min-height:40px; display:flex; align-items:center;}
   body.layout-phone #filterPopup{width:calc(100% - 16px); overflow-x:hidden; max-height:calc(100vh - 124px);}
   body.layout-phone #filterPopup #btnCloseFilterPopup{width:40px; height:40px; flex:0 0 auto; align-items:center; justify-content:center; padding:0;}
   body.layout-phone #filterInput{font-size:16px; min-height:40px; padding:0 10px 0 0;}
@@ -4906,8 +5032,13 @@
     body.layout-phone #findBar .recent-dd .rd-row{min-height:44px;}
     body.layout-phone .ctx-item, body.layout-phone #libraryMenu .lib-it, body.layout-phone #libraryMenu .lib-search input{min-height:44px;}
     body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"], body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){height:44px;}
+    body.layout-phone #pairPickBanner .btn-mini, body.layout-phone #pairPickBanner .btn-mini-secondary{min-height:44px;}
     body.layout-phone .link-dialog-card .btn-mini, body.layout-phone .link-dialog-card .btn-mini-secondary, body.layout-phone .link-dialog-card .btn-mini-outline, body.layout-phone #filterPopup .btn-mini, body.layout-phone #filterPopup .btn-mini-secondary, body.layout-phone #filterPopup .btn-mini-outline{min-height:44px;}
     body.layout-phone .link-dialog-card .stepper{height:44px;}
+    body.layout-phone .link-seg button, body.layout-phone .link-chip, body.layout-phone .link-side-btn, body.layout-phone .link-addstep, body.layout-phone .link-side-chip, body.layout-phone .link-side-menu .ctx-item{min-height:44px;}
+    body.layout-phone .link-more summary{line-height:44px;}
+    body.layout-compact .link-seg button, body.layout-compact .link-chip, body.layout-compact .link-side-btn, body.layout-compact .link-addstep{min-height:44px;}
+    body.layout-compact .link-dialog-card select, body.layout-compact .link-dialog-card input[type="number"], body.layout-compact .link-dialog-card input[type="text"]:not(.stepper-value){min-height:44px; box-sizing:border-box;}
     body.layout-phone .link-dialog-card .stepper .stepper-btn{width:44px; height:44px;}
     body.layout-phone .time-range-clear, body.layout-phone .filter-library-row-icon, body.layout-phone #filterLibraryList .filter-library-row-del{width:44px; height:44px;}
     body.layout-phone #filterPopup #btnCloseFilterPopup{width:44px; height:44px;}
@@ -5133,8 +5264,8 @@
       <button type="button" id="btnAssistant" class="toolbar-icon-btn hidden" title="Assistant (local LLM)">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/><path d="M5.5 7h.01M8 7h.01M10.5 7h.01"/></svg>
       </button>
-      <!-- Phone only: opens the same find bar as Ctrl+F. -->
-      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view">
+      <!-- Opens the find bar (Ctrl+F), in every layout. -->
+      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
@@ -5177,6 +5308,12 @@
           <button type="button" id="btnSave" class="panel-toggle-btn" title="Save session…">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
           </button>
+          <div id="saveMenu" class="hidden">
+            <div class="ctx-meta">Save your work</div>
+            <div class="ctx-item" data-action="session">Save session…</div>
+            <div class="ctx-item" data-action="filter" id="saveMenuFilter">Save active filter…</div>
+            <div class="ctx-note hidden" id="saveMenuHint">Select a filter first</div>
+          </div>
           <button type="button" id="sidebarToggle" class="panel-toggle-btn" title="Collapse (Ctrl+B)">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 4 5.5 8l4 4"/><path d="M12.5 3.5v9"/></svg>
           </button>
@@ -5261,6 +5398,7 @@
           </div>
           <div class="filter-footer-row">
             <div class="filter-footer-actions">
+              <button type="button" class="filter-link-btn" id="filterLinkEventsBtn" title="Pair two kinds of events, e.g. each request with its response">Link two events…</button>
               <button type="submit" class="btn-mini" id="filterSubmitBtn">Add filter</button>
             </div>
           </div>
@@ -5354,7 +5492,7 @@
         <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
         <!-- Facet panel toggle (Patterns/Facets session) — floats right, a
              display toggle rather than a filter-creating action. -->
-        <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+Shift+F)">
+        <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+I)">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 3.5h11M2.5 8h7M2.5 12.5h4"/></svg>
           <span class="facets-btn-label">Facets</span>
         </button>
@@ -5373,11 +5511,14 @@
            minimap — exactly one is ever displayed) plus the optional
            #facetPanel on its right, so the facets sit beside every view
            without an overlay. -->
+      <!-- "Pair with…" pick mode (docs/ui-and-views.md): above the views on desktop/tablet,
+           pinned to the bottom on the phone. Built by renderPairPickBanner. -->
+      <div id="pairPickBanner" class="hidden" role="status"></div>
       <div id="viewArea">
       <div id="fhSplit">
         <!-- Find bar (FEATURE_BACKLOG.md #3): incremental, non-destructive
              search inside whichever log view is current (Context or
-             Filtered) — Ctrl+G opens it, F3/Shift+F3 (or Enter/Shift+Enter
+             Filtered) — Ctrl+F opens it, F3/Shift+F3 (or Ctrl+G/Ctrl+Shift+G, Enter/Shift+Enter
              in the input) walk the hits, "Add as filter" promotes the search
              into a real "text" filter node only when that's actually wanted.
              Floats over the top-right corner of #fhSplit (like an IDE find
@@ -5528,7 +5669,16 @@
           <div id="linkWrap">
             <div id="linkToolbar">
               <span id="linkInfo"></span>
-              <span class="link-hint">Right-click the brace for the combined pair · double-click a row to jump to it</span>
+              <!-- Pairs' references without an end (node._linkUnmatched): off -> inline -> only these. View only. -->
+              <button type="button" id="linkUnChip" class="link-un-chip hidden" aria-pressed="false"></button>
+              <span id="linkStats"></span>
+              <span class="link-toolbar-sp"></span>
+              <span class="link-sort-lab">Sort</span>
+              <span class="link-seg" id="linkSortSeg" role="group" aria-label="Sort">
+                <button type="button" data-link-sort="time" aria-pressed="true">Time</button>
+                <button type="button" data-link-sort="dt" aria-pressed="false">Δt ↓</button>
+              </span>
+              <span class="link-hint" id="linkHintText"></span>
             </div>
             <div id="linkScroll">
               <div id="linkSpacer">
@@ -5544,7 +5694,7 @@
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
         <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>, or just search the current view with <b>Ctrl+G</b>.</p>
+        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — search the current view with <b>Ctrl+F</b>, or build a filter on top of it with <b>Ctrl+Shift+F</b>.</p>
       </div>
 
       <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
@@ -5751,7 +5901,7 @@
 
       <!-- Facet panel: value distribution per column of the active node's
            result; clicking a value adds a filter node (see "Facet panel"
-           in the script). Toggled by #btnFacets / Ctrl+Shift+F. -->
+           in the script). Toggled by #btnFacets / Ctrl+I. -->
       <div id="facetPanel" class="hidden">
         <div id="facetResizer" title="Drag to resize"></div>
         <div id="facetPanelHeader">
@@ -5836,6 +5986,7 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>
       Extract
     </div>
+    <div class="ctx-item" id="ctxPairWith"><span>Pair with…</span></div>
     <div class="ctx-item" id="ctxOpenInVs">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
       Open in Visual Studio
@@ -5939,42 +6090,25 @@
   </div>
 
   <div id="linkDialog" class="hidden">
-    <div class="link-dialog-card link-dialog-card-wide">
-      <div class="link-dialog-title">Link filters</div>
-      <div class="link-intro">Example: pair each "Move requested" with the next "Position reached" to measure how long moves take.</div>
+    <div class="link-dialog-card link-dialog-card-wide" id="linkDialogCard">
+      <div class="link-dialog-title" id="linkDialogTitle">Link events</div>
+      <!-- Start / End rows (text field + "▾" to pick an existing filter) and the
+           sentence between them are JS-built into #linkSides by renderLinkSides. -->
+      <div id="linkSides"></div>
+      <button type="button" class="link-addstep" id="linkAddStep">+ Add step</button>
       <div class="link-field">
-        <label for="linkRefSelect">Reference (anchor)</label>
-        <select id="linkRefSelect"></select>
-      </div>
-      <div class="link-field">
-        <label>Hops <span class="link-hops-hint">— each resolved relative to the previous match, in selection order</span></label>
-        <div id="linkHopsList"></div>
-      </div>
-      <div class="link-field">
-        <div class="link-toggle-row">
-          <label class="link-toggle-label" for="linkExclusiveInput">Don't reuse a target entry once it's matched</label>
-          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkExclusiveInput"></button>
+        <div class="link-fieldrow">
+          <span class="link-fieldlab">Same</span>
+          <span id="linkKeyChips" class="link-chips" role="group" aria-label="Pair only events with the same"></span>
         </div>
-        <div class="link-toggle-row" id="linkOrderEnforceRow">
-          <label class="link-toggle-label" for="linkOrderEnforceInput">Enforce chronological order across hops</label>
-          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkOrderEnforceInput"></button>
+        <div class="link-fieldrow hidden" id="linkKeyPatternRow">
+          <input type="text" id="linkKeyPattern" placeholder="captured value, e.g. job=[*:word]" spellcheck="false" autocomplete="off">
         </div>
       </div>
-      <!-- Correlation key and Δt condition (docs/filters.md → "Link filter:
-           correlation key" / "Δt condition"), read by readLinkDialogOptions. -->
+      <!-- Δt is a pure post-filter: it hides finished pairs, never changes the pairing. -->
       <div class="link-field">
         <div class="link-toggle-row">
-          <label class="link-toggle-label" for="linkKeyInput">Match only same</label>
-          <span class="link-option-controls">
-            <select id="linkKeySelect"></select>
-            <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkKeyInput"></button>
-          </span>
-        </div>
-        <div class="link-toggle-row hidden" id="linkKeyPatternRow">
-          <input type="text" id="linkKeyPattern" placeholder="captured value, e.g. axis [*:int]" spellcheck="false" autocomplete="off">
-        </div>
-        <div class="link-toggle-row">
-          <label class="link-toggle-label" for="linkDtInput">Only pairs with Δt</label>
+          <label class="link-toggle-label" for="linkDtInput">Show only pairs with Δt</label>
           <span class="link-option-controls">
             <select id="linkDtOp"><option value="&gt;">&gt;</option><option value="&lt;">&lt;</option></select>
             <input type="number" id="linkDtValue" min="0" step="any" value="500">
@@ -5983,7 +6117,19 @@
           </span>
         </div>
       </div>
+      <details class="link-more" id="linkMore">
+        <summary>More options</summary>
+        <div class="link-toggle-row">
+          <label class="link-toggle-label" for="linkExclusiveInput">Don't reuse an end event once it's paired</label>
+          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkExclusiveInput"></button>
+        </div>
+        <div class="link-toggle-row" id="linkOrderEnforceRow">
+          <label class="link-toggle-label" for="linkOrderEnforceInput">Enforce chronological order across steps</label>
+          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkOrderEnforceInput"></button>
+        </div>
+      </details>
       <!-- Live pair count / histogram / sample pairs — renderLiveResults. -->
+      <div id="linkHint" class="link-hint hidden"></div>
       <div id="linkResults" class="live-results hidden">
         <div class="filter-results-head">
           <div id="linkLiveMatch" class="live-match"></div>
@@ -5995,6 +6141,7 @@
         <button type="button" id="linkDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="linkDialogCreate" class="btn-mini">Create</button>
       </div>
+      <div id="linkSideMenu" class="link-side-menu hidden" role="menu"></div>
     </div>
   </div>
 
@@ -6115,6 +6262,16 @@
     <div class="link-dialog-card">
       <div class="link-dialog-title">Export / Share — <span id="exportViewLabel" class="link-target-label"></span></div>
       <div class="export-summary" id="exportSummary"></div>
+      <div class="settings-row" id="exportWorkRow">
+        <div class="settings-row-text">
+          <span class="settings-row-label">Session &amp; filters</span>
+          <span class="settings-row-hint">For a colleague to open in PhiLogg.</span>
+        </div>
+        <div class="export-work-btns">
+          <button type="button" class="btn-mini-secondary" id="exportSaveSession">Save session…</button>
+          <button type="button" class="btn-mini-secondary" id="exportSaveFilter">Save filter…</button>
+        </div>
+      </div>
       <div class="settings-row export-stack">
         <div class="settings-row-text">
           <span class="settings-row-label">Lines</span>
@@ -8291,7 +8448,7 @@ function serializeThemeExport(id) {
 async function exportCustomThemeToFile(id) {
   const data = serializeThemeExport(id);
   if (!data) return;
-  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "theme") + ".theme.json", "PhiLogg theme")) showCopyToast("Theme exported");
+  await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "theme") + ".theme.json", "PhiLogg theme");
 }
 
 // Only the string-valued, non-empty entries of `src` among `keys`.
@@ -8492,7 +8649,7 @@ function serializeSyntaxSchemeExport(id) {
 async function exportCustomSyntaxSchemeToFile(id) {
   const data = serializeSyntaxSchemeExport(id);
   if (!data) return;
-  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "syntax-scheme") + ".syntax.json", "PhiLogg syntax scheme")) showCopyToast("Syntax scheme exported");
+  await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "syntax-scheme") + ".syntax.json", "PhiLogg syntax scheme");
 }
 
 function parseSyntaxSchemeExport(text) {
@@ -13442,24 +13599,149 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   const bakeable = n =>
     (n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n);
   if (!bakeable(ref) || !bakeable(target)) return null;
-  const rootId = getRootFileId(refId);
-  const root = state.nodes[rootId];
-  if (!root) return null;
   const arrow = direction === "before" ? " ←" : " →";
   const nSuffix = n > 1 ? n : "";
+  return createLinkNodeFromBaked(getRootFileId(refId), bakeNodeCondition(ref), bakeNodeCondition(target),
+    direction, n, opts, ref.name + arrow + nSuffix + " " + target.name);
+}
+
+// The node-free half of createLinkNode: both sides arrive already baked (a
+// text condition from bakedTextCondition, a bakeNodeCondition result, or a
+// nested link = a chain, see hopsToLinkChain). Places the node as a new
+// top-level child of `rootId` and activates it. `name` is the base name
+// (default: linkChainName); the key/Δt suffix is appended here.
+function createLinkNodeFromBaked(rootId, bakedA, bakedB, direction, n, opts, name) {
+  const root = state.nodes[rootId];
+  if (!root || !bakedA || !bakedB) return null;
   const node = {
-    id: uid("n"), type: "filter", name: ref.name + arrow + nSuffix + " " + target.name,
+    id: uid("n"), type: "filter", name: "",
     parentId: rootId, children: [], filterType: "link", value: null,
-    bakedA: bakeNodeCondition(ref), bakedB: bakeNodeCondition(target),
+    bakedA: cloneBaked(bakedA), bakedB: cloneBaked(bakedB),
     linkDirection: direction, linkN: n,
     linkOrderEnforced: !!(opts && opts.orderEnforced),
     linkExclusive: !!(opts && opts.exclusive),
   };
   copyLinkOptions({ linkDt: opts && opts.dt, linkKey: opts && opts.key }, node);
-  node.name += linkOptionsNameSuffix(node);
+  node.name = (name != null ? name : linkChainName(node)) + linkOptionsNameSuffix(node);
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
   return activateNewNode(node);
+}
+
+// ---- Link chains <-> hops (the link dialog's model) ----
+// A (multi-hop) link is one nested baked condition: link(link(A, B1), B2)...
+// The dialog edits it as { start, hops: [{ baked, direction, n }], key, dt,
+// exclusive, orderEnforced } — the key (and the two flags) hold on every
+// hop, the Δt condition on the last one only (the whole tuple's span).
+
+// The baked condition of a plain text side typed into the dialog.
+function bakedTextCondition(pattern) {
+  return { filterType: "text", value: pattern, inverted: false, columns: ["message"] };
+}
+
+// Builds the nested baked link for `start` + `hops`; opts: { key, dt,
+// exclusive, orderEnforced }. null for an empty hop list.
+function hopsToLinkChain(start, hops, opts) {
+  if (!start || !hops || !hops.length) return null;
+  opts = opts || {};
+  let cur = cloneBaked(start);
+  hops.forEach((hop, i) => {
+    const link = {
+      filterType: "link", value: null, inverted: false,
+      bakedA: cur, bakedB: cloneBaked(hop.baked),
+      linkDirection: hop.direction === "before" ? "before" : "after",
+      linkN: Math.max(1, parseInt(hop.n, 10) || 1),
+      linkOrderEnforced: !!opts.orderEnforced, linkExclusive: !!opts.exclusive,
+    };
+    copyLinkOptions({ linkKey: opts.key, linkDt: i === hops.length - 1 ? opts.dt : null }, link);
+    cur = link;
+  });
+  return cur;
+}
+
+// Inverse of hopsToLinkChain for a link node or a baked link: unrolls the
+// bakedA nesting. Key, Δt and the flags are read off the outermost link.
+function linkChainToHops(link) {
+  if (!link || link.filterType !== "link" || !link.bakedA || !link.bakedB) return null;
+  const hops = [];
+  let cur = link;
+  while (cur.filterType === "link" && cur.bakedA && cur.bakedB) {
+    hops.unshift({ baked: cloneBaked(cur.bakedB), direction: cur.linkDirection, n: cur.linkN });
+    cur = cur.bakedA;
+  }
+  return {
+    start: cloneBaked(cur), hops,
+    key: sanitizeLinkKey(link.linkKey), dt: sanitizeLinkDt(link.linkDt),
+    exclusive: !!link.linkExclusive, orderEnforced: !!link.linkOrderEnforced,
+  };
+}
+
+// "A → B ← 2 C" for a link node or baked link (key/Δt suffix not included).
+function linkChainName(link) {
+  const c = linkChainToHops(link);
+  if (!c) return "";
+  return c.hops.reduce((name, h) =>
+    name + (h.direction === "before" ? " ←" : " →") + (h.n > 1 ? h.n : "") + " " + bakedConditionName(h.baked),
+  bakedConditionName(c.start));
+}
+
+// Replaces an existing link node's whole definition with `chain` (a baked
+// link, e.g. from hopsToLinkChain) as ONE undo step. The name is regenerated
+// only while it is still the auto-generated one (the old chain's name plus
+// its option suffix); a renamed node keeps its name.
+function updateLinkNodeWithUndo(nodeId, chain) {
+  const node = state.nodes[nodeId];
+  if (!node || node.filterType !== "link" || !chain || chain.filterType !== "link") return false;
+  withFieldEditUndo(nodeId, n => {
+    const auto = n.name === linkChainName(n) + linkOptionsNameSuffix(n);
+    n.bakedA = cloneBaked(chain.bakedA);
+    n.bakedB = cloneBaked(chain.bakedB);
+    n.linkDirection = chain.linkDirection;
+    n.linkN = chain.linkN;
+    n.linkOrderEnforced = !!chain.linkOrderEnforced;
+    n.linkExclusive = !!chain.linkExclusive;
+    copyLinkOptions(chain, n);
+    if (auto) n.name = linkChainName(n) + linkOptionsNameSuffix(n);
+    invalidateNodeSubtreeCaches(nodeId);
+  });
+  return true;
+}
+
+// Correlation-key suggestions for a start/end pair of entry lists: every
+// `name=` field (\w+) present in the first message of both sides becomes a
+// candidate, key pattern "name=[*:word]" (the value token up to the next
+// whitespace — "job=J-00001", "axis=1"). score = distinct values / start
+// entries carrying the field; `recommended` marks the best score when it is
+// >= 0.9 (an ID-like field, unique per start). Sorted best first.
+const LINK_KEY_SUGGEST_MIN_SCORE = 0.9;
+function suggestLinkKeys(startEntries, endEntries) {
+  const fieldRe = /(?:^|[\s,;(\[{])(\w+)=([^\s,;)\]}]+)/g;
+  const fieldsOf = msg => {
+    const out = new Set();
+    fieldRe.lastIndex = 0;
+    let m;
+    while ((m = fieldRe.exec(msg)) !== null) out.add(m[1]);
+    return out;
+  };
+  if (!startEntries.length || !endEntries.length) return [];
+  const endFields = fieldsOf(endEntries[0].message);
+  const cands = [];
+  for (const field of fieldsOf(startEntries[0].message)) {
+    if (!endFields.has(field)) continue;
+    const pattern = field + "=[*:word]";
+    const keyOf = compileLinkKey({ pattern });
+    const seen = new Set();
+    let carrying = 0;
+    for (const e of startEntries) {
+      const k = keyOf(e);
+      if (k == null) continue;
+      carrying++;
+      seen.add(k);
+    }
+    if (carrying) cands.push({ field, pattern, score: seen.size / carrying });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  return cands.map((c, i) => ({ field: c.field, pattern: c.pattern, recommended: i === 0 && c.score >= LINK_KEY_SUGGEST_MIN_SCORE }));
 }
 
 // Two optional link conditions (docs/filters.md → "Link filter: Δt
@@ -14100,9 +14382,14 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
 // alike (both go through evaluateFilterCondition); `cfg`
 // is either, both carry the same link* fields. For each reference entry:
 // find the Nth target before/after it, then apply the opt-in conditions in
-// order — order enforcement, the Δt condition — and only a pair that
-// survives them all claims its target under "exclusive matches" (a pair
-// dropped by a condition leaves its target free for a later reference).
+// order — order enforcement, then claim the target under "exclusive
+// matches", then the Δt condition. Δt is a pure post-filter: a pair it drops
+// still consumed its target, so the pairing is identical with and without
+// it (Δt only removes finished pairs).
+//
+// `unmatched` (optional array) collects the references that got no pair —
+// no key, no candidate, no match, order-enforce reject — in reference order;
+// NOT the ones the Δt post-filter dropped. Handed out as node._linkUnmatched.
 //
 // With a correlation key (linkKey), the targets are indexed by key ONCE
 // per recompute (a Map key -> that key's targets, each list still sorted
@@ -14110,7 +14397,7 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
 // key's list — the unchanged findNthOccurrence(Excluding) run over a
 // smaller array, so direction, N, the tie-break and exclusivity all keep
 // their exact meaning, just among same-key candidates.
-function computeLinkPairs(cfg, refEntries, targetEntries, fileId) {
+function computeLinkPairs(cfg, refEntries, targetEntries, fileId, unmatched) {
   const result = [];
   // usedIds backs the opt-in "exclusive matches" option: once a target
   // entry has been matched for one reference entry, later reference
@@ -14147,21 +14434,21 @@ function computeLinkPairs(cfg, refEntries, targetEntries, fileId) {
     if (targetsByKey) {
       const k = keyOf(anchorEntry);
       candidates = k == null ? null : targetsByKey.get(k);
-      if (!candidates) continue;
+      if (!candidates) { if (unmatched) unmatched.push(refEntry); continue; }
     }
     const match = usedIds
       ? findNthOccurrenceExcluding(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, usedIds, orderIndexMap)
       : findNthOccurrence(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, orderIndexMap);
-    if (!match) continue;
+    if (!match) { if (unmatched) unmatched.push(refEntry); continue; }
     // Opt-in "enforce order": reject (drop, same as "no match") a hop
     // whose match lands strictly before the anchor it was searched from —
     // i.e. require the chain's timestamps to be non-decreasing hop over
     // hop, regardless of which individual hop searched "before" vs
     // "after". See docs/filters.md for why this definition was chosen.
-    if (cfg.linkOrderEnforced && match.ts < anchorTs) continue;
+    if (cfg.linkOrderEnforced && match.ts < anchorTs) { if (unmatched) unmatched.push(refEntry); continue; }
     const pair = buildPairEntry(refEntry, match, orderIndexMap);
-    if (dt && !linkDtPasses(dt, pair.dtMs)) continue;
     if (usedIds) usedIds.add(match.id);
+    if (dt && !linkDtPasses(dt, pair.dtMs)) continue;
     result.push(pair);
   }
   return result;
@@ -15219,7 +15506,9 @@ function evaluateFilterCondition(cond, parentEntries, fileId, meta) {
     // entry sets exactly as before.
     const refEntries = getEntriesFromBaked(cond.bakedA, parentEntries, fileId);
     const targetEntries = getEntriesFromBaked(cond.bakedB, parentEntries, fileId);
-    result = computeLinkPairs(cond, refEntries, targetEntries, fileId);
+    const unmatched = meta ? [] : null;
+    result = computeLinkPairs(cond, refEntries, targetEntries, fileId, unmatched);
+    if (meta) meta.linkUnmatched = unmatched; // becomes node._linkUnmatched (runtime only, like _gapMs)
   } else if (cond.filterType === "gap") {
     const gap = computeGapEntries(cond.value, parentEntries);
     result = gap.result;
@@ -15323,6 +15612,7 @@ function getEntriesUncached(node, parentOverride) {
   const parentEntries = parentOverride || getEntries(node.parentId);
   const meta = {};
   const result = evaluateFilterCondition(node, parentEntries, getRootFileId(node.id), meta);
+  if (meta.linkUnmatched) node._linkUnmatched = meta.linkUnmatched; // references without an end, see computeLinkPairs
   if (meta.gaps) node._gapMs = meta.gaps; // read by appendLogRow's Δt column, see computeGapEntries
   if (meta.contextRanges) {
     node._contextRanges = meta.contextRanges; // used by renderVisibleRows to draw the bracket
@@ -15838,9 +16128,28 @@ function captureNodeFields(node) {
     wholeWord: !!node.wholeWord,
     assertions: node.assertions ? JSON.parse(JSON.stringify(node.assertions)) : undefined,
     columnRenames: node.columnRenames ? JSON.parse(JSON.stringify(node.columnRenames)) : undefined,
+    link: node.filterType === "link" ? captureLinkFields(node) : undefined,
   };
 }
+// A link node's own definition (updateLinkNodeWithUndo's edit), as fresh copies.
+function captureLinkFields(node) {
+  const out = {
+    bakedA: cloneBaked(node.bakedA), bakedB: cloneBaked(node.bakedB),
+    linkDirection: node.linkDirection, linkN: node.linkN,
+    linkOrderEnforced: !!node.linkOrderEnforced, linkExclusive: !!node.linkExclusive,
+  };
+  copyLinkOptions(node, out);
+  return out;
+}
 function applyNodeFields(node, fields) {
+  if (fields.link) {
+    node.bakedA = cloneBaked(fields.link.bakedA);
+    node.bakedB = cloneBaked(fields.link.bakedB);
+    node.linkDirection = fields.link.linkDirection; node.linkN = fields.link.linkN;
+    node.linkOrderEnforced = fields.link.linkOrderEnforced; node.linkExclusive = fields.link.linkExclusive;
+    copyLinkOptions(fields.link, node);
+    invalidateNodeSubtreeCaches(node.id);
+  }
   node.filterType = fields.filterType; node.value = fields.value;
   node.inverted = fields.inverted; node.name = fields.name;
   if (fields.muted) node.muted = true; else delete node.muted;
@@ -16862,6 +17171,10 @@ const plotFullscreenChartHost = el("#plotFullscreenChartHost");
 const copyToast = el("#copyToast");
 const linkWrap = el("#linkWrap");
 const linkInfo = el("#linkInfo");
+const linkUnChip = el("#linkUnChip");
+const linkStats = el("#linkStats");
+const linkSortSeg = el("#linkSortSeg");
+const linkHintText = el("#linkHintText");
 const linkScroll = el("#linkScroll");
 const linkSpacer = el("#linkSpacer");
 const linkBody = el("#linkBody");
@@ -17766,7 +18079,9 @@ function render() {
   try { renderInner(); } finally { renderDepth--; }
   if (renderDepth === 0) phoneEnforceTab();
 }
+let pairPick = null; // "Pair with…" pick mode: { startEntry, rootId, rootIds: Set of the file's entry ids, endEntry }
 function renderInner() {
+  validatePairPick();
   if (state.activeId !== lastActiveIdForReveal) {
     const prevNode = state.nodes[lastActiveIdForReveal];
     lastActiveIdForReveal = state.activeId;
@@ -18952,6 +19267,12 @@ function editFilterNode(nodeId) {
   }
   if (node.filterType === "gap") {
     openGapDialog(node.id, true);
+    return true;
+  }
+  if (node.filterType === "link") {
+    const spec = hasBakedSides(node) ? linkSpecFromNode(node) : null;
+    if (!spec) return false;
+    openLinkDialog(spec);
     return true;
   }
   return false;
@@ -20168,10 +20489,25 @@ function copyViaExecCommand(text) {
 }
 
 let toastTimer = null;
-// `action` ({ label, onClick }) adds a button to the toast (e.g. "Undo") and
-// keeps it up longer; the toast is otherwise click-through.
-function showCopyToast(message, action) {
-  copyToast.textContent = message;
+// `opts` is either an action ({ label, onClick }: adds a button to the toast,
+// e.g. "Undo", and keeps it up longer; the toast is otherwise click-through)
+// or an outcome style ({ kind: "ok" | "download" | "neutral" | "error",
+// duration }: leading icon + border per kind, see the #copyToast[data-kind]
+// CSS). Both may be combined; no kind = the plain toast.
+function showCopyToast(message, opts) {
+  const action = opts && opts.label ? opts : null;
+  const kind = opts && opts.kind || "";
+  if (kind) {
+    copyToast.textContent = "";
+    const t = document.createElement("span");
+    t.className = "toast-text";
+    t.textContent = message;
+    copyToast.appendChild(t);
+    copyToast.dataset.kind = kind;
+  } else {
+    copyToast.textContent = message;
+    delete copyToast.dataset.kind;
+  }
   copyToast.classList.toggle("has-action", !!action);
   if (action) {
     const btn = document.createElement("button");
@@ -20188,7 +20524,49 @@ function showCopyToast(message, action) {
   copyToast.classList.remove("hidden");
   requestAnimationFrame(() => copyToast.classList.add("show"));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideCopyToast, action ? 6000 : 1400);
+  toastTimer = setTimeout(hideCopyToast, (opts && opts.duration) || (action ? 6000 : 1400));
+}
+
+// The one save flow behind every file the app writes. `data` is a Blob or a
+// string. Uses the File System Access save picker where the engine has it,
+// else (or when the picker itself is unusable here) one <a download>. Shows
+// the outcome toast itself and returns "saved" | "downloaded" | "cancelled" |
+// "failed". A failure while WRITING to an already chosen file is reported, not
+// papered over with a download.
+async function saveFileWithFeedback(data, filename, { description, mime, ext }) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  let handle = null;
+  if (window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description, accept: { [mime.split(";")[0]]: [ext] } }],
+      });
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        showCopyToast("Not saved", { kind: "neutral" });
+        return "cancelled";
+      }
+      // API present but unusable in this context — fall through to a download
+    }
+  }
+  if (handle) {
+    const name = handle.name || filename;
+    try {
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch (err) {
+      const reason = String(err && (err.message || err.name) || "unknown error").trim().slice(0, 120);
+      showCopyToast("Couldn't save " + name + " \u2014 " + reason, { kind: "error", duration: 6000 });
+      return "failed";
+    }
+    showCopyToast("Saved " + name, { kind: "ok", duration: 3000 });
+    return "saved";
+  }
+  downloadBlobFallback(blob, filename);
+  showCopyToast("Downloaded " + filename, { kind: "download", duration: 3000 });
+  return "downloaded";
 }
 function hideCopyToast() {
   clearTimeout(toastTimer);
@@ -20431,32 +20809,7 @@ function buildExtractCsv(delimiter, decimalSep, includeHeaders, includeFullEntry
   return lines.join("\r\n");
 }
 async function saveCsvToFile(csvText) {
-  const suggested = "philogg-export.csv";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "CSV file", accept: { "text/csv": [".csv"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(csvText);
-      await writable.close();
-      return;
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the picker
-      downloadCsvFallback(csvText, suggested);
-      return;
-    }
-  }
-  downloadCsvFallback(csvText, suggested);
-}
-function downloadCsvFallback(csvText, filename) {
-  const url = URL.createObjectURL(new Blob([csvText], { type: "text/csv" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return saveFileWithFeedback(csvText, "philogg-export.csv", { description: "CSV file", mime: "text/csv", ext: ".csv" });
 }
 
 /* ---------- Pattern <-> table visualization ----------
@@ -20774,6 +21127,7 @@ const LINK_PAIR_ROW_HEIGHT_BASE = 26;
 const LINK_DELTA_HEIGHT = 16;
 const LINK_ROWS_GAP = 2;
 const LINK_BLOCK_MARGIN = 8;
+const LINK_MISSING_HEIGHT = 18; // the "no … found" line of an unmatched block (.pair-missing)
 const LINK_BUFFER_PX = 300; // pixels of slack rendered above/below the viewport, since blocks vary in height
 
 // A pair's row count follows getTupleEntries(pair) — 2 rows/1 delta for a
@@ -20782,16 +21136,49 @@ const LINK_BUFFER_PX = 300; // pixels of slack rendered above/below the viewport
 // the UI layer: every row now wraps one real, individually-addressable
 // entry, never a synthetic intermediate pair, so double-click always has a
 // real id to reveal (see buildPairRow).
+// View state of the Link view header, reset when the active link node changes:
+// the "N without end" chip (0 off, 1 inline in time order, 2 only these) and the sort ("time" | "dt").
+let linkViewUnmatched = 0;
+let linkViewSort = "time";
+let linkMissingText = ""; // the "no “…” found" line of the current node's unmatched blocks
 function renderLinkView(node) {
   if (linkNodeId !== node.id) {
     linkNodeId = node.id;
     linkSelectedPairIndex = null;
+    linkViewUnmatched = 0;
+    linkViewSort = "time";
     linkScroll.scrollTop = 0;
   }
   const pairs = applyLevelFilter(getEntries(node.id));
-  linkInfo.textContent = pairs.length.toLocaleString("de-DE") + " pair" + (pairs.length === 1 ? "" : "s");
+  const unmatched = applyLevelFilter(node._linkUnmatched || []);
+  if (!unmatched.length) linkViewUnmatched = 0;
+  const hops = linkChainToHops(node);
+  const endName = hops ? bakedConditionName(hops.hops[hops.hops.length - 1].baked) : "end";
+  linkMissingText = "no " + (endName.length > 36 ? endName.slice(0, 35) + "…" : endName) + " found";
+  const fmt = n => n.toLocaleString("de-DE");
+  linkInfo.textContent = fmt(pairs.length) + " pair" + (pairs.length === 1 ? "" : "s");
+  const shownPairs = linkViewUnmatched === 2 ? [] : pairs;
+  const dts = shownPairs.map(p => p.dtMs).sort((a, b) => a - b);
+  linkStats.textContent = dts.length ? "median " + formatMs(dts[dts.length >> 1]) + " · max " + formatMs(dts[dts.length - 1]) : "";
+  linkUnChip.classList.toggle("hidden", !unmatched.length);
+  linkUnChip.setAttribute("aria-pressed", linkViewUnmatched > 0 ? "true" : "false");
+  linkUnChip.textContent = linkViewUnmatched === 2 ? "only " + fmt(unmatched.length) + " without end"
+    : fmt(unmatched.length) + " without end" + (linkViewUnmatched === 1 ? " · inline" : "");
+  linkSortSeg.querySelectorAll("[data-link-sort]").forEach(b => b.setAttribute("aria-pressed", b.dataset.linkSort === linkViewSort ? "true" : "false"));
+  linkHintText.textContent = isCoarsePointer()
+    ? "Tap a pair to select · long-press for actions · double-tap a row to jump to it"
+    : "Click a pair to select · right-click for actions · double-click a row to jump to it";
 
-  linkPairsData = pairs.map(pair => ({ pair, realEntries: getTupleEntries(pair) }));
+  const item = (e, unmatchedItem) => ({ pair: e, realEntries: getTupleEntries(e), unmatched: unmatchedItem });
+  let items = shownPairs.map(e => item(e, false));
+  const un = linkViewUnmatched ? unmatched.map(e => item(e, true)) : [];
+  if (linkViewSort === "dt") {
+    items.sort((a, b) => b.pair.dtMs - a.pair.dtMs);
+    items = un.concat(items); // the ones without an end first, in time order
+  } else if (un.length) {
+    items = items.concat(un).sort((a, b) => a.pair.ts - b.pair.ts); // stable: ties keep pairs before unmatched
+  }
+  linkPairsData = items;
   computeLinkBlockOffsets();
   renderLinkVisibleBlocks();
 
@@ -20811,16 +21198,17 @@ function renderLinkView(node) {
 // height(n real entries) = n rows + (n-1) deltas + gaps between every
 // adjacent child (2n-2 of them, .pair-rows' flex `gap`) + the block's own
 // bottom margin.
-function linkBlockHeight(n) {
+// An unmatched block carries one more child, the "no … found" line (+ its flex gap).
+function linkBlockHeight(n, unmatched) {
   const rows = n * LINK_PAIR_ROW_HEIGHT + Math.max(0, n - 1) * LINK_DELTA_HEIGHT;
   const gaps = Math.max(0, 2 * n - 2) * LINK_ROWS_GAP;
-  return rows + gaps + LINK_BLOCK_MARGIN;
+  return rows + gaps + LINK_BLOCK_MARGIN + (unmatched ? LINK_ROWS_GAP + LINK_MISSING_HEIGHT : 0);
 }
 function computeLinkBlockOffsets() {
   const offsets = new Array(linkPairsData.length + 1);
   offsets[0] = 0;
   for (let i = 0; i < linkPairsData.length; i++) {
-    offsets[i + 1] = offsets[i] + linkBlockHeight(linkPairsData[i].realEntries.length);
+    offsets[i + 1] = offsets[i] + linkBlockHeight(linkPairsData[i].realEntries.length, linkPairsData[i].unmatched);
   }
   linkBlockOffsets = offsets;
 }
@@ -20872,6 +21260,27 @@ function renderLinkVisibleBlocks() {
   applyLinkSelectionClasses();
 }
 
+// Header controls: the unmatched chip cycles off -> inline -> only these; Sort Time | Δt ↓. Both re-lay the
+// blocks (the selection is an index into the shown list, so it is dropped).
+linkUnChip.addEventListener("click", () => {
+  linkViewUnmatched = (linkViewUnmatched + 1) % 3;
+  relayoutLinkView();
+});
+linkSortSeg.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-link-sort]");
+  if (!b || linkViewSort === b.dataset.linkSort) return;
+  linkViewSort = b.dataset.linkSort;
+  relayoutLinkView();
+});
+function relayoutLinkView() {
+  const node = state.nodes[linkNodeId];
+  if (!node) return;
+  linkSelectedPairIndex = null;
+  linkScroll.scrollTop = 0;
+  renderLinkView(node);
+  updateMinimapSelectionMarkers();
+}
+
 let linkScrollTicking = false;
 linkScroll.addEventListener("scroll", () => {
   if (linkScrollTicking) return;
@@ -20912,7 +21321,7 @@ function moveLinkSelection(delta) {
 function buildPairBlock(entryData, index) {
   const { pair, realEntries } = entryData;
   const block = document.createElement("div");
-  block.className = "pair-block";
+  block.className = "pair-block" + (entryData.unmatched ? " pair-unmatched" : "");
   block.dataset.pairIndex = index;
 
   const brace = document.createElement("div");
@@ -20947,6 +21356,14 @@ function buildPairBlock(entryData, index) {
     }
     rowsWrap.appendChild(buildPairRow(entry));
   });
+  if (entryData.unmatched) {
+    const missing = document.createElement("div");
+    missing.className = "pair-missing";
+    missing.style.height = LINK_MISSING_HEIGHT + "px";
+    missing.textContent = linkMissingText;
+    missing.title = linkMissingText;
+    rowsWrap.appendChild(missing);
+  }
 
   block.appendChild(brace);
   block.appendChild(rowsWrap);
@@ -20955,7 +21372,8 @@ function buildPairBlock(entryData, index) {
 
 function buildPairRow(entry) {
   const row = document.createElement("div");
-  row.className = "pair-row " + levelClass(entry.level, entry.formatId);
+  row.className = "pair-row " + levelClass(entry.level, entry.formatId) + pairPickRowClass(entry);
+  row._pickEntry = entry; // read by the pick-mode click interceptor (pickedEntryOfRow)
   row.style.height = LINK_PAIR_ROW_HEIGHT + "px";
   row.innerHTML =
     '<span class="pair-row-bar"></span>' +
@@ -21465,15 +21883,18 @@ function svgToPngDataUrl(svgEl, width, height, bgColor) {
     img.src = url;
   });
 }
-function downloadDataUrl(dataUrl, filename) {
-  const a = document.createElement("a");
-  a.href = dataUrl; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
+function dataUrlToBlob(dataUrl) {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(dataUrl);
+  const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] || "image/png" });
 }
 async function exportPlotImage() {
   if (!plotLastRenderExists()) { showCopyToast("Nothing plotted yet to save."); return; }
   const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-app").trim() || "#0b0f14";
   const filename = "plot-" + Date.now() + ".png";
+  let dataUrl;
   try {
     if (plotConfig.type === "3d") {
       const canvas = document.createElement("canvas");
@@ -21481,15 +21902,16 @@ async function exportPlotImage() {
       const ctx = canvas.getContext("2d");
       ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(plot3dCanvas, 0, 0);
-      downloadDataUrl(canvas.toDataURL("image/png"), filename);
-      return;
+      dataUrl = canvas.toDataURL("image/png");
+    } else {
+      const rect = plotChartArea.getBoundingClientRect();
+      dataUrl = await svgToPngDataUrl(plotSvg, Math.round(rect.width), Math.round(rect.height), bg);
     }
-    const rect = plotChartArea.getBoundingClientRect();
-    const dataUrl = await svgToPngDataUrl(plotSvg, Math.round(rect.width), Math.round(rect.height), bg);
-    downloadDataUrl(dataUrl, filename);
   } catch (e) {
     showCopyToast("Could not save the plot image.");
+    return;
   }
+  await saveFileWithFeedback(dataUrlToBlob(dataUrl), filename, { description: "PNG image", mime: "image/png", ext: ".png" });
 }
 plotSaveImageBtn.addEventListener("click", exportPlotImage);
 
@@ -24703,7 +25125,7 @@ function appendLogRow(frag, i, rc) {
   const row = document.createElement("div");
   let cls = (rc.textMode ? "log-row text-row" : "log-row row-grid " + levelClass(e.level, e.formatId)) + (e.id === state.selectedId ? " selected" : "") +
     (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
-    (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
+    (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") + pairPickRowClass(e) +
     (e._tempAnchor ? " temp-anchor-row" : "");
 
   let bracketHtml = "";
@@ -26648,7 +27070,7 @@ function renderHighlightVisibleRows() {
     const e = currentHighlightViewEntries[i];
     const row = document.createElement("div");
     let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
-      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "");
+      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + pairPickRowClass(e);
 
     const colors = highlightColorMap.get(e.id);
     let markerHtml = colors && colors.length
@@ -27396,6 +27818,7 @@ function closeEscapeOverlays() {
     if (!colorPickerPopup.classList.contains("hidden")) closeColorPicker(); else closeThemeEditor();
     return;
   }
+  cancelPairPick();
   setDrawerOpen(false);
   closePlotFullscreen();
   closeSettingsDialog();
@@ -27434,7 +27857,7 @@ function anyEscapeOverlayOpen() {
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
-    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
     const e = document.getElementById(overlayIds[i]);
@@ -31861,7 +32284,29 @@ async function openZipEntryFromPreload(entry, zip, job) {
 // file/filter the menu happened to be opened on, so they moved to the
 // toolbar/sidebar header instead.
 const btnSave = el("#btnSave");
-btnSave.addEventListener("click", openSessionExportDialog);
+const saveMenu = el("#saveMenu");
+function closeSaveMenu() { saveMenu.classList.add("hidden"); }
+// Phone only: the drawer's Save button opens a small menu (there is no
+// Export / Share button on the phone); desktop and tablet go straight to
+// the session dialog.
+btnSave.addEventListener("click", () => {
+  if (!document.body.classList.contains("layout-phone")) { openSessionExportDialog(); return; }
+  if (!saveMenu.classList.contains("hidden")) { closeSaveMenu(); return; }
+  const hasFilter = activeFilterNodeId() !== null;
+  el("#saveMenuFilter").classList.toggle("disabled", !hasFilter);
+  el("#saveMenuHint").classList.toggle("hidden", hasFilter);
+  const rect = btnSave.getBoundingClientRect();
+  saveMenu.style.top = (rect.bottom + 6) + "px";
+  saveMenu.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 200)) + "px";
+  saveMenu.classList.remove("hidden");
+});
+saveMenu.addEventListener("click", ev => {
+  const item = ev.target.closest("[data-action]");
+  if (!item || item.classList.contains("disabled")) return;
+  closeSaveMenu();
+  if (item.dataset.action === "session") openSessionExportDialog();
+  else saveFilterToFile(activeFilterNodeId());
+});
 
 // Settings opens a single wide page (not a dropdown menu) — see
 // "Settings page" below (openSettingsDialog) for its sections, built so
@@ -35119,7 +35564,7 @@ function fwPatternStartFiltersBlock(p, idx, libraryRecords) {
   return wrap;
 }
 
-/* ===================== Filter popup (Ctrl+F to create, F2/right-click "Edit filter…" to edit) ===================== */
+/* ===================== Filter popup (Ctrl+Shift+F to create, F2/right-click "Edit filter…" to edit) ===================== */
 
 const filterPopup = el("#filterPopup");
 const filterInput = el("#filterInput");
@@ -35432,6 +35877,7 @@ function openFilterPopup() {
   filterPopupColumns = new Set();
   renderFilterScopeHint();
   filterSubmitBtn.textContent = "Add filter";
+  filterLinkEventsBtn.classList.remove("hidden");
   filterInput.value = "";
   pillSet(filterInvertCheckbox, false);
   pillSet(filterCaseCheckbox, false);
@@ -35467,6 +35913,7 @@ function openEditFilterPopup(nodeId) {
   render();
   renderFilterScopeHint();
   filterSubmitBtn.textContent = "Save";
+  filterLinkEventsBtn.classList.add("hidden");
   filterInput.value = node.value;
   pillSet(filterInvertCheckbox, !!node.inverted);
   pillSet(filterCaseCheckbox, node.filterType === "text" && !!node.caseSensitive);
@@ -35498,6 +35945,17 @@ function closeFilterPopup() {
   // maybeCloseSidebarAltPeek's own comment) — a no-op otherwise.
   maybeCloseSidebarAltPeek();
 }
+
+// Footer "Link two events…": the popup's current text becomes the Start of the link dialog.
+const filterLinkEventsBtn = el("#filterLinkEventsBtn");
+filterLinkEventsBtn.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const rootId = filterPopupBaseId && getRootFileId(filterPopupBaseId);
+  if (!rootId || editingFilterId) return;
+  const text = filterInput.value.trim();
+  closeFilterPopup();
+  openLinkDialog({ rootId, start: { text } });
+});
 
 // Inserts a placeholder token at the current cursor position (replacing any
 // current selection), matching how a normal text input handles typed text.
@@ -35675,7 +36133,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
 
   renderLiveMatchMinimap(hits, baseEntries, target.minimap);
 
-  hits.slice(0, FILTER_SAMPLE_ROWS).forEach(e => {
+  (opts.samples || hits.slice(0, FILTER_SAMPLE_ROWS)).forEach(e => {
     const row = document.createElement("div");
     row.className = "filter-sample-row " + levelClass(e.level, e.formatId) + (opts.badge ? " has-badge" : "");
     const bar = document.createElement("span");
@@ -35689,7 +36147,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
     appendSampleMessage(msg, e.message, hitRe);
     if (opts.badge) {
       const badge = document.createElement("span");
-      badge.className = "filter-sample-badge";
+      badge.className = "filter-sample-badge" + (opts.badgeWarn && opts.badgeWarn(e) ? " warn" : "");
       badge.textContent = opts.badge(e) || "";
       row.append(bar, badge, time, msg);
     } else {
@@ -35923,27 +36381,26 @@ filterForm.addEventListener("submit", ev => {
 el("#btnCloseFilterPopup").addEventListener("click", closeFilterPopup);
 
 
-/* ===================== Find bar (Ctrl+G / F3 — FEATURE_BACKLOG.md #3) =====================
+/* ===================== Find bar (Ctrl+F / F3 — FEATURE_BACKLOG.md #3) =====================
    Incremental, NON-destructive search inside whichever log view is current:
    the Context view (currentHighlightViewEntries — its matches plus whatever
    context rows are revealed; collapsed gaps are not "in the view" and are
    not searched) or the Filtered view (currentViewEntries — post filter
    chain, post level quick-filter, in its displayed sort order). Table/Plot
    and the Link view have no plain entry list to walk, so the bar reports
-   "Not in this view" there. Before this existed, Ctrl+F was the only search
-   and it always created a filter node — "just look for this once" cost a
+   "Not in this view" there. Before this existed, the filter popup was the only
+   search and it always created a filter node — "just look for this once" cost a
    tree node you then deleted. Now: search first, promote to a filter only
    when needed ("Add as filter", which calls the exact createFilterNode the
-   Ctrl+F popup's commitFilter calls — no new node field, nothing new to
+   Ctrl+Shift+F popup's commitFilter calls — no new node field, nothing new to
    thread through the persistence carriers).
 
-   Shortcut decision: Ctrl+F stays "new filter" (least disruptive — it's the
-   app's core idiom and the empty-state hint), the find bar takes the
-   browser's own "find next" keys instead: Ctrl+G opens it (focuses it if
-   already open, steps to the next hit if already focused), F3/Shift+F3 step
-   next/previous from anywhere, Enter/Shift+Enter inside the input,
-   Ctrl+Enter adds the search as a filter, Esc closes it. The three chords
-   are rebindable in Settings -> Shortcuts.
+   Shortcut decision (usability test 2026-10-03/04: users expect Ctrl+F =
+   find): Ctrl+F opens the bar (focuses it if already open, selects the query
+   if already focused), F3/Shift+F3 step next/previous from anywhere (Ctrl+G /
+   Ctrl+Shift+G are fixed aliases), Enter/Shift+Enter inside the input,
+   Ctrl+Enter adds the search as a filter, Esc closes it. "New filter" moved
+   to Ctrl+Shift+F. Ctrl+F/F3/Shift+F3 are rebindable in Settings -> Shortcuts.
 
    The query language is exactly the filter popup's: a literal substring
    (case-insensitive unless "Aa"), a [*:...]/[*] wildcard pattern, or a real
@@ -36452,7 +36909,7 @@ function closeFindBar() {
 
 // "Add as filter": the search becomes a real "text" filter node under the
 // active node — the same createFilterNode call (and the same follow-up
-// reveal+render) the Ctrl+F popup's commitFilter makes, with the find bar's
+// reveal+render) the Ctrl+Shift+F popup's commitFilter makes, with the find bar's
 // case/regex toggles as its caseSensitive/isRegex. The query is used as-is,
 // so the new node keeps exactly the rows the search counted.
 function addFindAsFilter() {
@@ -36471,12 +36928,17 @@ function addFindAsFilter() {
   return node;
 }
 
-// Ctrl+G / F3 / Shift+F3, from the main keydown handler. Returns true when
-// it consumed the event.
+// Ctrl+F / F3 / Shift+F3 (+ the fixed Ctrl+G / Ctrl+Shift+G aliases for
+// next/previous), from the main keydown handler. Returns true when it
+// consumed the event.
 function handleFindShortcut(ev) {
   const isGo = matchesShortcut(ev, "findInView");
-  const isNext = matchesShortcut(ev, "findNext");
-  const isPrev = matchesShortcut(ev, "findPrev");
+  // Ctrl+G aliases only apply while no action is bound to that combo (a user
+  // rebinding wins; matchesShortcut-based checks run before this handler).
+  const c = comboFromEvent(ev);
+  const gAlias = !isGo && c.ctrl && !c.alt && c.key === "g" && !SHORTCUT_ACTIONS.some(a => comboEquals(getShortcutBinding(a.id), c));
+  const isNext = matchesShortcut(ev, "findNext") || (gAlias && !c.shift);
+  const isPrev = matchesShortcut(ev, "findPrev") || (gAlias && c.shift);
   if (!isGo && !isNext && !isPrev) return false;
   const active = document.activeElement;
   const inFind = active === findInput;
@@ -36491,7 +36953,7 @@ function handleFindShortcut(ev) {
   ev.preventDefault();
   if (isGo) {
     if (!findBarOpen() || !inFind) openFindBar();
-    else findStep(1);
+    else findInput.select(); // like browsers: Ctrl+F in the field selects the query
     return true;
   }
   if (!findBarOpen()) openFindBar();
@@ -36555,6 +37017,7 @@ const ctxNote = el("#ctxNote");
 const ctxNoteLabel = el("#ctxNoteLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 const ctxExtractMessage = el("#ctxExtractMessage");
+const ctxPairWith = el("#ctxPairWith");
 const ctxOpenInVs = el("#ctxOpenInVs");
 const ctxOpenInRider = el("#ctxOpenInRider");
 const ctxAddToSelection = el("#ctxAddToSelection");
@@ -36622,6 +37085,8 @@ function openContextMenu(ev, entry) {
   // Hidden on phone: the extraction node only feeds Table/Plot, which phone does not show.
   ctxExtractMessage.style.display =
     currentLayoutTier !== "phone" && buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
+  // "Pair with…": a real row only (never a link-view pair brace), and only where timestamps exist.
+  ctxPairWith.style.display = !entry.isPair && bookmarkable && !isPlainTextFormat(entry.formatId) ? "" : "none";
   // IDE Integration: row-level (not column-gated like "Filter for this
   // ___" above) — the Method column carries no file/line data of its own,
   // so gating strictly on which column was clicked would make these items
@@ -36841,6 +37306,132 @@ ctxExtractMessage.addEventListener("click", ev => {
   closeContextMenu();
   extractMessageFilter(entry);
 });
+
+
+/* ===================== "Pair with…" (pick mode) =====================
+   Row context menu → "Pair with…" → click/tap a second row → the banner shows the Δt
+   between the two rows → "Pair all like these…" opens the link dialog prefilled with the
+   two messages as patterns. The pick is intercepted by one capture-phase click listener
+   (no change to the row renderers; their classes carry the start/end markers, see
+   pairPickRowClass, and refreshPairPickMarks re-applies them to the rendered rows). */
+const pairPickBanner = el("#pairPickBanner");
+ctxPairWith.insertAdjacentHTML("afterbegin", ICON_LINK);
+
+// " name=value" fields of a message, in order.
+function messageFields(msg) {
+  const out = new Map();
+  const re = /(?:^|[\s,;(\[{])(\w+)=([^\s,;)\]}]+)/g;
+  let m;
+  while ((m = re.exec(msg)) !== null) if (!out.has(m[1])) out.set(m[1], m[2]);
+  return out;
+}
+// "+213 ms" / "-3.9 s" / "+7m 33s"
+function formatPairDt(ms) {
+  const a = Math.abs(ms), sign = ms < 0 ? "-" : "+";
+  if (a < 1000) return sign + Math.round(a) + " ms";
+  if (a < 60000) return sign + (a / 1000).toFixed(1) + " s";
+  return sign + formatMs(a);
+}
+function pairPickRowClass(e) {
+  if (!pairPick) return "";
+  return e === pairPick.startEntry ? " pair-start" : e === pairPick.endEntry ? " pair-end" : "";
+}
+function pairPickRowEntry(rowEl) {
+  if (rowEl._pickEntry) return rowEl._pickEntry;
+  return rowEl.dataset && rowEl.dataset.entryId ? entryIndex[rowEl.dataset.entryId] || null : null;
+}
+// Toggles the markers on every rendered row of the three row views (a re-render builds new rows
+// with the same classes through pairPickRowClass, so scrolling never drops them).
+function refreshPairPickMarks() {
+  document.body.classList.toggle("pair-picking", !!pairPick);
+  [tableRows, highlightRows, linkScroll].forEach(container => {
+    container.querySelectorAll(".log-row, .pair-row").forEach(rowEl => {
+      const e = pairPickRowEntry(rowEl);
+      rowEl.classList.toggle("pair-start", !!pairPick && !!e && e === pairPick.startEntry);
+      rowEl.classList.toggle("pair-end", !!pairPick && !!e && e === pairPick.endEntry);
+    });
+  });
+}
+function startPairPick(entry) {
+  const rootId = state.activeId && getRootFileId(state.activeId);
+  const root = rootId && state.nodes[rootId];
+  if (!root || !entry || entry.isPair) return;
+  pairPick = { startEntry: entry, rootId, rootIds: new Set((root.entries || []).map(e => e.id)), endEntry: null };
+  renderPairPickBanner();
+  refreshPairPickMarks();
+}
+function cancelPairPick() {
+  if (!pairPick) return;
+  pairPick = null;
+  renderPairPickBanner();
+  refreshPairPickMarks();
+}
+// Pick mode only survives while the start's file is still loaded with the same entries.
+function validatePairPick() {
+  if (!pairPick) return;
+  const root = state.nodes[pairPick.rootId];
+  if (!root || !state.rootIds.includes(pairPick.rootId) || entryIndex[pairPick.startEntry.id] !== pairPick.startEntry) cancelPairPick();
+}
+function ellipsize(text, n) { return text.length > n ? text.slice(0, n - 1) + "…" : text; }
+function renderPairPickBanner() {
+  if (!pairPick) { pairPickBanner.classList.add("hidden"); pairPickBanner.innerHTML = ""; document.body.style.removeProperty("--pp-h"); return; }
+  const touch = isCoarsePointer();
+  const startMsg = ellipsize(entryColumnValue(pairPick.startEntry, "message").replace(/\s+/g, " "), 70);
+  if (!pairPick.endEntry) {
+    pairPickBanner.innerHTML = '<span class="pp-text">' + (touch ? "Tap" : "Click") + " the end event · start: <b>" + escapeHtml(startMsg) + '</b></span>' +
+      '<span class="pp-actions"><button type="button" class="btn-mini-secondary" data-pp="cancel">Cancel</button></span>';
+  } else {
+    const a = pairPick.startEntry, b = pairPick.endEntry;
+    const fa = messageFields(a.message), fb = messageFields(b.message);
+    const same = [...fa].filter(([k, v]) => fb.get(k) === v).map(([k, v]) => "<b>" + escapeHtml(k + "=" + v) + "</b>");
+    pairPickBanner.innerHTML = '<span class="pp-text">Δt <span class="pp-dt">' + formatPairDt(b.ts - a.ts) + "</span> between the two rows" +
+      (same.length ? " · same " + same.join(", ") : "") + "</span>" +
+      '<span class="pp-actions"><button type="button" class="btn-mini-secondary" data-pp="cancel">Close</button>' +
+      '<button type="button" class="btn-mini" data-pp="pairall">Pair all like these…</button></span>';
+  }
+  pairPickBanner.classList.remove("hidden");
+  document.body.style.setProperty("--pp-h", pairPickBanner.offsetHeight + "px");
+}
+// "Pair all like these…": the link dialog with both messages as patterns, the direction from the
+// rows' order (timestamp, ties by log order), the key preselected like any other dialog.
+function pairAllFromPick() {
+  if (!pairPick || !pairPick.endEntry) return;
+  const a = pairPick.startEntry, b = pairPick.endEntry, rootId = pairPick.rootId;
+  const order = buildOrderIndexMap(rootId);
+  const after = b.ts !== a.ts ? b.ts > a.ts : order.get(b.id) >= order.get(a.id);
+  const pat = e => { const v = entryColumnValue(e, "message"); return collapseNewlinesToWildcard(buildNumericExtractPattern(v) || v); };
+  const spec = { rootId, start: { text: pat(a) }, hops: [{ text: pat(b), direction: after ? "after" : "before" }] };
+  cancelPairPick();
+  openLinkDialog(spec);
+}
+pairPickBanner.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-pp]");
+  if (!btn) return;
+  ev.stopPropagation();
+  if (btn.dataset.pp === "pairall") pairAllFromPick(); else cancelPairPick();
+});
+ctxPairWith.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  startPairPick(entry);
+});
+// While picking, a click on a row picks it instead of selecting it (table, Context/highlight view,
+// phone cards, the real rows inside link-view blocks). Capture phase: runs before every row/block handler.
+document.addEventListener("click", ev => {
+  if (!pairPick) return;
+  const rowEl = ev.target.closest && ev.target.closest(".log-row, .pair-row");
+  if (!rowEl || pairPickBanner.contains(ev.target)) return;
+  const e = pairPickRowEntry(rowEl);
+  if (!e) return;
+  ev.stopPropagation();
+  ev.preventDefault();
+  if (e === pairPick.startEntry) return;
+  if (!pairPick.rootIds.has(e.id)) { showCopyToast("Pick a row from the same file"); return; }
+  pairPick.endEntry = e;
+  renderPairPickBanner();
+  refreshPairPickMarks();
+}, true);
 
 // IDE Integration — "Open in Visual Studio": re-resolves the path (state may
 // have changed since the menu opened, e.g. the connection dropped), confirms
@@ -37256,7 +37847,7 @@ const VIEWBAR_ROW_ACTIONS = [
   { action: "extractMessage", label: "Extract", svg: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/>', strokeWidth: 1.4 },
 ];
 // "New" is its own group in #viewBar (person-requested: Standard filters |
-// Library presets | New) — a plain "+", opens the filter popup (Ctrl+F). It
+// Library presets | New) — a plain "+", opens the filter popup (Ctrl+Shift+F). It
 // needs no selected row, only state.activeId (see updateRowActionButtons).
 const VIEWBAR_NEW_ROW_ACTION = [
   { action: "newFilter", label: "New", svg: '<path d="M8 3.5v9M3.5 8h9"/>', strokeWidth: 1.8 },
@@ -38075,8 +38666,9 @@ function describeSidebarToolbarActions() {
   const target = node ? node.id : null;
   const actions = [
     { action: "rename", label: "Rename…", icon: ICON_RENAME, target, disabled: !filter },
-    { action: "edit", label: "Edit filter…", icon: ICON_EDIT, target,
-      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft))) },
+    { action: "edit", label: ft === "link" ? "Edit link…" : "Edit filter…", icon: ICON_EDIT, target,
+      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || (ft === "link" && hasBakedSides(filter)))) },
+    { action: "linkWith", label: "Link with…", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
     { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", icon: ICON_INVERT, target,
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
     { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target,
@@ -38105,6 +38697,7 @@ function handleSidebarToolbarActionClick(action) {
     case "clockOffset": openClockOffsetDialog(target); return;
     case "rename": startRenameNode(target); return;
     case "edit": editFilterNode(target); return;
+    case "linkWith": openLinkWithNode(target); return;
     case "invert": toggleInvertWithUndo(target); render(); return;
     case "mute": toggleMuteWithUndo([target]); render(); return;
     case "addToLibrary": openFilterLibrarySaveDialog(target); return;
@@ -38229,7 +38822,10 @@ function openTreeContextMenu(ev, clickedId) {
       // other nodes, and context filters have their own before/after dialog.
       if (node.filterType === "text" || node.filterType === "gap" || isTimeFilterType(node.filterType)) {
         buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
+      } else if (node.filterType === "link" && hasBakedSides(node)) {
+        buckets.edit.push({ action: "edit", label: "Edit link…", icon: ICON_EDIT });
       }
+      if (isLinkBakeableNode(node)) buckets.edit.push({ action: "linkWith", label: "Link with…", icon: ICON_LINK });
       // "link" results are pair entries with no parent-relative complement
       // (see getEntries), and "context"/"countContext" always contain their
       // own reference entries so a parent-relative difference is always
@@ -38403,6 +38999,10 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "gap") {
     if (treeCtxId && state.nodes[treeCtxId]) openGapDialog(treeCtxId, false);
+    return;
+  }
+  if (action === "linkWith") {
+    if (treeCtxId) openLinkWithNode(treeCtxId);
     return;
   }
   if (action === "clockOffset") {
@@ -38582,60 +39182,145 @@ sidebarToolbarEl.addEventListener("click", ev => {
   handleSidebarToolbarActionClick(btn.dataset.rowAction);
 });
 
-/* ===================== Link dialog (reference + N ordered hops) =====================
-   Generalized from "link exactly two filters" to "a reference plus 2+ target
-   hops, each resolved relative to the previous hop's match" — see
-   REQUIREMENTS-link-chaining-and-multiway.md's "multi-way link definition in
-   one dialog". Implemented as sugar over the existing chain-of-link-nodes
-   mechanism (design direction A, see PROJECT.md "Link filter"): Create walks
-   the hops in order, each createLinkNode() call using the PREVIOUS hop's
-   resulting node as the next hop's reference (parentId) — exactly the manual
-   chaining a person would otherwise build node-by-node in the tree, now done
-   in one dialog. Hop order follows selection order (ids, minus whichever one
-   is picked as reference) — Sets preserve insertion order, so this is just
-   the order the filters were Ctrl-clicked in; there's no separate reorder UI. */
+/* ===================== Link dialog (Start / End text fields, "Same" chips) =====================
+   One dialog creates AND edits a link (docs/filters.md → "Link filter"). The
+   sides are text fields (patterns, like the filter popup) with a "▾" to pick
+   an existing filter instead; a side is baked at Create time, so no helper
+   filter nodes are created. "+ Add step" appends another End (a hop resolved
+   relative to the previous match). Create makes ONE node holding the whole
+   chain (hopsToLinkChain / createLinkNodeFromBaked), Save on an edited link
+   replaces its definition in one undo step (updateLinkNodeWithUndo).
+
+   openLinkDialog(spec) — spec is { rootId, start, hops, direction, key, dt,
+   exclusive, orderEnforced, editNodeId } where a side (start, each hop) is
+   { text } | { nodeId } | { baked }, a hop may carry its own { direction, n }
+   and `direction` ("after" default) is the fallback; `key` is { column } |
+   { pattern } | "none" (omitted: the recommended suggestion is preselected).
+   An array of node ids (the multi-select "Link…") is adapted to a spec. */
 
 const linkDialog = el("#linkDialog");
-const linkRefSelect = el("#linkRefSelect");
-const linkHopsList = el("#linkHopsList");
+const linkDialogCard = el("#linkDialogCard");
+const linkDialogTitle = el("#linkDialogTitle");
+const linkDialogCreateBtn = el("#linkDialogCreate");
+const linkSidesEl = el("#linkSides");
+const linkKeyChips = el("#linkKeyChips");
 const linkOrderEnforceInput = el("#linkOrderEnforceInput");
 const linkOrderEnforceRow = el("#linkOrderEnforceRow");
 const linkExclusiveInput = el("#linkExclusiveInput");
-const linkKeyInput = el("#linkKeyInput");
-const linkKeySelect = el("#linkKeySelect");
+const linkMore = el("#linkMore");
 const linkKeyPatternRow = el("#linkKeyPatternRow");
 const linkKeyPattern = el("#linkKeyPattern");
 const linkDtInput = el("#linkDtInput");
 const linkDtOp = el("#linkDtOp");
 const linkDtValue = el("#linkDtValue");
 const linkDtUnit = el("#linkDtUnit");
+const linkHint = el("#linkHint");
+const linkSideMenu = el("#linkSideMenu");
 const linkResultsTarget = { root: el("#linkResults"), match: el("#linkLiveMatch"), minimap: el("#linkResultsMinimap"), samples: el("#linkResultsSamples") };
-const LINK_KEY_PATTERN_OPTION = "@pattern"; // #linkKeySelect's "value of pattern…" choice
 let linkPreviewTimer = null;
-let linkDialogIds = [];
-let linkHopRows = []; // [{targetId, nInput, dirSelect}], rebuilt by renderLinkHops()
+// null while closed, else { rootId, editNodeId, sides: [side], hops: [{direction, n}] (hops[i] belongs
+// to sides[i + 1]), key: {type: "none"|"suggest"|"column"|"pattern", value}, keyTouched, suggestions }
+// with side = {kind: "text", text} | {kind: "node", nodeId, label} | {kind: "baked", baked, label}.
+let linkDlg = null;
 
-function openLinkDialog(ids) {
-  const nodes = ids.map(id => state.nodes[id]).filter(Boolean);
-  if (nodes.length < 2) return;
-  linkDialogIds = nodes.map(n => n.id);
-  linkRefSelect.innerHTML = nodes.map(n => '<option value="' + n.id + '">' + escapeHtml(nodeDisplayName(n)) + "</option>").join("");
-  pillSet(linkOrderEnforceInput, false);
-  pillSet(linkExclusiveInput, false);
-  pillSet(linkKeyInput, false);
-  pillSet(linkDtInput, false);
-  linkKeySelect.innerHTML = groupColumnOptions(getRootFileId(nodes[0].id))
-    .map(o => '<option value="' + escapeHtml(o.key) + '">' + escapeHtml(o.label) + "</option>").join("") +
-    '<option value="' + LINK_KEY_PATTERN_OPTION + '">value of pattern…</option>';
-  linkKeyPattern.value = "";
-  linkDtOp.value = ">";
-  linkDtValue.value = "500";
-  linkDtUnit.value = "ms";
-  clearLiveResults(linkResultsTarget);
-  renderLinkHops();
-  linkDialog.classList.remove("hidden");
+// A baked side the dialog can show as an editable text field: exactly what
+// bakedTextCondition builds.
+function isPlainTextBaked(b) {
+  return !!b && b.filterType === "text" && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
+    !(b.ignoredColumns && b.ignoredColumns.length) && Array.isArray(b.columns) && b.columns.length === 1 && b.columns[0] === "message";
 }
-function closeLinkDialog() { linkDialog.classList.add("hidden"); clearTimeout(linkPreviewTimer); }
+function linkSideFromSpec(x) {
+  if (typeof x === "string") return { kind: "text", text: x };
+  if (!x) return { kind: "text", text: "" };
+  if (x.nodeId && state.nodes[x.nodeId]) return { kind: "node", nodeId: x.nodeId, label: nodeDisplayName(state.nodes[x.nodeId]) };
+  if (x.baked) return isPlainTextBaked(x.baked) ? { kind: "text", text: x.baked.value } : { kind: "baked", baked: cloneBaked(x.baked), label: bakedConditionName(x.baked) };
+  return { kind: "text", text: x.text || "" };
+}
+// A filter node a side can be baked from: not a locked node, no combiner without baked sides.
+function isLinkBakeableNode(n) {
+  return !!n && n.type === "filter" && !n.locked &&
+    ((n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n));
+}
+// baked condition of a side, or null while it is empty / its node is gone
+function linkSideBaked(side) {
+  if (side.kind === "text") { const t = side.text.trim(); return t ? bakedTextCondition(t) : null; }
+  if (side.kind === "baked") return cloneBaked(side.baked);
+  const n = state.nodes[side.nodeId];
+  return isLinkBakeableNode(n) ? bakeNodeCondition(n) : null;
+}
+
+// The multi-select "Link…": the first selected filter is the start, the others the ends.
+function linkSpecFromNodeIds(ids) {
+  const nodes = ids.map(id => state.nodes[id]).filter(Boolean);
+  if (nodes.length < 2) return null;
+  return { rootId: getRootFileId(nodes[0].id), start: { nodeId: nodes[0].id }, hops: nodes.slice(1).map(n => ({ nodeId: n.id })) };
+}
+// "Link with…" on a filter node: that filter is the start, the End is empty and focused.
+function openLinkWithNode(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!isLinkBakeableNode(node)) return;
+  openLinkDialog({ rootId: getRootFileId(nodeId), start: { nodeId } });
+}
+// "Edit link…": the spec of an existing link node.
+function linkSpecFromNode(node) {
+  const c = linkChainToHops(node);
+  if (!c) return null;
+  return {
+    rootId: getRootFileId(node.id), editNodeId: node.id, start: { baked: c.start },
+    hops: c.hops.map(h => ({ baked: h.baked, direction: h.direction, n: h.n })),
+    key: c.key || "none", dt: c.dt, exclusive: c.exclusive, orderEnforced: c.orderEnforced,
+  };
+}
+
+function openLinkDialog(spec) {
+  if (Array.isArray(spec)) spec = linkSpecFromNodeIds(spec);
+  if (!spec || !state.nodes[spec.rootId]) return;
+  const dirOf = h => (h && h.direction) || spec.direction || "after";
+  const hopSpecs = spec.hops && spec.hops.length ? spec.hops : [{}];
+  linkDlg = {
+    rootId: spec.rootId, editNodeId: spec.editNodeId || null,
+    sides: [linkSideFromSpec(spec.start)].concat(hopSpecs.map(linkSideFromSpec)),
+    hops: hopSpecs.map(h => ({ direction: dirOf(h) === "before" ? "before" : "after", n: Math.max(1, parseInt(h && h.n, 10) || 1) })),
+    key: { type: "none", value: null }, keyTouched: false, suggestions: [],
+  };
+  const key = spec.key === "none" ? { type: "none" } : sanitizeLinkKey(spec.key);
+  if (key) {
+    linkDlg.keyTouched = true;
+    linkDlg.key = key.type ? { type: "none", value: null } : key.column ? { type: "column", value: key.column } : { type: "pattern", value: key.pattern };
+  }
+  linkDialogTitle.textContent = linkDlg.editNodeId ? "Edit link" : "Link events";
+  linkDialogCreateBtn.textContent = linkDlg.editNodeId ? "Save" : "Create";
+  pillSet(linkOrderEnforceInput, !!spec.orderEnforced);
+  pillSet(linkExclusiveInput, !!spec.exclusive);
+  linkMore.open = !!(spec.exclusive || spec.orderEnforced);
+  pillSet(linkDtInput, !!spec.dt);
+  const dtMs = spec.dt ? spec.dt.ms : 500;
+  const unit = spec.dt ? ([...GAP_UNITS].reverse().find(u => dtMs >= u.ms && dtMs % u.ms === 0) || GAP_UNITS[0]) : GAP_UNITS[0];
+  linkDtOp.value = spec.dt && spec.dt.op === "<" ? "<" : ">";
+  linkDtValue.value = String(dtMs / unit.ms);
+  linkDtUnit.value = unit.key;
+  linkKeyPattern.value = linkDlg.key.type === "pattern" ? linkDlg.key.value : "";
+  linkHint.classList.add("hidden");
+  clearLiveResults(linkResultsTarget);
+  closeLinkSideMenu();
+  renderLinkSides();
+  refreshLinkSuggestions();
+  renderLinkKeyChips();
+  updateLinkOptionControls();
+  updateLinkOrderEnforceAvailability();
+  linkDialog.classList.remove("hidden");
+  linkDialogCard.scrollTop = 0;
+  updateLinkPreview();
+  const inputs = [...linkSidesEl.querySelectorAll("input.link-side-input")];
+  const focusEl = inputs.find(i => !i.value) || inputs[0];
+  if (focusEl) focusEl.focus();
+}
+function closeLinkDialog() {
+  linkDialog.classList.add("hidden");
+  clearTimeout(linkPreviewTimer);
+  closeLinkSideMenu();
+  linkDlg = null;
+}
 
 // Column choices for the Gap dialog's "measured per" and the Link dialog's
 // "Match only same": the loaded formats' middle columns (Thread/Location/
@@ -38648,19 +39333,17 @@ function groupColumnOptions(rootId) {
   return opts;
 }
 
-// The dialog's key/Δt options as { key, dt, error } — key/dt null when
-// their switch is off; error set (and the dialog refuses to create) for a
-// pattern without a wildcard capture or an unreadable Δt value.
+// Δt value/unit/op as { ms, op } from the dialog controls, or null while the switch is off;
+// error on an unreadable value.
 function readLinkDialogOptions() {
   let key = null, dt = null;
-  if (pillGet(linkKeyInput)) {
-    if (linkKeySelect.value === LINK_KEY_PATTERN_OPTION) {
-      const pattern = linkKeyPattern.value.trim();
-      if (!isExtractPattern(pattern) || !compileExtractPattern(pattern)) return { error: "Invalid key pattern — needs a capture like [*:int]" };
-      key = { pattern };
-    } else if (linkKeySelect.value) {
-      key = { column: linkKeySelect.value };
-    }
+  const k = linkDlg ? linkDlg.key : { type: "none" };
+  if (k.type === "suggest" || k.type === "pattern") {
+    const pattern = k.type === "pattern" ? linkKeyPattern.value.trim() : k.value;
+    if (!isExtractPattern(pattern) || !compileExtractPattern(pattern)) return { error: "Invalid key pattern — needs a capture like [*:word]" };
+    key = { pattern };
+  } else if (k.type === "column") {
+    key = { column: k.value };
   }
   if (pillGet(linkDtInput)) {
     const amount = parseFloat(linkDtValue.value);
@@ -38671,83 +39354,265 @@ function readLinkDialogOptions() {
   return { key, dt, error: null };
 }
 
-// Greys out each option's controls while its switch is off, and shows the
-// pattern input only for the "value of pattern…" key choice.
+// Greys out Δt's controls while its switch is off, shows the pattern input for the "pattern…" chip.
 function updateLinkOptionControls() {
-  const keyOn = pillGet(linkKeyInput);
-  linkKeySelect.disabled = !keyOn;
-  linkKeyPattern.disabled = !keyOn;
-  linkKeyPatternRow.classList.toggle("hidden", linkKeySelect.value !== LINK_KEY_PATTERN_OPTION);
   const dtOn = pillGet(linkDtInput);
   linkDtOp.disabled = linkDtValue.disabled = linkDtUnit.disabled = !dtOn;
+  linkKeyPatternRow.classList.toggle("hidden", !(linkDlg && linkDlg.key.type === "pattern"));
 }
 
-// The link the dialog would create, as one nested baked condition — the
-// exact shape createLinkNode's hop-by-hop chaining produces (see
-// bakeNodeCondition's "link" branch) — so the preview evaluates it with the
-// same getEntriesFromBaked a real link node's baked side uses. The key
-// applies to every hop, the Δt condition to the last one (the whole
-// tuple's span), mirroring the Create handler below. null when a picked
-// filter can't be baked.
+// The link the dialog would create, as one nested baked condition (hopsToLinkChain: the key and
+// the flags on every hop, Δt on the last), or null while a side is empty / its filter is gone.
 function buildLinkDialogChain(opts, withDt) {
-  let cur = state.nodes[linkRefSelect.value];
-  if (!cur || !linkHopRows.length) return null;
-  const bakeable = n => n && ((n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n));
-  if (!bakeable(cur)) return null;
-  cur = bakeNodeCondition(cur);
-  for (let i = 0; i < linkHopRows.length; i++) {
-    const hop = linkHopRows[i];
-    const target = state.nodes[hop.targetId];
-    if (!bakeable(target)) return null;
-    const link = {
-      filterType: "link", value: null, inverted: false,
-      bakedA: cur, bakedB: bakeNodeCondition(target),
-      linkDirection: hop.dirSelect.value, linkN: Math.max(1, parseInt(hop.nInput.value, 10) || 1),
-      linkOrderEnforced: pillGet(linkOrderEnforceInput), linkExclusive: pillGet(linkExclusiveInput),
-    };
-    copyLinkOptions({ linkKey: opts.key, linkDt: withDt && i === linkHopRows.length - 1 ? opts.dt : null }, link);
-    cur = link;
-  }
-  return cur;
+  if (!linkDlg) return null;
+  const baked = linkDlg.sides.map(linkSideBaked);
+  if (baked.some(b => !b)) return null;
+  return hopsToLinkChain(baked[0], linkDlg.hops.map((h, i) => ({ baked: baked[i + 1], direction: h.direction, n: h.n })), {
+    key: opts.key, dt: withDt ? opts.dt : null,
+    exclusive: pillGet(linkExclusiveInput), orderEnforced: pillGet(linkOrderEnforceInput),
+  });
 }
 
-// Live preview: "N pairs", or with a Δt condition "12 of 3.418 pairs"
-// (the count without the condition as the denominator — evaluated
-// separately rather than by filtering, since under "exclusive matches" a
-// pair the condition drops leaves its target free for a later reference),
-// plus the usual histogram and the first sample pairs with their Δt.
-// Evaluated over the shared root file, where Create places the new node.
+// Key suggestions over the matches of the first two sides in the root pool; a still-untouched key
+// follows the recommendation (none when nothing is recommended).
+function refreshLinkSuggestions() {
+  if (!linkDlg) return;
+  const a = linkSideBaked(linkDlg.sides[0]), b = linkSideBaked(linkDlg.sides[1]);
+  let sug = [];
+  if (a && b) {
+    try {
+      const pool = getEntries(linkDlg.rootId);
+      sug = suggestLinkKeys(getEntriesFromBaked(a, pool, linkDlg.rootId), getEntriesFromBaked(b, pool, linkDlg.rootId));
+    } catch (e) { sug = []; }
+  }
+  linkDlg.suggestions = sug;
+  if (!linkDlg.keyTouched) {
+    const rec = sug.find(s => s.recommended);
+    linkDlg.key = rec ? { type: "suggest", value: rec.pattern } : { type: "none", value: null };
+  } else if (linkDlg.key.type === "pattern") {
+    const hit = sug.find(s => s.pattern === linkKeyPattern.value.trim());
+    if (hit && linkDlg.editNodeId) linkDlg.key = { type: "suggest", value: hit.pattern };
+  }
+  renderLinkKeyChips();
+}
+
+// "Same" chips: suggested fields, the column options, none, pattern…
+function renderLinkKeyChips() {
+  if (!linkDlg) return;
+  const phone = currentLayoutTier === "phone";
+  const cols = groupColumnOptions(linkDlg.rootId);
+  if (linkDlg.key.type === "column" && !cols.some(c => c.key === linkDlg.key.value)) cols.push({ key: linkDlg.key.value, label: groupColumnLabel(linkDlg.key.value) });
+  if (linkDlg.key.type === "suggest" && !linkDlg.suggestions.some(s => s.pattern === linkDlg.key.value)) {
+    // the field is no longer shared by both sides: keep the pattern editable instead
+    linkKeyPattern.value = linkDlg.key.value;
+    linkDlg.key = { type: "pattern", value: null };
+  }
+  const k = linkDlg.key;
+  const chip = (id, label, note, pressed) =>
+    '<button type="button" class="link-chip" data-key-chip="' + escapeHtml(id) + '" aria-pressed="' + pressed + '">' + escapeHtml(label) +
+    (note ? " <small>" + escapeHtml(phone ? "★" : note) + "</small>" : "") + "</button>";
+  let html = linkDlg.suggestions.map(sg => chip("s:" + sg.pattern, sg.field, sg.recommended ? "recommended · unique per start" : "", k.type === "suggest" && k.value === sg.pattern)).join("");
+  html += cols.map(c => chip("c:" + c.key, c.label, "", k.type === "column" && k.value === c.key)).join("");
+  html += chip("none", "none", "", k.type === "none") + chip("pattern", "pattern…", "", k.type === "pattern");
+  linkKeyChips.innerHTML = html;
+  updateLinkOptionControls();
+}
+linkKeyChips.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-key-chip]");
+  if (!btn || !linkDlg) return;
+  ev.stopPropagation();
+  const id = btn.dataset.keyChip;
+  linkDlg.keyTouched = true;
+  if (id === "none") linkDlg.key = { type: "none", value: null };
+  else if (id === "pattern") linkDlg.key = { type: "pattern", value: null };
+  else if (id.startsWith("s:")) linkDlg.key = { type: "suggest", value: id.slice(2) };
+  else linkDlg.key = { type: "column", value: id.slice(2) };
+  renderLinkKeyChips();
+  if (id === "pattern") linkKeyPattern.focus();
+  updateLinkPreview();
+});
+
+// Start / End rows plus the "for each start, find the Nth next/previous end" sentence above each End.
+function renderLinkSides() {
+  if (!linkDlg) return;
+  const dirBtn = (i, v, label) => '<button type="button" data-dir="' + v + '" aria-pressed="' + (linkDlg.hops[i].direction === v) + '">' + label + "</button>";
+  let html = "";
+  linkDlg.sides.forEach((side, i) => {
+    if (i >= 1) {
+      const h = linkDlg.hops[i - 1];
+      html += '<div class="link-sentence link-hop-row" data-hop="' + (i - 1) + '">' + (i === 1 ? "for each start, find the" : "then, from that end, find the") +
+        ' <input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span> " +
+        '<span class="link-seg link-hop-dir" role="group" aria-label="Direction">' + dirBtn(i - 1, "after", "next") + dirBtn(i - 1, "before", "previous") + "</span> end</div>";
+    }
+    html += '<div class="link-side" data-side="' + i + '"><span class="link-side-lab">' + (i === 0 ? "Start" : "End") + "</span>";
+    if (side.kind === "text") {
+      html += '<input type="text" class="link-side-input" value="' + escapeHtml(side.text) + '" placeholder="' + (i === 0 ? "type a pattern, or ▾ pick a filter" : "type a pattern, or ▾ pick a filter") + '" spellcheck="false" autocomplete="off" aria-label="' + (i === 0 ? "Start event" : "End event") + '">';
+    } else {
+      html += '<span class="link-side-chip" title="' + escapeHtml(side.label) + '"><span>' + escapeHtml(side.label) + '</span><button type="button" class="link-side-btn" data-side-clear title="Type a pattern instead" aria-label="Type a pattern instead">✕</button></span>';
+    }
+    html += '<button type="button" class="link-side-btn" data-side-pick title="Use an existing filter instead" aria-label="Pick an existing filter">▾</button>';
+    if (i >= 1 && linkDlg.hops.length > 1) html += '<button type="button" class="link-side-btn" data-side-remove title="Remove this step" aria-label="Remove this step">✕</button>';
+    html += "</div>";
+  });
+  linkSidesEl.innerHTML = html;
+}
+
+linkSidesEl.addEventListener("input", ev => {
+  if (!linkDlg) return;
+  const input = ev.target.closest("input.link-side-input");
+  const hopN = ev.target.closest("input.link-hop-n");
+  if (input) {
+    linkDlg.sides[+input.closest("[data-side]").dataset.side].text = input.value;
+  } else if (hopN) {
+    const row = hopN.closest("[data-hop]"), n = Math.max(1, parseInt(hopN.value, 10) || 1);
+    linkDlg.hops[+row.dataset.hop].n = n;
+    row.querySelector(".link-hop-ord").textContent = ordinalSuffix(n);
+  }
+});
+linkSidesEl.addEventListener("click", ev => {
+  if (!linkDlg) return;
+  const side = ev.target.closest("[data-side]");
+  const dirBtn = ev.target.closest(".link-hop-dir button");
+  if (dirBtn) {
+    ev.stopPropagation();
+    const i = +dirBtn.closest("[data-hop]").dataset.hop;
+    linkDlg.hops[i].direction = dirBtn.dataset.dir;
+    renderLinkSides();
+    updateLinkOrderEnforceAvailability();
+    updateLinkPreview();
+    return;
+  }
+  if (!side) return;
+  const i = +side.dataset.side;
+  if (ev.target.closest("[data-side-pick]")) { ev.stopPropagation(); openLinkSideMenu(i, ev.target.closest("[data-side-pick]")); return; }
+  if (ev.target.closest("[data-side-clear]")) {
+    ev.stopPropagation();
+    linkDlg.sides[i] = { kind: "text", text: "" };
+    renderLinkSides();
+    linkSidesEl.querySelector('[data-side="' + i + '"] input').focus();
+    updateLinkPreview();
+    return;
+  }
+  if (ev.target.closest("[data-side-remove]")) {
+    ev.stopPropagation();
+    linkDlg.sides.splice(i, 1);
+    linkDlg.hops.splice(i - 1, 1);
+    renderLinkSides();
+    updateLinkOrderEnforceAvailability();
+    updateLinkPreview();
+  }
+});
+el("#linkAddStep").addEventListener("click", ev => {
+  if (!linkDlg) return;
+  ev.stopPropagation();
+  const last = linkDlg.hops[linkDlg.hops.length - 1];
+  linkDlg.sides.push({ kind: "text", text: "" });
+  linkDlg.hops.push({ direction: last ? last.direction : "after", n: 1 });
+  renderLinkSides();
+  updateLinkOrderEnforceAvailability();
+  const inputs = linkSidesEl.querySelectorAll("input.link-side-input");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+  updateLinkPreview();
+});
+
+// The "▾" popup of one side: the root file's bakeable filters, or back to typing a pattern.
+function closeLinkSideMenu() { linkSideMenu.classList.add("hidden"); linkSideMenu.innerHTML = ""; }
+function openLinkSideMenu(sideIndex, anchor) {
+  const nodes = [];
+  const walk = id => { const n = state.nodes[id]; if (!n) return; if (n.type === "filter" && isLinkBakeableNode(n)) nodes.push(n); n.children.forEach(walk); };
+  state.nodes[linkDlg.rootId].children.forEach(walk);
+  let html = nodes.map(n => '<div class="ctx-item" role="menuitem" data-pick-node="' + n.id + '" title="' + escapeHtml(nodeDisplayName(n)) + '">' + escapeHtml(nodeDisplayName(n)) + "</div>").join("");
+  if (!nodes.length) html = '<div class="ctx-note">No filters in this file yet</div>';
+  html += '<div class="ctx-sep"></div><div class="ctx-item" role="menuitem" data-pick-text="1">Type a pattern</div>';
+  linkSideMenu.innerHTML = html;
+  linkSideMenu.dataset.side = String(sideIndex);
+  linkSideMenu.classList.remove("hidden");
+  const cr = linkDialogCard.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(ar.right - cr.left - linkSideMenu.offsetWidth, cr.width - linkSideMenu.offsetWidth - 8));
+  linkSideMenu.style.left = left + "px";
+  linkSideMenu.style.top = (ar.bottom - cr.top + linkDialogCard.scrollTop + 4) + "px";
+}
+linkSideMenu.addEventListener("contextmenu", ev => ev.preventDefault());
+linkSideMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".ctx-item");
+  if (!item || !linkDlg) return;
+  const i = +linkSideMenu.dataset.side;
+  if (item.dataset.pickNode) {
+    const n = state.nodes[item.dataset.pickNode];
+    if (n) linkDlg.sides[i] = { kind: "node", nodeId: n.id, label: nodeDisplayName(n) };
+  } else {
+    linkDlg.sides[i] = { kind: "text", text: "" };
+  }
+  closeLinkSideMenu();
+  renderLinkSides();
+  if (item.dataset.pickText) linkSidesEl.querySelector('[data-side="' + i + '"] input').focus();
+  updateLinkPreview();
+});
+
+// The model the buttons and the preview share: the chain, the options, whether Create may run.
+function readLinkDialogModel() {
+  const opts = readLinkDialogOptions();
+  if (opts.error) return { opts, error: opts.error, chain: null, ready: false };
+  const chain = buildLinkDialogChain(opts, true);
+  return { opts, error: null, chain, ready: !!chain };
+}
+
+// Live preview: "192 pairs · 13 without end · median 347ms · max 3.9s" (with a Δt condition "36 of
+// 192 pairs"; the condition is a pure post-filter, so both counts are the same pairing), the
+// histogram over time, the slowest pairs first and then the first start without an end.
+// Evaluated over the shared root file, where the node lives.
 function updateLinkPreview() {
   clearTimeout(linkPreviewTimer);
-  linkPreviewTimer = setTimeout(() => {
-    if (linkDialog.classList.contains("hidden")) return;
-    const opts = readLinkDialogOptions();
-    if (opts.error) { showLiveMatchError(opts.error, linkResultsTarget); return; }
-    const rootId = getRootFileId(linkRefSelect.value);
-    const chain = rootId && buildLinkDialogChain(opts, false);
-    if (!chain) { clearLiveResults(linkResultsTarget); return; }
-    const pool = getEntries(rootId);
-    const all = getEntriesFromBaked(chain, pool, rootId);
-    const hits = opts.dt ? getEntriesFromBaked(buildLinkDialogChain(opts, true), pool, rootId) : all;
-    const fmt = n => n.toLocaleString("de-DE");
-    renderLiveResults(hits, all, null, false, null, linkResultsTarget, {
-      metaText: opts.dt ? "of " + fmt(all.length) + " pairs" : (all.length === 1 ? "pair" : "pairs"),
-      badge: e => "Δt " + formatMs(e.dtMs),
-    });
-  }, 150);
+  if (linkDlg) linkDialogCreateBtn.disabled = !readLinkDialogModel().ready; // Create follows the sides at once, the preview is debounced
+  linkPreviewTimer = setTimeout(runLinkPreview, 150);
 }
-// Any option change — a switch (pillSet fires a bubbling "change"), a
-// select, a typed value, a hop's N/direction — refreshes the controls'
-// state and the preview.
+function runLinkPreview() {
+  if (!linkDlg || linkDialog.classList.contains("hidden")) return;
+  refreshLinkSuggestions();
+  const model = readLinkDialogModel();
+  linkDialogCreateBtn.disabled = !model.ready;
+  linkHint.classList.add("hidden");
+  if (model.error) { showLiveMatchError(model.error, linkResultsTarget); return; }
+  if (!model.ready) {
+    clearLiveResults(linkResultsTarget);
+    linkHint.textContent = "Type or pick an end event to see the pairs.";
+    linkHint.classList.remove("hidden", "warn");
+    return;
+  }
+  const rootId = linkDlg.rootId, opts = model.opts;
+  const pool = getEntries(rootId);
+  const meta = {};
+  const all = evaluateFilterCondition(buildLinkDialogChain(opts, false), pool, rootId, meta);
+  const hits = opts.dt ? getEntriesFromBaked(model.chain, pool, rootId) : all;
+  const unmatched = meta.linkUnmatched || [];
+  const fmt = n => n.toLocaleString("de-DE");
+  const dts = hits.map(e => e.dtMs).sort((x, y) => x - y);
+  const median = dts.length ? dts[dts.length >> 1] : 0, max = dts.length ? dts[dts.length - 1] : 0;
+  let metaText = opts.dt ? "of " + fmt(all.length) + " pairs" : (all.length === 1 ? "pair" : "pairs");
+  if (unmatched.length) metaText += " · " + fmt(unmatched.length) + " without end";
+  if (hits.length) metaText += " · median " + formatMs(median) + " · max " + formatMs(max);
+  const slowest = hits.slice().sort((x, y) => y.dtMs - x.dtMs).slice(0, FILTER_SAMPLE_ROWS);
+  const noEnd = new Set();
+  const firstUnmatched = unmatched.length ? (unmatched[0].matchEntry || unmatched[0]) : null;
+  if (firstUnmatched) noEnd.add(firstUnmatched);
+  renderLiveResults(hits, all, null, false, null, linkResultsTarget, {
+    metaText,
+    samples: firstUnmatched ? slowest.slice(0, Math.max(0, FILTER_SAMPLE_ROWS - 1)).concat([firstUnmatched]) : slowest,
+    badge: e => noEnd.has(e) ? "no end" : "Δt " + formatMs(e.dtMs),
+    badgeWarn: e => noEnd.has(e),
+  });
+  if (max > 60000) {
+    linkHint.textContent = "Longest pair " + formatMs(max) + ": probably paired across different events. Try " + (linkDlg.key.type === "none" ? "a" : "another") + " “Same” key.";
+    linkHint.classList.remove("hidden");
+    linkHint.classList.add("warn");
+  }
+}
+// Any option change — a switch (pillSet fires a bubbling "change"), a select, a typed value, a
+// direction — refreshes the controls' state and the preview.
 linkDialog.addEventListener("change", () => { updateLinkOptionControls(); updateLinkPreview(); });
 linkDialog.addEventListener("input", updateLinkPreview);
 
-// Rebuilds the hop-row list from linkDialogIds minus whichever one is
-// currently chosen as reference, preserving their relative selection order.
-// Each row's wording spells out what it's relative to — the reference for
-// the first hop, "the previous match" for every hop after that — since the
-// old single-hop "before/after TargetName" phrasing read ambiguously about
-// what was before/after what (see requirements doc's optional UX polish).
 // 1 -> "st", 2 -> "nd", 3 -> "rd", 4 -> "th", 11-13 -> "th", 21 -> "st", 101 -> "st", 111 -> "th"
 function ordinalSuffix(n) {
   const m100 = n % 100;
@@ -38756,75 +39621,42 @@ function ordinalSuffix(n) {
   return m10 === 1 ? "st" : m10 === 2 ? "nd" : m10 === 3 ? "rd" : "th";
 }
 
-function renderLinkHops() {
-  const refId = linkRefSelect.value;
-  const refNode = state.nodes[refId];
-  const hopIds = linkDialogIds.filter(id => id !== refId);
-  linkHopRows = hopIds.map((targetId, i) => {
-    const target = state.nodes[targetId];
-    const anchorText = i === 0
-      ? "each " + escapeHtml(refNode ? nodeDisplayName(refNode) : "") + " entry"
-      : "the previous match";
-    const row = document.createElement("div");
-    row.className = "link-hop-row";
-    row.innerHTML =
-      '<span class="link-hop-desc">Find the <input type="number" class="link-hop-n" min="1" value="1">' +
-      '<span class="link-hop-ord">st</span> <b>' + escapeHtml(target ? nodeDisplayName(target) : "") + '</b> entry ' +
-      '<select class="link-hop-dir"><option value="before">before</option><option value="after">after</option></select> ' +
-      '<span class="link-hop-anchor">' + anchorText + '</span></span>';
-    row.querySelector(".link-hop-dir").value = "before";
-    const nIn = row.querySelector(".link-hop-n"), ordEl = row.querySelector(".link-hop-ord");
-    nIn.addEventListener("input", () => { ordEl.textContent = ordinalSuffix(Math.max(1, parseInt(nIn.value, 10) || 1)); });
-    const dirSelect = row.querySelector(".link-hop-dir");
-    dirSelect.addEventListener("change", updateLinkOrderEnforceAvailability);
-    return { targetId, nInput: row.querySelector(".link-hop-n"), dirSelect, row };
-  });
-  linkHopsList.innerHTML = "";
-  linkHopRows.forEach(h => linkHopsList.appendChild(h.row));
-  updateLinkOrderEnforceAvailability();
-  updateLinkOptionControls();
-  updateLinkPreview();
-}
-
-// "Enforce chronological order" is only meaningful when the hop chain mixes
-// "before" and "after" directions — see docs/filters.md's "Opt-in options"
-// section. A single-direction chain makes the monotonic-timestamp check in
-// getEntriesFromBaked/getEntries trivial: all-"before" always drops every
-// tuple, all-"after" (or a lone hop of either direction) never drops any.
-// Hide the row entirely (never leave a stale checked-but-hidden state)
-// whenever the current hop directions aren't diverse.
+// "Enforce chronological order" is only meaningful when the steps mix "next" and "previous" — see
+// docs/filters.md's "Opt-in options". A single-direction chain makes the monotonic-timestamp check
+// trivial, so the row is hidden (and never left checked-but-hidden) unless the directions differ.
 function updateLinkOrderEnforceAvailability() {
-  const dirs = linkHopRows.map(h => h.dirSelect.value);
+  const dirs = linkDlg ? linkDlg.hops.map(h => h.direction) : [];
   const diverse = dirs.length >= 2 && new Set(dirs).size > 1;
   if (!diverse) pillSet(linkOrderEnforceInput, false);
   linkOrderEnforceRow.classList.toggle("hidden", !diverse);
 }
-linkRefSelect.addEventListener("change", renderLinkHops);
-linkDialog.addEventListener("click", ev => { if (ev.target === linkDialog) closeLinkDialog(); });
+linkDialog.addEventListener("click", ev => {
+  if (ev.target === linkDialog) { closeLinkDialog(); return; }
+  if (!linkSideMenu.classList.contains("hidden") && !linkSideMenu.contains(ev.target)) closeLinkSideMenu();
+});
 el("#linkDialogCancel").addEventListener("click", closeLinkDialog);
-el("#linkDialogCreate").addEventListener("click", () => {
-  const orderEnforced = pillGet(linkOrderEnforceInput);
-  const exclusive = pillGet(linkExclusiveInput);
-  const opts = readLinkDialogOptions();
-  if (opts.error) { showLiveMatchError(opts.error, linkResultsTarget); return; } // keep the dialog open to fix it
-  let curRefId = linkRefSelect.value;
-  let lastNode = null;
-  let ok = !!curRefId && linkHopRows.length > 0;
-  for (let i = 0; i < linkHopRows.length; i++) {
-    const hop = linkHopRows[i];
-    const n = Math.max(1, parseInt(hop.nInput.value, 10) || 1);
-    // The correlation key holds on every hop (same axis/thread/... through
-    // the whole tuple); the Δt condition only on the last, where the pair
-    // spans the whole tuple — see buildLinkDialogChain.
-    const dt = i === linkHopRows.length - 1 ? opts.dt : null;
-    const node = createLinkNode(curRefId, hop.targetId, hop.dirSelect.value, n, { orderEnforced, exclusive, key: opts.key, dt });
-    if (!node) { ok = false; break; }
-    lastNode = node;
-    curRefId = node.id; // next hop anchors on THIS hop's match, not the original reference (Bug 1 fix)
+function commitLinkDialog() {
+  if (!linkDlg) return;
+  const model = readLinkDialogModel();
+  if (model.error) { showLiveMatchError(model.error, linkResultsTarget); return; } // keep the dialog open to fix it
+  if (!model.ready) return;
+  const chain = model.chain, editId = linkDlg.editNodeId, rootId = linkDlg.rootId;
+  let ok;
+  if (editId) {
+    ok = updateLinkNodeWithUndo(editId, chain);
+    if (ok) state.activeId = editId;
+  } else {
+    // ONE node holds the whole chain (no intermediate hop nodes).
+    ok = !!createLinkNodeFromBaked(rootId, chain.bakedA, chain.bakedB, chain.linkDirection, chain.linkN,
+      { orderEnforced: !!chain.linkOrderEnforced, exclusive: !!chain.linkExclusive, key: chain.linkKey || null, dt: chain.linkDt || null });
   }
-  if (ok && lastNode) revealFilteredView();
+  if (ok) revealFilteredView();
   closeLinkDialog();
   render();
+}
+linkDialogCreateBtn.addEventListener("click", commitLinkDialog);
+linkDialog.addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && ev.target.matches("input") && !linkDialogCreateBtn.disabled) { ev.preventDefault(); commitLinkDialog(); }
 });
 
 
@@ -39471,30 +40303,13 @@ function downloadBlobFallback(blob, filename) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
-// Same save path as every other file the app writes (saveFilterToFile,
-// saveCsvToFile): the File System Access save picker where the engine has
-// it (Chromium, and the Windows desktop build's WebView2), else a plain
-// <a download>. A cancelled picker saves nothing. Resolves true once saved.
+// Saves through the shared saveFileWithFeedback. Resolves true once the file
+// was saved or downloaded (it shows the outcome toast itself).
 async function saveExportFile(parts, filename, kind) {
   const spec = EXPORT_FILE_KINDS[kind];
   const blob = new Blob(parts, { type: spec.mime + ";charset=utf-8" });
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: spec.description, accept: { [spec.mime]: [spec.ext] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return true;
-    } catch (err) {
-      if (err && err.name === "AbortError") return false; // user cancelled the picker
-      // API present but unusable in this context — fall through to a download
-    }
-  }
-  downloadBlobFallback(blob, filename);
-  return true;
+  const outcome = await saveFileWithFeedback(blob, filename, { description: spec.description, mime: spec.mime, ext: spec.ext });
+  return outcome === "saved" || outcome === "downloaded";
 }
 
 const exportDialog = el("#exportDialog");
@@ -39535,6 +40350,10 @@ function renderExportDialog() {
     if (b.dataset.exportLines === "marked") b.disabled = marked < 2;
   });
   exportDialog.querySelectorAll("[data-export-format]").forEach(b => b.classList.toggle("active", b.dataset.exportFormat === exportFormat));
+  const filterBtn = el("#exportSaveFilter");
+  const activeIsFilter = activeFilterNodeId() !== null;
+  filterBtn.disabled = !activeIsFilter;
+  filterBtn.title = activeIsFilter ? "" : "Select a filter first";
   exportFirstN.value = String(exportExcerptLines);
   pillSet(el("#exportGapsToggle"), exportGaps);
   pillSet(el("#exportHeaderToggle"), exportHeader);
@@ -39590,11 +40409,21 @@ function copyMarkedRowsForTicket(fallback) {
 async function exportViewFile(kind) {
   const ctx = exportDialogCtx || collectExportContext();
   if (!ctx || !EXPORT_FILE_KINDS[kind]) { showCopyToast("Nothing to export"); return false; }
-  const saved = await saveExportFile(buildExportFileParts(kind, ctx), exportBaseName(ctx) + EXPORT_FILE_KINDS[kind].ext, kind);
-  if (saved) showCopyToast(kind === "html" ? "Report saved" : "Saved " + ctx.entries.length + " entries");
-  return saved;
+  return saveExportFile(buildExportFileParts(kind, ctx), exportBaseName(ctx) + EXPORT_FILE_KINDS[kind].ext, kind);
 }
 
+// The active node's id when it is a filter (what "Save filter…" saves), else null.
+function activeFilterNodeId() {
+  const n = state.nodes[state.activeId];
+  return n && n.type === "filter" ? n.id : null;
+}
+el("#exportSaveSession").addEventListener("click", () => { closeExportDialog(); openSessionExportDialog(); });
+el("#exportSaveFilter").addEventListener("click", () => {
+  const id = activeFilterNodeId();
+  if (id === null) return;
+  closeExportDialog();
+  saveFilterToFile(id);
+});
 el("#btnExport").addEventListener("click", ev => { ev.stopPropagation(); openExportDialog(); });
 exportDialog.addEventListener("click", ev => { if (ev.target === exportDialog) closeExportDialog(); });
 exportDialog.querySelectorAll("[data-export-format]").forEach(b => b.addEventListener("click", () => {
@@ -40191,35 +41020,9 @@ function exportFileBaseName(name, fallback) {
   return String(name || "").replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || fallback;
 }
 
-// Writes one JSON export through the save picker where there is one (the
-// plain download otherwise). Resolves false only when the person cancelled.
-async function saveJsonExportFile(json, suggestedName, description) {
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName,
-        types: [{ description, accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-      return true;
-    } catch (err) {
-      if (err && err.name === "AbortError") return false; // user cancelled the picker
-      // API present but unusable in this context — fall through to the download
-    }
-  }
-  downloadJsonFallback(json, suggestedName);
-  return true;
-}
-
-function downloadJsonFallback(json, filename) {
-  const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+// One JSON export through the shared save flow (saveFileWithFeedback).
+function saveJsonExportFile(json, suggestedName, description) {
+  return saveFileWithFeedback(json, suggestedName, { description, mime: "application/json", ext: ".json" });
 }
 
 async function saveFilterToFile(nodeId) {
@@ -40237,7 +41040,7 @@ async function saveFilterToFile(nodeId) {
     roots: branch.roots,
   }, null, 2);
 
-  if (await saveJsonExportFile(json, exportFileBaseName(nodeDisplayName(node), "filter") + ".json", "PhiLogg filter")) showCopyToast("Filter saved");
+  await saveJsonExportFile(json, exportFileBaseName(nodeDisplayName(node), "filter") + ".json", "PhiLogg filter");
 }
 
 // The node a filter file / library preset is materialized under — set by
@@ -40573,7 +41376,7 @@ function serializeFilterLibraryExport(rec) {
 }
 
 async function exportFilterLibraryEntry(rec) {
-  if (await saveJsonExportFile(JSON.stringify(serializeFilterLibraryExport(rec), null, 2), exportFileBaseName(rec.name, "filter-preset") + ".filterpreset.json", "PhiLogg filter library preset")) showCopyToast("Filter preset exported");
+  await saveJsonExportFile(JSON.stringify(serializeFilterLibraryExport(rec), null, 2), exportFileBaseName(rec.name, "filter-preset") + ".filterpreset.json", "PhiLogg filter library preset");
 }
 
 // null when the text isn't a preset file, { error } when it is but can't be
@@ -41132,7 +41935,7 @@ function renderLibraryMenu() {
 function openLibraryMenu() {
   // stopPropagation on the opening click keeps the document handler from
   // closing the other popups, so close them here.
-  closeOpenMenu(); closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFilterPopup(); closeColumnsPanel();
+  closeOpenMenu(); closeSaveMenu(); closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFilterPopup(); closeColumnsPanel();
   libraryMenuSearch.value = "";
   libraryMenuKb = 0;
   const rect = btnLibrary.getBoundingClientRect();
@@ -41264,12 +42067,13 @@ if (typeof IntersectionObserver !== "undefined") {
 const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
 
 const SHORTCUT_ACTIONS = [
-  { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, key: "f" } },
-  // FEATURE_BACKLOG.md #3: the find bar. Ctrl+F deliberately stays "new
-  // filter" (the app's core idiom, muscle memory, the empty-state hint) —
-  // the non-destructive search gets the browser's own "find next" keys,
-  // Ctrl+G and F3, instead. See docs/ui-and-views.md -> "Find bar".
-  { id: "findInView",    label: "Find in the current view (find bar)", default: { ctrl: true, key: "g" } },
+  { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, shift: true, key: "f" } },
+  // FEATURE_BACKLOG.md #3: the find bar. Ctrl+F opens it (usability test
+  // 2026-10-03/04: users expect Ctrl+F = find); "new filter" moved to
+  // Ctrl+Shift+F. Ctrl+G / Ctrl+Shift+G are fixed find next/previous aliases
+  // (handleFindShortcut), F3/Shift+F3 the rebindable ones. See
+  // docs/ui-and-views.md -> "Find bar".
+  { id: "findInView",    label: "Find in the current view (find bar)", default: { ctrl: true, key: "f" } },
   { id: "findNext",      label: "Find bar: next match",                default: { key: "f3" } },
   { id: "findPrev",      label: "Find bar: previous match",            default: { shift: true, key: "f3" } },
   { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
@@ -41290,7 +42094,7 @@ const SHORTCUT_ACTIONS = [
   { id: "viewTab3",      label: "Switch to View Selector tab 3",       default: { ctrl: true, key: "3" } },
   { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
   { id: "viewTab5",      label: "Switch to View Selector tab 5",       default: { ctrl: true, key: "5" } },
-  { id: "toggleFacets",  label: "Show/hide the Facet panel",           default: { ctrl: true, shift: true, key: "f" } },
+  { id: "toggleFacets",  label: "Show/hide the Facet panel",           default: { ctrl: true, key: "i" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
   { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
@@ -41305,6 +42109,7 @@ const SHORTCUT_ACTIONS = [
 // renderShortcutBindingsList().
 const FIXED_SHORTCUTS = [
   { label: "Find bar: next / previous match (in its input)", display: ["Enter", "Shift+Enter"] },
+  { label: "Find bar: next / previous match (browser alias)", display: ["Ctrl+G", "Ctrl+Shift+G"] },
   { label: "Find bar: add the search as a filter (in its input)", display: ["Ctrl", "Enter"] },
   { label: "Copy a filter",                          display: ["Ctrl", "C"] },
   { label: "Cut a filter",                           display: ["Ctrl", "X"] },
@@ -41602,7 +42407,7 @@ function serializeLogFormatExport(formatId) {
 async function exportLogFormatToFile(formatId) {
   const data = serializeLogFormatExport(formatId);
   if (!data) return;
-  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.logFormat.name, "log-format") + ".logformat.json", "PhiLogg log format")) showCopyToast("Log format exported");
+  await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.logFormat.name, "log-format") + ".logformat.json", "PhiLogg log format");
 }
 
 // Parses + validates an exported file's text. Returns { logFormat,
@@ -44116,6 +44921,7 @@ function closeClickDismissedPopups(ev) {
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
+  if (!saveMenu.contains(ev.target) && !btnSave.contains(ev.target)) closeSaveMenu();
   if (!libraryMenu.contains(ev.target) && !btnLibrary.contains(ev.target)) closeLibraryMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
@@ -44145,6 +44951,7 @@ const DISMISS_DBLCLICK_MS = 600;
 function clickDismissedPopupHit(target) {
   const open = p => !p.classList.contains("hidden");
   return (open(openMenu) && !openMenu.contains(target) && !btnOpen.contains(target))
+    || (open(saveMenu) && !saveMenu.contains(target) && !btnSave.contains(target))
     || (libraryMenuOpen() && !libraryMenu.contains(target) && !btnLibrary.contains(target))
     || (open(filterPopup) && !filterPopup.contains(target))
     || (open(columnsPanel) && !columnsPanel.contains(target) && !btnColumns.some(b => b.contains(target)))
@@ -44197,7 +45004,7 @@ document.addEventListener("keydown", ev => {
     if (state.activeId) openFilterPopup();
     return;
   }
-  // FEATURE_BACKLOG.md #3: Ctrl+G / F3 / Shift+F3 — checked ahead of the
+  // FEATURE_BACKLOG.md #3: Ctrl+F / F3 / Shift+F3 (+ Ctrl+G aliases) — checked ahead of the
   // inInput bail-out below so they keep working while typing in the find
   // bar's own input (handleFindShortcut itself ignores every OTHER input).
   if (handleFindShortcut(ev)) return;
@@ -45612,23 +46419,7 @@ el("#sessionExportConfirm").addEventListener("click", async () => {
   const now = new Date();
   const p2 = n => String(n).padStart(2, "0");
   const suggested = "philogg-session-" + now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + ".json";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "PhiLogg session", accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the picker
-      downloadJsonFallback(json, suggested);
-    }
-  } else {
-    downloadJsonFallback(json, suggested);
-  }
-  showCopyToast("Session exported");
+  await saveJsonExportFile(json, suggested, "PhiLogg session");
 });
 
 /* ---------- Matching (tiers 1–2) ---------- */

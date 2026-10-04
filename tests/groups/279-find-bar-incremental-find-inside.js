@@ -11,13 +11,13 @@
    opens it, typing searches (150ms debounce) and jumps to the first hit,
    F3/Shift+F3 and Enter/Shift+Enter step with wrap-around, "n / m" counts
    matching rows, hits are marked (mark.find-match-mark) in rendered rows,
-   Esc closes it. Ctrl+F keeps opening the filter popup. The scan is
+   Esc closes it. Ctrl+Shift+F opens the filter popup (Ctrl+F/G since 2026-10-04). The scan is
    time-sliced for huge views (279b drives that path by making
    performance.now() jump, so each 2048-entry batch ends a slice).
    ============================================================ */
 group(279);
 await withApp(async (w, d, T) => {
-  section("279a. Find bar: Ctrl+G, find-as-you-type, F3/Enter navigation with wrap, marks, toggles, Esc — no filter node created");
+  section("279a. Find bar: Ctrl+F, find-as-you-type, F3/Enter navigation with wrap, marks, toggles, Esc — no filter node created");
   const fb = d.createElement("script");
   fb.textContent = "window.__find = { get state() { return findState; } };";
   d.body.appendChild(fb);
@@ -33,8 +33,8 @@ await withApp(async (w, d, T) => {
   const hitIds = f.entries.filter((e, i) => i % 7 === 0).map(e => e.id); // entries 0,7,...,56
   assert(!isVisible(bar, w), "the find bar starts hidden");
 
-  fireKeydown(d, w, "g", { ctrlKey: true });
-  assert(isVisible(bar, w), "Ctrl+G opens the find bar");
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  assert(isVisible(bar, w), "Ctrl+F opens the find bar");
   assert(d.activeElement === input, "...and focuses its input");
   assert(d.getElementById("filterPopup").classList.contains("hidden"), "...without opening the filter popup");
 
@@ -65,8 +65,11 @@ await withApp(async (w, d, T) => {
     "the last hit (row 56, outside the initial render window) was scrolled into the rendered window");
   fireKeydown(d, w, "F3");
   assert(T.state.selectedId === hitIds[0], "next from the last hit wraps to the first");
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  assert(T.state.selectedId === hitIds[0] && input.selectionStart === 0 && input.selectionEnd === input.value.length,
+    "Ctrl+F with the find input already focused selects the query and does not step (see GROUP find-shortcut-ctrl-f)");
   fireKeydown(d, w, "g", { ctrlKey: true });
-  assert(T.state.selectedId === hitIds[1], "Ctrl+G with the find input already focused steps to the next hit (browser find-next)");
+  assert(T.state.selectedId === hitIds[1], "Ctrl+G is a find-next alias");
 
   // A step starts from the current selection, wherever it came from.
   w.selectEntry(f.entries[30].id);
@@ -145,10 +148,10 @@ await withApp(async (w, d, T) => {
   assert(Object.keys(T.state.nodes).length === nodeCount0 + 1, "the whole search session created no node (the one extra is the explicit 'message 1' filter)");
   void sub;
 
-  // Ctrl+F is unchanged: still the filter popup.
-  fireKeydown(d, w, "f", { ctrlKey: true });
+  // Ctrl+Shift+F: the filter popup.
+  fireKeydown(d, w, "F", { ctrlKey: true, shiftKey: true });
   assert(!d.getElementById("filterPopup").classList.contains("hidden") && !isVisible(bar, w),
-    "Ctrl+F still opens the filter popup, not the find bar");
+    "Ctrl+Shift+F opens the filter popup, not the find bar");
   fireKeydown(d, w, "F3");
   assert(!isVisible(bar, w), "F3 typed into another input (the filter popup's) is left alone");
   fireKeydown(d, w, "Escape");
@@ -181,7 +184,7 @@ await withApp(async (w, d, T) => {
 
   const input = d.getElementById("findInput");
   input.value = "needle";
-  fireKeydown(d, w, "g", { ctrlKey: true }); // opens with the typed query, no auto-jump
+  fireKeydown(d, w, "f", { ctrlKey: true }); // opens with the typed query, no auto-jump
   assert(!F().done && F().hits.length === 2, "the first slice ran synchronously and stopped after one batch (hits 999, 1999), got " + F().hits.length);
   assert(d.getElementById("findCount").textContent.endsWith("…"), "the counter shows a running partial count while scanning");
   fireKeydown(d, w, "F3");
