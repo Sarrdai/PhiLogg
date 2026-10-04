@@ -57,7 +57,7 @@ await withApp(async (w, d, T) => {
   assert(rangeNode, "the new node has filterType \"timerange\"");
   assert(T.state.activeId === (rangeNode && rangeNode.id), "the new range filter becomes the active node");
   assert(rangeNode.value.from === f.entries[5].ts && rangeNode.value.to === f.entries[14].ts, "the node's value holds both bounds directly, got " + JSON.stringify(rangeNode.value));
-  assert(rangeNode.name === w.formatTime(f.entries[5].ts) + " → " + w.formatTime(f.entries[14].ts), "the node's name shows both bounds, got " + rangeNode.name);
+  assert(rangeNode.name === "10:00:05.000 – 10:00:14.000 · 9.0s", "the node's name shows both bounds, got " + rangeNode.name);
 
   const rangeEntries = w.getEntries(rangeNode.id);
   assert(rangeEntries.length === 10, "range filter selects exactly entries 5..14 inclusive (10 entries), got " + rangeEntries.length);

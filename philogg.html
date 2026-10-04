@@ -13058,12 +13058,41 @@ function nodeIsExtractionView(node) {
 // ≥/≤ names in createFilterNode below, unaffected by this helper.
 // `nodeId` (optional) is where the range applies: under a plain-text file
 // its bounds are line numbers (formatTsFor).
+// Shape: `08:38:24 – 08:39:52 · 1m 28s`, open bounds `from 08:38:24` /
+// `until 08:45:48`. A bound's date is dropped when it lies on the same local
+// day as the root file's first entry (otherwise `MM-DD ` is prefixed); `.mmm`
+// only when both bounds are set and the span is under 10 s.
+function timeRangeBoundLabel(nodeId, ts, withMs) {
+  if (nodeIsPlainText(nodeId)) return "line " + Math.round(ts);
+  const d = new Date(ts);
+  if (isNaN(d)) return "—";
+  const p2 = n => String(n).padStart(2, "0");
+  let text = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  if (withMs) text += "." + String(d.getMilliseconds()).padStart(3, "0");
+  if (d.getFullYear() === 1970 && d.getMonth() === 0 && d.getDate() === 1) return text; // tsFormat without a date, see formatTime
+  const rootId = nodeId ? getRootFileId(nodeId) : null;
+  const root = rootId ? state.nodes[rootId] : null;
+  const first = root && root.entries && root.entries.length ? new Date(root.entries[0].ts) : null;
+  const sameDay = first && !isNaN(first) && first.getFullYear() === d.getFullYear() && first.getMonth() === d.getMonth() && first.getDate() === d.getDate();
+  return sameDay ? text : `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${text}`;
+}
 function timeRangeFilterName(value, nodeId) {
+  const from = value && value.from, to = value && value.to;
+  const plain = nodeIsPlainText(nodeId);
+  const ms = from != null && to != null && Math.abs(to - from) < 10000 && !plain;
+  const f = ts => timeRangeBoundLabel(nodeId, ts, ms);
+  if (from != null && to != null) return `${f(from)} – ${f(to)}` + (plain ? "" : ` · ${formatMs(Math.abs(to - from))}`);
+  if (from != null) return `from ${f(from)}`;
+  if (to != null) return `until ${f(to)}`;
+  return "any time";
+}
+// Tree-row tooltip of a time node: the full bounds with date and milliseconds.
+function timeRangeFullTitle(value, nodeId) {
   const from = value && value.from, to = value && value.to;
   const f = ts => formatTsFor(nodeId, ts);
   if (from != null && to != null) return `${f(from)} → ${f(to)}`;
-  if (from != null) return `≥ ${f(from)}`;
-  if (to != null) return `≤ ${f(to)}`;
+  if (from != null) return `from ${f(from)}`;
+  if (to != null) return `until ${f(to)}`;
   return "any time";
 }
 
@@ -13209,6 +13238,52 @@ function updateTimeRangeFilterNode(nodeId, from, to) {
   node.value = { from, to };
   node.name = timeRangeFilterName(node.value, node.parentId);
   invalidateNodeSubtreeCaches(nodeId);
+}
+
+// The one entry point for "put a time window on this node" (minimap drag,
+// row context menu / row actions, time-range dialog in create mode): one
+// filter node per window instead of nested after/before nodes.
+//  - `targetId` is a "timerange" node: it is updated in place (undoable); a
+//    null bound keeps the node's existing bound, and an inverted result keeps
+//    only the new bound.
+//  - `targetId` is a "level" node in auto mode: the window is inserted ABOVE
+//    it (same tree position) and the level node stays active, so the level
+//    chips keep reading its selection. If that level node already sits under
+//    a "timerange" node, that node is updated instead.
+//  - otherwise a new "timerange" child is created under it.
+// Returns the node that carries the window, or null.
+function applyTimeWindow(targetId, from, to) {
+  const target = state.nodes[targetId];
+  if (!target) return null;
+  if (target.type === "filter" && target.filterType === "timerange") {
+    let nf = from, nt = to;
+    if (nf != null && nt != null) {
+      if (nf > nt) { const t = nf; nf = nt; nt = t; }
+    } else {
+      if (nf == null) nf = target.value.from;
+      if (nt == null) nt = target.value.to;
+      if (nf != null && nt != null && nf > nt) { if (from != null) nt = null; else nf = null; }
+    }
+    updateTimeRangeFilterNodeWithUndo(targetId, nf, nt);
+    return target;
+  }
+  if (target.type === "filter" && target.filterType === "level" && levelFilterTreeMode === "auto") {
+    const parent = state.nodes[target.parentId];
+    if (!parent) return null;
+    // A window already sits above this level node: it is that window that changes.
+    if (parent.type === "filter" && parent.filterType === "timerange") return applyTimeWindow(parent.id, from, to);
+    const idx = parent.children.indexOf(targetId);
+    const win = createFilterNode(target.parentId, "timerange", { from, to });
+    if (!win) return null;
+    parent.children = parent.children.filter(id => id !== win.id);
+    parent.children.splice(idx, 1, win.id);
+    win.children.push(targetId);
+    target.parentId = win.id;
+    invalidateNodeSubtreeCaches(win.id);
+    activateNewNode(target);
+    return win;
+  }
+  return createFilterNode(targetId, "timerange", { from, to });
 }
 
 // Normalizes any of the three time-filter node shapes into a plain
@@ -19565,7 +19640,8 @@ function renderNode(id, depth, opts) {
     label.textContent = node.inverted ? "¬ " + displayName : displayName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
-    (node.label ? "  [" + node.name + "]" : "");
+    (node.label ? "  [" + node.name + "]" : "") +
+    (node.type === "filter" && node.filterType === "timerange" ? "\n" + timeRangeFullTitle(node.value, node.parentId) : "");
   row.appendChild(label);
   // Created by the LLM assistant in this run (llmCreatedNodeIds — an
   // in-memory set, not a node field).
@@ -28790,7 +28866,7 @@ function hideMinimapDragOverlay() {
 function createTimeRangeFilterFromDrag(fromTs, toTs) {
   const baseId = state.activeId;
   if (!baseId) return;
-  if (!createFilterNode(baseId, "timerange", { from: fromTs, to: toTs })) return;
+  if (!applyTimeWindow(baseId, fromTs, toTs)) return;
   revealFilteredView(); // a new filter's result lives in the Filtered view, same as every other filter-creation path
   render();
 }
@@ -37111,12 +37187,12 @@ function closeContextMenu() { contextMenu.classList.add("hidden"); closeAddToSel
 // than the legacy single-bound "after"/"before" types — same result, but now
 // editable afterward through the time-range dialog (see openTimeRangeDialog).
 el("#ctxAfter").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: ctxEntry.ts, to: null }); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { applyTimeWindow(state.activeId, ctxEntry.ts, null); revealFilteredView(); }
   closeContextMenu();
   render();
 });
 el("#ctxBefore").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: null, to: ctxEntry.ts }); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { applyTimeWindow(state.activeId, null, ctxEntry.ts); revealFilteredView(); }
   closeContextMenu();
   render();
 });
@@ -37131,7 +37207,7 @@ el("#ctxTimeRangeFromSelection").addEventListener("click", () => {
   if (tsList.length >= 2 && state.activeId) {
     const from = arrayMin(tsList);
     const to = arrayMax(tsList);
-    createFilterNode(state.activeId, "timerange", { from, to });
+    applyTimeWindow(state.activeId, from, to);
     revealFilteredView();
   }
   closeContextMenu();
@@ -38138,7 +38214,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter after."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: arrayMin(entries.map(e => e.ts)), to: null });
+        applyTimeWindow(state.activeId, arrayMin(entries.map(e => e.ts)), null);
         revealFilteredView(); render();
       }
       break;
@@ -38147,7 +38223,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter before."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: null, to: arrayMax(entries.map(e => e.ts)) });
+        applyTimeWindow(state.activeId, null, arrayMax(entries.map(e => e.ts)));
         revealFilteredView(); render();
       }
       break;
@@ -38184,7 +38260,7 @@ function handleRowActionClick(action, anchorBtn) {
         break;
       }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: arrayMin(tsList), to: arrayMax(tsList) });
+        applyTimeWindow(state.activeId, arrayMin(tsList), arrayMax(tsList));
         revealFilteredView();
         render();
       }
@@ -40565,7 +40641,7 @@ timeRangeDialogSubmit.addEventListener("click", () => {
 
   if (timeRangeDialogMode === "edit") {
     updateTimeRangeFilterNodeWithUndo(timeRangeDialogTargetId, from, to);
-  } else if (!createFilterNode(timeRangeDialogTargetId, "timerange", { from, to })) {
+  } else if (!applyTimeWindow(timeRangeDialogTargetId, from, to)) {
     closeTimeRangeDialog();
     return;
   }

@@ -59,7 +59,7 @@ await withApp(async (w, d, T) => {
   assert(legacyAfter.filterType === "timerange", "saving the edit migrates the node to \"timerange\"");
   assert(legacyAfter.value.from === f.entries[10].ts && legacyAfter.value.to === f.entries[20].ts,
     "migrated node's value holds both bounds, got " + JSON.stringify(legacyAfter.value));
-  assert(legacyAfter.name.includes("→"), "migrated node's name shows the arrow (both bounds), got " + legacyAfter.name);
+  assert(legacyAfter.name.includes(" – "), "migrated node's name shows the span (both bounds), got " + legacyAfter.name);
   assert(T.state.nodes[legacyAfter.id] === legacyAfter, "edit updates the SAME node id in place (not a new node)");
 
   // --- C. Row context menu "Filter after/before this row" now create unified nodes ---

@@ -72,7 +72,7 @@ group(273);
 
     section("273d. Line ranges: time filters are named in lines, merge is refused");
     const range = w.createFilterNode(f.id, "timerange", { from: 2, to: 3 });
-    assert(range.name === "line 2 → line 3", "range name in lines (" + range.name + ")");
+    assert(range.name === "line 2 – line 3", "range name in lines (" + range.name + ")");
     assert(w.getEntries(range.id).length === 2, "range keeps lines 2-3");
     const other = await w.addFile("other.txt", "x\n", () => {}, PT);
     const bulk = w.describeBulkActions([f, other]);
