@@ -65,6 +65,10 @@ always reported. Above it, a sharded run lists the ten slowest groups (wall
 time in the shard that ran them), so a group that got seconds slower shows
 up on the next run. **Always compare that number with a run on `main`**: a group that
 silently stopped running shows up as a lower count, not as a failure.
+A shard that **crashes** (an uncaught error, so it never prints its result
+line) is called out on that line itself — `— 1 shard(s) CRASHED, result
+INCOMPLETE` — and its already printed `FAIL` lines are counted; the groups it
+had not reached yet are simply missing from the total.
 
 Both the shard children and `run.js` itself end on `process.exitCode`, never
 `process.exit()`. Under the runner a child's stdout is a **pipe**, where
