@@ -34,8 +34,8 @@ await withApp(async (w, d, T) => {
   assert(f.entries.every(e => e.formatId === "fmt-default"), "every parsed entry is stamped with its file's formatId");
 
   // levelBucket's cascade itself is untouched by this feature.
-  assert(w.levelBucket("FATAL") === "ERROR" && w.levelBucket("TRACE") === "TRACE" && w.levelBucket("NOTICE") === "OTHER",
-    "levelBucket's prefix cascade is unchanged (FATAL->ERROR, TRACE->TRACE, unknown->OTHER)");
+  assert(w.levelBucket("FATAL") === "FATAL" && w.levelBucket("ERR") === "ERROR" && w.levelBucket("TRACE") === "TRACE" && w.levelBucket("NOTICE") === "OTHER",
+    "levelBucket's prefix cascade is unchanged (FATAL->FATAL, ERR->ERROR, TRACE->TRACE, unknown->OTHER)");
 });
 
 await withApp(async (w, d, T) => {
@@ -112,17 +112,17 @@ await withApp(async (w, d, T) => {
   const defaultRow = () => d.querySelector("#formatList .filter-library-row");
   fireClick(defaultRow().querySelector("button.btn-mini-outline"), w); // "Edit" the builtin default
   const rows = () => [...d.querySelectorAll("#formatEditLevels .format-level-row")];
-  assert(rows().length === 5, "the editor lists all five known level buckets, got " + rows().length);
-  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,DEBUG,TRACE",
+  assert(rows().length === 6, "the editor lists all six known level buckets, got " + rows().length);
+  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,DEBUG,FATAL,TRACE",
     "...the format's own levels first (in its order), then the unused ones appended");
-  assert(rows().slice(0, 4).every(r => r.querySelector("input").checked) && !rows()[4].querySelector("input").checked,
-    "the format's four levels are checked, the unused TRACE is not");
+  assert(rows().slice(0, 4).every(r => r.querySelector("input").checked) && !rows()[4].querySelector("input").checked && !rows()[5].querySelector("input").checked,
+    "the format's four levels are checked, the unused FATAL and TRACE are not");
   assert(rows()[0].querySelector("button").disabled, "the first row's ▲ is disabled");
 
   // Reorder (TRACE up one, above DEBUG) and enable it; drop DEBUG.
   const upBtn = lvl => [...d.querySelector('.format-level-row[data-level="' + lvl + '"]').querySelectorAll("button")][0];
   fireClick(upBtn("TRACE"), w);
-  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,TRACE,DEBUG", "▲ moves a level up one slot");
+  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,DEBUG,TRACE,FATAL", "▲ moves a level up one slot");
   const cb = lvl => d.querySelector('.format-level-row[data-level="' + lvl + '"] input');
   cb("TRACE").checked = true; cb("TRACE").dispatchEvent(new w.Event("change"));
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
@@ -151,7 +151,7 @@ await withApp(async (w, d, T) => {
 
   // Reopening the editor shows the saved order back, unused level appended.
   fireClick(defaultRow().querySelector("button.btn-mini-outline"), w);
-  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,TRACE,DEBUG", "reopening restores the saved order");
+  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,TRACE,FATAL,DEBUG", "reopening restores the saved order");
   assert(!cb("DEBUG").checked && cb("TRACE").checked, "...and the saved enabled/disabled state");
 
   // Saving with nothing checked is refused rather than storing an empty list.

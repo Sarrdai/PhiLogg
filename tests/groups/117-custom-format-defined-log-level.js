@@ -33,7 +33,7 @@ await withApp(async (w, d, T) => {
   assert(w.levelBucket("NOTICE") === "OTHER", "...and with no format context at all");
   assert(w.levelBucket("WARNING", "fmt-notice") === "WARN",
     "a level the format's list omits still falls through the fixed prefix cascade");
-  assert(w.levelBucket("FATAL", "fmt-notice") === "ERROR", "...FATAL -> ERROR as before");
+  assert(w.levelBucket("FATAL", "fmt-notice") === "FATAL", "...FATAL is its own bucket (no longer ERROR)");
   assert(w.levelBucket("SOMETHING-ELSE", "fmt-notice") === "OTHER",
     "unrecognized free text collapses into OTHER rather than inventing a dynamic bucket");
   assert(w.levelBucket("", "fmt-notice") === "OTHER" && w.levelBucket(null, "fmt-notice") === "OTHER", "empty/missing level text is OTHER");
@@ -42,7 +42,7 @@ await withApp(async (w, d, T) => {
   assert(w.customLevelSlot("NOTICE", "fmt-notice") === 1 && w.customLevelSlot("VERBOSE", "fmt-notice") === 2,
     "custom names take palette slots by their position among the format's custom names");
   assert(w.customLevelSlot("ERROR", "fmt-notice") === 0 && w.customLevelSlot("OTHER", "fmt-notice") === 0,
-    "the five fixed names and OTHER never take a custom slot");
+    "the six fixed names and OTHER never take a custom slot");
   assert(w.customLevelSlot("NOTICE") === 1, "with no format context the slot is resolved from the stored formats, deterministically");
   assert(w.levelClass("NOTICE", "fmt-notice") === "lvl-custom-1" && w.levelClass("VERBOSE", "fmt-notice") === "lvl-custom-2",
     "levelClass maps a custom bucket onto its lvl-custom-N class");
@@ -122,10 +122,10 @@ await withApp(async (w, d, T) => {
     "the bar unions both formats' lists, custom names included, got " + barLevels.join(","));
 
   // Sorting by Level puts custom buckets between TRACE and OTHER, by slot.
-  assert(w.levelSortRank("NOTICE", "fmt-a") === 5 && w.levelSortRank("AUDIT", "fmt-a") === 6,
+  assert(w.levelSortRank("NOTICE", "fmt-a") === 6 && w.levelSortRank("AUDIT", "fmt-a") === 7,
     "custom buckets rank after TRACE, ordered by slot");
   assert(w.levelSortRank("OTHER") > w.levelSortRank("AUDIT", "fmt-a"), "OTHER still sorts last");
-  assert(w.levelSortRank("ERROR") === 0 && w.levelSortRank("DEBUG") === 3, "the fixed five keep their ranks");
+  assert(w.levelSortRank("FATAL") === 0 && w.levelSortRank("ERROR") === 1 && w.levelSortRank("DEBUG") === 4 && w.levelSortRank("TRACE") === 5, "the six fixed levels keep their ranks (FATAL most severe)");
 });
 
 await withApp(async (w, d, T) => {
@@ -139,12 +139,12 @@ await withApp(async (w, d, T) => {
   const input = d.querySelector("#formatEditLevelNew");
   const addBtn = d.querySelector("#formatEditLevelAddBtn");
   const errEl = d.querySelector("#formatEditLevelError");
-  assert(rows().length === 5 && input && addBtn, "the editor still lists the five fixed rows, plus an add-custom field");
+  assert(rows().length === 6 && input && addBtn, "the editor still lists the six fixed rows, plus an add-custom field");
   assert(rows().every(r => !r.querySelector(".filter-library-row-del")), "fixed rows have no delete control (they're unchecked instead)");
 
   input.value = "  notice ";
   fireClick(addBtn, w);
-  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,DEBUG,TRACE,NOTICE",
+  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,DEBUG,FATAL,TRACE,NOTICE",
     "Add appends the trimmed/uppercased custom name as a new row, got " + rows().map(r => r.dataset.level).join(","));
   const noticeRow = () => d.querySelector('.format-level-row[data-level="NOTICE"]');
   assert(noticeRow().querySelector("input").checked, "a freshly added custom level is checked");
@@ -155,14 +155,14 @@ await withApp(async (w, d, T) => {
 
   // Validation: duplicates (either case, or against a fixed row) and blanks.
   input.value = "NoTiCe"; fireClick(addBtn, w);
-  assert(rows().length === 6 && !errEl.classList.contains("hidden") && errEl.textContent.includes("already"),
+  assert(rows().length === 7 && !errEl.classList.contains("hidden") && errEl.textContent.includes("already"),
     "a case-insensitive duplicate is rejected with an error instead of a second row");
   input.value = "warn"; fireClick(addBtn, w);
-  assert(rows().length === 6 && errEl.textContent.includes("already"), "...including a duplicate of one of the fixed rows");
+  assert(rows().length === 7 && errEl.textContent.includes("already"), "...including a duplicate of one of the fixed rows");
   input.value = "   "; fireClick(addBtn, w);
-  assert(rows().length === 6 && errEl.textContent.includes("Enter"), "whitespace-only input is refused");
+  assert(rows().length === 7 && errEl.textContent.includes("Enter"), "whitespace-only input is refused");
   input.value = "OTHER"; fireClick(addBtn, w);
-  assert(rows().length === 6 && errEl.textContent.includes("catch-all"), "OTHER is reserved and can't be added");
+  assert(rows().length === 7 && errEl.textContent.includes("catch-all"), "OTHER is reserved and can't be added");
 
   // Enter in the field adds too.
   input.value = "AUDIT";
@@ -174,7 +174,7 @@ await withApp(async (w, d, T) => {
   // Reorder a custom row like any other, then drop the fixed TRACE/DEBUG.
   const upBtn = lvl => [...d.querySelector('.format-level-row[data-level="' + lvl + '"]').querySelectorAll("button.filter-library-row-order")][0];
   fireClick(upBtn("NOTICE"), w);
-  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,DEBUG,NOTICE,TRACE,AUDIT", "▲ moves a custom row like any other");
+  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,DEBUG,FATAL,NOTICE,TRACE,AUDIT", "▲ moves a custom row like any other");
   const cb = lvl => d.querySelector('.format-level-row[data-level="' + lvl + '"] input');
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
 
@@ -193,7 +193,7 @@ await withApp(async (w, d, T) => {
 
   // Reopen: custom rows come back, in order, with the fixed leftovers appended.
   fireClick(defaultRow().querySelector("button.btn-mini-outline"), w);
-  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT,DEBUG,TRACE",
+  assert(rows().map(r => r.dataset.level).join(",") === "ERROR,WARN,INFO,NOTICE,AUDIT,FATAL,DEBUG,TRACE",
     "reopening restores the saved order with the unused fixed levels appended, got " + rows().map(r => r.dataset.level).join(","));
   assert(cb("NOTICE").checked && !cb("DEBUG").checked, "...and each row's saved checked state");
 
@@ -225,7 +225,7 @@ await withApp(async (w, d, T) => {
   w.invalidateAllCaches();
   w.render();
   const barLevels = [...d.querySelectorAll("#levelBar .level-btn")].map(b => b.dataset.level);
-  assert(barLevels.join(",") === "ERROR,WARN,INFO", "the removed custom level no longer has a bar button, got " + barLevels.join(","));
+  assert(barLevels.join(",") === "ERROR,WARN,INFO,OTHER", "the removed custom level no longer has its own bar button; its entries show up under Other, got " + barLevels.join(","));
   assert(node.value.join(",") === "NOTICE", "the existing filter node keeps its (now unknown) value rather than being rewritten");
   assert(w.getEntries(node.id).length === 0, "...and simply matches nothing now that those entries bucket to OTHER");
   const label = [...d.querySelectorAll("#tree .tree-label")].find(el => el.textContent.includes("NOTICE"));

@@ -27,10 +27,14 @@
     --level-info-soft:rgba(111,168,255,.10);
     --level-debug:#767f96;
     --level-debug-soft:rgba(118,127,150,.10);
+    /* FATAL: its own level (not folded into ERROR). Text on its solid fill is white in every theme; imported custom themes inherit these. */
+    --level-fatal:#d81b60;
+    --level-fatal-soft:rgba(216,27,96,.16);
+    --level-fatal-on:#fff;
     --level-trace:#5b6479;
     --level-trace-soft:rgba(91,100,121,.08);
     /* Rotating categorical palette for CUSTOM level names — a format may
-       name its own levels (NOTICE, FATAL, VERBOSE, ...) beyond the five that
+       name its own levels (NOTICE, FATAL, VERBOSE, ...) beyond the six that
        have a dedicated --level-* var; each custom name in a format's list is
        assigned a slot by its position among that format's custom names (see
        customLevelSlot/levelClass), wrapping after six. Six genuinely
@@ -177,6 +181,8 @@
     --level-info-soft:rgba(31,95,191,.10);
     --level-debug:#5b6474;
     --level-debug-soft:rgba(91,100,116,.10);
+    --level-fatal:#7a0c1c;
+    --level-fatal-soft:rgba(122,12,28,.12);
     --level-trace:#8991a3;
     --level-trace-soft:rgba(137,145,163,.08);
     --level-custom-1:#8e44ad;
@@ -265,6 +271,8 @@
     --level-info-soft:rgba(137,180,250,.10);
     --level-debug:#9399b2;
     --level-debug-soft:rgba(147,153,178,.10);
+    --level-fatal:#cf1f4f;
+    --level-fatal-soft:rgba(207,31,79,.16);
     --level-trace:#6c7086;
     --level-trace-soft:rgba(108,112,134,.08);
     --level-custom-1:#cba6f7;
@@ -308,6 +316,8 @@
     --level-info-soft:rgba(138,173,244,.10);
     --level-debug:#939ab7;
     --level-debug-soft:rgba(147,154,183,.10);
+    --level-fatal:#cc1f4c;
+    --level-fatal-soft:rgba(204,31,76,.16);
     --level-trace:#6e738d;
     --level-trace-soft:rgba(110,115,141,.08);
     --level-custom-1:#c6a0f6;
@@ -347,6 +357,8 @@
     --level-info-soft:rgba(140,170,238,.10);
     --level-debug:#949cbb;
     --level-debug-soft:rgba(148,156,187,.10);
+    --level-fatal:#c8203f;
+    --level-fatal-soft:rgba(200,32,63,.16);
     --level-trace:#737994;
     --level-trace-soft:rgba(115,121,148,.08);
     --level-custom-1:#ca9ee6;
@@ -386,6 +398,8 @@
     --level-info-soft:rgba(30,102,245,.10);
     --level-debug:#7c7f93;
     --level-debug-soft:rgba(124,127,147,.10);
+    --level-fatal:#7d0a24;
+    --level-fatal-soft:rgba(125,10,36,.12);
     --level-trace:#9ca0b0;
     --level-trace-soft:rgba(156,160,176,.08);
     --level-custom-1:#8839ef;
@@ -1331,7 +1345,9 @@
   .level-btn.lvl-info:hover{background:color-mix(in srgb, var(--level-info) 18%, transparent);}
   .level-btn.lvl-debug{box-shadow:inset 0 0 0 2px var(--level-debug);}
   .level-btn.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 18%, transparent);}
+  .level-btn.lvl-fatal{box-shadow:inset 0 0 0 2px var(--level-fatal);}
   .level-btn.lvl-trace{box-shadow:inset 0 0 0 2px var(--level-trace);}
+  .level-btn.lvl-fatal:hover{background:color-mix(in srgb, var(--level-fatal) 18%, transparent);}
   .level-btn.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 18%, transparent);}
   /* Custom level names (see --level-custom-* above). */
   .level-btn.lvl-custom-1{box-shadow:inset 0 0 0 2px var(--level-custom-1);}
@@ -1346,6 +1362,15 @@
   .level-btn.lvl-custom-5:hover{background:color-mix(in srgb, var(--level-custom-5) 18%, transparent);}
   .level-btn.lvl-custom-6{box-shadow:inset 0 0 0 2px var(--level-custom-6);}
   .level-btn.lvl-custom-6:hover{background:color-mix(in srgb, var(--level-custom-6) 18%, transparent);}
+  /* The Other chip (no format lists these levels): neutral, like .minimap-lvl-other. */
+  .level-btn.lvl-other{box-shadow:inset 0 0 0 2px var(--text-secondary);}
+  .level-btn.lvl-other:hover{background:color-mix(in srgb, var(--text-secondary) 18%, transparent);}
+  .level-btn.active.lvl-other{background:var(--text-secondary); color:var(--bg-app);}
+  .level-btn.active.lvl-other:hover{background:color-mix(in srgb, var(--text-secondary) 85%, #fff);}
+  .level-btn.lvl-other .row-action-label{background:var(--text-secondary); color:var(--bg-app); border-color:transparent;}
+  body.layout-compact .level-btn.lvl-other .level-count{color:var(--text-secondary);}
+  body.layout-compact .level-btn.active.lvl-other .level-count{color:var(--bg-app);}
+  body.filter-toolbar-labels-always .level-btn.lvl-other:not(.active) .row-action-label{color:var(--text-secondary);}
   /* Checked: the ring's own color fills the whole circle solid. */
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
   .level-btn.active.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 85%, #fff);}
@@ -1355,7 +1380,9 @@
   .level-btn.active.lvl-info:hover{background:color-mix(in srgb, var(--level-info) 85%, #fff);}
   .level-btn.active.lvl-debug{background:var(--level-debug); color:var(--level-debug-on);}
   .level-btn.active.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 85%, #fff);}
+  .level-btn.active.lvl-fatal{background:var(--level-fatal); color:var(--level-fatal-on);}
   .level-btn.active.lvl-trace{background:var(--level-trace); color:var(--level-trace-on);}
+  .level-btn.active.lvl-fatal:hover{background:color-mix(in srgb, var(--level-fatal) 85%, #fff);}
   .level-btn.active.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 85%, #fff);}
   .level-btn.active.lvl-custom-1{background:var(--level-custom-1); color:var(--level-custom-on);}
   .level-btn.active.lvl-custom-1:hover{background:color-mix(in srgb, var(--level-custom-1) 85%, #fff);}
@@ -1376,6 +1403,7 @@
   .level-btn.lvl-warn .row-action-label{background:var(--level-warn); color:var(--level-warn-on); border-color:transparent;}
   .level-btn.lvl-info .row-action-label{background:var(--level-info); color:var(--level-info-on); border-color:transparent;}
   .level-btn.lvl-debug .row-action-label{background:var(--level-debug); color:var(--level-debug-on); border-color:transparent;}
+  .level-btn.lvl-fatal .row-action-label{background:var(--level-fatal); color:var(--level-fatal-on); border-color:transparent;}
   .level-btn.lvl-trace .row-action-label{background:var(--level-trace); color:var(--level-trace-on); border-color:transparent;}
   .level-btn.lvl-custom-1 .row-action-label{background:var(--level-custom-1); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-2 .row-action-label{background:var(--level-custom-2); color:var(--level-custom-on); border-color:transparent;}
@@ -1399,7 +1427,9 @@
   body.layout-compact .level-btn.active.lvl-info .level-count{color:var(--level-info-on);}
   body.layout-compact .level-btn.lvl-debug .level-count{color:var(--level-debug);}
   body.layout-compact .level-btn.active.lvl-debug .level-count{color:var(--level-debug-on);}
+  body.layout-compact .level-btn.lvl-fatal .level-count{color:var(--level-fatal);}
   body.layout-compact .level-btn.lvl-trace .level-count{color:var(--level-trace);}
+  body.layout-compact .level-btn.active.lvl-fatal .level-count{color:var(--level-fatal-on);}
   body.layout-compact .level-btn.active.lvl-trace .level-count{color:var(--level-trace-on);}
   body.layout-compact .level-btn.lvl-custom-1 .level-count{color:var(--level-custom-1);}
   body.layout-compact .level-btn.active.lvl-custom-1 .level-count{color:var(--level-custom-on);}
@@ -1419,6 +1449,7 @@
   body.filter-toolbar-labels-always .level-btn.lvl-warn:not(.active) .row-action-label{color:var(--level-warn);}
   body.filter-toolbar-labels-always .level-btn.lvl-info:not(.active) .row-action-label{color:var(--level-info);}
   body.filter-toolbar-labels-always .level-btn.lvl-debug:not(.active) .row-action-label{color:var(--level-debug);}
+  body.filter-toolbar-labels-always .level-btn.lvl-fatal:not(.active) .row-action-label{color:var(--level-fatal);}
   body.filter-toolbar-labels-always .level-btn.lvl-trace:not(.active) .row-action-label{color:var(--level-trace);}
   body.filter-toolbar-labels-always .level-btn.lvl-custom-1:not(.active) .row-action-label{color:var(--level-custom-1);}
   body.filter-toolbar-labels-always .level-btn.lvl-custom-2:not(.active) .row-action-label{color:var(--level-custom-2);}
@@ -1654,6 +1685,7 @@
   .minimap-lvl-warn{fill:var(--level-warn);}
   .minimap-lvl-info{fill:var(--level-info);}
   .minimap-lvl-debug{fill:var(--level-debug);}
+  .minimap-lvl-fatal{fill:var(--level-fatal);}
   .minimap-lvl-trace{fill:var(--level-trace);}
   .minimap-lvl-custom-1{fill:var(--level-custom-1);}
   .minimap-lvl-custom-2{fill:var(--level-custom-2);}
@@ -2255,7 +2287,9 @@
   .lvl-info .level-badge{color:var(--level-info); background:color-mix(in srgb, var(--level-info) 22%, transparent);}
   .lvl-debug .col-bar{background:var(--level-debug);}
   .lvl-debug .level-badge{color:var(--level-debug); background:color-mix(in srgb, var(--level-debug) 22%, transparent);}
+  .lvl-fatal .col-bar{background:var(--level-fatal);}
   .lvl-trace .col-bar{background:var(--level-trace);}
+  .lvl-fatal .level-badge{color:var(--level-fatal); background:var(--level-fatal-soft);}
   .lvl-trace .level-badge{color:var(--level-trace); background:var(--level-trace-soft);}
   .lvl-custom-1 .col-bar{background:var(--level-custom-1);}
   .lvl-custom-1 .level-badge{color:var(--level-custom-1); background:color-mix(in srgb, var(--level-custom-1) 28%, transparent);}
@@ -2280,7 +2314,9 @@
   .log-row.lvl-info:hover{background:color-mix(in srgb, var(--level-info) 16%, transparent);}
   .log-row.lvl-debug{background:var(--level-debug-soft);}
   .log-row.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 16%, transparent);}
+  .log-row.lvl-fatal{background:var(--level-fatal-soft);}
   .log-row.lvl-trace{background:var(--level-trace-soft);}
+  .log-row.lvl-fatal:hover{background:color-mix(in srgb, var(--level-fatal) 14%, transparent);}
   .log-row.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 14%, transparent);}
   .log-row.lvl-custom-1{background:color-mix(in srgb, var(--level-custom-1) 12%, transparent);}
   .log-row.lvl-custom-1:hover{background:color-mix(in srgb, var(--level-custom-1) 20%, transparent);}
@@ -2779,6 +2815,7 @@
   .facet-value-name.lvl-warn{color:var(--level-warn);}
   .facet-value-name.lvl-info{color:var(--level-info);}
   .facet-value-name.lvl-debug{color:var(--level-debug);}
+  .facet-value-name.lvl-fatal{color:var(--level-fatal);}
   .facet-value-name.lvl-trace{color:var(--level-trace);}
   .facet-value-name.lvl-custom-1{color:var(--level-custom-1);}
   .facet-value-name.lvl-custom-2{color:var(--level-custom-2);}
@@ -2990,6 +3027,7 @@
   .lvl-warn .pair-row-bar{background:var(--level-warn);}
   .lvl-info .pair-row-bar{background:var(--level-info);}
   .lvl-debug .pair-row-bar{background:var(--level-debug);}
+  .lvl-fatal .pair-row-bar{background:var(--level-fatal);}
   .lvl-trace .pair-row-bar{background:var(--level-trace);}
   .lvl-custom-1 .pair-row-bar{background:var(--level-custom-1);}
   .lvl-custom-2 .pair-row-bar{background:var(--level-custom-2);}
@@ -3847,6 +3885,7 @@
   .te-prev-bar{display:flex; gap:6px; align-items:center; padding:10px 12px; background:var(--bg-panel); border-bottom:1px solid var(--border);}
   .te-prev-lvl{font-size:10.5px; font-weight:650; padding:3px 9px; border-radius:999px; border:1.5px solid var(--te-lvl); color:var(--te-lvl);}
   .te-prev-lvl.active{background:var(--te-lvl); color:var(--te-lvl-on);}
+  .te-prev-lvl[data-lvl="fatal"], .te-prev-badge[data-lvl="fatal"]{--te-lvl:var(--level-fatal); --te-lvl-soft:var(--level-fatal-soft); --te-lvl-on:var(--level-fatal-on);}
   .te-prev-lvl[data-lvl="error"], .te-prev-badge[data-lvl="error"]{--te-lvl:var(--level-error); --te-lvl-soft:var(--level-error-soft); --te-lvl-on:var(--level-error-on);}
   .te-prev-lvl[data-lvl="warn"], .te-prev-badge[data-lvl="warn"]{--te-lvl:var(--level-warn); --te-lvl-soft:var(--level-warn-soft); --te-lvl-on:var(--level-warn-on);}
   .te-prev-lvl[data-lvl="info"], .te-prev-badge[data-lvl="info"]{--te-lvl:var(--level-info); --te-lvl-soft:var(--level-info-soft); --te-lvl-on:var(--level-info-on);}
@@ -10002,13 +10041,13 @@ const state = {
   formatRules: [],
 };
 
-// The five level buckets that have a dedicated --level-* theme var of their
+// The six level buckets that have a dedicated --level-* theme var of their
 // own (the implicit OTHER catch-all deliberately has none — see levelBucket).
 // A log format's level list (LogFormat.levels) may pick any subset of these,
-// in any order, AND add arbitrary custom names of its own (NOTICE, FATAL,
+// in any order, AND add arbitrary custom names of its own (NOTICE,
 // VERBOSE, ...) — those get a color from the rotating --level-custom-N
 // palette instead (see customLevelSlot/levelClass).
-const ALL_LEVELS = ["ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
+const ALL_LEVELS = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
 
 // How many --level-custom-N slots the CSS defines, per theme. Custom names
 // beyond this many in one format's list wrap around and reuse a color.
@@ -10134,9 +10173,10 @@ function levelColorVar(name, formatId) {
 
 // The union of the level lists of every format currently in play — each open
 // root file's format contributes its own list, concatenated in tree order and
-// de-duplicated as names first appear. This is what the level bar renders and
-// what a level filter node's value array is canonically ordered by.
-function activeLevelOrder() {
+// de-duplicated as names first appear. This is what a level filter node's
+// value array is canonically ordered by (the level bar itself shows more, see
+// activeLevelOrder).
+function formatLevelUnion() {
   const out = [];
   const push = l => { if (!out.includes(l)) out.push(l); };
   state.rootIds.forEach(id => {
@@ -10145,6 +10185,65 @@ function activeLevelOrder() {
   });
   if (!out.length && !allRootsPlainText()) LEVELS.forEach(push); // plain text has no levels: an empty level bar
   return out;
+}
+
+// The raw level names of each bucket that actually occurs in the open ROOT
+// files (never the active node, so the bar does not change shape while
+// filtering): Map bucket -> [{ level, n }] summed over roots, in order of first
+// appearance. Feeds the "extra" chips and the Other chip's tooltip.
+function rootFileBucketLevels() {
+  const out = new Map();
+  const bucketOf = makeLevelBucketer();
+  state.rootIds.forEach(id => {
+    const node = state.nodes[id];
+    if (!node || node.type !== "file" || nodeIsPlainText(id)) return;
+    for (const rec of fileAggregate(node).levelOrder) {
+      const b = bucketOf(rec.level, rec.formatId);
+      let list = out.get(b);
+      if (!list) { list = []; out.set(b, list); }
+      const ex = list.find(x => x.level === rec.level);
+      if (ex) ex.n += rec.n; else list.push({ level: rec.level, n: rec.n });
+    }
+  });
+  return out;
+}
+
+// The buckets the level bar (and the minimap's header line) show, in order:
+// the union of the open formats' level lists (shown even with 0 entries) PLUS
+// every bucket that occurs in an open root file but is not in that union
+// (FATAL, TRACE, OTHER, a level of another format) — so the chip counts always
+// add up to the entry count. Extras are placed by levelSortRank (FATAL before
+// ERROR, TRACE after DEBUG, custom names after TRACE, OTHER always last).
+function activeLevelOrder() {
+  const base = formatLevelUnion();
+  const extras = [...rootFileBucketLevels().keys()].filter(b => !base.includes(b));
+  if (!extras.length) return base;
+  const out = base.slice();
+  extras.sort((a, b) => levelSortRank(a) - levelSortRank(b));
+  extras.forEach(b => {
+    // Insert before the first listed level that ranks after it; OTHER goes last.
+    const r = levelSortRank(b);
+    let at = out.findIndex(l => levelSortRank(l) > r);
+    if (b === "OTHER" || at === -1) at = out.length;
+    out.splice(at, 0, b);
+  });
+  return out;
+}
+
+// Chip text/tooltip name of a bucket: OTHER is spelled "Other"; the rest keep
+// their (uppercase) level name.
+function levelBarName(lvl) { return lvl === "OTHER" ? "Other" : lvl; }
+
+// Accessible name/tooltip of a level-bar chip: "ERROR 134", and for OTHER the
+// raw level names behind it: "Other 33 (VERBOSE 21 · NOTICE 12)".
+function levelBarTitle(lvl, count) {
+  let t = levelBarName(lvl) + " " + count.toLocaleString("de-DE");
+  if (lvl === "OTHER") {
+    const raw = rootFileBucketLevels().get("OTHER") || [];
+    const parts = raw.map(x => (x.level.trim() || "(empty)") + " " + x.n.toLocaleString("de-DE"));
+    if (parts.length) t += " (" + parts.join(" · ") + ")";
+  }
+  return t;
 }
 
 // Re-sorts a set of picked level names into activeLevelOrder(). Anything not
@@ -10289,21 +10388,21 @@ function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? ke
 // and as the minimap's "most severe bucket" index. Custom level names sit
 // between TRACE and OTHER, ordered by their palette slot (see levelSortRank)
 // — OTHER stays last, so its rank leaves room for CUSTOM_LEVEL_SLOTS slots.
-const LEVEL_SORT_RANK = { ERROR: 0, WARN: 1, INFO: 2, DEBUG: 3, TRACE: 4, OTHER: 5 + CUSTOM_LEVEL_SLOTS };
+const LEVEL_SORT_RANK = { FATAL: 0, ERROR: 1, WARN: 2, INFO: 3, DEBUG: 4, TRACE: 5, OTHER: 6 + CUSTOM_LEVEL_SLOTS };
 
-// The .minimap-lvl-* fill class for a levelSortRank: the five known
+// The .minimap-lvl-* fill class for a levelSortRank: the six known
 // buckets, then one slot per --level-custom-N, then OTHER last. Shared by
 // the timeline minimap and the filter popup's match histogram.
 function minimapLevelClass(rank) {
-  if (rank < 5) return ["minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace"][rank];
-  if (rank < 5 + CUSTOM_LEVEL_SLOTS) return "minimap-lvl-custom-" + (rank - 4);
+  if (rank < 6) return ["minimap-lvl-fatal", "minimap-lvl-error", "minimap-lvl-warn", "minimap-lvl-info", "minimap-lvl-debug", "minimap-lvl-trace"][rank];
+  if (rank < 6 + CUSTOM_LEVEL_SLOTS) return "minimap-lvl-custom-" + (rank - 5);
   return "minimap-lvl-other";
 }
 function levelSortRank(bucket, formatId) {
   const r = LEVEL_SORT_RANK[bucket];
   if (r !== undefined) return r;
   const slot = customLevelSlot(bucket, formatId);
-  return slot ? 4 + slot : LEVEL_SORT_RANK.OTHER;
+  return slot ? 5 + slot : LEVEL_SORT_RANK.OTHER;
 }
 
 // Builds a comparator for the sortable log-table headers. Only ever applied
@@ -12370,7 +12469,7 @@ function activateQueuedFileNode(node) {
 //      level list wins — that's what makes a custom name like NOTICE its own
 //      named, colored bucket rather than collapsing into OTHER;
 //   2. otherwise the historical prefix cascade, so the five known buckets
-//      keep their forgiving matching (FATAL/ERR -> ERROR, WARNING -> WARN,
+//      keep their forgiving matching (FATAL -> FATAL, ERR -> ERROR, WARNING -> WARN,
 //      ...) even for a format whose list happens to omit one of them;
 //   3. otherwise "OTHER" — the single catch-all. Unrecognized free text
 //      deliberately does NOT get a bucket of its own: only names a format
@@ -12389,7 +12488,8 @@ function levelBucket(level, formatId) {
   }
   const l = normalizeLevelName(raw);
   if (formatLevels(formatId).includes(l)) return l;
-  if (l.startsWith("ERR") || l.startsWith("FATAL")) return "ERROR";
+  if (l.startsWith("FATAL")) return "FATAL";
+  if (l.startsWith("ERR")) return "ERROR";
   if (l.startsWith("WARN")) return "WARN";
   if (l.startsWith("INFO")) return "INFO";
   if (l.startsWith("DEBUG")) return "DEBUG";
@@ -20237,7 +20337,7 @@ function renderLevelBar() {
     btn.className = "level-btn row-action-btn " + levelClass(lvl) + (isActive ? " active" : "");
     btn.type = "button";
     btn.dataset.level = lvl; // queried directly by name elsewhere (tests, format editor rows) without needing a rebuild
-    const label = lvl + " " + (counts[lvl] || 0).toLocaleString("de-DE");
+    const label = levelBarTitle(lvl, counts[lvl] || 0);
     btn.title = label; // accessible name, since the button itself carries no visible text
     const n = counts[lvl] || 0;
     const countText = n >= 100000 ? Math.round(n / 1000) + "k" : n.toLocaleString("de-DE"); // fits the 44px circle
@@ -28559,30 +28659,23 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // so the level counts should match that same "whole file" scope instead of
   // silently changing meaning with the active node.
   const minimapLvlCounts = getLevelCounts(rootId) || {};
-  // Each count carries its level letter ("E 149 · W 256 · ..."). FATAL/TRACE
-  // appear only when present. A format that does not list FATAL as a level of
-  // its own folds FATAL lines into the ERROR bucket (levelBucket), so the E
-  // count includes them — the tooltip says how many ("incl. N Fatal").
-  let foldedFatal = 0;
-  const rootNode = state.nodes[rootId];
-  if (rootNode && rootNode.type === "file") {
-    const bucketOf = makeLevelBucketer();
-    for (const rec of fileAggregate(rootNode).levelOrder) {
-      if (normalizeLevelName(rec.level).startsWith("FATAL") && bucketOf(rec.level, rec.formatId) === "ERROR") foldedFatal += rec.n;
-    }
-  }
+  // Each count carries its level letter ("E 149 · W 256 · ..."), in the same
+  // order as the level bar, with the same extra buckets (FATAL, TRACE, Other).
+  // Buckets the listed formats do not have are shown only when this file has
+  // entries in them; the Other segment is spelled out ("Other 33").
+  const minimapBase = formatLevelUnion();
   activeLevelOrder().forEach(lvl => {
     const n = minimapLvlCounts[lvl] || 0;
-    if (n === 0 && (lvl === "FATAL" || lvl === "TRACE")) return;
+    if (n === 0 && !minimapBase.includes(lvl)) return;
     const colorVar = levelColorVar(lvl) || "var(--text-secondary)";
-    const fullName = lvl.charAt(0) + lvl.slice(1).toLowerCase();
-    const fatalNote = lvl === "ERROR" && foldedFatal ? " (incl. " + foldedFatal.toLocaleString("de-DE") + " Fatal)" : "";
+    const fullName = lvl === "OTHER" ? "Other" : lvl.charAt(0) + lvl.slice(1).toLowerCase();
+    const text = lvl === "OTHER" ? "Other" : lvl.charAt(0);
     // Clickable (person-requested, this session): attaches/reveals a
     // single-level filter node for this level directly under the ROOT file
     // — see the delegated click listener on timelineMinimapMetaEl below.
     minimapMeta.push('<span class="minimap-meta-level" data-level="' + escapeHtml(lvl) + '" style="color:' + colorVar +
-      '" title="' + escapeHtml(fullName + fatalNote) + ': add/show a level filter for this file">' +
-      escapeHtml(lvl.charAt(0)) + " " + n.toLocaleString("de-DE") + '</span>');
+      '" title="' + escapeHtml(fullName) + ': add/show a level filter for this file">' +
+      escapeHtml(text) + " " + n.toLocaleString("de-DE") + '</span>');
   });
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
@@ -45143,7 +45236,8 @@ function renderFwzResult() {
 // The same fixed-name prefix cascade levelBucket applies in text mode.
 function fwzLevelCascade(l) {
   if (ALL_LEVELS.includes(l)) return l;
-  if (l.startsWith("ERR") || l.startsWith("FATAL")) return "ERROR";
+  if (l.startsWith("FATAL")) return "FATAL";
+  if (l.startsWith("ERR")) return "ERROR";
   if (l.startsWith("WARN")) return "WARN";
   if (l.startsWith("INFO")) return "INFO";
   if (l.startsWith("DEBUG")) return "DEBUG";

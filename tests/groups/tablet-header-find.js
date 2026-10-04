@@ -9,8 +9,7 @@
    circles show their count (compact, "On hover" labels); unchecked "Always"
    pills use the level color; the log views' "Time range" button is never
    disabled (falls back to a dialog prefilled with the visible span); the
-   minimap meta strip carries level letters and says when FATAL is folded
-   into ERROR; English placeholder/hint texts, touch variants.
+   minimap meta strip carries level letters (FATAL its own segment); English placeholder/hint texts, touch variants.
    ============================================================ */
 group("tablet-header-find");
 
@@ -128,7 +127,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("tablet-header-find d. Minimap strip: level letters, FATAL folded into ERROR is announced");
+  section("tablet-header-find d. Minimap strip: level letters, FATAL is its own segment, Other is spelled out");
   const [sim] = LOGSIM.generateToStrings({ scenarios: ["levels"], entries: 400, seed: 5 });
   const f = await w.addFile(sim.name, sim.text, () => {});
   T.state.activeId = f.id;
@@ -138,14 +137,16 @@ await withApp(async (w, d, T) => {
   const counts = w.getLevelCounts(f.id);
   segs.forEach(s => {
     const lvl = s.dataset.level;
-    assert(s.textContent === lvl.charAt(0) + " " + (counts[lvl] || 0).toLocaleString("de-DE"), lvl + " segment reads '<letter> <count>', got " + s.textContent);
+    const text = lvl === "OTHER" ? "Other" : lvl.charAt(0);
+    assert(s.textContent === text + " " + (counts[lvl] || 0).toLocaleString("de-DE"), lvl + " segment reads '<letter> <count>' (Other spelled out), got " + s.textContent);
   });
   const fatal = f.entries.filter(e => /^FATAL/i.test(e.level)).length;
   assert(fatal > 0, "sanity: the simulated file has FATAL lines");
+  const fs = segs.find(s => s.dataset.level === "FATAL");
+  assert(fs && fs.textContent === "F " + fatal.toLocaleString("de-DE"), "FATAL has its own F segment with its own count, got " + (fs && fs.textContent));
   const e = segs.find(s => s.dataset.level === "ERROR");
-  assert(e.title.startsWith("Error (incl. " + fatal.toLocaleString("de-DE") + " Fatal)"), "ERROR's tooltip says how many FATAL lines it includes, got " + e.title);
-  assert(!segs.some(s => s.textContent.startsWith("F ")), "default format: no separate F segment (FATAL is part of ERROR)");
-  assert(counts.ERROR >= fatal, "the E count includes the FATAL lines");
+  assert(e.title.startsWith("Error:"), "ERROR's tooltip no longer mentions folded FATAL lines, got " + e.title);
+  assert(segs.findIndex(s => s.dataset.level === "FATAL") < segs.findIndex(s => s.dataset.level === "ERROR"), "FATAL comes before ERROR");
   assert(!d.querySelector("#timelineMinimapMeta").innerHTML.includes("T 0"), "TRACE is not listed with a zero count");
 });
 
