@@ -313,6 +313,7 @@ async function withApp(run, opts = {}) {
       get minimapBinningMode() { return minimapBinningMode; },
       set minimapBinningMode(v) { minimapBinningMode = v; },
       get minimapWidth() { return minimapWidth; },
+      get minimapView() { return { tMin: minimapTMin, tMax: minimapTMax, fileTMin: minimapFileTMin, fileTMax: minimapFileTMax, idxLo: minimapIdxLo, idxN: minimapIdxN, trail: minimapViewTrail.slice(), draft: minimapDraft ? { ...minimapDraft } : null }; },
       get minimapBucketCount() { return minimapBucketCount; },
       get minimapBars() { return { bg: minimapBgCounts, ov: minimapOvCounts, rank: minimapOvRank, name: minimapOvName }; },
       get highlightColorMap() { return highlightColorMap; },

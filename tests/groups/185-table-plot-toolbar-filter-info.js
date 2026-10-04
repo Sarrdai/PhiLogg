@@ -37,7 +37,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = rangeNode.id;
   w.render();
   w.applyFhView("table");
-  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts });
+  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts }, f.id);
   assert(infoEl().textContent.includes(expectedRangeText),
     "active timerange filter's name (timeRangeFilterName) appears in the info text, got " + JSON.stringify(infoEl().textContent));
   assert(infoEl().textContent.includes("6 rows"), "row count reflects the timerange-narrowed extraction (entries 2..7 inclusive), got " + JSON.stringify(infoEl().textContent));
@@ -69,7 +69,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = rangeNode.id;
   w.render();
   w.applyFhView("plot");
-  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts });
+  const expectedRangeText = w.timeRangeFilterName({ from: f.entries[2].ts, to: f.entries[7].ts }, f.id);
   assert(infoEl().textContent.includes(expectedRangeText),
     "active timerange filter's name appears in the Plot info text too, got " + JSON.stringify(infoEl().textContent));
   assert(infoEl().textContent.includes("6 points"), "visible-point count reflects the timerange-narrowed extraction, got " + JSON.stringify(infoEl().textContent));

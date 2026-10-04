@@ -918,6 +918,12 @@
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
   }
+  /* Time-filter labels: up to 2 lines, breaking only between .tl-seg segments. */
+  .tree-label.tree-label-wrap{
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+    white-space:normal; line-height:1.3;
+  }
+  .tree-label-wrap .tl-seg{white-space:nowrap;}
   [data-type="file"] > .tree-row .tree-label{font-weight:600; color:var(--text-primary);}
   .tree-rename-input{
     width:100%; min-width:0; font:inherit; font-size:12.3px; color:var(--text-primary);
@@ -1619,6 +1625,19 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   #timelineMinimapMeta b{color:var(--text-secondary); font-weight:650;}
+  /* Zoom breadcrumbs (Whole file > 08:37:05-08:40:27 ...) + resolution hint. */
+  .minimap-crumb{
+    font:inherit; color:var(--accent-strong); background:none; border:0; padding:0 2px; cursor:pointer; border-radius:3px;
+  }
+  .minimap-crumb:hover:not(:disabled){background:var(--accent-soft);}
+  .minimap-crumb:disabled{color:var(--text-secondary); font-weight:650; cursor:default;}
+  .minimap-res{color:var(--text-secondary);}
+  /* Separators are generated so a hidden .minimap-meta-rest (phone) leaves no dangling dot. */
+  .minimap-crumbs + .minimap-res::before, .minimap-draft-text + .minimap-res::before, .minimap-res + .minimap-meta-rest::before{content:"·"; margin:0 7px;}
+  /* The draft's text lives in the meta line too, but only the phone shows it there
+     (its floating label would cover the 36 px strip); see the layout-phone rules. */
+  .minimap-draft-text{display:none;}
+  body.layout-phone .minimap-crumb{padding:4px 6px; font-size:12px;}
   /* Per-level count segments appended after Duration (person-requested,
      this session) — color comes from an inline style (levelColorVar()) set
      in JS, this just matches the bold weight #timelineMinimapMeta b uses.
@@ -1695,6 +1714,36 @@
     pointer-events:none; white-space:nowrap; z-index:11;
   }
   #timelineMinimapDragLabel.hidden{display:none;}
+  /* Draft window: stays after a drag until filtered, zoomed into, edited or
+     discarded. Siblings of the <svg> like the drag overlay (re-renders wipe
+     the svg). The rect reuses #timelineMinimapDragRect with .selected. */
+  #timelineMinimapDragRect.selected{opacity:1; border-width:1px 0; pointer-events:none;}
+  #timelineMinimapDraftLabel{
+    position:absolute; top:4px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:11;
+  }
+  .minimap-draft-handle{
+    position:absolute; width:22px; margin-left:-11px; cursor:ew-resize; z-index:12; touch-action:none;
+  }
+  .minimap-draft-handle::after{
+    content:""; position:absolute; left:8px; width:6px; top:15%; bottom:15%;
+    background:var(--accent); border-radius:3px; box-shadow:0 0 0 1px var(--bg-panel);
+  }
+  .minimap-draft-handle:hover::after, .minimap-draft-handle.dragging::after{background:var(--accent-strong);}
+  .minimap-draft-bar{
+    position:absolute; display:flex; gap:4px; padding:3px; z-index:30;
+    background:var(--bg-elevated-2); border:1px solid var(--accent); border-radius:8px;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);
+  }
+  .minimap-draft-bar button{
+    font:inherit; font-size:12px; min-height:26px; padding:0 10px; cursor:pointer;
+    color:var(--text-primary); background:var(--bg-panel); border:1px solid var(--border); border-radius:6px;
+  }
+  .minimap-draft-bar button:hover{border-color:var(--accent); background:var(--accent-soft);}
+  .minimap-draft-bar button[data-act="filter"]{color:var(--accent-strong); font-weight:600;}
+  .minimap-draft-handle.hidden, #timelineMinimapDraftLabel.hidden, .minimap-draft-bar.hidden{display:none;}
 
   /* Virtualized body: #tableBody scrolls, #tableSpacer gives it the correct
      scrollHeight for the full (unrendered) row count, #tableRows holds only
@@ -3171,7 +3220,14 @@
     padding-top:106px;
   }
   #timeRangeDialog.hidden{display:none;}
-  #timeRangeDialog input[type="datetime-local"]{flex:1 1 auto; min-width:0;}
+  #timeRangeDialog input[type="text"], #timeRangeDialog input[type="date"]{flex:1 1 auto; min-width:0;}
+  #timeRangeDialog input.time-range-time{font-family:var(--mono, ui-monospace, Menlo, Consolas, monospace); text-align:center;}
+  #timeRangeDialog .time-range-date-row{display:flex; margin-bottom:6px;}
+  #timeRangeDialog .time-range-date-row.hidden, #timeRangeDialog .time-range-chip.hidden{display:none;}
+  .time-range-chip{display:inline-block; font-size:12px; padding:2px 10px; margin-bottom:12px; border:1px solid var(--border); border-radius:999px; color:var(--text-secondary);}
+  .time-range-nudge{min-width:44px; min-height:34px; flex:0 0 auto; padding:0 6px; font-size:12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-elev, transparent); color:var(--text-primary); cursor:pointer;}
+  .time-range-nudge:hover{border-color:var(--accent); color:var(--accent-strong);}
+  .time-range-meta{font-size:12px; color:var(--text-secondary); margin:-4px 0 12px; min-height:16px;}
 
   /* ---------- Export scope dialog ("Just this filter" vs "Include ancestor
      chain" — see openExportScopePrompt) — was missing its overlay CSS
@@ -4748,8 +4804,22 @@
   body.layout-phone #tourBanner.expanded .tour-banner-hint{order:1;}
   body.layout-phone #tourBanner.expanded #tourBannerMore, body.layout-phone #tourBanner.expanded #tourBannerClose{order:2;}
 
-  body.layout-phone #timelineMinimap{height:14px;}
+  /* 36px bars (was 14); the meta line stays hidden at rest, a 24px crumb line
+     (breadcrumbs back out of a zoom, the rest of the meta hidden) shows only
+     while the minimap is zoomed. */
+  body.layout-phone #timelineMinimap{height:36px;}
+  body.layout-phone #timelineMinimapSvg{flex:0 0 36px;}
   body.layout-phone #timelineMinimapMeta{display:none;}
+  body.layout-phone #timelineMinimap.has-crumbs{height:60px;}
+  body.layout-phone #timelineMinimap.has-crumbs #timelineMinimapMeta{display:flex; align-items:center; height:24px; padding:0 8px;}
+  body.layout-phone #timelineMinimap.has-crumbs .minimap-meta-rest{display:none;}
+  body.layout-phone .minimap-crumbs{flex:0 0 auto;}
+  body.layout-phone #timelineMinimap.has-draft #timelineMinimapDraftLabel{display:none;}
+  body.layout-phone #timelineMinimap.has-draft .minimap-res{display:none;}
+  body.layout-phone #timelineMinimap.has-draft .minimap-draft-text{display:block; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-secondary);}
+  body.layout-phone .minimap-crumbs + .minimap-draft-text::before{content:"·"; margin:0 7px;}
+  body.layout-phone .minimap-draft-bar button{min-height:40px; min-width:44px; font-size:13px;}
+  body.layout-compact .minimap-draft-bar button{min-height:36px;}
 
   body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
   body.layout-phone #viewBar > :not(#fhTabs):not(#levelBar){display:none !important;}
@@ -4824,7 +4894,7 @@
   body.layout-phone #timeRangeDialog, body.layout-phone #noteDialog, body.layout-phone #clockOffsetDialog, body.layout-phone #assertDialog,
   body.layout-phone #contextDialog, body.layout-phone #countContextDialog, body.layout-phone #exportScopeDialog{padding-top:16px;}
   body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"],
-  body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){
+  body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="date"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){
     box-sizing:border-box; height:40px; font-size:16px;
   }
   body.layout-phone #noteDialogInput, body.layout-phone .link-dialog-card textarea{font-size:16px;}
@@ -5411,6 +5481,15 @@
         <div id="timelineMinimapTooltip" class="hidden"></div>
         <div id="timelineMinimapDragRect" class="hidden"></div>
         <div id="timelineMinimapDragLabel" class="hidden"></div>
+        <div id="timelineMinimapDraftLabel" class="hidden"></div>
+        <div class="minimap-draft-handle hidden" data-side="from"></div>
+        <div class="minimap-draft-handle hidden" data-side="to"></div>
+        <div id="timelineMinimapDraftBar" class="minimap-draft-bar hidden">
+          <button type="button" data-act="zoom" title="Zoom the minimap into this window">Zoom</button>
+          <button type="button" data-act="filter" title="Filter the log to this window">Filter</button>
+          <button type="button" data-act="edit" title="Edit the window bounds in the time-range dialog">Edit…</button>
+          <button type="button" data-act="discard" aria-label="Discard" title="Discard the window (Esc)">×</button>
+        </div>
       </div>
 
       <!-- Filter/Highlight split. Filter view is
@@ -6355,24 +6434,32 @@
   <div id="timeRangeDialog" class="hidden">
     <div class="link-dialog-card">
       <div class="link-dialog-title" id="timeRangeDialogTitle">Time filter</div>
+      <div class="time-range-chip hidden" id="timeRangeDateChip"></div>
       <div class="link-field">
-        <label for="timeRangeFromInput">From <span class="time-range-hint">(empty = no lower bound)</span></label>
-        <div class="link-field-row">
-          <input type="datetime-local" id="timeRangeFromInput" step="0.001">
+        <label for="timeRangeFromInput">From <span class="time-range-hint">(empty = open)</span></label>
+        <div class="time-range-date-row hidden" id="timeRangeFromDateRow"><input type="date" id="timeRangeFromDate" aria-label="From date"></div>
+        <div class="link-field-row" style="flex-wrap:nowrap">
+          <button type="button" class="time-range-nudge" id="timeRangeFromMinus" data-nudge="-1">&minus;1s</button>
+          <input type="text" class="time-range-time" id="timeRangeFromInput" inputmode="decimal" autocomplete="off" placeholder="HH:MM:SS.mmm">
+          <button type="button" class="time-range-nudge" id="timeRangeFromPlus" data-nudge="1">+1s</button>
           <button type="button" class="time-range-clear" id="timeRangeFromClear" title="Clear">
             <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
           </button>
         </div>
       </div>
       <div class="link-field">
-        <label for="timeRangeToInput">To <span class="time-range-hint">(empty = no upper bound)</span></label>
-        <div class="link-field-row">
-          <input type="datetime-local" id="timeRangeToInput" step="0.001">
+        <label for="timeRangeToInput">To <span class="time-range-hint">(empty = open)</span></label>
+        <div class="time-range-date-row hidden" id="timeRangeToDateRow"><input type="date" id="timeRangeToDate" aria-label="To date"></div>
+        <div class="link-field-row" style="flex-wrap:nowrap">
+          <button type="button" class="time-range-nudge" id="timeRangeToMinus" data-nudge="-1">&minus;1s</button>
+          <input type="text" class="time-range-time" id="timeRangeToInput" inputmode="decimal" autocomplete="off" placeholder="HH:MM:SS.mmm">
+          <button type="button" class="time-range-nudge" id="timeRangeToPlus" data-nudge="1">+1s</button>
           <button type="button" class="time-range-clear" id="timeRangeToClear" title="Clear">
             <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
           </button>
         </div>
       </div>
+      <div class="time-range-meta" id="timeRangeMeta"></div>
       <div class="time-range-error hidden" id="timeRangeDialogError">Set at least one of From / To.</div>
       <div class="link-dialog-actions">
         <button type="button" id="timeRangeDialogCancel" class="btn-mini-secondary">Cancel</button>
@@ -13058,12 +13145,41 @@ function nodeIsExtractionView(node) {
 // ≥/≤ names in createFilterNode below, unaffected by this helper.
 // `nodeId` (optional) is where the range applies: under a plain-text file
 // its bounds are line numbers (formatTsFor).
+// Shape: `08:38:24 – 08:39:52 · 1m 28s`, open bounds `from 08:38:24` /
+// `until 08:45:48`. A bound's date is dropped when it lies on the same local
+// day as the root file's first entry (otherwise `MM-DD ` is prefixed); `.mmm`
+// only when both bounds are set and the span is under 10 s.
+function timeRangeBoundLabel(nodeId, ts, withMs) {
+  if (nodeIsPlainText(nodeId)) return "line " + Math.round(ts);
+  const d = new Date(ts);
+  if (isNaN(d)) return "—";
+  const p2 = n => String(n).padStart(2, "0");
+  let text = `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}`;
+  if (withMs) text += "." + String(d.getMilliseconds()).padStart(3, "0");
+  if (d.getFullYear() === 1970 && d.getMonth() === 0 && d.getDate() === 1) return text; // tsFormat without a date, see formatTime
+  const rootId = nodeId ? getRootFileId(nodeId) : null;
+  const root = rootId ? state.nodes[rootId] : null;
+  const first = root && root.entries && root.entries.length ? new Date(root.entries[0].ts) : null;
+  const sameDay = first && !isNaN(first) && first.getFullYear() === d.getFullYear() && first.getMonth() === d.getMonth() && first.getDate() === d.getDate();
+  return sameDay ? text : `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${text}`;
+}
 function timeRangeFilterName(value, nodeId) {
+  const from = value && value.from, to = value && value.to;
+  const plain = nodeIsPlainText(nodeId);
+  const ms = from != null && to != null && Math.abs(to - from) < 10000 && !plain;
+  const f = ts => timeRangeBoundLabel(nodeId, ts, ms);
+  if (from != null && to != null) return `${f(from)} – ${f(to)}` + (plain ? "" : ` · ${formatMs(Math.abs(to - from))}`);
+  if (from != null) return `from ${f(from)}`;
+  if (to != null) return `until ${f(to)}`;
+  return "any time";
+}
+// Tree-row tooltip of a time node: the full bounds with date and milliseconds.
+function timeRangeFullTitle(value, nodeId) {
   const from = value && value.from, to = value && value.to;
   const f = ts => formatTsFor(nodeId, ts);
   if (from != null && to != null) return `${f(from)} → ${f(to)}`;
-  if (from != null) return `≥ ${f(from)}`;
-  if (to != null) return `≤ ${f(to)}`;
+  if (from != null) return `from ${f(from)}`;
+  if (to != null) return `until ${f(to)}`;
   return "any time";
 }
 
@@ -13209,6 +13325,53 @@ function updateTimeRangeFilterNode(nodeId, from, to) {
   node.value = { from, to };
   node.name = timeRangeFilterName(node.value, node.parentId);
   invalidateNodeSubtreeCaches(nodeId);
+}
+
+// The one entry point for "put a time window on this node" (minimap drag,
+// row context menu / row actions, time-range dialog in create mode): one
+// filter node per window instead of nested after/before nodes.
+//  - `targetId` is a "timerange" node: it is updated in place (undoable); a
+//    null bound keeps the node's existing bound, and an inverted result keeps
+//    only the new bound.
+//  - `targetId` is a "level" node in auto mode: the window is inserted ABOVE
+//    it (same tree position) and the level node stays active, so the level
+//    chips keep reading its selection. If that level node already sits under
+//    a "timerange" node, that node is updated instead.
+//  - otherwise a new "timerange" child is created under it.
+// Returns the node that carries the window, or null.
+function applyTimeWindow(targetId, from, to) {
+  const target = state.nodes[targetId];
+  if (!target) return null;
+  if (target.type === "filter" && target.filterType === "timerange") {
+    let nf = from, nt = to;
+    if (nf != null && nt != null) {
+      if (nf > nt) { const t = nf; nf = nt; nt = t; }
+    } else {
+      if (nf == null) nf = target.value.from;
+      if (nt == null) nt = target.value.to;
+      if (nf != null && nt != null && nf > nt) { if (from != null) nt = null; else nf = null; }
+    }
+    updateTimeRangeFilterNodeWithUndo(targetId, nf, nt);
+    return target;
+  }
+  if (target.type === "filter" && target.filterType === "level" && levelFilterTreeMode === "auto") {
+    const parent = state.nodes[target.parentId];
+    if (!parent) return null;
+    // A window already sits above this level node: it is that window that changes.
+    if (parent.type === "filter" && parent.filterType === "timerange") return applyTimeWindow(parent.id, from, to);
+    const idx = parent.children.indexOf(targetId);
+    const win = createFilterNode(target.parentId, "timerange", { from, to });
+    if (!win) return null;
+    parent.children = parent.children.filter(id => id !== win.id);
+    parent.children.splice(idx, 1, win.id);
+    win.children.push(targetId);
+    target.parentId = win.id;
+    invalidateNodeSubtreeCaches(win.id);
+    activateNewNode(target);
+    pushUndo({ kind: "insertAbove", nodeId: targetId, winNode: win, parentId: parent.id, index: idx });
+    return win;
+  }
+  return createFilterNode(targetId, "timerange", { from, to });
 }
 
 // Normalizes any of the three time-filter node shapes into a plain
@@ -16259,7 +16422,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
-  clockOffset: "clock adjust", create: "filter creation", batch: "assistant round",
+  clockOffset: "clock adjust", create: "filter creation", batch: "assistant round", insertAbove: "time window",
 };
 
 function undo() {
@@ -16297,6 +16460,17 @@ function offerPhoneUndoToast(prevTop) {
 function undoAction(action) {
   if (action.kind === "batch") {
     for (let i = action.actions.length - 1; i >= 0; i--) undoAction(action.actions[i]);
+  } else if (action.kind === "insertAbove") {
+    // A node (time window) inserted above `nodeId`: put nodeId back at its old index and drop the window.
+    const node = state.nodes[action.nodeId], win = state.nodes[action.winNode.id], parent = state.nodes[action.parentId];
+    if (node && win && parent) {
+      win.children = win.children.filter(id => id !== action.nodeId);
+      parent.children = parent.children.filter(id => id !== win.id);
+      insertAt(parent, action.nodeId, action.index);
+      node.parentId = action.parentId;
+      deleteNode(win.id);
+      state.activeId = action.nodeId;
+    }
   } else if (action.kind === "delete") {
     const restored = restoreSubtree(action.snapshot);
     insertAt(state.nodes[action.parentId], restored.id, action.index);
@@ -16377,6 +16551,17 @@ function redo() {
 function redoAction(action) {
   if (action.kind === "batch") {
     action.actions.forEach(redoAction);
+  } else if (action.kind === "insertAbove") {
+    const node = state.nodes[action.nodeId], win = action.winNode, parent = state.nodes[action.parentId];
+    if (node && parent && !state.nodes[win.id]) {
+      parent.children = parent.children.filter(id => id !== action.nodeId);
+      win.children = [action.nodeId];
+      win.parentId = action.parentId;
+      state.nodes[win.id] = win;
+      insertAt(parent, win.id, action.index);
+      node.parentId = win.id;
+      state.activeId = action.nodeId;
+    }
   } else if (action.kind === "delete") {
     // The node is currently restored (undo put it back with its original
     // id) — deleting it again is the redo.
@@ -17203,6 +17388,9 @@ const timelineMinimapSvg = el("#timelineMinimapSvg");
 const timelineMinimapTooltip = el("#timelineMinimapTooltip");
 const timelineMinimapDragRect = el("#timelineMinimapDragRect");
 const timelineMinimapDragLabel = el("#timelineMinimapDragLabel");
+const timelineMinimapDraftLabel = el("#timelineMinimapDraftLabel");
+const timelineMinimapDraftBar = el("#timelineMinimapDraftBar");
+const minimapDraftHandles = [...timelineMinimapEl.querySelectorAll(".minimap-draft-handle")];
 const fhTabs = el("#fhTabs");
 const fhSplit = el("#fhSplit");
 const viewBarEl = el("#viewBar");
@@ -19562,10 +19750,26 @@ function renderNode(id, depth, opts) {
     // opts.labelText: a ZIP entry nested under its subfolder rows shows
     // just its basename (renderZipSection); the title keeps the full path.
     const displayName = (opts && opts.labelText) || nodeDisplayName(node);
-    label.textContent = node.inverted ? "¬ " + displayName : displayName;
+    const shownName = node.inverted ? "¬ " + displayName : displayName;
+    if (!(opts && opts.labelText) && !node.label && node.type === "filter" &&
+        (node.filterType === "timerange" || node.filterType === "after" || node.filterType === "before")) {
+      // Time-filter labels wrap onto at most 2 lines, breaking only after the
+      // " – " / " · " separators: each segment is a nowrap span, the single
+      // spaces between them are the only break opportunities. textContent
+      // stays identical to the plain name.
+      label.classList.add("tree-label-wrap");
+      shownName.split(/(?<=[–·]) /).forEach((seg, i) => {
+        if (i) label.appendChild(document.createTextNode(" "));
+        const sp = document.createElement("span");
+        sp.className = "tl-seg";
+        sp.textContent = seg;
+        label.appendChild(sp);
+      });
+    } else label.textContent = shownName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
-    (node.label ? "  [" + node.name + "]" : "");
+    (node.label ? "  [" + node.name + "]" : "") +
+    (node.type === "filter" && node.filterType === "timerange" ? "\n" + timeRangeFullTitle(node.value, node.parentId) : "");
   row.appendChild(label);
   // Created by the LLM assistant in this run (llmCreatedNodeIds — an
   // in-memory set, not a node field).
@@ -28000,7 +28204,7 @@ let minimapLastViewEntries = [];
 // when flipping between filters on large files. Keyed on everything the pass
 // reads: root id, entry count (grows on tail append, resets on rotation),
 // time span, and bucket count (changes on resize).
-let minimapBgCache = null; // { rootId, entryCount, tMin, tMax, bucketCount, binningMode, bgCounts, maxCount }
+let minimapBgCache = null; // { rootId, entryCount, tMin, tMax, bucketCount, binningMode, idxLo, idxN, bgCounts, maxCount }
 
 /* ===================== Minimap binning mode (Settings -> Timeline minimap,
    FEATURE_BACKLOG.md #2, person-approved design) =====================
@@ -28042,26 +28246,56 @@ let minimapBinningMode = "time"; // "time" | "entries"
 // they already have.
 let minimapRootEntries = [];
 
+/* ===================== Minimap zoom (time-window workflow, step 3) =====================
+   The minimap shows the whole root file or, when zoomed, a time window of it.
+   minimapTMin/minimapTMax are always the bounds of what is DRAWN (the view
+   window while zoomed, the file's span otherwise), so minimapTsToX/XToTs/
+   BucketOf and every consumer built on them (range rects, markers, tooltip,
+   click-to-jump, drag-select, long-press dialog) work unchanged inside a
+   zoomed view. The file's own span is minimapFileTMin/TMax. In "entries"
+   binning mode the drawn range is the index slice [minimapIdxLo,
+   minimapIdxLo + minimapIdxN) of the root entries inside the window.
+   State: minimapViewTrail is the breadcrumb stack (each element {from, to},
+   the last one is the current view, empty = whole file); it resets when the
+   minimap's root file changes and is not persisted. A wheel zoom replaces
+   the top crumb when that crumb came from a wheel (minimapViewWheelTop)
+   instead of pushing one crumb per wheel notch.
+   Hooks: setMinimapView(from, to) (push a crumb; false when not applicable),
+   minimapViewReset(), minimapViewGoTo(depth), minimapViewZoomAt(ts, factor). */
+let minimapFileTMin = 0;
+let minimapFileTMax = 0;
+let minimapIdxLo = 0;
+let minimapIdxN = 0;
+let minimapViewTrail = [];
+let minimapViewWheelTop = false;
+let minimapViewRootId = null;
+// The draft window (drag result, no filter yet): {from, to} timestamps of the
+// minimap's root file, kept as timestamps so it survives every re-render and
+// zoom. Discarded on a root-file change. See renderMinimapDraft.
+let minimapDraft = null;
+const MINIMAP_MIN_SPAN_MS = 2000; // plain-text files: 1 (= 2 lines), see minimapMinSpan
+
 function minimapTsToX(ts) {
   if (minimapBinningMode === "entries") {
-    const len = minimapRootEntries.length;
-    if (len < 2) return 0; // mirrors the tMax<=tMin guard below: nothing to position against
+    const n = minimapIdxN;
+    if (n < 2) return 0; // mirrors the tMax<=tMin guard below: nothing to position against
     // Binary search for the entry ts resolves to (first index with an equal
     // or later timestamp), same lookup lowerBoundByTs already backs
     // elsewhere in the file — clamped since a ts past the file's own last
     // entry (e.g. the drag-anchor timestamp captured before a rotation
     // trimmed the file) would otherwise search past the array's end.
-    const idx = Math.min(len - 1, Math.max(0, lowerBoundByTs(minimapRootEntries, ts)));
-    return (idx / (len - 1)) * minimapWidth;
+    const idx = Math.min(minimapIdxLo + n - 1, Math.max(minimapIdxLo, lowerBoundByTs(minimapRootEntries, ts)));
+    return ((idx - minimapIdxLo) / (n - 1)) * minimapWidth;
   }
   if (minimapTMax <= minimapTMin) return 0;
   return ((ts - minimapTMin) / (minimapTMax - minimapTMin)) * minimapWidth;
 }
 function minimapXToTs(x) {
   if (minimapBinningMode === "entries") {
-    const len = minimapRootEntries.length;
-    if (len < 2) return minimapTMin;
-    const idx = Math.min(len - 1, Math.max(0, Math.round((x / minimapWidth) * (len - 1))));
+    const n = minimapIdxN;
+    if (n < 1) return minimapTMin;
+    if (n < 2) return minimapRootEntries[minimapIdxLo].ts;
+    const idx = minimapIdxLo + Math.min(n - 1, Math.max(0, Math.round((x / minimapWidth) * (n - 1))));
     // Returns the REAL timestamp of the entry that pixel resolves to, not an
     // interpolated point in time — this is the crux of why every caller
     // above this conversion layer (click-to-jump's lowerBoundByTs lookup,
@@ -28088,13 +28322,83 @@ function minimapXToTs(x) {
 function minimapBucketOf(ts) {
   if (minimapBucketCount === 0) return 0;
   if (minimapBinningMode === "entries") {
-    const len = minimapRootEntries.length;
-    if (len < 2) return 0;
-    const idx = Math.min(len - 1, Math.max(0, lowerBoundByTs(minimapRootEntries, ts)));
-    return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor((idx / len) * minimapBucketCount)));
+    const n = minimapIdxN;
+    if (n < 2) return 0;
+    const idx = Math.min(minimapIdxLo + n - 1, Math.max(minimapIdxLo, lowerBoundByTs(minimapRootEntries, ts)));
+    return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((idx - minimapIdxLo) / n) * minimapBucketCount)));
   }
   const span = Math.max(1, minimapTMax - minimapTMin);
   return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * minimapBucketCount)));
+}
+
+// True when the ts range [loTs, hiTs] lies completely outside the drawn
+// range (only possible while zoomed) — the range rects hide then instead of
+// clamping onto the first/last bar.
+function minimapRangeOutOfView(loTs, hiTs) {
+  return minimapViewTrail.length > 0 && (hiTs < minimapTMin || loTs > minimapTMax);
+}
+
+function minimapMinSpan() {
+  return nodeIsPlainText(minimapViewRootId) ? 1 : MINIMAP_MIN_SPAN_MS;
+}
+// Clamps a requested window into the file and enforces the minimum span;
+// null = the window covers the whole file (or the file is too short to zoom).
+function minimapNormalizeView(from, to) {
+  const lo = minimapFileTMin, hi = minimapFileTMax;
+  if (!(Number.isFinite(from) && Number.isFinite(to)) || to <= from) return undefined;
+  const min = minimapMinSpan();
+  if (hi - lo <= min) return null;
+  if (to - from < min) { const mid = (from + to) / 2; from = mid - min / 2; to = mid + min / 2; }
+  if (to - from >= hi - lo) return null;
+  if (from < lo) { to += lo - from; from = lo; }
+  if (to > hi) { from -= to - hi; to = hi; }
+  from = Math.max(lo, Math.round(from)); to = Math.min(hi, Math.round(to));
+  if (to <= from) return undefined;
+  return { from, to };
+}
+function minimapViewRerender() {
+  renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+  updateMinimapRenderedRange();
+}
+function minimapViewReset() {
+  if (!minimapViewTrail.length) return;
+  minimapViewTrail = [];
+  minimapViewWheelTop = false;
+  minimapViewRerender();
+}
+// Back to crumb `depth` (0 = whole file).
+function minimapViewGoTo(depth) {
+  if (depth >= minimapViewTrail.length) return;
+  minimapViewTrail.length = Math.max(0, depth);
+  minimapViewWheelTop = false;
+  minimapViewRerender();
+}
+// Zooms the minimap into [from, to] and pushes a breadcrumb. Returns true
+// when the view changed.
+function setMinimapView(from, to, opts) {
+  if (!minimapLastRootId || minimapRootEntries.length < 2) return false;
+  const v = minimapNormalizeView(from, to);
+  if (v === undefined) return false;
+  if (v === null) { if (!minimapViewTrail.length) return false; minimapViewReset(); return true; }
+  const top = minimapViewTrail[minimapViewTrail.length - 1];
+  if (top && top.from === v.from && top.to === v.to) return false;
+  if (opts && opts.wheel && minimapViewWheelTop && top) minimapViewTrail[minimapViewTrail.length - 1] = v;
+  else minimapViewTrail.push(v);
+  minimapViewWheelTop = !!(opts && opts.wheel);
+  minimapViewRerender();
+  return true;
+}
+// Wheel zoom: scales the drawn window by `factor` (< 1 in, > 1 out) keeping
+// the time `anchorTs` at the same fractional position. Zooming out past the
+// whole file resets.
+function minimapViewZoomAt(anchorTs, factor) {
+  if (!minimapLastRootId || minimapRootEntries.length < 2) return false;
+  const from = minimapTMin, to = minimapTMax;
+  const span = to - from;
+  if (!(span > 0)) return false;
+  if (factor < 1 && span <= minimapMinSpan()) return false;
+  const a = Math.min(to, Math.max(from, anchorTs));
+  return setMinimapView(a - (a - from) * factor, a + (to - a) * factor, { wheel: true });
 }
 
 // Maps a timestamp to the horizontal span of the density BAR it falls into,
@@ -28116,6 +28420,32 @@ function minimapBarSpan(ts) {
   return { left: bucket * barW, right: (bucket + 1) * barW };
 }
 
+// Breadcrumb trail + resolution hint for the meta line while zoomed: each
+// crumb is a button (data-depth = how many crumbs stay), the last one is the
+// current view and disabled.
+function minimapResolutionText() {
+  const fmt = v => String(v >= 100 ? Math.round(v) : v >= 10 ? +v.toFixed(1) : +v.toFixed(2));
+  const W = Math.max(1, minimapWidth);
+  if (minimapBinningMode === "entries") return fmt(minimapIdxN / W) + " entries/px";
+  if (nodeIsPlainText(minimapViewRootId)) return fmt((minimapTMax - minimapTMin + 1) / W) + " lines/px";
+  const ms = (minimapTMax - minimapTMin) / W;
+  return ms < 1000 ? fmt(ms) + " ms/px" : (ms / 1000).toFixed(2) + " s/px";
+}
+function minimapCrumbsHtml(rootId) {
+  const trail = minimapViewTrail;
+  const crumb = (label, depth) => '<button type="button" class="minimap-crumb" data-depth="' + depth + '"' +
+    (depth === trail.length ? " disabled" : "") + ">" + escapeHtml(label) + "</button>";
+  const parts = [crumb("Whole file", 0)];
+  trail.forEach((v, i) => {
+    const ms = !nodeIsPlainText(rootId) && v.to - v.from < 10000;
+    parts.push(crumb(timeRangeBoundLabel(rootId, v.from, ms) + "–" + timeRangeBoundLabel(rootId, v.to, ms), i + 1));
+  });
+  return '<span class="minimap-crumbs">' + parts.join(" › ") + '</span>' +
+    (minimapShownDraft() ? '<span class="minimap-draft-text">' + escapeHtml(minimapDraftLabelText(minimapShownDraft(), false)) + "</span>" : "") +
+    '<span class="minimap-res" title="Resolution of the zoomed minimap">' +
+    escapeHtml(minimapResolutionText()) + "</span>";
+}
+
 // rootId: the active node's root file id (whole-file density, background bars).
 // viewEntries: the active node's filtered+leveled result in chronological
 // order — i.e. currentViewEntries *before* any column-sort copy is applied
@@ -28127,19 +28457,21 @@ function minimapBarSpan(ts) {
 // an index is monotonic in the index in entries mode, and in time mode as
 // long as the file's ts are all numbers and non-decreasing (its aggregate
 // knows); null otherwise, and the caller buckets entry by entry.
-function minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) {
+// Zoomed: only the index slice [idxLo, idxLo + idxN) is bucketed (bounds are
+// absolute indices into the root's entries).
+function minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode, idxLo, idxN) {
   const root = state.nodes[rootId];
   const entries = root.entries;
-  const n = entries.length;
+  const n = idxN;
   if (!entriesMode && !fileAggregate(root).sorted) return null;
   const bucketAt = entriesMode
-    ? i => Math.min(bucketCount - 1, Math.floor((i / n) * bucketCount))
+    ? i => Math.min(bucketCount - 1, Math.floor(((i - idxLo) / n) * bucketCount))
     : i => bucketOfTime(entries[i].ts);
   const bounds = new Array(bucketCount + 1);
-  bounds[bucketCount] = n;
-  let lo0 = 0;
+  bounds[bucketCount] = idxLo + n;
+  let lo0 = idxLo;
   for (let b = 0; b < bucketCount; b++) {
-    let lo = lo0, hi = n;
+    let lo = lo0, hi = idxLo + n;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (bucketAt(mid) < b) lo = mid + 1; else hi = mid; }
     bounds[b] = lo0 = lo;
   }
@@ -28152,13 +28484,40 @@ function renderTimelineMinimap(rootId, viewEntries) {
 
   const rootEntries = rootId ? state.nodes[rootId].entries : [];
   minimapRootEntries = rootEntries; // feeds minimapTsToX/minimapXToTs/minimapBucketOf's "entries" branch — see minimapBinningMode's own module comment
+  if (rootId !== minimapViewRootId) { // a new root file starts whole (see "Minimap zoom")
+    minimapViewRootId = rootId;
+    minimapViewTrail = [];
+    minimapViewWheelTop = false;
+    minimapDraft = null; // the draft window belongs to one root file
+  }
   if (rootEntries.length < 2) {
+    minimapViewTrail = [];
+    timelineMinimapEl.classList.remove("zoomed", "has-crumbs", "has-draft");
+    minimapDraft = null;
+    renderMinimapDraft();
     timelineMinimapSvg.innerHTML = "";
     timelineMinimapMetaEl.textContent = "";
     timelineMinimapTooltip.classList.add("hidden");
     minimapInteractive = false;
     return;
   }
+
+  // Drawn range: the zoom window (clamped into the file) or the whole file.
+  // Set before the height is measured: on the phone the zoomed class adds the
+  // crumb line above the bars.
+  minimapFileTMin = rootEntries[0].ts;
+  minimapFileTMax = rootEntries[rootEntries.length - 1].ts;
+  let view = minimapViewTrail.length ? minimapViewTrail[minimapViewTrail.length - 1] : null;
+  if (view && (view.to < minimapFileTMin || view.from > minimapFileTMax || minimapFileTMax - minimapFileTMin <= minimapMinSpan())) {
+    minimapViewTrail = [];
+    minimapViewWheelTop = false;
+    view = null;
+  }
+  timelineMinimapEl.classList.toggle("zoomed", !!view);
+  if (minimapDraft && minimapDraft.adoptedFrom && minimapDraft.adoptedFrom !== state.activeId) minimapDraft = null; // an unsaved moved window dies with a node switch
+  const shownDraft = minimapShownDraft();
+  timelineMinimapEl.classList.toggle("has-crumbs", !!view || !!shownDraft);
+  timelineMinimapEl.classList.toggle("has-draft", !!shownDraft);
 
   // Width: measured off the container, same as before the meta line existed —
   // the meta line sits in its own row above the bars and doesn't consume any
@@ -28174,13 +28533,22 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // Root file entries are relied on elsewhere (link filter's binary search,
   // OR-filter merge) to stay chronological — see PROJECT.md — so the first/
   // last entry give the file's real time span directly, no scan needed.
-  minimapTMin = rootEntries[0].ts;
-  minimapTMax = rootEntries[rootEntries.length - 1].ts;
+  if (view) {
+    minimapTMin = Math.max(view.from, minimapFileTMin);
+    minimapTMax = Math.min(view.to, minimapFileTMax);
+    minimapIdxLo = lowerBoundByTs(rootEntries, minimapTMin);
+    minimapIdxN = upperBoundByTs(rootEntries, minimapTMax) - minimapIdxLo;
+  } else {
+    minimapTMin = minimapFileTMin;
+    minimapTMax = minimapFileTMax;
+    minimapIdxLo = 0;
+    minimapIdxN = rootEntries.length;
+  }
   const minimapMeta = nodeIsPlainText(rootId)
-    ? ["Lines <b>" + (minimapTMax - minimapTMin + 1).toLocaleString("de-DE") + "</b>"]
-    : ["Start <b>" + escapeHtml(formatTime(minimapTMin)) + "</b>",
-      "End <b>" + escapeHtml(formatTime(minimapTMax)) + "</b>",
-      "Duration <b>" + escapeHtml(formatMs(minimapTMax - minimapTMin)) + "</b>"];
+    ? ["Lines <b>" + (minimapFileTMax - minimapFileTMin + 1).toLocaleString("de-DE") + "</b>"]
+    : ["Start <b>" + escapeHtml(formatTime(minimapFileTMin)) + "</b>",
+      "End <b>" + escapeHtml(formatTime(minimapFileTMax)) + "</b>",
+      "Duration <b>" + escapeHtml(formatMs(minimapFileTMax - minimapFileTMin)) + "</b>"];
   // Per-level entry counts, one number-only segment per active level in the
   // same order/color as #levelBar's own buttons (activeLevelOrder()) —
   // person-requested, this session. Counts the whole ROOT FILE (rootId), not
@@ -28216,7 +28584,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
       '" title="' + escapeHtml(fullName + fatalNote) + ': add/show a level filter for this file">' +
       escapeHtml(lvl.charAt(0)) + " " + n.toLocaleString("de-DE") + '</span>');
   });
-  timelineMinimapMetaEl.innerHTML = minimapMeta.join(" · ");
+  // Zoomed: breadcrumbs back out + the resolution of the drawn window before
+  // the file facts; on the phone only the crumbs stay (CSS hides the rest).
+  timelineMinimapMetaEl.innerHTML = (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
+    '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + "</span>";
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
@@ -28224,6 +28595,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // A plain-text file's "ts" are consecutive line numbers: more buckets than
   // lines would leave every other bucket empty (a striped minimap).
   if (nodeIsPlainText(rootId)) bucketCount = Math.max(1, Math.min(bucketCount, minimapTMax - minimapTMin + 1));
+  if (view && minimapBinningMode === "entries") bucketCount = Math.max(1, Math.min(bucketCount, minimapIdxN)); // a slice of 5 entries has no use for 100 buckets
   minimapBucketCount = bucketCount;
   // Bucket-index formulas for the two passes below — TIME mode buckets a
   // timestamp by its position in [minimapTMin, minimapTMax] (bucketOfTime,
@@ -28247,12 +28619,12 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const c = minimapBgCache;
   if (c && c.rootId === rootId && c.entryCount === rootEntries.length &&
       c.tMin === minimapTMin && c.tMax === minimapTMax && c.bucketCount === bucketCount &&
-      c.binningMode === minimapBinningMode) {
+      c.binningMode === minimapBinningMode && c.idxLo === minimapIdxLo && c.idxN === minimapIdxN) {
     bgCounts = c.bgCounts;
     maxCount = c.maxCount;
   } else {
     bgCounts = new Array(bucketCount).fill(0);
-    const bounds = minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode);
+    const bounds = minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode, minimapIdxLo, minimapIdxN);
     if (bounds) {
       for (let b = 0; b < bucketCount; b++) bgCounts[b] = bounds[b + 1] - bounds[b];
     } else if (entriesMode) {
@@ -28269,13 +28641,14 @@ function renderTimelineMinimap(rootId, viewEntries) {
       const n = rootEntries.length;
       for (let i = 0; i < n; i++) bgCounts[Math.min(bucketCount - 1, Math.floor((i / n) * bucketCount))]++;
     } else {
-      for (const e of rootEntries) bgCounts[bucketOfTime(e.ts)]++;
+      // Unsorted time file: bucket entry by entry (zoomed: only those inside the window).
+      for (const e of rootEntries) if (!view || (e.ts >= minimapTMin && e.ts <= minimapTMax)) bgCounts[bucketOfTime(e.ts)]++;
     }
     // Loop instead of Math.max(...spread): same call-stack-argument-ceiling
     // reasoning as computeColumnStats, and bucketCount can reach 400.
     maxCount = 1;
     for (const n of bgCounts) if (n > maxCount) maxCount = n;
-    minimapBgCache = { rootId, entryCount: rootEntries.length, tMin: minimapTMin, tMax: minimapTMax, bucketCount, binningMode: minimapBinningMode, bgCounts, maxCount };
+    minimapBgCache = { rootId, entryCount: rootEntries.length, tMin: minimapTMin, tMax: minimapTMax, bucketCount, binningMode: minimapBinningMode, idxLo: minimapIdxLo, idxN: minimapIdxN, bgCounts, maxCount };
   }
 
   const ovCounts = new Array(bucketCount).fill(0);
@@ -28286,7 +28659,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // same counts as the background, and per bucket the lowest-ranked level
   // present — ties going to the level whose first entry in that bucket comes
   // first, exactly what the per-entry loop below picks.
-  const bounds = viewEntries === rootEntries ? minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) : null;
+  const bounds = viewEntries === rootEntries ? minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode, minimapIdxLo, minimapIdxN) : null;
   if (bounds) {
     const ovFirst = new Array(bucketCount).fill(Infinity);
     for (let b = 0; b < bucketCount; b++) ovCounts[b] = bounds[b + 1] - bounds[b];
@@ -28322,14 +28695,16 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const levelInfo = new Map(); // formatId -> Map(level -> [bucket, rank])
   if (!bounds) for (const e of viewEntries) {
     let b;
+    if (view && !entriesMode && (e.ts < minimapTMin || e.ts > minimapTMax)) continue;
     if (entriesMode) {
       const idx = orderIndexMap.get(e.id);
+      if (view && (idx == null || idx < minimapIdxLo || idx >= minimapIdxLo + minimapIdxN)) continue;
       // idx === undefined only for an entry that isn't actually a member of
       // its claimed root file (shouldn't happen for real callers — see
       // renderTimelineMinimap's own rootId/viewEntries contract above) —
       // falls back to bucket 0 rather than throwing, same defensive spirit
       // as buildOrderIndexMap's own "resolves undefined" fallback.
-      b = idx == null ? 0 : Math.min(bucketCount - 1, Math.floor((idx / rootCount) * bucketCount));
+      b = idx == null ? 0 : Math.min(bucketCount - 1, Math.floor(((idx - minimapIdxLo) / (view ? minimapIdxN : rootCount)) * bucketCount));
     } else {
       b = bucketOfTime(e.ts);
     }
@@ -28387,6 +28762,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // rect hidden while the Link view is active (see its own comment).
   updateMinimapFullRange();
   updateMinimapSelectionMarkers();
+  renderMinimapDraft();
 }
 
 // Repositions the "whole Filtered-view result" rectangle to span from the
@@ -28420,6 +28796,7 @@ function updateMinimapFullRange() {
     if (e.ts < minTs) minTs = e.ts;
     if (e.ts > maxTs) maxTs = e.ts;
   }
+  if (minimapRangeOutOfView(minTs, maxTs)) { rect.classList.add("hidden"); return; }
   const x1 = minimapBarSpan(minTs).left;
   const x2 = minimapBarSpan(maxTs).right;
   rect.setAttribute("x", x1.toFixed(1));
@@ -28439,7 +28816,7 @@ function updateMinimapFullRange() {
 // straight past the end of the array.
 function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
   const r = visibleEntryRange(entries, scrollEl, rowOffsets);
-  return r ? { left: minimapBarSpan(r.first.ts).left, right: minimapBarSpan(r.last.ts).right } : null;
+  return r && !minimapRangeOutOfView(r.first.ts, r.last.ts) ? { left: minimapBarSpan(r.first.ts).left, right: minimapBarSpan(r.last.ts).right } : null;
 }
 
 // First/last real entry inside the scroll container's viewport ({first, last}),
@@ -28539,6 +28916,7 @@ function updateMinimapRenderedRange() {
     const bodyScrollTop = Math.max(0, extractScroll.scrollTop - headerH);
     const startIdx = Math.min(total - 1, Math.max(0, Math.floor(bodyScrollTop / EXTRACT_ROW_HEIGHT)));
     const endIdx = Math.min(total - 1, Math.max(startIdx, Math.ceil((bodyScrollTop + viewportH) / EXTRACT_ROW_HEIGHT)));
+    if (minimapRangeOutOfView(extractRowsData[startIdx].entry.ts, extractRowsData[endIdx].entry.ts)) { rect.classList.add("hidden"); return; }
     const x1 = minimapBarSpan(extractRowsData[startIdx].entry.ts).left;
     const x2 = minimapBarSpan(extractRowsData[endIdx].entry.ts).right;
     rect.setAttribute("x", x1.toFixed(1));
@@ -28563,6 +28941,7 @@ function updateMinimapRenderedRange() {
       if (ts < minTs) minTs = ts;
       if (ts > maxTs) maxTs = ts;
     }
+    if (minimapRangeOutOfView(minTs, maxTs)) { rect.classList.add("hidden"); return; }
     const x1 = minimapBarSpan(minTs).left;
     const x2 = minimapBarSpan(maxTs).right;
     rect.setAttribute("x", x1.toFixed(1));
@@ -28641,7 +29020,7 @@ function updateMinimapSelectionMarkers() {
   const marked = minimapMarkedEntries();
   if (marked.length === 0) { g.innerHTML = ""; return; }
   const H = Math.max(20, timelineMinimapSvg.clientHeight || 52);
-  g.innerHTML = marked.map(e => {
+  g.innerHTML = marked.filter(e => !minimapRangeOutOfView(e.ts, e.ts)).map(e => {
     const x = minimapTsToX(e.ts);
     return '<rect class="minimap-marker-line" x="' + (x - 1).toFixed(1) + '" y="0" width="2" height="' + H + '"/>' +
       '<path class="minimap-marker-flag" d="M ' + (x - 4).toFixed(1) + ' 0 L ' + (x + 4).toFixed(1) + ' 0 L ' + x.toFixed(1) + ' 6 Z"/>';
@@ -28656,10 +29035,21 @@ function updateMinimapSelectionMarkers() {
 // minimapLastRootId rather than a closed-over rootId, since it must resolve
 // to whichever file the CURRENTLY rendered meta line actually belongs to.
 timelineMinimapMetaEl.addEventListener("click", ev => {
+  const crumb = ev.target.closest(".minimap-crumb");
+  if (crumb) { minimapViewGoTo(+crumb.dataset.depth); return; }
   const span = ev.target.closest(".minimap-meta-level");
   if (!span || !minimapLastRootId) return;
   applyLevelFilterUnderRootFile(minimapLastRootId, span.dataset.level);
 });
+
+// Wheel over the minimap zooms around the cursor (0.8 in / 1.25 out); the
+// page never scrolls while the pointer is over it. Non-passive on purpose.
+timelineMinimapEl.addEventListener("wheel", ev => {
+  if (!ev.deltaY && !ev.deltaX) return;
+  ev.preventDefault();
+  if (minimapRootEntries.length < 2 || !minimapWidth) return;
+  minimapViewZoomAt(minimapAnchorTsAtClientX(ev.clientX), (ev.deltaY || ev.deltaX) < 0 ? 0.8 : 1.25);
+}, { passive: false });
 
 // Click-to-jump: nearest entry in time, same "select + scroll + flash"
 // path a row double-click uses elsewhere. Withheld during a column sort —
@@ -28673,6 +29063,8 @@ timelineMinimapMetaEl.addEventListener("click", ev => {
 timelineMinimapSvg.addEventListener("click", ev => {
   if (minimapDragSuppressClick) { minimapDragSuppressClick = false; return; }
   if (minimapLongPressDone) return; // the long-press already opened the time-range dialog
+  if (minimapPinchTail) return; // a pinch is no click
+  minimapDiscardDraft(); // a plain click leaves the draft window behind and jumps
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
   const ts = minimapXToTs(x);
@@ -28790,10 +29182,230 @@ function hideMinimapDragOverlay() {
 function createTimeRangeFilterFromDrag(fromTs, toTs) {
   const baseId = state.activeId;
   if (!baseId) return;
-  if (!createFilterNode(baseId, "timerange", { from: fromTs, to: toTs })) return;
+  if (!applyTimeWindow(baseId, fromTs, toTs)) return;
   revealFilteredView(); // a new filter's result lives in the Filtered view, same as every other filter-creation path
   render();
 }
+
+/* ---------- Draft window: a drag leaves a draft (no filter yet) -----------
+   Two handles move one bound each (the bounds swap when they cross), the
+   action bar below the strip turns it into something: Zoom (view = draft
+   +-10 %), Filter (applyTimeWindow on the active node), Edit... (time-range
+   dialog), x / Esc (discard). Stored as timestamps (minimapDraft) so it
+   survives every re-render, zoom and resize; renderMinimapDraft() repositions
+   the DOM pieces, all outside the <svg>. */
+/* The ADOPTED state: while the active node is a time filter (timerange, or
+   the legacy after/before) and there is no user draft, its own window is
+   shown as a draft with handles but without the action bar. An open bound
+   (null) sits at the file boundary and has no handle. Moving a handle turns
+   it into a normal draft ({..., adoptedFrom: nodeId}, bar with "Update
+   filter"); x / Esc then falls back to the adopted state; switching the
+   active node drops such a draft. Derived on every render, never stored. */
+function minimapAdoptedWindow() {
+  const n = state.nodes[state.activeId];
+  if (!n || n.type !== "filter" || !isTimeFilterType(n.filterType) || getRootFileId(n.id) !== minimapViewRootId) return null;
+  const r = timeRangeOfNode(n);
+  if (r.from == null && r.to == null) return null;
+  return { from: r.from, to: r.to, adoptedFrom: n.id };
+}
+function minimapShownDraft() { return minimapDraft || minimapAdoptedWindow(); }
+
+function minimapDraftEntryCount(from, to) {
+  const v = minimapLastViewEntries;
+  if (!v || !v.length) return 0;
+  return Math.max(0, upperBoundByTs(v, to == null ? Infinity : to) - lowerBoundByTs(v, from == null ? -Infinity : from));
+}
+// ms: milliseconds in the bounds (the floating label); the phone's crumb line uses seconds.
+function minimapDraftLabelText(d, ms) {
+  const root = minimapViewRootId;
+  const n = minimapDraftEntryCount(d.from, d.to);
+  const bound = ts => timeRangeBoundLabel(root, ts, ms !== false);
+  const range = d.from != null && d.to != null
+    ? bound(d.from) + " – " + bound(d.to) + (nodeIsPlainText(root) ? "" : " · " + formatMs(d.to - d.from))
+    : d.from != null ? "from " + bound(d.from) : "until " + bound(d.to);
+  return range + " · " + n.toLocaleString("de-DE") + " entries";
+}
+function renderMinimapDraft() {
+  const d = minimapShownDraft();
+  const rect = timelineMinimapDragRect;
+  const hideAll = () => {
+    if (rect.classList.contains("selected")) { rect.classList.remove("selected"); rect.classList.add("hidden"); }
+    timelineMinimapDraftLabel.classList.add("hidden");
+    timelineMinimapDraftBar.classList.add("hidden");
+    minimapDraftHandles.forEach(h => h.classList.add("hidden"));
+  };
+  if (!d || (minimapDragging && minimapDragMoved) || minimapPinch || timelineMinimapEl.classList.contains("hidden") || minimapRootEntries.length < 2 ||
+      minimapRangeOutOfView(d.from == null ? minimapFileTMin : d.from, d.to == null ? minimapFileTMax : d.to)) { hideAll(); return; }
+  const W = minimapWidth;
+  // An open bound sits at the file boundary (off-screen when zoomed past it).
+  const xa = minimapTsToX(d.from == null ? minimapFileTMin : d.from), xb = minimapTsToX(d.to == null ? minimapFileTMax : d.to);
+  const lo = Math.min(W, Math.max(0, xa)), hi = Math.min(W, Math.max(0, xb));
+  // An SVG element has no offsetTop/offsetHeight: measure against the container.
+  const sr = timelineMinimapSvg.getBoundingClientRect(), cr = timelineMinimapEl.getBoundingClientRect();
+  const top = Math.round(sr.top - cr.top), h = Math.round(sr.height);
+  rect.classList.add("selected");
+  rect.classList.remove("hidden");
+  rect.style.top = top + "px";
+  rect.style.height = h + "px";
+  rect.style.left = lo.toFixed(1) + "px";
+  rect.style.width = Math.max(1, hi - lo).toFixed(1) + "px";
+  timelineMinimapDraftLabel.textContent = minimapDraftLabelText(d);
+  const shortEl = timelineMinimapMetaEl.querySelector(".minimap-draft-text");
+  if (shortEl) shortEl.textContent = minimapDraftLabelText(d, false);
+  timelineMinimapDraftLabel.classList.remove("hidden");
+  const halfL = (timelineMinimapDraftLabel.offsetWidth || 0) / 2; // keep the whole label inside the strip
+  timelineMinimapDraftLabel.style.left = Math.max(halfL + 4, Math.min(W - halfL - 4, (lo + hi) / 2)).toFixed(1) + "px";
+  timelineMinimapDraftLabel.style.top = (top + 4) + "px";
+  minimapDraftHandles.forEach(hd => {
+    const bound = hd.dataset.side === "from" ? d.from : d.to;
+    const x = hd.dataset.side === "from" ? xa : xb;
+    const inside = bound != null && x >= 0 && x <= W;
+    hd.classList.toggle("hidden", !inside);
+    hd.style.left = x.toFixed(1) + "px";
+    hd.style.top = top + "px";
+    hd.style.height = h + "px";
+  });
+  // The action bar belongs to a user draft only, not to the adopted window.
+  if (!minimapDraft) { timelineMinimapDraftBar.classList.add("hidden"); return; }
+  const node = state.nodes[state.activeId];
+  const filterBtn = timelineMinimapDraftBar.querySelector('[data-act="filter"]');
+  filterBtn.textContent = node && node.filterType === "timerange" ? "Update filter" : "Filter";
+  timelineMinimapDraftBar.classList.remove("hidden");
+  const barW = timelineMinimapDraftBar.offsetWidth || 0;
+  const barLeft = Math.max(4, Math.min(W - barW - 4, (lo + hi) / 2 - barW / 2));
+  timelineMinimapDraftBar.style.left = barLeft.toFixed(1) + "px";
+  timelineMinimapDraftBar.style.top = (top + h + 3) + "px";
+}
+function minimapSetDraft(from, to) {
+  minimapDraft = { from, to };
+  minimapViewRerender(); // the phone crumb line appears with the draft
+}
+function minimapDiscardDraft() {
+  if (!minimapDraft) return;
+  minimapDraft = null;
+  minimapViewRerender();
+}
+function minimapDraftAction(act) {
+  const d = minimapDraft;
+  if (!d) return;
+  if (act === "discard") { minimapDiscardDraft(); return; }
+  if (act === "zoom") {
+    const f = d.from == null ? minimapFileTMin : d.from, t = d.to == null ? minimapFileTMax : d.to;
+    const pad = (t - f) * 0.1;
+    setMinimapView(f - pad, t + pad);
+    return;
+  }
+  const { from, to } = d;
+  minimapDraft = null;
+  if (act === "filter") { createTimeRangeFilterFromDrag(from, to); minimapViewRerender(); return; }
+  minimapViewRerender();
+  if (act === "edit" && state.activeId) openTimeRangeDialog("create", state.activeId, { from, to });
+}
+timelineMinimapDraftBar.addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-act]");
+  if (b) minimapDraftAction(b.dataset.act);
+});
+timelineMinimapDraftBar.addEventListener("pointerdown", ev => ev.stopPropagation());
+
+// Handle drag: one bound follows the pointer, swapping when they cross.
+let minimapHandleDrag = null; // { side, pointerId, rect, el, prevDraft }
+minimapDraftHandles.forEach(hd => hd.addEventListener("pointerdown", ev => {
+  if (ev.button !== 0 || !minimapShownDraft() || minimapPinch) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  minimapHandleDrag = { side: hd.dataset.side, pointerId: ev.pointerId === undefined ? null : ev.pointerId, rect: timelineMinimapSvg.getBoundingClientRect(), el: hd, prevDraft: minimapDraft };
+  hd.classList.add("dragging");
+  if (typeof hd.setPointerCapture === "function" && ev.pointerId !== undefined) {
+    try { hd.setPointerCapture(ev.pointerId); } catch (_) { /* pointer already gone */ }
+  }
+}));
+window.addEventListener("pointermove", ev => {
+  const hd = minimapHandleDrag;
+  if (!hd || (hd.pointerId !== null && ev.pointerId !== undefined && ev.pointerId !== hd.pointerId)) return;
+  const base = minimapShownDraft();
+  if (!base) return;
+  const ts = Math.round(minimapXToTs(minimapEventUnitX(ev, hd.rect)));
+  const other = hd.side === "from" ? base.to : base.from;
+  if (ts === other) return;
+  const adoptedFrom = base.adoptedFrom;
+  if (other == null) minimapDraft = hd.side === "from" ? { from: ts, to: null, adoptedFrom } : { from: null, to: ts, adoptedFrom };
+  else {
+    minimapDraft = { from: Math.min(ts, other), to: Math.max(ts, other), adoptedFrom };
+    hd.side = ts < other ? "from" : "to"; // crossing swaps which bound the dragged handle owns
+  }
+  renderMinimapDraft();
+});
+function endMinimapHandleDrag(ev) {
+  const hd = minimapHandleDrag;
+  if (!hd || (hd.pointerId !== null && ev.pointerId !== undefined && ev.pointerId !== hd.pointerId)) return;
+  minimapHandleDrag = null;
+  hd.el.classList.remove("dragging");
+}
+window.addEventListener("pointerup", endMinimapHandleDrag);
+window.addEventListener("pointercancel", endMinimapHandleDrag);
+
+/* ---------- Pinch zoom (touch): two fingers on the strip zoom around their
+   midpoint, same logic as the wheel (minimapViewZoomAt: consecutive steps
+   replace the top crumb, zooming out past the whole file resets, min span).
+   A second finger cancels a running draft drag / handle drag (the previous
+   draft comes back) and starts the pinch; lifting one finger ends it without
+   starting a draft, click or long-press (minimapPinchTail swallows the
+   trailing click). touch-action: pan-y already keeps the browser from
+   pinch-zooming the page. */
+let minimapPinch = null; // { ids: [a, b], prevDist }
+let minimapPinchTail = false;
+const minimapTouches = new Map(); // pointerId -> clientX of touches that landed on the minimap
+function minimapAnchorTsAtClientX(clientX) {
+  const rect = timelineMinimapSvg.getBoundingClientRect();
+  const x = rect.width ? Math.min(minimapWidth, Math.max(0, ((clientX - rect.left) / rect.width) * minimapWidth)) : minimapWidth / 2;
+  return minimapBinningMode === "entries" ? minimapXToTs(x) : minimapTMin + (x / minimapWidth) * (minimapTMax - minimapTMin);
+}
+function cancelMinimapGesturesForPinch() {
+  if (minimapDragging) {
+    clearMinimapLongPress();
+    endMinimapDrag();
+    minimapDragMoved = false;
+  }
+  if (minimapHandleDrag) {
+    const hd = minimapHandleDrag;
+    minimapHandleDrag = null;
+    hd.el.classList.remove("dragging");
+    minimapDraft = hd.prevDraft; // back to the draft (or adopted window) from before the handle moved
+  }
+}
+window.addEventListener("pointerdown", ev => {
+  if (ev.pointerType !== "touch" || ev.pointerId === undefined || !ev.target || !ev.target.closest) return;
+  if (!ev.target.closest("#timelineMinimap") || ev.target.closest(".minimap-draft-bar") || minimapRootEntries.length < 2) return;
+  if (minimapTouches.size === 0) minimapPinchTail = false;
+  minimapTouches.set(ev.pointerId, ev.clientX);
+  if (minimapTouches.size === 2 && !minimapPinch) {
+    const ids = [...minimapTouches.keys()];
+    cancelMinimapGesturesForPinch();
+    minimapPinch = { ids, prevDist: Math.abs(minimapTouches.get(ids[0]) - minimapTouches.get(ids[1])) };
+    minimapPinchTail = true;
+    minimapViewRerender(); // hides the draft overlay while pinching
+  }
+}, true);
+window.addEventListener("pointermove", ev => {
+  if (!minimapPinch || !minimapTouches.has(ev.pointerId)) return;
+  minimapTouches.set(ev.pointerId, ev.clientX);
+  const [a, b] = minimapPinch.ids;
+  const dist = Math.abs(minimapTouches.get(a) - minimapTouches.get(b));
+  if (dist < 1 || minimapPinch.prevDist < 1) { minimapPinch.prevDist = Math.max(dist, 1); return; }
+  const factor = minimapPinch.prevDist / dist; // fingers apart -> smaller window
+  minimapPinch.prevDist = dist;
+  if (factor === 1) return;
+  minimapViewZoomAt(minimapAnchorTsAtClientX((minimapTouches.get(a) + minimapTouches.get(b)) / 2), factor);
+});
+function endMinimapTouch(ev) {
+  if (!minimapTouches.delete(ev.pointerId)) return;
+  if (minimapPinch && minimapPinch.ids.includes(ev.pointerId)) {
+    minimapPinch = null;
+    renderMinimapDraft();
+  }
+}
+window.addEventListener("pointerup", endMinimapTouch, true);
+window.addEventListener("pointercancel", endMinimapTouch, true);
 
 // Pointer events (mouse, touch, pen alike): pointerdown + setPointerCapture on
 // the svg, pointermove/up/cancel on window (captured events bubble there, and
@@ -28843,7 +29455,7 @@ let minimapLongPressDone = false; // set per gesture; also makes the trailing cl
 
 timelineMinimapSvg.addEventListener("pointerdown", ev => {
   minimapPointerType = ev.pointerType || "mouse"; // also for a right-click, so the contextmenu handler sees the right type
-  if (!minimapInteractive || ev.button !== 0 || ev.isPrimary === false) return;
+  if (!minimapInteractive || ev.button !== 0 || ev.isPrimary === false || minimapPinch) return;
   minimapPointerId = ev.pointerId === undefined ? null : ev.pointerId;
   minimapLongPressDone = false;
   minimapPressClientX = ev.clientX;
@@ -28873,7 +29485,7 @@ window.addEventListener("pointermove", ev => {
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const xStart = minimapTsToX(minimapDragStartTs), xNow = minimapTsToX(curTs);
   if (!minimapDragMoved && Math.abs(xNow - xStart) < minimapDragThreshold) return;
-  minimapDragMoved = true;
+  if (!minimapDragMoved) { minimapDragMoved = true; renderMinimapDraft(); } // the new drag replaces an existing draft's overlay
   clearMinimapLongPress(); // a swipe, not a long-press
   showMinimapDragOverlay(xStart, xNow);
 });
@@ -28882,11 +29494,14 @@ window.addEventListener("pointerup", ev => {
   if (!minimapDragging || !minimapOwnsPointer(ev)) return;
   clearMinimapLongPress();
   endMinimapDrag();
-  if (!minimapDragMoved) return; // a plain click/tap — the svg's own "click" listener handles jump-to
+  const wasMoved = minimapDragMoved;
+  minimapDragMoved = false;
+  if (!wasMoved) return; // a plain click/tap — the svg's own "click" listener handles jump-to
   minimapDragSuppressClick = true;
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const fromTs = Math.round(Math.min(minimapDragStartTs, curTs)), toTs = Math.round(Math.max(minimapDragStartTs, curTs));
-  if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
+  if (toTs > fromTs) minimapSetDraft(fromTs, toTs);
+  else renderMinimapDraft();
 });
 
 // The browser took the gesture (vertical pan, system gesture): abort, no filter.
@@ -28894,6 +29509,8 @@ window.addEventListener("pointercancel", ev => {
   if (!minimapDragging || !minimapOwnsPointer(ev)) return;
   clearMinimapLongPress();
   endMinimapDrag();
+  minimapDragMoved = false;
+  renderMinimapDraft();
 });
 
 // Right-click: open the time-range dialog directly (see "Time range dialog"
@@ -37111,12 +37728,12 @@ function closeContextMenu() { contextMenu.classList.add("hidden"); closeAddToSel
 // than the legacy single-bound "after"/"before" types — same result, but now
 // editable afterward through the time-range dialog (see openTimeRangeDialog).
 el("#ctxAfter").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: ctxEntry.ts, to: null }); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { applyTimeWindow(state.activeId, ctxEntry.ts, null); revealFilteredView(); }
   closeContextMenu();
   render();
 });
 el("#ctxBefore").addEventListener("click", () => {
-  if (ctxEntry && state.activeId) { createFilterNode(state.activeId, "timerange", { from: null, to: ctxEntry.ts }); revealFilteredView(); }
+  if (ctxEntry && state.activeId) { applyTimeWindow(state.activeId, null, ctxEntry.ts); revealFilteredView(); }
   closeContextMenu();
   render();
 });
@@ -37131,7 +37748,7 @@ el("#ctxTimeRangeFromSelection").addEventListener("click", () => {
   if (tsList.length >= 2 && state.activeId) {
     const from = arrayMin(tsList);
     const to = arrayMax(tsList);
-    createFilterNode(state.activeId, "timerange", { from, to });
+    applyTimeWindow(state.activeId, from, to);
     revealFilteredView();
   }
   closeContextMenu();
@@ -38138,7 +38755,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter after."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: arrayMin(entries.map(e => e.ts)), to: null });
+        applyTimeWindow(state.activeId, arrayMin(entries.map(e => e.ts)), null);
         revealFilteredView(); render();
       }
       break;
@@ -38147,7 +38764,7 @@ function handleRowActionClick(action, anchorBtn) {
       const entries = afterBeforeActionEntries();
       if (!entries.length) { showCopyToast("Select or mark at least one entry to filter before."); break; }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: null, to: arrayMax(entries.map(e => e.ts)) });
+        applyTimeWindow(state.activeId, null, arrayMax(entries.map(e => e.ts)));
         revealFilteredView(); render();
       }
       break;
@@ -38184,7 +38801,7 @@ function handleRowActionClick(action, anchorBtn) {
         break;
       }
       if (state.activeId) {
-        createFilterNode(state.activeId, "timerange", { from: arrayMin(tsList), to: arrayMax(tsList) });
+        applyTimeWindow(state.activeId, arrayMin(tsList), arrayMax(tsList));
         revealFilteredView();
         render();
       }
@@ -40534,17 +41151,117 @@ function isCoarsePointer() {
   try { return !!(window.matchMedia && matchMedia("(pointer: coarse)").matches); } catch { return false; }
 }
 
+// Dialog fields: a time-only text field per bound (HH:MM:SS(.mmm)), the date
+// implied by a chip when the root file lies on one day, otherwise one date
+// input per bound. Plain-text files (bounds are line numbers) get whole-number
+// "line" fields without dates; ±1 then means one line.
+let timeRangeDialogCtx = null; // { plain, firstTs, lastTs, dayStr, singleDay, baseId }
+const TIME_RANGE_SIDES = {
+  from: { input: timeRangeFromInput, date: el("#timeRangeFromDate"), dateRow: el("#timeRangeFromDateRow") },
+  to: { input: timeRangeToInput, date: el("#timeRangeToDate"), dateRow: el("#timeRangeToDateRow") },
+};
+const timeRangeDateChip = el("#timeRangeDateChip");
+const timeRangeMeta = el("#timeRangeMeta");
+function trDayStr(ts) {
+  const d = new Date(ts), p2 = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+}
+function trTimeStr(ts) {
+  const d = new Date(ts), p2 = n => String(n).padStart(2, "0");
+  return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+}
+// "HH:MM", "HH:MM:SS", "HH:MM:SS.m{1,3}" -> ms since midnight, or NaN.
+function parseTimeOfDay(str) {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?$/.exec(str.trim());
+  if (!m) return NaN;
+  const h = +m[1], mi = +m[2], sec = m[3] ? +m[3] : 0, ms = m[4] ? +m[4].padEnd(3, "0") : 0;
+  if (h > 23 || mi > 59 || sec > 59) return NaN;
+  return ((h * 60 + mi) * 60 + sec) * 1000 + ms;
+}
+// Reads one bound: a ts, null (field empty = open) or NaN (invalid text).
+function timeRangeDialogBound(side) {
+  const sd = TIME_RANGE_SIDES[side], ctx = timeRangeDialogCtx;
+  const text = sd.input.value.trim();
+  if (!text) return null;
+  if (ctx && ctx.plain) return /^\d+$/.test(text) ? +text : NaN;
+  const tod = parseTimeOfDay(text);
+  if (isNaN(tod)) return NaN;
+  const day = ctx && ctx.singleDay ? ctx.dayStr : (sd.date.value || (ctx && ctx.dayStr));
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || "");
+  if (!dm) return NaN;
+  const h = Math.floor(tod / 3600000), mi = Math.floor(tod / 60000) % 60, sec = Math.floor(tod / 1000) % 60;
+  return new Date(+dm[1], +dm[2] - 1, +dm[3], h, mi, sec, tod % 1000).getTime();
+}
+function setTimeRangeDialogBound(side, ts) {
+  const sd = TIME_RANGE_SIDES[side], ctx = timeRangeDialogCtx;
+  if (ts == null || isNaN(ts)) { sd.input.value = ""; return; }
+  if (ctx && ctx.plain) { sd.input.value = String(Math.max(0, Math.round(ts))); return; }
+  sd.input.value = trTimeStr(ts);
+  if (!(ctx && ctx.singleDay)) sd.date.value = trDayStr(ts);
+}
+function updateTimeRangeDialogMeta() {
+  const ctx = timeRangeDialogCtx;
+  const from = timeRangeDialogBound("from"), to = timeRangeDialogBound("to");
+  if (!ctx || isNaN(from) || isNaN(to) || (from == null && to == null)) { timeRangeMeta.textContent = ""; return; }
+  const lo = from != null && to != null ? Math.min(from, to) : from, hi = from != null && to != null ? Math.max(from, to) : to;
+  let n = 0;
+  const base = state.nodes[ctx.baseId] ? getEntries(ctx.baseId) : [];
+  for (let i = 0; i < base.length; i++) { const t = base[i].ts; if ((lo == null || t >= lo) && (hi == null || t <= hi)) n++; }
+  const count = n.toLocaleString("de-DE") + (n === 1 ? " entry" : " entries");
+  timeRangeMeta.textContent = from != null && to != null && !ctx.plain ? `Duration ${formatMs(hi - lo)} · ${count}` : count;
+}
+function showTimeRangeDialogError(msg) {
+  timeRangeDialogError.textContent = msg;
+  timeRangeDialogError.classList.remove("hidden");
+}
+function nudgeTimeRangeDialogBound(side, dir, big) {
+  const ctx = timeRangeDialogCtx;
+  if (!ctx) return;
+  let ts = timeRangeDialogBound(side);
+  if (isNaN(ts)) return;
+  if (ts == null) ts = side === "from" ? ctx.firstTs : ctx.lastTs;
+  else ts += dir * (ctx.plain ? (big ? 10 : 1) : (big ? 60000 : 1000));
+  if (ts == null) return;
+  setTimeRangeDialogBound(side, ts);
+  timeRangeDialogError.classList.add("hidden");
+  updateTimeRangeDialogMeta();
+}
+
 function openTimeRangeDialog(mode, targetId, prefill) {
   const target = state.nodes[targetId];
   if (!target) return;
   timeRangeDialogMode = mode;
   timeRangeDialogTargetId = targetId;
   const range = prefill || { from: null, to: null };
-  timeRangeFromInput.value = tsToLocalInputValue(range.from);
-  timeRangeToInput.value = tsToLocalInputValue(range.to);
+  const rootId = getRootFileId(targetId), root = rootId ? state.nodes[rootId] : null;
+  const entries = root && root.entries ? root.entries : [];
+  const plain = nodeIsPlainText(targetId);
+  const firstTs = entries.length ? entries[0].ts : null, lastTs = entries.length ? entries[entries.length - 1].ts : null;
+  const fileDay = firstTs != null ? trDayStr(firstTs) : trDayStr(Date.now());
+  const singleDay = !plain && (firstTs == null || trDayStr(lastTs) === fileDay) &&
+    [range.from, range.to].every(t => t == null || trDayStr(t) === fileDay);
+  timeRangeDialogCtx = { plain, firstTs, lastTs, dayStr: fileDay, singleDay, baseId: mode === "edit" ? target.parentId : targetId };
+  const ctx = timeRangeDialogCtx;
+  timeRangeDateChip.classList.toggle("hidden", plain || !singleDay || fileDay === "1970-01-01");
+  if (!timeRangeDateChip.classList.contains("hidden")) {
+    const [y, m, d] = fileDay.split("-").map(Number);
+    timeRangeDateChip.textContent = new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" }) + " " + fileDay;
+  }
+  Object.values(TIME_RANGE_SIDES).forEach(sd => {
+    sd.dateRow.classList.toggle("hidden", plain || singleDay);
+    sd.date.value = "";
+    sd.input.placeholder = plain ? "line" : "HH:MM:SS.mmm";
+    sd.input.inputMode = plain ? "numeric" : "decimal";
+    sd.input.classList.toggle("time-range-time", !plain);
+  });
+  TIME_RANGE_SIDES.from.date.value = trDayStr(range.from != null ? range.from : (firstTs != null ? firstTs : Date.now()));
+  TIME_RANGE_SIDES.to.date.value = trDayStr(range.to != null ? range.to : (lastTs != null ? lastTs : Date.now()));
+  setTimeRangeDialogBound("from", range.from);
+  setTimeRangeDialogBound("to", range.to);
   timeRangeDialogError.classList.add("hidden");
   timeRangeDialogTitle.textContent = mode === "edit" ? "Edit time filter" : `Time filter on “${target.name}”`;
   timeRangeDialogSubmit.textContent = mode === "edit" ? "Save" : "Create";
+  updateTimeRangeDialogMeta();
   timeRangeDialog.classList.remove("hidden");
   if (!isCoarsePointer()) timeRangeFromInput.focus(); // touch: no autofocus, the keyboard would pop up
 }
@@ -40552,20 +41269,37 @@ function closeTimeRangeDialog() {
   timeRangeDialog.classList.add("hidden");
   timeRangeDialogMode = null;
   timeRangeDialogTargetId = null;
+  timeRangeDialogCtx = null;
 }
 timeRangeDialog.addEventListener("click", ev => { if (ev.target === timeRangeDialog) closeTimeRangeDialog(); });
 el("#timeRangeDialogCancel").addEventListener("click", closeTimeRangeDialog);
-el("#timeRangeFromClear").addEventListener("click", () => { timeRangeFromInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
-el("#timeRangeToClear").addEventListener("click", () => { timeRangeToInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
+["from", "to"].forEach(side => {
+  const sd = TIME_RANGE_SIDES[side], Side = side === "from" ? "From" : "To";
+  el("#timeRange" + Side + "Clear").addEventListener("click", () => { sd.input.value = ""; timeRangeDialogError.classList.add("hidden"); updateTimeRangeDialogMeta(); });
+  el("#timeRange" + Side + "Minus").addEventListener("click", () => nudgeTimeRangeDialogBound(side, -1, false));
+  el("#timeRange" + Side + "Plus").addEventListener("click", () => nudgeTimeRangeDialogBound(side, 1, false));
+  sd.input.addEventListener("input", () => { timeRangeDialogError.classList.add("hidden"); updateTimeRangeDialogMeta(); });
+  sd.date.addEventListener("input", () => { timeRangeDialogError.classList.add("hidden"); updateTimeRangeDialogMeta(); });
+  sd.input.addEventListener("keydown", ev => {
+    if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+      ev.preventDefault();
+      nudgeTimeRangeDialogBound(side, ev.key === "ArrowUp" ? 1 : -1, ev.shiftKey);
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      timeRangeDialogSubmit.click();
+    }
+  });
+});
 timeRangeDialogSubmit.addEventListener("click", () => {
-  let from = localInputValueToTs(timeRangeFromInput.value);
-  let to = localInputValueToTs(timeRangeToInput.value);
-  if (from == null && to == null) { timeRangeDialogError.classList.remove("hidden"); return; }
+  let from = timeRangeDialogBound("from");
+  let to = timeRangeDialogBound("to");
+  if (isNaN(from) || isNaN(to)) { showTimeRangeDialogError(timeRangeDialogCtx && timeRangeDialogCtx.plain ? "Use a whole line number" : "Use HH:MM:SS(.mmm)"); return; }
+  if (from == null && to == null) { showTimeRangeDialogError("Set at least one of From / To."); return; }
   if (from != null && to != null && from > to) { const t = from; from = to; to = t; } // swap silently, same as the minimap drag
 
   if (timeRangeDialogMode === "edit") {
     updateTimeRangeFilterNodeWithUndo(timeRangeDialogTargetId, from, to);
-  } else if (!createFilterNode(timeRangeDialogTargetId, "timerange", { from, to })) {
+  } else if (!applyTimeWindow(timeRangeDialogTargetId, from, to)) {
     closeTimeRangeDialog();
     return;
   }
@@ -45016,6 +45750,7 @@ document.addEventListener("keydown", ev => {
     // The format setup wizard sits on top of Settings: Esc closes just the
     // wizard, leaving Settings (and its unsaved format editor) open.
     if (formatDialogOpen() || themeEditorOpen()) { closeEscapeOverlays(); return; }
+    if (minimapDraft && !inInput && !anyEscapeOverlayOpen()) { minimapDiscardDraft(); return; }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
     closeEscapeOverlays();
     let needsRender = false;

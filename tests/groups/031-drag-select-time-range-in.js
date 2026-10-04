@@ -50,14 +50,19 @@ await withApp(async (w, d, T) => {
   // exercise the suppress-flag guard (see the click listener's comment).
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
 
-  assert(dragRectEl.classList.contains("hidden"), "drag overlay rect hides again after mouseup");
+  // Time-window workflow step 4: the drag leaves a DRAFT window (the overlay
+  // rect stays, as .selected); the Filter button of its action bar creates the filter.
+  assert(dragRectEl.classList.contains("selected") && !dragRectEl.classList.contains("hidden"), "after mouseup the overlay rect stays as the draft window");
+  assert(f.children.length === beforeChildCount, "the drag itself creates no filter yet");
+  d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
+  assert(!T.minimapView.draft && d.querySelector("#timelineMinimapDraftBar").classList.contains("hidden"), "draft and action bar are gone after Filter (the new node shows as the adopted window)");
   assert(f.children.length === beforeChildCount + 1, "drag-select added exactly ONE filter child under the active file, got " + f.children.length);
 
   const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
   assert(rangeNode, "the new node has filterType \"timerange\"");
   assert(T.state.activeId === (rangeNode && rangeNode.id), "the new range filter becomes the active node");
   assert(rangeNode.value.from === f.entries[5].ts && rangeNode.value.to === f.entries[14].ts, "the node's value holds both bounds directly, got " + JSON.stringify(rangeNode.value));
-  assert(rangeNode.name === w.formatTime(f.entries[5].ts) + " → " + w.formatTime(f.entries[14].ts), "the node's name shows both bounds, got " + rangeNode.name);
+  assert(rangeNode.name === "10:00:05.000 – 10:00:14.000 · 9.0s", "the node's name shows both bounds, got " + rangeNode.name);
 
   const rangeEntries = w.getEntries(rangeNode.id);
   assert(rangeEntries.length === 10, "range filter selects exactly entries 5..14 inclusive (10 entries), got " + rangeEntries.length);
@@ -115,6 +120,7 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
   w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
+  d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
 
   const midDragRangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === dragFromTs);
   assert(midDragRangeNode, "a tail tick landing mid-drag doesn't desync the gesture — the resulting filter's \"from\" still matches the entry actually dragged from");

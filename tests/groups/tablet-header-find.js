@@ -111,7 +111,7 @@ await withApp(async (w, d, T) => {
   btn().dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
   assert(!dlg.classList.contains("hidden"), "click opens the time range dialog");
   const firstEntry = f.entries[0];
-  assert(w.localInputValueToTs(d.querySelector("#timeRangeFromInput").value) === firstEntry.ts, "From is prefilled with the first visible row's time, got " + d.querySelector("#timeRangeFromInput").value);
+  assert(w.timeRangeDialogBound("from") === firstEntry.ts, "From is prefilled with the first visible row's time, got " + d.querySelector("#timeRangeFromInput").value);
   assert(d.querySelector("#timeRangeToInput").value !== "" && d.querySelector("#timeRangeToInput").value >= d.querySelector("#timeRangeFromInput").value, "To is prefilled with the last visible row's time");
   assert(kids() === k0, "nothing is created until the dialog is submitted");
   d.querySelector("#timeRangeDialogCancel").dispatchEvent(new w.MouseEvent("click", { bubbles: true }));

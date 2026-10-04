@@ -49,8 +49,10 @@ await withApp(async (w, d, T) => {
     assert(!dragRect.classList.contains("hidden"), type + ": drag overlay shows once past the threshold");
     w.dispatchEvent(ttPointer(w, "pointerup", type, { clientX: x2, clientY: 10 }));
     svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
-    assert(rangeNodes().length === before + 1, type + ": the drag created exactly one time-range filter");
-    assert(dragRect.classList.contains("hidden"), type + ": overlay hides after pointerup");
+    assert(rangeNodes().length === before && T.minimapView.draft, type + ": the drag leaves a draft window, no filter yet");
+    d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
+    assert(rangeNodes().length === before + 1, type + ": Filter on the draft creates exactly one time-range filter");
+    assert(!T.minimapView.draft && d.querySelector("#timelineMinimapDraftBar").classList.contains("hidden"), type + ": the action bar is gone once the draft is filtered");
     T.state.activeId = f.id;
   }
 
