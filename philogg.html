@@ -3052,6 +3052,29 @@
   .filter-link-btn:hover{color:var(--accent);}
   .filter-link-btn.hidden{display:none;}
 
+  /* "Pair with…" pick mode: banner, start/end row markers. */
+  :root{--pair-pick:#a58cf0;}
+  #pairPickBanner{
+    flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:8px 12px; font-size:12.5px;
+    background:color-mix(in srgb, var(--pair-pick) 16%, var(--bg-elevated)); border-bottom:1px solid var(--pair-pick); color:var(--text-primary);
+  }
+  #pairPickBanner.hidden{display:none;}
+  #pairPickBanner .pp-text{flex:1 1 220px; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #pairPickBanner b{font-weight:600; font-family:var(--font-mono); font-size:12px;}
+  #pairPickBanner .pp-dt{font-family:var(--font-mono); font-weight:700; color:var(--pair-pick);}
+  #pairPickBanner .pp-actions{display:flex; gap:8px; flex:0 0 auto;}
+  body.layout-phone #pairPickBanner{
+    position:fixed; left:0; right:0; bottom:0; z-index:70; border-bottom:0; border-top:1px solid var(--pair-pick);
+    padding:12px 12px calc(12px + env(safe-area-inset-bottom)); box-shadow:0 -6px 18px rgba(0,0,0,.35);
+  }
+  body.layout-phone #pairPickBanner .pp-text{white-space:normal; flex:1 1 100%;}
+  body.layout-phone #pairPickBanner .btn-mini, body.layout-phone #pairPickBanner .btn-mini-secondary{min-height:40px;}
+  body.layout-phone.pair-picking #content{padding-bottom:var(--pp-h, 96px);}
+  body.pair-picking .log-row, body.pair-picking .pair-row{cursor:crosshair;}
+  body.pair-picking .log-row:hover, body.pair-picking .pair-row:hover{box-shadow:inset 3px 0 0 var(--pair-pick);}
+  .log-row.pair-start, .pair-row.pair-start{box-shadow:inset 3px 0 0 var(--accent); background:var(--accent-soft);}
+  .log-row.pair-end, .pair-row.pair-end{box-shadow:inset 3px 0 0 var(--pair-pick); background:color-mix(in srgb, var(--pair-pick) 14%, transparent);}
+
   /* ---------- Time context dialog ---------- */
   #contextDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
@@ -4342,6 +4365,7 @@
      Link dialog's pair Δt (renderLiveResults' opts.badge). */
   .filter-sample-row.has-badge{grid-template-columns:3px auto auto minmax(0,1fr);}
   .filter-sample-badge{color:var(--accent-strong); white-space:nowrap; text-align:right;}
+  .filter-sample-badge.warn{color:var(--warn);}
   .filter-sample-row .col-bar{margin:2px 0; height:16px;}
   .filter-sample-time{color:var(--text-tertiary); white-space:nowrap;}
   .filter-sample-msg{color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -4807,7 +4831,7 @@
   body.layout-phone .link-seg button, body.layout-phone .link-chip{min-height:40px;}
   body.layout-phone .link-fieldrow{flex-wrap:wrap;}
   body.layout-phone .link-fieldlab{flex:1 0 100%; padding-top:0;}
-  body.layout-phone .link-more summary{min-height:40px; display:flex; align-items:center;}
+  body.layout-phone .link-more summary{line-height:40px; margin-bottom:0;} /* stays display:list-item: keeps the ▸/▾ marker */
   body.layout-phone .link-side-menu .ctx-item{min-height:40px; display:flex; align-items:center;}
   body.layout-phone #filterPopup{width:calc(100% - 16px); overflow-x:hidden; max-height:calc(100vh - 124px);}
   body.layout-phone #filterPopup #btnCloseFilterPopup{width:40px; height:40px; flex:0 0 auto; align-items:center; justify-content:center; padding:0;}
@@ -4977,9 +5001,11 @@
     body.layout-phone #findBar .recent-dd .rd-row{min-height:44px;}
     body.layout-phone .ctx-item, body.layout-phone #libraryMenu .lib-it, body.layout-phone #libraryMenu .lib-search input{min-height:44px;}
     body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"], body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){height:44px;}
+    body.layout-phone #pairPickBanner .btn-mini, body.layout-phone #pairPickBanner .btn-mini-secondary{min-height:44px;}
     body.layout-phone .link-dialog-card .btn-mini, body.layout-phone .link-dialog-card .btn-mini-secondary, body.layout-phone .link-dialog-card .btn-mini-outline, body.layout-phone #filterPopup .btn-mini, body.layout-phone #filterPopup .btn-mini-secondary, body.layout-phone #filterPopup .btn-mini-outline{min-height:44px;}
     body.layout-phone .link-dialog-card .stepper{height:44px;}
-    body.layout-phone .link-seg button, body.layout-phone .link-chip, body.layout-phone .link-side-btn, body.layout-phone .link-addstep, body.layout-phone .link-side-chip, body.layout-phone .link-more summary, body.layout-phone .link-side-menu .ctx-item{min-height:44px;}
+    body.layout-phone .link-seg button, body.layout-phone .link-chip, body.layout-phone .link-side-btn, body.layout-phone .link-addstep, body.layout-phone .link-side-chip, body.layout-phone .link-side-menu .ctx-item{min-height:44px;}
+    body.layout-phone .link-more summary{line-height:44px;}
     body.layout-compact .link-seg button, body.layout-compact .link-chip, body.layout-compact .link-side-btn, body.layout-compact .link-addstep{min-height:44px;}
     body.layout-compact .link-dialog-card select, body.layout-compact .link-dialog-card input[type="number"], body.layout-compact .link-dialog-card input[type="text"]:not(.stepper-value){min-height:44px; box-sizing:border-box;}
     body.layout-phone .link-dialog-card .stepper .stepper-btn{width:44px; height:44px;}
@@ -5448,6 +5474,9 @@
            minimap — exactly one is ever displayed) plus the optional
            #facetPanel on its right, so the facets sit beside every view
            without an overlay. -->
+      <!-- "Pair with…" pick mode (docs/ui-and-views.md): above the views on desktop/tablet,
+           pinned to the bottom on the phone. Built by renderPairPickBanner. -->
+      <div id="pairPickBanner" class="hidden" role="status"></div>
       <div id="viewArea">
       <div id="fhSplit">
         <!-- Find bar (FEATURE_BACKLOG.md #3): incremental, non-destructive
@@ -5911,6 +5940,7 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>
       Extract
     </div>
+    <div class="ctx-item" id="ctxPairWith"><span>Pair with…</span></div>
     <div class="ctx-item" id="ctxOpenInVs">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
       Open in Visual Studio
@@ -17989,7 +18019,9 @@ function render() {
   try { renderInner(); } finally { renderDepth--; }
   if (renderDepth === 0) phoneEnforceTab();
 }
+let pairPick = null; // "Pair with…" pick mode: { startEntry, rootId, rootIds: Set of the file's entry ids, endEntry }
 function renderInner() {
+  validatePairPick();
   if (state.activeId !== lastActiveIdForReveal) {
     const prevNode = state.nodes[lastActiveIdForReveal];
     lastActiveIdForReveal = state.activeId;
@@ -21184,7 +21216,8 @@ function buildPairBlock(entryData, index) {
 
 function buildPairRow(entry) {
   const row = document.createElement("div");
-  row.className = "pair-row " + levelClass(entry.level, entry.formatId);
+  row.className = "pair-row " + levelClass(entry.level, entry.formatId) + pairPickRowClass(entry);
+  row._pickEntry = entry; // read by the pick-mode click interceptor (pickedEntryOfRow)
   row.style.height = LINK_PAIR_ROW_HEIGHT + "px";
   row.innerHTML =
     '<span class="pair-row-bar"></span>' +
@@ -24932,7 +24965,7 @@ function appendLogRow(frag, i, rc) {
   const row = document.createElement("div");
   let cls = (rc.textMode ? "log-row text-row" : "log-row row-grid " + levelClass(e.level, e.formatId)) + (e.id === state.selectedId ? " selected" : "") +
     (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
-    (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") +
+    (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") + pairPickRowClass(e) +
     (e._tempAnchor ? " temp-anchor-row" : "");
 
   let bracketHtml = "";
@@ -26877,7 +26910,7 @@ function renderHighlightVisibleRows() {
     const e = currentHighlightViewEntries[i];
     const row = document.createElement("div");
     let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
-      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "");
+      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + pairPickRowClass(e);
 
     const colors = highlightColorMap.get(e.id);
     let markerHtml = colors && colors.length
@@ -27625,6 +27658,7 @@ function closeEscapeOverlays() {
     if (!colorPickerPopup.classList.contains("hidden")) closeColorPicker(); else closeThemeEditor();
     return;
   }
+  cancelPairPick();
   setDrawerOpen(false);
   closePlotFullscreen();
   closeSettingsDialog();
@@ -27663,7 +27697,7 @@ function anyEscapeOverlayOpen() {
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
-    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
     const e = document.getElementById(overlayIds[i]);
@@ -35931,7 +35965,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
     appendSampleMessage(msg, e.message, hitRe);
     if (opts.badge) {
       const badge = document.createElement("span");
-      badge.className = "filter-sample-badge";
+      badge.className = "filter-sample-badge" + (opts.badgeWarn && opts.badgeWarn(e) ? " warn" : "");
       badge.textContent = opts.badge(e) || "";
       row.append(bar, badge, time, msg);
     } else {
@@ -36797,6 +36831,7 @@ const ctxNote = el("#ctxNote");
 const ctxNoteLabel = el("#ctxNoteLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 const ctxExtractMessage = el("#ctxExtractMessage");
+const ctxPairWith = el("#ctxPairWith");
 const ctxOpenInVs = el("#ctxOpenInVs");
 const ctxOpenInRider = el("#ctxOpenInRider");
 const ctxAddToSelection = el("#ctxAddToSelection");
@@ -36864,6 +36899,8 @@ function openContextMenu(ev, entry) {
   // Hidden on phone: the extraction node only feeds Table/Plot, which phone does not show.
   ctxExtractMessage.style.display =
     currentLayoutTier !== "phone" && buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
+  // "Pair with…": a real row only (never a link-view pair brace), and only where timestamps exist.
+  ctxPairWith.style.display = !entry.isPair && bookmarkable && !isPlainTextFormat(entry.formatId) ? "" : "none";
   // IDE Integration: row-level (not column-gated like "Filter for this
   // ___" above) — the Method column carries no file/line data of its own,
   // so gating strictly on which column was clicked would make these items
@@ -37083,6 +37120,132 @@ ctxExtractMessage.addEventListener("click", ev => {
   closeContextMenu();
   extractMessageFilter(entry);
 });
+
+
+/* ===================== "Pair with…" (pick mode) =====================
+   Row context menu → "Pair with…" → click/tap a second row → the banner shows the Δt
+   between the two rows → "Pair all like these…" opens the link dialog prefilled with the
+   two messages as patterns. The pick is intercepted by one capture-phase click listener
+   (no change to the row renderers; their classes carry the start/end markers, see
+   pairPickRowClass, and refreshPairPickMarks re-applies them to the rendered rows). */
+const pairPickBanner = el("#pairPickBanner");
+ctxPairWith.insertAdjacentHTML("afterbegin", ICON_LINK);
+
+// " name=value" fields of a message, in order.
+function messageFields(msg) {
+  const out = new Map();
+  const re = /(?:^|[\s,;(\[{])(\w+)=([^\s,;)\]}]+)/g;
+  let m;
+  while ((m = re.exec(msg)) !== null) if (!out.has(m[1])) out.set(m[1], m[2]);
+  return out;
+}
+// "+213 ms" / "-3.9 s" / "+7m 33s"
+function formatPairDt(ms) {
+  const a = Math.abs(ms), sign = ms < 0 ? "-" : "+";
+  if (a < 1000) return sign + Math.round(a) + " ms";
+  if (a < 60000) return sign + (a / 1000).toFixed(1) + " s";
+  return sign + formatMs(a);
+}
+function pairPickRowClass(e) {
+  if (!pairPick) return "";
+  return e === pairPick.startEntry ? " pair-start" : e === pairPick.endEntry ? " pair-end" : "";
+}
+function pairPickRowEntry(rowEl) {
+  if (rowEl._pickEntry) return rowEl._pickEntry;
+  return rowEl.dataset && rowEl.dataset.entryId ? entryIndex[rowEl.dataset.entryId] || null : null;
+}
+// Toggles the markers on every rendered row of the three row views (a re-render builds new rows
+// with the same classes through pairPickRowClass, so scrolling never drops them).
+function refreshPairPickMarks() {
+  document.body.classList.toggle("pair-picking", !!pairPick);
+  [tableRows, highlightRows, linkScroll].forEach(container => {
+    container.querySelectorAll(".log-row, .pair-row").forEach(rowEl => {
+      const e = pairPickRowEntry(rowEl);
+      rowEl.classList.toggle("pair-start", !!pairPick && !!e && e === pairPick.startEntry);
+      rowEl.classList.toggle("pair-end", !!pairPick && !!e && e === pairPick.endEntry);
+    });
+  });
+}
+function startPairPick(entry) {
+  const rootId = state.activeId && getRootFileId(state.activeId);
+  const root = rootId && state.nodes[rootId];
+  if (!root || !entry || entry.isPair) return;
+  pairPick = { startEntry: entry, rootId, rootIds: new Set((root.entries || []).map(e => e.id)), endEntry: null };
+  renderPairPickBanner();
+  refreshPairPickMarks();
+}
+function cancelPairPick() {
+  if (!pairPick) return;
+  pairPick = null;
+  renderPairPickBanner();
+  refreshPairPickMarks();
+}
+// Pick mode only survives while the start's file is still loaded with the same entries.
+function validatePairPick() {
+  if (!pairPick) return;
+  const root = state.nodes[pairPick.rootId];
+  if (!root || !state.rootIds.includes(pairPick.rootId) || entryIndex[pairPick.startEntry.id] !== pairPick.startEntry) cancelPairPick();
+}
+function ellipsize(text, n) { return text.length > n ? text.slice(0, n - 1) + "…" : text; }
+function renderPairPickBanner() {
+  if (!pairPick) { pairPickBanner.classList.add("hidden"); pairPickBanner.innerHTML = ""; document.body.style.removeProperty("--pp-h"); return; }
+  const touch = isCoarsePointer();
+  const startMsg = ellipsize(entryColumnValue(pairPick.startEntry, "message").replace(/\s+/g, " "), 70);
+  if (!pairPick.endEntry) {
+    pairPickBanner.innerHTML = '<span class="pp-text">' + (touch ? "Tap" : "Click") + " the end event · start: <b>" + escapeHtml(startMsg) + '</b></span>' +
+      '<span class="pp-actions"><button type="button" class="btn-mini-secondary" data-pp="cancel">Cancel</button></span>';
+  } else {
+    const a = pairPick.startEntry, b = pairPick.endEntry;
+    const fa = messageFields(a.message), fb = messageFields(b.message);
+    const same = [...fa].filter(([k, v]) => fb.get(k) === v).map(([k, v]) => "<b>" + escapeHtml(k + "=" + v) + "</b>");
+    pairPickBanner.innerHTML = '<span class="pp-text">Δt <span class="pp-dt">' + formatPairDt(b.ts - a.ts) + "</span> between the two rows" +
+      (same.length ? " · same " + same.join(", ") : "") + "</span>" +
+      '<span class="pp-actions"><button type="button" class="btn-mini-secondary" data-pp="cancel">Close</button>' +
+      '<button type="button" class="btn-mini" data-pp="pairall">Pair all like these…</button></span>';
+  }
+  pairPickBanner.classList.remove("hidden");
+  document.body.style.setProperty("--pp-h", pairPickBanner.offsetHeight + "px");
+}
+// "Pair all like these…": the link dialog with both messages as patterns, the direction from the
+// rows' order (timestamp, ties by log order), the key preselected like any other dialog.
+function pairAllFromPick() {
+  if (!pairPick || !pairPick.endEntry) return;
+  const a = pairPick.startEntry, b = pairPick.endEntry, rootId = pairPick.rootId;
+  const order = buildOrderIndexMap(rootId);
+  const after = b.ts !== a.ts ? b.ts > a.ts : order.get(b.id) >= order.get(a.id);
+  const pat = e => { const v = entryColumnValue(e, "message"); return collapseNewlinesToWildcard(buildNumericExtractPattern(v) || v); };
+  const spec = { rootId, start: { text: pat(a) }, hops: [{ text: pat(b), direction: after ? "after" : "before" }] };
+  cancelPairPick();
+  openLinkDialog(spec);
+}
+pairPickBanner.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-pp]");
+  if (!btn) return;
+  ev.stopPropagation();
+  if (btn.dataset.pp === "pairall") pairAllFromPick(); else cancelPairPick();
+});
+ctxPairWith.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  startPairPick(entry);
+});
+// While picking, a click on a row picks it instead of selecting it (table, Context/highlight view,
+// phone cards, the real rows inside link-view blocks). Capture phase: runs before every row/block handler.
+document.addEventListener("click", ev => {
+  if (!pairPick) return;
+  const rowEl = ev.target.closest && ev.target.closest(".log-row, .pair-row");
+  if (!rowEl || pairPickBanner.contains(ev.target)) return;
+  const e = pairPickRowEntry(rowEl);
+  if (!e) return;
+  ev.stopPropagation();
+  ev.preventDefault();
+  if (e === pairPick.startEntry) return;
+  if (!pairPick.rootIds.has(e.id)) { showCopyToast("Pick a row from the same file"); return; }
+  pairPick.endEntry = e;
+  renderPairPickBanner();
+  refreshPairPickMarks();
+}, true);
 
 // IDE Integration — "Open in Visual Studio": re-resolves the path (state may
 // have changed since the menu opened, e.g. the connection dropped), confirms
@@ -39251,6 +39414,7 @@ function runLinkPreview() {
     metaText,
     samples: firstUnmatched ? slowest.slice(0, Math.max(0, FILTER_SAMPLE_ROWS - 1)).concat([firstUnmatched]) : slowest,
     badge: e => noEnd.has(e) ? "no end" : "Δt " + formatMs(e.dtMs),
+    badgeWarn: e => noEnd.has(e),
   });
   if (max > 60000) {
     linkHint.textContent = "Longest pair " + formatMs(max) + ": probably paired across different events. Try " + (linkDlg.key.type === "none" ? "a" : "another") + " “Same” key.";
