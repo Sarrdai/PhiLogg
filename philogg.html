@@ -3171,7 +3171,14 @@
     padding-top:106px;
   }
   #timeRangeDialog.hidden{display:none;}
-  #timeRangeDialog input[type="datetime-local"]{flex:1 1 auto; min-width:0;}
+  #timeRangeDialog input[type="text"], #timeRangeDialog input[type="date"]{flex:1 1 auto; min-width:0;}
+  #timeRangeDialog input.time-range-time{font-family:var(--mono, ui-monospace, Menlo, Consolas, monospace); text-align:center;}
+  #timeRangeDialog .time-range-date-row{display:flex; margin-bottom:6px;}
+  #timeRangeDialog .time-range-date-row.hidden, #timeRangeDialog .time-range-chip.hidden{display:none;}
+  .time-range-chip{display:inline-block; font-size:12px; padding:2px 10px; margin-bottom:12px; border:1px solid var(--border); border-radius:999px; color:var(--text-secondary);}
+  .time-range-nudge{min-width:44px; min-height:34px; flex:0 0 auto; padding:0 6px; font-size:12px; border:1px solid var(--border); border-radius:6px; background:var(--bg-elev, transparent); color:var(--text-primary); cursor:pointer;}
+  .time-range-nudge:hover{border-color:var(--accent); color:var(--accent-strong);}
+  .time-range-meta{font-size:12px; color:var(--text-secondary); margin:-4px 0 12px; min-height:16px;}
 
   /* ---------- Export scope dialog ("Just this filter" vs "Include ancestor
      chain" — see openExportScopePrompt) — was missing its overlay CSS
@@ -4824,7 +4831,7 @@
   body.layout-phone #timeRangeDialog, body.layout-phone #noteDialog, body.layout-phone #clockOffsetDialog, body.layout-phone #assertDialog,
   body.layout-phone #contextDialog, body.layout-phone #countContextDialog, body.layout-phone #exportScopeDialog{padding-top:16px;}
   body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"],
-  body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){
+  body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="date"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){
     box-sizing:border-box; height:40px; font-size:16px;
   }
   body.layout-phone #noteDialogInput, body.layout-phone .link-dialog-card textarea{font-size:16px;}
@@ -6355,24 +6362,32 @@
   <div id="timeRangeDialog" class="hidden">
     <div class="link-dialog-card">
       <div class="link-dialog-title" id="timeRangeDialogTitle">Time filter</div>
+      <div class="time-range-chip hidden" id="timeRangeDateChip"></div>
       <div class="link-field">
-        <label for="timeRangeFromInput">From <span class="time-range-hint">(empty = no lower bound)</span></label>
-        <div class="link-field-row">
-          <input type="datetime-local" id="timeRangeFromInput" step="0.001">
+        <label for="timeRangeFromInput">From <span class="time-range-hint">(empty = open)</span></label>
+        <div class="time-range-date-row hidden" id="timeRangeFromDateRow"><input type="date" id="timeRangeFromDate" aria-label="From date"></div>
+        <div class="link-field-row" style="flex-wrap:nowrap">
+          <button type="button" class="time-range-nudge" id="timeRangeFromMinus" data-nudge="-1">&minus;1s</button>
+          <input type="text" class="time-range-time" id="timeRangeFromInput" inputmode="decimal" autocomplete="off" placeholder="HH:MM:SS.mmm">
+          <button type="button" class="time-range-nudge" id="timeRangeFromPlus" data-nudge="1">+1s</button>
           <button type="button" class="time-range-clear" id="timeRangeFromClear" title="Clear">
             <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
           </button>
         </div>
       </div>
       <div class="link-field">
-        <label for="timeRangeToInput">To <span class="time-range-hint">(empty = no upper bound)</span></label>
-        <div class="link-field-row">
-          <input type="datetime-local" id="timeRangeToInput" step="0.001">
+        <label for="timeRangeToInput">To <span class="time-range-hint">(empty = open)</span></label>
+        <div class="time-range-date-row hidden" id="timeRangeToDateRow"><input type="date" id="timeRangeToDate" aria-label="To date"></div>
+        <div class="link-field-row" style="flex-wrap:nowrap">
+          <button type="button" class="time-range-nudge" id="timeRangeToMinus" data-nudge="-1">&minus;1s</button>
+          <input type="text" class="time-range-time" id="timeRangeToInput" inputmode="decimal" autocomplete="off" placeholder="HH:MM:SS.mmm">
+          <button type="button" class="time-range-nudge" id="timeRangeToPlus" data-nudge="1">+1s</button>
           <button type="button" class="time-range-clear" id="timeRangeToClear" title="Clear">
             <svg viewBox="0 0 16 16" width="10" height="10" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
           </button>
         </div>
       </div>
+      <div class="time-range-meta" id="timeRangeMeta"></div>
       <div class="time-range-error hidden" id="timeRangeDialogError">Set at least one of From / To.</div>
       <div class="link-dialog-actions">
         <button type="button" id="timeRangeDialogCancel" class="btn-mini-secondary">Cancel</button>
@@ -40610,17 +40625,117 @@ function isCoarsePointer() {
   try { return !!(window.matchMedia && matchMedia("(pointer: coarse)").matches); } catch { return false; }
 }
 
+// Dialog fields: a time-only text field per bound (HH:MM:SS(.mmm)), the date
+// implied by a chip when the root file lies on one day, otherwise one date
+// input per bound. Plain-text files (bounds are line numbers) get whole-number
+// "line" fields without dates; ±1 then means one line.
+let timeRangeDialogCtx = null; // { plain, firstTs, lastTs, dayStr, singleDay, baseId }
+const TIME_RANGE_SIDES = {
+  from: { input: timeRangeFromInput, date: el("#timeRangeFromDate"), dateRow: el("#timeRangeFromDateRow") },
+  to: { input: timeRangeToInput, date: el("#timeRangeToDate"), dateRow: el("#timeRangeToDateRow") },
+};
+const timeRangeDateChip = el("#timeRangeDateChip");
+const timeRangeMeta = el("#timeRangeMeta");
+function trDayStr(ts) {
+  const d = new Date(ts), p2 = n => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
+}
+function trTimeStr(ts) {
+  const d = new Date(ts), p2 = n => String(n).padStart(2, "0");
+  return `${p2(d.getHours())}:${p2(d.getMinutes())}:${p2(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+}
+// "HH:MM", "HH:MM:SS", "HH:MM:SS.m{1,3}" -> ms since midnight, or NaN.
+function parseTimeOfDay(str) {
+  const m = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?$/.exec(str.trim());
+  if (!m) return NaN;
+  const h = +m[1], mi = +m[2], sec = m[3] ? +m[3] : 0, ms = m[4] ? +m[4].padEnd(3, "0") : 0;
+  if (h > 23 || mi > 59 || sec > 59) return NaN;
+  return ((h * 60 + mi) * 60 + sec) * 1000 + ms;
+}
+// Reads one bound: a ts, null (field empty = open) or NaN (invalid text).
+function timeRangeDialogBound(side) {
+  const sd = TIME_RANGE_SIDES[side], ctx = timeRangeDialogCtx;
+  const text = sd.input.value.trim();
+  if (!text) return null;
+  if (ctx && ctx.plain) return /^\d+$/.test(text) ? +text : NaN;
+  const tod = parseTimeOfDay(text);
+  if (isNaN(tod)) return NaN;
+  const day = ctx && ctx.singleDay ? ctx.dayStr : (sd.date.value || (ctx && ctx.dayStr));
+  const dm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day || "");
+  if (!dm) return NaN;
+  const h = Math.floor(tod / 3600000), mi = Math.floor(tod / 60000) % 60, sec = Math.floor(tod / 1000) % 60;
+  return new Date(+dm[1], +dm[2] - 1, +dm[3], h, mi, sec, tod % 1000).getTime();
+}
+function setTimeRangeDialogBound(side, ts) {
+  const sd = TIME_RANGE_SIDES[side], ctx = timeRangeDialogCtx;
+  if (ts == null || isNaN(ts)) { sd.input.value = ""; return; }
+  if (ctx && ctx.plain) { sd.input.value = String(Math.max(0, Math.round(ts))); return; }
+  sd.input.value = trTimeStr(ts);
+  if (!(ctx && ctx.singleDay)) sd.date.value = trDayStr(ts);
+}
+function updateTimeRangeDialogMeta() {
+  const ctx = timeRangeDialogCtx;
+  const from = timeRangeDialogBound("from"), to = timeRangeDialogBound("to");
+  if (!ctx || isNaN(from) || isNaN(to) || (from == null && to == null)) { timeRangeMeta.textContent = ""; return; }
+  const lo = from != null && to != null ? Math.min(from, to) : from, hi = from != null && to != null ? Math.max(from, to) : to;
+  let n = 0;
+  const base = state.nodes[ctx.baseId] ? getEntries(ctx.baseId) : [];
+  for (let i = 0; i < base.length; i++) { const t = base[i].ts; if ((lo == null || t >= lo) && (hi == null || t <= hi)) n++; }
+  const count = n.toLocaleString("de-DE") + (n === 1 ? " entry" : " entries");
+  timeRangeMeta.textContent = from != null && to != null && !ctx.plain ? `Duration ${formatMs(hi - lo)} · ${count}` : count;
+}
+function showTimeRangeDialogError(msg) {
+  timeRangeDialogError.textContent = msg;
+  timeRangeDialogError.classList.remove("hidden");
+}
+function nudgeTimeRangeDialogBound(side, dir, big) {
+  const ctx = timeRangeDialogCtx;
+  if (!ctx) return;
+  let ts = timeRangeDialogBound(side);
+  if (isNaN(ts)) return;
+  if (ts == null) ts = side === "from" ? ctx.firstTs : ctx.lastTs;
+  else ts += dir * (ctx.plain ? (big ? 10 : 1) : (big ? 60000 : 1000));
+  if (ts == null) return;
+  setTimeRangeDialogBound(side, ts);
+  timeRangeDialogError.classList.add("hidden");
+  updateTimeRangeDialogMeta();
+}
+
 function openTimeRangeDialog(mode, targetId, prefill) {
   const target = state.nodes[targetId];
   if (!target) return;
   timeRangeDialogMode = mode;
   timeRangeDialogTargetId = targetId;
   const range = prefill || { from: null, to: null };
-  timeRangeFromInput.value = tsToLocalInputValue(range.from);
-  timeRangeToInput.value = tsToLocalInputValue(range.to);
+  const rootId = getRootFileId(targetId), root = rootId ? state.nodes[rootId] : null;
+  const entries = root && root.entries ? root.entries : [];
+  const plain = nodeIsPlainText(targetId);
+  const firstTs = entries.length ? entries[0].ts : null, lastTs = entries.length ? entries[entries.length - 1].ts : null;
+  const fileDay = firstTs != null ? trDayStr(firstTs) : trDayStr(Date.now());
+  const singleDay = !plain && (firstTs == null || trDayStr(lastTs) === fileDay) &&
+    [range.from, range.to].every(t => t == null || trDayStr(t) === fileDay);
+  timeRangeDialogCtx = { plain, firstTs, lastTs, dayStr: fileDay, singleDay, baseId: mode === "edit" ? target.parentId : targetId };
+  const ctx = timeRangeDialogCtx;
+  timeRangeDateChip.classList.toggle("hidden", plain || !singleDay || fileDay === "1970-01-01");
+  if (!timeRangeDateChip.classList.contains("hidden")) {
+    const [y, m, d] = fileDay.split("-").map(Number);
+    timeRangeDateChip.textContent = new Date(y, m - 1, d).toLocaleDateString("en-US", { weekday: "short" }) + " " + fileDay;
+  }
+  Object.values(TIME_RANGE_SIDES).forEach(sd => {
+    sd.dateRow.classList.toggle("hidden", plain || singleDay);
+    sd.date.value = "";
+    sd.input.placeholder = plain ? "line" : "HH:MM:SS.mmm";
+    sd.input.inputMode = plain ? "numeric" : "decimal";
+    sd.input.classList.toggle("time-range-time", !plain);
+  });
+  TIME_RANGE_SIDES.from.date.value = trDayStr(range.from != null ? range.from : (firstTs != null ? firstTs : Date.now()));
+  TIME_RANGE_SIDES.to.date.value = trDayStr(range.to != null ? range.to : (lastTs != null ? lastTs : Date.now()));
+  setTimeRangeDialogBound("from", range.from);
+  setTimeRangeDialogBound("to", range.to);
   timeRangeDialogError.classList.add("hidden");
   timeRangeDialogTitle.textContent = mode === "edit" ? "Edit time filter" : `Time filter on “${target.name}”`;
   timeRangeDialogSubmit.textContent = mode === "edit" ? "Save" : "Create";
+  updateTimeRangeDialogMeta();
   timeRangeDialog.classList.remove("hidden");
   if (!isCoarsePointer()) timeRangeFromInput.focus(); // touch: no autofocus, the keyboard would pop up
 }
@@ -40628,15 +40743,32 @@ function closeTimeRangeDialog() {
   timeRangeDialog.classList.add("hidden");
   timeRangeDialogMode = null;
   timeRangeDialogTargetId = null;
+  timeRangeDialogCtx = null;
 }
 timeRangeDialog.addEventListener("click", ev => { if (ev.target === timeRangeDialog) closeTimeRangeDialog(); });
 el("#timeRangeDialogCancel").addEventListener("click", closeTimeRangeDialog);
-el("#timeRangeFromClear").addEventListener("click", () => { timeRangeFromInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
-el("#timeRangeToClear").addEventListener("click", () => { timeRangeToInput.value = ""; timeRangeDialogError.classList.add("hidden"); });
+["from", "to"].forEach(side => {
+  const sd = TIME_RANGE_SIDES[side], Side = side === "from" ? "From" : "To";
+  el("#timeRange" + Side + "Clear").addEventListener("click", () => { sd.input.value = ""; timeRangeDialogError.classList.add("hidden"); updateTimeRangeDialogMeta(); });
+  el("#timeRange" + Side + "Minus").addEventListener("click", () => nudgeTimeRangeDialogBound(side, -1, false));
+  el("#timeRange" + Side + "Plus").addEventListener("click", () => nudgeTimeRangeDialogBound(side, 1, false));
+  sd.input.addEventListener("input", () => { timeRangeDialogError.classList.add("hidden"); updateTimeRangeDialogMeta(); });
+  sd.date.addEventListener("input", () => { timeRangeDialogError.classList.add("hidden"); updateTimeRangeDialogMeta(); });
+  sd.input.addEventListener("keydown", ev => {
+    if (ev.key === "ArrowUp" || ev.key === "ArrowDown") {
+      ev.preventDefault();
+      nudgeTimeRangeDialogBound(side, ev.key === "ArrowUp" ? 1 : -1, ev.shiftKey);
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      timeRangeDialogSubmit.click();
+    }
+  });
+});
 timeRangeDialogSubmit.addEventListener("click", () => {
-  let from = localInputValueToTs(timeRangeFromInput.value);
-  let to = localInputValueToTs(timeRangeToInput.value);
-  if (from == null && to == null) { timeRangeDialogError.classList.remove("hidden"); return; }
+  let from = timeRangeDialogBound("from");
+  let to = timeRangeDialogBound("to");
+  if (isNaN(from) || isNaN(to)) { showTimeRangeDialogError(timeRangeDialogCtx && timeRangeDialogCtx.plain ? "Use a whole line number" : "Use HH:MM:SS(.mmm)"); return; }
+  if (from == null && to == null) { showTimeRangeDialogError("Set at least one of From / To."); return; }
   if (from != null && to != null && from > to) { const t = from; from = to; to = t; } // swap silently, same as the minimap drag
 
   if (timeRangeDialogMode === "edit") {

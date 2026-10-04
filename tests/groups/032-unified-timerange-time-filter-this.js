@@ -54,7 +54,7 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "Ctrl+E on a legacy \"after\" node opens the time-range dialog (not the text popup)");
   assert(d.querySelector("#timeRangeFromInput").value !== "", "From is prefilled from the legacy node's value");
   assert(d.querySelector("#timeRangeToInput").value === "", "To starts empty — the legacy \"after\" node had no upper bound");
-  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(f.entries[20].ts);
+  w.setTimeRangeDialogBound("to", f.entries[20].ts);
   fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
   assert(legacyAfter.filterType === "timerange", "saving the edit migrates the node to \"timerange\"");
   assert(legacyAfter.value.from === f.entries[10].ts && legacyAfter.value.to === f.entries[20].ts,
@@ -104,7 +104,7 @@ await withApp(async (w, d, T) => {
   assert(f.children.length === childCountBeforeInvalid, "no node was created from the invalid (empty) submit");
 
   // --- F. Clear button empties a field ---
-  d.querySelector("#timeRangeFromInput").value = w.tsToLocalInputValue(f.entries[0].ts);
+  w.setTimeRangeDialogBound("from", f.entries[0].ts);
   fireClick(d.querySelector("#timeRangeFromClear"), w);
   assert(d.querySelector("#timeRangeFromInput").value === "", "the clear button empties the From field");
   w.closeTimeRangeDialog();
@@ -141,8 +141,8 @@ await withApp(async (w, d, T) => {
 
   // --- I. A reversed From/To on submit is silently swapped, not rejected — same as the minimap drag's own swap ---
   w.openTimeRangeDialog("create", f.id, { from: null, to: null });
-  d.querySelector("#timeRangeFromInput").value = w.tsToLocalInputValue(f.entries[25].ts);
-  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(f.entries[5].ts);
+  w.setTimeRangeDialogBound("from", f.entries[25].ts);
+  w.setTimeRangeDialogBound("to", f.entries[5].ts);
   const beforeSwapCreate = f.children.length;
   fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
   assert(f.children.length === beforeSwapCreate + 1, "a reversed From/To still creates a node (not rejected)");

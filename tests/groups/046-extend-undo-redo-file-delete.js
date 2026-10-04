@@ -92,7 +92,7 @@ await withApp(async (w, d, T) => {
   const stackLenBeforeRange = T.undoStack.length;
   fireKeydown(d, w, "e", { ctrlKey: true });
   assert(!d.querySelector("#timeRangeDialog").classList.contains("hidden"), "Ctrl+E on a legacy \"after\" node opens the time-range dialog");
-  d.querySelector("#timeRangeToInput").value = w.tsToLocalInputValue(fa.entries[7].ts);
+  w.setTimeRangeDialogBound("to", fa.entries[7].ts);
   fireClick(d.querySelector("#timeRangeDialogSubmit"), w);
   assert(rangeNode.filterType === "timerange" && rangeNode.value.to === fa.entries[7].ts, "time-range edit applied and migrated the node");
   assert(T.undoStack.length === stackLenBeforeRange + 1, "time-range edit pushes an undo action");
