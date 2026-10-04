@@ -824,6 +824,15 @@
      row: one selection style, no frame. The active node is always part of the
      selection (treeSelectionIds). */
   .tree-row.multi-selected{background:var(--accent-soft); color:var(--text-primary); border-left-color:var(--accent);}
+  /* Tree select mode: a checkbox per row; the active row is not highlighted unless it is checked. */
+  .tree-row.select-mode.active:not(.multi-selected){background:transparent; border-left-color:transparent;}
+  .link-intro{font-size:12px; color:var(--text-secondary); margin:-2px 0 10px; line-height:1.4;}
+  .tree-check{flex:0 0 auto; width:18px; height:18px; box-sizing:border-box; border-radius:4px; border:2px solid var(--text-tertiary); display:flex; align-items:center; justify-content:center; margin-right:6px; color:var(--bg-base); position:relative; z-index:2; background:var(--bg-panel);}
+  .tree-check svg{width:12px; height:12px; display:none;}
+  .tree-row.multi-selected .tree-check{background:var(--accent); border-color:var(--accent);}
+  .tree-row.multi-selected .tree-check svg{display:block;}
+  #sidebarToolbar .stb-btn:disabled{opacity:.4; pointer-events:none;}
+  #sidebarToolbar .stb-done{color:var(--accent-strong); font-weight:600;}
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
   .tree-row.tree-draggable{cursor:grab;}
@@ -1221,7 +1230,7 @@
      that mechanism's flicker-avoidance is reused as-is, only what it
      reveals changed. */
   .row-action-label{
-    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%) translateY(4px);
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
     width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
     background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
@@ -1229,7 +1238,7 @@
     transition:opacity .12s ease, transform .12s ease;
   }
   .row-action-btn.expanded .row-action-label, .row-action-btn:focus-visible .row-action-label{
-    opacity:1; transform:translateX(-50%) translateY(0);
+    opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);
   }
   /* Library preset pills (#libraryPresetBar) drive the floating label off
      plain :hover instead of the JS setupHitExpandGroups mechanism — the
@@ -1240,7 +1249,7 @@
      #libraryManageBar — Add to Library/Library — were removed this session,
      relocated into #sidebarToolbar's "Add to library…"/"Apply from
      library…" actions; see describeSidebarToolbarActions' own comment.) */
-  #libraryPresetBar .row-action-btn:hover .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  #libraryPresetBar .row-action-btn:hover .row-action-label{opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);}
   /* The "Library Filter" group and its leading "|" collapse out entirely when
      nothing is pinned (id+[hidden] beats the .row-actions flex display). */
   #libraryPresetBar[hidden], #libraryPresetSep[hidden]{display:none;}
@@ -1253,7 +1262,7 @@
   .toolbar-icon-btn:has(.tb-hit){position:relative;}
   .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .tb-label{
-    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(-50%) translateY(4px);
+    position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
     width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
     background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
@@ -1261,7 +1270,7 @@
     transition:opacity .12s ease, transform .12s ease;
   }
   .toolbar-icon-btn.expanded .tb-label, .toolbar-icon-btn:focus-visible .tb-label{
-    opacity:1; transform:translateX(-50%) translateY(0);
+    opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);
   }
   /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
      button labels" (person-requested, 2026-09-05; redesigned 2026-09-08) —
@@ -1282,7 +1291,7 @@
   body.filter-toolbar-labels-never .row-action-btn:not(.rect) .row-action-label{display:none !important;}
   body.filter-toolbar-labels-always .row-action-btn:not(.rect){border-radius:20px; width:auto; padding-right:10px; overflow:hidden;}
   body.filter-toolbar-labels-always .row-action-btn:not(.rect) .row-action-label{
-    position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
+    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
 
@@ -1292,7 +1301,7 @@
   body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit){width:auto; padding-right:10px; overflow:hidden;}
   body.view-toolbar-labels-always .row-action-btn.rect .row-action-label,
   body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit) .tb-label{
-    position:static; transform:none; opacity:1; max-width:240px; margin-left:6px;
+    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
   /* person-reported, 2026-09-15: a disabled button's label is the only
@@ -1368,13 +1377,56 @@
   .level-btn.lvl-custom-4 .row-action-label{background:var(--level-custom-4); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-5 .row-action-label{background:var(--level-custom-5); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-6 .row-action-label{background:var(--level-custom-6); color:var(--level-custom-on); border-color:transparent;}
+  /* Count inside the level circle (compact tier only, "On hover" label mode —
+     "Always" pills already carry name + count in their label). Inactive circle:
+     the level's own color on the transparent ring; checked: the fill's "on" color. */
+  .level-btn .level-count{display:none;}
+  body.layout-compact:not(.filter-toolbar-labels-always) .level-btn .level-count{
+    display:flex; position:absolute; inset:0; align-items:center; justify-content:center;
+    font:600 10px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
+  }
+  body.layout-compact .level-btn.lvl-error .level-count{color:var(--level-error);}
+  body.layout-compact .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
+  body.layout-compact .level-btn.lvl-warn .level-count{color:var(--level-warn);}
+  body.layout-compact .level-btn.active.lvl-warn .level-count{color:var(--level-warn-on);}
+  body.layout-compact .level-btn.lvl-info .level-count{color:var(--level-info);}
+  body.layout-compact .level-btn.active.lvl-info .level-count{color:var(--level-info-on);}
+  body.layout-compact .level-btn.lvl-debug .level-count{color:var(--level-debug);}
+  body.layout-compact .level-btn.active.lvl-debug .level-count{color:var(--level-debug-on);}
+  body.layout-compact .level-btn.lvl-trace .level-count{color:var(--level-trace);}
+  body.layout-compact .level-btn.active.lvl-trace .level-count{color:var(--level-trace-on);}
+  body.layout-compact .level-btn.lvl-custom-1 .level-count{color:var(--level-custom-1);}
+  body.layout-compact .level-btn.active.lvl-custom-1 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-2 .level-count{color:var(--level-custom-2);}
+  body.layout-compact .level-btn.active.lvl-custom-2 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-3 .level-count{color:var(--level-custom-3);}
+  body.layout-compact .level-btn.active.lvl-custom-3 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-4 .level-count{color:var(--level-custom-4);}
+  body.layout-compact .level-btn.active.lvl-custom-4 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-5 .level-count{color:var(--level-custom-5);}
+  body.layout-compact .level-btn.active.lvl-custom-5 .level-count{color:var(--level-custom-on);}
+  body.layout-compact .level-btn.lvl-custom-6 .level-count{color:var(--level-custom-6);}
+  body.layout-compact .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
+  /* "Always" pills: an unchecked pill is a transparent ring, so its label takes the
+     level's own color (the -on color is meant for the solid fill and was white on light). */
+  body.filter-toolbar-labels-always .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
+  body.filter-toolbar-labels-always .level-btn.lvl-warn:not(.active) .row-action-label{color:var(--level-warn);}
+  body.filter-toolbar-labels-always .level-btn.lvl-info:not(.active) .row-action-label{color:var(--level-info);}
+  body.filter-toolbar-labels-always .level-btn.lvl-debug:not(.active) .row-action-label{color:var(--level-debug);}
+  body.filter-toolbar-labels-always .level-btn.lvl-trace:not(.active) .row-action-label{color:var(--level-trace);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-1:not(.active) .row-action-label{color:var(--level-custom-1);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-2:not(.active) .row-action-label{color:var(--level-custom-2);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-3:not(.active) .row-action-label{color:var(--level-custom-3);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-4:not(.active) .row-action-label{color:var(--level-custom-4);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-5:not(.active) .row-action-label{color:var(--level-custom-5);}
+  body.filter-toolbar-labels-always .level-btn.lvl-custom-6:not(.active) .row-action-label{color:var(--level-custom-6);}
   /* #levelBar is rebuilt on every level toggle/file change (renderLevelBar),
      so the JS setupHitExpandGroups binding (done once at boot, against
      elements that don't exist yet) never reaches these buttons — reveal the
      label via plain :hover instead, same fix already used for
      #libraryPresetBar above. :focus-visible keyboard support still comes
      from the generic .row-action-btn:focus-visible rule above. */
-  #levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(-50%) translateY(0);}
+  #levelBar .level-btn:hover:not(:disabled) .row-action-label{opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);}
 
   /* ---------- Filter/Highlight split ---------- */
   #fhSplit{flex:1 1 auto; display:flex; flex-direction:column; min-height:0; position:relative;}
@@ -1576,7 +1628,7 @@
      `.level-btn`/etc. already use elsewhere in this file. */
   .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
   .minimap-meta-level:hover{filter:brightness(1.35);}
-  #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block;}
+  #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block; touch-action:pan-y;}
   .minimap-bg-bar{fill:var(--text-tertiary); opacity:.3;}
   .minimap-ov-bar{opacity:.95;}
   .minimap-lvl-error{fill:var(--level-error);}
@@ -1963,6 +2015,15 @@
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
+  /* "View Toolbar button labels: Always" makes the buttons inline pills, so a
+     toolbar row can outgrow the viewport: scroll inside the row instead of
+     widening the page. Scoped to the always mode because overflow would clip
+     the floating "On hover" label pills (they sit above the button). Heights
+     stay fixed (CONTEXT_TOOLBAR_HEIGHT). */
+  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
+    min-width:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin;
+  }
+  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > *{flex-shrink:0;}
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
@@ -2399,6 +2460,11 @@
     background:var(--border-hover); transition:background .12s;
   }
   #detailResizer:hover::after, #detailResizer.dragging::after{ background:var(--accent); }
+  /* Touch (compact tier): invisible >=44px tall grab area centred on the 7px
+     strip; no visual change. */
+  body.layout-compact #detailResizer::before{
+    content:""; position:absolute; left:0; right:0; top:-19px; height:44px;
+  }
 
   #detailPanel{
     flex:0 0 auto; height:190px; min-height:80px; position:relative;
@@ -2528,6 +2594,11 @@
     color:var(--text-primary); white-space:pre; word-break:normal;
   }
   .wrap-messages #detailMessage{white-space:pre-wrap; word-break:break-word;}
+  /* Touch tiers (tablet/phone; the coarse-pointer rules are tier-scoped, see Touch targets): no keyboard, so the hint says "Tap". */
+  #detailPlaceholder .dp-touch{display:none;}
+  body.layout-compact #detailPlaceholder .dp-touch, body.layout-phone #detailPlaceholder .dp-touch{display:inline;}
+  body.layout-compact #detailPlaceholder .dp-desktop, body.layout-phone #detailPlaceholder .dp-desktop{display:none;}
+  body.layout-compact .recent-dd .rd-hint, body.layout-phone .recent-dd .rd-hint{display:none;}
   #detailPanel.empty #detailPlaceholder{display:flex;}
   #detailPanel.empty #detailMessage{display:none;}
   #detailPanel:not(.empty) #detailPlaceholder{display:none;}
@@ -2556,6 +2627,10 @@
      (updateDetailPanel) rather than a CSS-only rule (no stable class to key
      an :empty-style selector off here — a note's own text could legitimately
      be blank while being edited, so absence has to be tracked, not inferred). */
+  /* Selected entry outside the active filter (the italic ghost row, .not-in-filter-chip). */
+  #detailOutside{
+    margin:0 0 10px; font-family:var(--font-ui); font-size:11.5px; color:var(--text-tertiary); font-style:italic;
+  }
   #detailNote{
     margin:10px 0 0; padding-top:10px; border-top:1px dashed var(--border-soft);
     font-family:var(--font-ui); font-size:12px; line-height:1.6; font-style:italic;
@@ -2670,6 +2745,12 @@
   .facet-more:hover{text-decoration:underline;}
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
   #btnFacets{float:right;}
+  /* Tablet tier: the Facets toggle carries its text label (independent of the label-mode setting). */
+  #btnFacets .facets-btn-label{display:none; font-size:11.5px; font-weight:600; white-space:nowrap;}
+  body.layout-compact #btnFacets{width:auto; gap:3px; padding:0 4px;}
+  body.layout-compact #btnFacets .facets-btn-label{display:inline;}
+  /* Path-like values keep their end visible: shortened from the left in JS (fitFacetPathNames). */
+  .facet-value-name.facet-path{text-overflow:clip;}
   #extractToolbar{
     flex:0 0 auto; display:flex; flex-direction:column; gap:8px;
     padding:9px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
@@ -4243,13 +4324,15 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu, #plotRoleMenu{
+  #contextMenu, #treeContextMenu, #openMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
   }
   #openMenu{min-width:180px;}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden{display:none;}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden, #facetValueMenu.hidden{display:none;}
+  /* Touch long-press menu on a facet value: the full value (wrapping, selectable) on top. */
+  #facetValueMenu .ctx-meta{user-select:text; -webkit-user-select:text; font-size:11.5px; color:var(--text-primary);}
   #extractContextMenu .ctx-item.hidden{display:none;}
   .ctx-item{
     display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px;
@@ -4391,6 +4474,10 @@
      surrounding rows close up by exactly one row's worth of space instead
      of a full re-render yanking the scroll position elsewhere. */
   .log-row.temp-anchor-row{border-left:3px dashed var(--text-secondary); font-style:italic; opacity:.85;}
+  .not-in-filter-chip{
+    display:inline-block; margin-right:6px; padding:0 5px; border:1px solid var(--border-soft); border-radius:8px;
+    font-size:10px; line-height:14px; font-style:normal; color:var(--text-tertiary); vertical-align:1px;
+  }
   .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
   /* ---------- Log view columns popup (#btnColumns) — own fixed-position/
@@ -4503,9 +4590,17 @@
   body.layout-compact.drawer-open #drawerScrim, body.layout-phone.drawer-open #drawerScrim{
     display:block; position:fixed; inset:0; z-index:55; background:rgba(0,0,0,.45);
   }
+  /* Popups opened from inside the drawer (z-index 60) must paint above it —
+     their desktop z-indexes (40-55) put them under the open drawer. */
+  body.layout-compact #treeContextMenu, body.layout-phone #treeContextMenu,
+  body.layout-compact #libraryMenu, body.layout-phone #libraryMenu,
+  body.layout-compact #filterPopup, body.layout-phone #filterPopup{z-index:62;}
+  body.layout-compact #treeCtxInfoMenu, body.layout-phone #treeCtxInfoMenu,
+  body.layout-compact #addToSelectionMenu, body.layout-phone #addToSelectionMenu{z-index:63;}
+  body.layout-compact #colorPickerPopup, body.layout-phone #colorPickerPopup{z-index:64;}
   body.layout-compact #toolbar, body.layout-phone #toolbar{gap:10px; padding:0 10px;}
   body.layout-compact .toolbar-right{gap:10px; min-width:0;}
-  body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;}
 
   /* ---------- Phone shell (layout-phone, < 600px) ----------
      Reader mode: header reduced to drawer / title / find / settings, one-line
@@ -4522,7 +4617,7 @@
   body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
   body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  body.layout-phone #btnFindPhone{display:flex;}
+  body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone{display:flex;}
   body.layout-phone .toolbar-right{flex:0 0 auto; gap:6px;}
   body.layout-phone #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
 
@@ -4771,7 +4866,7 @@
     body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
     body.layout-compact #btnLibrary{height:44px;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
-    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
+    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
     body.layout-phone #sidebarToolbar .stb-btn, body.layout-compact #sidebarToolbar .stb-btn{height:44px; min-width:44px;}
     body.layout-phone .view-tabs, body.layout-compact .view-tabs, body.layout-phone #detailViewTabs, body.layout-compact #detailViewTabs{height:auto;}
@@ -4783,6 +4878,14 @@
     body.layout-phone .tree-swatch{pointer-events:none;}
     body.layout-compact .tree-row.active .tree-mute, body.layout-compact .tree-row.active .tree-del{opacity:1; width:44px; height:44px; margin-block:-4px; padding:0; align-items:center; justify-content:center;}
     body.layout-phone .tree-mute, body.layout-phone .tree-del{display:none;}
+    /* Delete x on touch: every row that shows it gets a >=44px hit area. The
+       active tree row grows the button itself (rule above); a hovered tree
+       row and an opened folder-watch/ZIP entry row (always shows it) get an
+       invisible ::before instead, so the row layout is untouched. Hidden
+       (opacity 0) buttons get none, so a stray tap can't delete. */
+    body.layout-compact .tree-row:not(.active):hover .tree-del, body.layout-compact .folder-watch-file .tree-del{position:relative;}
+    body.layout-compact .tree-row:not(.active):hover .tree-del::before, body.layout-compact .folder-watch-file .tree-del::before{content:""; position:absolute; inset:-12px;}
+    body.layout-compact .folder-watch-file .tree-del{opacity:1;}
     body.layout-phone #findInput, body.layout-phone #findCloseBtn, body.layout-phone #findAddFilterBtn, body.layout-phone #findBar .find-opt, body.layout-phone #findBar .find-nav-btn{height:44px;}
     body.layout-phone #findCloseBtn, body.layout-phone #findBar .find-opt, body.layout-phone #findBar .find-nav-btn{min-width:44px;}
     body.layout-phone #findCloseBtn, body.layout-phone #findBar .find-nav-btn{width:44px;}
@@ -5096,7 +5199,7 @@
                    it replaced the old "Filter on:" pill-chain header row. -->
               <div class="filter-input-wrap">
                 <span id="filterScopeHint" class="filter-scope-hint"></span>
-                <input type="text" id="filterInput" placeholder="Text enthält… oder Muster mit [*:float]" autocomplete="off">
+                <input type="text" id="filterInput" placeholder="Text contains… or a pattern with [*:float]" autocomplete="off">
               </div>
               <button type="button" class="btn-icon" id="btnCloseFilterPopup" title="Close">
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
@@ -5239,6 +5342,7 @@
              display toggle rather than a filter-creating action. -->
         <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+Shift+F)">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 3.5h11M2.5 8h7M2.5 12.5h4"/></svg>
+          <span class="facets-btn-label">Facets</span>
         </button>
         <!-- The library management group (#libraryManageBar: "Add to
              Library"/"Library", pinned far-right) that used to live here is
@@ -5682,7 +5786,8 @@
             </button>
           </div>
           <div id="detailBody">
-            <div id="detailPlaceholder">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</div>
+            <div id="detailPlaceholder"><span class="dp-desktop">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</span><span class="dp-touch">Tap a row to see its full message here.</span></div>
+            <div id="detailOutside" style="display:none">This entry is not part of the current filter.</div>
             <div id="detailMessage"></div>
             <div id="detailNote"></div>
           </div>
@@ -5695,6 +5800,15 @@
          Created by llmDock, only in the desktop build. -->
     <aside id="llmDockPanel" class="hidden"></aside>
 
+  </div>
+
+  <!-- Touch long-press menu on a facet value (see openFacetValueMenu). -->
+  <div id="facetValueMenu" class="hidden">
+    <div class="ctx-meta" id="facetValueMenuValue"></div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" data-act="only">Show only this</div>
+    <div class="ctx-item" data-act="exclude">Exclude this</div>
+    <div class="ctx-item" data-act="copy">Copy value</div>
   </div>
 
   <div id="contextMenu" class="hidden">
@@ -5813,6 +5927,7 @@
   <div id="linkDialog" class="hidden">
     <div class="link-dialog-card link-dialog-card-wide">
       <div class="link-dialog-title">Link filters</div>
+      <div class="link-intro">Example: pair each "Move requested" with the next "Position reached" to measure how long moves take.</div>
       <div class="link-field">
         <label for="linkRefSelect">Reference (anchor)</label>
         <select id="linkRefSelect"></select>
@@ -12794,7 +12909,20 @@ function timeRangeFilterName(value, nodeId) {
 // The tree selection: state.multiSelect plus the active node, which is always
 // part of it (creators/file loads leave multiSelect empty while activeId is
 // set). Every reader of the selection goes through this, never multiSelect.
+// Tree select mode (touch-friendly multi-select, tablet UX step 4): a plain
+// variable, not DOM state — renderTree rebuilds every row. While on, a row
+// tap toggles the node in state.multiSelect instead of activating it, every
+// row shows a checkbox, and the selection is exactly multiSelect (the active
+// node is NOT implicitly part of it, a tap must be able to leave it out).
+let treeSelectMode = false;
+function setTreeSelectMode(on, seedId) {
+  on = !!on;
+  if (on === treeSelectMode && !on) return;
+  treeSelectMode = on;
+  state.multiSelect = new Set(on && seedId && state.nodes[seedId] ? [seedId] : []);
+}
 function treeSelectionIds() {
+  if (treeSelectMode) return new Set([...state.multiSelect].filter(id => state.nodes[id]));
   const sel = new Set(state.multiSelect);
   if (state.activeId && state.nodes[state.activeId]) sel.add(state.activeId);
   return sel;
@@ -15815,6 +15943,9 @@ function undo() {
   const action = undoStack.pop();
   if (!action) { showCopyToast("Nothing to undo"); return; }
   undoAction(action);
+  // Every branch ends by activating the node it touched: that node is the one selection (a stale multi-selection, e.g. of the
+  // active node while a non-active one was deleted, would otherwise survive as a mixed selection).
+  if (state.activeId && state.nodes[state.activeId]) state.multiSelect = new Set([state.activeId]);
   redoStack.push(action);
   updateUndoRedoButtons();
   // Global sweep on purpose: an action can be a restored subtree, a re-parent, a field edit
@@ -15895,6 +16026,9 @@ function redo() {
   const action = redoStack.pop();
   if (!action) { showCopyToast("Nothing to redo"); return; }
   redoAction(action);
+  // Every branch ends by activating the node it touched: that node is the one selection (a stale multi-selection, e.g. of the
+  // active node while a non-active one was deleted, would otherwise survive as a mixed selection).
+  if (state.activeId && state.nodes[state.activeId]) state.multiSelect = new Set([state.activeId]);
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
   updateUndoRedoButtons();
@@ -16001,6 +16135,7 @@ const detailPanel = el("#detailPanel");
 const detailMeta = el("#detailMeta");
 const detailMessageEl = el("#detailMessage");
 const detailNoteEl = el("#detailNote");
+const detailOutsideEl = el("#detailOutside");
 const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
@@ -16136,7 +16271,7 @@ function finishAnalysisFilter(node, tab) {
    inside the group key (never present in real log text), so the key can be
    split back into literal text and placeholders without ambiguity when a
    filter pattern is built from it. One regex pass per message, alternatives
-   in priority order: GUID, IPv4[:port], a "quoted string" (its content), a
+   in priority order: GUID, IPv4[:port], a "double" or 'single' quoted string (its content; quotes kept), a
    Windows/UNC or multi-segment Unix path, a hex literal/hash (0x…, or 8+
    hex digits mixing letters and digits), then any number — a sign only
    when it isn't glued to a word ("Worker-3" keeps its dash), and grouped
@@ -16149,7 +16284,7 @@ const PATTERN_PH_SPLIT_RE = /([-])/;
 const PATTERN_TOKEN_RE = new RegExp(
   "([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})" +
   "|((?<![\\w.])\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d{1,5})?(?![\\w.]))" +
-  '|("[^"\\n]*")' +
+  '|("[^"\\n]*"|(?<![\\w\'])\'[^\'\\n]*\'(?![\\w\']))' +
   "|((?:\\b[A-Za-z]:\\\\|\\\\\\\\)[^\\s\"'<>|,;]+|(?<![\\w.:/])\\/[\\w.-]+(?:\\/[\\w.-]*)+)" +
   "|(\\b0[xX][0-9a-fA-F]+\\b|\\b(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{8,}\\b)" +
   "|((?:(?<![\\w.])[-+])?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?))",
@@ -16169,7 +16304,7 @@ function patternTokenReplacer(m, guid, ip, quoted, path, hex, num) {
   }
   if (guid !== undefined) return "";
   if (ip !== undefined) return "";
-  if (quoted !== undefined) return '""';
+  if (quoted !== undefined) { const q = quoted[0]; return q + "" + q; }
   if (path !== undefined) return "";
   return "";
 }
@@ -16472,7 +16607,7 @@ function renderFacetPanel() {
         const [value, count, lvlCls] = col.values[i];
         const pct = count / total * 100;
         html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
-          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
+          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
           '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
           '<span class="facet-pct">' + (pct > 0 && pct < 1 ? "<1" : Math.round(pct)) + "%</span></div>";
@@ -16487,6 +16622,41 @@ function renderFacetPanel() {
   });
   facetPanelBody.innerHTML = html;
   facetPanelBody._facetResult = c.result;
+  fitFacetPathNames();
+}
+
+// Path-like facet values (contain \ or /) are shortened to start at the last
+// path segment so the file name stays visible: "…\Scheduler.cs line 219". Plain JS (a CSS
+// direction:rtl trick mangles \, : and . at the ends). The full value stays
+// in the row's title. No layout (hidden panel, jsdom) → left untouched.
+function fitFacetPathNames() {
+  facetPanelBody.querySelectorAll(".facet-value-name.facet-path").forEach(nameEl => {
+    const full = nameEl.dataset.full != null ? nameEl.dataset.full : (nameEl.dataset.full = nameEl.textContent);
+    nameEl.textContent = full;
+    if (!nameEl.clientWidth || nameEl.scrollWidth <= nameEl.clientWidth) return;
+    // Start at the last path segment ("…\Scheduler.cs line 219" — the file
+    // name is the distinguishing part); if that still doesn't fit, cut it on
+    // the right ("…\Scheduler.cs li…").
+    const sepAt = Math.max(full.lastIndexOf("\\", full.length - 2), full.lastIndexOf("/", full.length - 2));
+    const tail = "…" + full.slice(Math.max(0, sepAt));
+    nameEl.textContent = tail;
+    if (nameEl.scrollWidth <= nameEl.clientWidth) return;
+    const head = "…" + full.charAt(sepAt), seg = full.slice(sepAt + 1);
+    let lo = 0, hi = seg.length - 1; // chars of the segment kept
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      nameEl.textContent = head + seg.slice(0, mid) + "…";
+      if (nameEl.scrollWidth <= nameEl.clientWidth) lo = mid; else hi = mid - 1;
+    }
+    nameEl.textContent = head + seg.slice(0, lo) + "…";
+  });
+}
+if (typeof ResizeObserver === "function") {
+  let facetFitFrame = 0;
+  new ResizeObserver(() => {
+    if (facetFitFrame) return;
+    facetFitFrame = requestAnimationFrame(() => { facetFitFrame = 0; if (facetsOpen) fitFacetPathNames(); });
+  }).observe(el("#facetPanelBody"));
 }
 
 // Filter node for one facet value, under the active node: Level → a level
@@ -16598,7 +16768,32 @@ facetPanelBody.addEventListener("contextmenu", ev => {
   ev.stopPropagation();
   const col = result.columns.find(c => c.key === section.dataset.col);
   const entry = col && col.values[+row.dataset.idx];
-  if (entry) createFacetFilter(col, entry[0], true);
+  if (!entry) return;
+  // A touch long-press (synthesized by the global helper above, it sets
+  // longPressFired first) opens a menu instead of silently excluding.
+  if (longPressFired) openFacetValueMenu(col, entry[0], ev.clientX, ev.clientY);
+  else createFacetFilter(col, entry[0], true);
+});
+const facetValueMenu = el("#facetValueMenu");
+let facetValueMenuTarget = null;
+function closeFacetValueMenu() { facetValueMenu.classList.add("hidden"); facetValueMenuTarget = null; }
+function openFacetValueMenu(col, value, x, y) {
+  closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu();
+  facetValueMenuTarget = { col, value };
+  el("#facetValueMenuValue").textContent = value || "(empty)";
+  facetValueMenu.classList.remove("hidden");
+  const r = facetValueMenu.getBoundingClientRect();
+  facetValueMenu.style.left = Math.max(8, Math.min(x, window.innerWidth - (r.width || 280) - 8)) + "px";
+  facetValueMenu.style.top = Math.max(8, Math.min(y, window.innerHeight - (r.height || 160) - 8)) + "px";
+}
+facetValueMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".ctx-item");
+  const t = facetValueMenuTarget;
+  if (!item || !t) return;
+  closeFacetValueMenu();
+  if (item.dataset.act === "copy") { copyTextToClipboard(t.value); showCopyToast("Copied"); }
+  else createFacetFilter(t.col, t.value, item.dataset.act === "exclude");
 });
 // These six log-display toggles now exist TWICE in the DOM (once in
 // #contextToolbar, once in #filteredToolbar — see "Unified toolbar" HTML
@@ -16915,6 +17110,28 @@ function showFhTab(tab) {
   // The bar is only shown while the Context panel is actually on screen, and
   // that's exactly what just changed.
   updateContextToolbar();
+  // After the toolbar settled (showing it changes the viewport), so the
+  // measurement below is the final one.
+  if (fhLayout === "tabs" && tab === "highlight" && !tabAnchor && !renderDepth) revealSelectedInContextTab();
+}
+
+// The Context pane can't scroll while it is display:none, so a selection made
+// on the Filtered tab leaves it wherever it was (often above the fold of the
+// small tablet viewport). When the tab becomes visible, bring the selected
+// entry into view (centered) if it isn't fully visible. Not while tail-follow
+// owns the scroll position, not for the plain-text editor (its tab anchor), and
+// not when revealInHighlightView already has a scroll target of its own.
+function revealSelectedInContextTab() {
+  if (!state.selectedId || state.highlightScrollTargetId || textEditorShown()) return;
+  if (state.tailFollow && isTailedHighlightViewActive()) return;
+  const idx = currentHighlightViewEntries.findIndex(e => e.id === state.selectedId);
+  const offsets = highlightRowOffsets;
+  if (idx === -1 || !offsets || offsets[idx + 1] == null) return;
+  const viewportH = highlightBody.clientHeight;
+  if (!viewportH) return; // not laid out (jsdom / hidden): nothing to measure
+  const top = offsets[idx], bottom = offsets[idx + 1];
+  if (top >= highlightBody.scrollTop && bottom <= highlightBody.scrollTop + viewportH) return;
+  scrollToHighlightIndex(idx, { center: true });
 }
 
 // The single entry point for the three-way toggle: view is "highlight"
@@ -17306,6 +17523,7 @@ function applyNavWaypoint(wp) {
   // current one alone rather than blanking the detail panel.
   if (wp.selectedId && entryIndex[wp.selectedId]) state.selectedId = wp.selectedId;
   render();
+  updateDetailPanel(); // render() doesn't refresh it: the pane (and its outside-filter notice) would keep the previous entry
   // After render(), because render()'s own A1 branch calls
   // revealFilteredView() for a filter node, which would otherwise override
   // the pane this waypoint was recorded in.
@@ -17395,11 +17613,14 @@ tableHeaderEl.addEventListener("click", ev => {
   const th = ev.target.closest(".th-sortable");
   if (!th) return;
   const col = th.dataset.sort;
+  const firstDir = col === "delta" ? "desc" : "asc"; // Δt: largest first — "where is the time lost"
   if (state.sortColumn === col) {
-    state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+    // Third tap: first direction -> opposite -> off (back to log order); no sort = sortColumn null.
+    if (state.sortDir === firstDir) state.sortDir = firstDir === "asc" ? "desc" : "asc";
+    else { state.sortColumn = null; state.sortDir = "asc"; }
   } else {
     state.sortColumn = col;
-    state.sortDir = col === "delta" ? "desc" : "asc"; // Δt: largest first — "where is the time lost"
+    state.sortDir = firstDir;
   }
   renderTable();
   findRefresh(); // a re-sort reorders the list the find bar's hit indices point into
@@ -17835,7 +18056,18 @@ function renderStatus() {
   updatePhoneTitle();
   if (fileCount === 0) { statusText.textContent = ""; return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
-  statusText.textContent = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
+  const filesText = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
+  // Compact tier (tablet): the sidebar is a drawer, so the header names the
+  // active filter and its result size ("<filter> · <count> / <total> entries");
+  // tapping it opens the drawer. A root file (or nothing) active keeps the
+  // plain files text. Desktop shows the plain text, phone hides #statusText.
+  const active = currentLayoutTier === "compact" && state.activeId ? state.nodes[state.activeId] : null;
+  if (active && !state.rootIds.includes(active.id)) {
+    const shown = (getEntries(active.id) || []).length;
+    statusText.textContent = `${active.inverted ? "¬ " : ""}${nodeDisplayName(active)} · ${shown.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} entries`;
+  } else {
+    statusText.textContent = filesText;
+  }
 }
 
 // Short type label shown next to each tree node's name (FILE/TXT/TIME/TBL/AND/OR/LNK).
@@ -18261,6 +18493,7 @@ function applyTempAnchorOnActiveNodeSwitch(nodeId) {
   const entry = state.selectedId ? entryIndex[state.selectedId] : null;
   state.tempAnchor = entry ? computeTempAnchorForNode(nodeId, entry) : null;
   if (state.tempAnchor && tempAnchorMode === "fade") scheduleTempAnchorFade();
+  renderDetailOutsideNotice(entry);
 }
 
 // Which occurrence (nth) of its id the last keyboard move landed on. A merge's
@@ -18816,7 +19049,8 @@ function renderNode(id, depth, opts) {
   const muteClass = node.muted ? " muted" : "";
   const kbLoadId = kbLoadNavIdOf(node); // being loaded from the keyboard: the cursor's row while it loads
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + (kbLoadId && treeCursorId() === kbLoadId ? " tree-cursor" : "") + clipClass + multiClass + invertClass + muteClass +
-    (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "");
+    (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "") +
+    (treeSelectMode ? " select-mode" : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
   // to the RIGHT of its file's icon column instead of visually overlapping
@@ -18842,6 +19076,13 @@ function renderNode(id, depth, opts) {
   // reported: it used to shift the icon whenever it appeared/disappeared).
   // Toggles node.collapsed (display-only, not persisted) for any node with
   // real children.
+  if (treeSelectMode) {
+    const check = document.createElement("span");
+    check.className = "tree-check";
+    check.setAttribute("aria-hidden", "true");
+    check.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3.2 3.2L13 4.8"/></svg>';
+    row.appendChild(check);
+  }
   const chevronSlot = document.createElement("span");
   chevronSlot.className = "tree-chevron-slot";
   const hasRealChildren = nodeHasCollapsibleChildren(node);
@@ -19028,6 +19269,16 @@ function renderNode(id, depth, opts) {
   }
 
   row.addEventListener("click", ev => {
+    if (treeSelectMode) {
+      // Select mode: a tap toggles the node's checkbox; it never activates the
+      // node, switches the view or closes the drawer.
+      const sel = new Set(state.multiSelect);
+      if (!sel.delete(id)) sel.add(id);
+      state.multiSelect = sel;
+      lastTreeRowClickId = null;
+      render();
+      return;
+    }
     let activateId = id; // the node this click makes active (differs only when Ctrl+click deselects the active one)
     if (ev.ctrlKey || ev.metaKey) {
       // The active node is part of the selection, so Ctrl+click extends/shrinks
@@ -19396,7 +19647,9 @@ function renderLevelBar() {
     btn.dataset.level = lvl; // queried directly by name elsewhere (tests, format editor rows) without needing a rebuild
     const label = lvl + " " + (counts[lvl] || 0).toLocaleString("de-DE");
     btn.title = label; // accessible name, since the button itself carries no visible text
-    btn.innerHTML = '<span class="row-action-hit"></span><span class="row-action-label">' + escapeHtml(label) + '</span>';
+    const n = counts[lvl] || 0;
+    const countText = n >= 100000 ? Math.round(n / 1000) + "k" : n.toLocaleString("de-DE"); // fits the 44px circle
+    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => {
       if (levelFilterTreeMode === "auto") {
         const current = currentTreeLevelSelection();
@@ -19496,6 +19749,7 @@ function getVisibleEntries() {
    a small buffer) actually become <tr> nodes — see renderExtractVisibleRows. */
 
 let extractRowsData = []; // [{ entry, values: [...] }]
+let extractTimeBase = null; // ts of the first row (null for plain text / no rows): ELAPSED_COL + this = the row's clock time
 let extractColumns = [];  // [{ name, type }]
 let extractNodeId = null;
 let extractSortCol = null; // index into extractColumns, or null (natural/chronological order)
@@ -21946,6 +22200,43 @@ window.addEventListener("mouseup", ev => {
   renderPlotChart();
 });
 
+// Y default helper: the first float, else int, pattern column (colIndex >= 0,
+// not the X column) with at least two distinct finite values in the rows.
+function plotVaryingNumericColumn(plottable, xCol) {
+  const varies = c => {
+    let first;
+    for (const row of extractRowsData) {
+      const v = parseValueForPlot(row.values[c.index], c.type);
+      if (!Number.isFinite(v)) continue;
+      if (first === undefined) first = v;
+      else if (v !== first) return true;
+    }
+    return false;
+  };
+  for (const type of ["float", "int"]) {
+    const hit = plottable.find(c => c.type === type && c.index >= 0 && c.index !== xCol && varies(c));
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// The time column as plot X is drawn as clock time: t (ms since the first row)
+// + extractTimeBase. Not for plain text (its ELAPSED_COL is the line number).
+function plotXIsClock() {
+  return plotConfig.xCol === ELAPSED_COL && extractTimeBase != null;
+}
+// "08:12:30"; ".mmm" added while the visible span is < 2 s; the date is
+// prepended when the visible span crosses midnight.
+function formatPlotClockTick(t, lo, hi) {
+  const abs = extractTimeBase + t;
+  const d = new Date(abs), p2 = n => String(n).padStart(2, "0");
+  const crossesMidnight = new Date(extractTimeBase + lo).toDateString() !== new Date(extractTimeBase + hi).toDateString();
+  let out = p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds());
+  if (hi - lo < 2000) out += "." + String(d.getMilliseconds()).padStart(3, "0");
+  if (crossesMidnight) out = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + " " + out;
+  return out;
+}
+
 function renderPlotControls() {
   // plotConfig itself is now loaded per-node by loadPlotConfigForNode
   // (called from renderExtractTable on every genuine node switch) — nothing
@@ -21959,16 +22250,14 @@ function renderPlotControls() {
     return;
   }
   // X always has a valid selection (it's a dropdown, never empty) — re-pick if the
-  // pattern changed underneath it. extractColumns always starts with the
-  // synthetic Index column (see INDEX_COL), so plottable[0] here IS Index —
-  // that's what makes it the default X axis for every extraction's plot,
-  // with no extra logic needed. Y defaults are only auto-picked ONCE per
+  // pattern changed underneath it. The default is the time column (ELAPSED_COL,
+  // drawn with clock-time ticks — see plotXIsClock; for a plain-text file it is
+  // the Line column), not Index. Y defaults are only auto-picked ONCE per
   // extraction (first time its plot tab is opened); after that, unchecking every
   // box is a valid state (the chart just shows a "pick a column" placeholder)
   // instead of the box being silently re-checked out from under the user.
-  // A plain-text file's plot defaults to its Line column instead.
   if (plotConfig.xCol == null || !plottable.some(c => c.index === plotConfig.xCol)) {
-    plotConfig.xCol = nodeIsPlainText(extractNodeId) && plottable.some(c => c.index === ELAPSED_COL) ? ELAPSED_COL : plottable[0].index;
+    plotConfig.xCol = plottable.some(c => c.index === ELAPSED_COL) ? ELAPSED_COL : plottable[0].index;
   }
   // Z axis (3D scatter only): re-pick if the pattern changed underneath it,
   // same fallback shape as X — default to the second plottable column so it
@@ -21979,8 +22268,11 @@ function renderPlotControls() {
   if (!plotConfig.yColsInit) {
     // Prefer a real pattern-extracted column over the synthetic Index/t(ms)
     // ones for the Y default — those are more useful defaults to look at
-    // than "t(ms) plotted against Index".
-    const firstOther = plottable.find(c => c.index !== plotConfig.xCol && c.index >= 0)
+    // than "t(ms) plotted against Index". Among them: the first numeric column
+    // whose values actually vary, float columns before int ones (a constant
+    // column is a flat line); none varying -> the first pattern column.
+    const firstOther = plotVaryingNumericColumn(plottable, plotConfig.xCol)
+      || plottable.find(c => c.index !== plotConfig.xCol && c.index >= 0)
       || plottable.find(c => c.index !== plotConfig.xCol)
       || plottable[0];
     plotConfig.yCols = [firstOther.index];
@@ -22452,7 +22744,7 @@ function renderPlotChart() {
       if (t < xDomainMin - 1e-9 || t > xDomainMax + 1e-9) return;
       const px = xPix(t);
       parts.push('<line class="plot-grid-line" x1="' + px + '" y1="' + top + '" x2="' + px + '" y2="' + (top + plotH) + '"/>');
-      parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + formatAxisNumber(t) + "</text>");
+      parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + (plotXIsClock() ? formatPlotClockTick(t, xDomainMin, xDomainMax) : formatAxisNumber(t)) + "</text>");
     });
   }
   // Axes
@@ -22466,8 +22758,9 @@ function renderPlotChart() {
   // one Y series — with several, the per-series legend below already names
   // each one by its own color, and one shared Y title couldn't describe
   // them all anyway.
-  parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="x" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.xCol))) + "</text>");
-  parts.push(plotAxisCaret("x", left + plotW / 2, top + plotH + 34, columnAxisLabel(findExtractColumn(plotConfig.xCol)), "middle", ""));
+  const xAxisLabel = plotXIsClock() && findExtractColumn(ELAPSED_COL).name === "t (ms)" ? "Time" : columnAxisLabel(findExtractColumn(plotConfig.xCol));
+  parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="x" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(xAxisLabel) + "</text>");
+  parts.push(plotAxisCaret("x", left + plotW / 2, top + plotH + 34, xAxisLabel, "middle", ""));
   if (series.length === 1) {
     const yTitleX = 14, yTitleY = top + plotH / 2;
     parts.push('<text class="plot-axis-title plot-axis-clickable" data-axis="y" x="' + yTitleX + '" y="' + yTitleY + '" text-anchor="middle" transform="rotate(-90 ' + yTitleX + ' ' + yTitleY + ')">' + escapeHtml(columnAxisLabel(findExtractColumn(series[0].col))) + "</text>");
@@ -23129,6 +23422,7 @@ function renderExtractTable(node) {
   const plainText = nodeIsPlainText(node.id);
   const entries = applyLevelFilter(getEntries(node.id));
   const pairs = entries.length > 0 && !!entries[0].isPair;
+  extractTimeBase = !plainText && entries.length ? entries[0].ts : null;
   extractColumns = [
     { name: "Index", type: "int", colIndex: INDEX_COL },
     { name: plainText ? "Line" : "t (ms)", type: "int", colIndex: ELAPSED_COL },
@@ -23816,7 +24110,7 @@ function wrapColsForBody(bodyEl) {
     return track > 0 ? Math.max(1, Math.floor((track - cw) / cw)) : 0;
   }
   if (!(bodyEl === tableBody && filteredTextMode ? state.wrapTextView : wrapMessagesEff())) return 0;
-  const track = (bodyEl.clientWidth || 0) - TABLE_ROWS_H_PADDING - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
+  const track = (bodyEl.clientWidth || 0) - rowsHPadding(bodyEl === tableBody ? tableRows : highlightRows) - (bodyEl === tableBody ? tableGutterW() : lastColumnEdgeX + COLUMN_GRID_GAP);
   if (!(track > 0)) return 0;
   const cw = msgCharWidth();
   return Math.max(1, Math.floor((track - cw) / cw));
@@ -23999,6 +24293,7 @@ function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
   return true;
 }
 
+let viewMembers = []; // the Filtered view's real members (chronological, no temp anchor) — membership check of the detail notice
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
 /* ===================== Temporary anchor rendering (FEATURE_BACKLOG #18) ===
@@ -24378,7 +24673,8 @@ function appendLogRow(frag, i, rc) {
     middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
   }
   const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message", plainTextSyntaxRanges(e, rc.syntax));
-  const msgHtml = filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase;
+  const msgHtml = (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
+    (filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase);
 
   row.className = cls;
   row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode()) + "px";
@@ -25003,7 +25299,7 @@ function buildContextRowOffsets(entries, strips) {
    overflow, and the header — a flex SIBLING of the scrolling body, not a
    descendant — gets its own width and has its scrollLeft driven by the body's
    scroll event. Padding is read off the element rather than hardcoded the way
-   TABLE_ROWS_H_PADDING is: this one changes with ctx-active (the marker lane)
+   the old fixed TABLE_ROWS_H_PADDING was: this one changes with ctx-active (the marker lane)
    as well as with --color-mark-w, and one style read per rebuild is cheaper
    than a constant that silently drifts out of sync with the CSS. */
 let cachedMaxHighlightMsgPixelWidth = 0;
@@ -25428,9 +25724,13 @@ let contextToolbarPanelOnScreen = false;
 function setContextToolbarVisible(visible, compensate = true) {
   if (visible === contextToolbarVisible) return;
   contextToolbarVisible = visible;
+  // The bar's real height (the compact tier's min-height:52px differs from the
+  // desktop 36px), measured while it is displayed: after showing, before hiding.
+  const hBefore = contextToolbar.offsetHeight;
   contextToolbar.classList.toggle("hidden", !visible);
   if (compensate) {
-    setHighlightScroll(highlightBody.scrollTop + (visible ? CONTEXT_TOOLBAR_HEIGHT : -CONTEXT_TOOLBAR_HEIGHT));
+    const h = (visible ? contextToolbar.offsetHeight : hBefore) || CONTEXT_TOOLBAR_HEIGHT; // jsdom: 0 -> the CSS constant
+    setHighlightScroll(highlightBody.scrollTop + (visible ? h : -h));
   }
 }
 
@@ -26528,9 +26828,13 @@ let resizing = false;
 let resizeStartY = 0;
 let resizeStartHeight = 0;
 
-detailResizer.addEventListener("mousedown", ev => {
+detailResizer.addEventListener("pointerdown", ev => {
+  if (ev.button !== undefined && ev.button !== 0) return;
   resizing = true;
   resizeStartY = ev.clientY;
+  if (typeof detailResizer.setPointerCapture === "function" && ev.pointerId !== undefined) {
+    try { detailResizer.setPointerCapture(ev.pointerId); } catch (_) { /* pointer already gone */ }
+  }
   resizeStartHeight = detailPanel.getBoundingClientRect().height;
   detailResizer.classList.add("dragging");
   document.body.style.cursor = "row-resize";
@@ -26547,7 +26851,7 @@ detailResizer.addEventListener("mousedown", ev => {
 // the throttle so the panel visibly tracks the cursor with no added latency
 // — only the expensive re-render is deferred.
 let detailResizeTicking = false;
-window.addEventListener("mousemove", ev => {
+window.addEventListener("pointermove", ev => {
   if (!resizing) return;
   const deltaY = ev.clientY - resizeStartY; // dragging down (positive) shrinks the panel
   const maxHeight = Math.max(150, window.innerHeight - 260); // leave room for header/table
@@ -26558,13 +26862,15 @@ window.addEventListener("mousemove", ev => {
   requestAnimationFrame(() => { renderVisibleRows(); detailResizeTicking = false; }); // the table viewport just changed size
 });
 
-window.addEventListener("mouseup", () => {
+const endDetailResize = () => {
   if (!resizing) return;
   resizing = false;
   detailResizer.classList.remove("dragging");
   document.body.style.cursor = "";
   document.body.style.userSelect = "";
-});
+};
+window.addEventListener("pointerup", endDetailResize);
+window.addEventListener("pointercancel", endDetailResize);
 
 /* ---------- Sidebar resizer (drag the handle right of the tree) ---------- */
 let sidebarResizing = false;
@@ -27340,14 +27646,30 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // so the level counts should match that same "whole file" scope instead of
   // silently changing meaning with the active node.
   const minimapLvlCounts = getLevelCounts(rootId) || {};
+  // Each count carries its level letter ("E 149 · W 256 · ..."). FATAL/TRACE
+  // appear only when present. A format that does not list FATAL as a level of
+  // its own folds FATAL lines into the ERROR bucket (levelBucket), so the E
+  // count includes them — the tooltip says how many ("incl. N Fatal").
+  let foldedFatal = 0;
+  const rootNode = state.nodes[rootId];
+  if (rootNode && rootNode.type === "file") {
+    const bucketOf = makeLevelBucketer();
+    for (const rec of fileAggregate(rootNode).levelOrder) {
+      if (normalizeLevelName(rec.level).startsWith("FATAL") && bucketOf(rec.level, rec.formatId) === "ERROR") foldedFatal += rec.n;
+    }
+  }
   activeLevelOrder().forEach(lvl => {
+    const n = minimapLvlCounts[lvl] || 0;
+    if (n === 0 && (lvl === "FATAL" || lvl === "TRACE")) return;
     const colorVar = levelColorVar(lvl) || "var(--text-secondary)";
+    const fullName = lvl.charAt(0) + lvl.slice(1).toLowerCase();
+    const fatalNote = lvl === "ERROR" && foldedFatal ? " (incl. " + foldedFatal.toLocaleString("de-DE") + " Fatal)" : "";
     // Clickable (person-requested, this session): attaches/reveals a
     // single-level filter node for this level directly under the ROOT file
     // — see the delegated click listener on timelineMinimapMetaEl below.
     minimapMeta.push('<span class="minimap-meta-level" data-level="' + escapeHtml(lvl) + '" style="color:' + colorVar +
-      '" title="' + escapeHtml(lvl) + ': add/show a level filter for this file">' +
-      (minimapLvlCounts[lvl] || 0).toLocaleString("de-DE") + '</span>');
+      '" title="' + escapeHtml(fullName + fatalNote) + ': add/show a level filter for this file">' +
+      escapeHtml(lvl.charAt(0)) + " " + n.toLocaleString("de-DE") + '</span>');
   });
   timelineMinimapMetaEl.innerHTML = minimapMeta.join(" · ");
   minimapInteractive = !state.sortColumn;
@@ -27571,12 +27893,21 @@ function updateMinimapFullRange() {
 // branch below): startIdx used to only clamp at 0, so that scenario indexed
 // straight past the end of the array.
 function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
+  const r = visibleEntryRange(entries, scrollEl, rowOffsets);
+  return r ? { left: minimapBarSpan(r.first.ts).left, right: minimapBarSpan(r.last.ts).right } : null;
+}
+
+// First/last real entry inside the scroll container's viewport ({first, last}),
+// or null when nothing real is in view. Shared by the minimap's rendered-range
+// box and the toolbar's "Time range" fallback (visible span of the log view).
+function visibleEntryRange(entries, scrollEl, rowOffsets) {
   if (scrollEl === highlightBody && textEditorShown()) {
     // The editor shows the lines its DOM puts in the viewport (no row window).
     const r = editorVisibleRange();
     if (!r || !entries[r.first] || !entries[r.last]) return null;
-    return { left: minimapBarSpan(entries[r.first].ts).left, right: minimapBarSpan(entries[r.last].ts).right };
+    return { first: entries[r.first], last: entries[r.last] };
   }
+  if (!entries.length) return null;
   const viewportH = scrollEl.clientHeight || 400;
   const maxIdx = entries.length - 1;
   // Shared with highlightBody (never compressed — the ternary is a no-op
@@ -27606,7 +27937,7 @@ function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
   while (s <= e && entries[s]._tempAnchor) s++;
   while (e >= s && entries[e]._tempAnchor) e--;
   if (s > e) return null; // only the anchor row is in view — nothing real to bound
-  return { left: minimapBarSpan(entries[s].ts).left, right: minimapBarSpan(entries[e].ts).right };
+  return { first: entries[s], last: entries[e] };
 }
 
 // Repositions the "currently rendered" sub-rectangle to match what actually
@@ -27796,6 +28127,7 @@ timelineMinimapMetaEl.addEventListener("click", ev => {
 // silently moving the (invisible) Filtered view in the background.
 timelineMinimapSvg.addEventListener("click", ev => {
   if (minimapDragSuppressClick) { minimapDragSuppressClick = false; return; }
+  if (minimapLongPressDone) return; // the long-press already opened the time-range dialog
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
   const ts = minimapXToTs(x);
@@ -27918,35 +28250,105 @@ function createTimeRangeFilterFromDrag(fromTs, toTs) {
   render();
 }
 
-timelineMinimapSvg.addEventListener("mousedown", ev => {
-  if (!minimapInteractive || ev.button !== 0) return;
+// Pointer events (mouse, touch, pen alike): pointerdown + setPointerCapture on
+// the svg, pointermove/up/cancel on window (captured events bubble there, and
+// a mouse released outside the svg still ends the drag). CSS `touch-action:
+// pan-y` on the svg lets a horizontal swipe select while a vertical swipe
+// still scrolls the page; when the browser takes such a pan it sends
+// pointercancel, which aborts the gesture without creating a filter.
+const MINIMAP_LONG_PRESS_MS = 500;
+const MINIMAP_LONG_PRESS_SLOP_PX = 10; // finger travel (client px) that turns a press into a swipe/scroll
+const MINIMAP_TOUCH_DRAG_THRESHOLD_PX = 8; // touch jitter is larger than a mouse's
+let minimapPointerType = "mouse";
+let minimapPointerId = null;
+let minimapDragThreshold = MINIMAP_DRAG_THRESHOLD_PX;
+let minimapPressClientX = 0;
+let minimapLongPressTimer = null;
+let minimapLongPressAt = -Infinity; // performance.now() of the last long-press firing (see the contextmenu handler)
+
+function minimapOwnsPointer(ev) {
+  return minimapPointerId === null || ev.pointerId === undefined || ev.pointerId === minimapPointerId;
+}
+function clearMinimapLongPress() {
+  if (minimapLongPressTimer !== null) { clearTimeout(minimapLongPressTimer); minimapLongPressTimer = null; }
+}
+function endMinimapDrag() {
+  minimapDragging = false;
+  minimapPointerId = null;
+  document.body.style.userSelect = "";
+  hideMinimapDragOverlay();
+}
+// Long-press (touch) or contextmenu: open the time-range dialog prefilled
+// with the pressed point as both bounds. Fires at most once per gesture.
+function openMinimapTimeRangeAt(clientX) {
+  if (!minimapInteractive || !state.activeId) return;
+  const rect = timelineMinimapSvg.getBoundingClientRect();
+  const ts = Math.round(minimapXToTs(minimapEventUnitX({ clientX }, rect)));
+  openTimeRangeDialog("create", state.activeId, { from: ts, to: ts });
+}
+function fireMinimapLongPress(clientX) {
+  clearMinimapLongPress();
+  if (minimapLongPressDone) return;
+  minimapLongPressDone = true;
+  minimapLongPressAt = performance.now();
+  endMinimapDrag();
+  openMinimapTimeRangeAt(clientX);
+}
+let minimapLongPressDone = false; // set per gesture; also makes the trailing click (if any) a no-op
+
+timelineMinimapSvg.addEventListener("pointerdown", ev => {
+  minimapPointerType = ev.pointerType || "mouse"; // also for a right-click, so the contextmenu handler sees the right type
+  if (!minimapInteractive || ev.button !== 0 || ev.isPrimary === false) return;
+  minimapPointerId = ev.pointerId === undefined ? null : ev.pointerId;
+  minimapLongPressDone = false;
+  minimapPressClientX = ev.clientX;
+  const touch = minimapPointerType === "touch";
+  minimapDragThreshold = touch ? MINIMAP_TOUCH_DRAG_THRESHOLD_PX : MINIMAP_DRAG_THRESHOLD_PX;
   minimapDragSvgRect = timelineMinimapSvg.getBoundingClientRect();
   minimapDragStartTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   minimapDragging = true;
   minimapDragMoved = false;
   document.body.style.userSelect = "none";
-  ev.preventDefault();
+  if (typeof timelineMinimapSvg.setPointerCapture === "function" && ev.pointerId !== undefined) {
+    try { timelineMinimapSvg.setPointerCapture(ev.pointerId); } catch (_) { /* pointer already gone */ }
+  }
+  clearMinimapLongPress();
+  if (touch) {
+    const x = ev.clientX;
+    minimapLongPressTimer = setTimeout(() => fireMinimapLongPress(x), MINIMAP_LONG_PRESS_MS);
+  }
 });
+// pointerdown's own preventDefault would not stop the browser's compat
+// mousedown default (text selection / focus), so keep the old one for mouse.
+timelineMinimapSvg.addEventListener("mousedown", ev => { if (minimapInteractive && ev.button === 0) ev.preventDefault(); });
 
-window.addEventListener("mousemove", ev => {
-  if (!minimapDragging) return;
+window.addEventListener("pointermove", ev => {
+  if (!minimapDragging || !minimapOwnsPointer(ev)) return;
+  if (minimapLongPressTimer !== null && Math.abs(ev.clientX - minimapPressClientX) > MINIMAP_LONG_PRESS_SLOP_PX) clearMinimapLongPress();
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const xStart = minimapTsToX(minimapDragStartTs), xNow = minimapTsToX(curTs);
-  if (!minimapDragMoved && Math.abs(xNow - xStart) < MINIMAP_DRAG_THRESHOLD_PX) return;
+  if (!minimapDragMoved && Math.abs(xNow - xStart) < minimapDragThreshold) return;
   minimapDragMoved = true;
+  clearMinimapLongPress(); // a swipe, not a long-press
   showMinimapDragOverlay(xStart, xNow);
 });
 
-window.addEventListener("mouseup", ev => {
-  if (!minimapDragging) return;
-  minimapDragging = false;
-  document.body.style.userSelect = "";
-  hideMinimapDragOverlay();
-  if (!minimapDragMoved) return; // a plain click — the svg's own "click" listener handles jump-to
+window.addEventListener("pointerup", ev => {
+  if (!minimapDragging || !minimapOwnsPointer(ev)) return;
+  clearMinimapLongPress();
+  endMinimapDrag();
+  if (!minimapDragMoved) return; // a plain click/tap — the svg's own "click" listener handles jump-to
   minimapDragSuppressClick = true;
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const fromTs = Math.round(Math.min(minimapDragStartTs, curTs)), toTs = Math.round(Math.max(minimapDragStartTs, curTs));
   if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
+});
+
+// The browser took the gesture (vertical pan, system gesture): abort, no filter.
+window.addEventListener("pointercancel", ev => {
+  if (!minimapDragging || !minimapOwnsPointer(ev)) return;
+  clearMinimapLongPress();
+  endMinimapDrag();
 });
 
 // Right-click: open the time-range dialog directly (see "Time range dialog"
@@ -27954,12 +28356,17 @@ window.addEventListener("mouseup", ev => {
 // the clicked point as both bounds (a zero-width starting range), so the
 // dialog opens on an already-valid selection the person can then widen
 // either side of. Withheld during a column sort, same as click/drag above.
+// A touch long-press opens it through fireMinimapLongPress; the browser may
+// ALSO fire contextmenu for the same press (before or after our timer), so
+// that case is folded into the one open instead of opening twice.
 timelineMinimapSvg.addEventListener("contextmenu", ev => {
   if (!minimapInteractive || !state.activeId) return;
   ev.preventDefault();
-  const rect = timelineMinimapSvg.getBoundingClientRect();
-  const ts = Math.round(minimapXToTs(minimapEventUnitX(ev, rect)));
-  openTimeRangeDialog("create", state.activeId, { from: ts, to: ts });
+  if (minimapPointerType === "touch" && (minimapLongPressTimer !== null || performance.now() - minimapLongPressAt < 1500)) {
+    if (minimapLongPressTimer !== null) fireMinimapLongPress(ev.clientX);
+    return;
+  }
+  openMinimapTimeRangeAt(ev.clientX);
 });
 
 // Scrolls the virtual list so that the entry at `index` is in view (and
@@ -28702,11 +29109,13 @@ function updateDetailPanel() {
     detailMessageEl.textContent = "";
     detailNoteEl.style.display = "none";
     detailNoteEl.textContent = "";
+    detailOutsideEl.style.display = "none";
     return;
   }
 
   detailPanel.classList.remove("empty");
   detailMeta.className = levelClass(entry.level, entry.formatId);
+  renderDetailOutsideNotice(entry); // before the Raw branch below returns early
 
   // Match marking (see the section above textFilterMatches) — same
   // computation as renderVisibleRows, with the filter-path half gated by the
@@ -28769,6 +29178,22 @@ function updateDetailPanel() {
     detailMessageEl.textContent = entry.message;
   }
   renderDetailNote(entry);
+}
+
+// One-line notice while the entry shown in the detail panel is not part of
+// the active view (node + level filter), whether or not a temp-anchor ghost
+// row exists — refreshed by updateDetailPanel and after every table build.
+function renderDetailOutsideNotice(entry) {
+  detailOutsideEl.style.display = entry && entryOutsideActiveView(entry) ? "block" : "none";
+}
+// True when `entry` is not a member of the view the Filtered pane shows
+// (active node + level filter). Binary search by ts in the chronological
+// member list, then the same-ts run: no scan, no copy.
+function entryOutsideActiveView(entry) {
+  const list = viewMembers;
+  if (list.length && list[0].isPair) return false; // link pair view: its rows are pair objects, no verdict
+  for (let i = lowerBoundByTs(list, entry.ts); i < list.length && list[i].ts === entry.ts; i++) if (list[i].id === entry.id) return false;
+  return true;
 }
 
 // Full note text, always shown here regardless of state.showNotes/
@@ -29101,7 +29526,8 @@ function toggleBookmark(entryId) {
   // the Filtered view showing the stale pre-change set until some UNRELATED
   // full render happened to run.
   if (state.pinBookmarksInFilteredView) {
-    currentViewEntries = spliceTempAnchor(getVisibleEntries());
+    viewMembers = getVisibleEntries();
+    currentViewEntries = spliceTempAnchor(viewMembers);
     viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
     if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
     tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
@@ -29110,6 +29536,7 @@ function toggleBookmark(entryId) {
       tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
     }
     cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+    renderDetailOutsideNotice(selectedEntry());
     syncTableRowsWidth();
   }
   // Repaint the visible row windows of BOTH views so the bookmark dot
@@ -29383,6 +29810,8 @@ const btnDrawer = el("#btnDrawer");
 function setDrawerOpen(open) {
   open = !!open && currentLayoutTier !== "desktop";
   document.body.classList.toggle("drawer-open", open);
+  // Closing the drawer on compact/phone ends tree select mode (nothing visible to act on).
+  if (!open && treeSelectMode && currentLayoutTier !== "desktop") { setTreeSelectMode(false); if (typeof render === "function") render(); }
   btnDrawer.setAttribute("aria-expanded", open ? "true" : "false");
 }
 function isDrawerOpen() { return document.body.classList.contains("drawer-open"); }
@@ -29408,6 +29837,8 @@ window.addEventListener("resize", () => {
   if (currentLayoutTier === "phone" && cardMode() && wrapColsForBody(tableBody) !== tableWrapCols) render();
 });
 btnDrawer.addEventListener("click", () => setDrawerOpen(!isDrawerOpen()));
+// Compact tier: the header status line names the active filter; tapping it opens the drawer.
+statusText.addEventListener("click", () => { if (currentLayoutTier === "compact") setDrawerOpen(true); });
 
 // ---- Phone shell (layout-phone) ----
 // Phone only shows the Filtered view (no tab bar); wherever a render lands on
@@ -29630,7 +30061,7 @@ function measureMsgWidth(text) {
   // offsetWidth specifically, NOT getBoundingClientRect().width: verified
   // directly (Playwright, document.documentElement.style.zoom set to 1.5)
   // that offsetWidth/clientWidth/scrollWidth stay in the same "unscaled
-  // CSS px" space state.columnWidths/lastColumnEdgeX/TABLE_ROWS_H_PADDING
+  // CSS px" space state.columnWidths/lastColumnEdgeX/rowsHPadding()
   // already use regardless of state.fontScale's whole-UI zoom, while
   // getBoundingClientRect() returns the zoomed VISUAL size instead — mixing
   // that in here would put contentW off by the zoom factor at any scale
@@ -29671,18 +30102,25 @@ function computeMaxMessageWidth(entries) {
   }
   return longest ? measureMsgWidth(longest) : 0;
 }
-// #tableRows' own left+right padding (padding:2px 16px 20px 14px, box-
-// sizing:border-box — see its CSS comment) — added on top of the grid
-// content width below since box-sizing:border-box means an explicit
-// .style.width here is the OUTER (border-box) size.
-const TABLE_ROWS_H_PADDING = 14 + 16;
+// #tableRows'/#highlightRows' real left+right padding, read off the element:
+// it varies with --color-mark-w (--rows-pad-left), the ctx-active marker lane
+// and the phone layout, so a constant drifts out of sync with the CSS. Added on
+// top of the grid content width below since box-sizing:border-box means an
+// explicit .style.width here is the OUTER (border-box) size. Fallback (old
+// default padding) when styles can't be resolved (jsdom).
+const ROWS_H_PADDING_FALLBACK = 14 + 16;
+function rowsHPadding(rowsEl) {
+  const cs = getComputedStyle(rowsEl);
+  const l = parseFloat(cs.paddingLeft), r = parseFloat(cs.paddingRight);
+  return Number.isFinite(l) && Number.isFinite(r) ? l + r : ROWS_H_PADDING_FALLBACK;
+}
 function syncTableRowsWidth() {
   // Word-wrap on: the message wraps within the viewport, so there is nothing
   // to scroll to horizontally — clear any forced width and let #tableRows
   // stretch-fill (left:0;right:0), same as a short-message file.
   if (cardMode() || (filteredTextMode ? state.wrapTextView : wrapMessagesEff())) { tableRows.style.width = ""; return; }
   const contentW = cachedMaxMsgPixelWidth > 0
-    ? tableGutterW() + cachedMaxMsgPixelWidth + TABLE_ROWS_H_PADDING
+    ? tableGutterW() + cachedMaxMsgPixelWidth + rowsHPadding(tableRows)
     : 0;
   // Only override when content genuinely needs more than the viewport
   // already gives it for free — otherwise clear the inline style so
@@ -29902,6 +30340,7 @@ function renderTable() {
   // (bugfix — person-reported: an anchor from far outside the filter's real
   // span made the minimap's highlighted range balloon to cover it).
   const minimapViewEntries = getVisibleEntries();
+  viewMembers = minimapViewEntries;
   currentViewEntries = spliceTempAnchor(minimapViewEntries);
   viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
   if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
@@ -29911,6 +30350,7 @@ function renderTable() {
     tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
   }
   cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  renderDetailOutsideNotice(selectedEntry());
   syncTableRowsWidth();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
   // Table-view-specific ("what's actually got a DOM row right now") — see
@@ -34721,8 +35161,16 @@ function createRecentDropdown({ input, host, apply, hideOnBlur }) {
     const hint = document.createElement("div");
     hint.className = "rd-hint";
     hint.textContent = "\u2191\u2193 select \u00b7 Enter apply \u00b7 Shift+Del remove";
-    box.appendChild(hint);
+    box.appendChild(hint); // hidden on touch by CSS (no keyboard)
     box.hidden = false;
+    // In the filter popup, stop above the Syntax options row so it stays reachable
+    // while the list is open (scrolls instead). No-op where there is no such row.
+    box.style.maxHeight = "";
+    const syntaxRow = host.closest("#filterPopup") && document.querySelector("#filterPopup .filter-settings-row");
+    if (syntaxRow) {
+      const room = syntaxRow.getBoundingClientRect().top - box.getBoundingClientRect().top - 4;
+      if (room > 0) { box.style.maxHeight = Math.max(56, room) + "px"; box.style.overflowY = "auto"; }
+    }
   }
   function open() { sel = -1; draw(); }
   function removeAt(i) {
@@ -36098,10 +36546,16 @@ el("#ctxCopyTicket").addEventListener("click", ev => {
 // if none were found — "Filter for this ___" (below) then falls back to
 // the exact literal text instead, so a message/method/thread with no
 // numbers in it is still filterable for its exact value.
+// The lookbehind keeps a token from starting right after an ASCII letter/digit/
+// underscore/dot, or a sign/digit right after "<letter>-" (identifiers like
+// "J-00004", "worker-3"). ASCII only on purpose: CJK text ("注文70328") must
+// still extract. Exception: a clock time right after "<digit>T" (ISO timestamp).
 const NUMERIC_TOKEN_RE = new RegExp(
+  "(?:(?<=\\dT)\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?|(?<![A-Za-z0-9_.]|[A-Za-z]-)(?:" +
   "\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
   "|\\d+(?:\\.\\d+)?\\s?(?:ms|s|sec|secs|seconds|min|mins|minutes|h|hrs|hours)\\b" + // duration + unit
-  "|[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?)",     // standalone number (grouped only with both separators)
+  "|[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?)" +     // standalone number (grouped only with both separators)
+  "))",
   "g"
 );
 function buildNumericExtractPattern(message) {
@@ -36501,14 +36955,40 @@ function openAddToSelectionMenu(anchorEl) {
   if (existing.length) html += '<div class="ctx-sep"></div>';
   html += '<div class="ctx-item" data-selection-action="create">Create new selection filter</div>';
   addToSelectionMenu.innerHTML = html;
-  const anchorRect = anchorEl.getBoundingClientRect();
-  addToSelectionMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
-  addToSelectionMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
   addToSelectionMenu.classList.remove("hidden");
+  const pos = placeSubmenuBesideAnchor(anchorEl.getBoundingClientRect(),
+    addToSelectionMenu.offsetWidth || 260, addToSelectionMenu.offsetHeight || 200, window.innerWidth, window.innerHeight);
+  addToSelectionMenu.style.left = pos.left + "px";
+  addToSelectionMenu.style.top = pos.top + "px";
   fitPopupToViewport(addToSelectionMenu);
 }
 
-ctxAddToSelection.addEventListener("mouseenter", () => openAddToSelectionMenu(ctxAddToSelection));
+// Pure placement for a submenu next to the item that opens it, so the
+// submenu never covers its anchor (on touch it would receive the tap's click
+// instead of the anchor): right of the anchor if it fits, else left of it,
+// else below it (above if that fits better). Always clamped into the viewport.
+function placeSubmenuBesideAnchor(anchor, w, h, vw, vh) {
+  const M = 4;
+  const clampTop = t => Math.max(M, Math.min(t, vh - h - M));
+  if (anchor.right + w <= vw - M) return { left: anchor.right, top: clampTop(anchor.top) };
+  if (anchor.left - w >= M) return { left: anchor.left - w, top: clampTop(anchor.top) };
+  const left = Math.max(M, Math.min(anchor.left, vw - w - M));
+  if (anchor.bottom + h <= vh - M) return { left, top: anchor.bottom };
+  if (anchor.top - h >= M) return { left, top: anchor.top - h };
+  return { left, top: clampTop(anchor.bottom) };
+}
+
+// A tap synthesizes mouseenter right before its click; opening on that
+// mouseenter put the submenu on top of the tapped item. The pointer type of
+// the hover/press (pointerenter/pointerdown precede mouseenter) tells which.
+let ctxAddToSelectionPointerType = "mouse";
+const noteCtxAddPointerType = ev => { ctxAddToSelectionPointerType = ev.pointerType || "mouse"; };
+ctxAddToSelection.addEventListener("pointerenter", noteCtxAddPointerType);
+ctxAddToSelection.addEventListener("pointerdown", noteCtxAddPointerType);
+ctxAddToSelection.addEventListener("mouseenter", () => {
+  if (ctxAddToSelectionPointerType === "touch") return; // touch opens on tap (click) only
+  openAddToSelectionMenu(ctxAddToSelection);
+});
 
 ctxAddToSelection.addEventListener("click", ev => {
   ev.stopPropagation();
@@ -36728,7 +37208,7 @@ elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.inner
 // and therefore NOT covered by the regression suite, same as every other
 // entry in that "no layout engine" gap.
 function clampLabelOffset(rect, viewportWidth) {
-  const EDGE_MARGIN = 4; // small breathing room, matching the row's own 4px button gap
+  const EDGE_MARGIN = 8; // breathing room so the pill never touches the screen edge (also the touch-tablet case)
   if (rect.left < EDGE_MARGIN) return EDGE_MARGIN - rect.left; // overflowing the left edge -> shift right
   if (rect.right > viewportWidth - EDGE_MARGIN) return (viewportWidth - EDGE_MARGIN) - rect.right; // overflowing the right edge -> shift left
   return 0; // already fits, no correction needed
@@ -36750,13 +37230,26 @@ function setupHitExpandGroups(hitSelector) {
       .map(hit => ({ hit, btn: hit.closest(".toolbar-icon-btn") }))
       .filter(e => e.btn);
     const collapseAll = entries => entries.forEach(e => e.btn.classList.remove("expanded"));
-    // Clears a button's inline clamp override (see below) so it never leaks
-    // into the next hover at a different position — the CSS class-driven
-    // `translateX(-50%)` (unexpanded) or (via .expanded) `translateX(-50%)
-    // translateY(0)` takes back over once the inline style is cleared.
+    // The label's x-offset lives in the --label-dx CSS custom property (added
+    // to its translateX(-50%) in the .row-action-label/.tb-label rules).
+    // Cleared on collapse so it never leaks into the next hover at a
+    // different position.
+    const labelOf = btn => btn.querySelector(".row-action-label, .tb-label");
     const resetLabelClamp = btn => {
-      const label = btn.querySelector(".row-action-label");
-      if (label && label.style.transform) label.style.transform = "";
+      const label = labelOf(btn);
+      if (label && label.style.getPropertyValue("--label-dx")) label.style.removeProperty("--label-dx");
+    };
+    // Idempotent: measured from the BUTTON's centre + the label's layout
+    // width (offsetWidth ignores transforms), not from the label's own
+    // (mid-transition, already shifted) rect, so repeated calls agree.
+    const clampLabel = btn => {
+      const label = labelOf(btn);
+      if (!label) return;
+      const w = label.offsetWidth;
+      if (!w) return; // no layout (jsdom / hidden)
+      const b = btn.getBoundingClientRect(), cx = (b.left + b.right) / 2;
+      const shift = clampLabelOffset({ left: cx - w / 2, right: cx + w / 2 }, window.innerWidth);
+      if (shift) label.style.setProperty("--label-dx", shift + "px"); else label.style.removeProperty("--label-dx");
     };
     container.addEventListener("mousemove", ev => {
       const entries = liveEntries();
@@ -36769,16 +37262,17 @@ function setupHitExpandGroups(hitSelector) {
         const isExpanded = !!hovered && e.btn === hovered.btn;
         e.btn.classList.toggle("expanded", isExpanded);
         if (!isExpanded) { resetLabelClamp(e.btn); return; }
-        // Just expanded (or already was, re-measured every move — cheap
-        // relative to the getBoundingClientRect() calls above it, and
-        // idempotent either way): measure the label AS RENDERED (already
-        // reflecting the default centering transform) and nudge it back
-        // within the viewport if it overflows either edge.
-        const label = e.btn.querySelector(".row-action-label");
-        if (!label) return;
-        const shift = clampLabelOffset(label.getBoundingClientRect(), window.innerWidth);
-        label.style.transform = shift ? "translateX(calc(-50% + " + shift + "px)) translateY(0)" : "";
+        clampLabel(e.btn); // keep the floating pill inside the screen (re-measured every move, idempotent)
       });
+    });
+    // Keyboard / touch focus reveals the same pill via :focus-visible.
+    container.addEventListener("focusin", ev => {
+      const btn = ev.target.closest && ev.target.closest(".toolbar-icon-btn");
+      if (btn && container.contains(btn)) clampLabel(btn);
+    });
+    container.addEventListener("focusout", ev => {
+      const btn = ev.target.closest && ev.target.closest(".toolbar-icon-btn");
+      if (btn && !btn.classList.contains("expanded")) resetLabelClamp(btn);
     });
     container.addEventListener("mouseleave", () => {
       const entries = liveEntries();
@@ -36819,7 +37313,9 @@ function updateRowActionButtons() {
   // time with a toast, since it changes with every zoom/pan without
   // necessarily going through updateRowActionButtons().
   const markedRows = markedRowEntries().length;
-  const timeRangeEnabled = onTable ? markedRows >= 2 : onPlot ? plot2dToolsAvailable : rangeEnabled;
+  // Log views: never disabled — with fewer than 2 multi-selected rows the
+  // click falls back to the time range dialog prefilled with the visible span.
+  const timeRangeEnabled = onTable ? markedRows >= 2 : onPlot ? plot2dToolsAvailable : true;
   const selectEnabled = onTable ? markedRows >= 1 : onPlot ? plot2dToolsAvailable : addToSelectionEnabled;
   // "Filter after/before" resolve the same per-view way as Time range/Select
   // (see afterBeforeActionEntries), but a single entry is enough (unlike
@@ -36901,6 +37397,17 @@ function handleRowActionClick(action, anchorBtn) {
       break;
     case "timeRangeFromSelection": {
       const tsList = timeRangeActionEntries().map(e => e.ts);
+      if (tsList.length < 2 && fhActiveTab !== "table" && fhActiveTab !== "plot") {
+        // Log views: no 2+ selection -> open the dialog prefilled with the time
+        // span of the rows currently on screen (same pane the minimap box tracks).
+        if (!state.activeId) break;
+        const onContext = fhLayout === "tabs" && fhActiveTab === "highlight";
+        const vis = onContext
+          ? visibleEntryRange(currentHighlightViewEntries, highlightBody, highlightRowOffsets)
+          : visibleEntryRange(currentViewEntries, tableBody, tableRowOffsets);
+        openTimeRangeDialog("create", state.activeId, vis ? { from: vis.first.ts, to: vis.last.ts } : null);
+        break;
+      }
       if (tsList.length < 2) {
         const what = fhActiveTab === "table" ? "two marked rows" : fhActiveTab === "plot" ? "two visible entries" : "two selected rows";
         showCopyToast("Need " + what + " to create a time-range filter.");
@@ -37320,6 +37827,7 @@ function describeBulkActions(nodes) {
 // Runs a bulk action (shared by the context menu and the sidebar toolbar —
 // see describeSidebarToolbarActions/handleSidebarToolbarActionClick below).
 function performBulkAction(action, ids) {
+  treeSelectMode = false; // the action consumes the selection (see setTreeSelectMode)
   if (action === "mute") {
     toggleMuteWithUndo(ids);
     state.multiSelect = new Set();
@@ -37629,7 +38137,8 @@ function openTreeContextMenu(ev, clickedId) {
     html = '<div class="ctx-item ctx-submenu-trigger" data-action="info" data-info-text="' + escapeHtml(nodeDisplayName(node)) + '">' +
       ICON_INFO + " Info" +
       '<svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
-      "</div><div class=\"ctx-sep\"></div>" + sectionsHtml;
+      '</div><div class="ctx-item" data-action="selectMultiple">' + ICON_CHECKLIST + " Select multiple</div>" +
+      "<div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
   treeContextMenu.innerHTML = html;
@@ -37650,6 +38159,10 @@ treeContextMenu.addEventListener("click", ev => {
   // item here does.
   if (action === "info") { openTreeCtxInfoMenu(item, item.dataset.infoText || ""); return; }
   closeTreeContextMenu();
+  if (action === "selectMultiple") {
+    if (treeCtxId && state.nodes[treeCtxId]) { setTreeSelectMode(true, treeCtxId); render(); }
+    return;
+  }
 
   if (action === "loadFolderFile") {
     const target = folderCtxTarget;
@@ -37796,7 +38309,25 @@ function renderSidebarToolbar() {
   // "" restores the CSS class's own display:flex rather than hardcoding a
   // value — same convention #viewBar's own hasFiles gating uses.
   sidebarToolbarEl.style.display = hasFiles ? "" : "none";
-  if (!hasFiles) return;
+  if (!hasFiles) { treeSelectMode = false; return; }
+
+  if (treeSelectMode) {
+    // Select mode bar (mockup 8A): "N selected", the bulk actions (disabled
+    // placeholders below 2 selected) and "Done".
+    sidebarToolbarEl.classList.add("multi");
+    const info = describeSidebarToolbarMultiActions();
+    const n = treeSelectionIds().size;
+    const actions = info ? info.actions : [{ action: "and", label: "AND", icon: ICON_AND, disabled: true }, { action: "or", label: "OR", icon: ICON_OR, disabled: true }, { action: "link", label: "Link…", icon: ICON_LINK, disabled: true }];
+    const key = ["sel", n, info && info.short, actions.map(a => a.action + ":" + a.label + ":" + !!a.disabled).join(",")].join("|");
+    if (key !== sidebarToolbarMultiKey) {
+      sidebarToolbarMultiKey = key;
+      sidebarToolbarEl.innerHTML = '<span class="stb-cnt"' + (info && info.note ? ' title="' + escapeHtml(info.note) + '"' : "") + ">" + n + " selected</span>" +
+        actions.map(a => '<button type="button" class="stb-btn stb-' + a.action + '" data-multi-action="' + a.action + '"' + (a.disabled ? " disabled" : "") + ' title="' + escapeHtml(a.label) + '">' + a.icon + escapeHtml(a.label) + "</button>").join("") +
+        (info && info.short ? '<span class="stb-msg" title="' + escapeHtml(info.note || info.short) + '">' + escapeHtml(info.short) + "</span>" : '<span class="stb-sp"></span>') +
+        '<button type="button" class="stb-btn stb-done" data-multi-action="done" title="Leave select mode (Esc)">Done</button>';
+    }
+    return;
+  }
 
   const info = describeSidebarToolbarMultiActions();
   sidebarToolbarEl.classList.toggle("multi", !!info);
@@ -37844,6 +38375,7 @@ sidebarToolbarEl.addEventListener("click", ev => {
     ev.stopPropagation();
     const action = multiBtn.dataset.multiAction;
     if (action === "close") { state.multiSelect = new Set(); render(); return; }
+    if (action === "done") { setTreeSelectMode(false); render(); return; }
     // Re-derive rather than trust anything cached on the button.
     const info = describeSidebarToolbarMultiActions();
     if (!info || !info.actions.some(a => a.action === action)) return;
@@ -43393,6 +43925,18 @@ document.addEventListener("click", ev => {
   if (sidebarForcedPeek && !sidebarEl.contains(ev.target)) clearSidebarForcedPeek();
 });
 
+// The row/tree/extract context menus also close on a press outside them: many
+// controls stopPropagation() their click (popup openers must), so the document
+// click handler above never sees taps on them. Capture phase + pointerdown, so
+// it runs before any handler and the opening press (right-click / long-press)
+// is already over by the time its menu exists.
+document.addEventListener("pointerdown", ev => {
+  if (!contextMenu.contains(ev.target) && !addToSelectionMenu.contains(ev.target)) closeContextMenu();
+  if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
+  if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
+  if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
+}, true);
+
 /* ===================== Keyboard shortcuts ===================== */
 
 document.addEventListener("keydown", ev => {
@@ -43437,6 +43981,7 @@ document.addEventListener("keydown", ev => {
     closeContextMenu();
     closeTreeContextMenu();
     closeExtractContextMenu();
+    closeFacetValueMenu();
     closeCsvExportDialog();
     closeExportDialog();
     closeLinkDialog();
@@ -43455,6 +44000,7 @@ document.addEventListener("keydown", ev => {
     if (sessionMatchResolver) closeSessionMatchDialog("cancel");
     if (mergeLoadResolver) closeMergeLoadDialog(false);
     let needsRender = false;
+    if (treeSelectMode) { setTreeSelectMode(false); needsRender = true; }
     // Clearing selections is scoped to the focused area (tree vs. log views);
     // never while typing in an input.
     if (state.focusRegion === "tree") {

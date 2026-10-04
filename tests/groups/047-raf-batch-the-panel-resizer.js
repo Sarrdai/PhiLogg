@@ -68,13 +68,13 @@ await withApp(async (w, d, T) => {
   // Detail-panel resizer: same batching guard, lighter check (row re-render only).
   const detailResizer = d.querySelector("#detailResizer");
   w.__rvrCalls = 0;
-  detailResizer.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientY: 500 }));
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientY: 480 }));
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientY: 460 }));
+  detailResizer.dispatchEvent(new w.MouseEvent("pointerdown", { bubbles: true, clientY: 500 }));
+  w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientY: 480 }));
+  w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientY: 460 }));
   assert(w.__rvrCalls === 0, "detail-panel resize also defers its row re-render instead of running it synchronously per mousemove");
   await new Promise(resolve => setTimeout(resolve, 50));
   assert(w.__rvrCalls === 1, "detail-panel resize's two rapid moves collapse into one deferred re-render, got " + w.__rvrCalls);
-  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true }));
+  w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true }));
 
   // fhSplit resizer: same batching guard.
   T.state.activeId = f.id;

@@ -37,14 +37,14 @@ await withApp(async (w, d, T) => {
   // Drag from entry 5's time to entry 14's time (inclusive range of 10 entries).
   const x1 = w.minimapTsToX(f.entries[5].ts);
   const x2 = w.minimapTsToX(f.entries[14].ts);
-  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: x1, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("pointerdown", { bubbles: true, clientX: x1, clientY: 10 }));
   assert(dragRectEl.classList.contains("hidden"), "drag overlay stays hidden until the pointer moves past the click threshold");
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: (x1 + x2) / 2, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: (x1 + x2) / 2, clientY: 10 }));
   assert(!dragRectEl.classList.contains("hidden"), "drag overlay rect appears once the pointer has moved past the click threshold");
   const dragLabelEl = d.querySelector("#timelineMinimapDragLabel");
   assert(!dragLabelEl.classList.contains("hidden") && dragLabelEl.textContent.includes("→"), "drag label shows a from → to readout while dragging");
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: x2, clientY: 10 }));
-  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: x2, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: x2, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true, clientX: x2, clientY: 10 }));
   // Real browsers fire a trailing "click" after mouseup; jsdom doesn't
   // synthesize one from dispatched mousedown/mouseup, so simulate it to
   // exercise the suppress-flag guard (see the click listener's comment).
@@ -76,8 +76,8 @@ await withApp(async (w, d, T) => {
   T.state.selectedId = null;
   const jumpTs = rangeEntries[3].ts;
   const jumpX = w.minimapTsToX(jumpTs);
-  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: jumpX, clientY: 10 }));
-  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("pointerdown", { bubbles: true, clientX: jumpX, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true, clientX: jumpX, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: jumpX, clientY: 10 }));
   assert(T.state.selectedId != null, "a plain (non-dragged) click on the minimap still jumps to the nearest entry");
 
@@ -97,8 +97,8 @@ await withApp(async (w, d, T) => {
   T.state.selectedId = null;
   const dragFromTs = f.entries[5].ts, dragToXBefore = w.minimapTsToX(f.entries[14].ts);
   const dragFromX = w.minimapTsToX(dragFromTs);
-  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: dragFromX, clientY: 10 }));
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: (dragFromX + dragToXBefore) / 2, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("pointerdown", { bubbles: true, clientX: dragFromX, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: (dragFromX + dragToXBefore) / 2, clientY: 10 }));
 
   // Tail tick mid-drag: append 10 more entries (10:00:20 .. 10:00:29),
   // extending minimapTMax well past the drag's original endpoint — this is
@@ -112,8 +112,8 @@ await withApp(async (w, d, T) => {
   // Same real screen position as before (dragToXBefore) — the on-screen
   // pixel the person's mouse is actually at doesn't move just because the
   // underlying data did.
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
-  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
 
   const midDragRangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === dragFromTs);

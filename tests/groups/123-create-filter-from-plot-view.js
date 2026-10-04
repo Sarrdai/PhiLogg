@@ -58,7 +58,11 @@ await withApp(async (w, d, T) => {
   // #extractWrap's content.
   w.applyFhView("plot");
   assert(T.extractRowsData.length === 5, "sanity: one extraction row per entry");
-  assert(T.plotConfig.xCol === -2, "sanity: the synthetic Index column (-2) is the default X axis");
+  assert(T.plotConfig.xCol === -1, "sanity: the time column (-1) is the default X axis (tablet UX round, step 5)");
+  // The zoom checks below are written in Index units: pick Index explicitly (a user-changed choice is kept).
+  T.plotConfig.xCol = -2;
+  w.renderPlotControls();
+  w.renderPlotChart();
 
   // The unified "Time range" row-action is still in #viewBar and stays
   // visible on the Plot tab now (person-requested: it replaced Plot's own

@@ -72,7 +72,7 @@ deployments possible:
   children keep working, and it stays in the tree struck through. Selecting 2+
   nodes swaps that row for the bulk actions on a highlighted bar: AND / OR /
   Link… over any number of filters of one file, or Merge N files (or a short
-  hint when the selection can't be combined). It sits alongside the
+  hint when the selection can't be combined). Without a keyboard, long-press a node → **Select multiple** puts the tree in a select mode with a checkbox per row and a **Done** button. It sits alongside the
   tree's existing right-click menu (Copy/Cut/Save filter… stay there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
   shown in the tree instead of the raw pattern — handy for turning
@@ -143,7 +143,7 @@ deployments possible:
   severe level it occurs with, "+k more" to
   see the rest. Click a value to add a filter for exactly that value;
   Alt+click or right-click adds it as NOT to hide a dominant source of
-  noise. Both features only ever add ordinary, undoable nodes to the filter
+  noise. On a tablet, long-press a value for a menu (show only / exclude / copy); long file paths start at their file name. Both features only ever add ordinary, undoable nodes to the filter
   tree.
 - **Highlight rules underline their own matches** — a colored text filter
   doesn't just tint the row's left edge: the matched substring itself is

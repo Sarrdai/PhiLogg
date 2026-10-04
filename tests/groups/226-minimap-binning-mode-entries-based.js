@@ -159,9 +159,9 @@ await withApp(async (w, d, T) => {
   // with a mode-aware minimapXToTs/minimapTsToX underneath it). ---
   const beforeChildCount = f.children.length;
   const x1 = w.minimapTsToX(f.entries[5].ts), x2 = w.minimapTsToX(f.entries[25].ts);
-  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: x1, clientY: 10 }));
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: x2, clientY: 10 }));
-  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: x2, clientY: 10 }));
+  svg.dispatchEvent(new w.MouseEvent("pointerdown", { bubbles: true, clientX: x1, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: x2, clientY: 10 }));
+  w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true, clientX: x2, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
   assert(f.children.length === beforeChildCount + 1, "drag-select still creates exactly one new filter child in entries mode, got " + f.children.length);
   const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");

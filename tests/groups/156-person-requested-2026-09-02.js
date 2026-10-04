@@ -94,7 +94,7 @@ await withApp(async (w, d, T) => {
   // after their respective columns.
   let titles = Array.from(d.querySelectorAll("#plotSvg .plot-axis-title")).map(t => t.textContent);
   assert(titles.length === 2, "a single-series chart gets both an X and a Y axis title, got " + JSON.stringify(titles));
-  assert(titles[0] === "Index", "the X title is the X column's own name (the synthetic Index column by default), got " + titles[0]);
+  assert(titles[0] === "Time", "the X title is \"Time\" for the default time column (clock ticks), got " + titles[0]);
   const yColName = w.findExtractColumn(T.plotConfig.yCols[0]).name;
   assert(titles[1] === yColName, "the Y title is the single plotted Y column's own name, got " + titles[1] + " expected " + yColName);
   assert(d.querySelectorAll("#plotSvg text").length > titles.length, "sanity: real tick-number labels are drawn too, not just the two titles");
@@ -107,7 +107,7 @@ await withApp(async (w, d, T) => {
   T.plotConfig.yCols = [1, 2];
   w.renderPlotChart();
   titles = Array.from(d.querySelectorAll("#plotSvg .plot-axis-title")).map(t => t.textContent);
-  assert(titles.length === 1 && titles[0] === "Index", "with 2 Y series, only the X title remains, got " + JSON.stringify(titles));
+  assert(titles.length === 1 && titles[0] === "Time", "with 2 Y series, only the X title remains, got " + JSON.stringify(titles));
   const name1 = w.findExtractColumn(1).name, name2 = w.findExtractColumn(2).name;
   const svgText = d.querySelector("#plotSvg").textContent;
   assert(svgText.includes(name1) && svgText.includes(name2), "both Y series' names appear somewhere in the chart (the in-SVG legend), got column names " + name1 + "/" + name2);

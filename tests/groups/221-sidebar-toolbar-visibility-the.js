@@ -104,24 +104,24 @@ await withApp(async (w, d, T) => {
   assert(w.clampLabelOffset({ left: 100, right: 200 }, VW) === 0, "a label fully inside the viewport gets a 0 shift");
 
   // Sits exactly at the margin boundary -> still 0 (not overflowing).
-  assert(w.clampLabelOffset({ left: 4, right: 200 }, VW) === 0, "a label sitting exactly at the left margin needs no shift");
-  assert(w.clampLabelOffset({ left: 200, right: VW - 4 }, VW) === 0, "a label sitting exactly at the right margin needs no shift");
+  assert(w.clampLabelOffset({ left: 8, right: 200 }, VW) === 0, "a label sitting exactly at the left margin needs no shift");
+  assert(w.clampLabelOffset({ left: 200, right: VW - 8 }, VW) === 0, "a label sitting exactly at the right margin needs no shift");
 
   // Overflowing the LEFT edge (e.g. a button near #sidebarToolbar's own left
   // edge) -> positive shift (move right) that lands the label's left edge
-  // exactly on the 4px margin.
+  // exactly on the 8px margin.
   const leftShift = w.clampLabelOffset({ left: -20, right: 80 }, VW);
-  assert(leftShift === 24, "a label overflowing the left edge by 20px shifts right by exactly enough to sit at the 4px margin (24px), got " + leftShift);
+  assert(leftShift === 28, "a label overflowing the left edge by 20px shifts right by exactly enough to sit at the 8px margin (28px), got " + leftShift);
 
   // Overflowing the RIGHT edge (any toolbar's rightmost button) -> negative
-  // shift (move left) that lands the label's right edge exactly on the 4px
+  // shift (move left) that lands the label's right edge exactly on the 8px
   // margin from the right.
   const rightShift = w.clampLabelOffset({ left: 350, right: 430 }, VW);
-  assert(rightShift === -34, "a label overflowing the right edge by 30px (past VW-4=396) shifts left by exactly enough to sit at the margin (-34px), got " + rightShift);
+  assert(rightShift === -38, "a label overflowing the right edge by 30px (past VW-8=392) shifts left by exactly enough to sit at the margin (-38px), got " + rightShift);
 
   // A label wider than the viewport itself overflows both sides at once —
   // the function still returns a single well-defined shift (left-edge rule
   // wins since it's checked first), rather than throwing or returning NaN.
   const bothShift = w.clampLabelOffset({ left: -50, right: 500 }, VW);
-  assert(Number.isFinite(bothShift) && bothShift === 54, "a label wider than the viewport still gets a finite, well-defined shift (left-edge rule), got " + bothShift);
+  assert(Number.isFinite(bothShift) && bothShift === 58, "a label wider than the viewport still gets a finite, well-defined shift (left-edge rule), got " + bothShift);
 });

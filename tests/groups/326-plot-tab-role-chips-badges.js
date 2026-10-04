@@ -36,7 +36,7 @@ await withApp(async (w, d, T) => {
   assert([...d.querySelectorAll(".pattern-grp")].map(g => g.textContent).join() === "Row,Message", "Row and Message labels");
   assert(chip(-2) && chip(-1) && d.querySelector(".pattern-sep"), "Row chips for Index and t (ms) plus a separator");
   assert(chip(-2).querySelector(".pattern-chip-num").textContent === "#" && chip(-1).querySelector(".pattern-chip-num").textContent === "t", "glyphs # and t");
-  assert(badges(-2) === "X" && badges(1) === "Y", "line default: Index = X, temperature = Y, got " + badges(-2) + "/" + badges(1));
+  assert(badges(-1) === "X" && badges(1) === "Y", "line default: t (ms) = X, temperature = Y, got " + badges(-1) + "/" + badges(1));
   assert(chip(2).querySelector(".pattern-role.empty").textContent === "+", "a plottable chip without role shows the dashed +");
   assert(!chip(0).querySelector(".pattern-role"), "the word chip has no badge");
   fireClick(chip(2), w);
@@ -111,7 +111,7 @@ await withApp(async (w, d, T) => {
   assert(!item("Ignore column") && !item("Include column"), "Row chips have no ignore item");
   w.renderExtractTable(node);
   assert(menuOpen(), "an open menu survives a renderExtractTable re-render");
-  assert(chip(-1) && badges(-2) === "X", "chips were rebuilt with badges");
+  assert(chip(-1) && badges(-1) === "X", "chips were rebuilt with badges");
   w.applyFhView("table");
   assert(!menuOpen(), "switching to the Table tab closes the menu");
   assert(!d.querySelector(".pattern-role") && !d.querySelector(".pattern-grp"), "Table tab: badges and Row group gone again");
@@ -121,7 +121,7 @@ await withApp(async (w, d, T) => {
   type("scatter");
   sel("#plotXSelect", -1);
   const xTitle = d.querySelector('#plotSvg .plot-axis-clickable[data-axis="x"]');
-  assert(xTitle && d.querySelector("#plotSvg .plot-axis-caret[data-axis=\"x\"]").textContent === "\u25be" && xTitle.textContent === "t (ms)", "the X title is clickable, keeps its plain text, and has a caret");
+  assert(xTitle && d.querySelector("#plotSvg .plot-axis-caret[data-axis=\"x\"]").textContent === "\u25be" && xTitle.textContent === "Time", "the X title is clickable, keeps its plain text, and has a caret");
   fireClick(xTitle, w);
   assert(menuOpen() && menu().textContent.includes("temperature [C]"), "axis menu lists the columns with units");
   pick("voltage");
