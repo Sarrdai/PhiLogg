@@ -156,7 +156,9 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(mzPointer(w, "pointermove", { clientX: 600, clientY: 10 }));
   w.dispatchEvent(mzPointer(w, "pointerup", { clientX: 600, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: 600, clientY: 10 }));
-  assert(f.children.length === before + 1, "drag inside the zoomed view still creates one filter (step 4 turns it into a draft)");
+  assert(f.children.length === before && T.minimapView.draft, "drag inside the zoomed view leaves a draft");
+  d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
+  assert(f.children.length === before + 1, "Filter on a draft inside the zoomed view creates one filter");
   const node = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
   assert(node && node.value.from === e(30) && node.value.to === e(50), "drag 25%..75% of the 20..60 s view = 30..50 s, got " + JSON.stringify(node && node.value));
   assert(T.minimapView.trail.length === 1, "the zoom survives the render that creating the filter triggers");
@@ -167,7 +169,7 @@ await withApp(async (w, d, T) => {
   const dlg = d.querySelector("#timeRangeDialog");
   assert(dlg && (dlg.open || !dlg.classList.contains("hidden")), "right-click opens the time-range dialog");
   assert(d.querySelector("#timeRangeFromInput").value.startsWith("10:00:40"), "dialog prefilled with the zoomed 50% point, got " + d.querySelector("#timeRangeFromInput").value);
-  d.querySelector("#timeRangeCancel") && d.querySelector("#timeRangeCancel").click();
+  d.querySelector("#timeRangeDialogCancel") && d.querySelector("#timeRangeDialogCancel").click();
 });
 
 await withApp(async (w, d, T) => {
@@ -225,6 +227,8 @@ await withApp(async (w, d, T) => {
   assert(css("#timelineMinimapMeta").display === "flex" && css("#timelineMinimapMeta").height === "24px", "crumb line shows while zoomed, 24 px");
   assert(css("#timelineMinimap .minimap-meta-rest").display === "none", "the file facts stay hidden on the phone");
   assert(d.querySelectorAll("#timelineMinimapMeta .minimap-crumb").length === 2, "crumbs present on the phone");
+  const resEl = d.querySelector("#timelineMinimapMeta .minimap-res");
+  assert(resEl && resEl.nextElementSibling.classList.contains("minimap-meta-rest") && !/·/.test(d.querySelector(".minimap-crumbs").parentElement.childNodes[1].textContent || ""), "separators are CSS-generated: no literal dot text between the crumb line and the hidden rest");
   w.minimapViewReset();
   assert(css("#timelineMinimapMeta").display === "none" && css("#timelineMinimap").height === "36px", "back to the plain 36 px strip after reset");
   w.innerWidth = 1440; w.dispatchEvent(new w.Event("resize"));

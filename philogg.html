@@ -1626,6 +1626,11 @@
   .minimap-crumb:hover:not(:disabled){background:var(--accent-soft);}
   .minimap-crumb:disabled{color:var(--text-secondary); font-weight:650; cursor:default;}
   .minimap-res{color:var(--text-secondary);}
+  /* Separators are generated so a hidden .minimap-meta-rest (phone) leaves no dangling dot. */
+  .minimap-crumbs + .minimap-res::before, .minimap-draft-text + .minimap-res::before, .minimap-res + .minimap-meta-rest::before{content:"·"; margin:0 7px;}
+  /* The draft's text lives in the meta line too, but only the phone shows it there
+     (its floating label would cover the 36 px strip); see the layout-phone rules. */
+  .minimap-draft-text{display:none;}
   body.layout-phone .minimap-crumb{padding:4px 6px; font-size:12px;}
   /* Per-level count segments appended after Duration (person-requested,
      this session) — color comes from an inline style (levelColorVar()) set
@@ -1703,6 +1708,36 @@
     pointer-events:none; white-space:nowrap; z-index:11;
   }
   #timelineMinimapDragLabel.hidden{display:none;}
+  /* Draft window: stays after a drag until filtered, zoomed into, edited or
+     discarded. Siblings of the <svg> like the drag overlay (re-renders wipe
+     the svg). The rect reuses #timelineMinimapDragRect with .selected. */
+  #timelineMinimapDragRect.selected{opacity:1; border-width:1px 0; pointer-events:none;}
+  #timelineMinimapDraftLabel{
+    position:absolute; top:4px; transform:translateX(-50%);
+    padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
+    border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
+    pointer-events:none; white-space:nowrap; z-index:11;
+  }
+  .minimap-draft-handle{
+    position:absolute; width:22px; margin-left:-11px; cursor:ew-resize; z-index:12; touch-action:none;
+  }
+  .minimap-draft-handle::after{
+    content:""; position:absolute; left:8px; width:6px; top:15%; bottom:15%;
+    background:var(--accent); border-radius:3px; box-shadow:0 0 0 1px var(--bg-panel);
+  }
+  .minimap-draft-handle:hover::after, .minimap-draft-handle.dragging::after{background:var(--accent-strong);}
+  .minimap-draft-bar{
+    position:absolute; display:flex; gap:4px; padding:3px; z-index:30;
+    background:var(--bg-elevated-2); border:1px solid var(--accent); border-radius:8px;
+    box-shadow:0 4px 14px rgba(0,0,0,.25);
+  }
+  .minimap-draft-bar button{
+    font:inherit; font-size:12px; min-height:26px; padding:0 10px; cursor:pointer;
+    color:var(--text-primary); background:var(--bg-panel); border:1px solid var(--border); border-radius:6px;
+  }
+  .minimap-draft-bar button:hover{border-color:var(--accent); background:var(--accent-soft);}
+  .minimap-draft-bar button[data-act="filter"]{color:var(--accent-strong); font-weight:600;}
+  .minimap-draft-handle.hidden, #timelineMinimapDraftLabel.hidden, .minimap-draft-bar.hidden{display:none;}
 
   /* Virtualized body: #tableBody scrolls, #tableSpacer gives it the correct
      scrollHeight for the full (unrendered) row count, #tableRows holds only
@@ -4769,9 +4804,16 @@
   body.layout-phone #timelineMinimap{height:36px;}
   body.layout-phone #timelineMinimapSvg{flex:0 0 36px;}
   body.layout-phone #timelineMinimapMeta{display:none;}
-  body.layout-phone #timelineMinimap.zoomed{height:60px;}
-  body.layout-phone #timelineMinimap.zoomed #timelineMinimapMeta{display:flex; align-items:center; height:24px; padding:0 8px;}
-  body.layout-phone #timelineMinimap.zoomed .minimap-meta-rest{display:none;}
+  body.layout-phone #timelineMinimap.has-crumbs{height:60px;}
+  body.layout-phone #timelineMinimap.has-crumbs #timelineMinimapMeta{display:flex; align-items:center; height:24px; padding:0 8px;}
+  body.layout-phone #timelineMinimap.has-crumbs .minimap-meta-rest{display:none;}
+  body.layout-phone .minimap-crumbs{flex:0 0 auto;}
+  body.layout-phone #timelineMinimap.has-draft #timelineMinimapDraftLabel{display:none;}
+  body.layout-phone #timelineMinimap.has-draft .minimap-res{display:none;}
+  body.layout-phone #timelineMinimap.has-draft .minimap-draft-text{display:block; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-secondary);}
+  body.layout-phone .minimap-crumbs + .minimap-draft-text::before{content:"·"; margin:0 7px;}
+  body.layout-phone .minimap-draft-bar button{min-height:40px; min-width:44px; font-size:13px;}
+  body.layout-compact .minimap-draft-bar button{min-height:36px;}
 
   body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
   body.layout-phone #viewBar > :not(#fhTabs):not(#levelBar){display:none !important;}
@@ -5433,6 +5475,15 @@
         <div id="timelineMinimapTooltip" class="hidden"></div>
         <div id="timelineMinimapDragRect" class="hidden"></div>
         <div id="timelineMinimapDragLabel" class="hidden"></div>
+        <div id="timelineMinimapDraftLabel" class="hidden"></div>
+        <div class="minimap-draft-handle hidden" data-side="from"></div>
+        <div class="minimap-draft-handle hidden" data-side="to"></div>
+        <div id="timelineMinimapDraftBar" class="minimap-draft-bar hidden">
+          <button type="button" data-act="zoom" title="Zoom the minimap into this window">Zoom</button>
+          <button type="button" data-act="filter" title="Filter the log to this window">Filter</button>
+          <button type="button" data-act="edit" title="Edit the window bounds in the time-range dialog">Edit…</button>
+          <button type="button" data-act="discard" aria-label="Discard" title="Discard the window (Esc)">×</button>
+        </div>
       </div>
 
       <!-- Filter/Highlight split. Filter view is
@@ -17308,6 +17359,9 @@ const timelineMinimapSvg = el("#timelineMinimapSvg");
 const timelineMinimapTooltip = el("#timelineMinimapTooltip");
 const timelineMinimapDragRect = el("#timelineMinimapDragRect");
 const timelineMinimapDragLabel = el("#timelineMinimapDragLabel");
+const timelineMinimapDraftLabel = el("#timelineMinimapDraftLabel");
+const timelineMinimapDraftBar = el("#timelineMinimapDraftBar");
+const minimapDraftHandles = [...timelineMinimapEl.querySelectorAll(".minimap-draft-handle")];
 const fhTabs = el("#fhTabs");
 const fhSplit = el("#fhSplit");
 const viewBarEl = el("#viewBar");
@@ -28171,6 +28225,10 @@ let minimapIdxN = 0;
 let minimapViewTrail = [];
 let minimapViewWheelTop = false;
 let minimapViewRootId = null;
+// The draft window (drag result, no filter yet): {from, to} timestamps of the
+// minimap's root file, kept as timestamps so it survives every re-render and
+// zoom. Discarded on a root-file change. See renderMinimapDraft.
+let minimapDraft = null;
 const MINIMAP_MIN_SPAN_MS = 2000; // plain-text files: 1 (= 2 lines), see minimapMinSpan
 
 function minimapTsToX(ts) {
@@ -28338,7 +28396,9 @@ function minimapCrumbsHtml(rootId) {
     const ms = !nodeIsPlainText(rootId) && v.to - v.from < 10000;
     parts.push(crumb(timeRangeBoundLabel(rootId, v.from, ms) + "–" + timeRangeBoundLabel(rootId, v.to, ms), i + 1));
   });
-  return '<span class="minimap-crumbs">' + parts.join(" › ") + '</span> · <span class="minimap-res" title="Resolution of the zoomed minimap">' +
+  return '<span class="minimap-crumbs">' + parts.join(" › ") + '</span>' +
+    (minimapDraft ? '<span class="minimap-draft-text">' + escapeHtml(minimapDraftLabelText(minimapDraft, false)) + "</span>" : "") +
+    '<span class="minimap-res" title="Resolution of the zoomed minimap">' +
     escapeHtml(minimapResolutionText()) + "</span>";
 }
 
@@ -28384,10 +28444,13 @@ function renderTimelineMinimap(rootId, viewEntries) {
     minimapViewRootId = rootId;
     minimapViewTrail = [];
     minimapViewWheelTop = false;
+    minimapDraft = null; // the draft window belongs to one root file
   }
   if (rootEntries.length < 2) {
     minimapViewTrail = [];
-    timelineMinimapEl.classList.remove("zoomed");
+    timelineMinimapEl.classList.remove("zoomed", "has-crumbs", "has-draft");
+    minimapDraft = null;
+    renderMinimapDraft();
     timelineMinimapSvg.innerHTML = "";
     timelineMinimapMetaEl.textContent = "";
     timelineMinimapTooltip.classList.add("hidden");
@@ -28407,6 +28470,8 @@ function renderTimelineMinimap(rootId, viewEntries) {
     view = null;
   }
   timelineMinimapEl.classList.toggle("zoomed", !!view);
+  timelineMinimapEl.classList.toggle("has-crumbs", !!view || !!minimapDraft);
+  timelineMinimapEl.classList.toggle("has-draft", !!minimapDraft);
 
   // Width: measured off the container, same as before the meta line existed —
   // the meta line sits in its own row above the bars and doesn't consume any
@@ -28475,7 +28540,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   });
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
-  timelineMinimapMetaEl.innerHTML = (view ? minimapCrumbsHtml(rootId) + " · " : "") +
+  timelineMinimapMetaEl.innerHTML = (view || minimapDraft ? minimapCrumbsHtml(rootId) : "") +
     '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + "</span>";
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
@@ -28651,6 +28716,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // rect hidden while the Link view is active (see its own comment).
   updateMinimapFullRange();
   updateMinimapSelectionMarkers();
+  renderMinimapDraft();
 }
 
 // Repositions the "whole Filtered-view result" rectangle to span from the
@@ -28956,6 +29022,7 @@ timelineMinimapEl.addEventListener("wheel", ev => {
 timelineMinimapSvg.addEventListener("click", ev => {
   if (minimapDragSuppressClick) { minimapDragSuppressClick = false; return; }
   if (minimapLongPressDone) return; // the long-press already opened the time-range dialog
+  minimapDiscardDraft(); // a plain click leaves the draft window behind and jumps
   const rect = timelineMinimapSvg.getBoundingClientRect();
   const x = ((ev.clientX - rect.left) / rect.width) * minimapWidth;
   const ts = minimapXToTs(x);
@@ -29078,6 +29145,133 @@ function createTimeRangeFilterFromDrag(fromTs, toTs) {
   render();
 }
 
+/* ---------- Draft window: a drag leaves a draft (no filter yet) -----------
+   Two handles move one bound each (the bounds swap when they cross), the
+   action bar below the strip turns it into something: Zoom (view = draft
+   +-10 %), Filter (applyTimeWindow on the active node), Edit... (time-range
+   dialog), x / Esc (discard). Stored as timestamps (minimapDraft) so it
+   survives every re-render, zoom and resize; renderMinimapDraft() repositions
+   the DOM pieces, all outside the <svg>. */
+function minimapDraftEntryCount(from, to) {
+  const v = minimapLastViewEntries;
+  if (!v || !v.length) return 0;
+  return Math.max(0, upperBoundByTs(v, to) - lowerBoundByTs(v, from));
+}
+// ms: milliseconds in the bounds (the floating label); the phone's crumb line uses seconds.
+function minimapDraftLabelText(d, ms) {
+  const root = minimapViewRootId;
+  const n = minimapDraftEntryCount(d.from, d.to);
+  const bound = ts => timeRangeBoundLabel(root, ts, ms !== false);
+  return bound(d.from) + " – " + bound(d.to) +
+    (nodeIsPlainText(root) ? "" : " · " + formatMs(d.to - d.from)) + " · " + n.toLocaleString("de-DE") + " entries";
+}
+function renderMinimapDraft() {
+  const d = minimapDraft;
+  const rect = timelineMinimapDragRect;
+  const hideAll = () => {
+    if (rect.classList.contains("selected")) { rect.classList.remove("selected"); rect.classList.add("hidden"); }
+    timelineMinimapDraftLabel.classList.add("hidden");
+    timelineMinimapDraftBar.classList.add("hidden");
+    minimapDraftHandles.forEach(h => h.classList.add("hidden"));
+  };
+  if (!d || (minimapDragging && minimapDragMoved) || timelineMinimapEl.classList.contains("hidden") || minimapRootEntries.length < 2 || minimapRangeOutOfView(d.from, d.to)) { hideAll(); return; }
+  const W = minimapWidth;
+  const xa = minimapTsToX(d.from), xb = minimapTsToX(d.to);
+  const lo = Math.min(W, Math.max(0, xa)), hi = Math.min(W, Math.max(0, xb));
+  // An SVG element has no offsetTop/offsetHeight: measure against the container.
+  const sr = timelineMinimapSvg.getBoundingClientRect(), cr = timelineMinimapEl.getBoundingClientRect();
+  const top = Math.round(sr.top - cr.top), h = Math.round(sr.height);
+  rect.classList.add("selected");
+  rect.classList.remove("hidden");
+  rect.style.top = top + "px";
+  rect.style.height = h + "px";
+  rect.style.left = lo.toFixed(1) + "px";
+  rect.style.width = Math.max(1, hi - lo).toFixed(1) + "px";
+  timelineMinimapDraftLabel.textContent = minimapDraftLabelText(d);
+  const shortEl = timelineMinimapMetaEl.querySelector(".minimap-draft-text");
+  if (shortEl) shortEl.textContent = minimapDraftLabelText(d, false);
+  timelineMinimapDraftLabel.classList.remove("hidden");
+  const halfL = (timelineMinimapDraftLabel.offsetWidth || 0) / 2; // keep the whole label inside the strip
+  timelineMinimapDraftLabel.style.left = Math.max(halfL + 4, Math.min(W - halfL - 4, (lo + hi) / 2)).toFixed(1) + "px";
+  timelineMinimapDraftLabel.style.top = (top + 4) + "px";
+  minimapDraftHandles.forEach(hd => {
+    const x = hd.dataset.side === "from" ? xa : xb;
+    const inside = x >= 0 && x <= W;
+    hd.classList.toggle("hidden", !inside);
+    hd.style.left = x.toFixed(1) + "px";
+    hd.style.top = top + "px";
+    hd.style.height = h + "px";
+  });
+  const node = state.nodes[state.activeId];
+  const filterBtn = timelineMinimapDraftBar.querySelector('[data-act="filter"]');
+  filterBtn.textContent = node && node.filterType === "timerange" ? "Update filter" : "Filter";
+  timelineMinimapDraftBar.classList.remove("hidden");
+  const barW = timelineMinimapDraftBar.offsetWidth || 0;
+  const barLeft = Math.max(4, Math.min(W - barW - 4, (lo + hi) / 2 - barW / 2));
+  timelineMinimapDraftBar.style.left = barLeft.toFixed(1) + "px";
+  timelineMinimapDraftBar.style.top = (top + h + 3) + "px";
+}
+function minimapSetDraft(from, to) {
+  minimapDraft = { from, to };
+  minimapViewRerender(); // the phone crumb line appears with the draft
+}
+function minimapDiscardDraft() {
+  if (!minimapDraft) return;
+  minimapDraft = null;
+  minimapViewRerender();
+}
+function minimapDraftAction(act) {
+  const d = minimapDraft;
+  if (!d) return;
+  if (act === "discard") { minimapDiscardDraft(); return; }
+  if (act === "zoom") {
+    const pad = (d.to - d.from) * 0.1;
+    setMinimapView(d.from - pad, d.to + pad);
+    return;
+  }
+  const { from, to } = d;
+  minimapDraft = null;
+  if (act === "filter") { createTimeRangeFilterFromDrag(from, to); minimapViewRerender(); return; }
+  minimapViewRerender();
+  if (act === "edit" && state.activeId) openTimeRangeDialog("create", state.activeId, { from, to });
+}
+timelineMinimapDraftBar.addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-act]");
+  if (b) minimapDraftAction(b.dataset.act);
+});
+timelineMinimapDraftBar.addEventListener("pointerdown", ev => ev.stopPropagation());
+
+// Handle drag: one bound follows the pointer, swapping when they cross.
+let minimapHandleDrag = null; // { side, pointerId, rect }
+minimapDraftHandles.forEach(hd => hd.addEventListener("pointerdown", ev => {
+  if (ev.button !== 0 || !minimapDraft) return;
+  ev.preventDefault();
+  ev.stopPropagation();
+  minimapHandleDrag = { side: hd.dataset.side, pointerId: ev.pointerId === undefined ? null : ev.pointerId, rect: timelineMinimapSvg.getBoundingClientRect(), el: hd };
+  hd.classList.add("dragging");
+  if (typeof hd.setPointerCapture === "function" && ev.pointerId !== undefined) {
+    try { hd.setPointerCapture(ev.pointerId); } catch (_) { /* pointer already gone */ }
+  }
+}));
+window.addEventListener("pointermove", ev => {
+  const hd = minimapHandleDrag;
+  if (!hd || !minimapDraft || (hd.pointerId !== null && ev.pointerId !== undefined && ev.pointerId !== hd.pointerId)) return;
+  const ts = Math.round(minimapXToTs(minimapEventUnitX(ev, hd.rect)));
+  const other = hd.side === "from" ? minimapDraft.to : minimapDraft.from;
+  if (ts === other) return;
+  minimapDraft = { from: Math.min(ts, other), to: Math.max(ts, other) };
+  hd.side = ts < other ? "from" : "to"; // crossing swaps which bound the dragged handle owns
+  renderMinimapDraft();
+});
+function endMinimapHandleDrag(ev) {
+  const hd = minimapHandleDrag;
+  if (!hd || (hd.pointerId !== null && ev.pointerId !== undefined && ev.pointerId !== hd.pointerId)) return;
+  minimapHandleDrag = null;
+  hd.el.classList.remove("dragging");
+}
+window.addEventListener("pointerup", endMinimapHandleDrag);
+window.addEventListener("pointercancel", endMinimapHandleDrag);
+
 // Pointer events (mouse, touch, pen alike): pointerdown + setPointerCapture on
 // the svg, pointermove/up/cancel on window (captured events bubble there, and
 // a mouse released outside the svg still ends the drag). CSS `touch-action:
@@ -29156,7 +29350,7 @@ window.addEventListener("pointermove", ev => {
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const xStart = minimapTsToX(minimapDragStartTs), xNow = minimapTsToX(curTs);
   if (!minimapDragMoved && Math.abs(xNow - xStart) < minimapDragThreshold) return;
-  minimapDragMoved = true;
+  if (!minimapDragMoved) { minimapDragMoved = true; renderMinimapDraft(); } // the new drag replaces an existing draft's overlay
   clearMinimapLongPress(); // a swipe, not a long-press
   showMinimapDragOverlay(xStart, xNow);
 });
@@ -29165,11 +29359,14 @@ window.addEventListener("pointerup", ev => {
   if (!minimapDragging || !minimapOwnsPointer(ev)) return;
   clearMinimapLongPress();
   endMinimapDrag();
-  if (!minimapDragMoved) return; // a plain click/tap — the svg's own "click" listener handles jump-to
+  const wasMoved = minimapDragMoved;
+  minimapDragMoved = false;
+  if (!wasMoved) return; // a plain click/tap — the svg's own "click" listener handles jump-to
   minimapDragSuppressClick = true;
   const curTs = minimapXToTs(minimapEventUnitX(ev, minimapDragSvgRect));
   const fromTs = Math.round(Math.min(minimapDragStartTs, curTs)), toTs = Math.round(Math.max(minimapDragStartTs, curTs));
-  if (toTs > fromTs) createTimeRangeFilterFromDrag(fromTs, toTs);
+  if (toTs > fromTs) minimapSetDraft(fromTs, toTs);
+  else renderMinimapDraft();
 });
 
 // The browser took the gesture (vertical pan, system gesture): abort, no filter.
@@ -29177,6 +29374,8 @@ window.addEventListener("pointercancel", ev => {
   if (!minimapDragging || !minimapOwnsPointer(ev)) return;
   clearMinimapLongPress();
   endMinimapDrag();
+  minimapDragMoved = false;
+  renderMinimapDraft();
 });
 
 // Right-click: open the time-range dialog directly (see "Time range dialog"
@@ -45416,6 +45615,7 @@ document.addEventListener("keydown", ev => {
     // The format setup wizard sits on top of Settings: Esc closes just the
     // wizard, leaving Settings (and its unsaved format editor) open.
     if (formatDialogOpen() || themeEditorOpen()) { closeEscapeOverlays(); return; }
+    if (minimapDraft && !inInput && !anyEscapeOverlayOpen()) { minimapDiscardDraft(); return; }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
     closeEscapeOverlays();
     let needsRender = false;

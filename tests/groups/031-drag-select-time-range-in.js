@@ -50,7 +50,12 @@ await withApp(async (w, d, T) => {
   // exercise the suppress-flag guard (see the click listener's comment).
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
 
-  assert(dragRectEl.classList.contains("hidden"), "drag overlay rect hides again after mouseup");
+  // Time-window workflow step 4: the drag leaves a DRAFT window (the overlay
+  // rect stays, as .selected); the Filter button of its action bar creates the filter.
+  assert(dragRectEl.classList.contains("selected") && !dragRectEl.classList.contains("hidden"), "after mouseup the overlay rect stays as the draft window");
+  assert(f.children.length === beforeChildCount, "the drag itself creates no filter yet");
+  d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
+  assert(dragRectEl.classList.contains("hidden") && !dragRectEl.classList.contains("selected"), "draft overlay is gone after Filter");
   assert(f.children.length === beforeChildCount + 1, "drag-select added exactly ONE filter child under the active file, got " + f.children.length);
 
   const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
@@ -115,6 +120,7 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
   w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: dragToXBefore, clientY: 10 }));
+  d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
 
   const midDragRangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange" && n.value.from === dragFromTs);
   assert(midDragRangeNode, "a tail tick landing mid-drag doesn't desync the gesture — the resulting filter's \"from\" still matches the entry actually dragged from");

@@ -163,6 +163,7 @@ await withApp(async (w, d, T) => {
   w.dispatchEvent(new w.MouseEvent("pointermove", { bubbles: true, clientX: x2, clientY: 10 }));
   w.dispatchEvent(new w.MouseEvent("pointerup", { bubbles: true, clientX: x2, clientY: 10 }));
   svg.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: x2, clientY: 10 }));
+  d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click(); // drag leaves a draft window, Filter turns it into the node
   assert(f.children.length === beforeChildCount + 1, "drag-select still creates exactly one new filter child in entries mode, got " + f.children.length);
   const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
   assert(rangeNode, "the created node has filterType \"timerange\"");
