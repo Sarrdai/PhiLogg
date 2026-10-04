@@ -1,0 +1,4 @@
+- **fix: phone gets an Undo toast after removing a node and loses actions it cannot use (2026-10-04, usability test)**
+  - Phone hides the Undo button and has no keyboard, so "Remove filter"/"Remove file" in the tree menu was permanent; it now shows an "Undo" toast (only while that action is still the latest).
+  - The row menu's "Extract" and the sidebar toolbar's "Add to library…" are omitted on phone (their results need Table/Plot and the library button, which phone does not have).
+  - **Tests**: GROUP phone-undo-toast, phone-hidden-actions. Docs: docs/ui-and-views.md.

@@ -15955,6 +15955,20 @@ function undo() {
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
 }
 
+// Phone has no visible Undo button and no keyboard, so a tree-menu removal would be
+// permanent: offer a toast with an Undo button. prevTop = undoStack's top before the
+// removal; nothing to offer when no new action was pushed (folder-watch file close).
+// The button only undoes while that very action is still on top.
+function offerPhoneUndoToast(prevTop) {
+  if (currentLayoutTier !== "phone") return;
+  const action = undoStack[undoStack.length - 1];
+  if (!action || action === prevTop) return;
+  showCopyToast(action.kind === "deleteFile" ? "File removed" : "Filter removed", {
+    label: "Undo",
+    onClick: () => { if (undoStack[undoStack.length - 1] === action) undo(); },
+  });
+}
+
 // One action's inverse. A "batch" (the LLM assistant's one-step-per-round,
 // see llmPushRoundBatch/llmUndoRound) undoes its own actions in reverse.
 function undoAction(action) {
@@ -36537,8 +36551,9 @@ function openContextMenu(ev, entry) {
   // just produce a literal-text node indistinguishable from "Filter for this
   // message" (buildNumericExtractPattern is the exact same check that button
   // uses, and extractMessageFilter below is the exact same function it calls).
+  // Hidden on phone: the extraction node only feeds Table/Plot, which phone does not show.
   ctxExtractMessage.style.display =
-    buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
+    currentLayoutTier !== "phone" && buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
   // IDE Integration: row-level (not column-gated like "Filter for this
   // ___" above) — the Method column carries no file/line data of its own,
   // so gating strictly on which column was clicked would make these items
@@ -37998,6 +38013,8 @@ function describeSidebarToolbarActions() {
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
     { action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target, separator: true, disabled: !filter },
   ];
+  // Phone has no #btnLibrary to apply a library preset, so saving one is pointless there.
+  if (currentLayoutTier === "phone") actions.pop();
   return { actions };
 }
 
@@ -38338,8 +38355,10 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "delete") {
     if (treeCtxId && state.nodes[treeCtxId]) {
+      const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(treeCtxId);
       render();
+      offerPhoneUndoToast(prevTop);
     }
     return;
   }
@@ -38436,7 +38455,10 @@ function renderSidebarToolbar() {
     }
     return;
   }
-  if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]")) {
+  // The button set depends on the layout tier (no "Add to library…" on phone): rebuild on a tier change.
+  const wantsLibBtn = describeSidebarToolbarActions().actions.some(a => a.action === "addToLibrary");
+  if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]") ||
+      !!sidebarToolbarEl.querySelector('[data-row-action="addToLibrary"]') !== wantsLibBtn) {
     sidebarToolbarMultiKey = null;
     sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "rect", "sidebar-toolbar-hit");
     // Idempotent (per-container guard), so calling it again never stacks listeners.
