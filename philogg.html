@@ -13362,6 +13362,7 @@ function applyTimeWindow(targetId, from, to) {
     target.parentId = win.id;
     invalidateNodeSubtreeCaches(win.id);
     activateNewNode(target);
+    pushUndo({ kind: "insertAbove", nodeId: targetId, winNode: win, parentId: parent.id, index: idx });
     return win;
   }
   return createFilterNode(targetId, "timerange", { from, to });
@@ -16415,7 +16416,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
-  clockOffset: "clock adjust", create: "filter creation", batch: "assistant round",
+  clockOffset: "clock adjust", create: "filter creation", batch: "assistant round", insertAbove: "time window",
 };
 
 function undo() {
@@ -16453,6 +16454,17 @@ function offerPhoneUndoToast(prevTop) {
 function undoAction(action) {
   if (action.kind === "batch") {
     for (let i = action.actions.length - 1; i >= 0; i--) undoAction(action.actions[i]);
+  } else if (action.kind === "insertAbove") {
+    // A node (time window) inserted above `nodeId`: put nodeId back at its old index and drop the window.
+    const node = state.nodes[action.nodeId], win = state.nodes[action.winNode.id], parent = state.nodes[action.parentId];
+    if (node && win && parent) {
+      win.children = win.children.filter(id => id !== action.nodeId);
+      parent.children = parent.children.filter(id => id !== win.id);
+      insertAt(parent, action.nodeId, action.index);
+      node.parentId = action.parentId;
+      deleteNode(win.id);
+      state.activeId = action.nodeId;
+    }
   } else if (action.kind === "delete") {
     const restored = restoreSubtree(action.snapshot);
     insertAt(state.nodes[action.parentId], restored.id, action.index);
@@ -16533,6 +16545,17 @@ function redo() {
 function redoAction(action) {
   if (action.kind === "batch") {
     action.actions.forEach(redoAction);
+  } else if (action.kind === "insertAbove") {
+    const node = state.nodes[action.nodeId], win = action.winNode, parent = state.nodes[action.parentId];
+    if (node && parent && !state.nodes[win.id]) {
+      parent.children = parent.children.filter(id => id !== action.nodeId);
+      win.children = [action.nodeId];
+      win.parentId = action.parentId;
+      state.nodes[win.id] = win;
+      insertAt(parent, win.id, action.index);
+      node.parentId = win.id;
+      state.activeId = action.nodeId;
+    }
   } else if (action.kind === "delete") {
     // The node is currently restored (undo put it back with its original
     // id) — deleting it again is the redo.

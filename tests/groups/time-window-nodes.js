@@ -133,3 +133,40 @@ await withApp(async (w, d, T) => {
   const win = twActive(T);
   assert(win.filterType === "timerange" && win.parentId === lvl.id && f.children.length === 1 && f.children[0] === lvl.id, "window nests under the level node as before");
 });
+
+await withApp(async (w, d, T) => {
+  section("time-window-nodes g. Level-node window insert is ONE undo step");
+  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
+  T.state.activeId = f.id;
+  w.render();
+  const chip = lvl => [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.dataset.level === lvl);
+  fireClick(chip("ERROR"), w);
+  const lvl = twActive(T);
+  const sibling = w.createFilterNode(f.id, "text", "INFO"); // level node is NOT the only/last child
+  T.state.activeId = lvl.id;
+  f.children = [lvl.id, sibling.id].filter((x, i, a) => a.indexOf(x) === i);
+  w.render();
+  const shape = () => JSON.stringify(f.children.map(id => [id, T.state.nodes[id].children.slice()]));
+  const cnt = () => w.getEntries(lvl.id).length;
+  const shapeBefore = shape(), cntBefore = cnt(), nodesBefore = Object.keys(T.state.nodes).length;
+  const win = w.applyTimeWindow(lvl.id, f.entries[5].ts, f.entries[20].ts);
+  const shapeAfter = shape(), cntAfter = cnt();
+  assert(win && lvl.parentId === win.id && f.children.indexOf(win.id) === 0 && T.state.activeId === lvl.id, "sanity: window inserted at the level node's index");
+  w.undo();
+  assert(shape() === shapeBefore, "undo restores tree shape: " + shape() + " vs " + shapeBefore);
+  assert(!T.state.nodes[win.id] && Object.keys(T.state.nodes).length === nodesBefore, "window node gone");
+  assert(lvl.parentId === f.id && f.children.indexOf(lvl.id) === 0, "level node back at original parent/index");
+  assert(T.state.activeId === lvl.id, "level node is active after undo, got " + T.state.activeId);
+  assert(chip("ERROR").classList.contains("active"), "ERROR chip lit after undo");
+  assert(cnt() === cntBefore, "entry count restored: " + cnt() + " vs " + cntBefore);
+  w.redo();
+  assert(shape() === shapeAfter && lvl.parentId === win.id && T.state.nodes[win.id], "redo re-applies the same tree shape");
+  assert(T.state.activeId === lvl.id && chip("ERROR").classList.contains("active"), "level node active after redo");
+  assert(cnt() === cntAfter, "entry count after redo: " + cnt() + " vs " + cntAfter);
+  // chip toggle after the insert: two undos walk back chip, then insert
+  fireClick(chip("INFO"), w);
+  assert(lvl.value.length === 2, "chip toggled: " + lvl.value.join(","));
+  w.undo();
+  w.undo();
+  assert(shape() === shapeBefore && T.state.activeId === lvl.id, "insert, chip, undo x2 -> original tree: " + shape());
+});
