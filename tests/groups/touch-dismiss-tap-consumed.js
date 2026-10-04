@@ -45,11 +45,12 @@ await withApp(async (w, d, T) => {
   d.getElementById("detailClose").click();
 
   section("touch-dismiss-tap-consumed c. A dblclick right after a swallowed dismiss tap is swallowed");
-  openMenu();
+  openMenu(); // the right-click also selects card a
+  const selC = T.state.selectedId;
   tap(card(c.id));
   const tabBefore = T.fhActiveTab;
   fireDblClick(card(c.id), w);
-  assert(T.fhActiveTab === tabBefore && T.state.selectedId === b.id, "dblclick ignored (no jump, selection unchanged)");
+  assert(T.fhActiveTab === tabBefore && T.state.selectedId === selC, "dblclick ignored (no jump, selection unchanged)");
 
   section("touch-dismiss-tap-consumed d. A press that never becomes a click does not swallow a later tap");
   openMenu();

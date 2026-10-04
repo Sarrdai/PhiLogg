@@ -24381,6 +24381,24 @@ function clearTempAnchorFadeTimer() {
   if (tempAnchorFadeTimer) { clearTimeout(tempAnchorFadeTimer); tempAnchorFadeTimer = null; }
 }
 
+// The anchor was just cleared by a real selection elsewhere (applySelection):
+// its spliced clone must leave currentViewEntries and the DOM right away —
+// the fade timer's callbacks early-return once state.tempAnchor is null, so
+// nothing else would ever remove the stale "not in this filter" ghost row
+// (it would survive a tab switch until the next full renderTable). Repaints
+// in place like setNoteAndRepaint (no render(): that resets the scroll).
+function dropTempAnchorRow() {
+  clearTempAnchorFadeTimer();
+  const idx = currentViewEntries.findIndex(e => e._tempAnchor);
+  if (idx === -1) return;
+  currentViewEntries.splice(idx, 1);
+  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
+  const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
+  tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  renderVisibleRows();
+  updateMinimapSelectionMarkers();
+}
+
 // "Fade" mode: briefly shows the anchor row, collapses its OWN height to 0
 // as it fades (via .temp-anchor-fading's CSS transition), then removes just
 // that DOM row and drops it from state.tempAnchor/currentViewEntries —
@@ -24745,7 +24763,7 @@ function appendLogRow(frag, i, rc) {
     if (msgEl) msgEl.style.webkitLineClamp = String(cardLinesForEntry(e, tableWrapCols));
   }
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
-  row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
+  row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
   frag.appendChild(row);
   const noteRow = appendNoteRow(frag, e);
@@ -26671,7 +26689,7 @@ function renderHighlightVisibleRows() {
     // building moves under them mid-gesture.
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
       (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
-    row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
+    row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
     // Every revealed context row carries its slice of its run's connecting
     // line — appended as a real child AFTER innerHTML is set (a plain HTML
@@ -28660,6 +28678,23 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
   selectFn(entryId);
 }
 
+// Right-click on a log row (Explorer convention): a row outside the current
+// multi-selection becomes the single selection BEFORE the context menu opens,
+// so the detail panel and the menu's actions refer to the same entry. A row
+// inside the multi-selection leaves it untouched (ctxCopy copies the whole
+// set). selectFn is selectEntry/selectHighlightEntry — never the Context
+// tab's click variant, whose list expansion would move rows under the menu —
+// and phoneSheetOpen stays alone (a long-press must not open the sheet).
+function selectRowForContextMenu(entryId, selectFn) {
+  if (state.logMultiSelect.has(entryId)) return;
+  if (state.logMultiSelect.size) {
+    state.logMultiSelect = new Set();
+    updateLogMultiSelectClasses();
+  }
+  logMultiSelectAnchorId = entryId;
+  if (state.selectedId !== entryId) selectFn(entryId);
+}
+
 // Ctrl+C in the log view (see the keydown handler): copies the raw text of
 // every multi-selected row, or just the single selected entry when nothing
 // is multi-selected — sorted chronologically by timestamp (not click/DOM
@@ -28694,7 +28729,10 @@ function applySelection(entryId) {
   state.focusRegion = "entries";
   // A no-match temp anchor (FEATURE_BACKLOG #18) is only meaningful for the
   // exact entry it was created for — any OTHER real selection drops it.
-  if (state.tempAnchor && state.tempAnchor.entryId !== entryId) state.tempAnchor = null;
+  if (state.tempAnchor && state.tempAnchor.entryId !== entryId) {
+    state.tempAnchor = null;
+    dropTempAnchorRow();
+  }
   // Picking a row means the user wants to look at *this* entry — stop the
   // view from being yanked to the bottom by incoming tailed entries. Checks
   // both views (FEATURE_BACKLOG #25): a row click in the Highlight/Full view
@@ -28724,7 +28762,10 @@ function selectEntry(entryId, opts) {
     // opts.index: callers that already know the entry's position (arrow-key
     // navigation, minimap click) pass it along so a large view isn't scanned
     // twice per keypress (moveSelection's own findIndex + this one).
-    const idx = opts.index != null ? opts.index : currentViewEntries.findIndex(e => e.id === entryId);
+    // The hint is only trusted while it still points at this entry: dropping
+    // the temp anchor row (applySelection) shifts the list under the caller.
+    const idx = opts.index != null && currentViewEntries[opts.index] && currentViewEntries[opts.index].id === entryId
+      ? opts.index : currentViewEntries.findIndex(e => e.id === entryId);
     if (idx !== -1) scrollToIndex(idx, { center: opts.center }); // already re-renders its own window
   }
   // Plain mouse click on an already-visible row: just flip the "selected"
@@ -36547,7 +36588,7 @@ function openContextMenu(ev, entry) {
   ctxTimeRangeFromSelection.style.display = state.logMultiSelect.size >= 2 ? "" : "none";
   // "Extract" mirrors the #viewBar row-action's own gate (updateRowActionButtons'
   // extractActionEnabled) — only shown when the right-clicked entry's message
-  // actually has numeric/time content to wildcard; a message with none would
+  // actually has numeric/time/identifier content to wildcard; a message with none would
   // just produce a literal-text node indistinguishable from "Filter for this
   // message" (buildNumericExtractPattern is the exact same check that button
   // uses, and extractMessageFilter below is the exact same function it calls).
@@ -36645,8 +36686,11 @@ el("#ctxCopyTicket").addEventListener("click", ev => {
 // placeholder, producing a ready-to-use wildcard pattern (e.g. "moved to
 // [*:float] after [*:int] tries"). Clock times / durations are
 // recognized as a single [*:time] rather than being split into
-// separate numbers, and a number glued directly onto letters (e.g. inside
-// a hash or "v2") is left alone rather than being pulled out. A number
+// separate numbers. An identifier that starts with a letter and contains a
+// digit ("J-00004", "worker-3", "v2", "gen2", "a3f9", "snake_9") becomes ONE
+// [*:word] capture — never literal (the pattern would match only that one
+// entry) and never an int column. A number glued onto letters otherwise
+// (e.g. "注文70328") is still pulled out as before. A number
 // grouped with both separators ("1,234.5" / "1.234,5") stays ONE [*:float],
 // which a plain [*:float] matches (see EXTRACT_TYPES); a lone "1,234" is
 // ambiguous and is left split, [*:float@en]/@de is the explicit way. Returns null
@@ -36654,12 +36698,13 @@ el("#ctxCopyTicket").addEventListener("click", ev => {
 // the exact literal text instead, so a message/method/thread with no
 // numbers in it is still filterable for its exact value.
 // The lookbehind keeps a token from starting right after an ASCII letter/digit/
-// underscore/dot, or a sign/digit right after "<letter>-" (identifiers like
-// "J-00004", "worker-3"). ASCII only on purpose: CJK text ("注文70328") must
+// underscore/dot, or right after "<letter>-" (so the tail of an identifier
+// is never re-scanned as a number). ASCII only on purpose: CJK text ("注文70328") must
 // still extract. Exception: a clock time right after "<digit>T" (ISO timestamp).
 const NUMERIC_TOKEN_RE = new RegExp(
   "(?:(?<=\\dT)\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?|(?<![A-Za-z0-9_.]|[A-Za-z]-)(?:" +
-  "\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
+  "[A-Za-z][A-Za-z_]*-?\\d\\w*(?:-\\w+)*" +                                         // identifier (letter + digit): one [*:word]
+  "|\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
   "|\\d+(?:\\.\\d+)?\\s?(?:ms|s|sec|secs|seconds|min|mins|minutes|h|hrs|hours)\\b" + // duration + unit
   "|[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?)" +     // standalone number (grouped only with both separators)
   "))",
@@ -36674,7 +36719,7 @@ function buildNumericExtractPattern(message) {
   while ((m = NUMERIC_TOKEN_RE.exec(message)) !== null) {
     out += message.slice(lastIndex, m.index);
     const tok = m[0];
-    out += tok.includes(":") || /[a-zA-Z]/.test(tok) ? "[*:time]" : (tok.includes(".") ? "[*:float]" : "[*:int]");
+    out += /^[A-Za-z]/.test(tok) ? "[*:word]" : tok.includes(":") || /[a-zA-Z]/.test(tok) ? "[*:time]" : (tok.includes(".") ? "[*:float]" : "[*:int]");
     lastIndex = NUMERIC_TOKEN_RE.lastIndex;
     count++;
   }
@@ -37435,7 +37480,7 @@ function updateRowActionButtons() {
   // "Extract" additionally needs that entry's message to actually contain
   // something extractable — same buildNumericExtractPattern() the button's
   // own click handler (extractMessageFilter) already uses to build the
-  // pattern; a message with no numeric/time content would just create a
+  // pattern; a message with no numeric/time/identifier content would just create a
   // literal-text filter node, which isn't what "Extract" is for (person-
   // requested, 2026-09-08 — use "Message" for that case instead).
   const extractActionEnabled = messageActionEnabled &&

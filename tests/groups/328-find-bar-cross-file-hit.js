@@ -89,8 +89,15 @@ await withApp(async (w, d, T) => {
   const aBadgeN = Number(badge(fa.id).textContent);
   fireClick(badge(fa.id), w);
   await sleep(60);
+  // The badge click selects a's first hit, which (correctly) drops b's anchor;
+  // re-create the foreign selection: select b's hit again, then switch to a.
+  w.selectEntry(firstHit.id);
+  w.applyTempAnchorOnActiveNodeSwitch(fa.id);
+  w.render();
+  w.findRefresh();
+  await sleep(60);
   assert(T.state.activeId === fa.id && T.currentViewEntries.some(e => e._tempAnchor), "sanity: b's selected entry is spliced into a's view as a temp anchor");
-  assert(count.textContent === "1 / " + aBadgeN, "counter total equals a's badge count (" + aBadgeN + "), got " + count.textContent);
+  assert(count.textContent === aBadgeN + " matches" || count.textContent === "1 / " + aBadgeN, "counter total equals a's badge count (" + aBadgeN + "), got " + count.textContent);
   assert(!T.currentViewEntries.some((e, i) => e._tempAnchor && w.__find.state.hits.includes(i)), "no hit index points at the _tempAnchor row");
   // Same file: a matching anchor row (excluded by the active filter) isn't counted either.
   const inA = fa.entries.find(e => /retry/i.test(e.message || ""));
