@@ -141,6 +141,18 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#detailOutside").style.display === "none", "level filter off again: notice gone");
   w.render();
   assert(!d.querySelector(".not-in-filter-chip"), "and the chip once the rows are rebuilt");
+
+  // Regression: the Raw detail view returned early and left a stale notice on screen.
+  w.setDetailView("raw");
+  T.state.activeId = f.id;
+  w.render();
+  w.selectEntry(pick.id);
+  d.querySelector('.level-btn[data-level="ERROR"]').dispatchEvent(new w.MouseEvent("click", { bubbles: true }));
+  assert(d.querySelector("#detailOutside").style.display === "block", "Raw view: notice shown for the hidden entry");
+  const inView = T.currentViewEntries.find(e => e.level === "ERROR");
+  w.selectEntry(inView.id);
+  assert(d.querySelector("#detailOutside").style.display === "none", "Raw view: selecting an entry of the view clears the notice");
+  w.setDetailView("pretty");
 });
 
 await withApp(async (w, d, T) => {

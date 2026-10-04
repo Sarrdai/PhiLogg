@@ -15943,6 +15943,9 @@ function undo() {
   const action = undoStack.pop();
   if (!action) { showCopyToast("Nothing to undo"); return; }
   undoAction(action);
+  // Every branch ends by activating the node it touched: that node is the one selection (a stale multi-selection, e.g. of the
+  // active node while a non-active one was deleted, would otherwise survive as a mixed selection).
+  if (state.activeId && state.nodes[state.activeId]) state.multiSelect = new Set([state.activeId]);
   redoStack.push(action);
   updateUndoRedoButtons();
   // Global sweep on purpose: an action can be a restored subtree, a re-parent, a field edit
@@ -16023,6 +16026,9 @@ function redo() {
   const action = redoStack.pop();
   if (!action) { showCopyToast("Nothing to redo"); return; }
   redoAction(action);
+  // Every branch ends by activating the node it touched: that node is the one selection (a stale multi-selection, e.g. of the
+  // active node while a non-active one was deleted, would otherwise survive as a mixed selection).
+  if (state.activeId && state.nodes[state.activeId]) state.multiSelect = new Set([state.activeId]);
   undoStack.push(action);
   if (undoStack.length > UNDO_STACK_LIMIT) undoStack.shift();
   updateUndoRedoButtons();
@@ -17517,6 +17523,7 @@ function applyNavWaypoint(wp) {
   // current one alone rather than blanking the detail panel.
   if (wp.selectedId && entryIndex[wp.selectedId]) state.selectedId = wp.selectedId;
   render();
+  updateDetailPanel(); // render() doesn't refresh it: the pane (and its outside-filter notice) would keep the previous entry
   // After render(), because render()'s own A1 branch calls
   // revealFilteredView() for a filter node, which would otherwise override
   // the pane this waypoint was recorded in.
@@ -29108,6 +29115,7 @@ function updateDetailPanel() {
 
   detailPanel.classList.remove("empty");
   detailMeta.className = levelClass(entry.level, entry.formatId);
+  renderDetailOutsideNotice(entry); // before the Raw branch below returns early
 
   // Match marking (see the section above textFilterMatches) — same
   // computation as renderVisibleRows, with the filter-path half gated by the
@@ -29170,7 +29178,6 @@ function updateDetailPanel() {
     detailMessageEl.textContent = entry.message;
   }
   renderDetailNote(entry);
-  renderDetailOutsideNotice(entry);
 }
 
 // One-line notice while the entry shown in the detail panel is not part of
