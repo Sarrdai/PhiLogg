@@ -99,10 +99,11 @@ deployments possible:
   hides behind the others' chatter); the Filtered view shows each row's
   measured gap, and sorting the Δt column (largest first) ranks where the
   most time is lost — no threshold needed. The **Link filter** can pair only entries that belong
-  together ("match only same Thread", or the same captured value such as
-  `axis [*:int]`) and keep only pairs with Δt above/below a limit, with a
-  live "12 of 3.418 pairs" preview; an extraction on link pairs gets a
-  Δt column to plot durations over time. See `docs/filters.md`.
+  together ("Same" chips suggest the fields both events share, e.g. `job`, with
+  the ID-like one preselected, or a column such as Thread) and show only pairs
+  with Δt above/below a limit, with a live "192 pairs · 13 without end" preview;
+  the Link view sorts pairs by Δt and shows the starts that never got an end.
+  An extraction on link pairs gets a Δt column to plot durations over time. See `docs/filters.md`.
 - **Text-filter match highlighting** — see exactly which substring an active
   text filter matched, marked inline in the Filter view's rows and/or the
   entry-detail panel. Toggle it on/off from the view bar (next to the
@@ -196,9 +197,12 @@ deployments possible:
   the entries whose value actually satisfies it. Numbers with thousands separators
   (`1,234.5`, `1.234,5`) are read as one value; `[*:float@en]` /
   `[*:float@de]` pin the number format where it is ambiguous (`12,345`).
-- **Link filter** — pair up nearest-preceding/following entries across two
-  filters (e.g. "the last position reading before each error"), chainable
-  into multi-hop tuples via a guided dialog.
+- **Link filter** — pair up nearest-preceding/following entries (e.g. each
+  "Move requested" with its "Position reached") to measure how long things take.
+  Right-click a row → **Pair with…**, click the end row: the Δt between the two
+  rows shows at once, and **Pair all like these…** opens the link dialog
+  prefilled. Also reachable from the new-filter popup ("Link two events…") and
+  the tree menu ("Link with…", "Edit link…"); chainable into multi-hop tuples.
 - **Context/Filtered split** — the narrowed "Filtered" view plus a
   "Context" view showing the same result *with the log around it*: the
   matches, and everything the filter rejected hidden between them,

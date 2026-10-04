@@ -1,0 +1,5 @@
+- **feat: link filter is findable and answers "how long does it take" correctly (2026-10-04, person-requested)**
+  - Row menu **Pair with…** → click/tap the end row → banner with the Δt between the two rows (closes backlog #5) → **Pair all like these…**; also "Link two events…" in the filter popup and "Link with…"/"Edit link…" in the tree menu (link edit closes the link half of #58).
+  - Link dialog: start/end are pattern fields (or a picked filter), direction defaults to next, "Same" chips suggest shared `name=value` fields with the ID-like one preselected, preview shows pairs, starts without end and slowest first; the dialog creates one node per chain.
+  - The Δt condition only filters finished pairs (it used to free the end event under "Don't reuse" and change the pairing). The Link view shows "N without end" (off / inline / only), Sort Time / Δt and a touch-aware hint.
+  - **Tests**: GROUP link-dt-postfilter, link-unmatched, link-chain-edit, link-dialog-v2, link-pair-with, link-view-header. Docs: docs/filters.md, docs/ui-and-views.md, README.
