@@ -93,10 +93,11 @@ await withApp(async (w, d, T) => {
   assert(pillChecked(d.querySelector("#csvExportHeadersInput")) === true, "include-headers defaults to on");
 
   let saved = null;
-  w.downloadCsvFallback = (text, name) => { saved = { text, name }; };
+  w.downloadBlobFallback = (blob, name) => { const e = { name, text: undefined }; saved = e; blob.text().then(t => { e.text = t; }); };
   d.querySelector("#csvExportDelimiterSelect").value = ";";
   d.querySelector("#csvExportDecimalSelect").value = ",";
   fireClick(d.querySelector("#csvExportConfirm"), w);
+  await waitFor(() => saved !== null && saved.text !== undefined);
   assert(dialog.classList.contains("hidden"), "Export closes the dialog");
   assert(saved !== null, "Export triggers a file save (fallback download, since jsdom has no showSaveFilePicker)");
   const lines = saved.text.split("\r\n");
@@ -117,6 +118,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#ctxExportCsv"), w);
   setPill(d.querySelector("#csvExportHeadersInput"), false);
   fireClick(d.querySelector("#csvExportConfirm"), w);
+  await waitFor(() => saved !== null && saved.text !== undefined);
   const bodyOnlyLines = saved.text.split("\r\n");
   assert(bodyOnlyLines.length === 2, "unchecking 'include header row' exports only the 2 data rows, got " + bodyOnlyLines.length);
 });

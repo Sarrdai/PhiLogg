@@ -4214,6 +4214,17 @@
   }
   #copyToast.show{opacity:1; transform:translateX(-50%) translateY(0);}
   #copyToast.hidden{display:none;}
+  /* Outcome toasts (showCopyToast kind: ok / download / neutral / error): a
+     leading icon, a border per outcome, a long file name ellipsizes. */
+  #copyToast[data-kind]{display:flex; align-items:center; gap:8px; max-width:calc(100vw - 24px);}
+  #copyToast[data-kind]::before{flex:none; font-weight:700; line-height:1;}
+  #copyToast[data-kind="ok"]::before{content:"\2713"; color:var(--accent-strong);}
+  #copyToast[data-kind="download"]::before{content:"\2193"; color:var(--accent-strong);}
+  #copyToast[data-kind="neutral"]{border-color:var(--border);}
+  #copyToast[data-kind="neutral"]::before{content:"\00d7"; color:var(--text-tertiary);}
+  #copyToast[data-kind="error"]{border-color:var(--level-error);}
+  #copyToast[data-kind="error"]::before{content:"!"; color:var(--level-error);}
+  #copyToast .toast-text{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
   /* ---------- Filter popup ---------- */
   /* max-height/overflow-y (person-reported: content below the fold was
@@ -8416,7 +8427,7 @@ function serializeThemeExport(id) {
 async function exportCustomThemeToFile(id) {
   const data = serializeThemeExport(id);
   if (!data) return;
-  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "theme") + ".theme.json", "PhiLogg theme")) showCopyToast("Theme exported");
+  await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "theme") + ".theme.json", "PhiLogg theme");
 }
 
 // Only the string-valued, non-empty entries of `src` among `keys`.
@@ -8617,7 +8628,7 @@ function serializeSyntaxSchemeExport(id) {
 async function exportCustomSyntaxSchemeToFile(id) {
   const data = serializeSyntaxSchemeExport(id);
   if (!data) return;
-  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "syntax-scheme") + ".syntax.json", "PhiLogg syntax scheme")) showCopyToast("Syntax scheme exported");
+  await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.name, "syntax-scheme") + ".syntax.json", "PhiLogg syntax scheme");
 }
 
 function parseSyntaxSchemeExport(text) {
@@ -20457,10 +20468,25 @@ function copyViaExecCommand(text) {
 }
 
 let toastTimer = null;
-// `action` ({ label, onClick }) adds a button to the toast (e.g. "Undo") and
-// keeps it up longer; the toast is otherwise click-through.
-function showCopyToast(message, action) {
-  copyToast.textContent = message;
+// `opts` is either an action ({ label, onClick }: adds a button to the toast,
+// e.g. "Undo", and keeps it up longer; the toast is otherwise click-through)
+// or an outcome style ({ kind: "ok" | "download" | "neutral" | "error",
+// duration }: leading icon + border per kind, see the #copyToast[data-kind]
+// CSS). Both may be combined; no kind = the plain toast.
+function showCopyToast(message, opts) {
+  const action = opts && opts.label ? opts : null;
+  const kind = opts && opts.kind || "";
+  if (kind) {
+    copyToast.textContent = "";
+    const t = document.createElement("span");
+    t.className = "toast-text";
+    t.textContent = message;
+    copyToast.appendChild(t);
+    copyToast.dataset.kind = kind;
+  } else {
+    copyToast.textContent = message;
+    delete copyToast.dataset.kind;
+  }
   copyToast.classList.toggle("has-action", !!action);
   if (action) {
     const btn = document.createElement("button");
@@ -20477,7 +20503,49 @@ function showCopyToast(message, action) {
   copyToast.classList.remove("hidden");
   requestAnimationFrame(() => copyToast.classList.add("show"));
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(hideCopyToast, action ? 6000 : 1400);
+  toastTimer = setTimeout(hideCopyToast, (opts && opts.duration) || (action ? 6000 : 1400));
+}
+
+// The one save flow behind every file the app writes. `data` is a Blob or a
+// string. Uses the File System Access save picker where the engine has it,
+// else (or when the picker itself is unusable here) one <a download>. Shows
+// the outcome toast itself and returns "saved" | "downloaded" | "cancelled" |
+// "failed". A failure while WRITING to an already chosen file is reported, not
+// papered over with a download.
+async function saveFileWithFeedback(data, filename, { description, mime, ext }) {
+  const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  let handle = null;
+  if (window.showSaveFilePicker) {
+    try {
+      handle = await window.showSaveFilePicker({
+        suggestedName: filename,
+        types: [{ description, accept: { [mime.split(";")[0]]: [ext] } }],
+      });
+    } catch (err) {
+      if (err && err.name === "AbortError") {
+        showCopyToast("Not saved", { kind: "neutral" });
+        return "cancelled";
+      }
+      // API present but unusable in this context — fall through to a download
+    }
+  }
+  if (handle) {
+    const name = handle.name || filename;
+    try {
+      const writable = await handle.createWritable();
+      await writable.write(blob);
+      await writable.close();
+    } catch (err) {
+      const reason = String(err && (err.message || err.name) || "unknown error").trim().slice(0, 120);
+      showCopyToast("Couldn't save " + name + " \u2014 " + reason, { kind: "error", duration: 6000 });
+      return "failed";
+    }
+    showCopyToast("Saved " + name, { kind: "ok", duration: 3000 });
+    return "saved";
+  }
+  downloadBlobFallback(blob, filename);
+  showCopyToast("Downloaded " + filename, { kind: "download", duration: 3000 });
+  return "downloaded";
 }
 function hideCopyToast() {
   clearTimeout(toastTimer);
@@ -20720,32 +20788,7 @@ function buildExtractCsv(delimiter, decimalSep, includeHeaders, includeFullEntry
   return lines.join("\r\n");
 }
 async function saveCsvToFile(csvText) {
-  const suggested = "philogg-export.csv";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "CSV file", accept: { "text/csv": [".csv"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(csvText);
-      await writable.close();
-      return;
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the picker
-      downloadCsvFallback(csvText, suggested);
-      return;
-    }
-  }
-  downloadCsvFallback(csvText, suggested);
-}
-function downloadCsvFallback(csvText, filename) {
-  const url = URL.createObjectURL(new Blob([csvText], { type: "text/csv" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  return saveFileWithFeedback(csvText, "philogg-export.csv", { description: "CSV file", mime: "text/csv", ext: ".csv" });
 }
 
 /* ---------- Pattern <-> table visualization ----------
@@ -21819,15 +21862,18 @@ function svgToPngDataUrl(svgEl, width, height, bgColor) {
     img.src = url;
   });
 }
-function downloadDataUrl(dataUrl, filename) {
-  const a = document.createElement("a");
-  a.href = dataUrl; a.download = filename;
-  document.body.appendChild(a); a.click(); a.remove();
+function dataUrlToBlob(dataUrl) {
+  const m = /^data:([^;,]*)(;base64)?,(.*)$/s.exec(dataUrl);
+  const bin = m[2] ? atob(m[3]) : decodeURIComponent(m[3]);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], { type: m[1] || "image/png" });
 }
 async function exportPlotImage() {
   if (!plotLastRenderExists()) { showCopyToast("Nothing plotted yet to save."); return; }
   const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg-app").trim() || "#0b0f14";
   const filename = "plot-" + Date.now() + ".png";
+  let dataUrl;
   try {
     if (plotConfig.type === "3d") {
       const canvas = document.createElement("canvas");
@@ -21835,15 +21881,16 @@ async function exportPlotImage() {
       const ctx = canvas.getContext("2d");
       ctx.fillStyle = bg; ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(plot3dCanvas, 0, 0);
-      downloadDataUrl(canvas.toDataURL("image/png"), filename);
-      return;
+      dataUrl = canvas.toDataURL("image/png");
+    } else {
+      const rect = plotChartArea.getBoundingClientRect();
+      dataUrl = await svgToPngDataUrl(plotSvg, Math.round(rect.width), Math.round(rect.height), bg);
     }
-    const rect = plotChartArea.getBoundingClientRect();
-    const dataUrl = await svgToPngDataUrl(plotSvg, Math.round(rect.width), Math.round(rect.height), bg);
-    downloadDataUrl(dataUrl, filename);
   } catch (e) {
     showCopyToast("Could not save the plot image.");
+    return;
   }
+  await saveFileWithFeedback(dataUrlToBlob(dataUrl), filename, { description: "PNG image", mime: "image/png", ext: ".png" });
 }
 plotSaveImageBtn.addEventListener("click", exportPlotImage);
 
@@ -40213,30 +40260,13 @@ function downloadBlobFallback(blob, filename) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 }
-// Same save path as every other file the app writes (saveFilterToFile,
-// saveCsvToFile): the File System Access save picker where the engine has
-// it (Chromium, and the Windows desktop build's WebView2), else a plain
-// <a download>. A cancelled picker saves nothing. Resolves true once saved.
+// Saves through the shared saveFileWithFeedback. Resolves true once the file
+// was saved or downloaded (it shows the outcome toast itself).
 async function saveExportFile(parts, filename, kind) {
   const spec = EXPORT_FILE_KINDS[kind];
   const blob = new Blob(parts, { type: spec.mime + ";charset=utf-8" });
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: filename,
-        types: [{ description: spec.description, accept: { [spec.mime]: [spec.ext] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(blob);
-      await writable.close();
-      return true;
-    } catch (err) {
-      if (err && err.name === "AbortError") return false; // user cancelled the picker
-      // API present but unusable in this context — fall through to a download
-    }
-  }
-  downloadBlobFallback(blob, filename);
-  return true;
+  const outcome = await saveFileWithFeedback(blob, filename, { description: spec.description, mime: spec.mime, ext: spec.ext });
+  return outcome === "saved" || outcome === "downloaded";
 }
 
 const exportDialog = el("#exportDialog");
@@ -40332,9 +40362,7 @@ function copyMarkedRowsForTicket(fallback) {
 async function exportViewFile(kind) {
   const ctx = exportDialogCtx || collectExportContext();
   if (!ctx || !EXPORT_FILE_KINDS[kind]) { showCopyToast("Nothing to export"); return false; }
-  const saved = await saveExportFile(buildExportFileParts(kind, ctx), exportBaseName(ctx) + EXPORT_FILE_KINDS[kind].ext, kind);
-  if (saved) showCopyToast(kind === "html" ? "Report saved" : "Saved " + ctx.entries.length + " entries");
-  return saved;
+  return saveExportFile(buildExportFileParts(kind, ctx), exportBaseName(ctx) + EXPORT_FILE_KINDS[kind].ext, kind);
 }
 
 el("#btnExport").addEventListener("click", ev => { ev.stopPropagation(); openExportDialog(); });
@@ -40933,35 +40961,9 @@ function exportFileBaseName(name, fallback) {
   return String(name || "").replace(/[^\w\-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 60) || fallback;
 }
 
-// Writes one JSON export through the save picker where there is one (the
-// plain download otherwise). Resolves false only when the person cancelled.
-async function saveJsonExportFile(json, suggestedName, description) {
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName,
-        types: [{ description, accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-      return true;
-    } catch (err) {
-      if (err && err.name === "AbortError") return false; // user cancelled the picker
-      // API present but unusable in this context — fall through to the download
-    }
-  }
-  downloadJsonFallback(json, suggestedName);
-  return true;
-}
-
-function downloadJsonFallback(json, filename) {
-  const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 5000);
+// One JSON export through the shared save flow (saveFileWithFeedback).
+function saveJsonExportFile(json, suggestedName, description) {
+  return saveFileWithFeedback(json, suggestedName, { description, mime: "application/json", ext: ".json" });
 }
 
 async function saveFilterToFile(nodeId) {
@@ -40979,7 +40981,7 @@ async function saveFilterToFile(nodeId) {
     roots: branch.roots,
   }, null, 2);
 
-  if (await saveJsonExportFile(json, exportFileBaseName(nodeDisplayName(node), "filter") + ".json", "PhiLogg filter")) showCopyToast("Filter saved");
+  await saveJsonExportFile(json, exportFileBaseName(nodeDisplayName(node), "filter") + ".json", "PhiLogg filter");
 }
 
 // The node a filter file / library preset is materialized under — set by
@@ -41315,7 +41317,7 @@ function serializeFilterLibraryExport(rec) {
 }
 
 async function exportFilterLibraryEntry(rec) {
-  if (await saveJsonExportFile(JSON.stringify(serializeFilterLibraryExport(rec), null, 2), exportFileBaseName(rec.name, "filter-preset") + ".filterpreset.json", "PhiLogg filter library preset")) showCopyToast("Filter preset exported");
+  await saveJsonExportFile(JSON.stringify(serializeFilterLibraryExport(rec), null, 2), exportFileBaseName(rec.name, "filter-preset") + ".filterpreset.json", "PhiLogg filter library preset");
 }
 
 // null when the text isn't a preset file, { error } when it is but can't be
@@ -42346,7 +42348,7 @@ function serializeLogFormatExport(formatId) {
 async function exportLogFormatToFile(formatId) {
   const data = serializeLogFormatExport(formatId);
   if (!data) return;
-  if (await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.logFormat.name, "log-format") + ".logformat.json", "PhiLogg log format")) showCopyToast("Log format exported");
+  await saveJsonExportFile(JSON.stringify(data, null, 2), exportFileBaseName(data.logFormat.name, "log-format") + ".logformat.json", "PhiLogg log format");
 }
 
 // Parses + validates an exported file's text. Returns { logFormat,
@@ -46356,23 +46358,7 @@ el("#sessionExportConfirm").addEventListener("click", async () => {
   const now = new Date();
   const p2 = n => String(n).padStart(2, "0");
   const suggested = "philogg-session-" + now.getFullYear() + "-" + p2(now.getMonth() + 1) + "-" + p2(now.getDate()) + ".json";
-  if (window.showSaveFilePicker) {
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: suggested,
-        types: [{ description: "PhiLogg session", accept: { "application/json": [".json"] } }],
-      });
-      const writable = await handle.createWritable();
-      await writable.write(json);
-      await writable.close();
-    } catch (err) {
-      if (err && err.name === "AbortError") return; // user cancelled the picker
-      downloadJsonFallback(json, suggested);
-    }
-  } else {
-    downloadJsonFallback(json, suggested);
-  }
-  showCopyToast("Session exported");
+  await saveJsonExportFile(json, suggested, "PhiLogg session");
 });
 
 /* ---------- Matching (tiers 1–2) ---------- */

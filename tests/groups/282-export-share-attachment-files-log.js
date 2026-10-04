@@ -6,8 +6,8 @@
    GROUP 282 — Export / Share: attachment files (.log/.csv/.tsv/.html)
    Origin: 2026-09-25 session (see GROUP 281). buildExportFileParts builds
    the full current view as chunked string parts (EXPORT_CHUNK_ENTRIES per
-   part) for one Blob; saveExportFile goes through showSaveFilePicker where
-   present (cancel = nothing saved, no fallback) else downloadBlobFallback.
+   part) for one Blob; saveExportFile goes through saveFileWithFeedback (showSaveFilePicker where
+   present, cancel = nothing saved, no fallback, else downloadBlobFallback).
    The HTML report is standalone and inert: everything escaped, no script.
    ============================================================ */
 group(282);
@@ -69,7 +69,7 @@ await withApp(async (w, d, T) => {
   assert(downloads.length === 1 && downloads[0].name === "svc-message_1.log", "no picker -> download fallback, named <file stem>-<view>, got " + (downloads[0] && downloads[0].name));
   const expLog = w.buildExportFileParts("log", w.collectExportContext()).join("");
   assert(downloads[0].blob.size === Buffer.byteLength(expLog, "utf8"), "the downloaded blob is the whole .log content");
-  assert(d.querySelector("#copyToast").textContent === "Saved 3 entries", "a toast confirms the save, got " + d.querySelector("#copyToast").textContent);
+  assert(d.querySelector("#copyToast").textContent === "Downloaded svc-message_1.log", "a toast confirms the download, got " + d.querySelector("#copyToast").textContent);
   T.state.activeId = f.id;
   await w.exportViewFile("html");
   assert(downloads[1].name === "svc.html", "active = the file itself -> just the file stem, got " + downloads[1].name);
@@ -85,6 +85,7 @@ await withApp(async (w, d, T) => {
   assert(pickerOpts.suggestedName === "svc.tsv" && pickerOpts.types[0].accept["text/tab-separated-values"][0] === ".tsv", "picker gets the suggested name and type");
   w.showSaveFilePicker = async () => { const e = new Error("cancel"); e.name = "AbortError"; throw e; };
   assert(await w.exportViewFile("csv") === false && downloads.length === 2, "cancelling the picker saves nothing and does not fall back");
+  assert(d.querySelector("#copyToast").textContent === "Not saved", "cancelling says so, got " + d.querySelector("#copyToast").textContent);
   w.showSaveFilePicker = async () => { throw new Error("SecurityError"); };
   await w.exportViewFile("csv");
   assert(downloads.length === 3 && downloads[2].name === "svc.csv", "an unusable picker falls back to the download");

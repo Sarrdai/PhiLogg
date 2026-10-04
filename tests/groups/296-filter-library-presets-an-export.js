@@ -33,11 +33,11 @@ await withApp(async (w, d, T) => {
 
   // Export from the library dialog.
   const captured = [];
-  w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+  w.downloadBlobFallback = (blob, name) => { const e = { name, json: null }; captured.push(e); blob.text().then(t => { e.json = t; }); };
   await w.openFilterLibraryDialog(f.id);
   const libRow = d.querySelector("#filterLibraryList .filter-library-row");
   fireClick(libRow.querySelector(".lib-export"), w);
-  await waitFor(() => captured.length === 1);
+  await waitFor(() => captured.length === 1 && captured[0].json !== null);
   const file = JSON.parse(captured[0].json);
   assert(file.format === "philogg-filter-library" && file.name === "Hot" && file.icon === "emoji:🔥" && file.roots.length === 1, "Export writes a philogg-filter-library file");
   assert(captured[0].name.endsWith(".filterpreset.json"), "suggested file name, got " + captured[0].name);

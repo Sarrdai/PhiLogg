@@ -9,7 +9,7 @@
    receiving copy, tier-2 rejection on a density mismatch, tier-3 manual
    pick with the ts+fingerprint bookmark fallback, the version guard, and
    the embedded-log materialization path. All file writes are captured by
-   stubbing downloadJsonFallback (jsdom has no showSaveFilePicker, so the
+   stubbing downloadBlobFallback (jsdom has no showSaveFilePicker, so the
    export path deterministically takes the download fallback).
    ============================================================ */
 group(21);
@@ -77,7 +77,7 @@ group(21);
 
     // Export dialog: one row per root file, per-file include + embed checkboxes.
     let captured = [];
-    w.downloadJsonFallback = (json, name) => captured.push({ json, name });
+    w.downloadBlobFallback = (blob, name) => { const e = { name, json: null }; captured.push(e); blob.text().then(t => { e.json = t; }); };
     w.openSessionExportDialog();
     assert(!d.querySelector("#sessionExportDialog").classList.contains("hidden"), "export: dialog opens");
     const rows = d.querySelectorAll("#sessionExportRows .session-file-row");
@@ -85,6 +85,7 @@ group(21);
     // Deselect the unrelated file — its filters/bookmarks must not be exported.
     d.querySelector('.session-include[data-file-id="' + other.id + '"]').checked = false;
     fireClick(d.querySelector("#sessionExportConfirm"), w);
+    await waitFor(() => captured.length === 1 && captured[0].json !== null);
     assert(captured.length === 1 && captured[0].name.startsWith("philogg-session-"),
       "export: confirm writes exactly one JSON via the download fallback");
     exportedJson = captured[0].json;
@@ -113,6 +114,7 @@ group(21);
     d.querySelector('.session-include[data-file-id="' + other.id + '"]').checked = false;
     d.querySelector('.session-embed[data-file-id="' + f.id + '"]').checked = true;
     fireClick(d.querySelector("#sessionExportConfirm"), w);
+    await waitFor(() => captured.length === 1 && captured[0].json !== null);
     exportedEmbeddedJson = captured[0].json;
     assert(JSON.parse(exportedEmbeddedJson).files[0].text.includes("message 15"),
       "export: per-file embed checkbox includes the rebuilt log text");
