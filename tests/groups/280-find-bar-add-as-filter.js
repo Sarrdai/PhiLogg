@@ -28,7 +28,7 @@ await withApp(async (w, d, T) => {
   const input = d.getElementById("findInput");
   const addBtn = d.getElementById("findAddFilterBtn");
 
-  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireKeydown(d, w, "f", { ctrlKey: true });
   input.value = "needle";
   fireInput(input, w);
   await sleep(200);
@@ -39,7 +39,7 @@ await withApp(async (w, d, T) => {
   const node = T.state.nodes[f.children[f.children.length - 1]];
   assert(node.type === "filter" && node.filterType === "text" && node.value === "needle" && !node.caseSensitive && !node.isRegex && !node.inverted,
     "...a plain text filter carrying the query");
-  assert(node.name === "“needle”", "...named like a Ctrl+F filter, got " + node.name);
+  assert(node.name === "“needle”", "...named like a Ctrl+Shift+F filter, got " + node.name);
   assert(w.getEntries(node.id).length === 9, "...keeping exactly the 9 rows the search counted");
   assert(T.state.activeId === node.id, "...and it became the active node");
   assert(!isVisible(bar, w) && d.activeElement !== input, "the find bar closed after promoting the search");
@@ -48,7 +48,7 @@ await withApp(async (w, d, T) => {
   // Same shape as a node the Ctrl+F popup creates for the same query.
   T.state.activeId = f.id;
   w.render();
-  fireKeydown(d, w, "f", { ctrlKey: true });
+  fireKeydown(d, w, "F", { ctrlKey: true, shiftKey: true });
   d.getElementById("filterInput").value = "needle";
   fireSubmit(d.getElementById("filterForm"), w);
   const popupNode = T.state.nodes[f.children[f.children.length - 1]];
@@ -59,7 +59,7 @@ await withApp(async (w, d, T) => {
   // Case + regex carry over; Ctrl+Enter is the keyboard path.
   T.state.activeId = f.id;
   w.render();
-  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireKeydown(d, w, "f", { ctrlKey: true });
   fireClick(d.getElementById("findCaseBtn"), w);
   fireClick(d.getElementById("findRegexBtn"), w);
   input.value = "(";
@@ -79,15 +79,15 @@ await withApp(async (w, d, T) => {
   w.renderShortcutBindingsList();
   const row = id => d.querySelector('#shortcutBindingsList [data-action-id="' + id + '"]');
   const keys = id => [...row(id).querySelectorAll("kbd")].map(k => k.textContent).join("+");
-  assert(row("findInView") && keys("findInView") === "Ctrl+G", "Shortcut Manager lists 'Find in the current view' as Ctrl+G, got " + (row("findInView") && keys("findInView")));
+  assert(row("findInView") && keys("findInView") === "Ctrl+F", "Shortcut Manager lists 'Find in the current view' as Ctrl+F, got " + (row("findInView") && keys("findInView")));
   assert(row("findNext") && keys("findNext") === "F3", "...'next match' as F3");
   assert(row("findPrev") && keys("findPrev") === "Shift+F3", "...'previous match' as Shift+F3");
-  assert(keys("newFilter") === "Ctrl+F", "...and Ctrl+F is still 'New filter'");
+  assert(keys("newFilter") === "Ctrl+Shift+F", "...and 'New filter' is Ctrl+Shift+F");
   fireClick(row("findInView").querySelector(".shortcut-rebind-btn"), w);
   fireKeydown(d, w, "k", { ctrlKey: true, altKey: true });
   assert(keys("findInView") === "Ctrl+Alt+K", "rebinding the find shortcut works, got " + keys("findInView"));
-  fireKeydown(d, w, "g", { ctrlKey: true });
-  assert(!isVisible(bar, w), "the old Ctrl+G no longer opens the bar");
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  assert(!isVisible(bar, w), "the old Ctrl+F no longer opens the bar");
   fireKeydown(d, w, "k", { ctrlKey: true, altKey: true });
   assert(isVisible(bar, w), "the new chord does");
   fireClick(d.getElementById("btnResetShortcuts"), w);

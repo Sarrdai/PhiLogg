@@ -1,0 +1,4 @@
+- **feat: Ctrl+F opens the find bar; New filter is Ctrl+Shift+F (2026-10-04, person-requested after the usability test)**
+  - Users expect Ctrl+F = find. `findInView` is Ctrl+F (again: selects the query), `newFilter` Ctrl+Shift+F, `toggleFacets` Ctrl+I; Ctrl+G / Ctrl+Shift+G are fixed find next/previous aliases (a user rebinding of that combo wins).
+  - The header find button (`#btnFindPhone`) now shows in every layout, tooltip "Find in view (Ctrl+F)". Empty-state hint, tooltips, tour texts, README and docs updated.
+  - **Tests**: GROUP find-shortcut-ctrl-f; groups 279, 280, 287, 322, 328, 343, 347, 350, 351, phone-sheet-explicit moved to the new keys. Docs: docs/ui-and-views.md, docs/filters.md, README.

@@ -82,25 +82,25 @@ const ROWS = [
     "Typing into the Regex field takes over from the marks. ✦ Re-suggest throws marks, regex and timestamp format away (after a confirmation; Undo brings them back)."]],
   ["DEEP", "format", "The export holds name, regex, timestamp format, levels, columns, example lines and the filename patterns.", [
     "Formats live in IndexedDB. The export is plain JSON: format \"philogg-log-format\", version 1."]],
-  ["TRY", "filters", "Select app.log in the tree, press Ctrl+F, type  timeout  and press Enter.", [
+  ["TRY", "filters", "Select app.log in the tree, press Ctrl+Shift+F, type  timeout  and press Enter.", [
     "A text filter can be case-sensitive, a regex, whole-word, inverted (Exclude NOT) or limited to columns. The popup previews the match count live."]],
-  ["HOW", "filters", "Nest a second filter under the first: with a filter selected, Ctrl+F adds a child that narrows it further.", [
+  ["HOW", "filters", "Nest a second filter under the first: with a filter selected, Ctrl+Shift+F adds a child that narrows it further.", [
     "Build the story of an incident top-down: \"service X\" → \"errors\" → \"after the deploy\". The tree stays readable, and F2 renames a node."]],
   ["GOTCHA", "filters", "Muting (M) is not deleting: a muted filter passes its parent's rows through unchanged.", [
     "Use it to compare with and without a step without rebuilding the chain: the children of a muted node keep working on what it passes through."]],
-  ["DONT", "filters", "Don't search the same log ten times with Ctrl+F. Ctrl+G searches the current view without creating a filter.", [
+  ["DONT", "filters", "Don't build a filter just to look for a string once. Ctrl+F searches the current view without creating one.", [
     "The find bar only looks at what the current view shows. When a search is worth keeping, press Ctrl+Enter in its box: it becomes a filter."]],
   ["WHAT", "link", "The Link filter pairs related entries, e.g. \"move requested\" with \"position reached\".", [
     "For each entry of one filter, PhiLogg finds the nearest entry of another filter after (or before) it. Restrict the pairs to the same thread or the same captured value,",
     "and keep only pairs whose Δt is above or below a limit."]],
   ["TRY", "link", "In app.log, link  Move requested  with  Position reached  and match only the same job=[*].", [
-    "Create both as text filters (select app.log, Ctrl+F, Enter), Ctrl-click the two filters in the tree and choose Link… (toolbar or right-click).",
+    "Create both as text filters (select app.log, Ctrl+Shift+F, Enter), Ctrl-click the two filters in the tree and choose Link… (toolbar or right-click).",
     "Switch on \"Match only same\", pick \"value of pattern\" and type job=[*]; the preview shows the pair count. Then add \"Only pairs with Δt >\" 1 s to find the slow moves.",
     "An extraction on the pairs (Table tab) gets a Δt (ms) column you can plot."]],
   ["DEEP", "link", "Pairing is nearest-neighbor in time within each key, not a join.", [
     "With a key (same thread, or the same value captured by a pattern like job=[*]) only entries sharing it are candidates. That is why interleaved threads",
     "don't confuse it, and why a move that was aborted (its end never came) simply stays unpaired."]],
-  ["TRY", "extract", "Select app.log, press Ctrl+F, type  Position update x=[*:float] y=[*:float] z=[*:float]  and press Enter.", [
+  ["TRY", "extract", "Select app.log, press Ctrl+Shift+F, type  Position update x=[*:float] y=[*:float] z=[*:float]  and press Enter.", [
     "The [*:…] placeholders turn numbers in the message into columns: [*:int], [*:float], [*:time], [*:word], [*:hex] and the bare [*].",
     "The Table tab now lists one row per match, with statistics; any numeric column can be plotted over time or against another in the Plot tab."]],
   ["GOTCHA", "extract", "Is 12,345 twelve thousand or twelve point three four five? Say so on the placeholder: [*:int@en] or [*:int@de].", [

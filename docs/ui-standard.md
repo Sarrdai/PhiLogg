@@ -155,7 +155,7 @@ the left in `.settings-row-text`, control right in `.settings-row-control`):
    short line.
 5. Headers → uniform title + close, uniform radius/padding.
 
-Dialogs in scope for the sweep: filter popup (Ctrl+F / edit), Settings
+Dialogs in scope for the sweep: filter popup (Ctrl+Shift+F / edit), Settings
 (all sections), Format Manager, link dialog, time-range dialog, note
 editor, theme import, folder-watch settings, CSV export, session
 export/import, color picker — and any dialog added by concurrent feature

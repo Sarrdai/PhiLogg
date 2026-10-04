@@ -35,7 +35,7 @@ if (groupSelected()) {
     const ev = T.editorView, editor = d.querySelector("#textEditor"), key0 = ev.key;
     const collapsed0 = ev.folds.filter(f => f.collapsed).length;
     assert(collapsed0 > 5, "folds collapsed first (" + collapsed0 + ")");
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     assert(isVisible(d.getElementById("findBar"), w), "Ctrl+G opens the find bar in the Context editor");
     await search(w, d, "0.1");
     const expectLines = js.entries.map((e, i) => i).filter(i => js.entries[i].message.includes("0.1"));
@@ -80,7 +80,7 @@ if (groupSelected()) {
     const html0 = hitLine.innerHTML, other0 = otherLine.innerHTML;
     const otherNodes = [...otherLine.childNodes];
     const text0 = d.querySelector("#teRows").textContent;
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     await search(w, d, "msg");
     assert(marks(d).length >= 3 && hitLine.querySelector("mark.editor-find-mark"), "the matches are marked (" + marks(d).length + ")");
     assert(hitLine.textContent === hitEntry.message && d.querySelector("#teRows").textContent === text0, "marking never changes the text");
@@ -89,7 +89,7 @@ if (groupSelected()) {
     assert(marks(d).length === 0 && !d.querySelector("#textEditor .find-cur"), "closing the bar removes every mark and the current-line class");
     assert(hitLine.innerHTML === html0, "the hit line's markup is exactly what it was before the search (marks unwrapped, text nodes merged back)");
     assert(!isVisible(d.getElementById("findBar"), w), "bar hidden");
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     await search(w, d, "zzzzqq");
     assert(count(d) === "No results" && marks(d).length === 0, "no results: no marks");
     await search(w, d, "msg");
@@ -117,7 +117,7 @@ if (groupSelected()) {
     await addText(w, "notes.txt", txt350.text);
     const txt = byName(T, "notes.txt");
     T.state.activeId = txt.id; w.render();
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     await search(w, d, "heartbeat");
     const ci = txt.entries.filter(e => /heartbeat/i.test(e.message)).length;
     assert(ci > 3 && count(d) === "1 / " + ci && marks(d).length === expectedMarks(T, d, /heartbeat/gi) && marks(d).length > 0, "case-insensitive by default (" + ci + ")");
@@ -143,7 +143,7 @@ if (groupSelected()) {
     const txt = byName(T, "notes.txt"), log = byName(T, "app.log");
     const f = w.createFilterNode(txt.id, "text", "Heartbeat");
     T.state.activeId = f.id; w.render(); w.applyFhView("highlight");
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     await search(w, d, "Sensor");
     const n = txt.entries.filter(e => /sensor/i.test(e.message)).length;
     assert(count(d) === "1 / " + n && marks(d).length === expectedMarks(T, d, /sensor/gi), "Context on a filter node searches the whole file, not only the result lines (" + n + ")");
@@ -155,7 +155,7 @@ if (groupSelected()) {
     assert(!isVisible(d.getElementById("findBar"), w) && marks(d).length === 0 && T.state.activeId === added.id, "the bar closes, the marks go, the new node is active");
     assert(T.fhActiveTab === "filter", "its result lives in Filtered");
     T.state.activeId = txt.id; w.render(); w.applyFhView("filter");
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     await search(w, d, "Sensor");
     assert(d.querySelectorAll("#tableRows mark.find-match-mark").length > 0 && marks(d).length === 0, "in Filtered the rows are marked (unchanged behaviour), the editor is not");
     assert(/\/ /.test(count(d)), "Filtered counter works, got " + count(d));
@@ -164,7 +164,7 @@ if (groupSelected()) {
     w.applyFhView("filter");
     d.getElementById("findCloseBtn").click();
     T.state.activeId = log.id; w.render();
-    fireKeydown(d, w, "g", { ctrlKey: true });
+    fireKeydown(d, w, "f", { ctrlKey: true });
     await search(w, d, "INFO");
     assert(marks(d).length === 0 && d.querySelectorAll("#tableRows mark.find-match-mark, #highlightRows mark.find-match-mark").length > 0, "log roots keep marking their rows");
   });

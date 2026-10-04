@@ -110,14 +110,14 @@ deployments possible:
   multi-line/pin-bookmarks buttons); Settings → Behavior controls whether it
   shows only the filter you're currently drilled into or every text filter
   in the chain, and where the marks appear.
-- **Find in the current view without creating a filter** — `Ctrl+G` opens a
-  small find bar over the log view: it searches only the rows the current
+- **Find in the current view without creating a filter** — `Ctrl+F` opens a
+  small find bar (also the magnifier button in the header) over the log view: it searches only the rows the current
   view (Context or Filtered) shows, marks every hit as you type, jumps to
-  the first one, and counts them ("3 / 41"). `F3`/`Shift+F3` (or
+  the first one, and counts them ("3 / 41"). `F3`/`Shift+F3` (or `Ctrl+G`/`Ctrl+Shift+G`,
   `Enter`/`Shift+Enter`) walk the hits with wrap-around; match-case and
   regex toggles use the same query language as a text filter. When a search
   turns out to be worth keeping, **Add as filter** (`Ctrl+Enter`) turns it
-  into a real filter node — `Ctrl+F` still opens the filter popup directly.
+  into a real filter node — `Ctrl+Shift+F` opens the filter popup directly.
   With two or more files open, every file in the tree also shows how many
   entries of the whole file match; click a count to jump to that file's
   first hit. Stays fast on views with hundreds of thousands of rows.
@@ -137,7 +137,7 @@ deployments possible:
   typed columns, or jump to its first entry. Stays responsive on 100 MB
   logs (one pass, computed in the background, cached per filter result).
 - **Facet panel: who/what produces these entries?** — a toggleable side
-  panel (`Ctrl+Shift+F`, or the button at the right end of the view bar;
+  panel (`Ctrl+I`, or the button at the right end of the view bar;
   drag its left edge to resize) shows the value distribution of every column (Thread, Location, Method,
   custom columns, Level, and Source for a merged file) over the current
   filter result: the top values with count, share and a bar, each value coloured by the most
@@ -269,7 +269,7 @@ deployments possible:
   copying behaves like a normal text pane even for huge files (a 19 MB,
   390k-line file opens in about a second). Filtered shows the same lines with
   the line number in place of the timestamp, so text, regex and wildcard
-  filters, the extraction Table and Plot, and the find bar (Ctrl+G) all work
+  filters, the extraction Table and Plot, and the find bar (Ctrl+F) all work
   on it, and a filter's matching lines are marked in the editor.
 - **View common image files right in the app** — `.jpg`/`.jpeg`/`.png`/
   `.tiff`/`.tif` open in an image viewer with pan/zoom/reset (drag-to-select

@@ -64,7 +64,7 @@ Regression-tested: **Group 81** — `compileExtractPattern` parsing (single cond
 
 ## Filter popup: Extract vs. Add filter as two buttons, scope hint, sectioned layout, live results, "Filter for this ___"
 
-(Searching without creating a node is the find bar's job — `Ctrl+G`/`F3`, see `docs/ui-and-views.md` → "Find bar". Its "Add as filter" makes the same `createFilterNode("text", …)` call this popup's `commitFilter` does.)
+(Searching without creating a node is the find bar's job — `Ctrl+F`/`F3`, see `docs/ui-and-views.md` → "Find bar". Its "Add as filter" makes the same `createFilterNode("text", …)` call this popup's `commitFilter` does.)
 
 Four person-requested passes on `#filterPopup`, same week (2026-08-17: sizing/layout → a section reorg + context-menu rename, same day → a bugfix flipping a checkbox's default, same day again → the checkbox removed entirely in favor of two plain buttons — described here as the current, post-all-four-passes shape end-to-end rather than layered deltas; see "Status / changelog" below for what changed in which pass).
 

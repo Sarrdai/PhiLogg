@@ -238,8 +238,8 @@ if (groupSelected()) {
     assert(T.state.inlineViewer && T.state.inlineViewer.kind === "image" && T.state.rootIds.length === 0, "a .png still opens the inline image viewer");
     await w.loadFileDescriptors([{ file: new w.File([txtDoc.text], "notes.txt"), handle: null }]);
     assert(T.state.inlineViewer === null && T.state.activeId === T.state.rootIds[0], "opening a text file after it activates the node and leaves the viewer");
-    fireKeydown(d, w, "f", { ctrlKey: true });
-    assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+F on the text file's node opens the filter popup like for any node");
+    fireKeydown(d, w, "F", { ctrlKey: true, shiftKey: true });
+    assert(!d.querySelector("#filterPopup").classList.contains("hidden"), "Ctrl+Shift+F on the text file's node opens the filter popup like for any node");
   });
 
   let exported347 = null;

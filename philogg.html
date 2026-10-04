@@ -4707,7 +4707,7 @@
      tour banner, only the Patterns + Filtered tabs, one scrolling row of
      level pills, a slim minimap, and the entry detail as a bottom sheet.
      Editing is off (see PROJECT.md / docs/ui-and-views.md "Responsive layout"). */
-  #phoneTitle, #btnFindPhone, #tourBannerMore, .tour-banner-hint, #detailGrab{display:none;}
+  #phoneTitle, #tourBannerMore, .tour-banner-hint, #detailGrab{display:none;}
   body:not(.layout-phone) .detail-phone-btn{display:none;}
   body.layout-phone #toolbar{height:52px;}
   body.layout-phone .brand-name, body.layout-phone .brand-version, body.layout-phone #navHistoryGroup,
@@ -4717,7 +4717,6 @@
   body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
   body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
-  body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone{display:flex;}
   body.layout-phone .toolbar-right{flex:0 0 auto; gap:6px;}
   body.layout-phone #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
 
@@ -5249,8 +5248,8 @@
       <button type="button" id="btnAssistant" class="toolbar-icon-btn hidden" title="Assistant (local LLM)">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/><path d="M5.5 7h.01M8 7h.01M10.5 7h.01"/></svg>
       </button>
-      <!-- Phone only: opens the same find bar as Ctrl+F. -->
-      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view">
+      <!-- Opens the find bar (Ctrl+F), in every layout. -->
+      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
@@ -5471,7 +5470,7 @@
         <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
         <!-- Facet panel toggle (Patterns/Facets session) — floats right, a
              display toggle rather than a filter-creating action. -->
-        <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+Shift+F)">
+        <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+I)">
           <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 3.5h11M2.5 8h7M2.5 12.5h4"/></svg>
           <span class="facets-btn-label">Facets</span>
         </button>
@@ -5497,7 +5496,7 @@
       <div id="fhSplit">
         <!-- Find bar (FEATURE_BACKLOG.md #3): incremental, non-destructive
              search inside whichever log view is current (Context or
-             Filtered) — Ctrl+G opens it, F3/Shift+F3 (or Enter/Shift+Enter
+             Filtered) — Ctrl+F opens it, F3/Shift+F3 (or Ctrl+G/Ctrl+Shift+G, Enter/Shift+Enter
              in the input) walk the hits, "Add as filter" promotes the search
              into a real "text" filter node only when that's actually wanted.
              Floats over the top-right corner of #fhSplit (like an IDE find
@@ -5673,7 +5672,7 @@
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
         <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — build filters on top of it with <b>Ctrl+F</b>, or just search the current view with <b>Ctrl+G</b>.</p>
+        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — search the current view with <b>Ctrl+F</b>, or build a filter on top of it with <b>Ctrl+Shift+F</b>.</p>
       </div>
 
       <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
@@ -5880,7 +5879,7 @@
 
       <!-- Facet panel: value distribution per column of the active node's
            result; clicking a value adds a filter node (see "Facet panel"
-           in the script). Toggled by #btnFacets / Ctrl+Shift+F. -->
+           in the script). Toggled by #btnFacets / Ctrl+I. -->
       <div id="facetPanel" class="hidden">
         <div id="facetResizer" title="Drag to resize"></div>
         <div id="facetPanelHeader">
@@ -35475,7 +35474,7 @@ function fwPatternStartFiltersBlock(p, idx, libraryRecords) {
   return wrap;
 }
 
-/* ===================== Filter popup (Ctrl+F to create, F2/right-click "Edit filter…" to edit) ===================== */
+/* ===================== Filter popup (Ctrl+Shift+F to create, F2/right-click "Edit filter…" to edit) ===================== */
 
 const filterPopup = el("#filterPopup");
 const filterInput = el("#filterInput");
@@ -36292,27 +36291,26 @@ filterForm.addEventListener("submit", ev => {
 el("#btnCloseFilterPopup").addEventListener("click", closeFilterPopup);
 
 
-/* ===================== Find bar (Ctrl+G / F3 — FEATURE_BACKLOG.md #3) =====================
+/* ===================== Find bar (Ctrl+F / F3 — FEATURE_BACKLOG.md #3) =====================
    Incremental, NON-destructive search inside whichever log view is current:
    the Context view (currentHighlightViewEntries — its matches plus whatever
    context rows are revealed; collapsed gaps are not "in the view" and are
    not searched) or the Filtered view (currentViewEntries — post filter
    chain, post level quick-filter, in its displayed sort order). Table/Plot
    and the Link view have no plain entry list to walk, so the bar reports
-   "Not in this view" there. Before this existed, Ctrl+F was the only search
-   and it always created a filter node — "just look for this once" cost a
+   "Not in this view" there. Before this existed, the filter popup was the only
+   search and it always created a filter node — "just look for this once" cost a
    tree node you then deleted. Now: search first, promote to a filter only
    when needed ("Add as filter", which calls the exact createFilterNode the
-   Ctrl+F popup's commitFilter calls — no new node field, nothing new to
+   Ctrl+Shift+F popup's commitFilter calls — no new node field, nothing new to
    thread through the persistence carriers).
 
-   Shortcut decision: Ctrl+F stays "new filter" (least disruptive — it's the
-   app's core idiom and the empty-state hint), the find bar takes the
-   browser's own "find next" keys instead: Ctrl+G opens it (focuses it if
-   already open, steps to the next hit if already focused), F3/Shift+F3 step
-   next/previous from anywhere, Enter/Shift+Enter inside the input,
-   Ctrl+Enter adds the search as a filter, Esc closes it. The three chords
-   are rebindable in Settings -> Shortcuts.
+   Shortcut decision (usability test 2026-10-03/04: users expect Ctrl+F =
+   find): Ctrl+F opens the bar (focuses it if already open, selects the query
+   if already focused), F3/Shift+F3 step next/previous from anywhere (Ctrl+G /
+   Ctrl+Shift+G are fixed aliases), Enter/Shift+Enter inside the input,
+   Ctrl+Enter adds the search as a filter, Esc closes it. "New filter" moved
+   to Ctrl+Shift+F. Ctrl+F/F3/Shift+F3 are rebindable in Settings -> Shortcuts.
 
    The query language is exactly the filter popup's: a literal substring
    (case-insensitive unless "Aa"), a [*:...]/[*] wildcard pattern, or a real
@@ -36821,7 +36819,7 @@ function closeFindBar() {
 
 // "Add as filter": the search becomes a real "text" filter node under the
 // active node — the same createFilterNode call (and the same follow-up
-// reveal+render) the Ctrl+F popup's commitFilter makes, with the find bar's
+// reveal+render) the Ctrl+Shift+F popup's commitFilter makes, with the find bar's
 // case/regex toggles as its caseSensitive/isRegex. The query is used as-is,
 // so the new node keeps exactly the rows the search counted.
 function addFindAsFilter() {
@@ -36840,12 +36838,17 @@ function addFindAsFilter() {
   return node;
 }
 
-// Ctrl+G / F3 / Shift+F3, from the main keydown handler. Returns true when
-// it consumed the event.
+// Ctrl+F / F3 / Shift+F3 (+ the fixed Ctrl+G / Ctrl+Shift+G aliases for
+// next/previous), from the main keydown handler. Returns true when it
+// consumed the event.
 function handleFindShortcut(ev) {
   const isGo = matchesShortcut(ev, "findInView");
-  const isNext = matchesShortcut(ev, "findNext");
-  const isPrev = matchesShortcut(ev, "findPrev");
+  // Ctrl+G aliases only apply while no action is bound to that combo (a user
+  // rebinding wins; matchesShortcut-based checks run before this handler).
+  const c = comboFromEvent(ev);
+  const gAlias = !isGo && c.ctrl && !c.alt && c.key === "g" && !SHORTCUT_ACTIONS.some(a => comboEquals(getShortcutBinding(a.id), c));
+  const isNext = matchesShortcut(ev, "findNext") || (gAlias && !c.shift);
+  const isPrev = matchesShortcut(ev, "findPrev") || (gAlias && c.shift);
   if (!isGo && !isNext && !isPrev) return false;
   const active = document.activeElement;
   const inFind = active === findInput;
@@ -36860,7 +36863,7 @@ function handleFindShortcut(ev) {
   ev.preventDefault();
   if (isGo) {
     if (!findBarOpen() || !inFind) openFindBar();
-    else findStep(1);
+    else findInput.select(); // like browsers: Ctrl+F in the field selects the query
     return true;
   }
   if (!findBarOpen()) openFindBar();
@@ -37754,7 +37757,7 @@ const VIEWBAR_ROW_ACTIONS = [
   { action: "extractMessage", label: "Extract", svg: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/>', strokeWidth: 1.4 },
 ];
 // "New" is its own group in #viewBar (person-requested: Standard filters |
-// Library presets | New) — a plain "+", opens the filter popup (Ctrl+F). It
+// Library presets | New) — a plain "+", opens the filter popup (Ctrl+Shift+F). It
 // needs no selected row, only state.activeId (see updateRowActionButtons).
 const VIEWBAR_NEW_ROW_ACTION = [
   { action: "newFilter", label: "New", svg: '<path d="M8 3.5v9M3.5 8h9"/>', strokeWidth: 1.8 },
@@ -42003,12 +42006,13 @@ if (typeof IntersectionObserver !== "undefined") {
 const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
 
 const SHORTCUT_ACTIONS = [
-  { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, key: "f" } },
-  // FEATURE_BACKLOG.md #3: the find bar. Ctrl+F deliberately stays "new
-  // filter" (the app's core idiom, muscle memory, the empty-state hint) —
-  // the non-destructive search gets the browser's own "find next" keys,
-  // Ctrl+G and F3, instead. See docs/ui-and-views.md -> "Find bar".
-  { id: "findInView",    label: "Find in the current view (find bar)", default: { ctrl: true, key: "g" } },
+  { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, shift: true, key: "f" } },
+  // FEATURE_BACKLOG.md #3: the find bar. Ctrl+F opens it (usability test
+  // 2026-10-03/04: users expect Ctrl+F = find); "new filter" moved to
+  // Ctrl+Shift+F. Ctrl+G / Ctrl+Shift+G are fixed find next/previous aliases
+  // (handleFindShortcut), F3/Shift+F3 the rebindable ones. See
+  // docs/ui-and-views.md -> "Find bar".
+  { id: "findInView",    label: "Find in the current view (find bar)", default: { ctrl: true, key: "f" } },
   { id: "findNext",      label: "Find bar: next match",                default: { key: "f3" } },
   { id: "findPrev",      label: "Find bar: previous match",            default: { shift: true, key: "f3" } },
   { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
@@ -42029,7 +42033,7 @@ const SHORTCUT_ACTIONS = [
   { id: "viewTab3",      label: "Switch to View Selector tab 3",       default: { ctrl: true, key: "3" } },
   { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
   { id: "viewTab5",      label: "Switch to View Selector tab 5",       default: { ctrl: true, key: "5" } },
-  { id: "toggleFacets",  label: "Show/hide the Facet panel",           default: { ctrl: true, shift: true, key: "f" } },
+  { id: "toggleFacets",  label: "Show/hide the Facet panel",           default: { ctrl: true, key: "i" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
   { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
@@ -42044,6 +42048,7 @@ const SHORTCUT_ACTIONS = [
 // renderShortcutBindingsList().
 const FIXED_SHORTCUTS = [
   { label: "Find bar: next / previous match (in its input)", display: ["Enter", "Shift+Enter"] },
+  { label: "Find bar: next / previous match (browser alias)", display: ["Ctrl+G", "Ctrl+Shift+G"] },
   { label: "Find bar: add the search as a filter (in its input)", display: ["Ctrl", "Enter"] },
   { label: "Copy a filter",                          display: ["Ctrl", "C"] },
   { label: "Cut a filter",                           display: ["Ctrl", "X"] },
@@ -44936,7 +44941,7 @@ document.addEventListener("keydown", ev => {
     if (state.activeId) openFilterPopup();
     return;
   }
-  // FEATURE_BACKLOG.md #3: Ctrl+G / F3 / Shift+F3 — checked ahead of the
+  // FEATURE_BACKLOG.md #3: Ctrl+F / F3 / Shift+F3 (+ Ctrl+G aliases) — checked ahead of the
   // inInput bail-out below so they keep working while typing in the find
   // bar's own input (handleFindShortcut itself ignores every OTHER input).
   if (handleFindShortcut(ev)) return;

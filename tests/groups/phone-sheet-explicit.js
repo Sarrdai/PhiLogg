@@ -24,7 +24,7 @@ await withApp(async (w, d, T) => {
   const hasCount = () => /^\d+ \/ \d+$/.test(count.textContent);
 
   section("phone-sheet-explicit a. Find steps select without opening the sheet");
-  fireKeydown(d, w, "g", { ctrlKey: true });
+  fireKeydown(d, w, "f", { ctrlKey: true });
   input.value = "heartbeat"; fireInput(input, w);
   await waitFor(() => /matches?$/.test(count.textContent) || hasCount(), 3000);
   fireKeydown(d, w, "F3");
