@@ -1,7 +1,7 @@
 // Usability-test driver: one browser in a fixed device mode, steps sent over HTTP.
 // Usage: NODE_PATH="$(npm root -g)" node driver.js <desktop|tablet|phone> <url> <outDir> [port]
-// A step is the source of an async function ({ page, touch, mode }) => result, POSTed as the
-// request body; the reply is JSON { step, result, error, pageErrors, dialogs, shot }.
+// A step is the source of an async function ({ page, touch, mode, files }) => result, POSTed as
+// the request body; the reply is JSON { step, result, error, pageErrors, dialogs, saved, shot }.
 // The mode can't be changed after start, and in tablet/phone the mouse, hover and hardware
 // shortcuts throw: what a finger and an on-screen keyboard can't do is a finding, not a detour.
 const { chromium } = require("playwright");
@@ -14,16 +14,92 @@ const PROFILES = {
 const [mode, url, outDir, port = "9333"] = process.argv.slice(2);
 if (!PROFILES[mode]) throw new Error("mode must be desktop, tablet or phone");
 const deny = what => () => { throw new Error(`${what} is not available in ${mode} mode`); };
+const fs = require("fs"), path = require("path");
+
+// Headless Chromium rejects every File System Access picker, which the app reads as "cancelled":
+// saves silently did nothing. Desktop gets fakes that behave like a person accepting the dialog
+// (the open picker goes through an <input> so "filechooser" + setFiles works, and hands back
+// real OPFS handles, which survive the app's IndexedDB structured clone). Touch modes drop the
+// pickers like Safari on iPad/iPhone, so the app takes its <input>/<a download> paths instead.
+function installPickers(mode) {
+  const abort = () => new DOMException("The user aborted a request.", "AbortError");
+  const names = ["showSaveFilePicker", "showOpenFilePicker", "showDirectoryPicker"];
+  if (mode !== "desktop") {
+    names.forEach(n => Object.defineProperty(window, n, { value: undefined, configurable: true, writable: true }));
+    return;
+  }
+  window.showSaveFilePicker = async (opts = {}) => {
+    const name = opts.suggestedName || "untitled";
+    if (await window.__driver({ kind: "save-picker", name }) === "cancel") throw abort();
+    return { kind: "file", name, async createWritable() {
+      const parts = [];
+      return {
+        async write(d) { parts.push(d && d.type === "write" ? d.data : d); },
+        async abort() {},
+        async close() {
+          const bytes = new Uint8Array(await new Blob(parts).arrayBuffer());
+          let bin = "";
+          for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode(...bytes.subarray(i, i + 0x8000));
+          await window.__driver({ kind: "saved", name, base64: btoa(bin) });
+        },
+      };
+    } };
+  };
+  window.showOpenFilePicker = (opts = {}) => new Promise((resolve, reject) => {
+    const input = Object.assign(document.createElement("input"), { type: "file", multiple: !!opts.multiple });
+    input.addEventListener("cancel", () => reject(abort()));
+    input.addEventListener("change", async () => {
+      try {
+        const dir = await navigator.storage.getDirectory();
+        resolve(await Promise.all([...input.files].map(async f => {
+          const h = await dir.getFileHandle(f.name, { create: true });
+          const w = await h.createWritable(); await w.write(f); await w.close();
+          return h;
+        })));
+      } catch (e) { reject(e); }
+    });
+    input.click();
+  });
+  window.showDirectoryPicker = async () => { await window.__driver({ kind: "folder-picker" }); throw abort(); };
+}
 
 (async () => {
   const browser = await chromium.launch();
   const context = await browser.newContext(PROFILES[mode]);
+  let pageErrors = [], dialogs = [], saved = [], pending = [], cancelSaves = 0, step = 0, saveCount = 0;
+  const savedAll = [], saveDir = `${outDir}/saved`;
+  fs.mkdirSync(saveDir, { recursive: true });
+  const savePath = name => `${saveDir}/${String(++saveCount).padStart(2, "0")}-${path.basename(name)}`;
+  const record = (via, name, file) => {
+    const bytes = fs.readFileSync(file), binary = bytes.subarray(0, 4096).includes(0);
+    const entry = { step, via, name, size: bytes.length, path: file,
+      excerpt: binary ? "(binary)" : bytes.subarray(0, 600).toString("utf8") };
+    savedAll.push(entry); saved.push(entry);
+  };
+  await context.exposeBinding("__driver", (_, msg) => {
+    if (msg.kind === "save-picker") return cancelSaves > 0 && cancelSaves-- ? "cancel" : "ok";
+    if (msg.kind === "folder-picker") dialogs.push("folder picker: not simulated, answered as cancelled");
+    if (msg.kind === "saved") { const file = savePath(msg.name); fs.writeFileSync(file, Buffer.from(msg.base64, "base64")); record("save picker", msg.name, file); }
+  });
+  await context.addInitScript(installPickers, mode);
+  // What a step can see of saved files (desktop picker saves and downloads alike).
+  const files = {
+    saved: () => savedAll,
+    cancelNextSave() {
+      if (mode !== "desktop") throw new Error(`there is no save dialog in ${mode} mode (files download directly)`);
+      cancelSaves++;
+    },
+  };
   const page = await context.newPage();
   const cdp = await context.newCDPSession(page);
-  let pageErrors = [], dialogs = [];
   page.on("pageerror", e => pageErrors.push(String(e)));
   page.on("console", m => { if (m.type() === "error") pageErrors.push(m.text()); });
   page.on("dialog", d => { dialogs.push(`${d.type()}: ${d.message()}`); d.accept(); });
+  page.on("download", d => pending.push((async () => {
+    const file = savePath(d.suggestedFilename());
+    await d.saveAs(file);
+    record("download", d.suggestedFilename(), file);
+  })().catch(e => pageErrors.push(`download failed: ${e.message}`))));
 
   // Real touch input (touch + pointer events with pointerType "touch"), for gestures tap() lacks.
   const point = async target => {
@@ -64,21 +140,21 @@ const deny = what => () => { throw new Error(`${what} is not available in ${mode
     Locator.press = deny("locator.press (use page.keyboard)");
   }
 
-  require("fs").writeFileSync(`${outDir}/driver.pid`, String(process.pid));
+  fs.writeFileSync(`${outDir}/driver.pid`, String(process.pid));
   await page.goto(url);
-  let step = 0;
   http.createServer((req, res) => {
     let body = "";
     req.on("data", c => body += c);
     req.on("end", async () => {
       const shot = `${outDir}/step-${String(++step).padStart(3, "0")}.png`;
       let result = null, error = null;
-      try { result = await eval(`(${body})`)({ page, touch, mode }); }
+      try { result = await eval(`(${body})`)({ page, touch, mode, files }); }
       catch (e) { error = String(e.message || e).split("\n")[0]; }
       await page.waitForTimeout(300);
+      await Promise.all(pending.splice(0));
       await page.screenshot({ path: shot, scale: "css" }).catch(e => { error = error || String(e); });
-      res.end(JSON.stringify({ step, result, error, pageErrors, dialogs, shot }, null, 1));
-      pageErrors = []; dialogs = [];
+      res.end(JSON.stringify({ step, result, error, pageErrors, dialogs, saved, shot }, null, 1));
+      pageErrors = []; dialogs = []; saved = [];
     });
   }).listen(+port, "127.0.0.1", () => console.log(`driver ready: ${mode} on port ${port}`));
 })();
