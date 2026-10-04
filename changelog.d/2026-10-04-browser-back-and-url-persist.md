@@ -1,0 +1,4 @@
+- **fix: browser Back stays in PhiLogg; ?url= files survive a reload (2026-10-04, phone usability test)**
+  - The Back gesture used to leave the page and a reload of a `?url=` log came back empty: that load never wrote a session-cache record. It is now persisted; on reload the restored copy (with filters) is kept and the fresh byte-identical fetch dropped.
+  - One guard history entry makes Back close an open overlay, then the phone sheet, then step the in-app nav history; with nothing left a toast says the next Back leaves.
+  - **Tests**: GROUP url-param-persist, browser-back-guard. Docs: docs/persistence-and-sync.md, docs/ui-and-views.md.

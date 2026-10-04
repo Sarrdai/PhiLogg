@@ -17599,9 +17599,39 @@ btnNavForward.addEventListener("click", navigateForward);
 // Browser/OS "back"/"forward" mouse buttons (button 3/4) — held back from
 // the app's own history navigation by preventDefault so a browser tab
 // doesn't also try to navigate itself away in the same gesture.
+let lastMouseNavAt = 0;
 document.addEventListener("mouseup", ev => {
-  if (ev.button === 3) { ev.preventDefault(); navigateBack(); }
-  else if (ev.button === 4) { ev.preventDefault(); navigateForward(); }
+  if (ev.button === 3) { ev.preventDefault(); lastMouseNavAt = Date.now(); navigateBack(); }
+  else if (ev.button === 4) { ev.preventDefault(); lastMouseNavAt = Date.now(); navigateForward(); }
+});
+
+// Browser/OS Back gesture (phone swipe, Android Back, Alt+Left) stays in the
+// app: ONE guard history entry is pushed from a trusted user interaction
+// (Chrome drops entries added without user activation). Back pops it and
+// steps back in-app instead — close an open overlay, else the phone sheet,
+// else the nav history — then re-arms; with nothing to step back to the guard
+// stays popped so the next Back leaves (a toast says so). pushState without a
+// URL keeps ?url= / ?session= intact.
+let backGuardArmed = false;
+function armBackGuard() {
+  if (backGuardArmed) return;
+  try { history.pushState({ philoggBackGuard: true }, ""); backGuardArmed = true; } catch { /* no history API */ }
+}
+["pointerdown", "pointerup", "keydown"].forEach(t => document.addEventListener(t, armBackGuard, true));
+window.addEventListener("popstate", ev => {
+  if (ev.state && ev.state.philoggBackGuard) { backGuardArmed = true; return; } // Forward onto the guard
+  backGuardArmed = false;
+  // A mouse Back button already stepped the in-app history; Chromium may
+  // still fire its own navigation despite preventDefault — don't double-step.
+  if (Date.now() - lastMouseNavAt < 600) { armBackGuard(); return; }
+  if (formatDialogOpen() || themeEditorOpen() || anyEscapeOverlayOpen() || isDrawerOpen()) closeEscapeOverlays();
+  else if (currentLayoutTier === "phone" && phoneSheetOpen) closePhoneSheet();
+  else if (navHistoryIndex > 0) navigateBack();
+  else {
+    if (state.rootIds.length) showCopyToast("Press Back again to leave PhiLogg \u2014 your session is saved");
+    return;
+  }
+  armBackGuard();
 });
 
 fhTabs.addEventListener("click", ev => {
@@ -27302,6 +27332,43 @@ function toggleFocusMode(on) {
     setDesktopFullscreen(false);
   }
 }
+// Closes whatever Esc closes (and the browser Back gesture, see the popstate
+// handler): the format wizard first, else the theme editor / its color picker
+// (both stack above Settings, so only that one closes), else the drawer and
+// every popup/menu/dialog. One list for both so they can't drift.
+function closeEscapeOverlays() {
+  if (formatDialogOpen()) { closeFormatEditDialog(); return; }
+  if (themeEditorOpen()) {
+    if (!colorPickerPopup.classList.contains("hidden")) closeColorPicker(); else closeThemeEditor();
+    return;
+  }
+  setDrawerOpen(false);
+  closePlotFullscreen();
+  closeSettingsDialog();
+  closeFilterPopup();
+  closeFindBar();
+  closeContextMenu();
+  closeTreeContextMenu();
+  closeExtractContextMenu();
+  closeFacetValueMenu();
+  closeCsvExportDialog();
+  closeExportDialog();
+  closeLinkDialog();
+  closeGapDialog();
+  closeContextDialog();
+  closeTimeRangeDialog();
+  closeAssertDialog();
+  closeClockOffsetDialog();
+  closeNoteDialog();
+  closeColumnsPanel();
+  closeColorPicker();
+  closeSessionExportDialog();
+  closeFilterLibrarySaveDialog();
+  closeFilterLibraryDialog();
+  closeLibraryMenu();
+  if (sessionMatchResolver) closeSessionMatchDialog("cancel");
+  if (mergeLoadResolver) closeMergeLoadDialog(false);
+}
 // Whether any popup/menu/dialog is currently open — used so Esc's secondary
 // "exit Focus Mode" path only fires when nothing else is consuming that Esc
 // (an open overlay closes first; a single Esc never both closes it AND drops
@@ -32457,11 +32524,11 @@ function applyFolderFileLocation(node, handle) {
   if (path) node.localPath = path;
   return changed;
 }
-function loadUrlIntoTree(url) { return trackForegroundLoad(() => loadUrlIntoTreeImpl(...arguments)); }
+function loadUrlIntoTree(url) { return trackForegroundLoad(() => loadUrlIntoTreeImpl(...arguments)); } // resolves to the new file node, null on failure
 async function loadUrlIntoTreeImpl(url) {
   if (location.protocol === "file:") {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
-    return;
+    return null;
   }
   let name = "remote.log";
   try {
@@ -32498,12 +32565,12 @@ async function loadUrlIntoTreeImpl(url) {
     } catch (err) {
       if (node) deleteNode(node.id);
       showCopyToast("Could not load log from URL (network or CORS error)");
-      return;
+      return null;
     }
     if (!res.ok) {
       if (node) deleteNode(node.id);
       showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
-      return;
+      return null;
     }
     const buf = await res.arrayBuffer();
     gzip = isGzipBytes(new Uint8Array(buf, 0, Math.min(2, buf.byteLength)));
@@ -32513,7 +32580,7 @@ async function loadUrlIntoTreeImpl(url) {
     } catch (err) {
       if (node) deleteNode(node.id);
       showCopyToast(`Could not decompress log from URL (${err.message})`);
-      return;
+      return null;
     }
     const text = new TextDecoder().decode(bytes);
     node = await addFile(name, text, undefined, undefined, node || undefined);
@@ -32539,13 +32606,35 @@ async function loadUrlIntoTreeImpl(url) {
     };
     state.tailFollow = true;
   }
+  // Persist like every other load path (loadOneFileIntoTree etc.): without
+  // a files-store record a reload finds the cacheKey in meta.fileOrder but
+  // nothing to restore, and the filters/bookmarks/notes are gone.
+  persistFileNode(node); // fire-and-forget
   render();
+  return node;
 }
 
 async function loadFromUrlParam() {
   const url = new URLSearchParams(location.search).get("url");
   if (!url) return;
-  await loadUrlIntoTree(url);
+  const fresh = await loadUrlIntoTree(url);
+  // A reload restored the previous visit's copy (with its filters, bookmarks,
+  // notes) from the session cache before this ran. If the freshly fetched
+  // file is byte-identical (tier-1 hash) to another root file, drop the FRESH
+  // node and keep the restored one; a changed log (different hash) stays as a
+  // new file.
+  if (!fresh || !state.nodes[fresh.id] || !fresh.entries || !fresh.entries.length) return;
+  const h = getFileFullHash(fresh);
+  for (const id of state.rootIds) {
+    const n = state.nodes[id];
+    if (id === fresh.id || !n || n.type !== "file" || !n.entries || !n.entries.length) continue;
+    if (getFileFullHash(n) !== h) continue;
+    const freshWasActive = state.activeId === fresh.id;
+    deleteNode(fresh.id);
+    if (freshWasActive) { state.activeId = n.id; state.multiSelect = new Set(); }
+    render();
+    return;
+  }
 }
 
 // ?session=<url> loads a session file (files + filters + notes + settings, see
@@ -43994,40 +44083,9 @@ document.addEventListener("keydown", ev => {
     // both closes it AND leaves focus mode.
     // The format setup wizard sits on top of Settings: Esc closes just the
     // wizard, leaving Settings (and its unsaved format editor) open.
-    if (formatDialogOpen()) { closeFormatEditDialog(); return; }
-    // Same for the theme editor — it also stacks above Settings; an open
-    // color picker on top of it closes first.
-    if (themeEditorOpen()) {
-      if (!colorPickerPopup.classList.contains("hidden")) closeColorPicker(); else closeThemeEditor();
-      return;
-    }
+    if (formatDialogOpen() || themeEditorOpen()) { closeEscapeOverlays(); return; }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
-    setDrawerOpen(false);
-    closePlotFullscreen();
-    closeSettingsDialog();
-    closeFilterPopup();
-    closeFindBar();
-    closeContextMenu();
-    closeTreeContextMenu();
-    closeExtractContextMenu();
-    closeFacetValueMenu();
-    closeCsvExportDialog();
-    closeExportDialog();
-    closeLinkDialog();
-    closeGapDialog();
-    closeContextDialog();
-    closeTimeRangeDialog();
-    closeAssertDialog();
-    closeClockOffsetDialog();
-    closeNoteDialog();
-    closeColumnsPanel();
-    closeColorPicker();
-    closeSessionExportDialog();
-    closeFilterLibrarySaveDialog();
-    closeFilterLibraryDialog();
-    closeLibraryMenu();
-    if (sessionMatchResolver) closeSessionMatchDialog("cancel");
-    if (mergeLoadResolver) closeMergeLoadDialog(false);
+    closeEscapeOverlays();
     let needsRender = false;
     if (treeSelectMode) { setTreeSelectMode(false); needsRender = true; }
     // Clearing selections is scoped to the focused area (tree vs. log views);
@@ -47813,9 +47871,6 @@ const formatConfigReady = loadFormatConfig();
 // and prime filterLibraryCache the same way (see its own comment).
 renderLibraryToolbarPresets();
 refreshFilterLibraryCache();
-// Deep-link ?url= load, fire-and-forget — independent of session restore
-// below (a link straight into a log doesn't need a prior cached session).
-loadFromUrlParam();
 // Async session restore AFTER the first (empty-state) render — restore's own
 // finally block re-renders once files/filters/bookmarks/settings are back.
 // Watched folders are restored right after (restoreWatchedFolders needs
@@ -47835,9 +47890,13 @@ const bootRestore = bootMeta.then(meta => restoreSessionFromCache(meta)).then(re
   if (restored) showCopyToast("Session restored");
   return restoreWatchedFolders();
 }).then(() => bootMeta).then(meta => restoreViewersFromCache(meta));
-// Deep links ?session=<url> and ?open=format, once the boot restore has
-// settled (the session load removes restored duplicates of the files it loads).
-bootRestore.catch(() => {}).then(() => loadSessionAndOpenFromParams());
+// Deep links ?url=, ?session=<url> and ?open=format, once the boot restore
+// has settled: ?url= persists its file, so a reload restores it first and the
+// link then drops its own byte-identical fresh copy (loadFromUrlParam); the
+// session load removes restored duplicates of the files it loads.
+bootRestore.catch(() => {}).then(() => new URLSearchParams(location.search).has("url")
+  ? loadFromUrlParam().catch(() => {}).then(() => loadSessionAndOpenFromParams())
+  : loadSessionAndOpenFromParams());
 // LLM assistant (desktop build only — window.philogg.llmChat): toolbar
 // button, Settings section, stored chat sessions. See "LLM assistant".
 initLlmAssistantUi();
