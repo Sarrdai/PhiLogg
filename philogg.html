@@ -2996,6 +2996,62 @@
   .link-hop-row select{margin:0 4px;}
   .link-hop-anchor{color:var(--text-tertiary); font-style:italic;}
 
+  /* Link dialog v2: Start / End side rows, the sentence between them, the
+     "Same" key chips, the "▾" filter picker menu. */
+  #linkDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
+  .link-side{display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;}
+  .link-side-lab{flex:0 0 40px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
+  .link-side input.link-side-input{flex:1 1 auto; min-width:0; width:auto;}
+  .link-side-chip{
+    flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:6px; background:var(--accent-soft); color:var(--accent);
+    border:1px solid var(--border); border-radius:6px; padding:5px 8px; font-family:var(--font-mono); font-size:12px;
+  }
+  .link-side-chip span{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .link-side-btn, .link-addstep{
+    font:inherit; font-size:12px; background:var(--bg-app); border:1px solid var(--border); color:var(--text-secondary);
+    border-radius:6px; cursor:pointer; padding:5px 9px; flex:0 0 auto;
+  }
+  .link-side-btn:hover, .link-addstep:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  .link-side-chip .link-side-btn{padding:0 5px; border:0; background:transparent; color:inherit;}
+  .link-addstep{display:block; margin:2px 0 12px 46px; border-style:dashed;}
+  .link-sentence{font-size:12px; color:var(--text-secondary); margin:2px 0 6px 46px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+  .link-sentence.link-hop-row{background:none; border:0; padding:0; line-height:1.4;}
+  .link-sentence input[type="number"]{width:48px !important; margin:0;}
+  .link-sentence .link-hop-ord{margin-left:-4px;}
+  .link-dialog-card .link-side input.link-side-input[type="text"]:not(.stepper-value){width:auto; flex:1 1 0;}
+  .link-seg{display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden;}
+  .link-seg button{font:inherit; font-size:11.5px; font-weight:600; border:0; background:transparent; color:var(--text-secondary); padding:0 10px; height:26px; cursor:pointer;}
+  .link-seg button + button{border-left:1px solid var(--border);}
+  .link-seg button[aria-pressed="true"]{background:var(--accent-soft); color:var(--accent);}
+  .link-fieldrow{display:flex; align-items:flex-start; gap:8px; margin-bottom:8px; font-size:11.5px; color:var(--text-secondary);}
+  .link-fieldrow.hidden{display:none;}
+  .link-fieldlab{flex:0 0 40px; padding-top:5px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
+  .link-chips{display:flex; flex-wrap:wrap; gap:6px; flex:1 1 auto; min-width:0;}
+  .link-chip{
+    font:inherit; font-size:11.5px; background:var(--bg-app); border:1px solid var(--border); color:var(--text-secondary);
+    border-radius:999px; padding:3px 10px; cursor:pointer;
+  }
+  .link-chip small{color:var(--text-tertiary); font-size:10.5px;}
+  .link-chip[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent);}
+  .link-more{margin:0 0 10px; font-size:11.5px; color:var(--text-secondary);}
+  .link-more summary{cursor:pointer; margin-bottom:6px;}
+  .link-hint{font-size:11.5px; color:var(--text-tertiary); margin:0 0 6px;}
+  .link-hint.warn{color:var(--warn, #d29922);}
+  .link-hint.hidden{display:none;}
+  .link-side-menu{
+    position:absolute; z-index:5; min-width:200px; max-width:calc(100% - 16px); max-height:240px; overflow-y:auto;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:4px;
+    box-shadow:0 10px 28px rgba(0,0,0,.45);
+  }
+  .link-side-menu.hidden{display:none;}
+  .link-side-menu .ctx-item{display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .link-side-menu .ctx-note{padding:4px 10px; font-size:11px; color:var(--text-tertiary);}
+  .filter-link-btn{
+    font:inherit; font-size:11.5px; background:none; border:0; padding:0 4px; color:var(--text-secondary); cursor:pointer; text-decoration:underline;
+  }
+  .filter-link-btn:hover{color:var(--accent);}
+  .filter-link-btn.hidden{display:none;}
+
   /* ---------- Time context dialog ---------- */
   #contextDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
@@ -4738,6 +4794,21 @@
   body.layout-phone #filterPopup .filter-footer-row{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); padding-bottom:10px;}
   body.layout-phone .link-dialog-card{padding-bottom:0;}
   body.layout-phone .link-dialog-card .link-dialog-actions{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); margin-top:8px; padding:10px 0 16px;}
+  /* Link dialog v2 on the phone: a full-screen sheet (the sticky action row above stays
+     pinned to its bottom), 40px controls, rows stacked under their labels. */
+  body.layout-phone #linkDialog{align-items:stretch; justify-content:stretch;}
+  body.layout-phone #linkDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
+  body.layout-phone .link-side{flex-wrap:wrap;}
+  body.layout-phone .link-side-lab{flex:1 0 100%;}
+  body.layout-phone .link-sentence, body.layout-phone .link-addstep{margin-left:0;}
+  body.layout-phone .link-sentence input[type="number"]{width:56px !important;}
+  body.layout-phone .link-side-btn, body.layout-phone .link-addstep{min-height:40px; min-width:40px;}
+  body.layout-phone .link-side-chip{min-height:40px; box-sizing:border-box;}
+  body.layout-phone .link-seg button, body.layout-phone .link-chip{min-height:40px;}
+  body.layout-phone .link-fieldrow{flex-wrap:wrap;}
+  body.layout-phone .link-fieldlab{flex:1 0 100%; padding-top:0;}
+  body.layout-phone .link-more summary{min-height:40px; display:flex; align-items:center;}
+  body.layout-phone .link-side-menu .ctx-item{min-height:40px; display:flex; align-items:center;}
   body.layout-phone #filterPopup{width:calc(100% - 16px); overflow-x:hidden; max-height:calc(100vh - 124px);}
   body.layout-phone #filterPopup #btnCloseFilterPopup{width:40px; height:40px; flex:0 0 auto; align-items:center; justify-content:center; padding:0;}
   body.layout-phone #filterInput{font-size:16px; min-height:40px; padding:0 10px 0 0;}
@@ -4908,6 +4979,9 @@
     body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"], body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){height:44px;}
     body.layout-phone .link-dialog-card .btn-mini, body.layout-phone .link-dialog-card .btn-mini-secondary, body.layout-phone .link-dialog-card .btn-mini-outline, body.layout-phone #filterPopup .btn-mini, body.layout-phone #filterPopup .btn-mini-secondary, body.layout-phone #filterPopup .btn-mini-outline{min-height:44px;}
     body.layout-phone .link-dialog-card .stepper{height:44px;}
+    body.layout-phone .link-seg button, body.layout-phone .link-chip, body.layout-phone .link-side-btn, body.layout-phone .link-addstep, body.layout-phone .link-side-chip, body.layout-phone .link-more summary, body.layout-phone .link-side-menu .ctx-item{min-height:44px;}
+    body.layout-compact .link-seg button, body.layout-compact .link-chip, body.layout-compact .link-side-btn, body.layout-compact .link-addstep{min-height:44px;}
+    body.layout-compact .link-dialog-card select, body.layout-compact .link-dialog-card input[type="number"], body.layout-compact .link-dialog-card input[type="text"]:not(.stepper-value){min-height:44px; box-sizing:border-box;}
     body.layout-phone .link-dialog-card .stepper .stepper-btn{width:44px; height:44px;}
     body.layout-phone .time-range-clear, body.layout-phone .filter-library-row-icon, body.layout-phone #filterLibraryList .filter-library-row-del{width:44px; height:44px;}
     body.layout-phone #filterPopup #btnCloseFilterPopup{width:44px; height:44px;}
@@ -5261,6 +5335,7 @@
           </div>
           <div class="filter-footer-row">
             <div class="filter-footer-actions">
+              <button type="button" class="filter-link-btn" id="filterLinkEventsBtn" title="Pair two kinds of events, e.g. each request with its response">Link two events…</button>
               <button type="submit" class="btn-mini" id="filterSubmitBtn">Add filter</button>
             </div>
           </div>
@@ -5939,42 +6014,25 @@
   </div>
 
   <div id="linkDialog" class="hidden">
-    <div class="link-dialog-card link-dialog-card-wide">
-      <div class="link-dialog-title">Link filters</div>
-      <div class="link-intro">Example: pair each "Move requested" with the next "Position reached" to measure how long moves take.</div>
+    <div class="link-dialog-card link-dialog-card-wide" id="linkDialogCard">
+      <div class="link-dialog-title" id="linkDialogTitle">Link events</div>
+      <!-- Start / End rows (text field + "▾" to pick an existing filter) and the
+           sentence between them are JS-built into #linkSides by renderLinkSides. -->
+      <div id="linkSides"></div>
+      <button type="button" class="link-addstep" id="linkAddStep">+ Add step</button>
       <div class="link-field">
-        <label for="linkRefSelect">Reference (anchor)</label>
-        <select id="linkRefSelect"></select>
-      </div>
-      <div class="link-field">
-        <label>Hops <span class="link-hops-hint">— each resolved relative to the previous match, in selection order</span></label>
-        <div id="linkHopsList"></div>
-      </div>
-      <div class="link-field">
-        <div class="link-toggle-row">
-          <label class="link-toggle-label" for="linkExclusiveInput">Don't reuse a target entry once it's matched</label>
-          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkExclusiveInput"></button>
+        <div class="link-fieldrow">
+          <span class="link-fieldlab">Same</span>
+          <span id="linkKeyChips" class="link-chips" role="group" aria-label="Pair only events with the same"></span>
         </div>
-        <div class="link-toggle-row" id="linkOrderEnforceRow">
-          <label class="link-toggle-label" for="linkOrderEnforceInput">Enforce chronological order across hops</label>
-          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkOrderEnforceInput"></button>
+        <div class="link-fieldrow hidden" id="linkKeyPatternRow">
+          <input type="text" id="linkKeyPattern" placeholder="captured value, e.g. job=[*:word]" spellcheck="false" autocomplete="off">
         </div>
       </div>
-      <!-- Correlation key and Δt condition (docs/filters.md → "Link filter:
-           correlation key" / "Δt condition"), read by readLinkDialogOptions. -->
+      <!-- Δt is a pure post-filter: it hides finished pairs, never changes the pairing. -->
       <div class="link-field">
         <div class="link-toggle-row">
-          <label class="link-toggle-label" for="linkKeyInput">Match only same</label>
-          <span class="link-option-controls">
-            <select id="linkKeySelect"></select>
-            <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkKeyInput"></button>
-          </span>
-        </div>
-        <div class="link-toggle-row hidden" id="linkKeyPatternRow">
-          <input type="text" id="linkKeyPattern" placeholder="captured value, e.g. axis [*:int]" spellcheck="false" autocomplete="off">
-        </div>
-        <div class="link-toggle-row">
-          <label class="link-toggle-label" for="linkDtInput">Only pairs with Δt</label>
+          <label class="link-toggle-label" for="linkDtInput">Show only pairs with Δt</label>
           <span class="link-option-controls">
             <select id="linkDtOp"><option value="&gt;">&gt;</option><option value="&lt;">&lt;</option></select>
             <input type="number" id="linkDtValue" min="0" step="any" value="500">
@@ -5983,7 +6041,19 @@
           </span>
         </div>
       </div>
+      <details class="link-more" id="linkMore">
+        <summary>More options</summary>
+        <div class="link-toggle-row">
+          <label class="link-toggle-label" for="linkExclusiveInput">Don't reuse an end event once it's paired</label>
+          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkExclusiveInput"></button>
+        </div>
+        <div class="link-toggle-row" id="linkOrderEnforceRow">
+          <label class="link-toggle-label" for="linkOrderEnforceInput">Enforce chronological order across steps</label>
+          <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkOrderEnforceInput"></button>
+        </div>
+      </details>
       <!-- Live pair count / histogram / sample pairs — renderLiveResults. -->
+      <div id="linkHint" class="link-hint hidden"></div>
       <div id="linkResults" class="live-results hidden">
         <div class="filter-results-head">
           <div id="linkLiveMatch" class="live-match"></div>
@@ -5995,6 +6065,7 @@
         <button type="button" id="linkDialogCancel" class="btn-mini-secondary">Cancel</button>
         <button type="button" id="linkDialogCreate" class="btn-mini">Create</button>
       </div>
+      <div id="linkSideMenu" class="link-side-menu hidden" role="menu"></div>
     </div>
   </div>
 
@@ -19104,6 +19175,12 @@ function editFilterNode(nodeId) {
   }
   if (node.filterType === "gap") {
     openGapDialog(node.id, true);
+    return true;
+  }
+  if (node.filterType === "link") {
+    const spec = hasBakedSides(node) ? linkSpecFromNode(node) : null;
+    if (!spec) return false;
+    openLinkDialog(spec);
     return true;
   }
   return false;
@@ -35584,6 +35661,7 @@ function openFilterPopup() {
   filterPopupColumns = new Set();
   renderFilterScopeHint();
   filterSubmitBtn.textContent = "Add filter";
+  filterLinkEventsBtn.classList.remove("hidden");
   filterInput.value = "";
   pillSet(filterInvertCheckbox, false);
   pillSet(filterCaseCheckbox, false);
@@ -35619,6 +35697,7 @@ function openEditFilterPopup(nodeId) {
   render();
   renderFilterScopeHint();
   filterSubmitBtn.textContent = "Save";
+  filterLinkEventsBtn.classList.add("hidden");
   filterInput.value = node.value;
   pillSet(filterInvertCheckbox, !!node.inverted);
   pillSet(filterCaseCheckbox, node.filterType === "text" && !!node.caseSensitive);
@@ -35650,6 +35729,17 @@ function closeFilterPopup() {
   // maybeCloseSidebarAltPeek's own comment) — a no-op otherwise.
   maybeCloseSidebarAltPeek();
 }
+
+// Footer "Link two events…": the popup's current text becomes the Start of the link dialog.
+const filterLinkEventsBtn = el("#filterLinkEventsBtn");
+filterLinkEventsBtn.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const rootId = filterPopupBaseId && getRootFileId(filterPopupBaseId);
+  if (!rootId || editingFilterId) return;
+  const text = filterInput.value.trim();
+  closeFilterPopup();
+  openLinkDialog({ rootId, start: { text } });
+});
 
 // Inserts a placeholder token at the current cursor position (replacing any
 // current selection), matching how a normal text input handles typed text.
@@ -35827,7 +35917,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
 
   renderLiveMatchMinimap(hits, baseEntries, target.minimap);
 
-  hits.slice(0, FILTER_SAMPLE_ROWS).forEach(e => {
+  (opts.samples || hits.slice(0, FILTER_SAMPLE_ROWS)).forEach(e => {
     const row = document.createElement("div");
     row.className = "filter-sample-row " + levelClass(e.level, e.formatId) + (opts.badge ? " has-badge" : "");
     const bar = document.createElement("span");
@@ -38227,8 +38317,9 @@ function describeSidebarToolbarActions() {
   const target = node ? node.id : null;
   const actions = [
     { action: "rename", label: "Rename…", icon: ICON_RENAME, target, disabled: !filter },
-    { action: "edit", label: "Edit filter…", icon: ICON_EDIT, target,
-      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft))) },
+    { action: "edit", label: ft === "link" ? "Edit link…" : "Edit filter…", icon: ICON_EDIT, target,
+      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || (ft === "link" && hasBakedSides(filter)))) },
+    { action: "linkWith", label: "Link with…", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
     { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", icon: ICON_INVERT, target,
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
     { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target,
@@ -38257,6 +38348,7 @@ function handleSidebarToolbarActionClick(action) {
     case "clockOffset": openClockOffsetDialog(target); return;
     case "rename": startRenameNode(target); return;
     case "edit": editFilterNode(target); return;
+    case "linkWith": openLinkWithNode(target); return;
     case "invert": toggleInvertWithUndo(target); render(); return;
     case "mute": toggleMuteWithUndo([target]); render(); return;
     case "addToLibrary": openFilterLibrarySaveDialog(target); return;
@@ -38381,7 +38473,10 @@ function openTreeContextMenu(ev, clickedId) {
       // other nodes, and context filters have their own before/after dialog.
       if (node.filterType === "text" || node.filterType === "gap" || isTimeFilterType(node.filterType)) {
         buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
+      } else if (node.filterType === "link" && hasBakedSides(node)) {
+        buckets.edit.push({ action: "edit", label: "Edit link…", icon: ICON_EDIT });
       }
+      if (isLinkBakeableNode(node)) buckets.edit.push({ action: "linkWith", label: "Link with…", icon: ICON_LINK });
       // "link" results are pair entries with no parent-relative complement
       // (see getEntries), and "context"/"countContext" always contain their
       // own reference entries so a parent-relative difference is always
@@ -38555,6 +38650,10 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "gap") {
     if (treeCtxId && state.nodes[treeCtxId]) openGapDialog(treeCtxId, false);
+    return;
+  }
+  if (action === "linkWith") {
+    if (treeCtxId) openLinkWithNode(treeCtxId);
     return;
   }
   if (action === "clockOffset") {
@@ -38734,60 +38833,145 @@ sidebarToolbarEl.addEventListener("click", ev => {
   handleSidebarToolbarActionClick(btn.dataset.rowAction);
 });
 
-/* ===================== Link dialog (reference + N ordered hops) =====================
-   Generalized from "link exactly two filters" to "a reference plus 2+ target
-   hops, each resolved relative to the previous hop's match" — see
-   REQUIREMENTS-link-chaining-and-multiway.md's "multi-way link definition in
-   one dialog". Implemented as sugar over the existing chain-of-link-nodes
-   mechanism (design direction A, see PROJECT.md "Link filter"): Create walks
-   the hops in order, each createLinkNode() call using the PREVIOUS hop's
-   resulting node as the next hop's reference (parentId) — exactly the manual
-   chaining a person would otherwise build node-by-node in the tree, now done
-   in one dialog. Hop order follows selection order (ids, minus whichever one
-   is picked as reference) — Sets preserve insertion order, so this is just
-   the order the filters were Ctrl-clicked in; there's no separate reorder UI. */
+/* ===================== Link dialog (Start / End text fields, "Same" chips) =====================
+   One dialog creates AND edits a link (docs/filters.md → "Link filter"). The
+   sides are text fields (patterns, like the filter popup) with a "▾" to pick
+   an existing filter instead; a side is baked at Create time, so no helper
+   filter nodes are created. "+ Add step" appends another End (a hop resolved
+   relative to the previous match). Create makes ONE node holding the whole
+   chain (hopsToLinkChain / createLinkNodeFromBaked), Save on an edited link
+   replaces its definition in one undo step (updateLinkNodeWithUndo).
+
+   openLinkDialog(spec) — spec is { rootId, start, hops, direction, key, dt,
+   exclusive, orderEnforced, editNodeId } where a side (start, each hop) is
+   { text } | { nodeId } | { baked }, a hop may carry its own { direction, n }
+   and `direction` ("after" default) is the fallback; `key` is { column } |
+   { pattern } | "none" (omitted: the recommended suggestion is preselected).
+   An array of node ids (the multi-select "Link…") is adapted to a spec. */
 
 const linkDialog = el("#linkDialog");
-const linkRefSelect = el("#linkRefSelect");
-const linkHopsList = el("#linkHopsList");
+const linkDialogCard = el("#linkDialogCard");
+const linkDialogTitle = el("#linkDialogTitle");
+const linkDialogCreateBtn = el("#linkDialogCreate");
+const linkSidesEl = el("#linkSides");
+const linkKeyChips = el("#linkKeyChips");
 const linkOrderEnforceInput = el("#linkOrderEnforceInput");
 const linkOrderEnforceRow = el("#linkOrderEnforceRow");
 const linkExclusiveInput = el("#linkExclusiveInput");
-const linkKeyInput = el("#linkKeyInput");
-const linkKeySelect = el("#linkKeySelect");
+const linkMore = el("#linkMore");
 const linkKeyPatternRow = el("#linkKeyPatternRow");
 const linkKeyPattern = el("#linkKeyPattern");
 const linkDtInput = el("#linkDtInput");
 const linkDtOp = el("#linkDtOp");
 const linkDtValue = el("#linkDtValue");
 const linkDtUnit = el("#linkDtUnit");
+const linkHint = el("#linkHint");
+const linkSideMenu = el("#linkSideMenu");
 const linkResultsTarget = { root: el("#linkResults"), match: el("#linkLiveMatch"), minimap: el("#linkResultsMinimap"), samples: el("#linkResultsSamples") };
-const LINK_KEY_PATTERN_OPTION = "@pattern"; // #linkKeySelect's "value of pattern…" choice
 let linkPreviewTimer = null;
-let linkDialogIds = [];
-let linkHopRows = []; // [{targetId, nInput, dirSelect}], rebuilt by renderLinkHops()
+// null while closed, else { rootId, editNodeId, sides: [side], hops: [{direction, n}] (hops[i] belongs
+// to sides[i + 1]), key: {type: "none"|"suggest"|"column"|"pattern", value}, keyTouched, suggestions }
+// with side = {kind: "text", text} | {kind: "node", nodeId, label} | {kind: "baked", baked, label}.
+let linkDlg = null;
 
-function openLinkDialog(ids) {
-  const nodes = ids.map(id => state.nodes[id]).filter(Boolean);
-  if (nodes.length < 2) return;
-  linkDialogIds = nodes.map(n => n.id);
-  linkRefSelect.innerHTML = nodes.map(n => '<option value="' + n.id + '">' + escapeHtml(nodeDisplayName(n)) + "</option>").join("");
-  pillSet(linkOrderEnforceInput, false);
-  pillSet(linkExclusiveInput, false);
-  pillSet(linkKeyInput, false);
-  pillSet(linkDtInput, false);
-  linkKeySelect.innerHTML = groupColumnOptions(getRootFileId(nodes[0].id))
-    .map(o => '<option value="' + escapeHtml(o.key) + '">' + escapeHtml(o.label) + "</option>").join("") +
-    '<option value="' + LINK_KEY_PATTERN_OPTION + '">value of pattern…</option>';
-  linkKeyPattern.value = "";
-  linkDtOp.value = ">";
-  linkDtValue.value = "500";
-  linkDtUnit.value = "ms";
-  clearLiveResults(linkResultsTarget);
-  renderLinkHops();
-  linkDialog.classList.remove("hidden");
+// A baked side the dialog can show as an editable text field: exactly what
+// bakedTextCondition builds.
+function isPlainTextBaked(b) {
+  return !!b && b.filterType === "text" && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
+    !(b.ignoredColumns && b.ignoredColumns.length) && Array.isArray(b.columns) && b.columns.length === 1 && b.columns[0] === "message";
 }
-function closeLinkDialog() { linkDialog.classList.add("hidden"); clearTimeout(linkPreviewTimer); }
+function linkSideFromSpec(x) {
+  if (typeof x === "string") return { kind: "text", text: x };
+  if (!x) return { kind: "text", text: "" };
+  if (x.nodeId && state.nodes[x.nodeId]) return { kind: "node", nodeId: x.nodeId, label: nodeDisplayName(state.nodes[x.nodeId]) };
+  if (x.baked) return isPlainTextBaked(x.baked) ? { kind: "text", text: x.baked.value } : { kind: "baked", baked: cloneBaked(x.baked), label: bakedConditionName(x.baked) };
+  return { kind: "text", text: x.text || "" };
+}
+// A filter node a side can be baked from: not a locked node, no combiner without baked sides.
+function isLinkBakeableNode(n) {
+  return !!n && n.type === "filter" && !n.locked &&
+    ((n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n));
+}
+// baked condition of a side, or null while it is empty / its node is gone
+function linkSideBaked(side) {
+  if (side.kind === "text") { const t = side.text.trim(); return t ? bakedTextCondition(t) : null; }
+  if (side.kind === "baked") return cloneBaked(side.baked);
+  const n = state.nodes[side.nodeId];
+  return isLinkBakeableNode(n) ? bakeNodeCondition(n) : null;
+}
+
+// The multi-select "Link…": the first selected filter is the start, the others the ends.
+function linkSpecFromNodeIds(ids) {
+  const nodes = ids.map(id => state.nodes[id]).filter(Boolean);
+  if (nodes.length < 2) return null;
+  return { rootId: getRootFileId(nodes[0].id), start: { nodeId: nodes[0].id }, hops: nodes.slice(1).map(n => ({ nodeId: n.id })) };
+}
+// "Link with…" on a filter node: that filter is the start, the End is empty and focused.
+function openLinkWithNode(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!isLinkBakeableNode(node)) return;
+  openLinkDialog({ rootId: getRootFileId(nodeId), start: { nodeId } });
+}
+// "Edit link…": the spec of an existing link node.
+function linkSpecFromNode(node) {
+  const c = linkChainToHops(node);
+  if (!c) return null;
+  return {
+    rootId: getRootFileId(node.id), editNodeId: node.id, start: { baked: c.start },
+    hops: c.hops.map(h => ({ baked: h.baked, direction: h.direction, n: h.n })),
+    key: c.key || "none", dt: c.dt, exclusive: c.exclusive, orderEnforced: c.orderEnforced,
+  };
+}
+
+function openLinkDialog(spec) {
+  if (Array.isArray(spec)) spec = linkSpecFromNodeIds(spec);
+  if (!spec || !state.nodes[spec.rootId]) return;
+  const dirOf = h => (h && h.direction) || spec.direction || "after";
+  const hopSpecs = spec.hops && spec.hops.length ? spec.hops : [{}];
+  linkDlg = {
+    rootId: spec.rootId, editNodeId: spec.editNodeId || null,
+    sides: [linkSideFromSpec(spec.start)].concat(hopSpecs.map(linkSideFromSpec)),
+    hops: hopSpecs.map(h => ({ direction: dirOf(h) === "before" ? "before" : "after", n: Math.max(1, parseInt(h && h.n, 10) || 1) })),
+    key: { type: "none", value: null }, keyTouched: false, suggestions: [],
+  };
+  const key = spec.key === "none" ? { type: "none" } : sanitizeLinkKey(spec.key);
+  if (key) {
+    linkDlg.keyTouched = true;
+    linkDlg.key = key.type ? { type: "none", value: null } : key.column ? { type: "column", value: key.column } : { type: "pattern", value: key.pattern };
+  }
+  linkDialogTitle.textContent = linkDlg.editNodeId ? "Edit link" : "Link events";
+  linkDialogCreateBtn.textContent = linkDlg.editNodeId ? "Save" : "Create";
+  pillSet(linkOrderEnforceInput, !!spec.orderEnforced);
+  pillSet(linkExclusiveInput, !!spec.exclusive);
+  linkMore.open = !!(spec.exclusive || spec.orderEnforced);
+  pillSet(linkDtInput, !!spec.dt);
+  const dtMs = spec.dt ? spec.dt.ms : 500;
+  const unit = spec.dt ? ([...GAP_UNITS].reverse().find(u => dtMs >= u.ms && dtMs % u.ms === 0) || GAP_UNITS[0]) : GAP_UNITS[0];
+  linkDtOp.value = spec.dt && spec.dt.op === "<" ? "<" : ">";
+  linkDtValue.value = String(dtMs / unit.ms);
+  linkDtUnit.value = unit.key;
+  linkKeyPattern.value = linkDlg.key.type === "pattern" ? linkDlg.key.value : "";
+  linkHint.classList.add("hidden");
+  clearLiveResults(linkResultsTarget);
+  closeLinkSideMenu();
+  renderLinkSides();
+  refreshLinkSuggestions();
+  renderLinkKeyChips();
+  updateLinkOptionControls();
+  updateLinkOrderEnforceAvailability();
+  linkDialog.classList.remove("hidden");
+  linkDialogCard.scrollTop = 0;
+  updateLinkPreview();
+  const inputs = [...linkSidesEl.querySelectorAll("input.link-side-input")];
+  const focusEl = inputs.find(i => !i.value) || inputs[0];
+  if (focusEl) focusEl.focus();
+}
+function closeLinkDialog() {
+  linkDialog.classList.add("hidden");
+  clearTimeout(linkPreviewTimer);
+  closeLinkSideMenu();
+  linkDlg = null;
+}
 
 // Column choices for the Gap dialog's "measured per" and the Link dialog's
 // "Match only same": the loaded formats' middle columns (Thread/Location/
@@ -38800,19 +38984,17 @@ function groupColumnOptions(rootId) {
   return opts;
 }
 
-// The dialog's key/Δt options as { key, dt, error } — key/dt null when
-// their switch is off; error set (and the dialog refuses to create) for a
-// pattern without a wildcard capture or an unreadable Δt value.
+// Δt value/unit/op as { ms, op } from the dialog controls, or null while the switch is off;
+// error on an unreadable value.
 function readLinkDialogOptions() {
   let key = null, dt = null;
-  if (pillGet(linkKeyInput)) {
-    if (linkKeySelect.value === LINK_KEY_PATTERN_OPTION) {
-      const pattern = linkKeyPattern.value.trim();
-      if (!isExtractPattern(pattern) || !compileExtractPattern(pattern)) return { error: "Invalid key pattern — needs a capture like [*:int]" };
-      key = { pattern };
-    } else if (linkKeySelect.value) {
-      key = { column: linkKeySelect.value };
-    }
+  const k = linkDlg ? linkDlg.key : { type: "none" };
+  if (k.type === "suggest" || k.type === "pattern") {
+    const pattern = k.type === "pattern" ? linkKeyPattern.value.trim() : k.value;
+    if (!isExtractPattern(pattern) || !compileExtractPattern(pattern)) return { error: "Invalid key pattern — needs a capture like [*:word]" };
+    key = { pattern };
+  } else if (k.type === "column") {
+    key = { column: k.value };
   }
   if (pillGet(linkDtInput)) {
     const amount = parseFloat(linkDtValue.value);
@@ -38823,82 +39005,264 @@ function readLinkDialogOptions() {
   return { key, dt, error: null };
 }
 
-// Greys out each option's controls while its switch is off, and shows the
-// pattern input only for the "value of pattern…" key choice.
+// Greys out Δt's controls while its switch is off, shows the pattern input for the "pattern…" chip.
 function updateLinkOptionControls() {
-  const keyOn = pillGet(linkKeyInput);
-  linkKeySelect.disabled = !keyOn;
-  linkKeyPattern.disabled = !keyOn;
-  linkKeyPatternRow.classList.toggle("hidden", linkKeySelect.value !== LINK_KEY_PATTERN_OPTION);
   const dtOn = pillGet(linkDtInput);
   linkDtOp.disabled = linkDtValue.disabled = linkDtUnit.disabled = !dtOn;
+  linkKeyPatternRow.classList.toggle("hidden", !(linkDlg && linkDlg.key.type === "pattern"));
 }
 
-// The link the dialog would create, as one nested baked condition — the
-// exact shape createLinkNode's hop-by-hop chaining produces (see
-// bakeNodeCondition's "link" branch) — so the preview evaluates it with the
-// same getEntriesFromBaked a real link node's baked side uses. The key
-// applies to every hop, the Δt condition to the last one (the whole
-// tuple's span), mirroring the Create handler below. null when a picked
-// filter can't be baked.
+// The link the dialog would create, as one nested baked condition (hopsToLinkChain: the key and
+// the flags on every hop, Δt on the last), or null while a side is empty / its filter is gone.
 function buildLinkDialogChain(opts, withDt) {
-  let cur = state.nodes[linkRefSelect.value];
-  if (!cur || !linkHopRows.length) return null;
-  const bakeable = n => n && ((n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n));
-  if (!bakeable(cur)) return null;
-  cur = bakeNodeCondition(cur);
-  for (let i = 0; i < linkHopRows.length; i++) {
-    const hop = linkHopRows[i];
-    const target = state.nodes[hop.targetId];
-    if (!bakeable(target)) return null;
-    const link = {
-      filterType: "link", value: null, inverted: false,
-      bakedA: cur, bakedB: bakeNodeCondition(target),
-      linkDirection: hop.dirSelect.value, linkN: Math.max(1, parseInt(hop.nInput.value, 10) || 1),
-      linkOrderEnforced: pillGet(linkOrderEnforceInput), linkExclusive: pillGet(linkExclusiveInput),
-    };
-    copyLinkOptions({ linkKey: opts.key, linkDt: withDt && i === linkHopRows.length - 1 ? opts.dt : null }, link);
-    cur = link;
-  }
-  return cur;
+  if (!linkDlg) return null;
+  const baked = linkDlg.sides.map(linkSideBaked);
+  if (baked.some(b => !b)) return null;
+  return hopsToLinkChain(baked[0], linkDlg.hops.map((h, i) => ({ baked: baked[i + 1], direction: h.direction, n: h.n })), {
+    key: opts.key, dt: withDt ? opts.dt : null,
+    exclusive: pillGet(linkExclusiveInput), orderEnforced: pillGet(linkOrderEnforceInput),
+  });
 }
 
-// Live preview: "N pairs", or with a Δt condition "12 of 3.418 pairs"
-// (the count without the condition as the denominator; the condition is a
-// pure post-filter, so both counts are the same pairing), plus the usual
-// histogram and the first sample pairs with their Δt.
-// Evaluated over the shared root file, where Create places the new node.
+// Key suggestions over the matches of the first two sides in the root pool; a still-untouched key
+// follows the recommendation (none when nothing is recommended).
+function refreshLinkSuggestions() {
+  if (!linkDlg) return;
+  const a = linkSideBaked(linkDlg.sides[0]), b = linkSideBaked(linkDlg.sides[1]);
+  let sug = [];
+  if (a && b) {
+    try {
+      const pool = getEntries(linkDlg.rootId);
+      sug = suggestLinkKeys(getEntriesFromBaked(a, pool, linkDlg.rootId), getEntriesFromBaked(b, pool, linkDlg.rootId));
+    } catch (e) { sug = []; }
+  }
+  linkDlg.suggestions = sug;
+  if (!linkDlg.keyTouched) {
+    const rec = sug.find(s => s.recommended);
+    linkDlg.key = rec ? { type: "suggest", value: rec.pattern } : { type: "none", value: null };
+  } else if (linkDlg.key.type === "pattern") {
+    const hit = sug.find(s => s.pattern === linkKeyPattern.value.trim());
+    if (hit && linkDlg.editNodeId) linkDlg.key = { type: "suggest", value: hit.pattern };
+  }
+  renderLinkKeyChips();
+}
+
+// "Same" chips: suggested fields, the column options, none, pattern…
+function renderLinkKeyChips() {
+  if (!linkDlg) return;
+  const phone = currentLayoutTier === "phone";
+  const cols = groupColumnOptions(linkDlg.rootId);
+  if (linkDlg.key.type === "column" && !cols.some(c => c.key === linkDlg.key.value)) cols.push({ key: linkDlg.key.value, label: groupColumnLabel(linkDlg.key.value) });
+  if (linkDlg.key.type === "suggest" && !linkDlg.suggestions.some(s => s.pattern === linkDlg.key.value)) {
+    // the field is no longer shared by both sides: keep the pattern editable instead
+    linkKeyPattern.value = linkDlg.key.value;
+    linkDlg.key = { type: "pattern", value: null };
+  }
+  const k = linkDlg.key;
+  const chip = (id, label, note, pressed) =>
+    '<button type="button" class="link-chip" data-key-chip="' + escapeHtml(id) + '" aria-pressed="' + pressed + '">' + escapeHtml(label) +
+    (note ? " <small>" + escapeHtml(phone ? "★" : note) + "</small>" : "") + "</button>";
+  let html = linkDlg.suggestions.map(sg => chip("s:" + sg.pattern, sg.field, sg.recommended ? "recommended · unique per start" : "", k.type === "suggest" && k.value === sg.pattern)).join("");
+  html += cols.map(c => chip("c:" + c.key, c.label, "", k.type === "column" && k.value === c.key)).join("");
+  html += chip("none", "none", "", k.type === "none") + chip("pattern", "pattern…", "", k.type === "pattern");
+  linkKeyChips.innerHTML = html;
+  updateLinkOptionControls();
+}
+linkKeyChips.addEventListener("click", ev => {
+  const btn = ev.target.closest("[data-key-chip]");
+  if (!btn || !linkDlg) return;
+  ev.stopPropagation();
+  const id = btn.dataset.keyChip;
+  linkDlg.keyTouched = true;
+  if (id === "none") linkDlg.key = { type: "none", value: null };
+  else if (id === "pattern") linkDlg.key = { type: "pattern", value: null };
+  else if (id.startsWith("s:")) linkDlg.key = { type: "suggest", value: id.slice(2) };
+  else linkDlg.key = { type: "column", value: id.slice(2) };
+  renderLinkKeyChips();
+  if (id === "pattern") linkKeyPattern.focus();
+  updateLinkPreview();
+});
+
+// Start / End rows plus the "for each start, find the Nth next/previous end" sentence above each End.
+function renderLinkSides() {
+  if (!linkDlg) return;
+  const dirBtn = (i, v, label) => '<button type="button" data-dir="' + v + '" aria-pressed="' + (linkDlg.hops[i].direction === v) + '">' + label + "</button>";
+  let html = "";
+  linkDlg.sides.forEach((side, i) => {
+    if (i >= 1) {
+      const h = linkDlg.hops[i - 1];
+      html += '<div class="link-sentence link-hop-row" data-hop="' + (i - 1) + '">' + (i === 1 ? "for each start, find the" : "then, from that end, find the") +
+        ' <input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span> " +
+        '<span class="link-seg link-hop-dir" role="group" aria-label="Direction">' + dirBtn(i - 1, "after", "next") + dirBtn(i - 1, "before", "previous") + "</span> end</div>";
+    }
+    html += '<div class="link-side" data-side="' + i + '"><span class="link-side-lab">' + (i === 0 ? "Start" : "End") + "</span>";
+    if (side.kind === "text") {
+      html += '<input type="text" class="link-side-input" value="' + escapeHtml(side.text) + '" placeholder="' + (i === 0 ? "type a pattern, or ▾ pick a filter" : "type a pattern, or ▾ pick a filter") + '" spellcheck="false" autocomplete="off" aria-label="' + (i === 0 ? "Start event" : "End event") + '">';
+    } else {
+      html += '<span class="link-side-chip" title="' + escapeHtml(side.label) + '"><span>' + escapeHtml(side.label) + '</span><button type="button" class="link-side-btn" data-side-clear title="Type a pattern instead" aria-label="Type a pattern instead">✕</button></span>';
+    }
+    html += '<button type="button" class="link-side-btn" data-side-pick title="Use an existing filter instead" aria-label="Pick an existing filter">▾</button>';
+    if (i >= 1 && linkDlg.hops.length > 1) html += '<button type="button" class="link-side-btn" data-side-remove title="Remove this step" aria-label="Remove this step">✕</button>';
+    html += "</div>";
+  });
+  linkSidesEl.innerHTML = html;
+}
+
+linkSidesEl.addEventListener("input", ev => {
+  if (!linkDlg) return;
+  const input = ev.target.closest("input.link-side-input");
+  const hopN = ev.target.closest("input.link-hop-n");
+  if (input) {
+    linkDlg.sides[+input.closest("[data-side]").dataset.side].text = input.value;
+  } else if (hopN) {
+    const row = hopN.closest("[data-hop]"), n = Math.max(1, parseInt(hopN.value, 10) || 1);
+    linkDlg.hops[+row.dataset.hop].n = n;
+    row.querySelector(".link-hop-ord").textContent = ordinalSuffix(n);
+  }
+});
+linkSidesEl.addEventListener("click", ev => {
+  if (!linkDlg) return;
+  const side = ev.target.closest("[data-side]");
+  const dirBtn = ev.target.closest(".link-hop-dir button");
+  if (dirBtn) {
+    ev.stopPropagation();
+    const i = +dirBtn.closest("[data-hop]").dataset.hop;
+    linkDlg.hops[i].direction = dirBtn.dataset.dir;
+    renderLinkSides();
+    updateLinkOrderEnforceAvailability();
+    updateLinkPreview();
+    return;
+  }
+  if (!side) return;
+  const i = +side.dataset.side;
+  if (ev.target.closest("[data-side-pick]")) { ev.stopPropagation(); openLinkSideMenu(i, ev.target.closest("[data-side-pick]")); return; }
+  if (ev.target.closest("[data-side-clear]")) {
+    ev.stopPropagation();
+    linkDlg.sides[i] = { kind: "text", text: "" };
+    renderLinkSides();
+    linkSidesEl.querySelector('[data-side="' + i + '"] input').focus();
+    updateLinkPreview();
+    return;
+  }
+  if (ev.target.closest("[data-side-remove]")) {
+    ev.stopPropagation();
+    linkDlg.sides.splice(i, 1);
+    linkDlg.hops.splice(i - 1, 1);
+    renderLinkSides();
+    updateLinkOrderEnforceAvailability();
+    updateLinkPreview();
+  }
+});
+el("#linkAddStep").addEventListener("click", ev => {
+  if (!linkDlg) return;
+  ev.stopPropagation();
+  const last = linkDlg.hops[linkDlg.hops.length - 1];
+  linkDlg.sides.push({ kind: "text", text: "" });
+  linkDlg.hops.push({ direction: last ? last.direction : "after", n: 1 });
+  renderLinkSides();
+  updateLinkOrderEnforceAvailability();
+  const inputs = linkSidesEl.querySelectorAll("input.link-side-input");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+  updateLinkPreview();
+});
+
+// The "▾" popup of one side: the root file's bakeable filters, or back to typing a pattern.
+function closeLinkSideMenu() { linkSideMenu.classList.add("hidden"); linkSideMenu.innerHTML = ""; }
+function openLinkSideMenu(sideIndex, anchor) {
+  const nodes = [];
+  const walk = id => { const n = state.nodes[id]; if (!n) return; if (n.type === "filter" && isLinkBakeableNode(n)) nodes.push(n); n.children.forEach(walk); };
+  state.nodes[linkDlg.rootId].children.forEach(walk);
+  let html = nodes.map(n => '<div class="ctx-item" role="menuitem" data-pick-node="' + n.id + '" title="' + escapeHtml(nodeDisplayName(n)) + '">' + escapeHtml(nodeDisplayName(n)) + "</div>").join("");
+  if (!nodes.length) html = '<div class="ctx-note">No filters in this file yet</div>';
+  html += '<div class="ctx-sep"></div><div class="ctx-item" role="menuitem" data-pick-text="1">Type a pattern</div>';
+  linkSideMenu.innerHTML = html;
+  linkSideMenu.dataset.side = String(sideIndex);
+  linkSideMenu.classList.remove("hidden");
+  const cr = linkDialogCard.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(ar.right - cr.left - linkSideMenu.offsetWidth, cr.width - linkSideMenu.offsetWidth - 8));
+  linkSideMenu.style.left = left + "px";
+  linkSideMenu.style.top = (ar.bottom - cr.top + linkDialogCard.scrollTop + 4) + "px";
+}
+linkSideMenu.addEventListener("contextmenu", ev => ev.preventDefault());
+linkSideMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".ctx-item");
+  if (!item || !linkDlg) return;
+  const i = +linkSideMenu.dataset.side;
+  if (item.dataset.pickNode) {
+    const n = state.nodes[item.dataset.pickNode];
+    if (n) linkDlg.sides[i] = { kind: "node", nodeId: n.id, label: nodeDisplayName(n) };
+  } else {
+    linkDlg.sides[i] = { kind: "text", text: "" };
+  }
+  closeLinkSideMenu();
+  renderLinkSides();
+  if (item.dataset.pickText) linkSidesEl.querySelector('[data-side="' + i + '"] input').focus();
+  updateLinkPreview();
+});
+
+// The model the buttons and the preview share: the chain, the options, whether Create may run.
+function readLinkDialogModel() {
+  const opts = readLinkDialogOptions();
+  if (opts.error) return { opts, error: opts.error, chain: null, ready: false };
+  const chain = buildLinkDialogChain(opts, true);
+  return { opts, error: null, chain, ready: !!chain };
+}
+
+// Live preview: "192 pairs · 13 without end · median 347ms · max 3.9s" (with a Δt condition "36 of
+// 192 pairs"; the condition is a pure post-filter, so both counts are the same pairing), the
+// histogram over time, the slowest pairs first and then the first start without an end.
+// Evaluated over the shared root file, where the node lives.
 function updateLinkPreview() {
   clearTimeout(linkPreviewTimer);
-  linkPreviewTimer = setTimeout(() => {
-    if (linkDialog.classList.contains("hidden")) return;
-    const opts = readLinkDialogOptions();
-    if (opts.error) { showLiveMatchError(opts.error, linkResultsTarget); return; }
-    const rootId = getRootFileId(linkRefSelect.value);
-    const chain = rootId && buildLinkDialogChain(opts, false);
-    if (!chain) { clearLiveResults(linkResultsTarget); return; }
-    const pool = getEntries(rootId);
-    const all = getEntriesFromBaked(chain, pool, rootId);
-    const hits = opts.dt ? getEntriesFromBaked(buildLinkDialogChain(opts, true), pool, rootId) : all;
-    const fmt = n => n.toLocaleString("de-DE");
-    renderLiveResults(hits, all, null, false, null, linkResultsTarget, {
-      metaText: opts.dt ? "of " + fmt(all.length) + " pairs" : (all.length === 1 ? "pair" : "pairs"),
-      badge: e => "Δt " + formatMs(e.dtMs),
-    });
-  }, 150);
+  if (linkDlg) linkDialogCreateBtn.disabled = !readLinkDialogModel().ready; // Create follows the sides at once, the preview is debounced
+  linkPreviewTimer = setTimeout(runLinkPreview, 150);
 }
-// Any option change — a switch (pillSet fires a bubbling "change"), a
-// select, a typed value, a hop's N/direction — refreshes the controls'
-// state and the preview.
+function runLinkPreview() {
+  if (!linkDlg || linkDialog.classList.contains("hidden")) return;
+  refreshLinkSuggestions();
+  const model = readLinkDialogModel();
+  linkDialogCreateBtn.disabled = !model.ready;
+  linkHint.classList.add("hidden");
+  if (model.error) { showLiveMatchError(model.error, linkResultsTarget); return; }
+  if (!model.ready) {
+    clearLiveResults(linkResultsTarget);
+    linkHint.textContent = "Type or pick an end event to see the pairs.";
+    linkHint.classList.remove("hidden", "warn");
+    return;
+  }
+  const rootId = linkDlg.rootId, opts = model.opts;
+  const pool = getEntries(rootId);
+  const meta = {};
+  const all = evaluateFilterCondition(buildLinkDialogChain(opts, false), pool, rootId, meta);
+  const hits = opts.dt ? getEntriesFromBaked(model.chain, pool, rootId) : all;
+  const unmatched = meta.linkUnmatched || [];
+  const fmt = n => n.toLocaleString("de-DE");
+  const dts = hits.map(e => e.dtMs).sort((x, y) => x - y);
+  const median = dts.length ? dts[dts.length >> 1] : 0, max = dts.length ? dts[dts.length - 1] : 0;
+  let metaText = opts.dt ? "of " + fmt(all.length) + " pairs" : (all.length === 1 ? "pair" : "pairs");
+  if (unmatched.length) metaText += " · " + fmt(unmatched.length) + " without end";
+  if (hits.length) metaText += " · median " + formatMs(median) + " · max " + formatMs(max);
+  const slowest = hits.slice().sort((x, y) => y.dtMs - x.dtMs).slice(0, FILTER_SAMPLE_ROWS);
+  const noEnd = new Set();
+  const firstUnmatched = unmatched.length ? (unmatched[0].matchEntry || unmatched[0]) : null;
+  if (firstUnmatched) noEnd.add(firstUnmatched);
+  renderLiveResults(hits, all, null, false, null, linkResultsTarget, {
+    metaText,
+    samples: firstUnmatched ? slowest.slice(0, Math.max(0, FILTER_SAMPLE_ROWS - 1)).concat([firstUnmatched]) : slowest,
+    badge: e => noEnd.has(e) ? "no end" : "Δt " + formatMs(e.dtMs),
+  });
+  if (max > 60000) {
+    linkHint.textContent = "Longest pair " + formatMs(max) + ": probably paired across different events. Try " + (linkDlg.key.type === "none" ? "a" : "another") + " “Same” key.";
+    linkHint.classList.remove("hidden");
+    linkHint.classList.add("warn");
+  }
+}
+// Any option change — a switch (pillSet fires a bubbling "change"), a select, a typed value, a
+// direction — refreshes the controls' state and the preview.
 linkDialog.addEventListener("change", () => { updateLinkOptionControls(); updateLinkPreview(); });
 linkDialog.addEventListener("input", updateLinkPreview);
 
-// Rebuilds the hop-row list from linkDialogIds minus whichever one is
-// currently chosen as reference, preserving their relative selection order.
-// Each row's wording spells out what it's relative to — the reference for
-// the first hop, "the previous match" for every hop after that — since the
-// old single-hop "before/after TargetName" phrasing read ambiguously about
-// what was before/after what (see requirements doc's optional UX polish).
 // 1 -> "st", 2 -> "nd", 3 -> "rd", 4 -> "th", 11-13 -> "th", 21 -> "st", 101 -> "st", 111 -> "th"
 function ordinalSuffix(n) {
   const m100 = n % 100;
@@ -38907,70 +39271,42 @@ function ordinalSuffix(n) {
   return m10 === 1 ? "st" : m10 === 2 ? "nd" : m10 === 3 ? "rd" : "th";
 }
 
-function renderLinkHops() {
-  const refId = linkRefSelect.value;
-  const refNode = state.nodes[refId];
-  const hopIds = linkDialogIds.filter(id => id !== refId);
-  linkHopRows = hopIds.map((targetId, i) => {
-    const target = state.nodes[targetId];
-    const anchorText = i === 0
-      ? "each " + escapeHtml(refNode ? nodeDisplayName(refNode) : "") + " entry"
-      : "the previous match";
-    const row = document.createElement("div");
-    row.className = "link-hop-row";
-    row.innerHTML =
-      '<span class="link-hop-desc">Find the <input type="number" class="link-hop-n" min="1" value="1">' +
-      '<span class="link-hop-ord">st</span> <b>' + escapeHtml(target ? nodeDisplayName(target) : "") + '</b> entry ' +
-      '<select class="link-hop-dir"><option value="before">before</option><option value="after">after</option></select> ' +
-      '<span class="link-hop-anchor">' + anchorText + '</span></span>';
-    row.querySelector(".link-hop-dir").value = "before";
-    const nIn = row.querySelector(".link-hop-n"), ordEl = row.querySelector(".link-hop-ord");
-    nIn.addEventListener("input", () => { ordEl.textContent = ordinalSuffix(Math.max(1, parseInt(nIn.value, 10) || 1)); });
-    const dirSelect = row.querySelector(".link-hop-dir");
-    dirSelect.addEventListener("change", updateLinkOrderEnforceAvailability);
-    return { targetId, nInput: row.querySelector(".link-hop-n"), dirSelect, row };
-  });
-  linkHopsList.innerHTML = "";
-  linkHopRows.forEach(h => linkHopsList.appendChild(h.row));
-  updateLinkOrderEnforceAvailability();
-  updateLinkOptionControls();
-  updateLinkPreview();
-}
-
-// "Enforce chronological order" is only meaningful when the hop chain mixes
-// "before" and "after" directions — see docs/filters.md's "Opt-in options"
-// section. A single-direction chain makes the monotonic-timestamp check in
-// getEntriesFromBaked/getEntries trivial: all-"before" always drops every
-// tuple, all-"after" (or a lone hop of either direction) never drops any.
-// Hide the row entirely (never leave a stale checked-but-hidden state)
-// whenever the current hop directions aren't diverse.
+// "Enforce chronological order" is only meaningful when the steps mix "next" and "previous" — see
+// docs/filters.md's "Opt-in options". A single-direction chain makes the monotonic-timestamp check
+// trivial, so the row is hidden (and never left checked-but-hidden) unless the directions differ.
 function updateLinkOrderEnforceAvailability() {
-  const dirs = linkHopRows.map(h => h.dirSelect.value);
+  const dirs = linkDlg ? linkDlg.hops.map(h => h.direction) : [];
   const diverse = dirs.length >= 2 && new Set(dirs).size > 1;
   if (!diverse) pillSet(linkOrderEnforceInput, false);
   linkOrderEnforceRow.classList.toggle("hidden", !diverse);
 }
-linkRefSelect.addEventListener("change", renderLinkHops);
-linkDialog.addEventListener("click", ev => { if (ev.target === linkDialog) closeLinkDialog(); });
+linkDialog.addEventListener("click", ev => {
+  if (ev.target === linkDialog) { closeLinkDialog(); return; }
+  if (!linkSideMenu.classList.contains("hidden") && !linkSideMenu.contains(ev.target)) closeLinkSideMenu();
+});
 el("#linkDialogCancel").addEventListener("click", closeLinkDialog);
-el("#linkDialogCreate").addEventListener("click", () => {
-  const orderEnforced = pillGet(linkOrderEnforceInput);
-  const exclusive = pillGet(linkExclusiveInput);
-  const opts = readLinkDialogOptions();
-  if (opts.error) { showLiveMatchError(opts.error, linkResultsTarget); return; } // keep the dialog open to fix it
-  // ONE node holds the whole chain (no intermediate hop nodes): the key and
-  // the flags hold on every hop, the Δt condition on the last — see
-  // buildLinkDialogChain / hopsToLinkChain.
-  const chain = buildLinkDialogChain(opts, true);
-  const rootId = getRootFileId(linkRefSelect.value);
-  const lastNode = chain && rootId
-    ? createLinkNodeFromBaked(rootId, chain.bakedA, chain.bakedB, chain.linkDirection, chain.linkN,
-      { orderEnforced, exclusive, key: opts.key, dt: chain.linkDt || null })
-    : null;
-  const ok = !!lastNode;
-  if (ok && lastNode) revealFilteredView();
+function commitLinkDialog() {
+  if (!linkDlg) return;
+  const model = readLinkDialogModel();
+  if (model.error) { showLiveMatchError(model.error, linkResultsTarget); return; } // keep the dialog open to fix it
+  if (!model.ready) return;
+  const chain = model.chain, editId = linkDlg.editNodeId, rootId = linkDlg.rootId;
+  let ok;
+  if (editId) {
+    ok = updateLinkNodeWithUndo(editId, chain);
+    if (ok) state.activeId = editId;
+  } else {
+    // ONE node holds the whole chain (no intermediate hop nodes).
+    ok = !!createLinkNodeFromBaked(rootId, chain.bakedA, chain.bakedB, chain.linkDirection, chain.linkN,
+      { orderEnforced: !!chain.linkOrderEnforced, exclusive: !!chain.linkExclusive, key: chain.linkKey || null, dt: chain.linkDt || null });
+  }
+  if (ok) revealFilteredView();
   closeLinkDialog();
   render();
+}
+linkDialogCreateBtn.addEventListener("click", commitLinkDialog);
+linkDialog.addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && ev.target.matches("input") && !linkDialogCreateBtn.disabled) { ev.preventDefault(); commitLinkDialog(); }
 });
 
 

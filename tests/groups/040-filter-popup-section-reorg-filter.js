@@ -59,8 +59,8 @@ await withApp(async (w, d, T) => {
   // The separate "Extract" button is gone (this session's filterType merge,
   // docs/archive/ui-implementation-plan.md's follow-up note) — "Add filter" is the
   // footer's only action button now.
-  assert(actionChildren.length === 1 && actionChildren[0] === d.querySelector("#filterSubmitBtn"),
-    "Add filter is the footer's sole action button, bottom-right");
+  assert(actionChildren.length === 2 && actionChildren[0] === d.querySelector("#filterLinkEventsBtn") && actionChildren[1] === d.querySelector("#filterSubmitBtn"),
+    "Add filter is the footer's only action button, bottom-right, preceded by the small 'Link two events…' link");
 
   const formChildren = [...d.querySelector("#filterForm").children];
   const idx = el => formChildren.indexOf(el);

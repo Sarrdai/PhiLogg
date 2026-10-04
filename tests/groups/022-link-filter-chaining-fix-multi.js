@@ -201,13 +201,9 @@ group(22);
 
     w.openLinkDialog([first.id, second.id, third.id]);
     assert(!d.querySelector("#linkDialog").classList.contains("hidden"), "multi-hop dialog: opens for 3 filters");
-    d.querySelector("#linkRefSelect").value = first.id;
-    d.querySelector("#linkRefSelect").dispatchEvent(new w.Event("change"));
-    const hopRows = d.querySelectorAll("#linkHopsList .link-hop-row");
-    assert(hopRows.length === 2, "multi-hop dialog: 2 hop rows for reference + 2 remaining filters");
-
-    hopRows[0].querySelector(".link-hop-dir").value = "after";
-    hopRows[1].querySelector(".link-hop-dir").value = "after";
+    const hopRows = d.querySelectorAll("#linkSides .link-hop-row");
+    assert(hopRows.length === 2, "multi-hop dialog: 2 hop rows for start + 2 remaining filters");
+    assert([...hopRows].every(r => r.querySelector('.link-hop-dir button[data-dir="after"]').getAttribute("aria-pressed") === "true"), "the direction defaults to next (after)");
     fireClick(d.querySelector("#linkDialogCreate"), w);
     assert(d.querySelector("#linkDialog").classList.contains("hidden"), "multi-hop dialog: closes after Create");
 
