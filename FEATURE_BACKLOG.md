@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 101
+LAST_ID: 102
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -55,6 +55,7 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 95 | Folder watch lists every file type PhiLogg can open | A watched folder lists only `.log`/`.log.gz` (`FOLDER_WATCH_EXTENSIONS`) plus inline-viewable txt/xml/json/images; a log with another extension — `.jsonl`, or anything a format's filename rule matches — doesn't appear at all, so the auto rules (which already apply to every listed type) can't reach it. Would widen `isCompatibleFolderFile` to format filename rules and pass a matching (or empty) extension list to the desktop wrapper's native `list_folder`. | mittel | 2 |
 | 97 | Plot: bound the number of drawn marks for very large extractions | After the 2026-10-02 stack-overflow fix a 300k-point scatter renders, but every mark is an SVG element: about 2 s per redraw in Chromium, and the first draw runs several redraws. Drawing at most one mark per pixel cell (or a canvas layer) would keep hover/click mapping and the picture while bounding the cost. | mittel | 2 |
 | 98 | Extraction table: select-all on a big extraction is slow | `applyExtractSelectionClasses` (behind `selectCells`) runs one `querySelector` per selected cell; selecting every cell of a 200k-row extraction takes seconds. Toggle the classes by walking the rendered rows once instead (found while fixing the spread crash, 2026-10-02). | klein | 2 |
+| 102 | Check saving in the macOS/Linux desktop builds | WKWebView (macOS) and WebKitGTK (Linux) have no `showSaveFilePicker`, so every save (session, filter, Export / Share files, CSV, plot image, themes) falls back to an `<a download>` of a Blob, and the Tauri wrapper does not handle downloads explicitly. Whether a file is actually written there, and where, is unverified (the cloud container cannot run those builds); the app would toast "Downloaded …" either way. Candidate: a wrapper-side save dialog via the `window.philogg` contract, like `pick_folder`. | mittel | 2 |
 | 88 | Very large files (multi-GB) in the desktop build | Keep raw data and a line/time index on the Rust side and hand JS only the window it currently needs, instead of holding every entry in memory. Today the whole file lives in RAM — fine up to a few hundred MB, a hard limit beyond that; #54 (Prune) only mitigates it. | groß | 3 |
 | 99 | Carry `selectionOrdinal` through the filter-node copy table | `createSelectionFilterNode` sets it, but no carrier copies, saves or restores it: a pasted, undone or reloaded "Selection N" node has `selectionFilter` and no ordinal, so `specialChildRank` ranks it 3 like any other. One `FILTER_NODE_FIELDS` row plus the readers and a fixture (GROUP filter-node-carriers lists it as not carried). | klein | 3 |
 | 100 | `findRootIdForEntry` is a linear scan | About 5 ms of every bookmark/note toggle on a 300k-entry file (measured in a one-off probe after the 2026-10-02 cache-scope change, which brought a toggle from about 625 ms to about 17 ms); an `entryIndex`-side root lookup would make it constant. | klein | 3 |
