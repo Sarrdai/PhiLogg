@@ -4599,6 +4599,10 @@
   body.layout-compact #addToSelectionMenu, body.layout-phone #addToSelectionMenu{z-index:63;}
   body.layout-compact #colorPickerPopup, body.layout-phone #colorPickerPopup{z-index:64;}
   body.layout-compact #toolbar, body.layout-phone #toolbar{gap:10px; padding:0 10px;}
+  /* Header above the scrim while the drawer is open: one tap on Undo/Find/... acts
+     (a capture listener on #toolbar closes the drawer); the drawer (z 60) still
+     covers the header's left part. */
+  body.layout-compact.drawer-open #toolbar, body.layout-phone.drawer-open #toolbar{position:relative; z-index:56;}
   body.layout-compact .toolbar-right{gap:10px; min-width:0;}
   body.layout-compact .status-text{min-width:0; max-width:34vw; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;}
 
@@ -4865,6 +4869,16 @@
     body.layout-phone .view-tab, body.layout-compact .view-tab{padding:0 14px; font-size:12px;}
     body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
     body.layout-compact #btnLibrary{height:44px;}
+    /* Tablet touch: #viewBar is one non-wrapping, horizontally scrollable row (the floated
+       children would wrap onto a 2nd line, e.g. the "+" alone). Hover label pills do not
+       exist on touch, so clipping them is harmless. Phone has its own rule above. */
+    body.layout-compact #viewBar{
+      display:flex; flex-wrap:nowrap; align-items:center; overflow-x:auto; overflow-y:hidden;
+      scrollbar-width:none; -webkit-overflow-scrolling:touch;
+    }
+    body.layout-compact #viewBar::-webkit-scrollbar{display:none;}
+    body.layout-compact #viewBar > *{float:none; flex:0 0 auto;}
+    body.layout-compact #viewBar > #btnFacets{margin-left:auto;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
@@ -5832,11 +5846,11 @@
     </div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctxAfter">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 13l-3-3M8 13l3-3"/></svg>
       Filter after this (incl.)
     </div>
     <div class="ctx-item" id="ctxBefore">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 13l-3-3M8 13l3-3"/></svg>
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>
       Filter before this (incl.)
     </div>
     <div class="ctx-item" id="ctxTimeRangeFromSelection">
@@ -15955,6 +15969,20 @@ function undo() {
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
 }
 
+// Phone has no visible Undo button and no keyboard, so a tree-menu removal would be
+// permanent: offer a toast with an Undo button. prevTop = undoStack's top before the
+// removal; nothing to offer when no new action was pushed (folder-watch file close).
+// The button only undoes while that very action is still on top.
+function offerPhoneUndoToast(prevTop) {
+  if (currentLayoutTier !== "phone") return;
+  const action = undoStack[undoStack.length - 1];
+  if (!action || action === prevTop) return;
+  showCopyToast(action.kind === "deleteFile" ? "File removed" : "Filter removed", {
+    label: "Undo",
+    onClick: () => { if (undoStack[undoStack.length - 1] === action) undo(); },
+  });
+}
+
 // One action's inverse. A "batch" (the LLM assistant's one-step-per-round,
 // see llmPushRoundBatch/llmUndoRound) undoes its own actions in reverse.
 function undoAction(action) {
@@ -17144,6 +17172,7 @@ function revealSelectedInContextTab() {
 // Ctrl+1/2/3 shortcuts, the #fhTabs click listener) clears it — see those
 // call sites instead.
 function applyFhView(view) {
+  if (currentLayoutTier === "phone") view = "filter"; // phone shows Filtered only; no caller may land elsewhere
   if (view === "stacked") {
     // Only reached while fhLayout is ALREADY "stacked" (the "Stacked" button
     // only renders in that layout — see renderViewTabs) — this click means
@@ -17598,9 +17627,39 @@ btnNavForward.addEventListener("click", navigateForward);
 // Browser/OS "back"/"forward" mouse buttons (button 3/4) — held back from
 // the app's own history navigation by preventDefault so a browser tab
 // doesn't also try to navigate itself away in the same gesture.
+let lastMouseNavAt = 0;
 document.addEventListener("mouseup", ev => {
-  if (ev.button === 3) { ev.preventDefault(); navigateBack(); }
-  else if (ev.button === 4) { ev.preventDefault(); navigateForward(); }
+  if (ev.button === 3) { ev.preventDefault(); lastMouseNavAt = Date.now(); navigateBack(); }
+  else if (ev.button === 4) { ev.preventDefault(); lastMouseNavAt = Date.now(); navigateForward(); }
+});
+
+// Browser/OS Back gesture (phone swipe, Android Back, Alt+Left) stays in the
+// app: ONE guard history entry is pushed from a trusted user interaction
+// (Chrome drops entries added without user activation). Back pops it and
+// steps back in-app instead — close an open overlay, else the phone sheet,
+// else the nav history — then re-arms; with nothing to step back to the guard
+// stays popped so the next Back leaves (a toast says so). pushState without a
+// URL keeps ?url= / ?session= intact.
+let backGuardArmed = false;
+function armBackGuard() {
+  if (backGuardArmed) return;
+  try { history.pushState({ philoggBackGuard: true }, ""); backGuardArmed = true; } catch { /* no history API */ }
+}
+["pointerdown", "pointerup", "keydown"].forEach(t => document.addEventListener(t, armBackGuard, true));
+window.addEventListener("popstate", ev => {
+  if (ev.state && ev.state.philoggBackGuard) { backGuardArmed = true; return; } // Forward onto the guard
+  backGuardArmed = false;
+  // A mouse Back button already stepped the in-app history; Chromium may
+  // still fire its own navigation despite preventDefault — don't double-step.
+  if (Date.now() - lastMouseNavAt < 600) { armBackGuard(); return; }
+  if (formatDialogOpen() || themeEditorOpen() || anyEscapeOverlayOpen() || isDrawerOpen()) closeEscapeOverlays();
+  else if (currentLayoutTier === "phone" && phoneSheetOpen) closePhoneSheet();
+  else if (navHistoryIndex > 0) navigateBack();
+  else {
+    if (state.rootIds.length) showCopyToast("Press Back again to leave PhiLogg \u2014 your session is saved");
+    return;
+  }
+  armBackGuard();
 });
 
 fhTabs.addEventListener("click", ev => {
@@ -19248,7 +19307,13 @@ function renderNode(id, depth, opts) {
     del.title = node.type === "file"
       ? (node.folderId ? "Close file (stays listed in its watched folder)" : "Remove file")
       : "Remove filter";
-    del.addEventListener("click", ev => { ev.stopPropagation(); deleteFilterNodeWithUndo(id); render(); });
+    del.addEventListener("click", ev => {
+      ev.stopPropagation();
+      const prevTop = undoStack[undoStack.length - 1];
+      deleteFilterNodeWithUndo(id);
+      render();
+      offerPhoneUndoToast(prevTop);
+    });
     row.appendChild(del);
   }
 
@@ -19349,8 +19414,10 @@ function renderNode(id, depth, opts) {
   row.addEventListener("auxclick", ev => {
     if (ev.button !== 1 || node.locked || (opts && opts.mergeSourceColor)) return;
     ev.preventDefault();
+    const prevTop = undoStack[undoStack.length - 1];
     deleteFilterNodeWithUndo(id);
     render();
+    offerPhoneUndoToast(prevTop);
   });
 
   // Drag-and-drop reparenting (mouse-event based — see treeDrag's comment):
@@ -24336,6 +24403,24 @@ function clearTempAnchorFadeTimer() {
   if (tempAnchorFadeTimer) { clearTimeout(tempAnchorFadeTimer); tempAnchorFadeTimer = null; }
 }
 
+// The anchor was just cleared by a real selection elsewhere (applySelection):
+// its spliced clone must leave currentViewEntries and the DOM right away —
+// the fade timer's callbacks early-return once state.tempAnchor is null, so
+// nothing else would ever remove the stale "not in this filter" ghost row
+// (it would survive a tab switch until the next full renderTable). Repaints
+// in place like setNoteAndRepaint (no render(): that resets the scroll).
+function dropTempAnchorRow() {
+  clearTempAnchorFadeTimer();
+  const idx = currentViewEntries.findIndex(e => e._tempAnchor);
+  if (idx === -1) return;
+  currentViewEntries.splice(idx, 1);
+  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
+  const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
+  tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  renderVisibleRows();
+  updateMinimapSelectionMarkers();
+}
+
 // "Fade" mode: briefly shows the anchor row, collapses its OWN height to 0
 // as it fades (via .temp-anchor-fading's CSS transition), then removes just
 // that DOM row and drops it from state.tempAnchor/currentViewEntries —
@@ -24700,7 +24785,7 @@ function appendLogRow(frag, i, rc) {
     if (msgEl) msgEl.style.webkitLineClamp = String(cardLinesForEntry(e, tableWrapCols));
   }
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
-  row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
+  row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
   frag.appendChild(row);
   const noteRow = appendNoteRow(frag, e);
@@ -26626,7 +26711,7 @@ function renderHighlightVisibleRows() {
     // building moves under them mid-gesture.
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
       (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
-    row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, e); });
+    row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
     // Every revealed context row carries its slice of its run's connecting
     // line — appended as a real child AFTER innerHTML is set (a plain HTML
@@ -27300,6 +27385,43 @@ function toggleFocusMode(on) {
     focusModePrevState = null;
     setDesktopFullscreen(false);
   }
+}
+// Closes whatever Esc closes (and the browser Back gesture, see the popstate
+// handler): the format wizard first, else the theme editor / its color picker
+// (both stack above Settings, so only that one closes), else the drawer and
+// every popup/menu/dialog. One list for both so they can't drift.
+function closeEscapeOverlays() {
+  if (formatDialogOpen()) { closeFormatEditDialog(); return; }
+  if (themeEditorOpen()) {
+    if (!colorPickerPopup.classList.contains("hidden")) closeColorPicker(); else closeThemeEditor();
+    return;
+  }
+  setDrawerOpen(false);
+  closePlotFullscreen();
+  closeSettingsDialog();
+  closeFilterPopup();
+  closeFindBar();
+  closeContextMenu();
+  closeTreeContextMenu();
+  closeExtractContextMenu();
+  closeFacetValueMenu();
+  closeCsvExportDialog();
+  closeExportDialog();
+  closeLinkDialog();
+  closeGapDialog();
+  closeContextDialog();
+  closeTimeRangeDialog();
+  closeAssertDialog();
+  closeClockOffsetDialog();
+  closeNoteDialog();
+  closeColumnsPanel();
+  closeColorPicker();
+  closeSessionExportDialog();
+  closeFilterLibrarySaveDialog();
+  closeFilterLibraryDialog();
+  closeLibraryMenu();
+  if (sessionMatchResolver) closeSessionMatchDialog("cancel");
+  if (mergeLoadResolver) closeMergeLoadDialog(false);
 }
 // Whether any popup/menu/dialog is currently open — used so Esc's secondary
 // "exit Focus Mode" path only fires when nothing else is consuming that Esc
@@ -28578,6 +28700,23 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
   selectFn(entryId);
 }
 
+// Right-click on a log row (Explorer convention): a row outside the current
+// multi-selection becomes the single selection BEFORE the context menu opens,
+// so the detail panel and the menu's actions refer to the same entry. A row
+// inside the multi-selection leaves it untouched (ctxCopy copies the whole
+// set). selectFn is selectEntry/selectHighlightEntry — never the Context
+// tab's click variant, whose list expansion would move rows under the menu —
+// and phoneSheetOpen stays alone (a long-press must not open the sheet).
+function selectRowForContextMenu(entryId, selectFn) {
+  if (state.logMultiSelect.has(entryId)) return;
+  if (state.logMultiSelect.size) {
+    state.logMultiSelect = new Set();
+    updateLogMultiSelectClasses();
+  }
+  logMultiSelectAnchorId = entryId;
+  if (state.selectedId !== entryId) selectFn(entryId);
+}
+
 // Ctrl+C in the log view (see the keydown handler): copies the raw text of
 // every multi-selected row, or just the single selected entry when nothing
 // is multi-selected — sorted chronologically by timestamp (not click/DOM
@@ -28612,7 +28751,10 @@ function applySelection(entryId) {
   state.focusRegion = "entries";
   // A no-match temp anchor (FEATURE_BACKLOG #18) is only meaningful for the
   // exact entry it was created for — any OTHER real selection drops it.
-  if (state.tempAnchor && state.tempAnchor.entryId !== entryId) state.tempAnchor = null;
+  if (state.tempAnchor && state.tempAnchor.entryId !== entryId) {
+    state.tempAnchor = null;
+    dropTempAnchorRow();
+  }
   // Picking a row means the user wants to look at *this* entry — stop the
   // view from being yanked to the bottom by incoming tailed entries. Checks
   // both views (FEATURE_BACKLOG #25): a row click in the Highlight/Full view
@@ -28642,7 +28784,10 @@ function selectEntry(entryId, opts) {
     // opts.index: callers that already know the entry's position (arrow-key
     // navigation, minimap click) pass it along so a large view isn't scanned
     // twice per keypress (moveSelection's own findIndex + this one).
-    const idx = opts.index != null ? opts.index : currentViewEntries.findIndex(e => e.id === entryId);
+    // The hint is only trusted while it still points at this entry: dropping
+    // the temp anchor row (applySelection) shifts the list under the caller.
+    const idx = opts.index != null && currentViewEntries[opts.index] && currentViewEntries[opts.index].id === entryId
+      ? opts.index : currentViewEntries.findIndex(e => e.id === entryId);
     if (idx !== -1) scrollToIndex(idx, { center: opts.center }); // already re-renders its own window
   }
   // Plain mouse click on an already-visible row: just flip the "selected"
@@ -28704,6 +28849,7 @@ function jumpAfterPip(fn, args) {
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
 function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
+  if (currentLayoutTier === "phone") return; // no Context view on phone (Filtered only)
   commitCurrentNavPosition(); // A2: freeze the Filtered-pane spot we are jumping out of
   state.entriesView = "highlight";
   const previousId = applySelection(entry.id);
@@ -29881,6 +30027,11 @@ el("#tourBannerMore").addEventListener("click", ev => {
   ev.currentTarget.setAttribute("aria-expanded", open ? "true" : "false");
 });
 el("#drawerScrim").addEventListener("click", () => setDrawerOpen(false));
+// The header sits above the scrim while the drawer is open: any tap on it closes the
+// drawer and continues to its button (#btnDrawer keeps toggling itself).
+el("#toolbar").addEventListener("click", ev => {
+  if (isDrawerOpen() && !ev.target.closest("#btnDrawer")) setDrawerOpen(false);
+}, true);
 
 // Long-press → context menu for touch pointers in the compact and phone tiers (iOS never fires
 // "contextmenu"). One global helper: no per-handler changes. The synthetic
@@ -32455,11 +32606,11 @@ function applyFolderFileLocation(node, handle) {
   if (path) node.localPath = path;
   return changed;
 }
-function loadUrlIntoTree(url) { return trackForegroundLoad(() => loadUrlIntoTreeImpl(...arguments)); }
+function loadUrlIntoTree(url) { return trackForegroundLoad(() => loadUrlIntoTreeImpl(...arguments)); } // resolves to the new file node, null on failure
 async function loadUrlIntoTreeImpl(url) {
   if (location.protocol === "file:") {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
-    return;
+    return null;
   }
   let name = "remote.log";
   try {
@@ -32496,12 +32647,12 @@ async function loadUrlIntoTreeImpl(url) {
     } catch (err) {
       if (node) deleteNode(node.id);
       showCopyToast("Could not load log from URL (network or CORS error)");
-      return;
+      return null;
     }
     if (!res.ok) {
       if (node) deleteNode(node.id);
       showCopyToast(`Could not load log from URL (HTTP ${res.status})`);
-      return;
+      return null;
     }
     const buf = await res.arrayBuffer();
     gzip = isGzipBytes(new Uint8Array(buf, 0, Math.min(2, buf.byteLength)));
@@ -32511,7 +32662,7 @@ async function loadUrlIntoTreeImpl(url) {
     } catch (err) {
       if (node) deleteNode(node.id);
       showCopyToast(`Could not decompress log from URL (${err.message})`);
-      return;
+      return null;
     }
     const text = new TextDecoder().decode(bytes);
     node = await addFile(name, text, undefined, undefined, node || undefined);
@@ -32537,20 +32688,43 @@ async function loadUrlIntoTreeImpl(url) {
     };
     state.tailFollow = true;
   }
+  // Persist like every other load path (loadOneFileIntoTree etc.): without
+  // a files-store record a reload finds the cacheKey in meta.fileOrder but
+  // nothing to restore, and the filters/bookmarks/notes are gone.
+  persistFileNode(node); // fire-and-forget
   render();
+  return node;
 }
 
-async function loadFromUrlParam() {
-  const url = new URLSearchParams(location.search).get("url");
+// search: the query string to read (boot passes the one it started with).
+async function loadFromUrlParam(search = location.search) {
+  const url = new URLSearchParams(search).get("url");
   if (!url) return;
-  await loadUrlIntoTree(url);
+  const fresh = await loadUrlIntoTree(url);
+  // A reload restored the previous visit's copy (with its filters, bookmarks,
+  // notes) from the session cache before this ran. If the freshly fetched
+  // file is byte-identical (tier-1 hash) to another root file, drop the FRESH
+  // node and keep the restored one; a changed log (different hash) stays as a
+  // new file.
+  if (!fresh || !state.nodes[fresh.id] || !fresh.entries || !fresh.entries.length) return;
+  const h = getFileFullHash(fresh);
+  for (const id of state.rootIds) {
+    const n = state.nodes[id];
+    if (id === fresh.id || !n || n.type !== "file" || !n.entries || !n.entries.length) continue;
+    if (getFileFullHash(n) !== h) continue;
+    const freshWasActive = state.activeId === fresh.id;
+    deleteNode(fresh.id);
+    if (freshWasActive) { state.activeId = n.id; state.multiSelect = new Set(); }
+    render();
+    return;
+  }
 }
 
 // ?session=<url> loads a session file (files + filters + notes + settings, see
 // loadSessionFromUrl); ?open=format opens the "Add log format" dialog, after
 // the session load when both are given.
-async function loadSessionAndOpenFromParams() {
-  const params = new URLSearchParams(location.search);
+async function loadSessionAndOpenFromParams(search = location.search) {
+  const params = new URLSearchParams(search);
   const sessionUrl = params.get("session");
   if (sessionUrl) await loadSessionFromUrl(sessionUrl);
   if (params.get("open") === "format") openFormatEditDialog(null);
@@ -36441,12 +36615,13 @@ function openContextMenu(ev, entry) {
   ctxTimeRangeFromSelection.style.display = state.logMultiSelect.size >= 2 ? "" : "none";
   // "Extract" mirrors the #viewBar row-action's own gate (updateRowActionButtons'
   // extractActionEnabled) — only shown when the right-clicked entry's message
-  // actually has numeric/time content to wildcard; a message with none would
+  // actually has numeric/time/identifier content to wildcard; a message with none would
   // just produce a literal-text node indistinguishable from "Filter for this
   // message" (buildNumericExtractPattern is the exact same check that button
   // uses, and extractMessageFilter below is the exact same function it calls).
+  // Hidden on phone: the extraction node only feeds Table/Plot, which phone does not show.
   ctxExtractMessage.style.display =
-    buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
+    currentLayoutTier !== "phone" && buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
   // IDE Integration: row-level (not column-gated like "Filter for this
   // ___" above) — the Method column carries no file/line data of its own,
   // so gating strictly on which column was clicked would make these items
@@ -36538,8 +36713,11 @@ el("#ctxCopyTicket").addEventListener("click", ev => {
 // placeholder, producing a ready-to-use wildcard pattern (e.g. "moved to
 // [*:float] after [*:int] tries"). Clock times / durations are
 // recognized as a single [*:time] rather than being split into
-// separate numbers, and a number glued directly onto letters (e.g. inside
-// a hash or "v2") is left alone rather than being pulled out. A number
+// separate numbers. An identifier that starts with a letter and contains a
+// digit ("J-00004", "worker-3", "v2", "gen2", "a3f9", "snake_9") becomes ONE
+// [*:word] capture — never literal (the pattern would match only that one
+// entry) and never an int column. A number glued onto letters otherwise
+// (e.g. "注文70328") is still pulled out as before. A number
 // grouped with both separators ("1,234.5" / "1.234,5") stays ONE [*:float],
 // which a plain [*:float] matches (see EXTRACT_TYPES); a lone "1,234" is
 // ambiguous and is left split, [*:float@en]/@de is the explicit way. Returns null
@@ -36547,12 +36725,13 @@ el("#ctxCopyTicket").addEventListener("click", ev => {
 // the exact literal text instead, so a message/method/thread with no
 // numbers in it is still filterable for its exact value.
 // The lookbehind keeps a token from starting right after an ASCII letter/digit/
-// underscore/dot, or a sign/digit right after "<letter>-" (identifiers like
-// "J-00004", "worker-3"). ASCII only on purpose: CJK text ("注文70328") must
+// underscore/dot, or right after "<letter>-" (so the tail of an identifier
+// is never re-scanned as a number). ASCII only on purpose: CJK text ("注文70328") must
 // still extract. Exception: a clock time right after "<digit>T" (ISO timestamp).
 const NUMERIC_TOKEN_RE = new RegExp(
   "(?:(?<=\\dT)\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?|(?<![A-Za-z0-9_.]|[A-Za-z]-)(?:" +
-  "\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
+  "[A-Za-z][A-Za-z_]*-?\\d\\w*(?:-\\w+)*" +                                         // identifier (letter + digit): one [*:word]
+  "|\\d{1,2}:\\d{2}(?::\\d{2})?(?:[.,]\\d+)?" +                                       // clock time
   "|\\d+(?:\\.\\d+)?\\s?(?:ms|s|sec|secs|seconds|min|mins|minutes|h|hrs|hours)\\b" + // duration + unit
   "|[-+]?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?)" +     // standalone number (grouped only with both separators)
   "))",
@@ -36567,7 +36746,7 @@ function buildNumericExtractPattern(message) {
   while ((m = NUMERIC_TOKEN_RE.exec(message)) !== null) {
     out += message.slice(lastIndex, m.index);
     const tok = m[0];
-    out += tok.includes(":") || /[a-zA-Z]/.test(tok) ? "[*:time]" : (tok.includes(".") ? "[*:float]" : "[*:int]");
+    out += /^[A-Za-z]/.test(tok) ? "[*:word]" : tok.includes(":") || /[a-zA-Z]/.test(tok) ? "[*:time]" : (tok.includes(".") ? "[*:float]" : "[*:int]");
     lastIndex = NUMERIC_TOKEN_RE.lastIndex;
     count++;
   }
@@ -37328,7 +37507,7 @@ function updateRowActionButtons() {
   // "Extract" additionally needs that entry's message to actually contain
   // something extractable — same buildNumericExtractPattern() the button's
   // own click handler (extractMessageFilter) already uses to build the
-  // pattern; a message with no numeric/time content would just create a
+  // pattern; a message with no numeric/time/identifier content would just create a
   // literal-text filter node, which isn't what "Extract" is for (person-
   // requested, 2026-09-08 — use "Message" for that case instead).
   const extractActionEnabled = messageActionEnabled &&
@@ -37906,6 +38085,8 @@ function describeSidebarToolbarActions() {
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
     { action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target, separator: true, disabled: !filter },
   ];
+  // Phone has no #btnLibrary to apply a library preset, so saving one is pointless there.
+  if (currentLayoutTier === "phone") actions.pop();
   return { actions };
 }
 
@@ -38246,8 +38427,10 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "delete") {
     if (treeCtxId && state.nodes[treeCtxId]) {
+      const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(treeCtxId);
       render();
+      offerPhoneUndoToast(prevTop);
     }
     return;
   }
@@ -38344,7 +38527,10 @@ function renderSidebarToolbar() {
     }
     return;
   }
-  if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]")) {
+  // The button set depends on the layout tier (no "Add to library…" on phone): rebuild on a tier change.
+  const wantsLibBtn = describeSidebarToolbarActions().actions.some(a => a.action === "addToLibrary");
+  if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]") ||
+      !!sidebarToolbarEl.querySelector('[data-row-action="addToLibrary"]') !== wantsLibBtn) {
     sidebarToolbarMultiKey = null;
     sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "rect", "sidebar-toolbar-hit");
     // Idempotent (per-container guard), so calling it again never stacks listeners.
@@ -38562,6 +38748,14 @@ linkDialog.addEventListener("input", updateLinkPreview);
 // the first hop, "the previous match" for every hop after that — since the
 // old single-hop "before/after TargetName" phrasing read ambiguously about
 // what was before/after what (see requirements doc's optional UX polish).
+// 1 -> "st", 2 -> "nd", 3 -> "rd", 4 -> "th", 11-13 -> "th", 21 -> "st", 101 -> "st", 111 -> "th"
+function ordinalSuffix(n) {
+  const m100 = n % 100;
+  if (m100 >= 11 && m100 <= 13) return "th";
+  const m10 = n % 10;
+  return m10 === 1 ? "st" : m10 === 2 ? "nd" : m10 === 3 ? "rd" : "th";
+}
+
 function renderLinkHops() {
   const refId = linkRefSelect.value;
   const refNode = state.nodes[refId];
@@ -38575,10 +38769,12 @@ function renderLinkHops() {
     row.className = "link-hop-row";
     row.innerHTML =
       '<span class="link-hop-desc">Find the <input type="number" class="link-hop-n" min="1" value="1">' +
-      'th <b>' + escapeHtml(target ? nodeDisplayName(target) : "") + '</b> entry ' +
+      '<span class="link-hop-ord">st</span> <b>' + escapeHtml(target ? nodeDisplayName(target) : "") + '</b> entry ' +
       '<select class="link-hop-dir"><option value="before">before</option><option value="after">after</option></select> ' +
       '<span class="link-hop-anchor">' + anchorText + '</span></span>';
     row.querySelector(".link-hop-dir").value = "before";
+    const nIn = row.querySelector(".link-hop-n"), ordEl = row.querySelector(".link-hop-ord");
+    nIn.addEventListener("input", () => { ordEl.textContent = ordinalSuffix(Math.max(1, parseInt(nIn.value, 10) || 1)); });
     const dirSelect = row.querySelector(".link-hop-dir");
     dirSelect.addEventListener("change", updateLinkOrderEnforceAvailability);
     return { targetId, nInput: row.querySelector(".link-hop-n"), dirSelect, row };
@@ -39505,6 +39701,10 @@ const timeRangeDialogSubmit = el("#timeRangeDialogSubmit");
 let timeRangeDialogMode = null; // "create" | "edit"
 let timeRangeDialogTargetId = null; // create: parentId · edit: the node's own id
 
+function isCoarsePointer() {
+  try { return !!(window.matchMedia && matchMedia("(pointer: coarse)").matches); } catch { return false; }
+}
+
 function openTimeRangeDialog(mode, targetId, prefill) {
   const target = state.nodes[targetId];
   if (!target) return;
@@ -39517,7 +39717,7 @@ function openTimeRangeDialog(mode, targetId, prefill) {
   timeRangeDialogTitle.textContent = mode === "edit" ? "Edit time filter" : `Time filter on “${target.name}”`;
   timeRangeDialogSubmit.textContent = mode === "edit" ? "Save" : "Create";
   timeRangeDialog.classList.remove("hidden");
-  timeRangeFromInput.focus();
+  if (!isCoarsePointer()) timeRangeFromInput.focus(); // touch: no autofocus, the keyboard would pop up
 }
 function closeTimeRangeDialog() {
   timeRangeDialog.classList.add("hidden");
@@ -43909,7 +44109,9 @@ el("#formatRuleEditSave").addEventListener("click", saveFormatRuleEdit);
 el("#btnAddFormat").addEventListener("click", () => openFormatEditDialog(null));
 el("#btnAddFormatRule").addEventListener("click", () => openFormatRuleEditDialog(null));
 
-document.addEventListener("click", ev => {
+// Click-timed dismissal of the popups below. Also called from the capture-phase dismiss-tap
+// swallow further down, because a swallowed touch click never reaches the bubble listener.
+function closeClickDismissedPopups(ev) {
   if (!contextMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
@@ -43923,18 +44125,59 @@ document.addEventListener("click", ev => {
   // on a click anywhere outside the sidebar itself — a click ON a tree row is
   // deliberately NOT treated as "outside" (still navigating the tree).
   if (sidebarForcedPeek && !sidebarEl.contains(ev.target)) clearSidebarForcedPeek();
-});
+}
+document.addEventListener("click", closeClickDismissedPopups);
 
 // The row/tree/extract context menus also close on a press outside them: many
 // controls stopPropagation() their click (popup openers must), so the document
 // click handler above never sees taps on them. Capture phase + pointerdown, so
 // it runs before any handler and the opening press (right-click / long-press)
 // is already over by the time its menu exists.
+//
+// A non-mouse press that actually closed a menu is consumed: its follow-up
+// click (and a dblclick right after it) must not also act on the element
+// under the finger (card -> detail sheet / selection), which would otherwise
+// turn dismiss-tap + card-tap into a double-tap.
+let dismissTapPending = false;   // the current touch/pen press closed a menu: swallow its click
+let dismissTapSwallowedAt = 0;   // time of the last swallowed dismiss click, for the dblclick guard
+const DISMISS_DBLCLICK_MS = 600;
+// True when a click-dismissed popup is open and `target` is outside it (and outside its opener).
+function clickDismissedPopupHit(target) {
+  const open = p => !p.classList.contains("hidden");
+  return (open(openMenu) && !openMenu.contains(target) && !btnOpen.contains(target))
+    || (libraryMenuOpen() && !libraryMenu.contains(target) && !btnLibrary.contains(target))
+    || (open(filterPopup) && !filterPopup.contains(target))
+    || (open(columnsPanel) && !columnsPanel.contains(target) && !btnColumns.some(b => b.contains(target)))
+    || (open(colorPickerPopup) && !colorPickerPopup.contains(target));
+}
+function anyPointerMenuOpen() {
+  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu]
+    .some(m => !m.classList.contains("hidden"));
+}
 document.addEventListener("pointerdown", ev => {
+  dismissTapPending = false; // a press that never became a click (scroll) must not swallow a later tap
+  const wasOpen = ev.pointerType !== "mouse" && anyPointerMenuOpen();
+  // Click-dismissed popups stay open here (their close is click-timed) but a touch press outside
+  // one must still consume its click, or the tap also acts on the row underneath.
+  const clickPopupHit = ev.pointerType !== "mouse" && clickDismissedPopupHit(ev.target);
   if (!contextMenu.contains(ev.target) && !addToSelectionMenu.contains(ev.target)) closeContextMenu();
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
+  if ((wasOpen && !anyPointerMenuOpen()) || clickPopupHit) dismissTapPending = true;
+}, true);
+document.addEventListener("click", ev => {
+  if (!dismissTapPending) return;
+  dismissTapPending = false;
+  dismissTapSwallowedAt = Date.now();
+  closeClickDismissedPopups(ev);
+  ev.stopPropagation();
+  ev.preventDefault();
+}, true);
+document.addEventListener("dblclick", ev => {
+  if (Date.now() - dismissTapSwallowedAt > DISMISS_DBLCLICK_MS) return;
+  ev.stopPropagation();
+  ev.preventDefault();
 }, true);
 
 /* ===================== Keyboard shortcuts ===================== */
@@ -43965,40 +44208,9 @@ document.addEventListener("keydown", ev => {
     // both closes it AND leaves focus mode.
     // The format setup wizard sits on top of Settings: Esc closes just the
     // wizard, leaving Settings (and its unsaved format editor) open.
-    if (formatDialogOpen()) { closeFormatEditDialog(); return; }
-    // Same for the theme editor — it also stacks above Settings; an open
-    // color picker on top of it closes first.
-    if (themeEditorOpen()) {
-      if (!colorPickerPopup.classList.contains("hidden")) closeColorPicker(); else closeThemeEditor();
-      return;
-    }
+    if (formatDialogOpen() || themeEditorOpen()) { closeEscapeOverlays(); return; }
     const escExitsFocus = isFocusMode() && !anyEscapeOverlayOpen();
-    setDrawerOpen(false);
-    closePlotFullscreen();
-    closeSettingsDialog();
-    closeFilterPopup();
-    closeFindBar();
-    closeContextMenu();
-    closeTreeContextMenu();
-    closeExtractContextMenu();
-    closeFacetValueMenu();
-    closeCsvExportDialog();
-    closeExportDialog();
-    closeLinkDialog();
-    closeGapDialog();
-    closeContextDialog();
-    closeTimeRangeDialog();
-    closeAssertDialog();
-    closeClockOffsetDialog();
-    closeNoteDialog();
-    closeColumnsPanel();
-    closeColorPicker();
-    closeSessionExportDialog();
-    closeFilterLibrarySaveDialog();
-    closeFilterLibraryDialog();
-    closeLibraryMenu();
-    if (sessionMatchResolver) closeSessionMatchDialog("cancel");
-    if (mergeLoadResolver) closeMergeLoadDialog(false);
+    closeEscapeOverlays();
     let needsRender = false;
     if (treeSelectMode) { setTreeSelectMode(false); needsRender = true; }
     // Clearing selections is scoped to the focused area (tree vs. log views);
@@ -44103,8 +44315,10 @@ document.addEventListener("keydown", ev => {
     const node = state.nodes[state.activeId];
     if (node && node.type === "filter") {
       ev.preventDefault();
+      const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(state.activeId);
       render();
+      offerPhoneUndoToast(prevTop);
     }
     return;
   }
@@ -44267,8 +44481,10 @@ document.addEventListener("keydown", ev => {
     const rootId = getRootFileId(state.activeId);
     if (rootId) {
       ev.preventDefault();
+      const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(rootId);
       render();
+      offerPhoneUndoToast(prevTop);
     }
     return;
   }
@@ -47784,9 +48000,6 @@ const formatConfigReady = loadFormatConfig();
 // and prime filterLibraryCache the same way (see its own comment).
 renderLibraryToolbarPresets();
 refreshFilterLibraryCache();
-// Deep-link ?url= load, fire-and-forget — independent of session restore
-// below (a link straight into a log doesn't need a prior cached session).
-loadFromUrlParam();
 // Async session restore AFTER the first (empty-state) render — restore's own
 // finally block re-renders once files/filters/bookmarks/settings are back.
 // Watched folders are restored right after (restoreWatchedFolders needs
@@ -47806,9 +48019,16 @@ const bootRestore = bootMeta.then(meta => restoreSessionFromCache(meta)).then(re
   if (restored) showCopyToast("Session restored");
   return restoreWatchedFolders();
 }).then(() => bootMeta).then(meta => restoreViewersFromCache(meta));
-// Deep links ?session=<url> and ?open=format, once the boot restore has
-// settled (the session load removes restored duplicates of the files it loads).
-bootRestore.catch(() => {}).then(() => loadSessionAndOpenFromParams());
+// Deep links ?url=, ?session=<url> and ?open=format, once the boot restore
+// has settled: ?url= persists its file, so a reload restores it first and the
+// link then drops its own byte-identical fresh copy (loadFromUrlParam); the
+// session load removes restored duplicates of the files it loads.
+// The query string is read NOW, at boot: these run only after the restore,
+// and the page's URL may have changed by then (history.replaceState).
+const bootSearch = location.search;
+bootRestore.catch(() => {}).then(() => new URLSearchParams(bootSearch).has("url")
+  ? loadFromUrlParam(bootSearch).catch(() => {}).then(() => loadSessionAndOpenFromParams(bootSearch))
+  : loadSessionAndOpenFromParams(bootSearch));
 // LLM assistant (desktop build only — window.philogg.llmChat): toolbar
 // button, Settings section, stored chat sessions. See "LLM assistant".
 initLlmAssistantUi();

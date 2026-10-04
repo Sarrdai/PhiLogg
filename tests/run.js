@@ -55,12 +55,19 @@ function runShard(index) {
   });
 }
 
+function crashNote(n) {
+  return n ? " — " + n + " shard(s) CRASHED, result INCOMPLETE (groups after the crash did not run)" : "";
+}
+
 (async () => {
   const started = Date.now();
   const results = await Promise.all(Array.from({ length: shards }, (_, i) => runShard(i)));
   if (claimsDir) fs.rmSync(claimsDir, { recursive: true, force: true });
 
-  let passed = 0, failed = 0, broken = false;
+  // crashed: shards that died before their result line (an uncaught error):
+  // their remaining groups never ran, so the totals are incomplete — the
+  // summary says so instead of reading "0 failed".
+  let passed = 0, failed = 0, broken = false, crashed = 0;
   const failures = [];
   const groupMs = {};
   for (const r of results) {
@@ -75,10 +82,14 @@ function runShard(index) {
     if (shards === 1) {
       // Unsharded: the child already printed the real summary and set the code.
       if (r.code !== 0) broken = true;
+      if (!lines.some(l => / passed, \d+ failed/.test(l))) crashed++;
       continue;
     }
     if (!marker) {
       broken = true;
+      crashed++;
+      // Its FAIL lines were printed but never reached a result line: count them.
+      for (const l of lines) if (/^FAIL\s/.test(l)) { failed++; failures.push(l.replace(/^FAIL\s+/, "") + " (crashed shard " + r.index + ")"); }
       console.log("shard " + r.index + "/" + shards + " produced no result line (" + (r.signal ? "killed by " + r.signal + (r.signal === "SIGKILL" ? ", out of memory?" : "") : "exit code " + r.code) + ")");
       continue;
     }
@@ -96,10 +107,10 @@ function runShard(index) {
       console.log("Slowest groups:");
       slowest.forEach(([g, ms]) => console.log("  GROUP " + g.padEnd(5) + (ms / 1000).toFixed(1).padStart(6) + "s"));
     }
-    console.log(passed + " passed, " + failed + " failed across " + shards + " shards in " + secs + "s");
+    console.log(passed + " passed, " + failed + " failed across " + shards + " shards in " + secs + "s" + crashNote(crashed));
     failures.forEach(f => console.log("FAIL  " + f));
   } else {
-    console.log("\n(1 shard, " + secs + "s)");
+    console.log("\n(1 shard, " + secs + "s)" + crashNote(crashed));
   }
   process.exitCode = failed || broken ? 1 : 0; // not process.exit() — see the test file's own note: it truncates buffered stdout
 })();

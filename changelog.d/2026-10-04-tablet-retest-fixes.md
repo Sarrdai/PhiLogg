@@ -1,0 +1,5 @@
+- **fix: tablet/phone retest fixes (2026-10-04, person-requested)**
+  - Header buttons (Undo, Find, ...) act on the first tap while the drawer is open; the time-range dialog no longer pops the keyboard on touch; the row menu's Filter before/after arrows were swapped.
+  - Tablet touch: the view bar is one scrolling row instead of wrapping; the link dialog reads "1st/2nd/3rd"; a tap outside the filter popup, columns panel, open/library menu or color picker only closes it.
+  - Phone-width windows get the Undo toast after tree ✕, middle-click, Delete and Ctrl+W removals too.
+  - **Tests**: GROUP drawer-header-tap, time-range-touch-focus, ctx-time-arrows, viewbar-touch-scroll, link-ordinal, phone-undo-toast-paths, touch-dismiss-click-popups. Docs: docs/ui-and-views.md.

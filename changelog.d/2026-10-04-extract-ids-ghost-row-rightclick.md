@@ -1,0 +1,5 @@
+- **fix: Extract identifiers, stale ghost row, right-click selection (2026-10-04, desktop usability test)**
+  - Extract / "Filter for this message": identifiers like `job=J-00004`, `worker-3`, `gen2` become one `[*:word]` capture instead of staying literal (the pattern matched only the clicked entry); still never an int column.
+  - A "not in this filter" ghost row of an earlier selection no longer stays in the Filtered list after another entry is selected (e.g. in the Context tab): the anchor's spliced row is dropped together with the anchor.
+  - Right-click on a row selects it (menu, selection and detail panel agree); inside a multi-selection the selection is kept.
+  - **Tests**: GROUP temp-anchor-stale-row, row-contextmenu-select; updated extract-pattern-identifiers. Docs: docs/filters.md, docs/ui-and-views.md.
