@@ -53,18 +53,21 @@ NODE_PATH="$(npm root -g)" node .claude/skills/usability-test/driver.js <mode> \
 ```
 
 This is the homepage's "Open with a demo log" link. The driver prints
-`driver ready` when the app is loaded; stop it at the end with
+`driver ready` when the app is loaded (port 9333; pass another one as a
+fourth argument if that's taken); stop it at the end with
 `kill $(cat $S/run/driver.pid)` (never `pkill -f`, it can kill your own shell).
+Saved files land in `$S/run/saved/`.
 
 ## 3. Drive the app
 
 Each step is an async function POSTed to the driver; it runs it, waits
 300 ms and returns JSON with `result`, `error`, `pageErrors` (uncaught
-exceptions + console errors), `dialogs` (native alerts, auto-accepted) and
-`shot`, a screenshot path in CSS pixels (= tap coordinates):
+exceptions + console errors), `dialogs` (native alerts, auto-accepted),
+`saved` (files the step saved, see below) and `shot`, a screenshot path in
+CSS pixels (= tap coordinates):
 
 ```bash
-curl -s 127.0.0.1:9333 --data-binary 'async ({ page, touch, mode }) => {
+curl -s 127.0.0.1:9333 --data-binary 'async ({ page, touch, mode, files }) => {
   await page.getByRole("button", { name: "Files and filters" }).tap();
 }'
 ```
@@ -85,9 +88,22 @@ curl -s 127.0.0.1:9333 --data-binary 'async ({ page, touch, mode }) => {
   `page.keyboard.type` into a focused field, `page.keyboard.press` for
   `Enter`/`Backspace` only. Scroll by swiping. Mouse, hover and other keys
   throw by design.
-- **File pickers** are fine in every mode: `page.waitForEvent("filechooser")`
+- **Opening files** works in every mode: `page.waitForEvent("filechooser")`
   around the tap/click, then `setFiles(...)` with simulator output. Dragging
-  files in from the OS exists on desktop only.
+  files in from the OS exists on desktop only. The folder picker (Open →
+  Folder…, folder watch) can't be simulated: on desktop it answers as
+  cancelled and says so in `dialogs` — note the task as not testable here.
+- **Saving files** (Save session…, Save filter…, Export / Share → Save
+  file, CSV, themes, …) is captured, not shown: on desktop the save dialog
+  is a stand-in that accepts the suggested name at once; tablet/phone have
+  no save dialog (like Safari on iPad/iPhone), so the app downloads
+  directly. Either way the step's `saved` lists each file as `{ step, via
+  ("save picker" | "download"), name, size, path, excerpt }` (excerpt = the
+  first 600 characters, `(binary)` for images); `Read` the `path` for the
+  whole file. `files.saved()` returns every file saved so far, and
+  `files.cancelNextSave()` (desktop only) makes the next save dialog report
+  "cancelled", to check that cancelling saves nothing and says nothing
+  alarming.
 - **Off limits in every mode** (the driver blocks most of it, the rest is on
   you): `page.evaluate` and friends, calling app functions, editing storage,
   `?open=`/deep-link tricks after the start URL, reading `philogg.html`,
