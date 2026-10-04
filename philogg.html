@@ -1619,6 +1619,14 @@
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
   #timelineMinimapMeta b{color:var(--text-secondary); font-weight:650;}
+  /* Zoom breadcrumbs (Whole file > 08:37:05-08:40:27 ...) + resolution hint. */
+  .minimap-crumb{
+    font:inherit; color:var(--accent-strong); background:none; border:0; padding:0 2px; cursor:pointer; border-radius:3px;
+  }
+  .minimap-crumb:hover:not(:disabled){background:var(--accent-soft);}
+  .minimap-crumb:disabled{color:var(--text-secondary); font-weight:650; cursor:default;}
+  .minimap-res{color:var(--text-secondary);}
+  body.layout-phone .minimap-crumb{padding:4px 6px; font-size:12px;}
   /* Per-level count segments appended after Duration (person-requested,
      this session) — color comes from an inline style (levelColorVar()) set
      in JS, this just matches the bold weight #timelineMinimapMeta b uses.
@@ -4755,8 +4763,15 @@
   body.layout-phone #tourBanner.expanded .tour-banner-hint{order:1;}
   body.layout-phone #tourBanner.expanded #tourBannerMore, body.layout-phone #tourBanner.expanded #tourBannerClose{order:2;}
 
-  body.layout-phone #timelineMinimap{height:14px;}
+  /* 36px bars (was 14); the meta line stays hidden at rest, a 24px crumb line
+     (breadcrumbs back out of a zoom, the rest of the meta hidden) shows only
+     while the minimap is zoomed. */
+  body.layout-phone #timelineMinimap{height:36px;}
+  body.layout-phone #timelineMinimapSvg{flex:0 0 36px;}
   body.layout-phone #timelineMinimapMeta{display:none;}
+  body.layout-phone #timelineMinimap.zoomed{height:60px;}
+  body.layout-phone #timelineMinimap.zoomed #timelineMinimapMeta{display:flex; align-items:center; height:24px; padding:0 8px;}
+  body.layout-phone #timelineMinimap.zoomed .minimap-meta-rest{display:none;}
 
   body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
   body.layout-phone #viewBar > :not(#fhTabs):not(#levelBar){display:none !important;}
@@ -28091,7 +28106,7 @@ let minimapLastViewEntries = [];
 // when flipping between filters on large files. Keyed on everything the pass
 // reads: root id, entry count (grows on tail append, resets on rotation),
 // time span, and bucket count (changes on resize).
-let minimapBgCache = null; // { rootId, entryCount, tMin, tMax, bucketCount, binningMode, bgCounts, maxCount }
+let minimapBgCache = null; // { rootId, entryCount, tMin, tMax, bucketCount, binningMode, idxLo, idxN, bgCounts, maxCount }
 
 /* ===================== Minimap binning mode (Settings -> Timeline minimap,
    FEATURE_BACKLOG.md #2, person-approved design) =====================
@@ -28133,26 +28148,52 @@ let minimapBinningMode = "time"; // "time" | "entries"
 // they already have.
 let minimapRootEntries = [];
 
+/* ===================== Minimap zoom (time-window workflow, step 3) =====================
+   The minimap shows the whole root file or, when zoomed, a time window of it.
+   minimapTMin/minimapTMax are always the bounds of what is DRAWN (the view
+   window while zoomed, the file's span otherwise), so minimapTsToX/XToTs/
+   BucketOf and every consumer built on them (range rects, markers, tooltip,
+   click-to-jump, drag-select, long-press dialog) work unchanged inside a
+   zoomed view. The file's own span is minimapFileTMin/TMax. In "entries"
+   binning mode the drawn range is the index slice [minimapIdxLo,
+   minimapIdxLo + minimapIdxN) of the root entries inside the window.
+   State: minimapViewTrail is the breadcrumb stack (each element {from, to},
+   the last one is the current view, empty = whole file); it resets when the
+   minimap's root file changes and is not persisted. A wheel zoom replaces
+   the top crumb when that crumb came from a wheel (minimapViewWheelTop)
+   instead of pushing one crumb per wheel notch.
+   Hooks: setMinimapView(from, to) (push a crumb; false when not applicable),
+   minimapViewReset(), minimapViewGoTo(depth), minimapViewZoomAt(ts, factor). */
+let minimapFileTMin = 0;
+let minimapFileTMax = 0;
+let minimapIdxLo = 0;
+let minimapIdxN = 0;
+let minimapViewTrail = [];
+let minimapViewWheelTop = false;
+let minimapViewRootId = null;
+const MINIMAP_MIN_SPAN_MS = 2000; // plain-text files: 1 (= 2 lines), see minimapMinSpan
+
 function minimapTsToX(ts) {
   if (minimapBinningMode === "entries") {
-    const len = minimapRootEntries.length;
-    if (len < 2) return 0; // mirrors the tMax<=tMin guard below: nothing to position against
+    const n = minimapIdxN;
+    if (n < 2) return 0; // mirrors the tMax<=tMin guard below: nothing to position against
     // Binary search for the entry ts resolves to (first index with an equal
     // or later timestamp), same lookup lowerBoundByTs already backs
     // elsewhere in the file — clamped since a ts past the file's own last
     // entry (e.g. the drag-anchor timestamp captured before a rotation
     // trimmed the file) would otherwise search past the array's end.
-    const idx = Math.min(len - 1, Math.max(0, lowerBoundByTs(minimapRootEntries, ts)));
-    return (idx / (len - 1)) * minimapWidth;
+    const idx = Math.min(minimapIdxLo + n - 1, Math.max(minimapIdxLo, lowerBoundByTs(minimapRootEntries, ts)));
+    return ((idx - minimapIdxLo) / (n - 1)) * minimapWidth;
   }
   if (minimapTMax <= minimapTMin) return 0;
   return ((ts - minimapTMin) / (minimapTMax - minimapTMin)) * minimapWidth;
 }
 function minimapXToTs(x) {
   if (minimapBinningMode === "entries") {
-    const len = minimapRootEntries.length;
-    if (len < 2) return minimapTMin;
-    const idx = Math.min(len - 1, Math.max(0, Math.round((x / minimapWidth) * (len - 1))));
+    const n = minimapIdxN;
+    if (n < 1) return minimapTMin;
+    if (n < 2) return minimapRootEntries[minimapIdxLo].ts;
+    const idx = minimapIdxLo + Math.min(n - 1, Math.max(0, Math.round((x / minimapWidth) * (n - 1))));
     // Returns the REAL timestamp of the entry that pixel resolves to, not an
     // interpolated point in time — this is the crux of why every caller
     // above this conversion layer (click-to-jump's lowerBoundByTs lookup,
@@ -28179,13 +28220,83 @@ function minimapXToTs(x) {
 function minimapBucketOf(ts) {
   if (minimapBucketCount === 0) return 0;
   if (minimapBinningMode === "entries") {
-    const len = minimapRootEntries.length;
-    if (len < 2) return 0;
-    const idx = Math.min(len - 1, Math.max(0, lowerBoundByTs(minimapRootEntries, ts)));
-    return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor((idx / len) * minimapBucketCount)));
+    const n = minimapIdxN;
+    if (n < 2) return 0;
+    const idx = Math.min(minimapIdxLo + n - 1, Math.max(minimapIdxLo, lowerBoundByTs(minimapRootEntries, ts)));
+    return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((idx - minimapIdxLo) / n) * minimapBucketCount)));
   }
   const span = Math.max(1, minimapTMax - minimapTMin);
   return Math.min(minimapBucketCount - 1, Math.max(0, Math.floor(((ts - minimapTMin) / span) * minimapBucketCount)));
+}
+
+// True when the ts range [loTs, hiTs] lies completely outside the drawn
+// range (only possible while zoomed) — the range rects hide then instead of
+// clamping onto the first/last bar.
+function minimapRangeOutOfView(loTs, hiTs) {
+  return minimapViewTrail.length > 0 && (hiTs < minimapTMin || loTs > minimapTMax);
+}
+
+function minimapMinSpan() {
+  return nodeIsPlainText(minimapViewRootId) ? 1 : MINIMAP_MIN_SPAN_MS;
+}
+// Clamps a requested window into the file and enforces the minimum span;
+// null = the window covers the whole file (or the file is too short to zoom).
+function minimapNormalizeView(from, to) {
+  const lo = minimapFileTMin, hi = minimapFileTMax;
+  if (!(Number.isFinite(from) && Number.isFinite(to)) || to <= from) return undefined;
+  const min = minimapMinSpan();
+  if (hi - lo <= min) return null;
+  if (to - from < min) { const mid = (from + to) / 2; from = mid - min / 2; to = mid + min / 2; }
+  if (to - from >= hi - lo) return null;
+  if (from < lo) { to += lo - from; from = lo; }
+  if (to > hi) { from -= to - hi; to = hi; }
+  from = Math.max(lo, Math.round(from)); to = Math.min(hi, Math.round(to));
+  if (to <= from) return undefined;
+  return { from, to };
+}
+function minimapViewRerender() {
+  renderTimelineMinimap(minimapLastRootId, minimapLastViewEntries);
+  updateMinimapRenderedRange();
+}
+function minimapViewReset() {
+  if (!minimapViewTrail.length) return;
+  minimapViewTrail = [];
+  minimapViewWheelTop = false;
+  minimapViewRerender();
+}
+// Back to crumb `depth` (0 = whole file).
+function minimapViewGoTo(depth) {
+  if (depth >= minimapViewTrail.length) return;
+  minimapViewTrail.length = Math.max(0, depth);
+  minimapViewWheelTop = false;
+  minimapViewRerender();
+}
+// Zooms the minimap into [from, to] and pushes a breadcrumb. Returns true
+// when the view changed.
+function setMinimapView(from, to, opts) {
+  if (!minimapLastRootId || minimapRootEntries.length < 2) return false;
+  const v = minimapNormalizeView(from, to);
+  if (v === undefined) return false;
+  if (v === null) { if (!minimapViewTrail.length) return false; minimapViewReset(); return true; }
+  const top = minimapViewTrail[minimapViewTrail.length - 1];
+  if (top && top.from === v.from && top.to === v.to) return false;
+  if (opts && opts.wheel && minimapViewWheelTop && top) minimapViewTrail[minimapViewTrail.length - 1] = v;
+  else minimapViewTrail.push(v);
+  minimapViewWheelTop = !!(opts && opts.wheel);
+  minimapViewRerender();
+  return true;
+}
+// Wheel zoom: scales the drawn window by `factor` (< 1 in, > 1 out) keeping
+// the time `anchorTs` at the same fractional position. Zooming out past the
+// whole file resets.
+function minimapViewZoomAt(anchorTs, factor) {
+  if (!minimapLastRootId || minimapRootEntries.length < 2) return false;
+  const from = minimapTMin, to = minimapTMax;
+  const span = to - from;
+  if (!(span > 0)) return false;
+  if (factor < 1 && span <= minimapMinSpan()) return false;
+  const a = Math.min(to, Math.max(from, anchorTs));
+  return setMinimapView(a - (a - from) * factor, a + (to - a) * factor, { wheel: true });
 }
 
 // Maps a timestamp to the horizontal span of the density BAR it falls into,
@@ -28207,6 +28318,30 @@ function minimapBarSpan(ts) {
   return { left: bucket * barW, right: (bucket + 1) * barW };
 }
 
+// Breadcrumb trail + resolution hint for the meta line while zoomed: each
+// crumb is a button (data-depth = how many crumbs stay), the last one is the
+// current view and disabled.
+function minimapResolutionText() {
+  const fmt = v => String(v >= 100 ? Math.round(v) : v >= 10 ? +v.toFixed(1) : +v.toFixed(2));
+  const W = Math.max(1, minimapWidth);
+  if (minimapBinningMode === "entries") return fmt(minimapIdxN / W) + " entries/px";
+  if (nodeIsPlainText(minimapViewRootId)) return fmt((minimapTMax - minimapTMin + 1) / W) + " lines/px";
+  const ms = (minimapTMax - minimapTMin) / W;
+  return ms < 1000 ? fmt(ms) + " ms/px" : (ms / 1000).toFixed(2) + " s/px";
+}
+function minimapCrumbsHtml(rootId) {
+  const trail = minimapViewTrail;
+  const crumb = (label, depth) => '<button type="button" class="minimap-crumb" data-depth="' + depth + '"' +
+    (depth === trail.length ? " disabled" : "") + ">" + escapeHtml(label) + "</button>";
+  const parts = [crumb("Whole file", 0)];
+  trail.forEach((v, i) => {
+    const ms = !nodeIsPlainText(rootId) && v.to - v.from < 10000;
+    parts.push(crumb(timeRangeBoundLabel(rootId, v.from, ms) + "–" + timeRangeBoundLabel(rootId, v.to, ms), i + 1));
+  });
+  return '<span class="minimap-crumbs">' + parts.join(" › ") + '</span> · <span class="minimap-res" title="Resolution of the zoomed minimap">' +
+    escapeHtml(minimapResolutionText()) + "</span>";
+}
+
 // rootId: the active node's root file id (whole-file density, background bars).
 // viewEntries: the active node's filtered+leveled result in chronological
 // order — i.e. currentViewEntries *before* any column-sort copy is applied
@@ -28218,19 +28353,21 @@ function minimapBarSpan(ts) {
 // an index is monotonic in the index in entries mode, and in time mode as
 // long as the file's ts are all numbers and non-decreasing (its aggregate
 // knows); null otherwise, and the caller buckets entry by entry.
-function minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) {
+// Zoomed: only the index slice [idxLo, idxLo + idxN) is bucketed (bounds are
+// absolute indices into the root's entries).
+function minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode, idxLo, idxN) {
   const root = state.nodes[rootId];
   const entries = root.entries;
-  const n = entries.length;
+  const n = idxN;
   if (!entriesMode && !fileAggregate(root).sorted) return null;
   const bucketAt = entriesMode
-    ? i => Math.min(bucketCount - 1, Math.floor((i / n) * bucketCount))
+    ? i => Math.min(bucketCount - 1, Math.floor(((i - idxLo) / n) * bucketCount))
     : i => bucketOfTime(entries[i].ts);
   const bounds = new Array(bucketCount + 1);
-  bounds[bucketCount] = n;
-  let lo0 = 0;
+  bounds[bucketCount] = idxLo + n;
+  let lo0 = idxLo;
   for (let b = 0; b < bucketCount; b++) {
-    let lo = lo0, hi = n;
+    let lo = lo0, hi = idxLo + n;
     while (lo < hi) { const mid = (lo + hi) >> 1; if (bucketAt(mid) < b) lo = mid + 1; else hi = mid; }
     bounds[b] = lo0 = lo;
   }
@@ -28243,13 +28380,33 @@ function renderTimelineMinimap(rootId, viewEntries) {
 
   const rootEntries = rootId ? state.nodes[rootId].entries : [];
   minimapRootEntries = rootEntries; // feeds minimapTsToX/minimapXToTs/minimapBucketOf's "entries" branch — see minimapBinningMode's own module comment
+  if (rootId !== minimapViewRootId) { // a new root file starts whole (see "Minimap zoom")
+    minimapViewRootId = rootId;
+    minimapViewTrail = [];
+    minimapViewWheelTop = false;
+  }
   if (rootEntries.length < 2) {
+    minimapViewTrail = [];
+    timelineMinimapEl.classList.remove("zoomed");
     timelineMinimapSvg.innerHTML = "";
     timelineMinimapMetaEl.textContent = "";
     timelineMinimapTooltip.classList.add("hidden");
     minimapInteractive = false;
     return;
   }
+
+  // Drawn range: the zoom window (clamped into the file) or the whole file.
+  // Set before the height is measured: on the phone the zoomed class adds the
+  // crumb line above the bars.
+  minimapFileTMin = rootEntries[0].ts;
+  minimapFileTMax = rootEntries[rootEntries.length - 1].ts;
+  let view = minimapViewTrail.length ? minimapViewTrail[minimapViewTrail.length - 1] : null;
+  if (view && (view.to < minimapFileTMin || view.from > minimapFileTMax || minimapFileTMax - minimapFileTMin <= minimapMinSpan())) {
+    minimapViewTrail = [];
+    minimapViewWheelTop = false;
+    view = null;
+  }
+  timelineMinimapEl.classList.toggle("zoomed", !!view);
 
   // Width: measured off the container, same as before the meta line existed —
   // the meta line sits in its own row above the bars and doesn't consume any
@@ -28265,13 +28422,22 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // Root file entries are relied on elsewhere (link filter's binary search,
   // OR-filter merge) to stay chronological — see PROJECT.md — so the first/
   // last entry give the file's real time span directly, no scan needed.
-  minimapTMin = rootEntries[0].ts;
-  minimapTMax = rootEntries[rootEntries.length - 1].ts;
+  if (view) {
+    minimapTMin = Math.max(view.from, minimapFileTMin);
+    minimapTMax = Math.min(view.to, minimapFileTMax);
+    minimapIdxLo = lowerBoundByTs(rootEntries, minimapTMin);
+    minimapIdxN = upperBoundByTs(rootEntries, minimapTMax) - minimapIdxLo;
+  } else {
+    minimapTMin = minimapFileTMin;
+    minimapTMax = minimapFileTMax;
+    minimapIdxLo = 0;
+    minimapIdxN = rootEntries.length;
+  }
   const minimapMeta = nodeIsPlainText(rootId)
-    ? ["Lines <b>" + (minimapTMax - minimapTMin + 1).toLocaleString("de-DE") + "</b>"]
-    : ["Start <b>" + escapeHtml(formatTime(minimapTMin)) + "</b>",
-      "End <b>" + escapeHtml(formatTime(minimapTMax)) + "</b>",
-      "Duration <b>" + escapeHtml(formatMs(minimapTMax - minimapTMin)) + "</b>"];
+    ? ["Lines <b>" + (minimapFileTMax - minimapFileTMin + 1).toLocaleString("de-DE") + "</b>"]
+    : ["Start <b>" + escapeHtml(formatTime(minimapFileTMin)) + "</b>",
+      "End <b>" + escapeHtml(formatTime(minimapFileTMax)) + "</b>",
+      "Duration <b>" + escapeHtml(formatMs(minimapFileTMax - minimapFileTMin)) + "</b>"];
   // Per-level entry counts, one number-only segment per active level in the
   // same order/color as #levelBar's own buttons (activeLevelOrder()) —
   // person-requested, this session. Counts the whole ROOT FILE (rootId), not
@@ -28307,7 +28473,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
       '" title="' + escapeHtml(fullName + fatalNote) + ': add/show a level filter for this file">' +
       escapeHtml(lvl.charAt(0)) + " " + n.toLocaleString("de-DE") + '</span>');
   });
-  timelineMinimapMetaEl.innerHTML = minimapMeta.join(" · ");
+  // Zoomed: breadcrumbs back out + the resolution of the drawn window before
+  // the file facts; on the phone only the crumbs stay (CSS hides the rest).
+  timelineMinimapMetaEl.innerHTML = (view ? minimapCrumbsHtml(rootId) + " · " : "") +
+    '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + "</span>";
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
@@ -28315,6 +28484,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // A plain-text file's "ts" are consecutive line numbers: more buckets than
   // lines would leave every other bucket empty (a striped minimap).
   if (nodeIsPlainText(rootId)) bucketCount = Math.max(1, Math.min(bucketCount, minimapTMax - minimapTMin + 1));
+  if (view && minimapBinningMode === "entries") bucketCount = Math.max(1, Math.min(bucketCount, minimapIdxN)); // a slice of 5 entries has no use for 100 buckets
   minimapBucketCount = bucketCount;
   // Bucket-index formulas for the two passes below — TIME mode buckets a
   // timestamp by its position in [minimapTMin, minimapTMax] (bucketOfTime,
@@ -28338,12 +28508,12 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const c = minimapBgCache;
   if (c && c.rootId === rootId && c.entryCount === rootEntries.length &&
       c.tMin === minimapTMin && c.tMax === minimapTMax && c.bucketCount === bucketCount &&
-      c.binningMode === minimapBinningMode) {
+      c.binningMode === minimapBinningMode && c.idxLo === minimapIdxLo && c.idxN === minimapIdxN) {
     bgCounts = c.bgCounts;
     maxCount = c.maxCount;
   } else {
     bgCounts = new Array(bucketCount).fill(0);
-    const bounds = minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode);
+    const bounds = minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode, minimapIdxLo, minimapIdxN);
     if (bounds) {
       for (let b = 0; b < bucketCount; b++) bgCounts[b] = bounds[b + 1] - bounds[b];
     } else if (entriesMode) {
@@ -28360,13 +28530,14 @@ function renderTimelineMinimap(rootId, viewEntries) {
       const n = rootEntries.length;
       for (let i = 0; i < n; i++) bgCounts[Math.min(bucketCount - 1, Math.floor((i / n) * bucketCount))]++;
     } else {
-      for (const e of rootEntries) bgCounts[bucketOfTime(e.ts)]++;
+      // Unsorted time file: bucket entry by entry (zoomed: only those inside the window).
+      for (const e of rootEntries) if (!view || (e.ts >= minimapTMin && e.ts <= minimapTMax)) bgCounts[bucketOfTime(e.ts)]++;
     }
     // Loop instead of Math.max(...spread): same call-stack-argument-ceiling
     // reasoning as computeColumnStats, and bucketCount can reach 400.
     maxCount = 1;
     for (const n of bgCounts) if (n > maxCount) maxCount = n;
-    minimapBgCache = { rootId, entryCount: rootEntries.length, tMin: minimapTMin, tMax: minimapTMax, bucketCount, binningMode: minimapBinningMode, bgCounts, maxCount };
+    minimapBgCache = { rootId, entryCount: rootEntries.length, tMin: minimapTMin, tMax: minimapTMax, bucketCount, binningMode: minimapBinningMode, idxLo: minimapIdxLo, idxN: minimapIdxN, bgCounts, maxCount };
   }
 
   const ovCounts = new Array(bucketCount).fill(0);
@@ -28377,7 +28548,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // same counts as the background, and per bucket the lowest-ranked level
   // present — ties going to the level whose first entry in that bucket comes
   // first, exactly what the per-entry loop below picks.
-  const bounds = viewEntries === rootEntries ? minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode) : null;
+  const bounds = viewEntries === rootEntries ? minimapBucketBounds(rootId, bucketCount, bucketOfTime, entriesMode, minimapIdxLo, minimapIdxN) : null;
   if (bounds) {
     const ovFirst = new Array(bucketCount).fill(Infinity);
     for (let b = 0; b < bucketCount; b++) ovCounts[b] = bounds[b + 1] - bounds[b];
@@ -28413,14 +28584,16 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const levelInfo = new Map(); // formatId -> Map(level -> [bucket, rank])
   if (!bounds) for (const e of viewEntries) {
     let b;
+    if (view && !entriesMode && (e.ts < minimapTMin || e.ts > minimapTMax)) continue;
     if (entriesMode) {
       const idx = orderIndexMap.get(e.id);
+      if (view && (idx == null || idx < minimapIdxLo || idx >= minimapIdxLo + minimapIdxN)) continue;
       // idx === undefined only for an entry that isn't actually a member of
       // its claimed root file (shouldn't happen for real callers — see
       // renderTimelineMinimap's own rootId/viewEntries contract above) —
       // falls back to bucket 0 rather than throwing, same defensive spirit
       // as buildOrderIndexMap's own "resolves undefined" fallback.
-      b = idx == null ? 0 : Math.min(bucketCount - 1, Math.floor((idx / rootCount) * bucketCount));
+      b = idx == null ? 0 : Math.min(bucketCount - 1, Math.floor(((idx - minimapIdxLo) / (view ? minimapIdxN : rootCount)) * bucketCount));
     } else {
       b = bucketOfTime(e.ts);
     }
@@ -28511,6 +28684,7 @@ function updateMinimapFullRange() {
     if (e.ts < minTs) minTs = e.ts;
     if (e.ts > maxTs) maxTs = e.ts;
   }
+  if (minimapRangeOutOfView(minTs, maxTs)) { rect.classList.add("hidden"); return; }
   const x1 = minimapBarSpan(minTs).left;
   const x2 = minimapBarSpan(maxTs).right;
   rect.setAttribute("x", x1.toFixed(1));
@@ -28530,7 +28704,7 @@ function updateMinimapFullRange() {
 // straight past the end of the array.
 function minimapRenderedSpan(entries, scrollEl, rowOffsets) {
   const r = visibleEntryRange(entries, scrollEl, rowOffsets);
-  return r ? { left: minimapBarSpan(r.first.ts).left, right: minimapBarSpan(r.last.ts).right } : null;
+  return r && !minimapRangeOutOfView(r.first.ts, r.last.ts) ? { left: minimapBarSpan(r.first.ts).left, right: minimapBarSpan(r.last.ts).right } : null;
 }
 
 // First/last real entry inside the scroll container's viewport ({first, last}),
@@ -28630,6 +28804,7 @@ function updateMinimapRenderedRange() {
     const bodyScrollTop = Math.max(0, extractScroll.scrollTop - headerH);
     const startIdx = Math.min(total - 1, Math.max(0, Math.floor(bodyScrollTop / EXTRACT_ROW_HEIGHT)));
     const endIdx = Math.min(total - 1, Math.max(startIdx, Math.ceil((bodyScrollTop + viewportH) / EXTRACT_ROW_HEIGHT)));
+    if (minimapRangeOutOfView(extractRowsData[startIdx].entry.ts, extractRowsData[endIdx].entry.ts)) { rect.classList.add("hidden"); return; }
     const x1 = minimapBarSpan(extractRowsData[startIdx].entry.ts).left;
     const x2 = minimapBarSpan(extractRowsData[endIdx].entry.ts).right;
     rect.setAttribute("x", x1.toFixed(1));
@@ -28654,6 +28829,7 @@ function updateMinimapRenderedRange() {
       if (ts < minTs) minTs = ts;
       if (ts > maxTs) maxTs = ts;
     }
+    if (minimapRangeOutOfView(minTs, maxTs)) { rect.classList.add("hidden"); return; }
     const x1 = minimapBarSpan(minTs).left;
     const x2 = minimapBarSpan(maxTs).right;
     rect.setAttribute("x", x1.toFixed(1));
@@ -28732,7 +28908,7 @@ function updateMinimapSelectionMarkers() {
   const marked = minimapMarkedEntries();
   if (marked.length === 0) { g.innerHTML = ""; return; }
   const H = Math.max(20, timelineMinimapSvg.clientHeight || 52);
-  g.innerHTML = marked.map(e => {
+  g.innerHTML = marked.filter(e => !minimapRangeOutOfView(e.ts, e.ts)).map(e => {
     const x = minimapTsToX(e.ts);
     return '<rect class="minimap-marker-line" x="' + (x - 1).toFixed(1) + '" y="0" width="2" height="' + H + '"/>' +
       '<path class="minimap-marker-flag" d="M ' + (x - 4).toFixed(1) + ' 0 L ' + (x + 4).toFixed(1) + ' 0 L ' + x.toFixed(1) + ' 6 Z"/>';
@@ -28747,10 +28923,26 @@ function updateMinimapSelectionMarkers() {
 // minimapLastRootId rather than a closed-over rootId, since it must resolve
 // to whichever file the CURRENTLY rendered meta line actually belongs to.
 timelineMinimapMetaEl.addEventListener("click", ev => {
+  const crumb = ev.target.closest(".minimap-crumb");
+  if (crumb) { minimapViewGoTo(+crumb.dataset.depth); return; }
   const span = ev.target.closest(".minimap-meta-level");
   if (!span || !minimapLastRootId) return;
   applyLevelFilterUnderRootFile(minimapLastRootId, span.dataset.level);
 });
+
+// Wheel over the minimap zooms around the cursor (0.8 in / 1.25 out); the
+// page never scrolls while the pointer is over it. Non-passive on purpose.
+timelineMinimapEl.addEventListener("wheel", ev => {
+  if (!ev.deltaY && !ev.deltaX) return;
+  ev.preventDefault();
+  if (minimapRootEntries.length < 2 || !minimapWidth) return;
+  const rect = timelineMinimapSvg.getBoundingClientRect();
+  const x = rect.width ? Math.min(minimapWidth, Math.max(0, ((ev.clientX - rect.left) / rect.width) * minimapWidth)) : minimapWidth / 2;
+  const anchorTs = minimapBinningMode === "entries"
+    ? minimapXToTs(x)
+    : minimapTMin + (x / minimapWidth) * (minimapTMax - minimapTMin);
+  minimapViewZoomAt(anchorTs, (ev.deltaY || ev.deltaX) < 0 ? 0.8 : 1.25);
+}, { passive: false });
 
 // Click-to-jump: nearest entry in time, same "select + scroll + flash"
 // path a row double-click uses elsewhere. Withheld during a column sort —
