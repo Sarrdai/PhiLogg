@@ -321,7 +321,7 @@ deployments possible:
   drawer, below 600px log entries become readable cards with an entry-detail
   sheet opened by tapping a card (read-only: no editing; Settings is a full-screen page), and touch devices get larger hit targets and
   long-press for the context menu.
-- **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with drag-to-select.**
+- **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with zoom and drag-to-select time windows.**
 - **Per-file clock offset** — a file's tree context menu ("Adjust clock…")
   applies a manual clock correction to one file's timestamps, for when one
   device's log is skewed relative to another's before you compare or merge.

@@ -1,0 +1,5 @@
+- **feat: time-window workflow — zoomable minimap, draft window, one node per window, readable labels (2026-10-04, person-requested)**
+  - Minimap: dragging leaves a draft window with two handles and a Zoom / Filter (Update filter) / Edit… / × bar; Zoom shows just the window with breadcrumbs back, the wheel zooms around the cursor, phones get a 36 px strip.
+  - Time-range dialog: time-only fields (`HH:MM:SS.mmm`), the date once (chip or per-bound date inputs), −1s/+1s buttons, live "Duration · N entries".
+  - One node per window: after/before/drag/dialog update an active time node instead of nesting; labels read `08:38:24 – 08:39:52 · 1m 28s`, `from …`, `until …`; a window made on a level node's chips is inserted above it.
+  - **Tests**: GROUP time-window-nodes, time-range-dialog-fields, minimap-zoom, minimap-draft-window, 031. Docs: docs/filters.md, README.

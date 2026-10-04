@@ -944,7 +944,7 @@ Regression-tested: **Group 94** — default mode, node creation/in-place-edit/de
 
 ## Timestamps without a date
 
-A format whose `tsFormat` has no date tokens (e.g. `HH:mm:ss.SSS`) parses to 1970-01-01 local time (`parseTimestampGeneric`'s defaults); order, Δt and time filters work as usual, and the format dialog's suggestion already proposes `HH:mm:ss.SSS` for such lines. `formatTime` omits the date for any timestamp on 1970-01-01 local, so these show as `00:01:03.700` everywhere the app prints a time (the datetime-local inputs keep the full value). Group 352g/h.
+A format whose `tsFormat` has no date tokens (e.g. `HH:mm:ss.SSS`) parses to 1970-01-01 local time (`parseTimestampGeneric`'s defaults); order, Δt and time filters work as usual, and the format dialog's suggestion already proposes `HH:mm:ss.SSS` for such lines. `formatTime` omits the date for any timestamp on 1970-01-01 local, so these show as `00:01:03.700` everywhere the app prints a time (the time-range dialog's fields show only the time of day). Group 352g/h.
 
 ## Log format export/import (JSON)
 
@@ -1429,7 +1429,7 @@ A text file is **one ordinary file node** pinned to the Plain text format (`PLAI
 **What a plain-text file looks like in the log views**
 - **No level badge.** Its entries have no level, so rows, pair rows and the entry detail render no `.level-badge` at all (`levelCellHtml`/`levelBadgeHtml`) — an empty badge still paints its padding and background as a small block.
 - **Minimap**: at most one bucket per line (consecutive line numbers would otherwise leave every other bucket empty).
-- **Line instead of Time.** `ts` is shown as a line number everywhere (`entryTimeText`, `formatTsFor`): the Time cell, entry detail, context-menu header, minimap ("Lines N") and time-filter names ("line 2 → line 3"; a minimap drag-select becomes a line range). No Δt.
+- **Line instead of Time.** `ts` is shown as a line number everywhere (`entryTimeText`, `formatTsFor`): the Time cell, entry detail, context-menu header, minimap ("Lines N") and time-filter names ("line 2 – line 3"; a minimap draft window becomes a line range). No Δt.
 - **With only plain-text files loaded** (`allRootsPlainText`) the Time header reads "Line" (own width key `line`), Δt and Level collapse, the level bar has no buttons, and "Filter for this ___"/the filter chips offer Line and Message. Loading any real log brings the ordinary columns back.
 - **Table/Plot**: the extraction table's second synthetic column (`ELAPSED_COL`) is **Line**, and a fresh plot's X axis defaults to it.
 - **Indentation and syntax colors.** Message cells are `.col-msg.plaintext` (`white-space:pre`, `pre-wrap` under Wrap, `tab-size:4`). A JSON/XML file (`plainTextSyntaxOf`: `node.textSyntax`) is colored with `jsonTokenRanges`/`xmlTokenRanges`, token *ranges* that `markCombinedHtml` merges as the innermost layer with filter and highlight-rule marks. Only visible rows are tokenized.
