@@ -13442,24 +13442,149 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   const bakeable = n =>
     (n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n);
   if (!bakeable(ref) || !bakeable(target)) return null;
-  const rootId = getRootFileId(refId);
-  const root = state.nodes[rootId];
-  if (!root) return null;
   const arrow = direction === "before" ? " ←" : " →";
   const nSuffix = n > 1 ? n : "";
+  return createLinkNodeFromBaked(getRootFileId(refId), bakeNodeCondition(ref), bakeNodeCondition(target),
+    direction, n, opts, ref.name + arrow + nSuffix + " " + target.name);
+}
+
+// The node-free half of createLinkNode: both sides arrive already baked (a
+// text condition from bakedTextCondition, a bakeNodeCondition result, or a
+// nested link = a chain, see hopsToLinkChain). Places the node as a new
+// top-level child of `rootId` and activates it. `name` is the base name
+// (default: linkChainName); the key/Δt suffix is appended here.
+function createLinkNodeFromBaked(rootId, bakedA, bakedB, direction, n, opts, name) {
+  const root = state.nodes[rootId];
+  if (!root || !bakedA || !bakedB) return null;
   const node = {
-    id: uid("n"), type: "filter", name: ref.name + arrow + nSuffix + " " + target.name,
+    id: uid("n"), type: "filter", name: "",
     parentId: rootId, children: [], filterType: "link", value: null,
-    bakedA: bakeNodeCondition(ref), bakedB: bakeNodeCondition(target),
+    bakedA: cloneBaked(bakedA), bakedB: cloneBaked(bakedB),
     linkDirection: direction, linkN: n,
     linkOrderEnforced: !!(opts && opts.orderEnforced),
     linkExclusive: !!(opts && opts.exclusive),
   };
   copyLinkOptions({ linkDt: opts && opts.dt, linkKey: opts && opts.key }, node);
-  node.name += linkOptionsNameSuffix(node);
+  node.name = (name != null ? name : linkChainName(node)) + linkOptionsNameSuffix(node);
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
   return activateNewNode(node);
+}
+
+// ---- Link chains <-> hops (the link dialog's model) ----
+// A (multi-hop) link is one nested baked condition: link(link(A, B1), B2)...
+// The dialog edits it as { start, hops: [{ baked, direction, n }], key, dt,
+// exclusive, orderEnforced } — the key (and the two flags) hold on every
+// hop, the Δt condition on the last one only (the whole tuple's span).
+
+// The baked condition of a plain text side typed into the dialog.
+function bakedTextCondition(pattern) {
+  return { filterType: "text", value: pattern, inverted: false, columns: ["message"] };
+}
+
+// Builds the nested baked link for `start` + `hops`; opts: { key, dt,
+// exclusive, orderEnforced }. null for an empty hop list.
+function hopsToLinkChain(start, hops, opts) {
+  if (!start || !hops || !hops.length) return null;
+  opts = opts || {};
+  let cur = cloneBaked(start);
+  hops.forEach((hop, i) => {
+    const link = {
+      filterType: "link", value: null, inverted: false,
+      bakedA: cur, bakedB: cloneBaked(hop.baked),
+      linkDirection: hop.direction === "before" ? "before" : "after",
+      linkN: Math.max(1, parseInt(hop.n, 10) || 1),
+      linkOrderEnforced: !!opts.orderEnforced, linkExclusive: !!opts.exclusive,
+    };
+    copyLinkOptions({ linkKey: opts.key, linkDt: i === hops.length - 1 ? opts.dt : null }, link);
+    cur = link;
+  });
+  return cur;
+}
+
+// Inverse of hopsToLinkChain for a link node or a baked link: unrolls the
+// bakedA nesting. Key, Δt and the flags are read off the outermost link.
+function linkChainToHops(link) {
+  if (!link || link.filterType !== "link" || !link.bakedA || !link.bakedB) return null;
+  const hops = [];
+  let cur = link;
+  while (cur.filterType === "link" && cur.bakedA && cur.bakedB) {
+    hops.unshift({ baked: cloneBaked(cur.bakedB), direction: cur.linkDirection, n: cur.linkN });
+    cur = cur.bakedA;
+  }
+  return {
+    start: cloneBaked(cur), hops,
+    key: sanitizeLinkKey(link.linkKey), dt: sanitizeLinkDt(link.linkDt),
+    exclusive: !!link.linkExclusive, orderEnforced: !!link.linkOrderEnforced,
+  };
+}
+
+// "A → B ← 2 C" for a link node or baked link (key/Δt suffix not included).
+function linkChainName(link) {
+  const c = linkChainToHops(link);
+  if (!c) return "";
+  return c.hops.reduce((name, h) =>
+    name + (h.direction === "before" ? " ←" : " →") + (h.n > 1 ? h.n : "") + " " + bakedConditionName(h.baked),
+  bakedConditionName(c.start));
+}
+
+// Replaces an existing link node's whole definition with `chain` (a baked
+// link, e.g. from hopsToLinkChain) as ONE undo step. The name is regenerated
+// only while it is still the auto-generated one (the old chain's name plus
+// its option suffix); a renamed node keeps its name.
+function updateLinkNodeWithUndo(nodeId, chain) {
+  const node = state.nodes[nodeId];
+  if (!node || node.filterType !== "link" || !chain || chain.filterType !== "link") return false;
+  withFieldEditUndo(nodeId, n => {
+    const auto = n.name === linkChainName(n) + linkOptionsNameSuffix(n);
+    n.bakedA = cloneBaked(chain.bakedA);
+    n.bakedB = cloneBaked(chain.bakedB);
+    n.linkDirection = chain.linkDirection;
+    n.linkN = chain.linkN;
+    n.linkOrderEnforced = !!chain.linkOrderEnforced;
+    n.linkExclusive = !!chain.linkExclusive;
+    copyLinkOptions(chain, n);
+    if (auto) n.name = linkChainName(n) + linkOptionsNameSuffix(n);
+    invalidateNodeSubtreeCaches(nodeId);
+  });
+  return true;
+}
+
+// Correlation-key suggestions for a start/end pair of entry lists: every
+// `name=` field (\w+) present in the first message of both sides becomes a
+// candidate, key pattern "name=[*:word]" (the value token up to the next
+// whitespace — "job=J-00001", "axis=1"). score = distinct values / start
+// entries carrying the field; `recommended` marks the best score when it is
+// >= 0.9 (an ID-like field, unique per start). Sorted best first.
+const LINK_KEY_SUGGEST_MIN_SCORE = 0.9;
+function suggestLinkKeys(startEntries, endEntries) {
+  const fieldRe = /(?:^|[\s,;(\[{])(\w+)=([^\s,;)\]}]+)/g;
+  const fieldsOf = msg => {
+    const out = new Set();
+    fieldRe.lastIndex = 0;
+    let m;
+    while ((m = fieldRe.exec(msg)) !== null) out.add(m[1]);
+    return out;
+  };
+  if (!startEntries.length || !endEntries.length) return [];
+  const endFields = fieldsOf(endEntries[0].message);
+  const cands = [];
+  for (const field of fieldsOf(startEntries[0].message)) {
+    if (!endFields.has(field)) continue;
+    const pattern = field + "=[*:word]";
+    const keyOf = compileLinkKey({ pattern });
+    const seen = new Set();
+    let carrying = 0;
+    for (const e of startEntries) {
+      const k = keyOf(e);
+      if (k == null) continue;
+      carrying++;
+      seen.add(k);
+    }
+    if (carrying) cands.push({ field, pattern, score: seen.size / carrying });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  return cands.map((c, i) => ({ field: c.field, pattern: c.pattern, recommended: i === 0 && c.score >= LINK_KEY_SUGGEST_MIN_SCORE }));
 }
 
 // Two optional link conditions (docs/filters.md → "Link filter: Δt
@@ -14100,9 +14225,14 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
 // alike (both go through evaluateFilterCondition); `cfg`
 // is either, both carry the same link* fields. For each reference entry:
 // find the Nth target before/after it, then apply the opt-in conditions in
-// order — order enforcement, the Δt condition — and only a pair that
-// survives them all claims its target under "exclusive matches" (a pair
-// dropped by a condition leaves its target free for a later reference).
+// order — order enforcement, then claim the target under "exclusive
+// matches", then the Δt condition. Δt is a pure post-filter: a pair it drops
+// still consumed its target, so the pairing is identical with and without
+// it (Δt only removes finished pairs).
+//
+// `unmatched` (optional array) collects the references that got no pair —
+// no key, no candidate, no match, order-enforce reject — in reference order;
+// NOT the ones the Δt post-filter dropped. Handed out as node._linkUnmatched.
 //
 // With a correlation key (linkKey), the targets are indexed by key ONCE
 // per recompute (a Map key -> that key's targets, each list still sorted
@@ -14110,7 +14240,7 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
 // key's list — the unchanged findNthOccurrence(Excluding) run over a
 // smaller array, so direction, N, the tie-break and exclusivity all keep
 // their exact meaning, just among same-key candidates.
-function computeLinkPairs(cfg, refEntries, targetEntries, fileId) {
+function computeLinkPairs(cfg, refEntries, targetEntries, fileId, unmatched) {
   const result = [];
   // usedIds backs the opt-in "exclusive matches" option: once a target
   // entry has been matched for one reference entry, later reference
@@ -14147,21 +14277,21 @@ function computeLinkPairs(cfg, refEntries, targetEntries, fileId) {
     if (targetsByKey) {
       const k = keyOf(anchorEntry);
       candidates = k == null ? null : targetsByKey.get(k);
-      if (!candidates) continue;
+      if (!candidates) { if (unmatched) unmatched.push(refEntry); continue; }
     }
     const match = usedIds
       ? findNthOccurrenceExcluding(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, usedIds, orderIndexMap)
       : findNthOccurrence(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, orderIndexMap);
-    if (!match) continue;
+    if (!match) { if (unmatched) unmatched.push(refEntry); continue; }
     // Opt-in "enforce order": reject (drop, same as "no match") a hop
     // whose match lands strictly before the anchor it was searched from —
     // i.e. require the chain's timestamps to be non-decreasing hop over
     // hop, regardless of which individual hop searched "before" vs
     // "after". See docs/filters.md for why this definition was chosen.
-    if (cfg.linkOrderEnforced && match.ts < anchorTs) continue;
+    if (cfg.linkOrderEnforced && match.ts < anchorTs) { if (unmatched) unmatched.push(refEntry); continue; }
     const pair = buildPairEntry(refEntry, match, orderIndexMap);
-    if (dt && !linkDtPasses(dt, pair.dtMs)) continue;
     if (usedIds) usedIds.add(match.id);
+    if (dt && !linkDtPasses(dt, pair.dtMs)) continue;
     result.push(pair);
   }
   return result;
@@ -15219,7 +15349,9 @@ function evaluateFilterCondition(cond, parentEntries, fileId, meta) {
     // entry sets exactly as before.
     const refEntries = getEntriesFromBaked(cond.bakedA, parentEntries, fileId);
     const targetEntries = getEntriesFromBaked(cond.bakedB, parentEntries, fileId);
-    result = computeLinkPairs(cond, refEntries, targetEntries, fileId);
+    const unmatched = meta ? [] : null;
+    result = computeLinkPairs(cond, refEntries, targetEntries, fileId, unmatched);
+    if (meta) meta.linkUnmatched = unmatched; // becomes node._linkUnmatched (runtime only, like _gapMs)
   } else if (cond.filterType === "gap") {
     const gap = computeGapEntries(cond.value, parentEntries);
     result = gap.result;
@@ -15323,6 +15455,7 @@ function getEntriesUncached(node, parentOverride) {
   const parentEntries = parentOverride || getEntries(node.parentId);
   const meta = {};
   const result = evaluateFilterCondition(node, parentEntries, getRootFileId(node.id), meta);
+  if (meta.linkUnmatched) node._linkUnmatched = meta.linkUnmatched; // references without an end, see computeLinkPairs
   if (meta.gaps) node._gapMs = meta.gaps; // read by appendLogRow's Δt column, see computeGapEntries
   if (meta.contextRanges) {
     node._contextRanges = meta.contextRanges; // used by renderVisibleRows to draw the bracket
@@ -15838,9 +15971,28 @@ function captureNodeFields(node) {
     wholeWord: !!node.wholeWord,
     assertions: node.assertions ? JSON.parse(JSON.stringify(node.assertions)) : undefined,
     columnRenames: node.columnRenames ? JSON.parse(JSON.stringify(node.columnRenames)) : undefined,
+    link: node.filterType === "link" ? captureLinkFields(node) : undefined,
   };
 }
+// A link node's own definition (updateLinkNodeWithUndo's edit), as fresh copies.
+function captureLinkFields(node) {
+  const out = {
+    bakedA: cloneBaked(node.bakedA), bakedB: cloneBaked(node.bakedB),
+    linkDirection: node.linkDirection, linkN: node.linkN,
+    linkOrderEnforced: !!node.linkOrderEnforced, linkExclusive: !!node.linkExclusive,
+  };
+  copyLinkOptions(node, out);
+  return out;
+}
 function applyNodeFields(node, fields) {
+  if (fields.link) {
+    node.bakedA = cloneBaked(fields.link.bakedA);
+    node.bakedB = cloneBaked(fields.link.bakedB);
+    node.linkDirection = fields.link.linkDirection; node.linkN = fields.link.linkN;
+    node.linkOrderEnforced = fields.link.linkOrderEnforced; node.linkExclusive = fields.link.linkExclusive;
+    copyLinkOptions(fields.link, node);
+    invalidateNodeSubtreeCaches(node.id);
+  }
   node.filterType = fields.filterType; node.value = fields.value;
   node.inverted = fields.inverted; node.name = fields.name;
   if (fields.muted) node.muted = true; else delete node.muted;
@@ -38712,10 +38864,9 @@ function buildLinkDialogChain(opts, withDt) {
 }
 
 // Live preview: "N pairs", or with a Δt condition "12 of 3.418 pairs"
-// (the count without the condition as the denominator — evaluated
-// separately rather than by filtering, since under "exclusive matches" a
-// pair the condition drops leaves its target free for a later reference),
-// plus the usual histogram and the first sample pairs with their Δt.
+// (the count without the condition as the denominator; the condition is a
+// pure post-filter, so both counts are the same pairing), plus the usual
+// histogram and the first sample pairs with their Δt.
 // Evaluated over the shared root file, where Create places the new node.
 function updateLinkPreview() {
   clearTimeout(linkPreviewTimer);
@@ -38807,21 +38958,16 @@ el("#linkDialogCreate").addEventListener("click", () => {
   const exclusive = pillGet(linkExclusiveInput);
   const opts = readLinkDialogOptions();
   if (opts.error) { showLiveMatchError(opts.error, linkResultsTarget); return; } // keep the dialog open to fix it
-  let curRefId = linkRefSelect.value;
-  let lastNode = null;
-  let ok = !!curRefId && linkHopRows.length > 0;
-  for (let i = 0; i < linkHopRows.length; i++) {
-    const hop = linkHopRows[i];
-    const n = Math.max(1, parseInt(hop.nInput.value, 10) || 1);
-    // The correlation key holds on every hop (same axis/thread/... through
-    // the whole tuple); the Δt condition only on the last, where the pair
-    // spans the whole tuple — see buildLinkDialogChain.
-    const dt = i === linkHopRows.length - 1 ? opts.dt : null;
-    const node = createLinkNode(curRefId, hop.targetId, hop.dirSelect.value, n, { orderEnforced, exclusive, key: opts.key, dt });
-    if (!node) { ok = false; break; }
-    lastNode = node;
-    curRefId = node.id; // next hop anchors on THIS hop's match, not the original reference (Bug 1 fix)
-  }
+  // ONE node holds the whole chain (no intermediate hop nodes): the key and
+  // the flags hold on every hop, the Δt condition on the last — see
+  // buildLinkDialogChain / hopsToLinkChain.
+  const chain = buildLinkDialogChain(opts, true);
+  const rootId = getRootFileId(linkRefSelect.value);
+  const lastNode = chain && rootId
+    ? createLinkNodeFromBaked(rootId, chain.bakedA, chain.bakedB, chain.linkDirection, chain.linkN,
+      { orderEnforced, exclusive, key: opts.key, dt: chain.linkDt || null })
+    : null;
+  const ok = !!lastNode;
   if (ok && lastNode) revealFilteredView();
   closeLinkDialog();
   render();

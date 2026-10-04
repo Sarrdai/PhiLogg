@@ -211,15 +211,16 @@ group(22);
     fireClick(d.querySelector("#linkDialogCreate"), w);
     assert(d.querySelector("#linkDialog").classList.contains("hidden"), "multi-hop dialog: closes after Create");
 
+    // One node holds the whole chain (no intermediate hop nodes): its bakedA
+    // is a NESTED baked link condition (First -> Second), a flat data
+    // snapshot, not a reference to another node's id (see bakeNodeCondition's
+    // "link" branch).
     const linkNodes = Object.values(T.state.nodes).filter(n => n.filterType === "link");
-    assert(linkNodes.length === 2, "multi-hop dialog: chain of 2 link nodes created under the hood");
-    const hop1 = linkNodes.find(n => n.bakedA && n.bakedA.filterType === "text" && n.bakedA.value === "First");
-    // hop2's bakedA is a NESTED baked link condition — hop1's own bakeNodeCondition
-    // (filterType/bakedA/bakedB/linkDirection/etc), a flat data snapshot, not a
-    // reference to hop1's node id (see bakeNodeCondition's "link" branch).
-    const hop2 = linkNodes.find(n => hop1 && n.bakedA && n.bakedA.filterType === "link" && n.bakedA.bakedA && n.bakedA.bakedA.value === "First");
-    assert(!!hop1 && !!hop2, "multi-hop dialog: hop2's bakedA is hop1's own baked condition (nested), not a reference to hop1's node id");
-    assert(hop1.parentId === f.id && hop2.parentId === f.id, "both hops are placed directly under FILE, per the new placement rule — not nested under each other");
+    assert(linkNodes.length === 1, "multi-hop dialog: ONE link node holds the whole chain");
+    const hop2 = linkNodes[0];
+    assert(hop2.bakedA && hop2.bakedA.filterType === "link" && hop2.bakedA.bakedA && hop2.bakedA.bakedA.value === "First" && hop2.bakedA.bakedB.value === "Second" && hop2.bakedB.value === "Third",
+      "multi-hop dialog: bakedA is the nested First -> Second link, bakedB is Third");
+    assert(hop2.parentId === f.id, "the node is placed directly under FILE");
     const tupleRes = w.getEntries(hop2.id);
     assert(tupleRes.length === 1 && tupleRes[0].second.message === "Third A",
       "multi-hop dialog: resulting 3-way tuple resolves First -> Second -> Third correctly");
