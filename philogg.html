@@ -918,6 +918,12 @@
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
   }
+  /* Time-filter labels: up to 2 lines, breaking only between .tl-seg segments. */
+  .tree-label.tree-label-wrap{
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+    white-space:normal; line-height:1.3;
+  }
+  .tree-label-wrap .tl-seg{white-space:nowrap;}
   [data-type="file"] > .tree-row .tree-label{font-weight:600; color:var(--text-primary);}
   .tree-rename-input{
     width:100%; min-width:0; font:inherit; font-size:12.3px; color:var(--text-primary);
@@ -19744,7 +19750,22 @@ function renderNode(id, depth, opts) {
     // opts.labelText: a ZIP entry nested under its subfolder rows shows
     // just its basename (renderZipSection); the title keeps the full path.
     const displayName = (opts && opts.labelText) || nodeDisplayName(node);
-    label.textContent = node.inverted ? "¬ " + displayName : displayName;
+    const shownName = node.inverted ? "¬ " + displayName : displayName;
+    if (!(opts && opts.labelText) && !node.label && node.type === "filter" &&
+        (node.filterType === "timerange" || node.filterType === "after" || node.filterType === "before")) {
+      // Time-filter labels wrap onto at most 2 lines, breaking only after the
+      // " – " / " · " separators: each segment is a nowrap span, the single
+      // spaces between them are the only break opportunities. textContent
+      // stays identical to the plain name.
+      label.classList.add("tree-label-wrap");
+      shownName.split(/(?<=[–·]) /).forEach((seg, i) => {
+        if (i) label.appendChild(document.createTextNode(" "));
+        const sp = document.createElement("span");
+        sp.className = "tl-seg";
+        sp.textContent = seg;
+        label.appendChild(sp);
+      });
+    } else label.textContent = shownName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
     (node.label ? "  [" + node.name + "]" : "") +
