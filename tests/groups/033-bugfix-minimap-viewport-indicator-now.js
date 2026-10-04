@@ -47,7 +47,6 @@ await withApp(async (w, d, T) => {
   // "filtered to ERROR" level quick-filter). Pinned to "explicit" mode so the
   // click stays on the classic state.levelFilter path — see GROUP 94 for the
   // new default "auto" tree-node behavior.
-  T.levelFilterTreeMode = "explicit";
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);
   assert(T.currentViewEntries.length === 1 && T.currentViewEntries[0].message === "target",

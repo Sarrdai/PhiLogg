@@ -7,9 +7,10 @@
    (FEATURE_BACKLOG.md #37)
    Origin: this session (2026-08-25), bug report with screenshots: switching
    Settings -> Behavior's level-filter-tree mode to "explicit" (Manual)
-   reveals #btnApplyLevelToTree ("Add to tree") in #viewBar, and the active
-   filter chain (#breadcrumb) visibly shifts/wraps differently than in
-   "auto" mode where the button stays hidden. Root cause: every other
+   revealed #btnApplyLevelToTree ("Add to tree") in #viewBar, and the active
+   filter chain (#breadcrumb) visibly shifted/wrapped differently than while
+   the button was hidden (the setting is gone since the level bar became a
+   pure view filter; the button now shows while a chip is selected). Root cause: every other
    button pinned to #viewBar's top-left float line (#fhTabs,
    #btnPinBookmarks, #btnMultilineMsg, #btnColumns,
    #btnTextMatchHighlight, #levelBar — see the "Unified view bar" CSS
@@ -39,11 +40,9 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
 
-  const select = d.querySelector("#settingsLevelFilterTreeMode");
-  select.value = "explicit";
-  select.dispatchEvent(new w.Event("change", { bubbles: true }));
   const applyBtn = d.querySelector("#btnApplyLevelToTree");
-  assert(isVisible(applyBtn, w), "sanity: explicit mode reveals #btnApplyLevelToTree");
+  fireClick(d.querySelector('#levelBar .level-btn[data-level="ERROR"]'), w);
+  assert(isVisible(applyBtn, w), "sanity: a selected level chip reveals #btnApplyLevelToTree");
 
   const cs = w.getComputedStyle;
   assert(cs(applyBtn).float === "left", "#btnApplyLevelToTree floats left, joining #fhTabs/#levelBar's pinned top-left line");

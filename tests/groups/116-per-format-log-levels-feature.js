@@ -87,14 +87,14 @@ await withApp(async (w, d, T) => {
   assert(w.canonicalLevelOrder(["OTHER", "INFO"]).join(",") === "INFO,OTHER",
     "levels outside the union (OTHER) are kept, appended after the ordered ones");
 
-  // Auto mode (the default) upserts a single level node — its value array
-  // must come out in the union order, not ERROR/WARN/INFO/DEBUG.
-  assert(T.levelFilterTreeMode === "auto", "sanity: auto mode is the default");
+  // "Add to tree" turns the chip selection into one level node — its value
+  // array must come out in the union order, not ERROR/WARN/INFO/DEBUG.
   const findLevelBtn = lvl => d.querySelector('.level-btn[data-level="' + lvl + '"]');
   fireClick(findLevelBtn("ERROR"), w);
   fireClick(findLevelBtn("DEBUG"), w);
+  fireClick(d.querySelector("#btnApplyLevelToTree"), w);
   const levelNode = Object.values(T.state.nodes).find(n => n.type === "filter" && n.filterType === "level");
-  assert(levelNode, "clicking level buttons created a level filter node");
+  assert(levelNode, "Add to tree created a level filter node");
   assert(levelNode.value.join(",") === "DEBUG,ERROR",
     "the level node's value is ordered by the format's own level order, got " + levelNode.value.join(","));
   const label = [...d.querySelectorAll("#tree .tree-label")].find(el => el.textContent.includes("DEBUG"));

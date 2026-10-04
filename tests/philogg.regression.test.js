@@ -382,8 +382,6 @@ async function withApp(run, opts = {}) {
       get textMatchHighlightInDetail() { return textMatchHighlightInDetail; },
       get highlightMatchTextEnabled() { return highlightMatchTextEnabled; },
       get filePathLinksEnabled() { return filePathLinksEnabled; },
-      get levelFilterTreeMode() { return levelFilterTreeMode; },
-      set levelFilterTreeMode(v) { levelFilterTreeMode = v; },
       get tempAnchorMode() { return tempAnchorMode; },
       get tempAnchorFadeSeconds() { return tempAnchorFadeSeconds; },
       get temporaryAnchorAcrossFiles() { return temporaryAnchorAcrossFiles; },

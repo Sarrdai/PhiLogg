@@ -41,7 +41,7 @@ section("20. Session cache: persist in one window, restore in the next");
     savedEntryRaw = bEntry.raw;
     w.toggleBookmark(bEntry.id);
     T.state.notes.set(bEntry.id, "check this"); // general-purpose note, independent of the bookmark itself
-    T.state.levelFilter.add("ERROR");
+    T.state.levelFilter.add("ERROR"); // a view filter: deliberately NOT persisted (asserted after the restore)
     T.state.activeId = combo.id;
 
     await w.persistFileNode(f);
@@ -102,7 +102,7 @@ section("20. Session cache: persist in one window, restore in the next");
     const [bid] = [...T.state.bookmarks.entries()][0];
     assert(bid === f.entries[5].id, "restore: bookmark maps to ordinal 5");
     assert(T.state.notes.size === 1 && T.state.notes.get(f.entries[5].id) === "check this", "restore: note maps to ordinal 5 with its text");
-    assert(T.state.levelFilter.has("ERROR") && T.state.levelFilter.size === 1, "restore: level filter preserved");
+    assert(T.state.levelFilter.size === 0, "restore: the level-chip view filter is not persisted");
     assert(T.state.activeId === combo.id, "restore: active node is the restored AND filter");
 
     // --- Deletion clears the cached file record ---

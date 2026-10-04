@@ -1122,8 +1122,8 @@
      rule overrides display at rest. float:left is harmless while hidden —
      it only takes effect once JS sets display back to "flex". */
   #fhTabs{display:none; float:left; margin:0 14px 0 0;}
-  /* #btnApplyLevelToTree ("Add to tree", Settings → Behavior: Manual mode
-     only) sits after #levelBar in the same float flow. It's toggled via
+  /* #btnApplyLevelToTree ("Add to tree", shown only while the level bar has a
+     selection) sits after #levelBar in the same float flow. It's toggled via
      display:none/"" by JS (see updateLevelBarVisibility/similar), not
      removed from the DOM, so it must carry the SAME float:left as
      #fhTabs/#levelBar — otherwise, being an unfloated block sibling of
@@ -7044,18 +7044,6 @@
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsLevelFilterTreeMode">Level bar creates filter tree nodes</label>
-                <div class="settings-row-hint">Clicking a level button writes a real filter node (Automatic) or just quick-toggles (Manual).</div>
-              </div>
-              <div class="settings-row-control">
-                <select id="settingsLevelFilterTreeMode">
-                  <option value="auto">Automatic</option>
-                  <option value="explicit">Manual (Add to tree button)</option>
-                </select>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsTempAnchorMode">Show temporary anchor after a no-match filter switch</label>
                 <div class="settings-row-hint">Show the current row at its would-be spot when you switch to a filter it doesn't match.</div>
               </div>
@@ -7910,7 +7898,7 @@ const ICON_INFO = icon("info");
 const ICON_RENAME = icon("rename");
 // Ascending-bars icon for a "level" filter node (FEATURE_BACKLOG.md #10) —
 // used both in the tree (nodeIconHTML) and on the level bar's "Add to
-// tree" button (explicit mode, see initLevelFilterTreeModeSettings).
+// tree" button (see updateApplyLevelToTreeButtonVisibility).
 const ICON_LEVEL = icon("level");
 
 /* ===================== Theme ===================== */
@@ -9627,37 +9615,12 @@ document.getElementById("settingsTreeIndicatorMode").addEventListener("change", 
   render();
 });
 
-/* ===================== Level bar / filter-tree mode settings (Settings ->
-   Behavior, FEATURE_BACKLOG.md #10) — see the levelFilterTreeMode module
-   comment above for what the two modes mean. Same plain-localStorage-
-   preference wiring as initTextMatchHighlightSettings above. */
-function initLevelFilterTreeModeSettings() {
-  const stored = localStorage.getItem(LEVEL_FILTER_TREE_MODE_KEY);
-  levelFilterTreeMode = stored === "explicit" ? "explicit" : "auto";
-  const select = document.getElementById("settingsLevelFilterTreeMode");
-  if (select) select.value = levelFilterTreeMode;
-  updateApplyLevelToTreeButtonVisibility();
-}
-
-// Shows #btnApplyLevelToTree ("Add to tree") only in "explicit" mode — in
-// "auto" mode the level bar already writes straight into the tree, so the
-// button would be redundant — and disables it while there's nothing
-// selected on the level bar to push in.
+/* "Add to tree" (#btnApplyLevelToTree) is visible only while the level bar has
+   a selection (state.levelFilter): the chips are a pure view filter, and this
+   button turns the selection into a real level node. */
 function updateApplyLevelToTreeButtonVisibility() {
-  btnApplyLevelToTree.style.display = levelFilterTreeMode === "explicit" ? "" : "none";
-  btnApplyLevelToTree.disabled = state.levelFilter.size === 0;
+  btnApplyLevelToTree.style.display = state.levelFilter.size ? "" : "none";
 }
-
-document.getElementById("settingsLevelFilterTreeMode").addEventListener("change", ev => {
-  levelFilterTreeMode = ev.target.value === "explicit" ? "explicit" : "auto";
-  localStorage.setItem(LEVEL_FILTER_TREE_MODE_KEY, levelFilterTreeMode);
-  // Avoid a stale, now-invisible global toggle silently bleeding into the
-  // other mode (e.g. an "explicit" quick-filter left set, then switching to
-  // "auto" where the level bar no longer shows or clears it).
-  state.levelFilter.clear();
-  updateApplyLevelToTreeButtonVisibility();
-  render();
-});
 
 /* ===================== "On open, scroll log to" setting (Settings ->
    Behavior) — see the openScrollPosition module comment above. */
@@ -13454,23 +13417,6 @@ function applyTimeWindow(targetId, from, to) {
     updateTimeRangeFilterNodeWithUndo(targetId, nf, nt);
     return target;
   }
-  if (target.type === "filter" && target.filterType === "level" && levelFilterTreeMode === "auto") {
-    const parent = state.nodes[target.parentId];
-    if (!parent) return null;
-    // A window already sits above this level node: it is that window that changes.
-    if (parent.type === "filter" && parent.filterType === "timerange") return applyTimeWindow(parent.id, from, to);
-    const idx = parent.children.indexOf(targetId);
-    const win = createFilterNode(target.parentId, "timerange", { from, to });
-    if (!win) return null;
-    parent.children = parent.children.filter(id => id !== win.id);
-    parent.children.splice(idx, 1, win.id);
-    win.children.push(targetId);
-    target.parentId = win.id;
-    invalidateNodeSubtreeCaches(win.id);
-    activateNewNode(target);
-    pushUndo({ kind: "insertAbove", nodeId: targetId, winNode: win, parentId: parent.id, index: idx });
-    return win;
-  }
   return createFilterNode(targetId, "timerange", { from, to });
 }
 
@@ -15207,25 +15153,18 @@ function initIdeIntegration() {
   }
 }
 
-/* Level bar / filter-tree mode (Settings -> Behavior, FEATURE_BACKLOG.md
-   #10) — "auto" (default): clicking a level button upserts a real
-   filterType:"level" node at the current tree position (see
-   applyLevelSelectionToTree). "explicit": the level bar keeps its original
-   behavior (a plain state.levelFilter Set, applied only inside
-   getVisibleEntries — see applyLevelFilter — independent of tree position),
-   and the level bar's "Add to tree" button (#btnApplyLevelToTree, shown only
-   in this mode) pushes the current selection into the tree on demand. Plain
-   standing preference (same tier as textMatchHighlightScope above), not
-   session-cache state. */
-const LEVEL_FILTER_TREE_MODE_KEY = "philogg-level-filter-tree-mode";
+/* Level bar: a pure VIEW filter. A chip click toggles state.levelFilter (a
+   plain Set, applied inside getVisibleEntries — see applyLevelFilter —
+   independent of tree position, never writes the tree); the level bar's
+   "Add to tree" button (#btnApplyLevelToTree, shown only while something is
+   selected) turns the selection into a real level node on demand and clears
+   the selection. Not persisted (neither the session cache nor session files). */
 // "On open, scroll log to" (Settings -> Behavior): "start" (default, unchanged
 // behavior) or "end" — see createFileNode/createQueuedFileNode (sets a
 // one-shot _openScrollToEnd flag on the new root node) and renderTable's
-// no-anchor fallback (consumes it). Same plain-localStorage tier as the
-// level-filter-tree-mode setting above.
+// no-anchor fallback (consumes it). Plain-localStorage preference.
 const OPEN_SCROLL_POSITION_KEY = "philogg-open-scroll-position";
 let openScrollPosition = "start";
-let levelFilterTreeMode = "auto";
 
 // Which "text" filter nodes to pull match ranges from right now, per
 // textMatchHighlightEnabled/textMatchHighlightScope — see the section
@@ -16522,7 +16461,7 @@ function insertAt(parent, nodeId, index) {
 // button tooltips below.
 const UNDO_KIND_LABELS = {
   delete: "delete", deleteFile: "file delete", move: "move", edit: "edit",
-  clockOffset: "clock adjust", create: "filter creation", batch: "assistant round", insertAbove: "time window",
+  clockOffset: "clock adjust", create: "filter creation", batch: "assistant round",
 };
 
 function undo() {
@@ -16560,17 +16499,6 @@ function offerPhoneUndoToast(prevTop) {
 function undoAction(action) {
   if (action.kind === "batch") {
     for (let i = action.actions.length - 1; i >= 0; i--) undoAction(action.actions[i]);
-  } else if (action.kind === "insertAbove") {
-    // A node (time window) inserted above `nodeId`: put nodeId back at its old index and drop the window.
-    const node = state.nodes[action.nodeId], win = state.nodes[action.winNode.id], parent = state.nodes[action.parentId];
-    if (node && win && parent) {
-      win.children = win.children.filter(id => id !== action.nodeId);
-      parent.children = parent.children.filter(id => id !== win.id);
-      insertAt(parent, action.nodeId, action.index);
-      node.parentId = action.parentId;
-      deleteNode(win.id);
-      state.activeId = action.nodeId;
-    }
   } else if (action.kind === "delete") {
     const restored = restoreSubtree(action.snapshot);
     insertAt(state.nodes[action.parentId], restored.id, action.index);
@@ -16651,17 +16579,6 @@ function redo() {
 function redoAction(action) {
   if (action.kind === "batch") {
     action.actions.forEach(redoAction);
-  } else if (action.kind === "insertAbove") {
-    const node = state.nodes[action.nodeId], win = action.winNode, parent = state.nodes[action.parentId];
-    if (node && parent && !state.nodes[win.id]) {
-      parent.children = parent.children.filter(id => id !== action.nodeId);
-      win.children = [action.nodeId];
-      win.parentId = action.parentId;
-      state.nodes[win.id] = win;
-      insertAt(parent, win.id, action.index);
-      node.parentId = win.id;
-      state.activeId = action.nodeId;
-    }
   } else if (action.kind === "delete") {
     // The node is currently restored (undo put it back with its original
     // id) — deleting it again is the redo.
@@ -20253,50 +20170,16 @@ function pathTreeItemWrap(row, depth) {
 }
 function basenameOf(path) { return path.slice(path.lastIndexOf("/") + 1); }
 
-// The level array of the "level" filter node currently sitting at
-// state.activeId, or [] when the active node isn't one (auto mode's level
-// bar reflects/edits whichever level node the tree is currently positioned
-// on — see applyLevelSelectionToTree).
-function currentTreeLevelSelection() {
-  const active = state.activeId ? state.nodes[state.activeId] : null;
-  return (active && active.type === "filter" && active.filterType === "level") ? active.value.slice() : [];
-}
-
-// Which levels the level bar's buttons show as .active — the classic global
-// state.levelFilter Set in "explicit" mode, or the active tree position's
-// own level-node selection in "auto" mode (see levelFilterTreeMode).
-function activeLevelSetForBar() {
-  return levelFilterTreeMode === "explicit" ? state.levelFilter : new Set(currentTreeLevelSelection());
-}
-
-// The node whose result the level bar's per-button preview counts are
-// computed against — the active
-// node itself, unless it IS a level node already, in which case its own
-// result is already narrowed to the current selection and counting against
-// it would hide every not-yet-selected level. Using the level node's own
-// parent instead keeps the counts meaning "what would this button show if
-// you turned it on", exactly like clicking into a fresh level node would.
-function levelBarCountsBaseId() {
-  const active = state.activeId ? state.nodes[state.activeId] : null;
-  return (active && active.type === "filter" && active.filterType === "level") ? active.parentId : state.activeId;
-}
-
-// Creates/updates/removes the single filterType:"level" node at the current
-// tree position to match `levels` — called both by the level bar's own
-// click handler (auto mode) and by #btnApplyLevelToTree (explicit mode's
-// "Add to tree" button). An existing level node at the active position is
-// edited in place (or deleted once every level is turned off, undoably —
-// same as any other filter delete); otherwise a new child node is created
+// Creates/updates the single filterType:"level" node at the current
+// tree position to match `levels` — called by #btnApplyLevelToTree ("Add to
+// tree"). An existing level node at the active position is
+// edited in place (undoably); otherwise a new child node is created
 // under the active node, same as any other "Add filter" flow.
 function applyLevelSelectionToTree(levels) {
-  if (!state.activeId) return;
+  if (!state.activeId || !levels.length) return;
   const active = state.nodes[state.activeId];
-  if (active && active.type === "filter" && active.filterType === "level") {
-    if (levels.length === 0) deleteFilterNodeWithUndo(active.id);
-    else updateFilterNodeWithUndo(active.id, "level", levels, false);
-  } else if (levels.length) {
-    createFilterNode(state.activeId, "level", levels);
-  }
+  if (active && active.type === "filter" && active.filterType === "level") updateFilterNodeWithUndo(active.id, "level", levels, false);
+  else createFilterNode(state.activeId, "level", levels);
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
   render();
 }
@@ -20323,8 +20206,8 @@ function applyLevelFilterUnderRootFile(rootId, level) {
 
 function renderLevelBar() {
   levelBarEl.innerHTML = "";
-  const counts = getLevelCounts(levelBarCountsBaseId()) || {};
-  const activeLevels = activeLevelSetForBar();
+  const counts = getLevelCounts(state.activeId) || {};
+  const activeLevels = state.levelFilter;
 
   activeLevelOrder().forEach(lvl => {
     const btn = document.createElement("button");
@@ -20343,18 +20226,10 @@ function renderLevelBar() {
     const countText = n >= 100000 ? Math.round(n / 1000) + "k" : n.toLocaleString("de-DE"); // fits the 44px circle
     btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => {
-      if (levelFilterTreeMode === "auto") {
-        const current = currentTreeLevelSelection();
-        const idx = current.indexOf(lvl);
-        if (idx === -1) current.push(lvl); else current.splice(idx, 1);
-        applyLevelSelectionToTree(canonicalLevelOrder(current));
-        return;
-      }
       if (state.levelFilter.has(lvl)) state.levelFilter.delete(lvl);
       else state.levelFilter.add(lvl);
       renderLevelBar();
       renderMainView();
-      updateApplyLevelToTreeButtonVisibility();
       // The level quick-filter only narrows the Filtered view (getVisibleEntries
       // — the Full view deliberately ignores it, see renderHighlightView) — so
       // a change made while on the Full tab would otherwise look like nothing
@@ -20366,6 +20241,7 @@ function renderLevelBar() {
     });
     levelBarEl.appendChild(btn);
   });
+  updateApplyLevelToTreeButtonVisibility();
 }
 
 
@@ -28652,7 +28528,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // Per-level entry counts, one number-only segment per active level in the
   // same order/color as #levelBar's own buttons (activeLevelOrder()) —
   // person-requested, this session. Counts the whole ROOT FILE (rootId), not
-  // levelBarCountsBaseId() (the level bar's own "preview" counts, which
+  // the active node (the level bar's own counts, which
   // track whatever the currently active node/filter narrows to) — follow-up,
   // person-requested: the rest of this line (Start/End/Duration) already
   // describes the file's global time span regardless of the active filter,
@@ -46678,7 +46554,6 @@ function buildCacheMeta() {
     viewers: persistedViewerList(),
     activeViewer: (state.inlineViewer && state.inlineViewer.cacheKey) || null,
     settings: {
-      levelFilter: [...state.levelFilter],
       sortColumn: state.sortColumn,
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
@@ -46956,10 +46831,6 @@ async function restoreSessionFromCache(metaIn) {
     Object.values(byKey).forEach(fileNode => { syncBookmarksFilterNode(fileNode.id); syncNotesFilterNode(fileNode.id); });
 
     const s = meta.settings || {};
-    if (Array.isArray(s.levelFilter)) {
-      state.levelFilter.clear();
-      s.levelFilter.forEach(l => state.levelFilter.add(l));
-    }
     state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
@@ -47205,7 +47076,6 @@ function buildSessionExport(fileIds, embedTextIds) {
     exportedAt: new Date().toISOString(),
     files,
     settings: {
-      levelFilter: [...state.levelFilter],
       sortColumn: state.sortColumn,
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
@@ -47546,10 +47416,6 @@ async function runSessionImport(data, opts = {}) {
   // an entirely skipped import shouldn't clobber the current view state.
   if (resolved.size) {
     const s = data.settings || {};
-    if (Array.isArray(s.levelFilter)) {
-      state.levelFilter.clear();
-      s.levelFilter.forEach(l => state.levelFilter.add(l));
-    }
     state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
@@ -49535,6 +49401,8 @@ btnApplyLevelToTree.addEventListener("click", () => {
   const levels = canonicalLevelOrder([...state.levelFilter]);
   if (!levels.length) return;
   applyLevelSelectionToTree(levels);
+  state.levelFilter.clear(); // the new/edited node now does the filtering
+  render();
 });
 el("#brandVersion").textContent = PHILOGG_VERSION;
 el("#licenseVersion").textContent = "Version: " + PHILOGG_VERSION;
@@ -49569,7 +49437,7 @@ initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
 initFilePathLinksSetting();
 initDetailViewSetting();
-initLevelFilterTreeModeSettings();
+updateApplyLevelToTreeButtonVisibility();
 initTreeIndicatorModeSetting();
 initOpenScrollPositionSetting();
 initTempAnchorSettings();

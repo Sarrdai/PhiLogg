@@ -16,7 +16,6 @@
 group("clean-circle-rings");
 await withApp(async (w, d, T) => {
   section("clean-circle-rings a. level buttons: no border, ring as box-shadow, solid fill when checked, no brightness filter");
-  T.levelFilterTreeMode = "explicit";
   const f = await w.addFile("a.log", makeLog(0, 8, { levels: ["ERROR", "ERROR", "WARN", "INFO", "INFO", "INFO", "DEBUG", "DEBUG"] }), () => {});
   T.state.activeId = f.id;
   w.render();

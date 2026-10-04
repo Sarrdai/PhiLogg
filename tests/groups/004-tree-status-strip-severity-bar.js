@@ -41,7 +41,6 @@ await withApp(async (w, d, T) => {
   // leaving Full stale until an unrelated render happened to touch it) but
   // deliberately does NOT narrow its own entry list (this session's change —
   // see GROUP 61e below for the auto-reveal-Filtered half of that change).
-  T.levelFilterTreeMode = "explicit"; // pin the classic state.levelFilter path (see GROUP 94 for the new default "auto" tree-node behavior)
   w.applyFhView("stacked"); // both panels rendered so we can inspect both
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);

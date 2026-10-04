@@ -83,8 +83,10 @@ await withApp(async (w, d, T) => {
 
   // Quick-filtering by a custom level works end to end.
   fireClick(btn("NOTICE"), w);
+  assert(T.state.levelFilter.has("NOTICE") && T.currentViewEntries.length === 2, "clicking a custom level chip narrows the Filtered view to those entries");
+  fireClick(d.querySelector("#btnApplyLevelToTree"), w);
   const levelNode = Object.values(T.state.nodes).find(n => n.type === "filter" && n.filterType === "level");
-  assert(levelNode && levelNode.value.join(",") === "NOTICE", "clicking a custom level button creates a level node holding that name");
+  assert(levelNode && levelNode.value.join(",") === "NOTICE", "Add to tree creates a level node holding that name");
   assert(w.getEntries(levelNode.id).every(e => e.level === "NOTICE") && w.getEntries(levelNode.id).length === 2,
     "the level node filters to exactly the custom-level entries");
   const label = [...d.querySelectorAll("#tree .tree-label")].find(el => el.textContent.includes("NOTICE"));
@@ -215,6 +217,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   fireClick(d.querySelector('.level-btn[data-level="NOTICE"]'), w);
+  fireClick(d.querySelector("#btnApplyLevelToTree"), w);
   const node = Object.values(T.state.nodes).find(n => n.type === "filter" && n.filterType === "level");
   assert(node && node.value.join(",") === "NOTICE", "sanity: a level node on the custom level exists");
   assert(w.getEntries(node.id).length === 2, "sanity: it matches the two NOTICE entries");

@@ -95,12 +95,13 @@ if (groupSelected()) {
     assert(ch.filterType === "text" && ch.columns.join() === "thread" && w.getEntries(ch.id).length === TOUR.ROWS.filter(r => r[1] === "format" && r[0] !== "DEEP").length, "a chapter is a text filter on the Thread column (DEEP lines hidden by the Reading view)");
     assert(w.getEntries(byLabel("Pitfalls (GOTCHA + DONT)").id).length === TOUR.ROWS.filter(r => r[0] === "GOTCHA" || r[0] === "DONT").length, "Pitfalls = GOTCHA + DONT");
     assert(w.getEntries(view[0].id).length === TOUR.ROWS.filter(r => r[0] !== "DEEP").length, "the Reading view hides DEEP");
-    assert(T.state.levelFilter.size === 0, "no global level filter (it would be invisible in the default level-bar mode)");
+    assert(T.state.levelFilter.size === 0, "no chip selection (view filter) is active after loading the session");
     assert(isVisible(d.querySelector("#tourBanner"), w) && d.querySelector("#tourBanner .tour-banner-text").innerHTML === TOUR.BANNER.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"), "the banner shows the tour text");
     const btn = d.querySelector('#levelBar .level-btn[data-level="DEEP"]');
     assert(btn && !btn.classList.contains("active"), "the DEEP button is off");
     fireClick(btn, w);
-    assert(T.state.nodes[view[0].id].value.includes("DEEP") && w.getEntries(view[0].id).length === TOUR.ROWS.length, "clicking DEEP adds it to the active level node: the internals show");
+    assert(T.state.levelFilter.has("DEEP") && T.state.nodes[view[0].id].value.includes("DEEP") === false && d.querySelector('#levelBar .level-btn[data-level="DEEP"]').classList.contains("active"),
+      "clicking DEEP selects the chip as a view filter and leaves the Reading view node untouched (open question: the Reading view still hides DEEP)");
   }, { indexedDB: new IDBFactory() });
 
   {
