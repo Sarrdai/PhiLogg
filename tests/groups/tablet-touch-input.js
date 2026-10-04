@@ -52,7 +52,7 @@ await withApp(async (w, d, T) => {
     assert(rangeNodes().length === before && T.minimapView.draft, type + ": the drag leaves a draft window, no filter yet");
     d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
     assert(rangeNodes().length === before + 1, type + ": Filter on the draft creates exactly one time-range filter");
-    assert(dragRect.classList.contains("hidden"), type + ": overlay hides once the draft is filtered");
+    assert(!T.minimapView.draft && d.querySelector("#timelineMinimapDraftBar").classList.contains("hidden"), type + ": the action bar is gone once the draft is filtered");
     T.state.activeId = f.id;
   }
 

@@ -126,7 +126,7 @@ await withApp(async (w, d, T) => {
   btn("filter").click();
   let nodes = dwKids(f, T);
   assert(nodes.length === 1 && nodes[0].value.from === dr.from && nodes[0].value.to === dr.to && T.state.activeId === nodes[0].id, "Filter creates the node through applyTimeWindow and activates it");
-  assert(T.minimapView.draft === null && bar.classList.contains("hidden") && rect.classList.contains("hidden"), "draft discarded after Filter");
+  assert(T.minimapView.draft === null && bar.classList.contains("hidden"), "draft discarded after Filter (the new active node shows as the adopted window, no bar)");
   assert(T.minimapView.trail.length === 1, "the zoom stays");
 
   // Active node is a time node now: the button updates it.

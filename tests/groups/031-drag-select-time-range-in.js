@@ -55,7 +55,7 @@ await withApp(async (w, d, T) => {
   assert(dragRectEl.classList.contains("selected") && !dragRectEl.classList.contains("hidden"), "after mouseup the overlay rect stays as the draft window");
   assert(f.children.length === beforeChildCount, "the drag itself creates no filter yet");
   d.querySelector('#timelineMinimapDraftBar [data-act="filter"]').click();
-  assert(dragRectEl.classList.contains("hidden") && !dragRectEl.classList.contains("selected"), "draft overlay is gone after Filter");
+  assert(!T.minimapView.draft && d.querySelector("#timelineMinimapDraftBar").classList.contains("hidden"), "draft and action bar are gone after Filter (the new node shows as the adopted window)");
   assert(f.children.length === beforeChildCount + 1, "drag-select added exactly ONE filter child under the active file, got " + f.children.length);
 
   const rangeNode = f.children.map(id => T.state.nodes[id]).find(n => n.filterType === "timerange");
