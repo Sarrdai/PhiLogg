@@ -347,7 +347,10 @@ deployments possible:
   use to create it, prefilled — nothing is added until you save. A filter
   file lands under the active node.
 - **Session export/import** — package an analysis (files, filters,
-  bookmarks, notes) to share with a colleague.
+  bookmarks, notes) to share with a colleague. Also reachable from Export /
+  Share ("Session & filters": save the session or the active filter), and
+  from the phone's Save button. Every save says what happened: "Saved",
+  "Downloaded", "Not saved" or why it couldn't be saved.
 - **Export / Share for tickets** (toolbar button or `Ctrl+Shift+E`) —
   "Copy for ticket" puts a compact excerpt on the clipboard, ready to paste
   into Jira, GitHub, GitLab, Azure DevOps or an e-mail: one short header

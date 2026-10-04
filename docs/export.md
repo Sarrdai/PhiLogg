@@ -144,7 +144,10 @@ with counts, sources, time span, the root file's bookmarked/annotated entries
 
 - **Dialog** — the **Export / Share** toolbar button (left of Settings) or
   the rebindable **Ctrl+Shift+E** (`exportView`) opens `#exportDialog`:
-  summary line, Lines row, Format row, the two toggles (pill toggles), a live
+  summary line, the **Session & filters** bar (**Save session…** closes the
+  dialog and opens the session dialog; **Save filter…** closes it and saves
+  the active node via `saveFilterToFile`, disabled with the title "Select a
+  filter first" unless the active node is a filter), Lines row, Format row, the two toggles (pill toggles), a live
   preview (read-only textarea; for Rich text a white div rendering the HTML),
   and the footer — `Save file ▾` on the left (menu: Log / CSV / TSV / Report,
   "Saves the full view"; closes on outside click, Escape, item choice, dialog
@@ -184,12 +187,23 @@ narrower paths stay: Ctrl+C on selected log rows and the extraction table's
 
 ### Saving files — browser and desktop
 
-The same mechanism every other file save in the app uses
-(`saveFilterToFile`, `saveCsvToFile`, `saveJsonExportFile` for the JSON exports): `showSaveFilePicker`
-where the engine has it (Chromium browsers, and the Windows desktop build's
-WebView2), otherwise a `Blob` + `<a download>` (`downloadBlobFallback`).
-Cancelling the picker (`AbortError`) saves nothing and doesn't fall back.
-No new `window.philogg` bridge call was needed.
+Every file the app writes (session, filter, filter preset, Export / Share
+files, Table CSV, plot PNG, theme / syntax scheme / log format) goes through
+the one `saveFileWithFeedback(data, filename, {description, mime, ext})`,
+which also shows the outcome toast and returns its outcome:
+
+- **saved** — `showSaveFilePicker` (Chromium, Windows WebView2) wrote the
+  file: "Saved <name the person chose>" (3 s).
+- **downloaded** — no picker, or the picker call itself is unusable here:
+  one `<a download>` (`downloadBlobFallback`): "Downloaded <name>" (3 s).
+- **cancelled** — picker `AbortError`: neutral "Not saved", nothing written.
+- **failed** — an error while writing to an already chosen file: red
+  "Couldn't save <name> — <reason>" (6 s), **no** download fallback.
+
+Toast kinds are `showCopyToast(msg, {kind: "ok"|"download"|"neutral"|"error",
+duration})`. Pre-save guards ("Nothing to save", ...) keep their own toasts;
+a plot render failure still says "Could not save the plot image.". No new
+`window.philogg` bridge call was needed.
 
 ### Performance for huge views
 
