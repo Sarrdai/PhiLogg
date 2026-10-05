@@ -2515,6 +2515,18 @@
   }
   #folderMinimapDragLabel.hidden{display:none;}
 
+  /* Format-mismatch empty state: overlays the (empty) Filtered/Context rows of
+     a file none of whose lines matched its log format — see
+     renderFormatMismatchPanels. Same look as #emptyState. */
+  .fmt-mismatch-panel{
+    position:absolute; inset:0; z-index:3; display:none; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; padding:40px; text-align:center; color:var(--text-tertiary); background:var(--bg-app);
+  }
+  .fmt-mismatch-panel.show{display:flex;}
+  .fmt-mismatch-panel h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0; max-width:420px; overflow-wrap:anywhere;}
+  .fmt-mismatch-panel p{font-size:12px; margin:0; max-width:360px; line-height:1.6;}
+  .fmt-mismatch-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:6px;}
+  body.layout-phone .fmt-mismatch-setup{display:none;}
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
   #emptyState p{font-size:12px; margin:0; max-width:320px; line-height:1.6;}
 
@@ -3587,6 +3599,9 @@
   }
   .shortcut-rebind-btn.recording{color:var(--accent-strong); border-color:var(--accent-strong);}
   .shortcut-conflict-note{font-size:11px; color:var(--danger, #e5484d); margin-top:6px;}
+  .shortcut-conflict-note.hint{color:var(--text-secondary);}
+  .shortcut-overridden-by{font-size:11px; color:var(--text-secondary); margin-right:6px;}
+  .shortcut-combo kbd.overridden{text-decoration:line-through; opacity:.6;}
   .shortcut-row-fixed{opacity:.55;}
   .shortcut-row-fixed .settings-row-label{color:var(--text-tertiary); font-weight:450;}
   .settings-subsection-title{
@@ -5378,12 +5393,12 @@
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
       <div class="toolbar-group">
-        <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" disabled></button>
-        <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" disabled></button>
+        <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" data-sc-title="Undo ({undo})" disabled></button>
+        <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" data-sc-title="Redo ({redo})" disabled></button>
       </div>
       <!-- Export / Share (docs/export.md): ticket snippet + view/report
            attachments for the active view. -->
-      <button type="button" id="btnExport" class="toolbar-icon-btn" title="Export / Share (Ctrl+Shift+E)">
+      <button type="button" id="btnExport" class="toolbar-icon-btn" title="Export / Share (Ctrl+Shift+E)" data-sc-title="Export / Share ({exportView})">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V10"/><path d="M9 2.5h4.5V7"/><path d="M13.5 2.5 7.5 8.5"/></svg>
       </button>
       <!-- LLM assistant (docs/llm-assistant.md) — desktop build only, shown by
@@ -5392,7 +5407,7 @@
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/><path d="M5.5 7h.01M8 7h.01M10.5 7h.01"/></svg>
       </button>
       <!-- Opens the find bar (Ctrl+F), in every layout. -->
-      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)">
+      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)" data-sc-title="Find in view ({findInView})">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
@@ -5659,8 +5674,8 @@
           <button type="button" id="findCaseBtn" class="find-opt" aria-pressed="false" title="Match case">Aa</button>
           <button type="button" id="findRegexBtn" class="find-opt" aria-pressed="false" title="Use regular expression">.*</button>
           <span id="findCount" class="find-count"></span>
-          <button type="button" id="findPrevBtn" class="find-nav-btn" title="Previous match (Shift+F3 / Shift+Enter)"></button>
-          <button type="button" id="findNextBtn" class="find-nav-btn" title="Next match (F3 / Enter)"></button>
+          <button type="button" id="findPrevBtn" class="find-nav-btn" title="Previous match (Shift+F3 / Shift+Enter)" data-sc-title="Previous match ({findPrev} / Shift+Enter)"></button>
+          <button type="button" id="findNextBtn" class="find-nav-btn" title="Next match (F3 / Enter)" data-sc-title="Next match ({findNext} / Enter)"></button>
           <button type="button" id="findAddFilterBtn" class="btn-mini-outline" title="Turn this search into a filter node under the active node (Ctrl+Enter)">Add as filter</button>
           <button type="button" class="btn-icon" id="findCloseBtn" title="Close (Esc)">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
@@ -5823,7 +5838,7 @@
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
         <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — search the current view with <b>Ctrl+F</b>, or build a filter on top of it with <b>Ctrl+Shift+F</b>.</p>
+        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — search the current view with <b data-sc-text="{findInView}">Ctrl+F</b>, or build a filter on top of it with <b data-sc-text="{newFilter}">Ctrl+Shift+F</b>.</p>
       </div>
 
       <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
@@ -6046,7 +6061,7 @@
           <div id="detailPanelHeader">
             <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
               <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)">Entry detail</button>
-              <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)">Facets</button>
+              <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
             </div>
             <span id="facetPanelCount"></span>
             <div id="detailMeta"></div>
@@ -6806,9 +6821,9 @@
               </div>
               <div class="settings-row-control font-scale-row">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)">−</button>
+                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)" data-sc-title="Decrease UI scale ({zoomOut})">−</button>
                   <span id="fontScaleValue" class="stepper-value">100%</span>
-                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase UI scale (Ctrl++)">+</button>
+                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase UI scale (Ctrl++)" data-sc-title="Increase UI scale ({zoomIn})">+</button>
                 </div>
                 <button type="button" class="btn-mini-outline" id="fontScaleReset" title="Reset">Reset</button>
               </div>
@@ -10569,6 +10584,22 @@ let fmActionBusy = 0;         // a minimap action is in flight — syncFolderPre
 // count and the main-thread drain budget so a background parse never hinders
 // the foreground app. Normal loads pass nothing and keep the full values.
 async function parseLogTextAsync(text, node, onProgress, parseOpts) {
+  await parseLogTextCore(text, node, onProgress, parseOpts);
+  noteFormatMismatch(text, node);
+}
+// A file that finished parsing with 0 entries from non-empty text: no line
+// matched its log format. The text stays on the node (session-only, see
+// rebuildFileText for the cache) so the empty-state panel can offer to
+// re-parse it in place (renderFormatMismatchPanels). Cleared by any parse
+// that finds entries, and by a tail append that makes the file non-empty
+// (the panel itself also checks entries.length).
+function noteFormatMismatch(text, node) {
+  if (state.nodes[node.id] !== node) return;
+  if (node.entries.length === 0 && !isPlainTextFormat(node.formatId) && /\S/.test(text)) {
+    node.noFormatMatch = { text, lines: text.replace(/\r?\n$/, "").split(/\r\n|\n/).length };
+  } else delete node.noFormatMatch;
+}
+async function parseLogTextCore(text, node, onProgress, parseOpts) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
   const plainText = isPlainTextFormat(formatId);
   // Plain text keeps blank lines as entries, so a file's final line
@@ -12690,6 +12721,19 @@ async function reparseTextFileNode(node, text) {
   delete node._cacheBlob; // the cached File no longer matches the entries' layout
   invalidateCachesForRoots([node.id]);
   syncBookmarksFilterNode(node.id); syncNotesFilterNode(node.id);
+}
+
+// The format-mismatch empty state's actions: re-parse a 0-entry file (see
+// noteFormatMismatch) in place under another format and pin it — same node
+// id, filter children stay. Not undoable (re-parsing never is).
+async function reparseFileWithFormat(node, formatId) {
+  const info = node.noFormatMatch;
+  if (!info || state.nodes[node.id] !== node) return false;
+  await pinFileFormat(node, formatId);
+  await reparseTextFileNode(node, info.text);
+  persistFileNode(node);
+  render();
+  return true;
 }
 
 // A meta-format's whole job: split one physical file's text into its
@@ -16624,8 +16668,8 @@ function updateUndoRedoButtons() {
   btnRedo.disabled = redoStack.length === 0;
   const nextUndo = undoStack[undoStack.length - 1];
   const nextRedo = redoStack[redoStack.length - 1];
-  btnUndo.title = nextUndo ? "Undo " + (nextUndo.label || UNDO_KIND_LABELS[nextUndo.kind] || nextUndo.kind) + " (Ctrl+Z)" : "Nothing to undo";
-  btnRedo.title = nextRedo ? "Redo " + (nextRedo.label || UNDO_KIND_LABELS[nextRedo.kind] || nextRedo.kind) + " (Ctrl+Shift+Z)" : "Nothing to redo";
+  btnUndo.title = nextUndo ? "Undo " + (nextUndo.label || UNDO_KIND_LABELS[nextUndo.kind] || nextUndo.kind) + " (" + shortcutLabel("undo") + ")" : "Nothing to undo";
+  btnRedo.title = nextRedo ? "Redo " + (nextRedo.label || UNDO_KIND_LABELS[nextRedo.kind] || nextRedo.kind) + " (" + shortcutLabel("redo") + ")" : "Nothing to redo";
 }
 
 function getChain(id) {
@@ -17137,6 +17181,11 @@ function facetsAvailable() {
 // persisted selection does nothing there; the phone sheet is the detail only).
 function facetsActive() { return facetsOpen && currentLayoutTier !== "phone"; }
 
+function lowerTabDetailTitle(offLog) {
+  return offLog
+    ? "Entry detail is shown in Context/Filtered"
+    : "Entry detail — full message of the selected row (" + shortcutLabel("toggleDetail") + " collapses the panel)";
+}
 // Applies the bottom-panel tab state to #detailPanel: tab buttons, the
 // lower-facets / detail-strip-only classes and the resizer. Called from
 // renderMainView (log tabs and Patterns/Table/Plot) and the tab switches.
@@ -17151,9 +17200,7 @@ function applyLowerPanel(offLog) {
   lowerTabDetail.setAttribute("aria-selected", facets ? "false" : "true");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
   lowerTabDetail.disabled = !!offLog;
-  lowerTabDetail.title = offLog
-    ? "Entry detail is shown in Context/Filtered"
-    : "Entry detail — full message of the selected row (Ctrl+J collapses the panel)";
+  lowerTabDetail.title = lowerTabDetailTitle(offLog);
   updateDetailResizerVisibility();
   renderFacetPanel();
 }
@@ -18623,7 +18670,48 @@ function renderMainView() {
   // stale and built when it is revealed (showFhTab/applyFhView).
   if (contextViewVisible()) renderHighlightView(true); // highlightColorMap was computed fresh above
   else contextViewStale = true;
+  renderFormatMismatchPanels();
   findRefresh(); // see render() — also covers renderMainView's direct callers
+}
+
+// Format-mismatch empty state (see noteFormatMismatch): one panel in the
+// Filtered rows and one in the Context rows, shown while the active node's
+// root file has 0 entries because no line matched its log format.
+const fmtMismatchPanels = [tableBody, highlightBody].map(body => {
+  const panel = document.createElement("div");
+  panel.className = "fmt-mismatch-panel";
+  panel.innerHTML = '<h2></h2><p></p><div class="fmt-mismatch-actions">' +
+    '<button type="button" class="btn-mini fmt-mismatch-setup">Set up log format…</button>' +
+    '<button type="button" class="btn-mini-secondary fmt-mismatch-plain">Open as plain text</button></div>';
+  panel.querySelector(".fmt-mismatch-setup").addEventListener("click", () => openFormatMismatchSetup(panel.fileNodeId));
+  panel.querySelector(".fmt-mismatch-plain").addEventListener("click", () => {
+    const node = state.nodes[panel.fileNodeId];
+    if (node) reparseFileWithFormat(node, PLAINTEXT_FORMAT_ID);
+  });
+  body.appendChild(panel);
+  return panel;
+});
+function renderFormatMismatchPanels() {
+  const root = state.nodes[getRootFileId(state.activeId)];
+  const show = !!(root && root.type === "file" && root.noFormatMatch && root.entries.length === 0);
+  fmtMismatchPanels.forEach(panel => {
+    panel.classList.toggle("show", show);
+    if (!show) return;
+    panel.fileNodeId = root.id;
+    const fmt = findLogFormat(root.formatId || DEFAULT_FORMAT_ID);
+    panel.querySelector("h2").textContent = "No line of " + root.name + " matches the log format \u201c" + (fmt ? fmt.name : "?") + "\u201d";
+    panel.querySelector("p").textContent = root.noFormatMatch.lines.toLocaleString("de-DE") + " lines were read. Pick the format that fits, or open the file as plain text.";
+  });
+}
+// "Set up log format…": the format editor with the file's first lines as
+// examples; after saving, the file is re-parsed in place with the new format.
+function openFormatMismatchSetup(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || !node.noFormatMatch) return;
+  openFormatEditDialog(null);
+  if (!formatDialogOpen()) return; // phone: the editor toasted instead
+  formatEditAfterSave = formatId => reparseFileWithFormat(node, formatId);
+  fwzAppendText(node.noFormatMatch.text.split(/\r\n|\n/).slice(0, FWZ_MAX_LINES * 2).join("\n"));
 }
 
 // Whether the Context view (#highlightWrap) is on screen: Stacked shows it
@@ -27742,7 +27830,7 @@ function isSidebarPeeking() { return sidebarEl.classList.contains("peeking"); }
 function updateSidebarToggleIcon() {
   const peeking = isSidebarPeeking();
   sidebarToggleBtn.innerHTML = peeking ? ICON_PIN : ICON_CHEVRON_LEFT;
-  sidebarToggleBtn.title = peeking ? "Pin open (Ctrl+B)" : "Collapse (Ctrl+B)";
+  sidebarToggleBtn.title = (peeking ? "Pin open (" : "Collapse (") + shortcutLabel("toggleSidebar") + ")";
 }
 
 // One marker button per node in the ancestor chain from the active node's
@@ -27755,7 +27843,7 @@ function renderSidebarRail() {
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "panel-toggle-btn";
-  toggle.title = "Expand (Ctrl+B)";
+  toggle.title = "Expand (" + shortcutLabel("toggleSidebar") + ")";
   toggle.innerHTML = ICON_CHEVRON_RIGHT;
   toggle.addEventListener("click", () => toggleSidebarCollapsed(false));
   sidebarRailEl.appendChild(toggle);
@@ -27931,11 +28019,11 @@ function isDetailPeeking() { return detailPanel.classList.contains("peeking"); }
 function updateDetailToggleIcon() {
   if (isDetailPeeking()) {
     detailToggleBtn.innerHTML = ICON_PIN;
-    detailToggleBtn.title = "Pin open (Ctrl+J)";
+    detailToggleBtn.title = "Pin open (" + shortcutLabel("toggleDetail") + ")";
   } else {
     const collapsed = isDetailCollapsed();
     detailToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
-    detailToggleBtn.title = collapsed ? "Expand (Ctrl+J)" : "Collapse (Ctrl+J)";
+    detailToggleBtn.title = (collapsed ? "Expand (" : "Collapse (") + shortcutLabel("toggleDetail") + ")";
   }
 }
 
@@ -43014,7 +43102,8 @@ const SHORTCUT_ACTIONS = [
 // renderShortcutBindingsList().
 const FIXED_SHORTCUTS = [
   { label: "Find bar: next / previous match (in its input)", display: ["Enter", "Shift+Enter"] },
-  { label: "Find bar: next / previous match (browser alias)", display: ["Ctrl+G", "Ctrl+Shift+G"] },
+  { label: "Find bar: next / previous match (browser alias)", display: ["Ctrl+G", "Ctrl+Shift+G"],
+    aliasCombos: [{ ctrl: true, key: "g" }, { ctrl: true, shift: true, key: "g" }] },
   { label: "Find bar: add the search as a filter (in its input)", display: ["Ctrl", "Enter"] },
   { label: "Copy a filter",                          display: ["Ctrl", "C"] },
   { label: "Cut a filter",                           display: ["Ctrl", "X"] },
@@ -43090,11 +43179,47 @@ function findShortcutConflict(combo, excludingId) {
   return SHORTCUT_ACTIONS.find(a => a.id !== excludingId && comboEquals(getShortcutBinding(a.id), combo));
 }
 
+// "Ctrl+Shift+F" — the current binding of a rebindable action as text, for
+// tooltips and hints (goes through getShortcutBinding, so the browser build's
+// closeFile default and any rebinding are already right).
+function shortcutLabel(actionId) {
+  return comboLabelParts(getShortcutBinding(actionId)).join("+");
+}
+// Static tooltips/texts naming a rebindable shortcut carry a template with
+// {actionId} placeholders: data-sc-title (sets title) / data-sc-text (sets
+// textContent). Dynamic setters (undo/redo, panel toggles, lower tab) call
+// shortcutLabel() themselves and are re-run here. Called at boot and after
+// every binding change (record, reset one, reset all).
+function shortcutTemplate(tpl) {
+  return tpl.replace(/\{(\w+)\}/g, (m, id) => SHORTCUT_ACTIONS.some(a => a.id === id) ? shortcutLabel(id) : m);
+}
+function refreshShortcutTooltips() {
+  document.querySelectorAll("[data-sc-title]").forEach(e => { e.title = shortcutTemplate(e.dataset.scTitle); });
+  document.querySelectorAll("[data-sc-text]").forEach(e => { e.textContent = shortcutTemplate(e.dataset.scText); });
+  updateUndoRedoButtons();
+  updateSidebarToggleIcon();
+  updateDetailToggleIcon();
+  const railToggle = sidebarRailEl.querySelector(".panel-toggle-btn");
+  if (railToggle) railToggle.title = "Expand (" + shortcutLabel("toggleSidebar") + ")";
+  lowerTabDetail.title = lowerTabDetailTitle(lowerTabDetail.disabled);
+}
+// The action currently bound to a find-bar alias combo (Ctrl+G /
+// Ctrl+Shift+G), which therefore wins over the alias in handleFindShortcut.
+function findAliasOverride(combo) {
+  return SHORTCUT_ACTIONS.find(a => comboEquals(getShortcutBinding(a.id), combo));
+}
+function shortcutBindingsChanged() {
+  saveShortcutBindingOverrides();
+  refreshShortcutTooltips();
+}
+
 let shortcutRecordingId = null;
 const shortcutConflictNote = el("#shortcutConflictNote");
-function setShortcutConflictNote(text) {
+// hint: a non-blocking note (the binding was saved) instead of a rejection.
+function setShortcutConflictNote(text, hint) {
   shortcutConflictNote.textContent = text || "";
   shortcutConflictNote.classList.toggle("hidden", !text);
+  shortcutConflictNote.classList.toggle("hint", !!hint);
 }
 function renderShortcutBindingsList() {
   const list = el("#shortcutBindingsList");
@@ -43118,7 +43243,7 @@ function renderShortcutBindingsList() {
     row.querySelector(".shortcut-rebind-btn").addEventListener("click", () => startShortcutRecording(action.id));
     row.querySelector(".shortcut-reset-btn").addEventListener("click", () => {
       delete shortcutBindingOverrides[action.id];
-      saveShortcutBindingOverrides();
+      shortcutBindingsChanged();
       setShortcutConflictNote("");
       renderShortcutBindingsList();
     });
@@ -43127,9 +43252,12 @@ function renderShortcutBindingsList() {
   FIXED_SHORTCUTS.forEach(fixed => {
     const row = document.createElement("div");
     row.className = "settings-row shortcut-row-fixed";
-    const comboHtml = fixed.display
-      ? `<span class="shortcut-combo">${fixed.display.map(p => `<kbd>${p}</kbd>`).join("")}</span>`
-      : "";
+    const holders = fixed.aliasCombos ? fixed.aliasCombos.map(findAliasOverride) : [];
+    const overriddenBy = [...new Set(holders.filter(Boolean).map(a => a.label))];
+    const comboHtml = (overriddenBy.length ? `<span class="shortcut-overridden-by">overridden by ${overriddenBy.map(escapeHtml).join(", ")}</span>` : "") +
+      (fixed.display
+        ? `<span class="shortcut-combo">${fixed.display.map((p, i) => `<kbd${holders[i] ? ' class="overridden"' : ""}>${p}</kbd>`).join("")}</span>`
+        : "");
     row.innerHTML = `
       <div class="settings-row-text"><div class="settings-row-label">${fixed.label}</div></div>
       <div class="settings-row-control shortcut-binding-control">${comboHtml}</div>`;
@@ -43169,16 +43297,25 @@ function onShortcutRecordingKeydown(ev) {
     return;
   }
   shortcutBindingOverrides[actionId] = combo;
-  saveShortcutBindingOverrides();
-  setShortcutConflictNote("");
+  shortcutBindingsChanged();
+  // Ctrl+G / Ctrl+Shift+G stay allowed: the binding wins over the fixed find
+  // alias (handleFindShortcut) — only a neutral note says so.
+  const aliasIdx = FIXED_SHORTCUTS.find(f => f.aliasCombos).aliasCombos.findIndex(c => comboEquals(c, combo));
+  if (aliasIdx >= 0) {
+    const action = SHORTCUT_ACTIONS.find(a => a.id === actionId);
+    const [keyLabel, which, otherId] = aliasIdx ? ["Ctrl+Shift+G", "previous match", "findPrev"] : ["Ctrl+G", "next match", "findNext"];
+    setShortcutConflictNote(`${keyLabel} was the find bar's "${which}" alias — it now runs "${action.label}". ${shortcutLabel(otherId)} still finds the ${which}.`, true);
+  } else setShortcutConflictNote("");
   stopShortcutRecording();
 }
 el("#btnResetShortcuts").addEventListener("click", () => {
   shortcutBindingOverrides = {};
-  saveShortcutBindingOverrides();
+  shortcutBindingsChanged();
   setShortcutConflictNote("");
   renderShortcutBindingsList();
 });
+
+refreshShortcutTooltips();
 
 // Builtin default always sorts first, regardless of createdAt, per the
 // person's explicit request — it's the format most people will look for.
@@ -43450,6 +43587,7 @@ const formatEditLevelsEl = el("#formatEditLevels");
 const formatEditLevelNew = el("#formatEditLevelNew");
 const formatEditLevelError = el("#formatEditLevelError");
 let formatEditId = null;
+let formatEditAfterSave = null; // optional callback(formatId) run once after a successful save, see openFormatMismatchSetup
 // "regex" (an ordinary log format — the dialog only ever writes Regex
 // mode; a stored Pattern-mode format opens as its compiled regex) or "meta".
 let formatEditMode = "regex";
@@ -44716,6 +44854,7 @@ function closeFormatEditDialog() {
   fwzSampleEl.classList.remove("fwz-drop-active");
   fwz = null;
   formatEditId = null;
+  formatEditAfterSave = null;
   if (wasOpen) openNextImportEditor();
 }
 
@@ -45521,6 +45660,7 @@ async function saveFormatEdit() {
     if (!levelNames.length) return fail("Pick at least one log level.");
   }
 
+  const afterSave = formatEditAfterSave;
   const existing = formatEditId ? state.logFormats.find(f => f.id === formatEditId) : null;
   const fmt = existing ? Object.assign({}, existing) : {
     id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
@@ -45611,6 +45751,7 @@ async function saveFormatEdit() {
   renderLevelBar(); // its buttons/order come from the formats currently in play
   refreshColumnState(); // its columns/header likewise come from the formats currently in play
   lastColumnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible() + "|" + allRootsPlainText(); // keep render()'s own memo check in sync, avoid a redundant second refresh on its next call
+  if (afterSave && fmt.mode !== "meta") await afterSave(fmt.id);
 }
 
 // Scrolls the example-lines box so example line `lineIdx` sits in its
@@ -46459,6 +46600,9 @@ function rebuildFileText(node) {
   // A JSON text file: the file's own text (the entries may be its pretty
   // print — re-parsing that raw would double-apply the layout).
   if (typeof node.textRaw === "string") return node.textRaw;
+  // No line matched the format (0 entries): the text itself is what to keep,
+  // or a restore would find an empty file.
+  if (node.noFormatMatch && !node.entries.length) return node.noFormatMatch.text;
   return node.entries.map(e => e.raw).join("\n");
 }
 

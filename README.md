@@ -374,7 +374,10 @@ deployments possible:
   directly; the timestamp format and the log levels are detected from the
   examples too. Optionally map the format to files by filename pattern in
   the same dialog. The log4net-style default format still works with zero
-  configuration. **Custom columns**: each format picks its own set of
+  configuration. A file none of whose lines match its format shows a panel
+  instead of an empty table, offering **Set up log format…** (the editor
+  prefilled with the file's first lines; the file is re-parsed on save) or
+  **Open as plain text**. **Custom columns**: each format picks its own set of
   columns, in your own order — Thread/Location/Method are each optional
   (drop any you don't need), and anything else can get a column of its own,
   right next to the built-in ones. Only Time and Level are always required.
