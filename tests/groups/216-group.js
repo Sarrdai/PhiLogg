@@ -41,33 +41,23 @@ await withApp(async (w, d, T) => {
   assert(spans().find(s => s.dataset.level === "ERROR").textContent === errSpanTextBefore,
     "counts stay the file's global totals even once a narrower filter node is active, unlike the level bar's own context-dependent counts");
 
-  // --- Follow-up, person-requested: clicking a count attaches/reveals a level filter
-  // for that level directly under the ROOT FILE (not under whatever node is active). ---
+  // --- Clicking a count acts like the level's chip: the root file becomes active, the
+  // level toggles in the view filter, the tree is untouched. ---
   T.state.activeId = narrowNode.id; // stay on the unrelated narrower node
   w.render();
   const childCountBefore = f.children.length;
+  const nodeCountBefore = Object.keys(T.state.nodes).length;
   fireClick(spans().find(s => s.dataset.level === "ERROR"), w);
-  assert(f.children.length === childCountBefore + 1, "clicking ERROR's count adds exactly one new child directly under the root file, got " + f.children.length + " (was " + childCountBefore + ")");
-  const errFilterNode = T.state.nodes[f.children[f.children.length - 1]];
-  assert(errFilterNode.type === "filter" && errFilterNode.filterType === "level" && JSON.stringify(errFilterNode.value) === JSON.stringify(["ERROR"]),
-    "the new child is a level filter for exactly [\"ERROR\"], got " + JSON.stringify(errFilterNode && errFilterNode.value));
-  assert(errFilterNode.parentId === f.id, "the new level filter's parent is the root file, not the previously-active narrower node");
-  assert(T.state.activeId === errFilterNode.id, "the new level filter is shown active immediately");
+  assert(f.children.length === childCountBefore && Object.keys(T.state.nodes).length === nodeCountBefore, "clicking ERROR's count creates no tree node");
+  assert(T.state.activeId === f.id, "the root file is activated (it was not the active node)");
+  assert(T.state.levelFilter.has("ERROR") && T.state.levelFilter.size === 1, "ERROR is toggled into the view filter");
+  assert(d.querySelector('#levelBar .level-btn[data-level="ERROR"]').classList.contains("active"), "the ERROR chip lights");
 
-  // Clicking the SAME level's count again reuses the existing node instead of duplicating it.
-  T.state.activeId = narrowNode.id; // move away, then click again
-  w.render();
-  const childCountAfterFirst = f.children.length;
+  // The same count again toggles it off; another count adds its level; the file stays active.
   fireClick(spans().find(s => s.dataset.level === "ERROR"), w);
-  assert(f.children.length === childCountAfterFirst, "clicking ERROR's count again does NOT create a duplicate node, still " + f.children.length + " children");
-  assert(T.state.activeId === errFilterNode.id, "…it just re-activates the existing ERROR level filter");
-
-  // A different level's count creates its own separate node.
+  assert(T.state.levelFilter.size === 0 && !d.querySelector('#levelBar .level-btn[data-level="ERROR"]').classList.contains("active"), "clicking ERROR's count again toggles it off");
   fireClick(spans().find(s => s.dataset.level === "WARN"), w);
-  const warnFilterNode = T.state.nodes[f.children[f.children.length - 1]];
-  assert(warnFilterNode.id !== errFilterNode.id && JSON.stringify(warnFilterNode.value) === JSON.stringify(["WARN"]),
-    "clicking a different level's count creates its own distinct level filter, got " + JSON.stringify(warnFilterNode && warnFilterNode.value));
-  assert(T.state.activeId === warnFilterNode.id, "the WARN level filter is shown active immediately");
+  assert(T.state.levelFilter.has("WARN") && T.state.activeId === f.id && f.children.length === childCountBefore, "a different level's count selects that level, still no node");
 
   // Truncation/no-data path untouched: still starts with "Start"/"Duration" and clears on <2 entries.
   assert(d.querySelector("#timelineMinimapMeta").textContent.includes("Start") &&

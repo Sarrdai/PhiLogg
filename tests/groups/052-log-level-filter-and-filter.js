@@ -30,7 +30,6 @@ await withApp(async (w, d, T) => {
   section("52. Level-filter buttons stay clickable, and filter creation stays usable, while the loading file is the active view (neither auto-updates live anymore)");
   // Pinned to "explicit" mode: this group is about DOM-identity survival
   // across load ticks, not the tree-node feature — see GROUP 94 for that.
-  T.levelFilterTreeMode = "explicit";
 
   // Monkey-patch renderLevelBar (the full rebuild) to count calls — same
   // injected-script technique used throughout this suite.

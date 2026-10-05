@@ -61,9 +61,9 @@ format saved before this rule existed, or compiled at runtime for a file
 already on disk, keeps parsing exactly as it always has.
 
 A format also carries its own **ordered level list** (`LogFormat.levels`,
-`formatLevelDefs(formatId)`). It may pick from the five names that own a
-theme color (`ALL_LEVELS` = `ERROR/WARN/INFO/DEBUG/TRACE`) *and* add
-arbitrary **custom names** of its own (`NOTICE`, `FATAL`, `VERBOSE`, …);
+`formatLevelDefs(formatId)`). It may pick from the six names that own a
+theme color (`ALL_LEVELS` = `FATAL/ERROR/WARN/INFO/DEBUG/TRACE`) *and* add
+arbitrary **custom names** of its own (`NOTICE`, `VERBOSE`, …);
 `OTHER` stays the implicit catch-all and is never listed. Each level
 definition is `{value, name, color}`: `name` is the canonical bucket name
 shown/colored everywhere; `color` is an explicit, user-picked CSS color
@@ -78,7 +78,8 @@ needed since each code maps explicitly to a name+color). A legacy record's
 plain-string `levels` array (every format saved before this feature)
 upcasts on read to `{value: name, name, color: null}` — no migration
 needed. It decides which level buttons the level bar offers, and in which
-order, for files using that format; a format without the field (every
+order, for files using that format (the bar also adds a chip for every
+bucket that occurs in an open file but is not listed: FATAL, TRACE, Other); a format without the field (every
 builtin, and anything created before this existed) falls back to `LEVELS` =
 `ERROR, WARN, INFO, DEBUG`. Every entry is stamped with the `formatId` it
 was parsed under (`parseLogTextAsync` and `appendTailText`), which is what

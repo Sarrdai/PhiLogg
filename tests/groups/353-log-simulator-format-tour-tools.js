@@ -10,7 +10,7 @@
    (six custom levels, chapters as threads, explanation lines attached,
    time-only timestamps); the demo log offers what the TRY steps use; the
    generated session loads through ?session= (fake fetch) into the expected
-   tree with the banner, and the level bar's DEEP button reveals the
+   tree with the banner, and the root file (not the Reading view) shows the DEEP
    internals; the CLI writes the same files.
    ============================================================ */
 group(353);
@@ -76,7 +76,7 @@ if (groupSelected()) {
   }, { indexedDB: new IDBFactory() });
 
   await withApp(async (w, d, T) => {
-    section("353d. ?session=welcome.session.json: files, format, tree, banner; the DEEP button reveals the internals");
+    section("353d. ?session=welcome.session.json: files, format, tree, banner, the root file reveals the internals");
     await T.bootRestore;
     await waitForFormatConfig(T);
     w.fetch = tourFetch(w);
@@ -95,12 +95,17 @@ if (groupSelected()) {
     assert(ch.filterType === "text" && ch.columns.join() === "thread" && w.getEntries(ch.id).length === TOUR.ROWS.filter(r => r[1] === "format" && r[0] !== "DEEP").length, "a chapter is a text filter on the Thread column (DEEP lines hidden by the Reading view)");
     assert(w.getEntries(byLabel("Pitfalls (GOTCHA + DONT)").id).length === TOUR.ROWS.filter(r => r[0] === "GOTCHA" || r[0] === "DONT").length, "Pitfalls = GOTCHA + DONT");
     assert(w.getEntries(view[0].id).length === TOUR.ROWS.filter(r => r[0] !== "DEEP").length, "the Reading view hides DEEP");
-    assert(T.state.levelFilter.size === 0, "no global level filter (it would be invisible in the default level-bar mode)");
+    assert(T.state.levelFilter.size === 0, "no chip selection (view filter) is active after loading the session");
     assert(isVisible(d.querySelector("#tourBanner"), w) && d.querySelector("#tourBanner .tour-banner-text").innerHTML === TOUR.BANNER.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"), "the banner shows the tour text");
-    const btn = d.querySelector('#levelBar .level-btn[data-level="DEEP"]');
-    assert(btn && !btn.classList.contains("active"), "the DEEP button is off");
-    fireClick(btn, w);
-    assert(T.state.nodes[view[0].id].value.includes("DEEP") && w.getEntries(view[0].id).length === TOUR.ROWS.length, "clicking DEEP adds it to the active level node: the internals show");
+    assert(T.state.activeId === view[0].id, "the Reading view is the active node when the tour opens");
+    assert(d.querySelector("#tourBanner .tour-banner-text").textContent.endsWith("Reading view hides DEEP \u2013 click welcome.log at the top of the tree for the internals."),
+      "the banner ends with the Reading view / welcome.log hint, got " + d.querySelector("#tourBanner .tour-banner-text").textContent);
+    const deepChip = () => d.querySelector('#levelBar .level-btn[data-level="DEEP"]');
+    assert(Number(deepChip().querySelector(".level-count").textContent) === 0, "under the Reading view the DEEP chip counts 0 (the node hides them)");
+    T.state.activeId = wel.id;
+    w.render();
+    assert(w.getEntries(wel.id).length === TOUR.ROWS.length, "the root file shows every row, DEEP included");
+    assert(Number(deepChip().querySelector(".level-count").textContent) === TOUR.ROWS.filter(r => r[0] === "DEEP").length, "...and its DEEP chip counts them");
   }, { indexedDB: new IDBFactory() });
 
   {

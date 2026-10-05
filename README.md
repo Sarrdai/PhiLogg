@@ -84,15 +84,15 @@ deployments possible:
   While you type, the filter dialog previews the result live: the match
   count, a histogram of the matches over time, and the first matching rows
   with the hit marked.
-- **Level bar can write into the filter tree** — by default, clicking
-  ERROR/WARN/INFO/DEBUG on the level bar creates/edits a real, undoable
-  filter-tree node at your current position, instead of a separate global
-  toggle. Its label is colored in the log level's own color, each level
-  name its own solid color when several are combined on one node (e.g.
-  "ERROR, INFO" shown as a red word and a blue word, no blending). Settings
-  → Behavior can switch this to "Manual" to keep the original
-  tree-independent quick-filter, with an "Add to tree" button to push the
-  current selection in on demand.
+- **Level bar: a quick view filter, with "Add to tree"** — clicking
+  FATAL/ERROR/WARN/INFO/DEBUG (and TRACE or "Other" whenever the file has
+  such entries) on the level bar narrows the Filtered view without touching
+  the filter tree; the selection stays on while you switch nodes. Every
+  entry is accounted for: the chip counts always add up to the entries of
+  the active node. "Add to tree" turns the current selection into a real,
+  undoable level node (labelled in the level's own color, each name its own
+  solid color when combined). On a phone the chips read "E 134", on a tablet
+  they get their own row when the toolbar is too narrow.
 - **Timing analysis for multi-threaded logs** — a **Gap filter** keeps
   entries that follow a pause of at least X ms/s/min, optionally measured
   per thread, source file, or any column (a stall in one thread no longer
@@ -381,10 +381,10 @@ deployments possible:
   right next to the built-in ones. Only Time and Level are always required.
   Each format also picks
   **which log levels it uses and in what order** — any subset of
-  ERROR/WARN/INFO/DEBUG/TRACE plus your own custom names (NOTICE, FATAL,
+  FATAL/ERROR/WARN/INFO/DEBUG/TRACE plus your own custom names (NOTICE,
   VERBOSE, …), each with an automatic color or one you pick yourself — that's
   what the level quick-filter bar shows for files using it; anything else
-  falls into OTHER. Levels can also be matched by a numeric code instead of
+  falls into "Other" (its own chip, tooltip names the raw levels). Levels can also be matched by a numeric code instead of
   text (e.g. syslog severity), mapped to whichever names/colors you choose.
   **JSON Lines** (structured logging — Serilog, `JsonConsoleFormatter`,
   structlog, pino, …): paste a few lines and the keys are detected; pick

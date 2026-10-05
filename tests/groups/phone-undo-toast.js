@@ -7,7 +7,7 @@
    Origin: 2026-10-04 (usability test). Phone hides #btnUndo and has no
    keyboard, so "Remove filter"/"Remove file" in the tree context menu got an
    "Undo" toast (offerPhoneUndoToast). Desktop/compact keep the visible Undo
-   button only; level-pill deselect-all (also a delete) never toasts.
+   button only.
    ============================================================ */
 group("phone-undo-toast");
 
@@ -57,18 +57,6 @@ await withApp(async (w, d, T) => {
   assert(ptToastText(d) === "File removed" && ptHasUndo(d), "toast 'File removed' with Undo, got " + ptToast(d).textContent);
   fireClick(ptToast(d).querySelector(".toast-action"), w);
   assert(!!T.state.nodes[g.id], "Undo restores the file");
-});
-
-await withApp(async (w, d, T) => {
-  section("phone-undo-toast d. level deselect-all on phone: no Undo toast");
-  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
-  const lv = w.createFilterNode(f.id, "level", ["ERROR"]);
-  T.state.activeId = lv.id;
-  w.render();
-  ptWidth(w, 390);
-  w.applyLevelSelectionToTree([]);
-  assert(!T.state.nodes[lv.id], "level node deleted by deselecting all levels");
-  assert(!ptHasUndo(d), "no Undo toast for the level-pill deletion");
 });
 
 for (const [px, name] of [[1440, "desktop"], [820, "compact"]]) {

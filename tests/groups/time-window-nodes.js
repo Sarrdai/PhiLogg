@@ -3,13 +3,13 @@
 
 /* ============================================================
    GROUP time-window-nodes — one filter node per time window, span labels,
-   level chips stay put
+   level windows nest
    Origin: 2026-10-04 (person-requested, usability round C step 1). Time
    filter names show the span (`10:00:05 – 10:00:20 · 15.0s`, open bounds
    `from …` / `until …`), "Filter after" + "Filter before" fill ONE node
    instead of nesting, a second window on an active time node updates it
-   (undoable), and a window created while a level node is active is inserted
-   ABOVE it so the level chips keep reading the level node.
+   (undoable). A window created while a level node is active is a plain child
+   of it (the chips are a pure view filter, no special case).
    ============================================================ */
 group("time-window-nodes");
 
@@ -98,75 +98,16 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("time-window-nodes e. Window while a level node is active goes above it; chips stay lit");
+  section("time-window-nodes e. A window while a level node is active is a plain child of it; chips stay a view filter");
   const f = await w.addFile("a.log", makeLog(0, 30), () => {}); // ERROR at i%5==0 (6 of 30), INFO otherwise
-  T.state.activeId = f.id;
-  w.render();
-  const chip = lvl => [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.dataset.level === lvl);
-  fireClick(chip("ERROR"), w);
-  const lvlNode = twActive(T);
-  assert(lvlNode.filterType === "level" && lvlNode.parentId === f.id, "sanity: level node created under the file");
-  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[5]);
-  fireClick(d.querySelector("#ctxAfter"), w);
-  w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[20]);
-  // the level node is still active, so this goes through the level path again
-  fireClick(d.querySelector("#ctxBefore"), w);
-  const win = T.state.nodes[f.children[0]];
-  assert(f.children.length === 1 && win.filterType === "timerange", "window sits directly under the file");
-  assert(win.children.length === 1 && win.children[0] === lvlNode.id && lvlNode.parentId === win.id, "level node moved under the window");
-  assert(T.state.activeId === lvlNode.id, "level node stays active");
-  assert(win.value.from === f.entries[5].ts && win.value.to === f.entries[20].ts, "after + before filled the one window above the level node: " + JSON.stringify(win.value));
-  assert(chip("ERROR").classList.contains("active") && !chip("INFO").classList.contains("active"), "ERROR chip still lit");
-  assert(w.getEntries(lvlNode.id).length === 4, "entries = time window ∩ ERROR (i = 5,10,15,20): " + w.getEntries(lvlNode.id).length);
-  fireClick(chip("INFO"), w);
-  assert(twActive(T) === lvlNode && lvlNode.value.length === 2 && chip("INFO").classList.contains("active"), "chips stay switchable: " + lvlNode.value.join(","));
-});
-
-await withApp(async (w, d, T) => {
-  section("time-window-nodes f. Explicit level mode is unaffected (plain nesting)");
-  T.levelFilterTreeMode = "explicit";
-  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
   const lvl = w.createFilterNode(f.id, "level", ["ERROR"]);
   w.render();
+  const chip = l => [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.dataset.level === l);
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[5]);
   fireClick(d.querySelector("#ctxAfter"), w);
   const win = twActive(T);
-  assert(win.filterType === "timerange" && win.parentId === lvl.id && f.children.length === 1 && f.children[0] === lvl.id, "window nests under the level node as before");
-});
-
-await withApp(async (w, d, T) => {
-  section("time-window-nodes g. Level-node window insert is ONE undo step");
-  const f = await w.addFile("a.log", makeLog(0, 30), () => {});
-  T.state.activeId = f.id;
-  w.render();
-  const chip = lvl => [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.dataset.level === lvl);
-  fireClick(chip("ERROR"), w);
-  const lvl = twActive(T);
-  const sibling = w.createFilterNode(f.id, "text", "INFO"); // level node is NOT the only/last child
-  T.state.activeId = lvl.id;
-  f.children = [lvl.id, sibling.id].filter((x, i, a) => a.indexOf(x) === i);
-  w.render();
-  const shape = () => JSON.stringify(f.children.map(id => [id, T.state.nodes[id].children.slice()]));
-  const cnt = () => w.getEntries(lvl.id).length;
-  const shapeBefore = shape(), cntBefore = cnt(), nodesBefore = Object.keys(T.state.nodes).length;
-  const win = w.applyTimeWindow(lvl.id, f.entries[5].ts, f.entries[20].ts);
-  const shapeAfter = shape(), cntAfter = cnt();
-  assert(win && lvl.parentId === win.id && f.children.indexOf(win.id) === 0 && T.state.activeId === lvl.id, "sanity: window inserted at the level node's index");
-  w.undo();
-  assert(shape() === shapeBefore, "undo restores tree shape: " + shape() + " vs " + shapeBefore);
-  assert(!T.state.nodes[win.id] && Object.keys(T.state.nodes).length === nodesBefore, "window node gone");
-  assert(lvl.parentId === f.id && f.children.indexOf(lvl.id) === 0, "level node back at original parent/index");
-  assert(T.state.activeId === lvl.id, "level node is active after undo, got " + T.state.activeId);
-  assert(chip("ERROR").classList.contains("active"), "ERROR chip lit after undo");
-  assert(cnt() === cntBefore, "entry count restored: " + cnt() + " vs " + cntBefore);
-  w.redo();
-  assert(shape() === shapeAfter && lvl.parentId === win.id && T.state.nodes[win.id], "redo re-applies the same tree shape");
-  assert(T.state.activeId === lvl.id && chip("ERROR").classList.contains("active"), "level node active after redo");
-  assert(cnt() === cntAfter, "entry count after redo: " + cnt() + " vs " + cntAfter);
-  // chip toggle after the insert: two undos walk back chip, then insert
+  assert(win.filterType === "timerange" && win.parentId === lvl.id && f.children.length === 1 && f.children[0] === lvl.id, "window nests under the level node");
+  assert(!chip("ERROR").classList.contains("active"), "chips show the view filter only: ERROR is not lit just because a level node exists");
   fireClick(chip("INFO"), w);
-  assert(lvl.value.length === 2, "chip toggled: " + lvl.value.join(","));
-  w.undo();
-  w.undo();
-  assert(shape() === shapeBefore && T.state.activeId === lvl.id, "insert, chip, undo x2 -> original tree: " + shape());
+  assert(T.state.levelFilter.has("INFO") && lvl.value.join(",") === "ERROR" && twActive(T) === win, "a chip click neither edits the level node nor moves the active node");
 });

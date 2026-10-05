@@ -31,7 +31,7 @@ const DEMO_ENTRIES = 2500;
 const DEMO_SEED = 7;
 const DEMO_NAME = "app.log";
 
-const BANNER = "You're reading the manual **as a log**. Its levels are custom: **WHAT**, **HOW**, **TRY**, **GOTCHA**, **DONT**, **DEEP**. Click **DEEP** in the level bar for internals.";
+const BANNER = "You're reading the manual **as a log**. Its levels are custom: **WHAT**, **HOW**, **TRY**, **GOTCHA**, **DONT**, **DEEP**. **Reading view** hides DEEP – click **welcome.log** at the top of the tree for the internals.";
 
 // [level, chapter (the Thread column), message, explanation lines]
 const ROWS = [
@@ -42,11 +42,11 @@ const ROWS = [
     "  TRY     a hands-on step in app.log",
     "  GOTCHA  a pitfall",
     "  DONT    what not to do",
-    "  DEEP    how it works inside (hidden at first)",
+    "  DEEP    how it works inside (hidden in the Reading view)",
     "A format can name its levels as it likes. Settings → Log Formats lists this one (\"" + FORMAT_NAME + "\"); it was added when the tour opened."]],
   ["HOW", "intro", "The left side is the filter tree. Each node is a filter; click one to see only what it keeps.", [
     "A filter takes the rows of its parent and narrows them. The chapters of this tour are text filters on the Thread column;",
-    "Quick read, Hands-on and Pitfalls are level filters. All of them sit under \"Reading view\", which hides DEEP."]],
+    "Quick read, Hands-on and Pitfalls are level filters. All of them sit under \"Reading view\", which hides DEEP. Click welcome.log at the top of the tree to see the DEEP lines too."]],
   ["DEEP", "intro", "The timestamps are reading time since the start. Click the ΔT header to sort by the gap to the previous row.", [
     "ΔT is the time to the previous row, here the length of the paragraph before it.",
     "The Gap filter (right-click a node → Gap filter…) keeps only rows that follow a pause of at least X, optionally measured per Thread."]],
@@ -120,10 +120,10 @@ const ROWS = [
 
 // Filter tree of the session file. `ref`s are the node numbers of the
 // session format (see serializeFilterTreeForCache). All nodes sit under the
-// "Reading view" level node (everything but DEEP): the level bar's DEEP
-// button edits the active level node, so one click shows the internals.
-// (A global session levelFilter would be invisible in the default
-// level-bar mode and could not be switched off from the bar.)
+// "Reading view" level node (everything but DEEP). The root file itself
+// (welcome.log, top of the tree) shows every row, DEEP included. The level bar
+// is a view filter on whichever node is active and cannot reveal rows the
+// active node already excludes, so the tour points at the root file instead.
 const THREAD_FILTERS = [
   ["files", "1 · Opening files"],
   ["format", "2 · Your own format"],

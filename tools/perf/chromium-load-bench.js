@@ -62,7 +62,7 @@ async function run(browser, i) {
   const filters = await page.evaluate(() => {
     const rootId = state.rootIds[0];
     const timed = fn => { const t = performance.now(); fn(); void document.body.offsetHeight; return performance.now() - t; };
-    const level = timed(() => applyLevelFilterUnderRootFile(rootId, "ERROR"));
+    const level = timed(() => toggleLevelFromMinimap(rootId, "ERROR"));
     const levelCount = currentViewEntries.length;
     state.activeId = rootId; render();
     const text = timed(() => { createFilterNode(rootId, "text", "customer 42"); revealFilteredView(); render(); });

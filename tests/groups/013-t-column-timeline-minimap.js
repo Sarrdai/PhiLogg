@@ -59,7 +59,6 @@ await withApp(async (w, d, T) => {
   // — pinned to "explicit" mode so the click still goes through the classic
   // state.levelFilter path this test predates (see FEATURE_BACKLOG.md #10 /
   // GROUP 94 for the new default "auto" tree-node behavior).
-  T.levelFilterTreeMode = "explicit";
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);
   const ovBarsAfter = d.querySelectorAll("#timelineMinimapSvg .minimap-ov-bar").length;

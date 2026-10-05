@@ -230,7 +230,6 @@ await withApp(async (w, d, T) => {
     "…and collapse-all hides all of it again");
 
   // --- (j) the level quick-filter doesn't change what counts as a match ---
-  T.levelFilterTreeMode = "explicit"; // the classic Set-based quick-filter (see GROUP 94)
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
   fireClick(errBtn, w);
   assert(T.currentHighlightViewEntries.length === 2 && T.contextMatchIds.size === 2,

@@ -103,8 +103,8 @@ group(21);
       "export: bookmarks carry ordinal + ts + raw fingerprint");
     assert(rec.notes.length === 1 && rec.notes[0].ordinal === 5 && rec.notes[0].text === "check this",
       "export: notes carry ordinal + text, separately from bookmarks");
-    assert(doc.settings.levelFilter.includes("ERROR") && doc.settings.sortColumn === "level"
-      && doc.settings.sortDir === "desc", "export: session-wide settings serialized");
+    assert(doc.settings.levelFilter === undefined && doc.settings.sortColumn === "level"
+      && doc.settings.sortDir === "desc", "export: session-wide settings serialized (the level-chip view filter is not part of them)");
     assert(doc.settings.active && doc.settings.active.exportId === rec.exportId && doc.settings.active.ref != null,
       "export: active filter recorded as exportId + ref");
 
@@ -152,7 +152,7 @@ group(21);
       "tier1: bookmarks attach by ordinal");
     assert(T.state.notes.size === 1 && T.state.notes.get(f.entries[5].id) === "check this",
       "tier1: notes attach by ordinal, separately from bookmarks");
-    assert(T.state.levelFilter.has("ERROR") && T.state.sortColumn === "level" && T.state.sortDir === "desc",
+    assert(T.state.levelFilter.size === 0 && T.state.sortColumn === "level" && T.state.sortDir === "desc",
       "tier1: session-wide settings applied");
     assert(T.state.activeId === combo.id, "tier1: active node restored via exportId + ref");
     assert(d.querySelector("#copyToast").textContent.includes("1 file matched automatically")

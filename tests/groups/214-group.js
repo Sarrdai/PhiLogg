@@ -8,7 +8,6 @@ await withApp(async (w, d, T) => {
   // Pinned to "explicit" mode so a click toggles state.levelFilter directly
   // (default "auto" mode instead edits a tree node — see Group 94) — same
   // pin Group 52 uses for the same reason.
-  T.levelFilterTreeMode = "explicit";
 
   const f = await w.addFile("a.log", makeLog(0, 8, { levels: ["ERROR", "ERROR", "WARN", "INFO", "INFO", "INFO", "DEBUG", "DEBUG"] }), () => {});
   T.state.activeId = f.id;

@@ -30,7 +30,6 @@ await withApp(async (w, d, T) => {
   // on-screen offset is bit-for-bit unchanged.
   const f = await w.addFile("a.log", makeLog(0, 60), () => {});
   T.state.activeId = f.id;
-  T.levelFilterTreeMode = "explicit"; // this scroll-anchoring group is about the classic Set-based quick-filter — see GROUP 94 for the new default "auto" tree-node behavior
   w.render();
 
   const tableBody = d.querySelector("#tableBody");
@@ -76,7 +75,6 @@ await withApp(async (w, d, T) => {
 
   const f = await w.addFile("a.log", makeLog(0, 60), () => {});
   T.state.activeId = f.id;
-  T.levelFilterTreeMode = "explicit"; // pin the classic Set-based quick-filter — see GROUP 94 for the new default "auto" tree-node behavior
   w.render();
   const tableBody = d.querySelector("#tableBody");
 
@@ -97,7 +95,6 @@ await withApp(async (w, d, T) => {
 
   const f = await w.addFile("a.log", makeLog(0, 60), () => {});
   T.state.activeId = f.id;
-  T.levelFilterTreeMode = "explicit"; // pin the classic Set-based quick-filter — see GROUP 94 for the new default "auto" tree-node behavior
   w.render();
   const tableBody = d.querySelector("#tableBody");
 
@@ -133,7 +130,6 @@ await withApp(async (w, d, T) => {
   // set, so they stay matches here).
   const allFilter = w.createFilterNode(f.id, "text", "message");
   T.state.activeId = allFilter.id;
-  T.levelFilterTreeMode = "explicit"; // pin the classic Set-based quick-filter — see GROUP 94 for the new default "auto" tree-node behavior
   w.render();
   const errBtn = [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.textContent.includes("ERROR"));
 

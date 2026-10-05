@@ -348,7 +348,7 @@ await withApp(async (w, d, T) => {
   // Text levels: defaults + every fixed level the values cascade to, plus
   // unknown values as custom levels (WARNING cascades to WARN, NOTICE is new).
   const lvlRows = () => [...d.querySelectorAll("#formatEditLevels .format-level-row")].map(r => r.dataset.level + (r.querySelector('input[type="checkbox"]').checked ? "+" : "-")).join(",");
-  assert(lvlRows() === "ERROR+,WARN+,INFO+,DEBUG+,NOTICE+,TRACE-", "a new format's level list is filled from the examples, got " + lvlRows());
+  assert(lvlRows() === "ERROR+,WARN+,INFO+,DEBUG+,NOTICE+,FATAL-,TRACE-", "a new format's level list is filled from the examples, got " + lvlRows());
   const noticeBadge = entries()[3].querySelector(".level-badge");
   assert(noticeBadge.dataset.level === "NOTICE" && noticeBadge.style.color === "var(--level-custom-1)", "the NOTICE badge takes the custom level's color");
   assert(entries()[4].querySelector(".level-badge").dataset.level === "WARN", "WARNING resolves to WARN like levelBucket's cascade");
@@ -362,7 +362,7 @@ await withApp(async (w, d, T) => {
   cb("DEBUG").checked = false; cb("DEBUG").dispatchEvent(new w.Event("change"));
   assert(T.fwz.levelsTouched, "unchecking a level marks the list as hand-edited");
   fwzPaste(w, d, "2026-09-23 10:00:06.000 AUDIT [main] req=x3 a");
-  assert(lvlRows() === "ERROR+,WARN+,INFO+,DEBUG-,NOTICE+,TRACE-,AUDIT+", "after a hand edit, a newly seen value is only appended, nothing else changes, got " + lvlRows());
+  assert(lvlRows() === "ERROR+,WARN+,INFO+,DEBUG-,NOTICE+,FATAL-,TRACE-,AUDIT+", "after a hand edit, a newly seen value is only appended, nothing else changes, got " + lvlRows());
   fireClick(d.querySelector("#formatEditCancel"), w);
 
   // Integer levels: all-numeric values switch to Integer mode, one level

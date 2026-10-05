@@ -12,7 +12,7 @@
    pattern (.settings-subsection-title + .settings-card) already used by
    Appearance's "Custom themes" and Log Formats' "Filename rules". Pure
    markup regrouping: no ids changed, so every other group's
-   #settingsHoverExpandSidebar/#settingsLevelFilterTreeMode/etc. selectors
+   #settingsHoverExpandSidebar/#settingsTempAnchorMode/etc. selectors
    still resolve — this group only asserts the new grouping itself.
 
    Updated this session (FEATURE_BACKLOG.md #8): a new "Timeline minimap"
@@ -47,7 +47,8 @@ await withApp(async (w, d, T) => {
     .forEach(id => assert(cardOf(id) === cards[1], "#" + id + " sits in the hover-to-expand card"));
   assert(cardOf("settingsContextInitialExpansion") === cards[2], "the context-view initial-expansion row sits in its own context-view card");
   assert(cardOf("settingsHideMinimapFullRangeInFullView") === cards[3], "the minimap-full-range-toggle row sits in its own timeline-minimap card");
-  assert(cardOf("settingsLevelFilterTreeMode") === cards[4], "the level-bar-tree-mode row sits in its own filter-tree card");
+  assert(!d.getElementById("settingsLevelFilterTreeMode"), "the level-bar tree-mode setting is gone (chips are a pure view filter)");
+  assert(cardOf("settingsTempAnchorMode") === cards[4], "the temporary-anchor row sits in the filter-tree card");
   [ "settingsTextMatchHighlightScope", "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail" ]
     .forEach(id => assert(cardOf(id) === cards[5], "#" + id + " sits in the text-match-highlighting card"));
 
