@@ -3672,6 +3672,7 @@
   .settings-row-text{display:flex; flex-direction:column; gap:3px; min-width:0;}
   .settings-row-label{font-size:13.5px; font-weight:550; color:var(--text-primary);}
   .settings-row-hint{font-size:12px; color:var(--text-tertiary); font-weight:400; line-height:1.5;}
+  #exportSaveFilterHint.hidden{display:none;}
   .settings-row-control.assert-mode-row{margin-bottom:0; width:auto;}
   .settings-row-control .assert-mode-btn{flex:0 0 auto; padding:6px 18px; height:30px;}
   .font-scale-row{display:flex; align-items:center; gap:8px;}
@@ -6380,6 +6381,7 @@
         <div class="settings-row-text">
           <span class="settings-row-label">Session &amp; filters</span>
           <span class="settings-row-hint">For a colleague to open in PhiLogg.</span>
+          <span class="settings-row-hint hidden" id="exportSaveFilterHint">Save filter needs a filter selected in the tree.</span>
         </div>
         <div class="export-work-btns">
           <button type="button" class="btn-mini-secondary" id="exportSaveSession">Save session…</button>
@@ -13529,6 +13531,8 @@ function bakeNodeCondition(node) {
     value: node.value != null && typeof node.value === "object" ? JSON.parse(JSON.stringify(node.value)) : node.value,
     inverted: !!node.inverted,
   };
+  // A custom name (rename) travels with the condition so a link built from it is named by it.
+  if (node.label) baked.label = node.label;
   if (node.filterType === "text") {
     if (node.caseSensitive) baked.caseSensitive = true;
     if (node.columns && node.columns.length) baked.columns = node.columns.slice();
@@ -22274,9 +22278,8 @@ function plotHandleHoverMove(ev) {
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
   if (!row) { plotTooltip.classList.add("hidden"); return; }
-  let html = escapeHtml(findExtractColumn(hit.xCol).name) + ": <b>" + escapeHtml(String(row.values[hit.xCol])) + "</b><br>" +
-    escapeHtml(hit.seriesName) + ": <b>" + escapeHtml(String(row.values[hit.yCol])) + "</b>";
-  if (hit.colorCol != null) html += "<br>" + escapeHtml(findExtractColumn(hit.colorCol).name) + ": <b>" + escapeHtml(String(row.values[hit.colorCol])) + "</b>";
+  let html = plotTooltipColumnLine(hit.xCol, row) + "<br>" + plotTooltipColumnLine(hit.yCol, row, hit.seriesName);
+  if (hit.colorCol != null) html += "<br>" + plotTooltipColumnLine(hit.colorCol, row);
   plotTooltip.innerHTML = html;
   plotTooltip.classList.remove("hidden"); // needs to be visible (not display:none) before offsetWidth/Height below can measure it
   positionPlotTooltip(plotChartAreaPointFromEvent(ev));
@@ -22917,6 +22920,36 @@ function formatPlotClockTick(t, lo, hi) {
   if (hi - lo < 2000) out += "." + String(d.getMilliseconds()).padStart(3, "0");
   if (crossesMidnight) out = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + " " + out;
   return out;
+}
+
+// Tooltip line for one plotted column: [label, value text]. The time column
+// ("t (ms)", ms since the first extracted row) reads as clock time, like the
+// X axis does: "Time" + HH:mm:ss.SSS, with "yyyy-MM-dd " in front when the
+// extracted rows span midnight. Plain text (ELAPSED_COL = line number,
+// extractTimeBase null) and every other column show the raw extracted value.
+let plotTooltipSpanCache = { rows: null, len: -1, crosses: false };
+function plotTooltipCrossesMidnight() {
+  const c = plotTooltipSpanCache;
+  if (c.rows === extractRowsData && c.len === extractRowsData.length) return c.crosses;
+  let lo = Infinity, hi = -Infinity;
+  for (const r of extractRowsData) {
+    const t = Number(r.values[ELAPSED_COL]);
+    if (t < lo) lo = t;
+    if (t > hi) hi = t;
+  }
+  const crosses = Number.isFinite(lo) && new Date(extractTimeBase + lo).toDateString() !== new Date(extractTimeBase + hi).toDateString();
+  plotTooltipSpanCache = { rows: extractRowsData, len: extractRowsData.length, crosses };
+  return crosses;
+}
+function plotTooltipColumnLine(col, row, labelOverride) {
+  const raw = row.values[col];
+  if (col === ELAPSED_COL && extractTimeBase != null && Number.isFinite(Number(raw))) {
+    const d = new Date(extractTimeBase + Number(raw)), p2 = n => String(n).padStart(2, "0");
+    let out = p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds()) + "." + String(d.getMilliseconds()).padStart(3, "0");
+    if (plotTooltipCrossesMidnight()) out = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + " " + out;
+    return escapeHtml("Time") + ": <b>" + escapeHtml(out) + "</b>";
+  }
+  return escapeHtml(labelOverride != null ? labelOverride : findExtractColumn(col).name) + ": <b>" + escapeHtml(String(raw)) + "</b>";
 }
 
 function renderPlotControls() {
@@ -23842,10 +23875,8 @@ plot3dCanvas.addEventListener("mousemove", ev => {
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
   if (!row) { plotTooltip.classList.add("hidden"); return; }
-  let html = escapeHtml(findExtractColumn(hit.xCol).name) + ": <b>" + escapeHtml(String(row.values[hit.xCol])) + "</b><br>" +
-    escapeHtml(hit.seriesName) + ": <b>" + escapeHtml(String(row.values[hit.yCol])) + "</b><br>" +
-    escapeHtml(findExtractColumn(hit.zCol).name) + ": <b>" + escapeHtml(String(row.values[hit.zCol])) + "</b>";
-  if (hit.colorCol != null) html += "<br>" + escapeHtml(findExtractColumn(hit.colorCol).name) + ": <b>" + escapeHtml(String(row.values[hit.colorCol])) + "</b>";
+  let html = plotTooltipColumnLine(hit.xCol, row) + "<br>" + plotTooltipColumnLine(hit.yCol, row, hit.seriesName) + "<br>" + plotTooltipColumnLine(hit.zCol, row);
+  if (hit.colorCol != null) html += "<br>" + plotTooltipColumnLine(hit.colorCol, row);
   plotTooltip.innerHTML = html;
   plotTooltip.classList.remove("hidden");
   positionPlotTooltip(plotChartAreaPointFromEvent(ev));
@@ -37836,6 +37867,58 @@ function collapseNewlinesToWildcard(pattern) {
   return pattern.replace(/\r\n|\r|\n/g, "[*]");
 }
 
+// A [*:word] capture that has the SAME value in every match of `pattern` over
+// `texts` (at least two matches) is not a variable: "v2" in ".../v2/orders/[*:int]"
+// would only become a constant Table column. Returns the pattern with each such
+// capture replaced by that literal value; the set of matching texts stays the
+// same. Only [*:word] is touched (numbers/times are variable by nature), a
+// single match proves nothing, and an invalid pattern comes back unchanged.
+// Pure: `texts` is any iterable of strings (the column values to match against).
+function freezeConstantWordCaptures(pattern, texts) {
+  const spec = compileExtractPattern(pattern);
+  if (!spec) return pattern;
+  const wordCols = [];
+  spec.columns.forEach((c, i) => { if (c.type === "word") wordCols.push(i); });
+  if (!wordCols.length) return pattern;
+  const seen = wordCols.map(() => new Set());
+  let matches = 0;
+  for (const text of texts) {
+    spec.regex.lastIndex = 0;
+    const m = wildcardMatch(spec.regex, spec.columns, text);
+    if (!m) continue;
+    matches++;
+    let allVary = true;
+    wordCols.forEach((ci, k) => { seen[k].add(m[ci + 1]); if (seen[k].size < 2) allVary = false; });
+    if (allVary) return pattern; // every word capture already differs: nothing to freeze
+  }
+  if (matches < 2) return pattern;
+  const frozen = new Map(); // column index -> literal
+  wordCols.forEach((ci, k) => { if (seen[k].size === 1) frozen.set(ci, [...seen[k]][0]); });
+  if (!frozen.size) return pattern;
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  let out = "", last = 0, idx = 0, m;
+  while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
+    out += pattern.slice(last, m.index) + (frozen.has(idx) ? frozen.get(idx) : m[0]);
+    last = EXTRACT_TOKEN_RE.lastIndex;
+    idx++;
+  }
+  return out + pattern.slice(last);
+}
+
+// The pattern "Filter for this ___" / "Extract" / "Pair all like these" build
+// from one entry's column: numbers and identifiers become typed captures
+// (buildNumericExtractPattern), newlines collapse, and word captures that never
+// vary over the root file's own entries ("v2") go back to literal text.
+function generatedEntryPattern(entry, columnKey, rootId) {
+  const value = entryColumnValue(entry, columnKey);
+  const numeric = buildNumericExtractPattern(value);
+  if (numeric === null) return collapseNewlinesToWildcard(value);
+  const pattern = collapseNewlinesToWildcard(numeric);
+  const root = state.nodes[rootId];
+  if (!root || !root.entries || !pattern.includes("[*:word")) return pattern;
+  return freezeConstantWordCaptures(pattern, (function* () { for (const e of root.entries) yield entryColumnValue(e, columnKey); })());
+}
+
 // "Filter for this ___" opens the filter popup prefilled from whichever
 // column was right-clicked (see resolveContextFilterColumn), with that
 // column pre-selected in the "Applies to" chips — but deliberately does
@@ -37857,7 +37940,7 @@ function openFilterForEntryColumn(entry, column) {
   if (!entry || !state.activeId) return;
   const value = entryColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
-  const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
+  const pattern = generatedEntryPattern(entry, column.key, getRootFileId(state.activeId));
   openFilterPopup();
   filterInput.value = pattern;
   recentFilterDropdown.hide(); // openFilterPopup() drew the empty-input list; the input is prefilled now
@@ -37881,7 +37964,7 @@ function extractMessageFilter(entry) {
   const column = { key: "message", label: "Message" };
   const value = entryColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
-  const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
+  const pattern = generatedEntryPattern(entry, column.key, getRootFileId(state.activeId));
   createFilterNode(state.activeId, "text", pattern, false, [], false, ["message"], false, false);
   revealFilteredView();
   render();
@@ -37998,7 +38081,7 @@ function pairAllFromPick() {
   const a = pairPick.startEntry, b = pairPick.endEntry, rootId = pairPick.rootId;
   const order = buildOrderIndexMap(rootId);
   const after = b.ts !== a.ts ? b.ts > a.ts : order.get(b.id) >= order.get(a.id);
-  const pat = e => { const v = entryColumnValue(e, "message"); return collapseNewlinesToWildcard(buildNumericExtractPattern(v) || v); };
+  const pat = e => generatedEntryPattern(e, "message", rootId);
   const spec = { rootId, start: { text: pat(a) }, hops: [{ text: pat(b), direction: after ? "after" : "before" }] };
   cancelPairPick();
   openLinkDialog(spec);
@@ -39825,7 +39908,7 @@ let linkDlg = null;
 // A baked side the dialog can show as an editable text field: exactly what
 // bakedTextCondition builds.
 function isPlainTextBaked(b) {
-  return !!b && b.filterType === "text" && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
+  return !!b && b.filterType === "text" && !b.label && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
     !(b.ignoredColumns && b.ignoredColumns.length) && Array.isArray(b.columns) && b.columns.length === 1 && b.columns[0] === "message";
 }
 function linkSideFromSpec(x) {
@@ -40953,6 +41036,7 @@ function renderExportDialog() {
   const activeIsFilter = activeFilterNodeId() !== null;
   filterBtn.disabled = !activeIsFilter;
   filterBtn.title = activeIsFilter ? "" : "Select a filter first";
+  el("#exportSaveFilterHint").classList.toggle("hidden", activeIsFilter); // the reason must be visible on touch, where a title never is
   exportFirstN.value = String(exportExcerptLines);
   pillSet(el("#exportGapsToggle"), exportGaps);
   pillSet(el("#exportHeaderToggle"), exportHeader);
@@ -41626,12 +41710,13 @@ function serializeFilterBranch(nodeId, includeAncestors) {
 // and/or/link node — its own bakedA/bakedB never look at another node).
 function materializeBakedAsNode(baked, parentId) {
   const node = {
-    id: uid("n"), type: "filter", name: bakedConditionName(baked),
+    id: uid("n"), type: "filter", name: bakedConditionName(Object.assign({}, baked, { label: undefined })),
     parentId, children: [],
     filterType: baked.filterType,
     value: baked.value !== undefined ? baked.value : null,
     inverted: !!baked.inverted,
   };
+  if (baked.label) node.label = baked.label;
   if (baked.filterType === "text") {
     if (baked.caseSensitive) node.caseSensitive = true;
     if (baked.columns && baked.columns.length) node.columns = baked.columns.slice();
@@ -41662,6 +41747,7 @@ function materializeBakedAsNode(baked, parentId) {
 // name-derivation rules for each filterType, recursing for a nested and/
 // or/link condition.
 function bakedConditionName(baked) {
+  if (baked.label) return baked.label;
   if (baked.filterType === "text") return baked.isRegex ? "/" + baked.value + "/" : "“" + baked.value + "”";
   if (baked.filterType === "level") return (baked.value || []).join(", ");
   if (baked.filterType === "idset") return idSetFilterName(baked.value);

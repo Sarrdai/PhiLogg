@@ -1,0 +1,6 @@
+- **fix: usability polish (plot tooltip clock time, link labels, Save filter hint, constant words) (2026-10-05, person-reported)**
+  - The plot hover tooltip (2D and 3D) shows the time column as clock time (`Time: 10:13:18.474`, with the date after midnight) instead of raw ms.
+  - A link built from renamed filters is named by their labels; the Edit-link dialog keeps the named chip; the label survives save/load.
+  - The disabled "Save filter…" in Export / Share says why in visible text, not only as a tooltip.
+  - "Filter for this message" keeps a constant identifier like `v2` literal instead of making it a constant Table column.
+  - **Tests**: GROUP plot-tooltip-clock, link-baked-label, export-save-filter-hint, extract-constant-word. Docs: docs/extraction-and-plotting.md, docs/filters.md, docs/export.md.
