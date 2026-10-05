@@ -78,7 +78,7 @@ An A1 waypoint is pushed at the *top* of `render()`, before the view it belongs 
 | Ctrl+W/T/N, Ctrl+Shift+W/T/N, Ctrl+Tab, Ctrl+Shift+Tab, Ctrl+PgUp/PgDn | Browsers: close/new tab and window, tab switching — reserved, `preventDefault` is ignored | The app uses none of them by default in the browser build (`closeFile` is Alt+W there, `browserDefault`). Desktop keeps Ctrl+W: on Windows the WebView2 browser accelerator keys are disabled (`desktop/src-tauri/src/windows.rs` `disable_alt_accelerator_keys`), Linux WebKitGTK has no menu. **Open:** macOS desktop not verified — Tauri's default macOS app menu may claim Cmd+W / Cmd+Z / Cmd+M. |
 | Ctrl+F, Ctrl+G, Ctrl+Shift+G, F3, Shift+F3 | Browser find | Deliberately overridden (outside other text inputs only; Ctrl+F/F3/Shift+F3 rebindable, Ctrl+G/Ctrl+Shift+G fixed aliases): the app has its own find bar, and browser find cannot search the virtualized list anyway. |
 | Ctrl+Shift+F | none | Used as is: "New filter". |
-| Ctrl+I | Firefox: Page Info | Deliberately overridden: toggle the Facet panel. |
+| Ctrl+I | Firefox: Page Info | Deliberately overridden: toggle the Facets tab of the bottom panel. |
 | Ctrl++ / Ctrl+- / Ctrl+0 | Browser zoom | Deliberately overridden: app UI zoom / focus the filter tree. |
 | Ctrl+1 to Ctrl+5 | Browser tab switching | Deliberately overridden (View Selector tabs). |
 | Ctrl+J | Browser downloads | Deliberately overridden (toggle Entry Detail). |
@@ -725,41 +725,57 @@ Filtered view lists, without pinned bookmarks — by message shape.
 
 ## Facet panel (value distribution per column)
 
-`#facetPanel`, a column on the right of `#viewArea` (280px by default) — the row that
-now holds whichever content component is displayed (`#fhSplit`,
-`#extractWrap`, `#patternsWrap`, the empty state, the inline viewer, the
-folder minimap). Toggled by `#btnFacets` (floated right in `#viewBar`), its
-✕, or `Ctrl+I` (`toggleFacets`, rebindable); the open state is kept in
-`philogg-facets-open`. It stays beside every tab (Context/Filtered/Table/
-Plot/Patterns), is hidden with the inline viewer, folder minimap, empty
-state and PiP, and reads "Not available for a link filter" on a `link` node
-(pair entries have no single column values).
+The second tab of the bottom panel (`#detailPanel`): **Entry detail | Facets**
+(`#lowerTabDetail` / `#lowerTabFacets`, `role="tab"`, `aria-selected`). The
+facets used to be a 280px side panel, which squeezed the log's Message column
+to a few pixels; now the log list keeps its full width and the panel's height
+comes from the existing `#detailResizer`. The selected tab is `facetsOpen`
+(persisted in `philogg-facets-open`, "1" = Facets); the only switches are the
+tabs and `Ctrl+I` (`toggleFacets`, rebindable, "Show/hide Facets (bottom panel
+tab)"): with Facets selected and the panel expanded and visible it goes back
+to Entry detail, otherwise it selects Facets and expands a collapsed panel.
+Selecting a log row keeps the tab (the detail content updates hidden).
+`Ctrl+J`, `#detailToggle`, peeking, focus mode and the resizer's double-click
+work for both tabs; the collapsed header shows both tabs.
+
+With Facets selected (`#detailPanel.lower-facets`) the header's meta and
+Raw/Parsed/Pretty are replaced by the entry count (`#facetPanelCount`) and
+`#facetPanelBody` replaces `#detailBody`. `applyLowerPanel(offLog)` (from
+`renderMainView`) sets the tab state; `renderFacetPanel()` fills the body.
+Visibility per view: Context/Filtered/link view as above; on
+Patterns/Table/Plot the panel is always there (Facets stay reachable by touch
+on every tab): with Facets selected as a normal panel, with Entry detail
+selected as a header-only strip (`.detail-strip-only`, Entry detail tab
+disabled, no resizer, no peeking; the persisted collapsed state and the
+remembered height stay untouched). Hidden with the inline viewer, folder
+minimap, empty state, plain-text roots and PiP; on the phone tier the Facets
+tab is hidden and facets never render (`facetsActive()`; a future round can
+reuse the self-contained `#facetPanelBody` in the phone sheet). A `link` node
+reads "Not available for a link filter" (pair entries have no single column
+values).
 
 - **Level colour**: each value's name is drawn in the colour of the most
   severe level among its entries in the current result (`createFacetAcc`
   tracks a `levelSortRank` minimum per value, same ranking as the Patterns
   tab's Level column; `levelClass` → `.facet-value-name.lvl-*`). A value
   with only unrecognized levels keeps the default text colour.
-- **Width**: `#facetResizer`, a grip on the panel's left edge (same look as
-  `#sidebarResizer`), drags the width via `flex-basis` — dragging left
-  grows it, clamped to 180px … `#viewArea` width − 240px
-  (`setFacetPanelWidth`). The handle is a child of `#facetPanel`, so every
-  path that hides the panel hides it too. Rows re-render per animation
-  frame while dragging; one `renderMainView()` runs on release (plot/table
-  widths). Session-only, like the sidebar/detail resizers.
+- **Layout**: `#facetPanelBody` is a grid (`repeat(auto-fill, minmax(260px,
+  1fr))`) with one `.facet-section` per column side by side; the body scrolls
+  vertically as a whole. A value row is name | count | % with the share bar
+  (`.facet-bar`, soft accent) drawn absolutely *behind* the row.
 
 - **Sections** (`facetColumnsFor`): every middle column of the loaded
   formats (`activeColumnDefs`: Thread/Location/Method/custom columns), then
   Level (the bucket name, omitted when every file is plain text), then
   Source for a merged file (`root.sources`, by `entry.sourceId`). Time and
   Message are left out (near-unique). Each section lists the top
-  `FACET_TOP_N` (8) values with count, share and a bar relative to the top
+  `FACET_TOP_N` (8) values with count, share and a bar (behind the row) relative to the top
   value; "(+k more · n entries)" reveals 25 more per click. Section headers
   collapse; collapsed keys are kept in `philogg-facets-collapsed`.
 - **Counts** come from one pass over the same result the Patterns tab uses
   (active node + level quick-filter), cached and time-sliced by the same
   `makeEntryAnalysis`; the column set is part of the cache key.
-  `renderFacetPanel()` runs from every `renderMainView()`.
+  `applyLowerPanel()` (and so `renderFacetPanel()`) runs from every `renderMainView()`.
 - **Clicks** (`createFacetFilter`) add a child of the active node: Level →
   a `level` node for that bucket; Source → an `idset` node of that source's
   entries in the active node's result, named "Source = …"; any other column
@@ -769,9 +785,8 @@ state and PiP, and reads "Not available for a link filter" on a `link` node
   inverted (NOT). One undo step each (`"create"`); the tab stays Patterns if
   that was on screen, otherwise the new node opens as usual. Panel clicks
   never take keyboard focus from the log view.
-- **Tablet/touch** (step 3 of the tablet UX round): on the compact tier
-  `#btnFacets` shows a "Facets" text label (`.facets-btn-label`, independent
-  of the label-mode setting). Values containing `\` or `/` get
+- **Tablet/touch** (step 3 of the tablet UX round): the Facets tab gets
+  44px touch targets on the compact tier (`.lower-tab`). Values containing `\` or `/` get
   `.facet-path` and start at their last path segment in JS (`fitFacetPathNames`,
   "…\Scheduler.cs line 219", cut on the right as "…\Scheduler.cs li…"; re-run on render and by a `ResizeObserver` on
   the panel body; the full value stays in the row `title`). A touch
@@ -909,7 +924,7 @@ The level chips (`#levelBar`) are a **pure view filter**. A click toggles the le
 
 A time window made while a level node is active is a normal child of it (`docs/filters.md` → "Time filters").
 
-**Touch layout** (`updateLevelBarLayout()`, run after every `renderLevelBar`, on `#levelBar` scroll, on resize and on a tier change; desktop never gets either class). **Phone** (`body.layout-phone`): one horizontally scrolling row; each chip shows its `.level-short` text, first letter plus count (`F 15`, `E 134`; Other is spelled `Other 33`), while the full "Error 134" / "Other 33 (VERBOSE 21 · NOTICE 12)" text stays in the `title`. A right-edge fade (a `mask-image`, class `.has-more-right`) is shown only while more chips are hidden to the right (`scrollWidth - clientWidth - scrollLeft > 1`). **Tablet** (`body.layout-compact`): the 44px circles stay; when `#viewBar`'s other children plus the chips' natural width (chip `offsetWidth` + 6px gaps, not the current row) exceed its inner width, `#viewBar` gets `.level-own-row`: it wraps, a `::before` with `flex-basis:100%` (`order:1`) forces the line break, and `#levelBar` (`order:2; flex:1 1 auto`) plus the Facets button (`order:3`, right-aligned) take the row under the tabs and actions, so the toolbar no longer scrolls horizontally because of the chips. Measuring the natural width makes the decision independent of the class it toggles, so it cannot oscillate.
+**Touch layout** (`updateLevelBarLayout()`, run after every `renderLevelBar`, on `#levelBar` scroll, on resize and on a tier change; desktop never gets either class). **Phone** (`body.layout-phone`): one horizontally scrolling row; each chip shows its `.level-short` text, first letter plus count (`F 15`, `E 134`; Other is spelled `Other 33`), while the full "Error 134" / "Other 33 (VERBOSE 21 · NOTICE 12)" text stays in the `title`. A right-edge fade (a `mask-image`, class `.has-more-right`) is shown only while more chips are hidden to the right (`scrollWidth - clientWidth - scrollLeft > 1`). **Tablet** (`body.layout-compact`): the 44px circles stay; when `#viewBar`'s other children plus the chips' natural width (chip `offsetWidth` + 6px gaps, not the current row) exceed its inner width, `#viewBar` gets `.level-own-row`: it wraps, a `::before` with `flex-basis:100%` (`order:1`) forces the line break, and `#levelBar` (`order:2; flex:1 1 auto`) take the row under the tabs and actions, so the toolbar no longer scrolls horizontally because of the chips. Measuring the natural width makes the decision independent of the class it toggles, so it cannot oscillate.
 
 **No new persistence carrier work needed**: a `"level"` node's `value` is a plain array riding the existing generic `value` field every filter node already carries through `cloneSubtree`, `snapshotSubtree`/`restoreSubtree`, `serializeFilterBranch`/`importFilterJson`, and `serializeFilterTreeForCache`/`materializeCachedFilters` — the only change any of them needed was adding `"level"` to the shared `FILTER_TYPES` validation Set (otherwise `materializeCachedFilters`/`importFilterJson` would silently drop the node as an "unknown filter type"). Tree UI is equally generic: `typeTagFor`/`ghostTypeTag` gained a `"LVL"` case and `nodeIconHTML`/`ghostIconFor` a new ascending-bars `ICON_LEVEL`, same pattern every other filter type already follows.
 
@@ -1312,7 +1327,7 @@ Person-reported/requested reworks (this session, screenshot-driven) to `renderNo
 Three layout tiers from the **window width** (never the user agent — a squeezed desktop window gets the same layout). `layoutTier()` (`LAYOUT_COMPACT_MIN` 600, `LAYOUT_DESKTOP_MIN` 1024; it reads the layout viewport `documentElement.clientWidth`, not `innerWidth`, which a mobile browser widens to fit overflowing content — a phone would otherwise stay in the compact layout) feeds `applyLayoutTier()` (boot + `resize`), which sets `body.layout-compact` (600–1023px) or `body.layout-phone` (< 600px, **not** also `layout-compact`); desktop (>= 1024px) has neither class and is the layout described everywhere else in this file. A real tier change re-runs `applyRowGrid()` and `render()`. The old `@media (max-width:760px)` rule and `COLUMN_MOBILE_BREAKPOINT` are gone. `applyRowGrid()` is the one place the tier hides columns (0px `--row-grid` tracks, stored `columnVisible` untouched): compact hides Δt and every middle column except Thread, phone hides Δt and every middle column.
 
 - **Drawer (compact + phone).** `#sidebar` becomes a `position:fixed` overlay (`width:min(340px,86vw)`, closed by default, `#drawerScrim` behind it); `#btnDrawer` (first item of `#toolbar`, `aria-label="Files and filters"`) toggles `body.drawer-open`. Scrim click, Escape, activating a tree row and any tier change close it; while it is open the header (`#toolbar`, z 56) sits above the scrim (the drawer, z 60, still covers its left part) and a capture-phase click listener on `#toolbar` closes the drawer for any target outside `#btnDrawer`, so one tap on Undo/Find/Settings acts and closes (GROUP drawer-header-tap); **Ctrl+B** toggles it instead of the desktop collapse. `#sidebarResizer`, `#sidebarToggle` and the collapsed rail are hidden/overridden there; the desktop collapse state is untouched. Drawer state is plain UI state, not persisted.
-- **Touch.** `@media (pointer:coarse)` raises targets to 44px **only in the phone and compact tiers** (one block at the end of the layout CSS, every selector scoped to `body.layout-phone` / `body.layout-compact`; GROUP responsive-touch walks the CSSOM to guard this — desktop, also on touch laptops, and a narrow mouse window keep the base sizes): toolbar/panel buttons, level pills/circles, view tabs, `#btnLibrary` (compact), bottom-sheet buttons, tree rows (48px), `.tree-swatch` (18px visible, 44px `::before` hit area; display-only in phone), compact-only mute/delete buttons on the active tree row (hidden in phone), and in Settings the selects/inputs/buttons, steppers, switches (52x32), accent swatches (32px) and nav items. Compact sub-toolbars and the detail header grow to fit (`min-height:52px`). On touch, `body.layout-compact #viewBar` (inside the same block) is one non-wrapping, horizontally scrollable flex row (children `flex:0 0 auto`, `#btnFacets` pushed right with `margin-left:auto`) instead of floats that wrapped onto a second line; mouse windows, phone and desktop keep their rules (GROUP viewbar-touch-scroll). The time-range dialog does not autofocus its From input on a coarse pointer (`isCoarsePointer()`), so the keyboard does not pop up. A global **long-press** helper (capture-phase `pointerdown` for `pointerType === "touch"`: still within 10px after 500ms) dispatches one synthetic `contextmenu` on the original target — every existing context-menu handler runs unchanged — and swallows the click after the release; a separate capture-phase `pointerdown` closes the row/tree (incl. Info)/extraction/facet-value menus on any outside press, and when a non-mouse press actually closed one, its follow-up click is consumed too (`dismissTapPending`), as is a `dblclick` within 600 ms of it, so dismiss-tap + card-tap cannot open the sheet or form a double-tap (mouse presses still close the menu and the click acts; GROUP touch-dismiss-tap-consumed, context-menu-pointerdown-dismiss); the click-dismissed popups (filter popup, columns panel, open menu, library menu, color picker) are not closed by that `pointerdown` (their close stays click-timed) but a non-mouse press outside one (and outside its opener) also sets `dismissTapPending`, and the swallowing capture click handler runs `closeClickDismissedPopups()` before stopping the click, so the tap no longer also selects the row underneath (GROUP touch-dismiss-click-popups); a trusted native `contextmenu` during a tracked press is dropped. **Compact and phone tiers** (off on desktop); moving more than 10px (scrolling the card list) cancels the press, and the long-press never selects the row. Popups opened at the press point are clamped into the viewport with an 8px margin on the phone (`fitPopupToViewport()`: row, tree, add-to-selection and info menus; they scroll inside when taller than the screen). **Phone menus and dialogs** share one rule set (`body.layout-phone`, GROUP phone-dialog-touch): menu rows (`.ctx-item`, library `.lib-it`) and dialog/popup buttons are 40px (44px under `pointer:coarse`), every dialog input/select is 16px (no iOS zoom) and 40px tall (44 coarse), steppers 40x40, `.time-range-clear` / library icon buttons 40x40, the link dialog's option rows wrap under their label (hop input >= 56px, toggles get a 44px `::before` hit area under coarse), dialog cards fill the width and scroll inside the screen height, the filter popup fills the width with a 16px input and its live result rows wrap instead of widening the page, and the library menu sits at the top with 8px margins (no `#btnLibrary` on the phone). Settings keeps its own phone pass.
+- **Touch.** `@media (pointer:coarse)` raises targets to 44px **only in the phone and compact tiers** (one block at the end of the layout CSS, every selector scoped to `body.layout-phone` / `body.layout-compact`; GROUP responsive-touch walks the CSSOM to guard this — desktop, also on touch laptops, and a narrow mouse window keep the base sizes): toolbar/panel buttons, level pills/circles, view tabs, `#btnLibrary` (compact), bottom-sheet buttons, tree rows (48px), `.tree-swatch` (18px visible, 44px `::before` hit area; display-only in phone), compact-only mute/delete buttons on the active tree row (hidden in phone), and in Settings the selects/inputs/buttons, steppers, switches (52x32), accent swatches (32px) and nav items. Compact sub-toolbars and the detail header grow to fit (`min-height:52px`). On touch, `body.layout-compact #viewBar` (inside the same block) is one non-wrapping, horizontally scrollable flex row (children `flex:0 0 auto`) instead of floats that wrapped onto a second line; mouse windows, phone and desktop keep their rules (GROUP viewbar-touch-scroll). The time-range dialog does not autofocus its From input on a coarse pointer (`isCoarsePointer()`), so the keyboard does not pop up. A global **long-press** helper (capture-phase `pointerdown` for `pointerType === "touch"`: still within 10px after 500ms) dispatches one synthetic `contextmenu` on the original target — every existing context-menu handler runs unchanged — and swallows the click after the release; a separate capture-phase `pointerdown` closes the row/tree (incl. Info)/extraction/facet-value menus on any outside press, and when a non-mouse press actually closed one, its follow-up click is consumed too (`dismissTapPending`), as is a `dblclick` within 600 ms of it, so dismiss-tap + card-tap cannot open the sheet or form a double-tap (mouse presses still close the menu and the click acts; GROUP touch-dismiss-tap-consumed, context-menu-pointerdown-dismiss); the click-dismissed popups (filter popup, columns panel, open menu, library menu, color picker) are not closed by that `pointerdown` (their close stays click-timed) but a non-mouse press outside one (and outside its opener) also sets `dismissTapPending`, and the swallowing capture click handler runs `closeClickDismissedPopups()` before stopping the click, so the tap no longer also selects the row underneath (GROUP touch-dismiss-click-popups); a trusted native `contextmenu` during a tracked press is dropped. **Compact and phone tiers** (off on desktop); moving more than 10px (scrolling the card list) cancels the press, and the long-press never selects the row. Popups opened at the press point are clamped into the viewport with an 8px margin on the phone (`fitPopupToViewport()`: row, tree, add-to-selection and info menus; they scroll inside when taller than the screen). **Phone menus and dialogs** share one rule set (`body.layout-phone`, GROUP phone-dialog-touch): menu rows (`.ctx-item`, library `.lib-it`) and dialog/popup buttons are 40px (44px under `pointer:coarse`), every dialog input/select is 16px (no iOS zoom) and 40px tall (44 coarse), steppers 40x40, `.time-range-clear` / library icon buttons 40x40, the link dialog's option rows wrap under their label (hop input >= 56px, toggles get a 44px `::before` hit area under coarse), dialog cards fill the width and scroll inside the screen height, the filter popup fills the width with a 16px input and its live result rows wrap instead of widening the page, and the library menu sits at the top with 8px margins (no `#btnLibrary` on the phone). Settings keeps its own phone pass.
 - **Touch input plumbing (tablet UX round, step 1).** The Entry-detail splitter (`#detailResizer`) and the log minimap drag use pointer events with capture (mouse and touch alike; `touch-action:none` on the splitter, `pan-y` on the minimap; compact gives the splitter an invisible 44px `::before` grab area). "Add to selection ›" ignores the `mouseenter` a tap synthesizes (last `pointerType` is tracked) and opens on tap only; `placeSubmenuBesideAnchor()` puts `#addToSelectionMenu` right of its anchor, else left, else below/above, so it never covers the tapped item. Floating toolbar labels (`.row-action-label`, `.tb-label`) are shifted by `--label-dx` (set in `setupHitExpandGroups`, measured from the button centre and the label's layout width, idempotent) to stay 8px inside the screen. The tree delete x has a >=44px hit area wherever it is visible on compact (active row: the button itself; hovered row / opened folder-watch or ZIP entry row: an invisible `::before`). GROUP tablet-touch-input.
 - **Compact wrap.** `wrapMessagesEff()` = `state.wrapMessages || compact`: the log message always wraps through the existing exact-height wrap path (both views, `wrapColsForBody`/`baseRowHeightForEntry`, body class `wrap-messages`). The stored setting is not changed; the Wrap button shows active, is disabled and carries the tooltip "Always wrapped in a narrow window".
 - **Phone shell.** Header: drawer button, brand mark, `#phoneTitle` (active node label; `<file> · <n> entries`, `updatePhoneTitle()` from `renderStatus()`), `#btnFindPhone` (= Ctrl+F; visible in every layout) and Settings; nav, undo/redo, export, assistant and `#statusText` hidden. `#tourBanner` is one line with ellipsis plus a more/less toggle (`#tourBannerMore`); expanded it also shows "Hands-on steps (TRY) need a desktop or tablet." and always resets on a new banner. `#viewBar` keeps only `#levelBar` (one horizontally scrolling row of 32px pills); the whole `#fhTabs` group is hidden (`display:none !important`, since `renderMainView()` sets it inline) — phone shows the Filtered view only. `phoneEnforceTab()` (end of the outermost `render()`) falls back to Filtered whenever Patterns/Context/Stacked/Table/Plot would be shown, as a safety net behind the funnels: `revealInHighlightView()` returns immediately on phone (card double-click, Enter) and `applyFhView()` coerces every view to `"filter"` there, so no caller can show Context even briefly, and `jumpToViewTab()` (Ctrl+1..5) always lands on Filtered in phone. The log toolbars, `#timelineMinimapMeta` and the table header are hidden, the minimap is 14px.

@@ -1,0 +1,4 @@
+- **feat: Facets move into the bottom panel as a tab (2026-10-05, person-requested)**
+  - The 280px facet side panel squeezed the log's Message column to a few pixels (tablet, narrow desktop). Facets are now the second tab of the bottom panel, "Entry detail | Facets": sections side by side, the share bar behind the value row, the log list keeps its full width.
+  - Switches: the tab itself and `Ctrl+I`; `#btnFacets`, the close button and the width handle are gone. Selecting a row keeps the tab. On Patterns/Table/Plot the panel stays (header-only strip with Entry detail selected). The phone has no Facets tab (this also fixes a persisted open state showing an unclosable side panel there).
+  - **Tests**: GROUP facets-bottom-tab (plus 287, 288, tablet-facets and the groups that touched `#btnFacets` updated). Docs: docs/ui-and-views.md, README.

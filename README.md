@@ -136,9 +136,8 @@ deployments possible:
   noise, **Extract** to open it straight in Table/Plot with the numbers as
   typed columns, or jump to its first entry. Stays responsive on 100 MB
   logs (one pass, computed in the background, cached per filter result).
-- **Facet panel: who/what produces these entries?** — a toggleable side
-  panel (`Ctrl+I`, or the button at the right end of the view bar;
-  drag its left edge to resize) shows the value distribution of every column (Thread, Location, Method,
+- **Facet panel: who/what produces these entries?** — a tab of the bottom
+  panel next to Entry detail (`Ctrl+I`; the log keeps its full width) shows the value distribution of every column (Thread, Location, Method,
   custom columns, Level, and Source for a merged file) over the current
   filter result: the top values with count, share and a bar, each value coloured by the most
   severe level it occurs with, "+k more" to

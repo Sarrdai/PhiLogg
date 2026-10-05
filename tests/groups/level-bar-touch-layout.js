@@ -91,11 +91,10 @@ await withApp(async (w, d, T) => {
   for (const sh of d.styleSheets) walk(sh.cssRules);
   const own = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row > #levelBar");
   const br = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row::before");
-  const facets = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row > #btnFacets");
   assert(br && br.style.flexBasis === "100%" && br.style.order === "1" && br.style.height === "0px" || (br && br.style.height === "0"), "own-row CSS: a ::before forces a line break (flex-basis 100%, order 1, height 0)");
   assert(own && own.style.order === "2" && own.style.minWidth === "0px" || (own && own.style.order === "2" && own.style.minWidth === "0"), "own-row CSS: #levelBar is ordered after the break and may shrink");
   assert(own && /1 1 auto/.test(own.style.flex) && !/calc|100px/.test(own.style.flex), "no reserved width: #levelBar is flex:1 1 auto");
-  assert(facets && facets.style.order === "3", "own-row CSS: the Facets button is ordered after the chips, so it shares their row");
+  assert(!rules.some(r => /btnFacets/.test(r.selectorText)), "no #btnFacets rule left (Facets is a bottom-panel tab)");
   assert(!rules.some(r => /level-own-row/.test(r.selectorText) && /calc\(100% - /.test(r.cssText)), "no calc() reserve anywhere in the own-row rules");
   assert(rules.every(r => !/level-own-row/.test(r.selectorText) || /layout-compact/.test(r.selectorText)), "every own-row rule is scoped to the compact tier");
   // Desktop and phone never carry the class.

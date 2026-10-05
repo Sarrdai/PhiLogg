@@ -4,8 +4,9 @@
 
 /* ============================================================
    GROUP 287 — Facet panel: value distribution per column
-   Origin: 2026-09-26 (FEATURE_BACKLOG.md #84). The toggle (button,
-   Ctrl+Shift+F, remembered), one section per middle column + Level +
+   Origin: 2026-09-26 (FEATURE_BACKLOG.md #84); since 2026-10-05 the facets are
+   the second tab of the bottom panel (GROUP facets-bottom-tab). The toggle
+   (Facets tab, Ctrl+I, remembered), one section per middle column + Level +
    Source for a merge, counts over the active node's result (level
    quick-filter included), "+k more", collapse, and the filter nodes a
    click creates (exact-value regex restricted to the column / level node /
@@ -25,10 +26,10 @@ group(287);
     section("287a. toggle + sections + counts");
     const f = await w.addFile("facets.log", TEXT, () => {});
     T.state.activeId = f.id; w.render();
-    const panel = d.querySelector("#facetPanel");
+    const panel = d.querySelector("#facetPanelBody");
     assert(!isVisible(panel, w), "closed by default");
-    fireClick(d.querySelector("#btnFacets"), w);
-    assert(isVisible(panel, w) && d.querySelector("#btnFacets").classList.contains("active"), "#btnFacets opens it");
+    fireClick(d.querySelector("#lowerTabFacets"), w);
+    assert(isVisible(panel, w) && d.querySelector("#lowerTabFacets").getAttribute("aria-selected") === "true", "the Facets tab opens it");
     assert(w.localStorage.getItem("philogg-facets-open") === "1", "open state remembered");
     const labels = [...d.querySelectorAll(".facet-section-head")].map(h => h.childNodes[1].textContent.trim());
     assert(labels.join(",") === "Thread,Location,Method,Level", "one section per middle column + Level, got " + labels);
@@ -49,7 +50,7 @@ group(287);
     T.state.levelFilter.clear(); w.render();
     // Ctrl+I closes it again
     fireKeydown(d, w, "i", { ctrlKey: true });
-    assert(!isVisible(panel, w), "Ctrl+I toggles the panel");
+    assert(!isVisible(panel, w), "Ctrl+I switches back to Entry detail");
   });
 
   await withApp(async (w, d, T) => {

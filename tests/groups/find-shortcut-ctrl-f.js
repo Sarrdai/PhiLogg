@@ -26,7 +26,7 @@ group("find-shortcut-ctrl-f");
     const btn = d.getElementById("btnFindPhone");
     assert(btn && w.getComputedStyle(btn).display !== "none", "#btnFindPhone is visible in the desktop layout");
     assert(/Ctrl\+F/.test(btn.title), "...and its tooltip mentions Ctrl+F, got " + btn.title);
-    assert(/Ctrl\+I/.test(d.getElementById("btnFacets").title), "#btnFacets tooltip says Ctrl+I");
+    assert(/Ctrl\+I/.test(d.getElementById("lowerTabFacets").title), "the Facets tab tooltip says Ctrl+I");
   });
 
   await withApp(async (w, d, T) => {
@@ -80,10 +80,10 @@ group("find-shortcut-ctrl-f");
     assert(!popup.classList.contains("hidden"), "Ctrl+Shift+F opens the filter popup while typing in the find input");
     fireKeydown(d, w, "Escape"); fireKeydown(d, w, "Escape");
     if (d.activeElement && d.activeElement.blur) d.activeElement.blur(); // jsdom keeps focus in the hidden popup's input
-    const panel = d.getElementById("facetPanel");
+    const panel = d.getElementById("facetPanelBody");
     const open0 = isVisible(panel, w);
     ctrl(d, w, "i");
-    assert(isVisible(panel, w) !== open0, "Ctrl+I toggles the facet panel");
+    assert(isVisible(panel, w) !== open0, "Ctrl+I toggles the Facets tab");
     ctrl(d, w, "i");
     assert(isVisible(panel, w) === open0, "...and back");
   });
@@ -110,7 +110,7 @@ group("find-shortcut-ctrl-f");
     const row = id => d.querySelector('#shortcutBindingsList [data-action-id="' + id + '"]');
     fireClick(row("toggleFacets").querySelector(".shortcut-rebind-btn"), w);
     ctrl(d, w, "g");
-    const panel = d.getElementById("facetPanel");
+    const panel = d.getElementById("facetPanelBody");
     const open0 = isVisible(panel, w);
     assert(!isVisible(bar, w), "sanity: the recording keypress did not open the find bar");
     ctrl(d, w, "g");
