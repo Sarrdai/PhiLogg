@@ -1,0 +1,4 @@
+- **fix: Shortcut tooltips follow rebindings, Ctrl+G alias note, format-mismatch empty state (2026-10-05, person-requested)**
+  - Tooltips/texts naming a rebindable shortcut (find, undo/redo, export, panel toggles, tab hints, UI scale, welcome text) now show the current binding (`shortcutLabel`, `refreshShortcutTooltips`). Rebinding an action to `Ctrl+G`/`Ctrl+Shift+G` stays allowed but shows a neutral note and marks the fixed alias row "overridden by ...".
+  - A file that finishes loading with 0 entries from non-empty text (no line matches its log format, e.g. the tour `welcome.log` opened alone) shows an empty-state panel with "Set up log format..." and "Open as plain text" (re-parse in place, format pinned) instead of a blank table. Backlog #103: auto-detect the format.
+  - **Tests**: GROUP shortcut-dynamic-tooltips, format-mismatch-empty-state. Docs: docs/ui-and-views.md, docs/log-formats.md, README.md.

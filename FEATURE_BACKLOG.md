@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 102
+LAST_ID: 103
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -68,3 +68,4 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 28 | Time sync between two open files | Selecting an entry in one file scrolls a second, side-by-side file to the nearest timestamp (device log vs. application log), without the destructive `mergeFiles` step. Would need a second file pane; the Filter/Highlight split is the closest existing precedent. | groß |  |
 | 89 | Remote log sources (desktop build) | Open/tail logs over SSH, from Docker containers, journald or Windows Event Log (`.evtx`) via the Rust side. Not possible in the single-file browser build; would only make sense as a desktop-only extra. | groß |  |
 | 90 | Text query language for power users | A typed query (e.g. `level:ERROR thread:Worker* msg~"timeout"`) that compiles into regular filter nodes, as an alternative input path to the dialogs. The filter tree covers GUI users; power users would get a faster, keyboard-only way to build chains. Open question: syntax scope, and keeping it a front-end for nodes rather than a second evaluation engine. | mittel–groß |  |
+| 103 | Auto-detect the log format when the filename-resolved format matches no line | Try the stored formats on the file's first ~50 lines and pick the best match, instead of only offering the "No line matches the log format" empty state (2026-10-05) with its manual "Set up log format…" / "Open as plain text" buttons. Decided not to build now: a wrong silent guess is worse than the visible prompt. | mittel |  |

@@ -2515,6 +2515,18 @@
   }
   #folderMinimapDragLabel.hidden{display:none;}
 
+  /* Format-mismatch empty state: overlays the (empty) Filtered/Context rows of
+     a file none of whose lines matched its log format — see
+     renderFormatMismatchPanels. Same look as #emptyState. */
+  .fmt-mismatch-panel{
+    position:absolute; inset:0; z-index:3; display:none; flex-direction:column; align-items:center; justify-content:center;
+    gap:10px; padding:40px; text-align:center; color:var(--text-tertiary); background:var(--bg-app);
+  }
+  .fmt-mismatch-panel.show{display:flex;}
+  .fmt-mismatch-panel h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0; max-width:420px; overflow-wrap:anywhere;}
+  .fmt-mismatch-panel p{font-size:12px; margin:0; max-width:360px; line-height:1.6;}
+  .fmt-mismatch-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:6px;}
+  body.layout-phone .fmt-mismatch-setup{display:none;}
   #emptyState h2{font-size:14px; font-weight:600; color:var(--text-secondary); margin:0;}
   #emptyState p{font-size:12px; margin:0; max-width:320px; line-height:1.6;}
 
@@ -2713,6 +2725,13 @@
   .syn-key{color:var(--syntax-key);}
   .syn-bool-null{color:var(--syntax-boolean-null);}
   .syn-punct{color:var(--syntax-punct);}
+  /* Stack traces (Pretty view): exception type bold in the error colour,
+     frames in the normal text colour with file:line emphasised, framework
+     frames (java.*, System.*, site-packages, ...) dimmed. */
+  .syn-trace-exc{color:var(--level-error); font-weight:700;}
+  .syn-trace-loc{color:var(--syntax-key);}
+  .syn-trace-note{color:var(--text-secondary);}
+  .syn-trace-fw, .syn-trace-fw .syn-trace-loc{color:var(--text-tertiary);}
   /* The selected entry's note, shown in full below its message — same
      "readable even with multi-line row rendering off" reasoning as the
      backlog item itself: a note-row in the log view can be one line tall,
@@ -2748,7 +2767,7 @@
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
-  .patterns-grid{display:grid; grid-template-columns:78px 48px 70px minmax(0,1fr) 112px 112px 64px; align-items:center;}
+  .patterns-grid{display:grid; grid-template-columns:78px 48px 124px minmax(0,1fr) 112px 112px 64px; align-items:center;}
   #patternsHead{
     flex:0 0 auto; padding:0 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
     color:var(--text-secondary); font-size:11px; font-weight:650; letter-spacing:.2px; user-select:none;
@@ -2768,6 +2787,7 @@
   .pattern-row:hover{background:var(--bg-elevated);}
   .pattern-row > span{padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .pattern-row .patterns-time{color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
+  .patterns-level-n{margin-left:5px; color:var(--text-tertiary); font-size:.9em; font-variant-numeric:tabular-nums;}
   .pattern-ph{color:var(--accent-strong); font-weight:650;}
   .pattern-actions{display:flex; gap:2px; justify-content:flex-end; visibility:hidden;}
   .pattern-row:hover .pattern-actions{visibility:visible;}
@@ -3579,6 +3599,9 @@
   }
   .shortcut-rebind-btn.recording{color:var(--accent-strong); border-color:var(--accent-strong);}
   .shortcut-conflict-note{font-size:11px; color:var(--danger, #e5484d); margin-top:6px;}
+  .shortcut-conflict-note.hint{color:var(--text-secondary);}
+  .shortcut-overridden-by{font-size:11px; color:var(--text-secondary); margin-right:6px;}
+  .shortcut-combo kbd.overridden{text-decoration:line-through; opacity:.6;}
   .shortcut-row-fixed{opacity:.55;}
   .shortcut-row-fixed .settings-row-label{color:var(--text-tertiary); font-weight:450;}
   .settings-subsection-title{
@@ -3672,6 +3695,7 @@
   .settings-row-text{display:flex; flex-direction:column; gap:3px; min-width:0;}
   .settings-row-label{font-size:13.5px; font-weight:550; color:var(--text-primary);}
   .settings-row-hint{font-size:12px; color:var(--text-tertiary); font-weight:400; line-height:1.5;}
+  #exportSaveFilterHint.hidden{display:none;}
   .settings-row-control.assert-mode-row{margin-bottom:0; width:auto;}
   .settings-row-control .assert-mode-btn{flex:0 0 auto; padding:6px 18px; height:30px;}
   .font-scale-row{display:flex; align-items:center; gap:8px;}
@@ -5369,12 +5393,12 @@
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
       <div class="toolbar-group">
-        <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" disabled></button>
-        <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" disabled></button>
+        <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" data-sc-title="Undo ({undo})" disabled></button>
+        <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" data-sc-title="Redo ({redo})" disabled></button>
       </div>
       <!-- Export / Share (docs/export.md): ticket snippet + view/report
            attachments for the active view. -->
-      <button type="button" id="btnExport" class="toolbar-icon-btn" title="Export / Share (Ctrl+Shift+E)">
+      <button type="button" id="btnExport" class="toolbar-icon-btn" title="Export / Share (Ctrl+Shift+E)" data-sc-title="Export / Share ({exportView})">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3.5H3.5a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V10"/><path d="M9 2.5h4.5V7"/><path d="M13.5 2.5 7.5 8.5"/></svg>
       </button>
       <!-- LLM assistant (docs/llm-assistant.md) — desktop build only, shown by
@@ -5383,7 +5407,7 @@
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/><path d="M5.5 7h.01M8 7h.01M10.5 7h.01"/></svg>
       </button>
       <!-- Opens the find bar (Ctrl+F), in every layout. -->
-      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)">
+      <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)" data-sc-title="Find in view ({findInView})">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
@@ -5650,8 +5674,8 @@
           <button type="button" id="findCaseBtn" class="find-opt" aria-pressed="false" title="Match case">Aa</button>
           <button type="button" id="findRegexBtn" class="find-opt" aria-pressed="false" title="Use regular expression">.*</button>
           <span id="findCount" class="find-count"></span>
-          <button type="button" id="findPrevBtn" class="find-nav-btn" title="Previous match (Shift+F3 / Shift+Enter)"></button>
-          <button type="button" id="findNextBtn" class="find-nav-btn" title="Next match (F3 / Enter)"></button>
+          <button type="button" id="findPrevBtn" class="find-nav-btn" title="Previous match (Shift+F3 / Shift+Enter)" data-sc-title="Previous match ({findPrev} / Shift+Enter)"></button>
+          <button type="button" id="findNextBtn" class="find-nav-btn" title="Next match (F3 / Enter)" data-sc-title="Next match ({findNext} / Enter)"></button>
           <button type="button" id="findAddFilterBtn" class="btn-mini-outline" title="Turn this search into a filter node under the active node (Ctrl+Enter)">Add as filter</button>
           <button type="button" class="btn-icon" id="findCloseBtn" title="Close (Esc)">
             <svg width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l10 10M13 3L3 13"/></svg>
@@ -5814,7 +5838,7 @@
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
         <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — search the current view with <b>Ctrl+F</b>, or build a filter on top of it with <b>Ctrl+Shift+F</b>.</p>
+        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — search the current view with <b data-sc-text="{findInView}">Ctrl+F</b>, or build a filter on top of it with <b data-sc-text="{newFilter}">Ctrl+Shift+F</b>.</p>
       </div>
 
       <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
@@ -6037,7 +6061,7 @@
           <div id="detailPanelHeader">
             <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
               <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)">Entry detail</button>
-              <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)">Facets</button>
+              <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
             </div>
             <span id="facetPanelCount"></span>
             <div id="detailMeta"></div>
@@ -6380,6 +6404,7 @@
         <div class="settings-row-text">
           <span class="settings-row-label">Session &amp; filters</span>
           <span class="settings-row-hint">For a colleague to open in PhiLogg.</span>
+          <span class="settings-row-hint hidden" id="exportSaveFilterHint">Save filter needs a filter selected in the tree.</span>
         </div>
         <div class="export-work-btns">
           <button type="button" class="btn-mini-secondary" id="exportSaveSession">Save session…</button>
@@ -6796,9 +6821,9 @@
               </div>
               <div class="settings-row-control font-scale-row">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)">−</button>
+                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)" data-sc-title="Decrease UI scale ({zoomOut})">−</button>
                   <span id="fontScaleValue" class="stepper-value">100%</span>
-                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase UI scale (Ctrl++)">+</button>
+                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase UI scale (Ctrl++)" data-sc-title="Increase UI scale ({zoomIn})">+</button>
                 </div>
                 <button type="button" class="btn-mini-outline" id="fontScaleReset" title="Reset">Reset</button>
               </div>
@@ -10559,6 +10584,22 @@ let fmActionBusy = 0;         // a minimap action is in flight — syncFolderPre
 // count and the main-thread drain budget so a background parse never hinders
 // the foreground app. Normal loads pass nothing and keep the full values.
 async function parseLogTextAsync(text, node, onProgress, parseOpts) {
+  await parseLogTextCore(text, node, onProgress, parseOpts);
+  noteFormatMismatch(text, node);
+}
+// A file that finished parsing with 0 entries from non-empty text: no line
+// matched its log format. The text stays on the node (session-only, see
+// rebuildFileText for the cache) so the empty-state panel can offer to
+// re-parse it in place (renderFormatMismatchPanels). Cleared by any parse
+// that finds entries, and by a tail append that makes the file non-empty
+// (the panel itself also checks entries.length).
+function noteFormatMismatch(text, node) {
+  if (state.nodes[node.id] !== node) return;
+  if (node.entries.length === 0 && !isPlainTextFormat(node.formatId) && /\S/.test(text)) {
+    node.noFormatMatch = { text, lines: text.replace(/\r?\n$/, "").split(/\r\n|\n/).length };
+  } else delete node.noFormatMatch;
+}
+async function parseLogTextCore(text, node, onProgress, parseOpts) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
   const plainText = isPlainTextFormat(formatId);
   // Plain text keeps blank lines as entries, so a file's final line
@@ -12682,6 +12723,19 @@ async function reparseTextFileNode(node, text) {
   syncBookmarksFilterNode(node.id); syncNotesFilterNode(node.id);
 }
 
+// The format-mismatch empty state's actions: re-parse a 0-entry file (see
+// noteFormatMismatch) in place under another format and pin it — same node
+// id, filter children stay. Not undoable (re-parsing never is).
+async function reparseFileWithFormat(node, formatId) {
+  const info = node.noFormatMatch;
+  if (!info || state.nodes[node.id] !== node) return false;
+  await pinFileFormat(node, formatId);
+  await reparseTextFileNode(node, info.text);
+  persistFileNode(node);
+  render();
+  return true;
+}
+
 // A meta-format's whole job: split one physical file's text into its
 // target formats' streams (splitTextByMetaFormat), then create the merge
 // result FIRST (createMergeShell — person-requested this session, before
@@ -13529,6 +13583,8 @@ function bakeNodeCondition(node) {
     value: node.value != null && typeof node.value === "object" ? JSON.parse(JSON.stringify(node.value)) : node.value,
     inverted: !!node.inverted,
   };
+  // A custom name (rename) travels with the condition so a link built from it is named by it.
+  if (node.label) baked.label = node.label;
   if (node.filterType === "text") {
     if (node.caseSensitive) baked.caseSensitive = true;
     if (node.columns && node.columns.length) baked.columns = node.columns.slice();
@@ -16612,8 +16668,8 @@ function updateUndoRedoButtons() {
   btnRedo.disabled = redoStack.length === 0;
   const nextUndo = undoStack[undoStack.length - 1];
   const nextRedo = redoStack[redoStack.length - 1];
-  btnUndo.title = nextUndo ? "Undo " + (nextUndo.label || UNDO_KIND_LABELS[nextUndo.kind] || nextUndo.kind) + " (Ctrl+Z)" : "Nothing to undo";
-  btnRedo.title = nextRedo ? "Redo " + (nextRedo.label || UNDO_KIND_LABELS[nextRedo.kind] || nextRedo.kind) + " (Ctrl+Shift+Z)" : "Nothing to redo";
+  btnUndo.title = nextUndo ? "Undo " + (nextUndo.label || UNDO_KIND_LABELS[nextUndo.kind] || nextUndo.kind) + " (" + shortcutLabel("undo") + ")" : "Nothing to undo";
+  btnRedo.title = nextRedo ? "Redo " + (nextRedo.label || UNDO_KIND_LABELS[nextRedo.kind] || nextRedo.kind) + " (" + shortcutLabel("redo") + ")" : "Nothing to redo";
 }
 
 function getChain(id) {
@@ -16881,12 +16937,13 @@ function createPatternAcc() {
       const key = normalizeMessagePattern(e.message);
       let g = groups.get(key);
       if (!g) {
-        g = { key, count: 0, floatMask: 0, rank: Infinity, level: "", levelFormatId: null, first: e, firstTs: e.ts, lastTs: e.ts };
+        g = { key, count: 0, floatMask: 0, rank: Infinity, level: "", levelFormatId: null, levels: new Map(), first: e, firstTs: e.ts, lastTs: e.ts };
         groups.set(key, g);
       }
       g.count++;
       g.floatMask |= patternFloatMask;
       const b = bucketOf(e.level, e.formatId);
+      g.levels.set(b, (g.levels.get(b) || 0) + 1);
       const r = levelSortRank(b, e.formatId);
       if (r < g.rank) { g.rank = r; g.level = b; g.levelFormatId = e.formatId; }
       if (e.ts < g.firstTs) g.firstTs = e.ts;
@@ -16907,7 +16964,7 @@ let patternsTotal = 0;
 const PATTERNS_COLUMNS = [
   { key: "count", label: "Count", cls: "patterns-num" },
   { key: null, label: "%", cls: "patterns-num" },
-  { key: "level", label: "Level" },
+  { key: "level", label: "Max level", tip: "Most severe level in the group; n/total = how many entries have it" },
   { key: "pattern", label: "Pattern" },
   { key: "first", label: "First" },
   { key: "last", label: "Last" },
@@ -16918,7 +16975,7 @@ function renderPatternsHead() {
     const sorted = col.key && col.key === patternsSortKey;
     const arrow = sorted ? (patternsSortDir === "asc" ? " ▲" : " ▼") : "";
     return '<span class="' + (col.cls || "") + (sorted ? " sorted" : "") + '"' +
-      (col.key ? ' data-sort="' + col.key + '" title="Sort by ' + col.label.toLowerCase() + '"' : "") + ">" +
+      (col.key ? ' data-sort="' + col.key + '" title="' + escapeHtml(col.tip || "Sort by " + col.label.toLowerCase()) + '"' : "") + ">" +
       escapeHtml(col.label) + arrow + "</span>";
   }).join("");
 }
@@ -16976,6 +17033,14 @@ function patternTimeText(ts) {
   const full = formatTime(ts);
   return full.length > 11 ? full.slice(11) : full;
 }
+// Tooltip of the Max-level cell: the group's entries per level in severity
+// order ("INFO 176 · WARN 3"); empty for a pure group (the badge says it all).
+function patternLevelTip(g) {
+  if (g.levels.size < 2) return "";
+  const parts = [...g.levels].map(([b, n]) => ({ b, n, r: levelSortRank(b, g.levelFormatId) }))
+    .sort((x, y) => x.r - y.r || y.n - x.n).map(x => x.b + " " + x.n);
+  return ' title="' + escapeHtml(parts.join(" · ")) + '"';
+}
 function renderPatternsVisibleRows() {
   const list = patternsSorted ? patternsSorted.list : [];
   if (!list.length) return;
@@ -16997,7 +17062,8 @@ function renderPatternsVisibleRows() {
       '<div class="pattern-row patterns-grid ' + lvlCls + '" data-idx="' + i + '" style="height:' + rowH + 'px">' +
       '<span class="patterns-num">' + g.count.toLocaleString("de-DE") + "</span>" +
       '<span class="patterns-num">' + pctText + "</span>" +
-      "<span>" + (g.level && g.level !== "OTHER" ? '<span class="level-badge">' + escapeHtml(g.level) + "</span>" : "") + "</span>" +
+      '<span class="patterns-level"' + patternLevelTip(g) + ">" + (g.level && g.level !== "OTHER" ? '<span class="level-badge">' + escapeHtml(g.level) + "</span>" +
+        (g.levels.size > 1 ? '<span class="patterns-level-n">' + g.levels.get(g.level) + "/" + g.count + "</span>" : "") : "") + "</span>" +
       '<span class="pattern-text" title="' + escapeHtml(patternDisplayText(g.key)) + '">' + text + "</span>" +
       '<span class="patterns-time">' + escapeHtml(patternTimeText(g.firstTs)) + "</span>" +
       '<span class="patterns-time">' + escapeHtml(patternTimeText(g.lastTs)) + "</span>" +
@@ -17115,6 +17181,11 @@ function facetsAvailable() {
 // persisted selection does nothing there; the phone sheet is the detail only).
 function facetsActive() { return facetsOpen && currentLayoutTier !== "phone"; }
 
+function lowerTabDetailTitle(offLog) {
+  return offLog
+    ? "Entry detail is shown in Context/Filtered"
+    : "Entry detail — full message of the selected row (" + shortcutLabel("toggleDetail") + " collapses the panel)";
+}
 // Applies the bottom-panel tab state to #detailPanel: tab buttons, the
 // lower-facets / detail-strip-only classes and the resizer. Called from
 // renderMainView (log tabs and Patterns/Table/Plot) and the tab switches.
@@ -17129,9 +17200,7 @@ function applyLowerPanel(offLog) {
   lowerTabDetail.setAttribute("aria-selected", facets ? "false" : "true");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
   lowerTabDetail.disabled = !!offLog;
-  lowerTabDetail.title = offLog
-    ? "Entry detail is shown in Context/Filtered"
-    : "Entry detail — full message of the selected row (Ctrl+J collapses the panel)";
+  lowerTabDetail.title = lowerTabDetailTitle(offLog);
   updateDetailResizerVisibility();
   renderFacetPanel();
 }
@@ -18601,7 +18670,48 @@ function renderMainView() {
   // stale and built when it is revealed (showFhTab/applyFhView).
   if (contextViewVisible()) renderHighlightView(true); // highlightColorMap was computed fresh above
   else contextViewStale = true;
+  renderFormatMismatchPanels();
   findRefresh(); // see render() — also covers renderMainView's direct callers
+}
+
+// Format-mismatch empty state (see noteFormatMismatch): one panel in the
+// Filtered rows and one in the Context rows, shown while the active node's
+// root file has 0 entries because no line matched its log format.
+const fmtMismatchPanels = [tableBody, highlightBody].map(body => {
+  const panel = document.createElement("div");
+  panel.className = "fmt-mismatch-panel";
+  panel.innerHTML = '<h2></h2><p></p><div class="fmt-mismatch-actions">' +
+    '<button type="button" class="btn-mini fmt-mismatch-setup">Set up log format…</button>' +
+    '<button type="button" class="btn-mini-secondary fmt-mismatch-plain">Open as plain text</button></div>';
+  panel.querySelector(".fmt-mismatch-setup").addEventListener("click", () => openFormatMismatchSetup(panel.fileNodeId));
+  panel.querySelector(".fmt-mismatch-plain").addEventListener("click", () => {
+    const node = state.nodes[panel.fileNodeId];
+    if (node) reparseFileWithFormat(node, PLAINTEXT_FORMAT_ID);
+  });
+  body.appendChild(panel);
+  return panel;
+});
+function renderFormatMismatchPanels() {
+  const root = state.nodes[getRootFileId(state.activeId)];
+  const show = !!(root && root.type === "file" && root.noFormatMatch && root.entries.length === 0);
+  fmtMismatchPanels.forEach(panel => {
+    panel.classList.toggle("show", show);
+    if (!show) return;
+    panel.fileNodeId = root.id;
+    const fmt = findLogFormat(root.formatId || DEFAULT_FORMAT_ID);
+    panel.querySelector("h2").textContent = "No line of " + root.name + " matches the log format \u201c" + (fmt ? fmt.name : "?") + "\u201d";
+    panel.querySelector("p").textContent = root.noFormatMatch.lines.toLocaleString("de-DE") + " lines were read. Pick the format that fits, or open the file as plain text.";
+  });
+}
+// "Set up log format…": the format editor with the file's first lines as
+// examples; after saving, the file is re-parsed in place with the new format.
+function openFormatMismatchSetup(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || !node.noFormatMatch) return;
+  openFormatEditDialog(null);
+  if (!formatDialogOpen()) return; // phone: the editor toasted instead
+  formatEditAfterSave = formatId => reparseFileWithFormat(node, formatId);
+  fwzAppendText(node.noFormatMatch.text.split(/\r\n|\n/).slice(0, FWZ_MAX_LINES * 2).join("\n"));
 }
 
 // Whether the Context view (#highlightWrap) is on screen: Stacked shows it
@@ -22274,9 +22384,8 @@ function plotHandleHoverMove(ev) {
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
   if (!row) { plotTooltip.classList.add("hidden"); return; }
-  let html = escapeHtml(findExtractColumn(hit.xCol).name) + ": <b>" + escapeHtml(String(row.values[hit.xCol])) + "</b><br>" +
-    escapeHtml(hit.seriesName) + ": <b>" + escapeHtml(String(row.values[hit.yCol])) + "</b>";
-  if (hit.colorCol != null) html += "<br>" + escapeHtml(findExtractColumn(hit.colorCol).name) + ": <b>" + escapeHtml(String(row.values[hit.colorCol])) + "</b>";
+  let html = plotTooltipColumnLine(hit.xCol, row) + "<br>" + plotTooltipColumnLine(hit.yCol, row, hit.seriesName);
+  if (hit.colorCol != null) html += "<br>" + plotTooltipColumnLine(hit.colorCol, row);
   plotTooltip.innerHTML = html;
   plotTooltip.classList.remove("hidden"); // needs to be visible (not display:none) before offsetWidth/Height below can measure it
   positionPlotTooltip(plotChartAreaPointFromEvent(ev));
@@ -22917,6 +23026,36 @@ function formatPlotClockTick(t, lo, hi) {
   if (hi - lo < 2000) out += "." + String(d.getMilliseconds()).padStart(3, "0");
   if (crossesMidnight) out = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + " " + out;
   return out;
+}
+
+// Tooltip line for one plotted column: [label, value text]. The time column
+// ("t (ms)", ms since the first extracted row) reads as clock time, like the
+// X axis does: "Time" + HH:mm:ss.SSS, with "yyyy-MM-dd " in front when the
+// extracted rows span midnight. Plain text (ELAPSED_COL = line number,
+// extractTimeBase null) and every other column show the raw extracted value.
+let plotTooltipSpanCache = { rows: null, len: -1, crosses: false };
+function plotTooltipCrossesMidnight() {
+  const c = plotTooltipSpanCache;
+  if (c.rows === extractRowsData && c.len === extractRowsData.length) return c.crosses;
+  let lo = Infinity, hi = -Infinity;
+  for (const r of extractRowsData) {
+    const t = Number(r.values[ELAPSED_COL]);
+    if (t < lo) lo = t;
+    if (t > hi) hi = t;
+  }
+  const crosses = Number.isFinite(lo) && new Date(extractTimeBase + lo).toDateString() !== new Date(extractTimeBase + hi).toDateString();
+  plotTooltipSpanCache = { rows: extractRowsData, len: extractRowsData.length, crosses };
+  return crosses;
+}
+function plotTooltipColumnLine(col, row, labelOverride) {
+  const raw = row.values[col];
+  if (col === ELAPSED_COL && extractTimeBase != null && Number.isFinite(Number(raw))) {
+    const d = new Date(extractTimeBase + Number(raw)), p2 = n => String(n).padStart(2, "0");
+    let out = p2(d.getHours()) + ":" + p2(d.getMinutes()) + ":" + p2(d.getSeconds()) + "." + String(d.getMilliseconds()).padStart(3, "0");
+    if (plotTooltipCrossesMidnight()) out = d.getFullYear() + "-" + p2(d.getMonth() + 1) + "-" + p2(d.getDate()) + " " + out;
+    return escapeHtml("Time") + ": <b>" + escapeHtml(out) + "</b>";
+  }
+  return escapeHtml(labelOverride != null ? labelOverride : findExtractColumn(col).name) + ": <b>" + escapeHtml(String(raw)) + "</b>";
 }
 
 function renderPlotControls() {
@@ -23842,10 +23981,8 @@ plot3dCanvas.addEventListener("mousemove", ev => {
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
   if (!row) { plotTooltip.classList.add("hidden"); return; }
-  let html = escapeHtml(findExtractColumn(hit.xCol).name) + ": <b>" + escapeHtml(String(row.values[hit.xCol])) + "</b><br>" +
-    escapeHtml(hit.seriesName) + ": <b>" + escapeHtml(String(row.values[hit.yCol])) + "</b><br>" +
-    escapeHtml(findExtractColumn(hit.zCol).name) + ": <b>" + escapeHtml(String(row.values[hit.zCol])) + "</b>";
-  if (hit.colorCol != null) html += "<br>" + escapeHtml(findExtractColumn(hit.colorCol).name) + ": <b>" + escapeHtml(String(row.values[hit.colorCol])) + "</b>";
+  let html = plotTooltipColumnLine(hit.xCol, row) + "<br>" + plotTooltipColumnLine(hit.yCol, row, hit.seriesName) + "<br>" + plotTooltipColumnLine(hit.zCol, row);
+  if (hit.colorCol != null) html += "<br>" + plotTooltipColumnLine(hit.colorCol, row);
   plotTooltip.innerHTML = html;
   plotTooltip.classList.remove("hidden");
   positionPlotTooltip(plotChartAreaPointFromEvent(ev));
@@ -27693,7 +27830,7 @@ function isSidebarPeeking() { return sidebarEl.classList.contains("peeking"); }
 function updateSidebarToggleIcon() {
   const peeking = isSidebarPeeking();
   sidebarToggleBtn.innerHTML = peeking ? ICON_PIN : ICON_CHEVRON_LEFT;
-  sidebarToggleBtn.title = peeking ? "Pin open (Ctrl+B)" : "Collapse (Ctrl+B)";
+  sidebarToggleBtn.title = (peeking ? "Pin open (" : "Collapse (") + shortcutLabel("toggleSidebar") + ")";
 }
 
 // One marker button per node in the ancestor chain from the active node's
@@ -27706,7 +27843,7 @@ function renderSidebarRail() {
   const toggle = document.createElement("button");
   toggle.type = "button";
   toggle.className = "panel-toggle-btn";
-  toggle.title = "Expand (Ctrl+B)";
+  toggle.title = "Expand (" + shortcutLabel("toggleSidebar") + ")";
   toggle.innerHTML = ICON_CHEVRON_RIGHT;
   toggle.addEventListener("click", () => toggleSidebarCollapsed(false));
   sidebarRailEl.appendChild(toggle);
@@ -27882,11 +28019,11 @@ function isDetailPeeking() { return detailPanel.classList.contains("peeking"); }
 function updateDetailToggleIcon() {
   if (isDetailPeeking()) {
     detailToggleBtn.innerHTML = ICON_PIN;
-    detailToggleBtn.title = "Pin open (Ctrl+J)";
+    detailToggleBtn.title = "Pin open (" + shortcutLabel("toggleDetail") + ")";
   } else {
     const collapsed = isDetailCollapsed();
     detailToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
-    detailToggleBtn.title = collapsed ? "Expand (Ctrl+J)" : "Collapse (Ctrl+J)";
+    detailToggleBtn.title = (collapsed ? "Expand (" : "Collapse (") + shortcutLabel("toggleDetail") + ")";
   }
 }
 
@@ -30230,9 +30367,94 @@ function formatDumpFragmentHtml(raw) {
 // own display:inline-block then simply starts flush at that new line's
 // left edge — no extra CSS needed for the "left-aligned block" look
 // (person-requested, this session).
+// ---- Stack traces (Java, .NET, Python) for the Pretty view ----
+// formatStackTraceHtml returns the message as HTML with the trace region
+// wrapped in one syn-block span, or null when the text holds no stack trace
+// (>= 2 frame lines, or 1 frame plus an exception header line).
+const STACK_TYPE = "(?:[A-Za-z_$][\\w$]*\\.)*[A-Za-z_$][\\w$]*(?:Exception|Error|Throwable|Fault)";
+const STACK_HEADER_RE = new RegExp("^\\s*(" + STACK_TYPE + ")(:.*)?$");
+const STACK_CAUSE_RE = /^\s*((?:Caused by|Suppressed):\s+)([\w$.]+)(:.*)?$/;
+const STACK_INNER_RE = /^\s*(--->\s+)([\w$.]+)(\s+\(0x[0-9A-Fa-f]+\))?(:.*)?$/;
+const STACK_FRAME_RE = /^\s*at\s+(\S[^()]*?)\((.*)\)(?:\s+in\s+(.+:line\s+\d+))?\s*$/;
+const STACK_PYFRAME_RE = /^\s*File "(.*)", line (\d+)(?:, in (.+))?\s*$/;
+const STACK_MORE_RE = /^\s*\.\.\. \d+ (?:more|common frames omitted)\s*$/;
+const STACK_END_RE = /^\s*---.*(?:stack trace|exception).*---\s*$/i;
+const STACK_TRACEBACK_RE = /^\s*Traceback \(most recent call last\):\s*$/;
+const STACK_FRAMEWORK_RE = /^(?:java|javax|jdk|sun|com\.sun|kotlin|scala|System|Microsoft)\./;
+const STACK_PY_FRAMEWORK_RE = /site-packages|[\\/]lib[\\/]python/;
+function classifyStackLine(line) {
+  let m;
+  if ((m = STACK_FRAME_RE.exec(line))) return { t: "frame", m };
+  if ((m = STACK_PYFRAME_RE.exec(line))) return { t: "pyframe", m };
+  if ((m = STACK_CAUSE_RE.exec(line))) return { t: "cause", m };
+  if ((m = STACK_INNER_RE.exec(line))) return { t: "inner", m };
+  if (STACK_MORE_RE.test(line)) return { t: "more" };
+  if (STACK_END_RE.test(line)) return { t: "end" };
+  if (STACK_TRACEBACK_RE.test(line)) return { t: "traceback" };
+  if ((m = STACK_HEADER_RE.exec(line))) return { t: "header", m };
+  return null;
+}
+function stackLineHtml(line, c, prev) {
+  const exc = (pre, type, mid, msg) => escapeHtml(pre) + '<span class="syn-trace-exc">' + escapeHtml(type) + "</span>" + escapeHtml((mid || "") + (msg || ""));
+  switch (c.t) {
+    case "header": return exc("", c.m[1], "", c.m[2]);
+    case "cause": return exc(c.m[1], c.m[2], "", c.m[3]);
+    case "inner": return exc(c.m[1], c.m[2], c.m[3], c.m[4]);
+    case "traceback": return '<span class="syn-trace-note">' + escapeHtml(line.trim()) + "</span>";
+    case "more": return '<span class="syn-trace-note">    ' + escapeHtml(line.trim()) + "</span>";
+    case "end": return '<span class="syn-trace-note">' + escapeHtml(line.trim()) + "</span>";
+    case "frame": {
+      const method = c.m[1].trim(), inner = c.m[2], where = c.m[3];
+      const fw = STACK_FRAMEWORK_RE.test(method.replace(/^[\w.$-]+\//, ""));
+      let args;
+      if (where === undefined && /^(?:[^\s(),]+(?::\d+)?|Native Method|Unknown Source)$/.test(inner)) args = '(<span class="syn-trace-loc">' + escapeHtml(inner) + "</span>)";
+      else args = "(" + escapeHtml(inner) + ")";
+      return '<span class="syn-trace-frame' + (fw ? " syn-trace-fw" : "") + '">    at ' + escapeHtml(method) + args +
+        (where !== undefined ? " in " + '<span class="syn-trace-loc">' + escapeHtml(where) + "</span>" : "") + "</span>";
+    }
+    case "pyframe": {
+      const fw = STACK_PY_FRAMEWORK_RE.test(c.m[1]);
+      return '<span class="syn-trace-frame' + (fw ? " syn-trace-fw" : "") + '">    File "' + escapeHtml(c.m[1]) + '", <span class="syn-trace-loc">line ' + escapeHtml(c.m[2]) + "</span>" +
+        (c.m[3] ? ", in " + escapeHtml(c.m[3]) : "") + "</span>";
+    }
+    case "pycode": return '<span class="syn-trace-frame' + (prev.fw ? " syn-trace-fw" : "") + '">      ' + escapeHtml(line.trim()) + "</span>";
+  }
+  return escapeHtml(line);
+}
+function formatStackTraceHtml(text) {
+  if (text.indexOf("\n") === -1 || !/\bat\s|File "/.test(text)) return null;
+  const lines = text.split("\n").map(l => l.replace(/\r$/, ""));
+  const cls = lines.map(classifyStackLine);
+  // a source line right below a Python "File" frame
+  for (let i = 1; i < lines.length; i++) {
+    if (!cls[i] && cls[i - 1] && (cls[i - 1].t === "pyframe") && /^\s+\S/.test(lines[i])) cls[i] = { t: "pycode", fw: STACK_PY_FRAMEWORK_RE.test(cls[i - 1].m[1]) };
+  }
+  const isAnchor = c => c && (c.t === "frame" || c.t === "pyframe" || c.t === "traceback" || c.t === "cause" || c.t === "inner");
+  let start = cls.findIndex(isAnchor);
+  if (start === -1) return null;
+  let end = start;
+  cls.forEach((c, i) => { if (c && c.t !== "header" && i > end) end = i; });
+  if (start > 0 && cls[start - 1] && cls[start - 1].t === "header") start--;
+  const lastAnchor = cls.slice(0, end + 1).reverse().find(c => c && c.t !== "more" && c.t !== "end");
+  if (end + 1 < lines.length && cls[end + 1] && cls[end + 1].t === "header" && lastAnchor && (lastAnchor.t === "pyframe" || lastAnchor.t === "pycode")) end++;
+  let frames = 0, header = false;
+  for (let i = start; i <= end; i++) {
+    const t = cls[i] && cls[i].t;
+    if (t === "frame" || t === "pyframe") frames++;
+    else if (t === "header" || t === "cause" || t === "inner" || t === "traceback") header = true;
+  }
+  if (!(frames >= 2 || (frames >= 1 && header))) return null;
+  const body = [];
+  for (let i = start; i <= end; i++) body.push(cls[i] ? stackLineHtml(lines[i], cls[i], i > 0 ? cls[i - 1] : null) : escapeHtml(lines[i]));
+  const pre = lines.slice(0, start), post = lines.slice(end + 1);
+  return (pre.length ? escapeHtml(pre.join("\n")) + "\n" : "") +
+    '<span class="syn-block syn-trace">' + body.join("\n") + "</span>" +
+    (post.length ? "\n" + escapeHtml(post.join("\n")) : "");
+}
+
 function formatMessageWithHighlight(text) {
   const hits = findEmbeddedFragments(text);
-  if (!hits.length) return escapeHtml(text);
+  if (!hits.length) { const trace = formatStackTraceHtml(text); return trace !== null ? trace : escapeHtml(text); }
   let out = "";
   let pos = 0;
   hits.forEach(h => {
@@ -37836,6 +38058,58 @@ function collapseNewlinesToWildcard(pattern) {
   return pattern.replace(/\r\n|\r|\n/g, "[*]");
 }
 
+// A [*:word] capture that has the SAME value in every match of `pattern` over
+// `texts` (at least two matches) is not a variable: "v2" in ".../v2/orders/[*:int]"
+// would only become a constant Table column. Returns the pattern with each such
+// capture replaced by that literal value; the set of matching texts stays the
+// same. Only [*:word] is touched (numbers/times are variable by nature), a
+// single match proves nothing, and an invalid pattern comes back unchanged.
+// Pure: `texts` is any iterable of strings (the column values to match against).
+function freezeConstantWordCaptures(pattern, texts) {
+  const spec = compileExtractPattern(pattern);
+  if (!spec) return pattern;
+  const wordCols = [];
+  spec.columns.forEach((c, i) => { if (c.type === "word") wordCols.push(i); });
+  if (!wordCols.length) return pattern;
+  const seen = wordCols.map(() => new Set());
+  let matches = 0;
+  for (const text of texts) {
+    spec.regex.lastIndex = 0;
+    const m = wildcardMatch(spec.regex, spec.columns, text);
+    if (!m) continue;
+    matches++;
+    let allVary = true;
+    wordCols.forEach((ci, k) => { seen[k].add(m[ci + 1]); if (seen[k].size < 2) allVary = false; });
+    if (allVary) return pattern; // every word capture already differs: nothing to freeze
+  }
+  if (matches < 2) return pattern;
+  const frozen = new Map(); // column index -> literal
+  wordCols.forEach((ci, k) => { if (seen[k].size === 1) frozen.set(ci, [...seen[k]][0]); });
+  if (!frozen.size) return pattern;
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  let out = "", last = 0, idx = 0, m;
+  while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
+    out += pattern.slice(last, m.index) + (frozen.has(idx) ? frozen.get(idx) : m[0]);
+    last = EXTRACT_TOKEN_RE.lastIndex;
+    idx++;
+  }
+  return out + pattern.slice(last);
+}
+
+// The pattern "Filter for this ___" / "Extract" / "Pair all like these" build
+// from one entry's column: numbers and identifiers become typed captures
+// (buildNumericExtractPattern), newlines collapse, and word captures that never
+// vary over the root file's own entries ("v2") go back to literal text.
+function generatedEntryPattern(entry, columnKey, rootId) {
+  const value = entryColumnValue(entry, columnKey);
+  const numeric = buildNumericExtractPattern(value);
+  if (numeric === null) return collapseNewlinesToWildcard(value);
+  const pattern = collapseNewlinesToWildcard(numeric);
+  const root = state.nodes[rootId];
+  if (!root || !root.entries || !pattern.includes("[*:word")) return pattern;
+  return freezeConstantWordCaptures(pattern, (function* () { for (const e of root.entries) yield entryColumnValue(e, columnKey); })());
+}
+
 // "Filter for this ___" opens the filter popup prefilled from whichever
 // column was right-clicked (see resolveContextFilterColumn), with that
 // column pre-selected in the "Applies to" chips — but deliberately does
@@ -37857,7 +38131,7 @@ function openFilterForEntryColumn(entry, column) {
   if (!entry || !state.activeId) return;
   const value = entryColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
-  const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
+  const pattern = generatedEntryPattern(entry, column.key, getRootFileId(state.activeId));
   openFilterPopup();
   filterInput.value = pattern;
   recentFilterDropdown.hide(); // openFilterPopup() drew the empty-input list; the input is prefilled now
@@ -37881,7 +38155,7 @@ function extractMessageFilter(entry) {
   const column = { key: "message", label: "Message" };
   const value = entryColumnValue(entry, column.key);
   if (!value) { showCopyToast("This entry has no " + column.label.toLowerCase() + " value to filter for"); return; }
-  const pattern = collapseNewlinesToWildcard(buildNumericExtractPattern(value) || value);
+  const pattern = generatedEntryPattern(entry, column.key, getRootFileId(state.activeId));
   createFilterNode(state.activeId, "text", pattern, false, [], false, ["message"], false, false);
   revealFilteredView();
   render();
@@ -37998,7 +38272,7 @@ function pairAllFromPick() {
   const a = pairPick.startEntry, b = pairPick.endEntry, rootId = pairPick.rootId;
   const order = buildOrderIndexMap(rootId);
   const after = b.ts !== a.ts ? b.ts > a.ts : order.get(b.id) >= order.get(a.id);
-  const pat = e => { const v = entryColumnValue(e, "message"); return collapseNewlinesToWildcard(buildNumericExtractPattern(v) || v); };
+  const pat = e => generatedEntryPattern(e, "message", rootId);
   const spec = { rootId, start: { text: pat(a) }, hops: [{ text: pat(b), direction: after ? "after" : "before" }] };
   cancelPairPick();
   openLinkDialog(spec);
@@ -39825,7 +40099,7 @@ let linkDlg = null;
 // A baked side the dialog can show as an editable text field: exactly what
 // bakedTextCondition builds.
 function isPlainTextBaked(b) {
-  return !!b && b.filterType === "text" && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
+  return !!b && b.filterType === "text" && !b.label && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
     !(b.ignoredColumns && b.ignoredColumns.length) && Array.isArray(b.columns) && b.columns.length === 1 && b.columns[0] === "message";
 }
 function linkSideFromSpec(x) {
@@ -40953,6 +41227,7 @@ function renderExportDialog() {
   const activeIsFilter = activeFilterNodeId() !== null;
   filterBtn.disabled = !activeIsFilter;
   filterBtn.title = activeIsFilter ? "" : "Select a filter first";
+  el("#exportSaveFilterHint").classList.toggle("hidden", activeIsFilter); // the reason must be visible on touch, where a title never is
   exportFirstN.value = String(exportExcerptLines);
   pillSet(el("#exportGapsToggle"), exportGaps);
   pillSet(el("#exportHeaderToggle"), exportHeader);
@@ -41626,12 +41901,13 @@ function serializeFilterBranch(nodeId, includeAncestors) {
 // and/or/link node — its own bakedA/bakedB never look at another node).
 function materializeBakedAsNode(baked, parentId) {
   const node = {
-    id: uid("n"), type: "filter", name: bakedConditionName(baked),
+    id: uid("n"), type: "filter", name: bakedConditionName(Object.assign({}, baked, { label: undefined })),
     parentId, children: [],
     filterType: baked.filterType,
     value: baked.value !== undefined ? baked.value : null,
     inverted: !!baked.inverted,
   };
+  if (baked.label) node.label = baked.label;
   if (baked.filterType === "text") {
     if (baked.caseSensitive) node.caseSensitive = true;
     if (baked.columns && baked.columns.length) node.columns = baked.columns.slice();
@@ -41662,6 +41938,7 @@ function materializeBakedAsNode(baked, parentId) {
 // name-derivation rules for each filterType, recursing for a nested and/
 // or/link condition.
 function bakedConditionName(baked) {
+  if (baked.label) return baked.label;
   if (baked.filterType === "text") return baked.isRegex ? "/" + baked.value + "/" : "“" + baked.value + "”";
   if (baked.filterType === "level") return (baked.value || []).join(", ");
   if (baked.filterType === "idset") return idSetFilterName(baked.value);
@@ -42825,7 +43102,8 @@ const SHORTCUT_ACTIONS = [
 // renderShortcutBindingsList().
 const FIXED_SHORTCUTS = [
   { label: "Find bar: next / previous match (in its input)", display: ["Enter", "Shift+Enter"] },
-  { label: "Find bar: next / previous match (browser alias)", display: ["Ctrl+G", "Ctrl+Shift+G"] },
+  { label: "Find bar: next / previous match (browser alias)", display: ["Ctrl+G", "Ctrl+Shift+G"],
+    aliasCombos: [{ ctrl: true, key: "g" }, { ctrl: true, shift: true, key: "g" }] },
   { label: "Find bar: add the search as a filter (in its input)", display: ["Ctrl", "Enter"] },
   { label: "Copy a filter",                          display: ["Ctrl", "C"] },
   { label: "Cut a filter",                           display: ["Ctrl", "X"] },
@@ -42901,11 +43179,47 @@ function findShortcutConflict(combo, excludingId) {
   return SHORTCUT_ACTIONS.find(a => a.id !== excludingId && comboEquals(getShortcutBinding(a.id), combo));
 }
 
+// "Ctrl+Shift+F" — the current binding of a rebindable action as text, for
+// tooltips and hints (goes through getShortcutBinding, so the browser build's
+// closeFile default and any rebinding are already right).
+function shortcutLabel(actionId) {
+  return comboLabelParts(getShortcutBinding(actionId)).join("+");
+}
+// Static tooltips/texts naming a rebindable shortcut carry a template with
+// {actionId} placeholders: data-sc-title (sets title) / data-sc-text (sets
+// textContent). Dynamic setters (undo/redo, panel toggles, lower tab) call
+// shortcutLabel() themselves and are re-run here. Called at boot and after
+// every binding change (record, reset one, reset all).
+function shortcutTemplate(tpl) {
+  return tpl.replace(/\{(\w+)\}/g, (m, id) => SHORTCUT_ACTIONS.some(a => a.id === id) ? shortcutLabel(id) : m);
+}
+function refreshShortcutTooltips() {
+  document.querySelectorAll("[data-sc-title]").forEach(e => { e.title = shortcutTemplate(e.dataset.scTitle); });
+  document.querySelectorAll("[data-sc-text]").forEach(e => { e.textContent = shortcutTemplate(e.dataset.scText); });
+  updateUndoRedoButtons();
+  updateSidebarToggleIcon();
+  updateDetailToggleIcon();
+  const railToggle = sidebarRailEl.querySelector(".panel-toggle-btn");
+  if (railToggle) railToggle.title = "Expand (" + shortcutLabel("toggleSidebar") + ")";
+  lowerTabDetail.title = lowerTabDetailTitle(lowerTabDetail.disabled);
+}
+// The action currently bound to a find-bar alias combo (Ctrl+G /
+// Ctrl+Shift+G), which therefore wins over the alias in handleFindShortcut.
+function findAliasOverride(combo) {
+  return SHORTCUT_ACTIONS.find(a => comboEquals(getShortcutBinding(a.id), combo));
+}
+function shortcutBindingsChanged() {
+  saveShortcutBindingOverrides();
+  refreshShortcutTooltips();
+}
+
 let shortcutRecordingId = null;
 const shortcutConflictNote = el("#shortcutConflictNote");
-function setShortcutConflictNote(text) {
+// hint: a non-blocking note (the binding was saved) instead of a rejection.
+function setShortcutConflictNote(text, hint) {
   shortcutConflictNote.textContent = text || "";
   shortcutConflictNote.classList.toggle("hidden", !text);
+  shortcutConflictNote.classList.toggle("hint", !!hint);
 }
 function renderShortcutBindingsList() {
   const list = el("#shortcutBindingsList");
@@ -42929,7 +43243,7 @@ function renderShortcutBindingsList() {
     row.querySelector(".shortcut-rebind-btn").addEventListener("click", () => startShortcutRecording(action.id));
     row.querySelector(".shortcut-reset-btn").addEventListener("click", () => {
       delete shortcutBindingOverrides[action.id];
-      saveShortcutBindingOverrides();
+      shortcutBindingsChanged();
       setShortcutConflictNote("");
       renderShortcutBindingsList();
     });
@@ -42938,9 +43252,12 @@ function renderShortcutBindingsList() {
   FIXED_SHORTCUTS.forEach(fixed => {
     const row = document.createElement("div");
     row.className = "settings-row shortcut-row-fixed";
-    const comboHtml = fixed.display
-      ? `<span class="shortcut-combo">${fixed.display.map(p => `<kbd>${p}</kbd>`).join("")}</span>`
-      : "";
+    const holders = fixed.aliasCombos ? fixed.aliasCombos.map(findAliasOverride) : [];
+    const overriddenBy = [...new Set(holders.filter(Boolean).map(a => a.label))];
+    const comboHtml = (overriddenBy.length ? `<span class="shortcut-overridden-by">overridden by ${overriddenBy.map(escapeHtml).join(", ")}</span>` : "") +
+      (fixed.display
+        ? `<span class="shortcut-combo">${fixed.display.map((p, i) => `<kbd${holders[i] ? ' class="overridden"' : ""}>${p}</kbd>`).join("")}</span>`
+        : "");
     row.innerHTML = `
       <div class="settings-row-text"><div class="settings-row-label">${fixed.label}</div></div>
       <div class="settings-row-control shortcut-binding-control">${comboHtml}</div>`;
@@ -42980,16 +43297,25 @@ function onShortcutRecordingKeydown(ev) {
     return;
   }
   shortcutBindingOverrides[actionId] = combo;
-  saveShortcutBindingOverrides();
-  setShortcutConflictNote("");
+  shortcutBindingsChanged();
+  // Ctrl+G / Ctrl+Shift+G stay allowed: the binding wins over the fixed find
+  // alias (handleFindShortcut) — only a neutral note says so.
+  const aliasIdx = FIXED_SHORTCUTS.find(f => f.aliasCombos).aliasCombos.findIndex(c => comboEquals(c, combo));
+  if (aliasIdx >= 0) {
+    const action = SHORTCUT_ACTIONS.find(a => a.id === actionId);
+    const [keyLabel, which, otherId] = aliasIdx ? ["Ctrl+Shift+G", "previous match", "findPrev"] : ["Ctrl+G", "next match", "findNext"];
+    setShortcutConflictNote(`${keyLabel} was the find bar's "${which}" alias — it now runs "${action.label}". ${shortcutLabel(otherId)} still finds the ${which}.`, true);
+  } else setShortcutConflictNote("");
   stopShortcutRecording();
 }
 el("#btnResetShortcuts").addEventListener("click", () => {
   shortcutBindingOverrides = {};
-  saveShortcutBindingOverrides();
+  shortcutBindingsChanged();
   setShortcutConflictNote("");
   renderShortcutBindingsList();
 });
+
+refreshShortcutTooltips();
 
 // Builtin default always sorts first, regardless of createdAt, per the
 // person's explicit request — it's the format most people will look for.
@@ -43261,6 +43587,7 @@ const formatEditLevelsEl = el("#formatEditLevels");
 const formatEditLevelNew = el("#formatEditLevelNew");
 const formatEditLevelError = el("#formatEditLevelError");
 let formatEditId = null;
+let formatEditAfterSave = null; // optional callback(formatId) run once after a successful save, see openFormatMismatchSetup
 // "regex" (an ordinary log format — the dialog only ever writes Regex
 // mode; a stored Pattern-mode format opens as its compiled regex) or "meta".
 let formatEditMode = "regex";
@@ -44527,6 +44854,7 @@ function closeFormatEditDialog() {
   fwzSampleEl.classList.remove("fwz-drop-active");
   fwz = null;
   formatEditId = null;
+  formatEditAfterSave = null;
   if (wasOpen) openNextImportEditor();
 }
 
@@ -45332,6 +45660,7 @@ async function saveFormatEdit() {
     if (!levelNames.length) return fail("Pick at least one log level.");
   }
 
+  const afterSave = formatEditAfterSave;
   const existing = formatEditId ? state.logFormats.find(f => f.id === formatEditId) : null;
   const fmt = existing ? Object.assign({}, existing) : {
     id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
@@ -45422,6 +45751,7 @@ async function saveFormatEdit() {
   renderLevelBar(); // its buttons/order come from the formats currently in play
   refreshColumnState(); // its columns/header likewise come from the formats currently in play
   lastColumnStateKey = activeColumnDefs().map(c => c.key).join(",") + "|" + activeMessageVisible() + "|" + allRootsPlainText(); // keep render()'s own memo check in sync, avoid a redundant second refresh on its next call
+  if (afterSave && fmt.mode !== "meta") await afterSave(fmt.id);
 }
 
 // Scrolls the example-lines box so example line `lineIdx` sits in its
@@ -46270,6 +46600,9 @@ function rebuildFileText(node) {
   // A JSON text file: the file's own text (the entries may be its pretty
   // print — re-parsing that raw would double-apply the layout).
   if (typeof node.textRaw === "string") return node.textRaw;
+  // No line matched the format (0 entries): the text itself is what to keep,
+  // or a restore would find an empty file.
+  if (node.noFormatMatch && !node.entries.length) return node.noFormatMatch.text;
   return node.entries.map(e => e.raw).join("\n");
 }
 

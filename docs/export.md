@@ -146,8 +146,10 @@ with counts, sources, time span, the root file's bookmarked/annotated entries
   the rebindable **Ctrl+Shift+E** (`exportView`) opens `#exportDialog`:
   summary line, the **Session & filters** bar (**Save session…** closes the
   dialog and opens the session dialog; **Save filter…** closes it and saves
-  the active node via `saveFilterToFile`, disabled with the title "Select a
-  filter first" unless the active node is a filter), Lines row, Format row, the two toggles (pill toggles), a live
+  the active node via `saveFilterToFile`, disabled unless the active node is
+  a filter, with the reason "Save filter needs a filter selected in the tree."
+  as a visible hint under the row's text (`#exportSaveFilterHint`, in every
+  layout; touch has no tooltips) plus the title "Select a filter first"), Lines row, Format row, the two toggles (pill toggles), a live
   preview (read-only textarea; for Rich text a white div rendering the HTML),
   and the footer — `Save file ▾` on the left (menu: Log / CSV / TSV / Report,
   "Saves the full view"; closes on outside click, Escape, item choice, dialog
