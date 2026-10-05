@@ -31,7 +31,7 @@ const DEMO_ENTRIES = 2500;
 const DEMO_SEED = 7;
 const DEMO_NAME = "app.log";
 
-const BANNER = "You're reading the manual **as a log**. Its levels are custom: **WHAT**, **HOW**, **TRY**, **GOTCHA**, **DONT**, **DEEP**. **Reading view** hides DEEP; click **welcome.log** at the top of the filter tree to read the internals too.";
+const BANNER = "You're reading the manual **as a log**. Its levels are custom: **WHAT**, **HOW**, **TRY**, **GOTCHA**, **DONT**, **DEEP**. **Reading view** hides DEEP – click **welcome.log** at the top of the tree for the internals.";
 
 // [level, chapter (the Thread column), message, explanation lines]
 const ROWS = [

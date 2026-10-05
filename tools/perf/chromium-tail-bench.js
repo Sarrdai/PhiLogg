@@ -36,8 +36,7 @@ if (!process.argv[2]) { console.error("usage: node chromium-tail-bench.js <log-f
 
   const tail = await page.evaluate(async ticks => {
     const f = state.nodes[state.rootIds[0]];
-    const level = applyLevelFilterUnderRootFile(f.id, "ERROR");
-    const levelNode = Object.values(state.nodes).find(n => n.filterType === "level");
+    const levelNode = createFilterNode(f.id, "level", ["ERROR"]);
     createFilterNode(levelNode.id, "text", "customer 42");
     const text = createFilterNode(f.id, "text", "customer 42");
     state.activeId = text.id;

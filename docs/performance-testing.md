@@ -144,8 +144,8 @@ cache write. Per run:
   change of *where* strings come from can move this number without memory
   actually being freed — it misled once (a 187 MB reading that was really
   ~325 MB);
-- **level filter / text filter**: `applyLevelFilterUnderRootFile(root,
-  "ERROR")` (162,500 matches) and a `"customer 42"` text filter under the
+- **level filter / text filter**: `toggleLevelFromMinimap(root,
+  "ERROR")` (the ERROR chip: 162,500 matches) and a `"customer 42"` text filter under the
   file, each created and rendered, style and layout included.
 
 The generated test file's timestamps wrap every 86,400 entries, so it is

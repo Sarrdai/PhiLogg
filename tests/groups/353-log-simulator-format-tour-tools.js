@@ -98,8 +98,8 @@ if (groupSelected()) {
     assert(T.state.levelFilter.size === 0, "no chip selection (view filter) is active after loading the session");
     assert(isVisible(d.querySelector("#tourBanner"), w) && d.querySelector("#tourBanner .tour-banner-text").innerHTML === TOUR.BANNER.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>"), "the banner shows the tour text");
     assert(T.state.activeId === view[0].id, "the Reading view is the active node when the tour opens");
-    assert(d.querySelector("#tourBanner .tour-banner-text").textContent.includes("Reading view") && d.querySelector("#tourBanner .tour-banner-text").textContent.includes("welcome.log"),
-      "the banner points at the Reading view and at welcome.log for the internals");
+    assert(d.querySelector("#tourBanner .tour-banner-text").textContent.endsWith("Reading view hides DEEP \u2013 click welcome.log at the top of the tree for the internals."),
+      "the banner ends with the Reading view / welcome.log hint, got " + d.querySelector("#tourBanner .tour-banner-text").textContent);
     const deepChip = () => d.querySelector('#levelBar .level-btn[data-level="DEEP"]');
     assert(Number(deepChip().querySelector(".level-count").textContent) === 0, "under the Reading view the DEEP chip counts 0 (the node hides them)");
     T.state.activeId = wel.id;

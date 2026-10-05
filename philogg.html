@@ -5126,9 +5126,10 @@
     /* Tablet: when the toolbar does not fit one row (JS: updateLevelBarLayout), the level bar
        gets its own full-width row under the tabs and the toolbar wraps instead of scrolling. */
     body.layout-compact #viewBar.level-own-row{flex-wrap:wrap; overflow-x:visible; overflow-y:visible;}
-    body.layout-compact #viewBar.level-own-row > #levelBar{order:1; flex:1 1 calc(100% - 100px); min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:6px;}
+    body.layout-compact #viewBar.level-own-row::before{content:""; flex-basis:100%; order:1; height:0;}
+    body.layout-compact #viewBar.level-own-row > #levelBar{order:2; flex:1 1 auto; min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:6px;}
     /* The Facets button follows the chips on THAT row (chips left, Facets right) instead of wrapping onto a row of its own. */
-    body.layout-compact #viewBar.level-own-row > #btnFacets{order:2;}
+    body.layout-compact #viewBar.level-own-row > #btnFacets{order:3;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
@@ -20199,24 +20200,37 @@ function applyLevelSelectionToTree(levels) {
   render();
 }
 
-// Clicking a level's count in the timeline minimap's header line
-// (person-requested, this session) — unlike applyLevelSelectionToTree above
-// (which edits/creates a level node at the CURRENT tree position), this
-// always targets the ROOT FILE directly, regardless of where state.activeId
-// currently sits, since the minimap's counts are the file's own global
-// totals, not scoped to the active node. Reuses an existing single-level
-// child of the root (same level, and only that level) instead of creating a
-// duplicate on repeated clicks — just re-activates it.
-function applyLevelFilterUnderRootFile(rootId, level) {
+// Toggles one level in the level bar's view filter (state.levelFilter) and
+// redraws — the single implementation behind a chip click and a click on a
+// level count in the minimap's header line. The Filtered view is revealed
+// because the quick filter only narrows that view (see applyLevelFilter), so
+// a change made on the Full tab would otherwise look like nothing happened
+// (a no-op in Stacked layout or when already on Filtered).
+function toggleLevelFilter(lvl) {
+  if (state.levelFilter.has(lvl)) state.levelFilter.delete(lvl);
+  else state.levelFilter.add(lvl);
+  renderLevelBar(); // also refreshes the "Add to tree" button's visibility
+  renderMainView();
+  revealFilteredView();
+}
+
+// Clicking a level's count in the timeline minimap's header line acts like
+// clicking that level's chip (person-requested): it makes the root file the
+// active node when it is not already (same as a tree-row click), then toggles
+// the level in the view filter. It never creates or activates a level node.
+function toggleLevelFromMinimap(rootId, level) {
   const root = state.nodes[rootId];
   if (!root) return;
-  const existing = root.children
-    .map(id => state.nodes[id])
-    .find(n => n && n.type === "filter" && n.filterType === "level" && n.value.length === 1 && n.value[0] === level);
-  if (existing) activateNewNode(existing);
-  else createFilterNode(rootId, "level", [level]);
-  revealFilteredView(); // same reasoning as applyLevelSelectionToTree above
-  render();
+  if (state.activeId !== rootId) {
+    state.multiSelect = new Set([rootId]);
+    applyTempAnchorOnActiveNodeSwitch(rootId);
+    state.activeId = rootId;
+    state.inlineViewer = null;
+    state.folderView = null;
+    state.treeCursor = null;
+    render(); // the tree highlight, the bar's counts and the view follow the new active node
+  }
+  toggleLevelFilter(level);
 }
 
 function renderLevelBar() {
@@ -20242,20 +20256,7 @@ function renderLevelBar() {
     // .level-short: the phone chip text ("F 15", "Other 33"); hidden on the other tiers.
     const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + countText;
     btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
-    btn.addEventListener("click", () => {
-      if (state.levelFilter.has(lvl)) state.levelFilter.delete(lvl);
-      else state.levelFilter.add(lvl);
-      renderLevelBar();
-      renderMainView();
-      // The level quick-filter only narrows the Filtered view (getVisibleEntries
-      // — the Full view deliberately ignores it, see renderHighlightView) — so
-      // a change made while on the Full tab would otherwise look like nothing
-      // happened. Reveal Filtered so the effect is actually visible, same as
-      // switching to another filter already does (revealFilteredView); a
-      // no-op in Stacked layout (both panels already visible) or when
-      // already on the Filtered tab.
-      revealFilteredView();
-    });
+    btn.addEventListener("click", () => toggleLevelFilter(lvl));
     levelBarEl.appendChild(btn);
   });
   updateApplyLevelToTreeButtonVisibility();
@@ -28590,11 +28591,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
     const colorVar = levelColorVar(lvl) || "var(--text-secondary)";
     const fullName = lvl === "OTHER" ? "Other" : lvl.charAt(0) + lvl.slice(1).toLowerCase();
     const text = lvl === "OTHER" ? "Other" : lvl.charAt(0);
-    // Clickable (person-requested, this session): attaches/reveals a
-    // single-level filter node for this level directly under the ROOT file
-    // — see the delegated click listener on timelineMinimapMetaEl below.
+    // Clickable: toggles this level in the view filter like the level bar's
+    // own chip — see the delegated click listener on timelineMinimapMetaEl below.
     minimapMeta.push('<span class="minimap-meta-level" data-level="' + escapeHtml(lvl) + '" style="color:' + colorVar +
-      '" title="' + escapeHtml(fullName) + ': add/show a level filter for this file">' +
+      '" title="' + escapeHtml("Show/hide " + fullName + " in this file's view") + '">' +
       escapeHtml(text) + " " + n.toLocaleString("de-DE") + '</span>');
   });
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
@@ -29040,9 +29040,9 @@ function updateMinimapSelectionMarkers() {
   }).join("");
 }
 
-// Clicking a per-level count in the meta line (person-requested, this
-// session) attaches/reveals a level filter for that level directly under
-// the file — see applyLevelFilterUnderRootFile's own comment. Delegated
+// Clicking a per-level count in the meta line toggles that level in the view
+// filter, exactly like the level bar's chip (toggleLevelFromMinimap activates
+// the file first when needed). Delegated
 // (the meta line's innerHTML is fully rebuilt on every renderTimelineMinimap
 // call, so a per-span listener would need re-wiring each time) and reads
 // minimapLastRootId rather than a closed-over rootId, since it must resolve
@@ -29052,7 +29052,7 @@ timelineMinimapMetaEl.addEventListener("click", ev => {
   if (crumb) { minimapViewGoTo(+crumb.dataset.depth); return; }
   const span = ev.target.closest(".minimap-meta-level");
   if (!span || !minimapLastRootId) return;
-  applyLevelFilterUnderRootFile(minimapLastRootId, span.dataset.level);
+  toggleLevelFromMinimap(minimapLastRootId, span.dataset.level);
 });
 
 // Wheel over the minimap zooms around the cursor (0.8 in / 1.25 out); the

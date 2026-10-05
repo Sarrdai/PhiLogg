@@ -145,7 +145,7 @@ await withApp(async (w, d, T) => {
   const fs = segs.find(s => s.dataset.level === "FATAL");
   assert(fs && fs.textContent === "F " + fatal.toLocaleString("de-DE"), "FATAL has its own F segment with its own count, got " + (fs && fs.textContent));
   const e = segs.find(s => s.dataset.level === "ERROR");
-  assert(e.title.startsWith("Error:"), "ERROR's tooltip no longer mentions folded FATAL lines, got " + e.title);
+  assert(e.title === "Show/hide Error in this file's view" && !/incl\./.test(e.title), "ERROR's tooltip says show/hide and no longer mentions folded FATAL lines, got " + e.title);
   assert(segs.findIndex(s => s.dataset.level === "FATAL") < segs.findIndex(s => s.dataset.level === "ERROR"), "FATAL comes before ERROR");
   assert(!d.querySelector("#timelineMinimapMeta").innerHTML.includes("T 0"), "TRACE is not listed with a zero count");
 });

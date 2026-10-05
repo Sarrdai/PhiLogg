@@ -98,3 +98,23 @@ await withApp(async (w, d, T) => {
   const doc = w.buildSessionExport([f.id], new Set());
   assert(doc.settings.levelFilter === undefined, "a session export does not carry it either");
 });
+
+await withApp(async (w, d, T) => {
+  section("level-bar-view-filter e. A click on a level count in the minimap header acts like the chip");
+  const f = await w.addFile("a.log", makeLog(0, 20), () => {});
+  const txt = w.createFilterNode(f.id, "text", "message");
+  T.state.activeId = txt.id;
+  w.render();
+  const seg = l => d.querySelector('#timelineMinimapMeta .minimap-meta-level[data-level="' + l + '"]');
+  assert(/show\/hide/i.test(seg("ERROR").title) && !/add/i.test(seg("ERROR").title), "tooltip: show/hide this level, no 'add a filter', got " + seg("ERROR").title);
+  const nodesBefore = lbvNodeCount(T);
+  fireClick(seg("ERROR"), w);
+  assert(lbvNodeCount(T) === nodesBefore, "no tree node is created");
+  assert(T.state.activeId === f.id, "the root file is activated first (it was not the active node)");
+  assert(T.state.levelFilter.has("ERROR") && lbvChip(d, "ERROR").classList.contains("active"), "ERROR is selected and its chip lights");
+  assert(isVisible(d.querySelector("#btnApplyLevelToTree"), w), "Add to tree appears");
+  assert(T.currentViewEntries.length === 4, "the Filtered view narrows to the 4 ERROR entries");
+  fireClick(seg("ERROR"), w);
+  assert(T.state.levelFilter.size === 0 && !lbvChip(d, "ERROR").classList.contains("active") && lbvNodeCount(T) === nodesBefore, "a second click toggles it off, still no tree change");
+  assert(T.state.activeId === f.id, "the file stays active");
+});

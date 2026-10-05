@@ -90,10 +90,13 @@ await withApp(async (w, d, T) => {
   const walk = rs => { for (const r of rs) { if (r.cssRules && !r.selectorText) walk(r.cssRules); else if (r.selectorText) rules.push(r); } };
   for (const sh of d.styleSheets) walk(sh.cssRules);
   const own = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row > #levelBar");
-  assert(own && own.style.order === "1" && /100%/.test(own.style.flex), "own-row CSS: #levelBar takes (nearly) the full row, ordered after the rest");
+  const br = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row::before");
   const facets = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row > #btnFacets");
-  assert(facets && facets.style.order === "2", "own-row CSS: the Facets button is ordered after the chips, so it shares their row instead of getting a row of its own");
-  assert(/calc\(100% - \d+px\)/.test(own.style.flex), "the chips' basis leaves room for the Facets button on the same row");
+  assert(br && br.style.flexBasis === "100%" && br.style.order === "1" && br.style.height === "0px" || (br && br.style.height === "0"), "own-row CSS: a ::before forces a line break (flex-basis 100%, order 1, height 0)");
+  assert(own && own.style.order === "2" && own.style.minWidth === "0px" || (own && own.style.order === "2" && own.style.minWidth === "0"), "own-row CSS: #levelBar is ordered after the break and may shrink");
+  assert(own && /1 1 auto/.test(own.style.flex) && !/calc|100px/.test(own.style.flex), "no reserved width: #levelBar is flex:1 1 auto");
+  assert(facets && facets.style.order === "3", "own-row CSS: the Facets button is ordered after the chips, so it shares their row");
+  assert(!rules.some(r => /level-own-row/.test(r.selectorText) && /calc\(100% - /.test(r.cssText)), "no calc() reserve anywhere in the own-row rules");
   assert(rules.every(r => !/level-own-row/.test(r.selectorText) || /layout-compact/.test(r.selectorText)), "every own-row rule is scoped to the compact tier");
   // Desktop and phone never carry the class.
   avail = 10;
