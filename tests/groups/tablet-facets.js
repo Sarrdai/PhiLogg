@@ -3,8 +3,9 @@
 
 /* ============================================================
    GROUP tablet-facets — Facets on the tablet tier (tablet UX round, step 3)
-   Origin: 2026-10-03 (tablet usability test). #btnFacets shows its "Facets"
-   label on the compact tier; path-like facet values start at their last
+   Origin: 2026-10-03 (tablet usability test). The Facets tab of the bottom
+   panel stays reachable on the compact tier (the #btnFacets button went away
+   2026-10-05); path-like facet values start at their last
    segment, cut on the right (JS, full value in the title); a touch long-press on a facet value
    opens a menu (value, Show only / Exclude / Copy value) instead of silently
    excluding; desktop right-click still excludes. jsdom has no layout: the
@@ -30,21 +31,16 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("facets.log", rows.join("\n") + "\n", () => {});
   T.state.activeId = f.id; w.render();
   w.setFacetsOpen(true);
-  const btn = d.querySelector("#btnFacets");
-  const label = btn.querySelector(".facets-btn-label");
   const valueRow = (col, name) => [...d.querySelectorAll('.facet-section[data-col="' + col + '"] .facet-value')].find(v => (v.querySelector(".facet-value-name").dataset.full || v.querySelector(".facet-value-name").textContent) === name);
   const loc = "C:\\src\\Orders\\OrderService.cs line 0";
 
-  section("tablet-facets a. Facets button: text label on the compact tier only");
-  tfSetWidth(w, 1400);
-  assert(w.getComputedStyle(label).display === "none", "desktop: no label");
+  section("tablet-facets a. The Facets tab (no #viewBar button any more) is reachable on the compact tier");
   tfSetWidth(w, 800);
   assert(d.body.classList.contains("layout-compact"), "sanity: compact tier");
-  assert(label && label.textContent === "Facets" && w.getComputedStyle(label).display !== "none", "tablet: label shown");
-  assert(w.getComputedStyle(btn).width === "auto", "tablet: button grows with its label, got " + w.getComputedStyle(btn).width);
-  d.body.classList.add("filter-toolbar-labels-never");
-  assert(w.getComputedStyle(label).display !== "none", "label independent of the label-mode setting");
-  d.body.classList.remove("filter-toolbar-labels-never");
+  assert(!d.querySelector("#btnFacets"), "no Facets button in #viewBar");
+  const tab = d.querySelector("#lowerTabFacets");
+  assert(tab && tab.textContent === "Facets" && w.getComputedStyle(tab).display !== "none", "tablet: the Facets tab is shown");
+  assert(isVisible(d.querySelector("#facetPanelBody"), w), "...and selected (sanity)");
 
   section("tablet-facets b. Path values start at the last path segment; full value stays in the title");
   const row = valueRow("location", loc);

@@ -28,7 +28,7 @@ await withApp(async (w, d, T) => {
   assert(decl(coarse, "body.layout-compact #viewBar", "overflow-x") === "auto", "overflow-x:auto");
   assert(decl(coarse, "body.layout-compact #viewBar > *", "flex") === "0 0 auto", "children do not shrink");
   assert(decl(coarse, "body.layout-compact #viewBar > *", "float") === "none", "floats off");
-  assert(decl(coarse, "body.layout-compact #viewBar > #btnFacets", "margin-left") === "auto", "Facets stays right-aligned");
+  assert(!coarse.some(r => /btnFacets/.test(r.selectorText)), "no #btnFacets rule (Facets is a bottom-panel tab)");
 
   section("viewbar-touch-scroll b. Desktop and phone rules unchanged");
   assert(decl(plain, "#viewBar", "display") === "flow-root", "desktop: flow-root");

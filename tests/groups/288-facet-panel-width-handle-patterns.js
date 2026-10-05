@@ -3,40 +3,18 @@
 // helper (withApp, waitFor, assert, section, fs, path, ...) is in scope.
 
 /* ============================================================
-   GROUP 288 — Facet panel width handle + Patterns as the first view tab
-   Origin: 2026-09-26 (person-requested). #facetResizer on the panel's left
-   edge resizes it (drag left grows, clamped to 180px..viewArea-240px) and
-   hides with the panel; the View Selector starts with Patterns so Ctrl+1..5
-   run left to right.
+   GROUP 288 — Patterns as the first view tab + facet value colours
+   Origin: 2026-09-26 (person-requested). The View Selector starts with
+   Patterns so Ctrl+1..5 run left to right. (The facet panel's width handle
+   from this group went away 2026-10-05 with the side panel.)
    ============================================================ */
 group(288);
 await withApp(async (w, d, T) => {
-  section("288a. dragging #facetResizer sets the facet panel width, clamped");
+  section("288a. no width handle any more: the facets are a bottom-panel tab (height via #detailResizer)");
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.activeId = f.id; w.render();
   w.setFacetsOpen(true);
-  const panel = d.querySelector("#facetPanel"), handle = d.querySelector("#facetResizer");
-  assert(!!handle && handle.parentElement === panel, "the handle lives inside #facetPanel (hidden with it)");
-  // jsdom has no layout: give the panel and #viewArea real widths.
-  panel.getBoundingClientRect = () => ({ width: 280, height: 500, left: 720, right: 1000, top: 0, bottom: 500 });
-  d.querySelector("#viewArea").getBoundingClientRect = () => ({ width: 1000, height: 500, left: 0, right: 1000, top: 0, bottom: 500 });
-  const mouse = (target, type, x) => target.dispatchEvent(new w.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: 10 }));
-  mouse(handle, "mousedown", 720);
-  assert(handle.classList.contains("dragging"), "mousedown starts a drag");
-  mouse(w, "mousemove", 620);
-  assert(panel.style.flexBasis === "380px", "dragging 100px left grows the panel to 380px, got " + panel.style.flexBasis);
-  mouse(w, "mousemove", 1000);
-  assert(panel.style.flexBasis === "180px", "min width 180px, got " + panel.style.flexBasis);
-  mouse(w, "mousemove", -500);
-  assert(panel.style.flexBasis === "760px", "max width = viewArea - 240px, got " + panel.style.flexBasis);
-  mouse(w, "mouseup", -500);
-  assert(!handle.classList.contains("dragging"), "mouseup ends the drag");
-  mouse(w, "mousemove", 720);
-  assert(panel.style.flexBasis === "760px", "moves after mouseup don't resize");
-  w.setFacetsOpen(false);
-  assert(panel.classList.contains("hidden"), "closing hides panel + handle together");
-  w.setFacetsOpen(true);
-  assert(panel.style.flexBasis === "760px", "width survives close/reopen within the session");
+  assert(!d.querySelector("#facetResizer") && !d.querySelector("#facetPanel"), "no #facetResizer / #facetPanel side panel");
 });
 
 await withApp(async (w, d, T) => {

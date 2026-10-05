@@ -108,8 +108,8 @@ await withApp(async (w, d, T) => {
   // No management group any more — #libraryManageBar was removed from
   // #viewBar entirely this session (see GROUP 194b/220/221) — #viewbarNew
   // is simply the last group now.
-  // #btnFacets (the Facet panel toggle, 2026-09-26) floats right after it.
-  assert(iNew === kids.length - 2 && kids[kids.length - 1] === "btnFacets", "New (#viewbarNew) is the last group of #viewBar, followed only by the right-floated #btnFacets, got " + kids.slice(-2));
+  // (The Facets toggle that used to float after it moved into the bottom panel as a tab, 2026-10-05.)
+  assert(iNew === kids.length - 1, "New (#viewbarNew) is the last child of #viewBar, got " + kids.slice(-2));
   // All group separators are DIRECT children of #viewBar (not inside a flex group).
   const seps = [...d.querySelectorAll("#viewBar > .row-action-separator")];
   assert(seps.length === 3,

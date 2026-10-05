@@ -2633,10 +2633,19 @@
     flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px;
     padding:0 8px 0 16px; border-bottom:1px solid var(--border-soft);
   }
-  #detailPanelHeaderLabel{
-    flex:0 0 auto; font-size:11px; font-weight:650; letter-spacing:.7px;
-    text-transform:uppercase; color:var(--text-tertiary);
+  /* Bottom-panel tabs: "Entry detail | Facets" (the selected one in the accent look). */
+  #lowerTabs{flex:0 0 auto; display:flex; align-items:stretch; align-self:stretch; gap:2px;}
+  .lower-tab{
+    background:none; border:0; border-bottom:2px solid transparent; margin:0; padding:0 8px; cursor:pointer;
+    font:inherit; font-size:11px; font-weight:650; letter-spacing:.7px; text-transform:uppercase; color:var(--text-tertiary);
   }
+  .lower-tab:hover:not(:disabled){color:var(--text-primary);}
+  .lower-tab[aria-selected="true"]{color:var(--accent-strong); border-bottom-color:var(--accent);}
+  .lower-tab:disabled{opacity:.55; cursor:default;}
+  .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
+  /* Patterns/Table/Plot with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
+  #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
+  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody){display:none !important;}
   #detailMeta{
     flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
   }
@@ -2770,42 +2779,32 @@
   .pattern-act.pattern-act-hide:hover{color:var(--level-error);}
   #patternsEmpty{padding:24px 16px; color:var(--text-tertiary); font-size:12px;}
 
-  /* ---------- Facet panel (value distribution per column) ---------- */
-  #facetPanel{
-    flex:0 0 280px; display:flex; flex-direction:column; min-height:0; min-width:0;
-    background:var(--bg-panel); border-left:1px solid var(--border); position:relative;
+  /* ---------- Facet panel (value distribution per column) ----------
+     The second tab of the bottom panel (#detailPanel, "Entry detail | Facets"):
+     the sections stand side by side as grid columns and the body scrolls as a
+     whole. The panel gets its height from #detailResizer like the detail tab. */
+  #facetPanelBody{
+    display:none; flex:1 1 auto; min-height:0; overflow:auto; padding:6px 0 10px; user-select:none;
+    grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); align-items:start;
   }
-  #facetPanel.hidden{display:none;}
-  /* Drag handle on the panel's left edge (same grip look as #sidebarResizer).
-     It lives INSIDE #facetPanel, overlaying the border, so every place that
-     hides the panel hides the handle too without extra bookkeeping. */
-  #facetResizer{
-    position:absolute; left:-4px; top:0; bottom:0; width:7px; z-index:2;
-    cursor:col-resize; touch-action:none;
-  }
-  #facetResizer::after{
-    content:""; position:absolute; left:2px; width:3px; top:50%; height:30px;
-    transform:translateY(-50%); border-radius:2px;
-    background:var(--border-hover); transition:background .12s;
-  }
-  #facetResizer:hover::after, #facetResizer.dragging::after{ background:var(--accent); }
-  #facetPanelHeader{
-    flex:0 0 auto; display:flex; align-items:center; gap:8px; height:34px; box-sizing:border-box;
-    padding:0 8px 0 12px; border-bottom:1px solid var(--border);
-  }
-  #facetPanelHeaderLabel{font-size:11px; font-weight:700; letter-spacing:.4px; text-transform:uppercase; color:var(--text-secondary);}
-  #facetPanelCount{flex:1 1 auto; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;}
-  #facetPanelBody{flex:1 1 auto; overflow:auto; padding:4px 0 12px; user-select:none;}
+  #detailPanel.lower-facets #facetPanelBody{display:grid;}
+  #detailPanel.lower-facets.collapsed:not(.peeking) #facetPanelBody{display:none;}
+  #detailPanel.lower-facets #detailBody, #detailPanel.lower-facets #detailMeta, #detailPanel.lower-facets #detailViewTabs{display:none;}
+  #facetPanelBody > .facet-pending{grid-column:1 / -1;}
+  .facet-section{min-width:0; padding-bottom:6px; border-left:1px solid var(--border-soft);}
+  .facet-section:first-child{border-left:0;}
+  #facetPanelCount{display:none; flex:1 1 auto; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  #detailPanel.lower-facets #facetPanelCount{display:block;}
   .facet-section-head{
-    display:flex; align-items:center; gap:6px; padding:6px 12px; cursor:pointer;
+    display:flex; align-items:center; gap:6px; padding:6px 8px 6px 12px; cursor:pointer;
     font-size:11.5px; font-weight:650; color:var(--text-primary);
   }
   .facet-section-head:hover{color:var(--accent-strong);}
   .facet-caret{display:inline-block; width:10px; color:var(--text-tertiary);}
   .facet-section-note{font-weight:400; font-size:10.5px; color:var(--text-tertiary);}
   .facet-value{
-    display:grid; grid-template-columns:minmax(0,1fr) 64px 42px 30px; align-items:center; gap:6px;
-    padding:2px 12px 2px 28px; cursor:pointer; font-size:11.5px; color:var(--text-secondary);
+    position:relative; display:grid; grid-template-columns:minmax(0,1fr) 42px 30px; align-items:center; gap:6px;
+    padding:2px 8px 2px 28px; cursor:pointer; font-size:11.5px; color:var(--text-secondary);
   }
   .facet-value:hover{background:var(--bg-elevated); color:var(--text-primary);}
   .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -2823,18 +2822,15 @@
   .facet-value-name.lvl-custom-4{color:var(--level-custom-4);}
   .facet-value-name.lvl-custom-5{color:var(--level-custom-5);}
   .facet-value-name.lvl-custom-6{color:var(--level-custom-6);}
-  .facet-bar{height:6px; border-radius:3px; background:var(--bg-elevated-2); overflow:hidden;}
-  .facet-bar > i{display:block; height:100%; background:var(--accent);}
+  /* The share bar is drawn behind the value row (empty track transparent), not in a column of its own. */
+  .facet-bar{position:absolute; left:28px; right:8px; top:1px; bottom:1px; border-radius:3px; overflow:hidden; pointer-events:none;}
+  .facet-bar > i{display:block; height:100%; background:var(--accent-soft);}
+  .facet-value > :not(.facet-bar){position:relative;}
   .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
   .facet-pct{color:var(--text-tertiary);}
   .facet-more{padding:2px 12px 4px 28px; font-size:11px; color:var(--accent-strong); cursor:pointer;}
   .facet-more:hover{text-decoration:underline;}
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
-  #btnFacets{float:right;}
-  /* Tablet tier: the Facets toggle carries its text label (independent of the label-mode setting). */
-  #btnFacets .facets-btn-label{display:none; font-size:11.5px; font-weight:600; white-space:nowrap;}
-  body.layout-compact #btnFacets{width:auto; gap:3px; padding:0 4px;}
-  body.layout-compact #btnFacets .facets-btn-label{display:inline;}
   /* Path-like values keep their end visible: shortened from the left in JS (fitFacetPathNames). */
   .facet-value-name.facet-path{text-overflow:clip;}
   #extractToolbar{
@@ -5052,7 +5048,7 @@
   body.layout-phone #detailPanel.collapsed.peeking #detailPanelInner{position:static; max-height:none; height:100%; box-shadow:none;}
   body.layout-phone #detailGrab{display:block; flex:0 0 auto; width:40px; height:4px; border-radius:2px; background:var(--bg-elevated-2); margin:8px auto 2px;}
   body.layout-phone #detailPanelHeader{height:auto; flex-wrap:wrap; gap:2px 4px; padding:2px 6px 6px 14px;}
-  body.layout-phone #detailPanelHeaderLabel, body.layout-phone #detailToggle{display:none;}
+  body.layout-phone #lowerTabs, body.layout-phone #facetPanelCount, body.layout-phone #detailToggle{display:none !important;}
   body.layout-phone #detailMeta{order:1; flex:1 1 0;}
   body.layout-phone .detail-phone-btn{display:flex; order:2; width:40px; height:40px;}
   body.layout-phone #detailMessage{white-space:pre-wrap; overflow-wrap:anywhere;}
@@ -5122,20 +5118,18 @@
     }
     body.layout-compact #viewBar::-webkit-scrollbar{display:none;}
     body.layout-compact #viewBar > *{float:none; flex:0 0 auto;}
-    body.layout-compact #viewBar > #btnFacets{margin-left:auto;}
     /* Tablet: when the toolbar does not fit one row (JS: updateLevelBarLayout), the level bar
        gets its own full-width row under the tabs and the toolbar wraps instead of scrolling. */
     body.layout-compact #viewBar.level-own-row{flex-wrap:wrap; overflow-x:visible; overflow-y:visible;}
     body.layout-compact #viewBar.level-own-row::before{content:""; flex-basis:100%; order:1; height:0;}
     body.layout-compact #viewBar.level-own-row > #levelBar{order:2; flex:1 1 auto; min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:6px;}
-    /* The Facets button follows the chips on THAT row (chips left, Facets right) instead of wrapping onto a row of its own. */
-    body.layout-compact #viewBar.level-own-row > #btnFacets{order:3;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
     body.layout-phone #sidebarToolbar .stb-btn, body.layout-compact #sidebarToolbar .stb-btn{height:44px; min-width:44px;}
     body.layout-phone .view-tabs, body.layout-compact .view-tabs, body.layout-phone #detailViewTabs, body.layout-compact #detailViewTabs{height:auto;}
     body.layout-phone .view-tab, body.layout-compact .view-tab, body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{height:44px;}
+    body.layout-compact .lower-tab{min-height:44px; padding:0 12px; font-size:12px;}
     body.layout-phone .tree-row, body.layout-compact .tree-row{min-height:48px;}
     body.layout-phone .tree-row, body.layout-compact .tree-row, body.layout-phone .log-row, body.layout-compact .log-row{-webkit-touch-callout:none;}
     body.layout-phone .tree-swatch, body.layout-compact .tree-swatch{position:relative; width:18px; height:18px;}
@@ -5206,7 +5200,6 @@
   html.pip-mode #contextToolbar,
   html.pip-mode #filteredToolbar,
   html.pip-mode #linkToolbar,
-  html.pip-mode #facetPanel,
   html.pip-mode #detailPanel,
   html.pip-mode #detailResizer,
   html.pip-mode #timelineMinimap,
@@ -5624,12 +5617,6 @@
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
         <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
-        <!-- Facet panel toggle (Patterns/Facets session) — floats right, a
-             display toggle rather than a filter-creating action. -->
-        <button type="button" id="btnFacets" class="toolbar-icon-btn icon-toggle" title="Facets — value distribution per column (Ctrl+I)">
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2.5 3.5h11M2.5 8h7M2.5 12.5h4"/></svg>
-          <span class="facets-btn-label">Facets</span>
-        </button>
         <!-- The library management group (#libraryManageBar: "Add to
              Library"/"Library", pinned far-right) that used to live here is
              removed (this session, project-owner review) — its two actions
@@ -5642,9 +5629,8 @@
       <!-- #viewArea (Patterns/Facets session): a row holding whichever
            content component is on screen (#fhSplit / #extractWrap /
            #patternsWrap / the empty state / the inline viewer / the folder
-           minimap — exactly one is ever displayed) plus the optional
-           #facetPanel on its right, so the facets sit beside every view
-           without an overlay. -->
+           minimap — exactly one is ever displayed). The facets are a tab of
+           the bottom panel (#detailPanel), not a side panel. -->
       <!-- "Pair with…" pick mode (docs/ui-and-views.md): above the views on desktop/tablet,
            pinned to the bottom on the phone. Built by renderPairPickBanner. -->
       <div id="pairPickBanner" class="hidden" role="status"></div>
@@ -6033,20 +6019,6 @@
         </div>
       </div>
 
-      <!-- Facet panel: value distribution per column of the active node's
-           result; clicking a value adds a filter node (see "Facet panel"
-           in the script). Toggled by #btnFacets / Ctrl+I. -->
-      <div id="facetPanel" class="hidden">
-        <div id="facetResizer" title="Drag to resize"></div>
-        <div id="facetPanelHeader">
-          <div id="facetPanelHeaderLabel">Facets</div>
-          <span id="facetPanelCount"></span>
-          <button type="button" id="facetPanelClose" class="panel-toggle-btn" title="Close facets">
-            <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
-          </button>
-        </div>
-        <div id="facetPanelBody"></div>
-      </div>
       </div>
 
       <div id="plotFullscreenOverlay" class="hidden">
@@ -6063,7 +6035,11 @@
         <div id="detailPanelInner">
           <div id="detailGrab" aria-hidden="true"></div>
           <div id="detailPanelHeader">
-            <div id="detailPanelHeaderLabel">Entry detail</div>
+            <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
+              <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)">Entry detail</button>
+              <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)">Facets</button>
+            </div>
+            <span id="facetPanelCount"></span>
             <div id="detailMeta"></div>
             <div class="view-tabs" id="detailViewTabs" role="group" aria-label="Detail view">
               <button type="button" class="view-tab" data-detail-view="raw" aria-pressed="false" title="The original text of the entry, unchanged">Raw</button>
@@ -6083,6 +6059,10 @@
               <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
             </button>
           </div>
+          <!-- Facets tab body: value distribution per column of the active node's
+               result; clicking a value adds a filter node (see "Facet panel" in
+               the script). Self-contained so the phone sheet can reuse it. -->
+          <div id="facetPanelBody"></div>
           <div id="detailBody">
             <div id="detailPlaceholder"><span class="dp-desktop">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</span><span class="dp-touch">Tap a row to see its full message here.</span></div>
             <div id="detailOutside" style="display:none">This entry is not part of the current filter.</div>
@@ -16721,10 +16701,10 @@ const patternsHead = el("#patternsHead");
 const patternsScroll = el("#patternsScroll");
 const patternsSpacer = el("#patternsSpacer");
 const patternsRows = el("#patternsRows");
-const facetPanel = el("#facetPanel");
 const facetPanelBody = el("#facetPanelBody");
 const facetPanelCount = el("#facetPanelCount");
-const btnFacets = el("#btnFacets");
+const lowerTabDetail = el("#lowerTabDetail");
+const lowerTabFacets = el("#lowerTabFacets");
 
 // Tabs that replace #fhSplit with a content component of their own —
 // "not a log view" for every check that used to read `table || plot`.
@@ -17061,7 +17041,9 @@ patternsRows.addEventListener("click", ev => {
    Each section lists its top values with count, share and a bar; a click
    adds a filter node under the active node restricted to that exact value
    (Alt+click or right-click: the same as a NOT filter). Collapsed sections and the
-   panel's open state are remembered per browser (localStorage). */
+   selected bottom-panel tab are remembered per browser (localStorage). The
+   facets are the second tab of the bottom panel (#detailPanel); facetsOpen
+   means "the Facets tab is selected". */
 const FACETS_OPEN_KEY = "philogg-facets-open";
 const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
@@ -17121,7 +17103,7 @@ function createFacetAcc(nodeId) {
   };
 }
 const facetsAnalysis = makeEntryAnalysis(createFacetAcc, facetColumnsKey, c => {
-  if (facetsOpen && c.nodeId === state.activeId) renderFacetPanel();
+  if (facetsActive() && c.nodeId === state.activeId) renderFacetPanel();
 });
 
 function facetsAvailable() {
@@ -17129,13 +17111,34 @@ function facetsAvailable() {
   return !!node && !isLinkNode(node);
 }
 
-// Shown/hidden and (re)filled from renderMainView — the panel sits beside
-// every content component except the inline viewer / folder minimap / empty
-// state, which hide it explicitly.
+// The Facets tab is selected AND can show: the phone has no Facets tab (a
+// persisted selection does nothing there; the phone sheet is the detail only).
+function facetsActive() { return facetsOpen && currentLayoutTier !== "phone"; }
+
+// Applies the bottom-panel tab state to #detailPanel: tab buttons, the
+// lower-facets / detail-strip-only classes and the resizer. Called from
+// renderMainView (log tabs and Patterns/Table/Plot) and the tab switches.
+// offLog: Patterns/Table/Plot are on screen. There the panel is always
+// present (Facets reachable by touch on every tab); with the Entry detail tab
+// selected it shrinks to a header-only strip, without touching the persisted
+// collapsed state or the remembered height.
+function applyLowerPanel(offLog) {
+  const facets = facetsActive();
+  detailPanel.classList.toggle("lower-facets", facets);
+  detailPanel.classList.toggle("detail-strip-only", !!offLog && !facets);
+  lowerTabDetail.setAttribute("aria-selected", facets ? "false" : "true");
+  lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
+  lowerTabDetail.disabled = !!offLog;
+  lowerTabDetail.title = offLog
+    ? "Entry detail is shown in Context/Filtered"
+    : "Entry detail — full message of the selected row (Ctrl+J collapses the panel)";
+  updateDetailResizerVisibility();
+  renderFacetPanel();
+}
+
+// (Re)fills the Facets tab body; nothing to do while another tab shows.
 function renderFacetPanel() {
-  btnFacets.classList.toggle("active", facetsOpen);
-  facetPanel.classList.toggle("hidden", !facetsOpen);
-  if (!facetsOpen) return;
+  if (!facetsActive()) return;
   if (!facetsAvailable()) {
     facetPanelCount.textContent = "";
     facetPanelBody.innerHTML = '<div class="facet-pending">Not available for a link filter.</div>';
@@ -17210,7 +17213,7 @@ if (typeof ResizeObserver === "function") {
   let facetFitFrame = 0;
   new ResizeObserver(() => {
     if (facetFitFrame) return;
-    facetFitFrame = requestAnimationFrame(() => { facetFitFrame = 0; if (facetsOpen) fitFacetPathNames(); });
+    facetFitFrame = requestAnimationFrame(() => { facetFitFrame = 0; if (facetsActive()) fitFacetPathNames(); });
   }).observe(el("#facetPanelBody"));
 }
 
@@ -17239,57 +17242,26 @@ function createFacetFilter(column, value, inverted) {
   finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
 }
 
+// Selects the Facets (true) or Entry detail (false) tab. Selecting Facets
+// expands a collapsed panel. The panel height/visibility can change, hence the
+// full renderMainView (it re-measures the log like any layout change).
 function setFacetsOpen(open) {
   facetsOpen = !!open;
   try { localStorage.setItem(FACETS_OPEN_KEY, facetsOpen ? "1" : "0"); } catch {}
-  renderFacetPanel();
-  // The log/table views re-measure their width on the next render; a full
-  // renderMainView is the simplest correct refresh after the layout change.
+  if (facetsOpen && isDetailCollapsed()) toggleDetailCollapsed(false);
   if (state.rootIds.length) renderMainView();
+  else applyLowerPanel(isOffLogTab(fhActiveTab));
+  updateDetailPanel(); // the detail content may have been skipped while the Facets tab was shown
 }
-btnFacets.addEventListener("click", ev => { ev.stopPropagation(); setFacetsOpen(!facetsOpen); });
-el("#facetPanelClose").addEventListener("click", ev => { ev.stopPropagation(); setFacetsOpen(false); });
-facetPanel.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
-
-// Facet panel width: drag #facetResizer (left edge) — dragging left grows the
-// panel. Session-only like the sidebar/detail resizers. Rows re-render per
-// animation frame while dragging; the full renderMainView (plot/table widths)
-// runs once on release, same refresh setFacetsOpen does.
-const facetResizer = el("#facetResizer");
-let facetResizing = false;
-let facetResizeStartX = 0;
-let facetResizeStartWidth = 0;
-let facetResizeTicking = false;
-function setFacetPanelWidth(px) {
-  const maxWidth = Math.max(200, el("#viewArea").getBoundingClientRect().width - 240); // leave room for the view
-  const width = Math.round(Math.max(180, Math.min(maxWidth, px)));
-  facetPanel.style.flexBasis = width + "px";
-  return width;
+// Ctrl+I: Facets selected, expanded and visible -> back to Entry detail; otherwise Facets.
+function toggleFacets() {
+  const shown = facetsActive() && !isDetailCollapsed() && detailPanel.style.display !== "none";
+  setFacetsOpen(!shown);
 }
-facetResizer.addEventListener("mousedown", ev => {
-  facetResizing = true;
-  facetResizeStartX = ev.clientX;
-  facetResizeStartWidth = facetPanel.getBoundingClientRect().width;
-  facetResizer.classList.add("dragging");
-  document.body.style.cursor = "col-resize";
-  document.body.style.userSelect = "none";
-  ev.preventDefault();
-  ev.stopPropagation();
-});
-window.addEventListener("mousemove", ev => {
-  if (!facetResizing) return;
-  setFacetPanelWidth(facetResizeStartWidth - (ev.clientX - facetResizeStartX));
-  if (facetResizeTicking) return;
-  facetResizeTicking = true;
-  requestAnimationFrame(() => { renderVisibleRows(); renderHighlightVisibleRows(); facetResizeTicking = false; });
-});
-window.addEventListener("mouseup", () => {
-  if (!facetResizing) return;
-  facetResizing = false;
-  facetResizer.classList.remove("dragging");
-  document.body.style.cursor = "";
-  document.body.style.userSelect = "";
-  if (state.rootIds.length) renderMainView();
+facetPanelBody.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
+[lowerTabDetail, lowerTabFacets].forEach(btn => {
+  btn.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
+  btn.addEventListener("click", ev => { ev.stopPropagation(); if (!btn.disabled) setFacetsOpen(btn === lowerTabFacets); });
 });
 facetPanelBody.addEventListener("click", ev => {
   const section = ev.target.closest(".facet-section");
@@ -18421,7 +18393,6 @@ function renderMainView() {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
     patternsWrap.style.display = "none";
-    facetPanel.classList.add("hidden");
     linkWrap.style.display = "none";
     fhTabs.style.display = "none";
     fhSplit.style.display = "none";
@@ -18459,7 +18430,6 @@ function renderMainView() {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
     patternsWrap.style.display = "none";
-    facetPanel.classList.add("hidden");
     linkWrap.style.display = "none";
     fhTabs.style.display = "none";
     fhSplit.style.display = "none";
@@ -18497,7 +18467,6 @@ function renderMainView() {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
     patternsWrap.style.display = "none";
-    facetPanel.classList.add("hidden");
     linkWrap.style.display = "none";
     fhTabs.style.display = "none";
     fhSplit.style.display = "none";
@@ -18509,7 +18478,6 @@ function renderMainView() {
     tableWrap.style.display = "none";
     extractWrap.style.display = "none";
     patternsWrap.style.display = "none";
-    facetPanel.classList.add("hidden");
     linkWrap.style.display = "none";
     fhTabs.innerHTML = "";
     fhTabs.style.display = "none";
@@ -18551,15 +18519,15 @@ function renderMainView() {
   fhTabs.style.display = "flex";
   renderViewTabs(extractCapable);
   updateViewBarRowActions();
-  renderFacetPanel();
 
   if (fhActiveTab === "patterns") {
     fhSplit.style.display = "none";
     extractWrap.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
-    detailResizer.style.display = "none";
-    detailPanel.style.display = "none";
+    // No Entry detail here, but the bottom panel stays for the Facets tab.
+    detailPanel.style.display = "flex";
+    applyLowerPanel(true);
     timelineMinimapEl.classList.remove("hidden");
     patternsWrap.style.display = "flex";
     renderPatternsView();
@@ -18571,9 +18539,9 @@ function renderMainView() {
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
-    // No entry-detail companion here — same as before this rework.
-    detailResizer.style.display = "none";
-    detailPanel.style.display = "none";
+    // No entry-detail companion here; the bottom panel stays for the Facets tab.
+    detailPanel.style.display = "flex";
+    applyLowerPanel(true);
     // Unlike before this rework, the minimap is no longer hidden while an
     // extraction's Table/Plot tab is on screen (Schritt 5) — there is a real
     // underlying entry set behind this node now that Context/Filtered work
@@ -18607,8 +18575,8 @@ function renderMainView() {
   // requested, this session — see updateDetailResizerVisibility): a
   // collapsed panel has a fixed 34px header height, not a manually
   // resizable one, so the drag handle would be dead UI if left visible.
-  updateDetailResizerVisibility();
   detailPanel.style.display = "flex";
+  applyLowerPanel(false);
 
   if (isLink) {
     tableWrap.style.display = "none";
@@ -27933,8 +27901,8 @@ function updateDetailToggleIcon() {
 // handle would be dead UI if left visible whenever it's collapsed, on top
 // of the existing no-files/extract-mode hide conditions.
 function updateDetailResizerVisibility() {
-  const onTableOrPlot = isOffLogTab(fhActiveTab);
-  detailResizer.style.display = (state.rootIds.length > 0 && !onTableOrPlot && !isDetailCollapsed()) ? "block" : "none";
+  const strip = detailPanel.classList.contains("detail-strip-only"); // Patterns/Table/Plot with Entry detail selected
+  detailResizer.style.display = (state.rootIds.length > 0 && !strip && !isDetailCollapsed()) ? "block" : "none";
 }
 
 function toggleDetailCollapsed(collapsed) {
@@ -27958,7 +27926,7 @@ function toggleDetailCollapsed(collapsed) {
 detailToggleBtn.addEventListener("click", () => toggleDetailCollapsed());
 detailViewTabBtns.forEach(btn => btn.addEventListener("click", () => setDetailView(btn.dataset.detailView)));
 detailPanel.addEventListener("mouseenter", () => {
-  if (!isDetailCollapsed() || !hoverExpandDetail) return;
+  if (!isDetailCollapsed() || !hoverExpandDetail || detailPanel.classList.contains("detail-strip-only")) return;
   detailPanel.classList.add("peeking");
   updateDetailToggleIcon();
   updateDetailPanel(); // header swaps from the truncated line to the full field set — see its own isDetailPeeking() branch
@@ -42842,7 +42810,7 @@ const SHORTCUT_ACTIONS = [
   { id: "viewTab3",      label: "Switch to View Selector tab 3",       default: { ctrl: true, key: "3" } },
   { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
   { id: "viewTab5",      label: "Switch to View Selector tab 5",       default: { ctrl: true, key: "5" } },
-  { id: "toggleFacets",  label: "Show/hide the Facet panel",           default: { ctrl: true, key: "i" } },
+  { id: "toggleFacets",  label: "Show/hide Facets (bottom panel tab)",   default: { ctrl: true, key: "i" } },
   { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
   { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
   { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
@@ -46077,7 +46045,7 @@ document.addEventListener("keydown", ev => {
   }
   if (matchesShortcut(ev, "toggleFacets")) {
     ev.preventDefault();
-    setFacetsOpen(!facetsOpen);
+    toggleFacets();
     return;
   }
 

@@ -5,7 +5,7 @@
    GROUP context-menu-pointerdown-dismiss — context menus close on any outside press
    Origin: 2026-10-03 (tablet usability test). The row context menu only closed
    from the document click handler, which never sees clicks on controls that
-   stopPropagation() (#btnFacets, facet values, ...). A capture-phase
+   stopPropagation() (the Facets tab, facet values, ...). A capture-phase
    pointerdown on document now closes #contextMenu (+ "Add to selection"),
    #treeContextMenu and #extractContextMenu when the press is outside them.
    ============================================================ */
@@ -32,8 +32,8 @@ await withApp(async (w, d, T) => {
   assert(!hidden() && !d.querySelector("#addToSelectionMenu").classList.contains("hidden"), "...nor does a press inside the 'Add to selection' submenu");
   d.querySelector("#addToSelectionMenu").classList.add("hidden");
 
-  section("context-menu-pointerdown-dismiss c. A press on a stopPropagation'ed control closes it (#btnFacets)");
-  const btn = d.querySelector("#btnFacets");
+  section("context-menu-pointerdown-dismiss c. A press on a stopPropagation'ed control closes it (the Facets tab)");
+  const btn = d.querySelector("#lowerTabFacets");
   let docClicks = 0;
   const countClick = () => { docClicks++; };
   d.addEventListener("click", countClick);
@@ -41,7 +41,7 @@ await withApp(async (w, d, T) => {
   pdown(btn);
   fireClick(btn, w);
   d.removeEventListener("click", countClick);
-  assert(hidden(), "pointerdown on #btnFacets closes the menu even though its click never reaches document");
+  assert(hidden(), "pointerdown on the Facets tab closes the menu even though its click never reaches document");
 
   section("context-menu-pointerdown-dismiss d. Tap into the facets panel / empty list area also closes it; submenu goes with it");
   fireContextMenu(row(), w);
