@@ -44,7 +44,8 @@ await withApp(async (w, d, T) => {
   assert([...d.querySelectorAll("#detailViewTabs .view-tab")].map(b => b.textContent).join("|") === "Raw|Parsed|Pretty" && !d.querySelector("#detailFormatToggle"),
     "three stages in one switch, the separate Format toggle is gone");
   assert(tab("pretty").classList.contains("active") && T.detailView === "pretty", "Pretty is the default");
-  assert(msgEl.textContent === entry.message, "Pretty on a fragment-free message shows the parsed message");
+  const strip = t => t.split("\n").map(l => l.trim()).join("\n");
+  assert(strip(msgEl.textContent) === strip(entry.message), "Pretty on a message without JSON/XML shows the parsed text (stack-trace styling only re-indents frames)");
   tab("raw").click();
   assert(tab("raw").classList.contains("active") && tab("raw").getAttribute("aria-pressed") === "true" && tab("pretty").getAttribute("aria-pressed") === "false", "Raw is now the active tab");
   assert(msgEl.textContent === entry.raw, "Raw shows entry.raw exactly");
@@ -85,7 +86,7 @@ await withApp(async (w, d, T) => {
   assert(net, "sanity: the simulated .NET stack trace has an 'Object[] arguments' frame");
   assert(w.findEmbeddedFragments(entry.message).length === 0, "no fragment detected in the stack trace");
   const html = w.formatMessageWithHighlight(entry.message);
-  assert(!/syn-block/.test(html) && html.includes(w.escapeHtml(net)), "the frame stays on one line, unformatted");
+  assert(!/syn-json|syn-xml/.test(html) && html.includes(w.escapeHtml(net.trim())), "the frame stays on one line (stack-trace styling only, no JSON/XML block)");
   assert(w.findEmbeddedFragments("new List{} and int[] x").length === 0, "{} after an identifier is skipped too");
   assert(w.findEmbeddedFragments("items: [] ok").length === 1 && w.findEmbeddedFragments('Response: {"a":[]} done').length === 1,
     "an empty array after punctuation/space and JSON containing [] are still fragments");

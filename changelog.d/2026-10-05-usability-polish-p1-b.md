@@ -1,0 +1,5 @@
+- **feat: Patterns "Max level" with counts, Pretty highlights stack traces (2026-10-05, person-requested)**
+  - Patterns: the Level column is now "Max level"; a mixed group shows the worst level plus `n/total` (`WARN 3/179`) and a tooltip with the per-level breakdown.
+  - Entry detail Pretty highlights Java/.NET/Python stack traces: exception types in the error colour, file:line emphasized, framework frames dimmed. Raw/Parsed unchanged.
+  - Simulator: new opt-in scenario `pytrace` (Python tracebacks).
+  - **Tests**: GROUP patterns-max-level, pretty-stack-trace; 301 updated. Docs: docs/ui-and-views.md, tools/log-sim/README.md, README.md.

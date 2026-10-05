@@ -130,7 +130,7 @@ deployments possible:
   addresses, paths, hex values and quoted strings become placeholders, so
   `Axis 2 position 1532.44 reached in 12 ms` and `Axis 1 position 88.10
   reached in 9 ms` are one row, `Axis <#> position <#> reached in <#> ms`,
-  with its count, share, most severe level and first/last time. Sort by
+  with its count, share, most severe level (a mixed group shows how many entries have it, e.g. `WARN 3/179`) and first/last time. Sort by
   count ascending to surface rare messages. Click a pattern to filter for
   it, Alt+click (or ⊘) to hide it as a NOT filter and keep narrowing the
   noise, **Extract** to open it straight in Table/Plot with the numbers as
@@ -423,7 +423,8 @@ deployments possible:
   indentation — with filter matches still marked (for a linked pair, both
   entries' original lines). **Parsed** shows the parsed message; **Pretty**
   (default) additionally pretty-prints and syntax-highlights XML/JSON
-  embedded in it. The choice is remembered across reloads.
+  embedded in it and highlights stack traces (Java, .NET, Python: exception
+  types, your frames, dimmed framework frames, file:line). The choice is remembered across reloads.
 - **Word wrap** — a soft-wrap toggle in each log toolbar wraps long messages
   instead of scrolling sideways (it also wraps the Entry Detail message), and
   on a text/JSON/XML file the same toggle wraps its lines instead. Both are

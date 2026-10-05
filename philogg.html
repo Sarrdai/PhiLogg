@@ -2713,6 +2713,13 @@
   .syn-key{color:var(--syntax-key);}
   .syn-bool-null{color:var(--syntax-boolean-null);}
   .syn-punct{color:var(--syntax-punct);}
+  /* Stack traces (Pretty view): exception type bold in the error colour,
+     frames in the normal text colour with file:line emphasised, framework
+     frames (java.*, System.*, site-packages, ...) dimmed. */
+  .syn-trace-exc{color:var(--level-error); font-weight:700;}
+  .syn-trace-loc{color:var(--syntax-key);}
+  .syn-trace-note{color:var(--text-secondary);}
+  .syn-trace-fw, .syn-trace-fw .syn-trace-loc{color:var(--text-tertiary);}
   /* The selected entry's note, shown in full below its message — same
      "readable even with multi-line row rendering off" reasoning as the
      backlog item itself: a note-row in the log view can be one line tall,
@@ -2748,7 +2755,7 @@
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
-  .patterns-grid{display:grid; grid-template-columns:78px 48px 70px minmax(0,1fr) 112px 112px 64px; align-items:center;}
+  .patterns-grid{display:grid; grid-template-columns:78px 48px 124px minmax(0,1fr) 112px 112px 64px; align-items:center;}
   #patternsHead{
     flex:0 0 auto; padding:0 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
     color:var(--text-secondary); font-size:11px; font-weight:650; letter-spacing:.2px; user-select:none;
@@ -2768,6 +2775,7 @@
   .pattern-row:hover{background:var(--bg-elevated);}
   .pattern-row > span{padding:0 8px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .pattern-row .patterns-time{color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
+  .patterns-level-n{margin-left:5px; color:var(--text-tertiary); font-size:.9em; font-variant-numeric:tabular-nums;}
   .pattern-ph{color:var(--accent-strong); font-weight:650;}
   .pattern-actions{display:flex; gap:2px; justify-content:flex-end; visibility:hidden;}
   .pattern-row:hover .pattern-actions{visibility:visible;}
@@ -16885,12 +16893,13 @@ function createPatternAcc() {
       const key = normalizeMessagePattern(e.message);
       let g = groups.get(key);
       if (!g) {
-        g = { key, count: 0, floatMask: 0, rank: Infinity, level: "", levelFormatId: null, first: e, firstTs: e.ts, lastTs: e.ts };
+        g = { key, count: 0, floatMask: 0, rank: Infinity, level: "", levelFormatId: null, levels: new Map(), first: e, firstTs: e.ts, lastTs: e.ts };
         groups.set(key, g);
       }
       g.count++;
       g.floatMask |= patternFloatMask;
       const b = bucketOf(e.level, e.formatId);
+      g.levels.set(b, (g.levels.get(b) || 0) + 1);
       const r = levelSortRank(b, e.formatId);
       if (r < g.rank) { g.rank = r; g.level = b; g.levelFormatId = e.formatId; }
       if (e.ts < g.firstTs) g.firstTs = e.ts;
@@ -16911,7 +16920,7 @@ let patternsTotal = 0;
 const PATTERNS_COLUMNS = [
   { key: "count", label: "Count", cls: "patterns-num" },
   { key: null, label: "%", cls: "patterns-num" },
-  { key: "level", label: "Level" },
+  { key: "level", label: "Max level", tip: "Most severe level in the group; n/total = how many entries have it" },
   { key: "pattern", label: "Pattern" },
   { key: "first", label: "First" },
   { key: "last", label: "Last" },
@@ -16922,7 +16931,7 @@ function renderPatternsHead() {
     const sorted = col.key && col.key === patternsSortKey;
     const arrow = sorted ? (patternsSortDir === "asc" ? " ▲" : " ▼") : "";
     return '<span class="' + (col.cls || "") + (sorted ? " sorted" : "") + '"' +
-      (col.key ? ' data-sort="' + col.key + '" title="Sort by ' + col.label.toLowerCase() + '"' : "") + ">" +
+      (col.key ? ' data-sort="' + col.key + '" title="' + escapeHtml(col.tip || "Sort by " + col.label.toLowerCase()) + '"' : "") + ">" +
       escapeHtml(col.label) + arrow + "</span>";
   }).join("");
 }
@@ -16980,6 +16989,14 @@ function patternTimeText(ts) {
   const full = formatTime(ts);
   return full.length > 11 ? full.slice(11) : full;
 }
+// Tooltip of the Max-level cell: the group's entries per level in severity
+// order ("INFO 176 · WARN 3"); empty for a pure group (the badge says it all).
+function patternLevelTip(g) {
+  if (g.levels.size < 2) return "";
+  const parts = [...g.levels].map(([b, n]) => ({ b, n, r: levelSortRank(b, g.levelFormatId) }))
+    .sort((x, y) => x.r - y.r || y.n - x.n).map(x => x.b + " " + x.n);
+  return ' title="' + escapeHtml(parts.join(" · ")) + '"';
+}
 function renderPatternsVisibleRows() {
   const list = patternsSorted ? patternsSorted.list : [];
   if (!list.length) return;
@@ -17001,7 +17018,8 @@ function renderPatternsVisibleRows() {
       '<div class="pattern-row patterns-grid ' + lvlCls + '" data-idx="' + i + '" style="height:' + rowH + 'px">' +
       '<span class="patterns-num">' + g.count.toLocaleString("de-DE") + "</span>" +
       '<span class="patterns-num">' + pctText + "</span>" +
-      "<span>" + (g.level && g.level !== "OTHER" ? '<span class="level-badge">' + escapeHtml(g.level) + "</span>" : "") + "</span>" +
+      '<span class="patterns-level"' + patternLevelTip(g) + ">" + (g.level && g.level !== "OTHER" ? '<span class="level-badge">' + escapeHtml(g.level) + "</span>" +
+        (g.levels.size > 1 ? '<span class="patterns-level-n">' + g.levels.get(g.level) + "/" + g.count + "</span>" : "") : "") + "</span>" +
       '<span class="pattern-text" title="' + escapeHtml(patternDisplayText(g.key)) + '">' + text + "</span>" +
       '<span class="patterns-time">' + escapeHtml(patternTimeText(g.firstTs)) + "</span>" +
       '<span class="patterns-time">' + escapeHtml(patternTimeText(g.lastTs)) + "</span>" +
@@ -30261,9 +30279,94 @@ function formatDumpFragmentHtml(raw) {
 // own display:inline-block then simply starts flush at that new line's
 // left edge — no extra CSS needed for the "left-aligned block" look
 // (person-requested, this session).
+// ---- Stack traces (Java, .NET, Python) for the Pretty view ----
+// formatStackTraceHtml returns the message as HTML with the trace region
+// wrapped in one syn-block span, or null when the text holds no stack trace
+// (>= 2 frame lines, or 1 frame plus an exception header line).
+const STACK_TYPE = "(?:[A-Za-z_$][\\w$]*\\.)*[A-Za-z_$][\\w$]*(?:Exception|Error|Throwable|Fault)";
+const STACK_HEADER_RE = new RegExp("^\\s*(" + STACK_TYPE + ")(:.*)?$");
+const STACK_CAUSE_RE = /^\s*((?:Caused by|Suppressed):\s+)([\w$.]+)(:.*)?$/;
+const STACK_INNER_RE = /^\s*(--->\s+)([\w$.]+)(\s+\(0x[0-9A-Fa-f]+\))?(:.*)?$/;
+const STACK_FRAME_RE = /^\s*at\s+(\S[^()]*?)\((.*)\)(?:\s+in\s+(.+:line\s+\d+))?\s*$/;
+const STACK_PYFRAME_RE = /^\s*File "(.*)", line (\d+)(?:, in (.+))?\s*$/;
+const STACK_MORE_RE = /^\s*\.\.\. \d+ (?:more|common frames omitted)\s*$/;
+const STACK_END_RE = /^\s*---.*(?:stack trace|exception).*---\s*$/i;
+const STACK_TRACEBACK_RE = /^\s*Traceback \(most recent call last\):\s*$/;
+const STACK_FRAMEWORK_RE = /^(?:java|javax|jdk|sun|com\.sun|kotlin|scala|System|Microsoft)\./;
+const STACK_PY_FRAMEWORK_RE = /site-packages|[\\/]lib[\\/]python/;
+function classifyStackLine(line) {
+  let m;
+  if ((m = STACK_FRAME_RE.exec(line))) return { t: "frame", m };
+  if ((m = STACK_PYFRAME_RE.exec(line))) return { t: "pyframe", m };
+  if ((m = STACK_CAUSE_RE.exec(line))) return { t: "cause", m };
+  if ((m = STACK_INNER_RE.exec(line))) return { t: "inner", m };
+  if (STACK_MORE_RE.test(line)) return { t: "more" };
+  if (STACK_END_RE.test(line)) return { t: "end" };
+  if (STACK_TRACEBACK_RE.test(line)) return { t: "traceback" };
+  if ((m = STACK_HEADER_RE.exec(line))) return { t: "header", m };
+  return null;
+}
+function stackLineHtml(line, c, prev) {
+  const exc = (pre, type, mid, msg) => escapeHtml(pre) + '<span class="syn-trace-exc">' + escapeHtml(type) + "</span>" + escapeHtml((mid || "") + (msg || ""));
+  switch (c.t) {
+    case "header": return exc("", c.m[1], "", c.m[2]);
+    case "cause": return exc(c.m[1], c.m[2], "", c.m[3]);
+    case "inner": return exc(c.m[1], c.m[2], c.m[3], c.m[4]);
+    case "traceback": return '<span class="syn-trace-note">' + escapeHtml(line.trim()) + "</span>";
+    case "more": return '<span class="syn-trace-note">    ' + escapeHtml(line.trim()) + "</span>";
+    case "end": return '<span class="syn-trace-note">' + escapeHtml(line.trim()) + "</span>";
+    case "frame": {
+      const method = c.m[1].trim(), inner = c.m[2], where = c.m[3];
+      const fw = STACK_FRAMEWORK_RE.test(method.replace(/^[\w.$-]+\//, ""));
+      let args;
+      if (where === undefined && /^(?:[^\s(),]+(?::\d+)?|Native Method|Unknown Source)$/.test(inner)) args = '(<span class="syn-trace-loc">' + escapeHtml(inner) + "</span>)";
+      else args = "(" + escapeHtml(inner) + ")";
+      return '<span class="syn-trace-frame' + (fw ? " syn-trace-fw" : "") + '">    at ' + escapeHtml(method) + args +
+        (where !== undefined ? " in " + '<span class="syn-trace-loc">' + escapeHtml(where) + "</span>" : "") + "</span>";
+    }
+    case "pyframe": {
+      const fw = STACK_PY_FRAMEWORK_RE.test(c.m[1]);
+      return '<span class="syn-trace-frame' + (fw ? " syn-trace-fw" : "") + '">    File "' + escapeHtml(c.m[1]) + '", <span class="syn-trace-loc">line ' + escapeHtml(c.m[2]) + "</span>" +
+        (c.m[3] ? ", in " + escapeHtml(c.m[3]) : "") + "</span>";
+    }
+    case "pycode": return '<span class="syn-trace-frame' + (prev.fw ? " syn-trace-fw" : "") + '">      ' + escapeHtml(line.trim()) + "</span>";
+  }
+  return escapeHtml(line);
+}
+function formatStackTraceHtml(text) {
+  if (text.indexOf("\n") === -1 || !/\bat\s|File "/.test(text)) return null;
+  const lines = text.split("\n").map(l => l.replace(/\r$/, ""));
+  const cls = lines.map(classifyStackLine);
+  // a source line right below a Python "File" frame
+  for (let i = 1; i < lines.length; i++) {
+    if (!cls[i] && cls[i - 1] && (cls[i - 1].t === "pyframe") && /^\s+\S/.test(lines[i])) cls[i] = { t: "pycode", fw: STACK_PY_FRAMEWORK_RE.test(cls[i - 1].m[1]) };
+  }
+  const isAnchor = c => c && (c.t === "frame" || c.t === "pyframe" || c.t === "traceback" || c.t === "cause" || c.t === "inner");
+  let start = cls.findIndex(isAnchor);
+  if (start === -1) return null;
+  let end = start;
+  cls.forEach((c, i) => { if (c && c.t !== "header" && i > end) end = i; });
+  if (start > 0 && cls[start - 1] && cls[start - 1].t === "header") start--;
+  const lastAnchor = cls.slice(0, end + 1).reverse().find(c => c && c.t !== "more" && c.t !== "end");
+  if (end + 1 < lines.length && cls[end + 1] && cls[end + 1].t === "header" && lastAnchor && (lastAnchor.t === "pyframe" || lastAnchor.t === "pycode")) end++;
+  let frames = 0, header = false;
+  for (let i = start; i <= end; i++) {
+    const t = cls[i] && cls[i].t;
+    if (t === "frame" || t === "pyframe") frames++;
+    else if (t === "header" || t === "cause" || t === "inner" || t === "traceback") header = true;
+  }
+  if (!(frames >= 2 || (frames >= 1 && header))) return null;
+  const body = [];
+  for (let i = start; i <= end; i++) body.push(cls[i] ? stackLineHtml(lines[i], cls[i], i > 0 ? cls[i - 1] : null) : escapeHtml(lines[i]));
+  const pre = lines.slice(0, start), post = lines.slice(end + 1);
+  return (pre.length ? escapeHtml(pre.join("\n")) + "\n" : "") +
+    '<span class="syn-block syn-trace">' + body.join("\n") + "</span>" +
+    (post.length ? "\n" + escapeHtml(post.join("\n")) : "");
+}
+
 function formatMessageWithHighlight(text) {
   const hits = findEmbeddedFragments(text);
-  if (!hits.length) return escapeHtml(text);
+  if (!hits.length) { const trace = formatStackTraceHtml(text); return trace !== null ? trace : escapeHtml(text); }
   let out = "";
   let pos = 0;
   hits.forEach(h => {

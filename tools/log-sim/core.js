@@ -352,6 +352,27 @@
       },
     },
 
+    pytrace: {
+      label: "Python tracebacks",
+      weight: 2,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): multi-line ERROR entries with a Python traceback ('Traceback (most recent call last):', '  File \"x.py\", line N, in func', final 'SomeError: msg'), mixing application and site-packages frames. Entry detail Pretty view.",
+      make(g) {
+        const job = "J-" + pad(g.int(1, 99999), 5);
+        const cont = [
+          "Traceback (most recent call last):",
+          '  File "/srv/app/worker.py", line ' + g.int(20, 90) + ", in run_job",
+          "    result = handler(payload)",
+          '  File "/srv/app/handlers.py", line ' + g.int(100, 300) + ", in handle",
+          "    return client.fetch(url)",
+          '  File "/usr/lib/python3.11/site-packages/requests/api.py", line ' + g.int(50, 80) + ", in get",
+          "    return request('get', url, params=params, **kwargs)",
+          "requests.exceptions.ConnectionError: HTTPSConnectionPool(host='api.example.org', port=443): Max retries exceeded",
+        ];
+        return { level: "ERROR", cls: "worker", method: "run", msg: "Job " + job + " failed", cont, json: { exception: cont.join("\n") } };
+      },
+    },
+
     ties: {
       label: "Same-timestamp clusters",
       weight: 1,

@@ -96,6 +96,10 @@ lines at the exact same millisecond; under `-f mixed` the steps alternate
 between default and syslog lines. For same-timestamp log order
 (`-s ties,basic`).
 
+`pytrace` is opt-in as well: multi-line ERROR entries with a Python
+traceback (application and site-packages frames, final `SomeError: msg`).
+For the entry detail's Pretty view (`-s pytrace`).
+
 `grouped` is opt-in too: numbers with thousands separators below and above
 1000 — `Throughput 1,234.5 msg/s` (en), `Meter reading 12.345,6 kWh` (de)
 and `Batch imported 12,345 records` (en integer, ambiguous without
