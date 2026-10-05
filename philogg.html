@@ -2642,6 +2642,7 @@
   .lower-tab:hover:not(:disabled){color:var(--text-primary);}
   .lower-tab[aria-selected="true"]{color:var(--accent-strong); border-bottom-color:var(--accent);}
   .lower-tab:disabled{opacity:.55; cursor:default;}
+  .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
   /* Patterns/Table/Plot with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
   #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
   #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody){display:none !important;}
