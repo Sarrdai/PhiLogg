@@ -61,6 +61,7 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#btnNavBack").disabled, "back is enabled after two navigations");
   assert(d.querySelector("#btnNavForward").disabled, "forward is disabled at the head of history");
 
+  T.resetUndoRedo(); // creations are undo steps now; only back/forward must add none
   fireClick(d.querySelector("#btnNavBack"), w);
   assert(T.state.activeId === n1.id, "back moved active node from n2 to n1");
   assert(!d.querySelector("#btnNavForward").disabled, "forward is enabled after going back");

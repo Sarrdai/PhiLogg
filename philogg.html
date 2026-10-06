@@ -13451,6 +13451,9 @@ function treeSelectionIds() {
   return sel;
 }
 function activateNewNode(node) {
+  // Every user-initiated filter creation is one undo step (see
+  // noteFilterNodeCreated); file nodes (loads, merge shells) are not.
+  if (node.type === "filter") noteFilterNodeCreated(node);
   state.activeId = node.id;
   state.multiSelect = new Set();
   state.folderView = null; // see createFileNode's own comment
@@ -16275,11 +16278,13 @@ function getLevelCounts(nodeId) {
    Covers: filter node delete & move (drag/drop reparent, and cut+paste
    which is also a move), plain (non-folder) file delete, filter value/
    pattern edits (the F2/"Edit filter…" popup and the time-range dialog),
-   the invert (NOT) toggle, and value-assertion add/clear. Still
-   deliberately NOT covering filter/file creation, folder-file close (a
+   the invert (NOT) toggle, value-assertion add/clear, and every
+   user-initiated filter-node creation (activateNewNode hook, bulk
+   creations grouped by withCreateUndo; non-user creations such as session
+   restore and the LLM tool runs are excluded, see withoutCreateUndo). Still
+   deliberately NOT covering file creation or folder-file close (a
    non-destructive action already — the file just returns to its folder's
-   grayed listing), or context-filter creation (no edit path exists for it
-   at all). A small snapshot-based stack was chosen over deriving undo
+   grayed listing). A small snapshot-based stack was chosen over deriving undo
    generically from every tree-mutating function (see PROJECT.md
    "Undo/redo" section for the reasoning).
 
@@ -16710,8 +16715,7 @@ function undoAction(action) {
     const node = state.nodes[action.nodeId];
     if (node) { applyNodeFields(node, action.before); state.activeId = action.nodeId; }
   } else if (action.kind === "create") {
-    // A filter node added by one click (Patterns tab / Facet panel — see
-    // pushCreateUndo): undo removes it again, snapshotting it first so redo
+    // A user-created filter node (see noteFilterNodeCreated): undo removes it again, snapshotting it first so redo
     // can put back the exact node (and anything added under it since).
     const node = state.nodes[action.nodeId];
     if (node) {
@@ -16861,7 +16865,7 @@ const extractStatsContent = el("#extractStatsContent");
    the Filtered view shows it (getEntries + the level quick-filter; pinned
    bookmarks are not part of the result). Neither filters anything itself:
    every action creates an ordinary filter node under the active node
-   (createFilterNode, undoable via pushCreateUndo), so the tree stays the one
+   (createFilterNode, undoable via activateNewNode), so the tree stays the one
    place where filtering happens. See docs/ui-and-views.md → "Patterns tab"
    and "Facet panel".
 
@@ -16961,10 +16965,48 @@ function makeEntryAnalysis(createAcc, variantKey, onAsync) {
   };
 }
 
-// Adds the "create" undo action for a node a one-click analysis action just
-// created (filter creation is otherwise not an undo step — see undo()).
-function pushCreateUndo(node) {
-  pushUndo({ kind: "create", nodeId: node.id, parentId: node.parentId });
+// Pushes the "create" undo action for one user-created filter node (undo
+// removes it with its subtree, redo restores it under the same id). Internal
+// pusher: creators go through noteFilterNodeCreated / withCreateUndo.
+function pushCreateUndo(node, label) {
+  const a = { kind: "create", nodeId: node.id, parentId: node.parentId };
+  if (label) a.label = label;
+  pushUndo(a);
+}
+
+// null = every creation pushes its own step immediately; an array = creations
+// are collected into it and pushed as ONE step by withCreateUndo.
+let createUndoCapture = null;
+// Called by activateNewNode for every filter node (the user-creation hook).
+function noteFilterNodeCreated(node) {
+  if (Array.isArray(createUndoCapture)) createUndoCapture.push(node);
+  else pushCreateUndo(node);
+}
+// Runs fn so every filter node it creates (via activateNewNode or an explicit
+// noteFilterNodeCreated) becomes one undo step. Nested calls join the outer one.
+function withCreateUndo(label, fn) {
+  if (Array.isArray(createUndoCapture)) return fn();
+  const captured = createUndoCapture = [];
+  try {
+    return fn();
+  } finally {
+    createUndoCapture = null;
+    const live = captured.filter(n => state.nodes[n.id]);
+    const ids = new Set(live.map(n => n.id));
+    const roots = live.filter(n => {
+      for (let p = state.nodes[n.id] && state.nodes[n.id].parentId; p; p = state.nodes[p] && state.nodes[p].parentId) if (ids.has(p)) return false;
+      return true;
+    });
+    const mk = n => ({ kind: "create", nodeId: n.id, parentId: state.nodes[n.id].parentId });
+    if (roots.length === 1) pushUndo({ ...mk(roots[0]), label });
+    else if (roots.length > 1) pushUndo({ kind: "batch", label, actions: roots.map(mk) });
+  }
+}
+// Runs fn without registering creations (LLM tool runs: the round batch owns them).
+function withoutCreateUndo(fn) {
+  const prev = createUndoCapture;
+  createUndoCapture = [];
+  try { return fn(); } finally { createUndoCapture = prev; }
 }
 
 // Commits a node created by the Patterns tab / Facet panel: undo step,
@@ -16972,7 +17014,6 @@ function pushCreateUndo(node) {
 // otherwise pick Filtered for the brand-new node.
 function finishAnalysisFilter(node, tab) {
   if (!node) return;
-  pushCreateUndo(node);
   render();
   if (tab && fhActiveTab !== tab && (tab !== "table" || nodeIsExtractionView(node))) applyFhView(tab);
 }
@@ -19732,7 +19773,13 @@ function renderFilterHistoryPreview(fileNode) {
   btn.className = "tree-ghost-restore-btn";
   btn.textContent = "Restore filters";
   btn.addEventListener("click", () => {
-    materializeCachedFilters(fileNode, match.filters);
+    // User action: one undo step for the restored roots (materializeCachedFilters
+    // itself stays undo-free, session restore uses it too).
+    withCreateUndo("filter restore", () => {
+      const before = new Set(fileNode.children);
+      materializeCachedFilters(fileNode, match.filters);
+      fileNode.children.filter(id => !before.has(id)).forEach(id => noteFilterNodeCreated(state.nodes[id]));
+    });
     state.activeId = fileNode.id;
     render();
   });
@@ -39953,7 +40000,7 @@ function performBulkAction(action, ids) {
     mergeFiles(ids); // fire-and-forget — its own synchronous prefix (node creation + flushLoadRender) already ran by the time this returns; it drives its own progress rendering from here
   } else if (action === "and" || action === "or") {
     const node = createAndOrNode(ids, action);
-    if (node) { pushCreateUndo(node); revealFilteredView(); }
+    if (node) revealFilteredView();
   }
   state.multiSelect = new Set();
   render();
@@ -42439,9 +42486,13 @@ function unpackAndOrLinkNode(nodeId) {
   if (!parent) return null;
 
   const sides = node.filterType === "link" ? [node.bakedA, node.bakedB] : node.baked;
-  const clones = sides.map(b => materializeBakedAsNode(b, node.parentId));
-  const insertIndex = parent.children.indexOf(nodeId) + 1;
-  parent.children.splice(Math.max(0, insertIndex), 0, ...clones.map(c => c.id));
+  // One undo step removing both clones.
+  withCreateUndo("unpack", () => {
+    const clones = sides.map(b => materializeBakedAsNode(b, node.parentId));
+    const insertIndex = parent.children.indexOf(nodeId) + 1;
+    parent.children.splice(Math.max(0, insertIndex), 0, ...clones.map(c => c.id));
+    clones.forEach(noteFilterNodeCreated);
+  });
 
   state.activeId = nodeId;
   // Left on the global sweep on purpose: unpack is rare (the new nodes have no cache, so it is
@@ -42662,7 +42713,12 @@ function importFilterJson(text, successToast) {
 
   // Every root is tagged attach:"target" (see serializeFilterBranch) —
   // always attaches under wherever the import was invoked, never FILE.
-  const { created, refMap } = materializeSerializedRoots(data.roots, () => target.id);
+  // One undo step for the whole import (every root; their subtrees ride along).
+  const { created, refMap } = withCreateUndo("filter import", () => {
+    const r = materializeSerializedRoots(data.roots, () => target.id);
+    r.created.forEach(noteFilterNodeCreated);
+    return r;
+  });
 
   const activeId = data.activeRef != null ? refMap[data.activeRef] : null;
   if (activeId && state.nodes[activeId]) state.activeId = activeId;
@@ -49368,7 +49424,7 @@ function runLlmTool(name, args) {
     }
     if (!result) {
       if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) parsed = {};
-      try { result = tool.run(parsed) || {}; } catch (e) { result = { error: "Tool failed: " + (e && e.message || e) }; }
+      try { result = withoutCreateUndo(() => tool.run(parsed)) || {}; } catch (e) { result = { error: "Tool failed: " + (e && e.message || e) }; }
     }
   }
   return { result, text: llmFitBudget(result), error: result.error || null };

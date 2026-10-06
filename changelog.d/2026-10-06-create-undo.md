@@ -1,0 +1,4 @@
+- **feat: every filter creation is undoable (2026-10-06, person-requested)**
+  - Ctrl+Z / Undo removes any filter node you created (dialog, find bar, time windows, level bar, context/gap/link/selection, copy+paste, ...) with its subtree; redo restores it under the same id. Before, only Patterns, Facets, AND/OR and assistant rounds were undoable.
+  - Bulk creations are one step: filter import, library apply, Unpack, file-history "Restore filters". Session restore, session import, auto Bookmarks/Notes nodes and assistant tool runs add no extra steps.
+  - **Tests**: GROUP create-undo. Docs: docs/persistence-and-sync.md, docs/llm-assistant.md.
