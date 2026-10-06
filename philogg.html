@@ -803,6 +803,9 @@
   #sidebarToolbar .toolbar-icon-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   #sidebarToolbar .toolbar-icon-btn:disabled{color:var(--text-tertiary);}
   #sidebarToolbar .toolbar-icon-btn:disabled .row-action-hit{opacity:.45;}
+  /* Phone-only under-icon labels (tab-bar style) — hidden on every other tier;
+     the phone rules sit with the other layout-phone drawer rules below. */
+  .row-action-short, .btn-short-label{display:none;}
   /* Multi mode (2+ nodes selected): the single-node row is replaced by the bulk
      actions (count · AND · OR · Link… / Merge N files / a short message · ×) and
      the bar takes the same highlight as selected tree rows, so the mode switch
@@ -4602,6 +4605,10 @@
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
   }
   #treeCtxInfoMenu.hidden{display:none;}
+  #treeCtxInfoMenu .ctx-info-row{display:flex; gap:10px; padding:2px 10px; font-size:11.5px; line-height:1.4;}
+  #treeCtxInfoMenu .ctx-info-k{flex:0 0 auto; width:64px; color:var(--text-tertiary);}
+  #treeCtxInfoMenu .ctx-info-v{flex:1 1 auto; min-width:0; color:var(--text-secondary); white-space:normal; overflow-wrap:anywhere;}
+  #treeCtxInfoMenu .ctx-meta-name{padding-bottom:6px;}
 
   /* Clickable local file paths (desktop build only for the actual link —
      see verifyVisibleFpCandidates/openFpPathMenu). A detected candidate
@@ -4915,7 +4922,9 @@
   body.layout-phone .col-resize-handle{display:none !important;}
   body.layout-phone #openMenu .ctx-item[data-action="folder"], body.layout-phone #openMenu .ctx-item[data-action="zip"]{display:none;}
 
-  /* Find bar (phone): spans the whole #fhSplit width and becomes a two-row grid,
+  /* Find bar (phone): in normal flow at the top of #fhSplit (it takes layout space while
+     open, so the list below is the real visible viewport and scrollToIndex needs no
+     special case; opening/closing re-renders the list, see openFindBar). Spans the whole #fhSplit width and becomes a two-row grid,
      row 1 = input (all remaining width) + hit count + close, row 2 = Aa / .* on
      the left, prev / next / Add as filter on the right. Pure CSS, the markup
      order stays the desktop one. 40px controls (44 under pointer:coarse, see
@@ -4923,7 +4932,7 @@
      recent-filters dropdown hangs below the bar: taller rows, an always-visible
      remove x (no hover on touch) and no keyboard hint. */
   body.layout-phone #findBar{
-    left:8px; right:8px; max-width:none; box-sizing:border-box;
+    position:relative; top:auto; left:auto; right:auto; flex:0 0 auto; margin:4px 8px; max-width:none; box-sizing:border-box;
     display:grid; gap:6px; padding:6px; align-items:center;
     grid-template-columns:auto auto minmax(0,1fr) auto auto auto auto;
     grid-template-areas:
@@ -5070,7 +5079,27 @@
   body.layout-phone.sheet-open #detailPanel{transform:none; visibility:visible; transition:transform .18s ease, visibility 0s;}
   body.layout-phone #detailPanel.collapsed:not(.peeking) #detailBody{display:block;}
   body.layout-phone #detailPanel.collapsed.peeking #detailPanelInner{position:static; max-height:none; height:100%; box-shadow:none;}
-  body.layout-phone #detailGrab{display:block; flex:0 0 auto; width:40px; height:4px; border-radius:2px; background:var(--bg-elevated-2); margin:8px auto 2px;}
+  /* Drawer toolbar (#sidebarToolbar) and the header's Open/Save: a 10px label
+     under the icon, regardless of the "View Toolbar button labels" setting
+     (the hover/always floating label is hidden here instead). The 44px
+     coarse-pointer width rule keeps the buttons >= 44px wide; they grow in height. */
+  body.layout-phone #sidebarToolbar .row-action-btn{
+    flex-direction:column; justify-content:center; gap:2px; width:44px; height:auto; min-height:54px;
+    padding:0; border-radius:7px; overflow:hidden;
+  }
+  body.layout-phone #sidebarToolbar .row-action-btn .row-action-label{display:none !important;}
+  body.layout-phone #sidebarToolbar .row-action-short{
+    display:block; max-width:100%; font-size:10px; line-height:12px; white-space:nowrap; overflow:hidden;
+    text-overflow:ellipsis; color:var(--text-secondary);
+  }
+  body.layout-phone #sidebarToolbar .row-action-btn:disabled .row-action-short{color:var(--text-tertiary); opacity:.45;}
+  body.layout-phone #sidebarHeader #btnOpen, body.layout-phone #sidebarHeader #btnSave{flex-direction:column; gap:2px; height:auto; min-height:44px;}
+  body.layout-phone #sidebarHeader .btn-short-label{display:block; font-size:10px; line-height:12px; white-space:nowrap; color:var(--text-secondary);}
+  /* Drag handle: the whole 44px strip above the header is the touch target
+     (resizes the sheet, see "Phone sheet grab"); the visible bar is its ::before. */
+  body.layout-phone #detailGrab{display:flex; align-items:center; justify-content:center; flex:0 0 auto; height:44px; margin-bottom:-8px; touch-action:none; cursor:row-resize;}
+  body.layout-phone #detailGrab::before{content:""; width:40px; height:4px; border-radius:2px; background:var(--bg-elevated-2);}
+  body.layout-phone #detailGrab.dragging::before{background:var(--accent);}
   body.layout-phone #detailPanelHeader{height:auto; flex-wrap:wrap; gap:2px 4px; padding:2px 6px 6px 14px;}
   body.layout-phone #lowerTabs, body.layout-phone #facetPanelCount, body.layout-phone #detailToggle{display:none !important;}
   body.layout-phone #detailMeta{order:1; flex:1 1 0;}
@@ -5114,7 +5143,18 @@
   body.layout-phone > .col-msg{font-size:14px;}
   body.layout-phone #tableRows .hl-markers, body.layout-phone #tableRows .ctx-bracket,
   body.layout-phone #tableRows .ctx-anchor-dot{display:none;}
-  body.layout-phone #tableRows .col-bookmark-icon{left:auto; right:6px; top:6px; bottom:auto; height:12px;}
+  /* Bookmark marker on a card: a 16px accent glyph centred on the first line
+     (padding-top 10px + 20px head row), right-aligned; the thread text stops
+     before it. A bookmarked card also gets an inset accent ring (inset
+     box-shadow: no layout change, so CARD_* heights hold); the selected ring
+     stays the full-strength 1px accent, the bookmark ring is the softer one,
+     and selected + bookmarked shows both. */
+  body.layout-phone #tableRows .col-bookmark-icon{left:auto; right:10px; top:10px; bottom:auto; width:16px; height:20px;}
+  body.layout-phone #tableRows .col-bookmark-icon svg{width:16px; height:16px;}
+  body.layout-phone #tableRows .log-row.row-bookmarked > .col-thread{box-sizing:border-box; padding-right:26px;}
+  body.layout-phone #tableRows .log-row.row-bookmarked{box-shadow:inset 0 0 0 1.5px color-mix(in srgb, var(--accent) 55%, transparent);}
+  body.layout-phone #tableRows .log-row.row-bookmarked.selected{box-shadow:inset 0 0 0 1px var(--accent), inset 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);}
+  body.layout-phone #tableRows .log-row.row-bookmarked.selected.row-multi-selected{box-shadow:inset 0 0 0 1px var(--accent), inset 0 0 0 3px var(--accent-strong), inset 0 0 0 5px color-mix(in srgb, var(--accent) 55%, transparent);}
   /* The bottom sheet takes its height out of the list so the selected card
      can always be scrolled above it (selectEntry -> scrollToIndex). */
   body.layout-phone.sheet-open #content{padding-bottom:var(--sheet-h);}
@@ -5189,6 +5229,11 @@
     body.layout-phone #filterPopup .token-chip, body.layout-phone #filterPopup .label-toggle{height:44px;}
     body.layout-phone #filterPopup .token-chip{min-width:44px;}
     body.layout-phone .link-dialog-card .assert-mode-btn{min-height:44px;}
+    /* Export "First [N]": the segment buttons are 44px tall, the number input inside stays a
+       32px field (the generic 44px dialog-input rules above/below would make it stick out). */
+    body.layout-phone #exportDialog .export-seg .assert-mode-btn, body.layout-compact #exportDialog .export-seg .assert-mode-btn{height:44px;}
+    body.layout-phone #exportDialog #exportFirstN, body.layout-compact #exportDialog #exportFirstN{height:32px; min-height:0; box-sizing:border-box;}
+    body.layout-phone #exportDialog #exportFirstN{font-size:16px; width:64px;}
     body.layout-phone .link-dialog-card .pill-toggle::before{content:""; position:absolute; inset:-12px -6px;}
     body.layout-compact .tree-mute .icon{width:18px; height:18px;}
     body.layout-phone #settingsDialog .settings-nav-item, body.layout-compact #settingsDialog .settings-nav-item{min-height:44px;}
@@ -5428,6 +5473,7 @@
           <div id="sidebarHeaderLabel">Files &amp; filters</div>
           <button type="button" id="btnOpen" class="panel-toggle-btn" title="Open…">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 2.5v11M2.5 8h11"/></svg>
+            <span class="btn-short-label">Open</span>
           </button>
           <div id="openMenu" class="hidden">
             <div class="ctx-item" data-action="files">
@@ -5449,6 +5495,7 @@
           </div>
           <button type="button" id="btnSave" class="panel-toggle-btn" title="Save session…">
             <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8v5a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V8"/><path d="M8 10V2M8 2 5.4 4.6M8 2l2.6 2.6"/></svg>
+            <span class="btn-short-label">Save</span>
           </button>
           <div id="saveMenu" class="hidden">
             <div class="ctx-meta">Save your work</div>
@@ -25454,7 +25501,7 @@ function appendLogRow(frag, i, rc) {
   const e = currentViewEntries[i];
   const row = document.createElement("div");
   let cls = (rc.textMode ? "log-row text-row" : "log-row row-grid " + levelClass(e.level, e.formatId)) + (e.id === state.selectedId ? " selected" : "") +
-    (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") +
+    (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") +
     (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") + pairPickRowClass(e) +
     (e._tempAnchor ? " temp-anchor-row" : "");
 
@@ -27400,7 +27447,7 @@ function renderHighlightVisibleRows() {
     const e = currentHighlightViewEntries[i];
     const row = document.createElement("div");
     let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
-      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + pairPickRowClass(e);
+      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") + pairPickRowClass(e);
 
     const colors = highlightColorMap.get(e.id);
     let markerHtml = colors && colors.length
@@ -29680,7 +29727,9 @@ function scrollToIndex(index, opts) {
   } else if (rowTop < scrollTop) {
     target = rowTop;
   } else if (rowTop + rowH > scrollTop + viewportH) {
-    target = rowTop + rowH - viewportH;
+    // A row taller than the viewport (phone card under an open find bar +
+    // sheet) keeps its top edge visible instead of its bottom edge.
+    target = Math.min(rowTop, rowTop + rowH - viewportH);
   } else {
     target = scrollTop; // already in view
   }
@@ -30489,6 +30538,7 @@ function updateDetailPanel() {
   const sheetNow = !!entry && phoneSheetOpen;
   const sheetWas = document.body.classList.contains("sheet-open");
   document.body.classList.toggle("sheet-open", sheetNow);
+  if (!sheetNow && sheetWas) clearPhoneSheetHeight(); // a reopened sheet starts at the 62vh default again
   if (sheetWas !== sheetNow && currentLayoutTier === "phone") renderVisibleRows();
 
   if (!entry) {
@@ -31212,6 +31262,7 @@ function applyLayoutTier() {
   document.body.classList.toggle("layout-compact", tier === "compact");
   document.body.classList.toggle("layout-phone", tier === "phone");
   setDrawerOpen(false);
+  if (tier !== "phone") clearPhoneSheetHeight();
   if (tier === "phone") cancelLongPress();
   updateLevelBarLayout();
   if (first) return; // boot: render() has not run yet / applyRowGrid already read the tier
@@ -31252,14 +31303,78 @@ function updatePhoneTitle() {
   let root = node;
   while (root.parentId && state.nodes[root.parentId]) root = state.nodes[root.parentId];
   const n = getEntries(node.id).length.toLocaleString("de-DE") + " entries";
-  if (root === node) { b.textContent = nodeDisplayName(node); sub.textContent = n; }
-  else { b.textContent = nodeDisplayName(node); sub.textContent = nodeDisplayName(root) + " · " + n; }
+  b.textContent = (node.inverted ? "¬ " : "") + nodeDisplayName(node);
+  sub.textContent = root === node ? n : nodeDisplayName(root) + " · " + n;
 }
 // Hides the sheet only; the selection (highlighted card, find counter) stays.
 function closePhoneSheet() {
   phoneSheetOpen = false;
   updateDetailPanel();
 }
+// ---- Phone sheet grab: dragging #detailGrab resizes the bottom sheet ----
+// The sheet top follows the finger (inline --sheet-h on body, so the
+// #content padding follows too); on release it snaps to the nearest of
+// PHONE_SHEET_SNAPS (fractions of window.innerHeight). Released below
+// PHONE_SHEET_CLOSE_FRAC, or flung down fast below the lowest snap, it
+// closes via closePhoneSheet(). The height is not persisted: closing the
+// sheet or leaving the phone tier clears it (back to the 62vh default).
+const PHONE_SHEET_SNAPS = [0.35, 0.62, 0.90];
+const PHONE_SHEET_CLOSE_FRAC = 0.20;
+const PHONE_SHEET_FLING_PX_PER_MS = 0.8;
+function clearPhoneSheetHeight() { document.body.style.removeProperty("--sheet-h"); }
+// Re-run the "selected card never hidden behind the sheet" logic after the
+// sheet height changed (same as the tail of selectEntry).
+function phoneSheetKeepSelectionVisible() {
+  renderVisibleRows();
+  if (currentLayoutTier !== "phone" || !phoneSheetOpen || !state.selectedId) return;
+  const si = currentViewEntries.findIndex(x => x.id === state.selectedId);
+  if (si !== -1) scrollToIndex(si);
+}
+(function initPhoneSheetGrab() {
+  const grab = el("#detailGrab");
+  let drag = null, ticking = false;
+  grab.addEventListener("pointerdown", ev => {
+    if (currentLayoutTier !== "phone" || !phoneSheetOpen) return;
+    if (ev.button !== undefined && ev.button !== 0) return;
+    if (typeof grab.setPointerCapture === "function" && ev.pointerId !== undefined) {
+      try { grab.setPointerCapture(ev.pointerId); } catch (_) { /* pointer already gone */ }
+    }
+    drag = { id: ev.pointerId, y0: ev.clientY, h0: detailPanel.getBoundingClientRect().height, h: null, lastY: ev.clientY, lastT: ev.timeStamp, v: 0 };
+    grab.classList.add("dragging");
+    ev.preventDefault();
+  });
+  grab.addEventListener("pointermove", ev => {
+    if (!drag || ev.pointerId !== drag.id) return;
+    const dt = ev.timeStamp - drag.lastT;
+    if (dt > 0) drag.v = (ev.clientY - drag.lastY) / dt; // px/ms, positive = downwards
+    drag.lastY = ev.clientY; drag.lastT = ev.timeStamp;
+    if (ev.clientY === drag.y0 && drag.h == null) return; // a tap moves nothing
+    const H = window.innerHeight;
+    drag.h = Math.max(0, Math.min(H * 0.95, drag.h0 - (ev.clientY - drag.y0)));
+    document.body.style.setProperty("--sheet-h", drag.h + "px");
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => { ticking = false; renderVisibleRows(); }); // the list viewport just changed size
+  });
+  const end = ev => {
+    if (!drag || (ev.pointerId !== undefined && ev.pointerId !== drag.id)) return;
+    const d0 = drag; drag = null;
+    grab.classList.remove("dragging");
+    if (d0.h == null) return; // tap: nothing happened
+    const H = window.innerHeight, h = d0.h;
+    if (ev.type === "pointercancel") { document.body.style.setProperty("--sheet-h", d0.h0 + "px"); phoneSheetKeepSelectionVisible(); return; }
+    if (h < H * PHONE_SHEET_CLOSE_FRAC || (d0.v > PHONE_SHEET_FLING_PX_PER_MS && h < H * PHONE_SHEET_SNAPS[0])) {
+      closePhoneSheet();
+      return;
+    }
+    let best = PHONE_SHEET_SNAPS[0];
+    for (const f of PHONE_SHEET_SNAPS) if (Math.abs(f * H - h) < Math.abs(best * H - h)) best = f;
+    document.body.style.setProperty("--sheet-h", Math.round(best * H) + "px");
+    phoneSheetKeepSelectionVisible();
+  };
+  grab.addEventListener("pointerup", end);
+  grab.addEventListener("pointercancel", end);
+})();
 el("#btnFindPhone").addEventListener("click", ev => { ev.stopPropagation(); openFindBar(); });
 el("#detailClose").addEventListener("click", closePhoneSheet);
 el("#detailPrev").addEventListener("click", () => moveSelection(-1));
@@ -37696,6 +37811,7 @@ function openFindBar() {
   findInput.focus();
   findInput.select();
   if (!wasOpen || prefill) applyFindQuery(false);
+  if (currentLayoutTier === "phone" && !wasOpen) renderVisibleRows(); // the phone bar is in flow: the list viewport just shrank
   if (!findInput.value) findRecentDropdown.open(); // recent list only over an empty input (not over a prefill / the previous query)
   return true;
 }
@@ -37726,6 +37842,7 @@ function closeFindBar() {
   findState.pendingDelta = 0;
   findState.autoJump = false;
   refreshFindMarks(); // drop the marks (activeFindSpec() is null now)
+  if (currentLayoutTier === "phone") renderVisibleRows(); // the in-flow phone bar is gone: the list viewport grew
 }
 
 // "Add as filter": the search becomes a real "text" filter node under the
@@ -38767,6 +38884,7 @@ function buildRowActionsHtml(list, shape, hitClass) {
         (a.icon ? a.icon : '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg>') +
       '</span>' +
       '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
+      (a.short ? '<span class="row-action-short">' + escapeHtml(a.short) + '</span>' : '') +
     '</button>'
   ).join("");
 }
@@ -39226,20 +39344,75 @@ function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); close
 // openTreeContextMenu) — same #addToSelectionMenu shape (position next to
 // the trigger, .ctx-meta styling), except the content here is plain text
 // (the node's full display name) rather than a list of actions.
-function openTreeCtxInfoMenu(anchorEl, text) {
-  treeCtxInfoMenu.innerHTML = '<div class="ctx-meta">' + escapeHtml(text) + "</div>";
-  const anchorRect = anchorEl.getBoundingClientRect();
-  treeCtxInfoMenu.style.left = Math.min(anchorRect.right, window.innerWidth - 260) + "px";
-  treeCtxInfoMenu.style.top = Math.min(anchorRect.top, window.innerHeight - 200) + "px";
+function treeNodeTypeLabel(node) {
+  if (node.type === "file") return node.merged ? "Merged file" : node.partial ? "Partial file" : "File";
+  switch (node.filterType) {
+    case "text": return nodeHasExtractableWildcards(node) ? "Extraction" : "Filter";
+    case "and": return "AND";
+    case "or": return "OR";
+    case "link": return "Link";
+    case "context": case "countContext": return "Context";
+    case "level": return "Level";
+    case "bookmarks": return "Bookmarks";
+    case "notes": return "Notes";
+    case "sources": return "Sources";
+    case "idset": return "Selection";
+    case "gap": return "Gap";
+    case "after": case "before": case "timerange": return "Time filter";
+    default: return "Filter";
+  }
+}
+
+// Key/value rows of the Info submenu, built when it opens. Entries is the
+// tree badge's number ("shown") over the root file's total entry count.
+function treeCtxInfoRows(node) {
+  const fmtN = n => n.toLocaleString("de-DE");
+  const rows = [["Type", treeNodeTypeLabel(node)]];
+  const rootId = getRootFileId(node.id);
+  const root = rootId && state.nodes[rootId];
+  const shown = (getEntries(node.id) || []).length;
+  const total = node.type === "file" ? node.entries.length : root ? root.entries.length : null;
+  rows.push(["Entries", total == null ? fmtN(shown) : fmtN(shown) + " / " + fmtN(total)]);
+  if (node.type === "file") {
+    const fmt = node.formatId && findLogFormat(node.formatId);
+    if (fmt && fmt.name) rows.push(["Format", fmt.name]);
+    let lo = Infinity, hi = -Infinity;
+    for (const e of node.entries) { const t = e.ts; if (typeof t === "number" && isFinite(t)) { if (t < lo) lo = t; if (t > hi) hi = t; } }
+    if (lo <= hi && !isPlainTextFormat(node.formatId)) {
+      const a = formatTime(lo);
+      let b = formatTime(hi);
+      if (a.slice(0, 10) === b.slice(0, 10) && /^\d{4}-/.test(b)) b = b.slice(11);
+      rows.push(["Time span", a + " → " + b]);
+    }
+  }
+  return rows;
+}
+
+function openTreeCtxInfoMenu(anchorEl, nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node) return;
+  treeCtxInfoMenu.innerHTML = '<div class="ctx-meta ctx-meta-name">' + escapeHtml(nodeDisplayName(node)) + "</div>" +
+    treeCtxInfoRows(node).map(r => '<div class="ctx-info-row"><span class="ctx-info-k">' + escapeHtml(r[0]) +
+      '</span><span class="ctx-info-v">' + escapeHtml(r[1]) + "</span></div>").join("");
   treeCtxInfoMenu.classList.remove("hidden");
+  const pos = placeSubmenuBesideAnchor(anchorEl.getBoundingClientRect(),
+    treeCtxInfoMenu.offsetWidth || 260, treeCtxInfoMenu.offsetHeight || 120, window.innerWidth, window.innerHeight);
+  treeCtxInfoMenu.style.left = pos.left + "px";
+  treeCtxInfoMenu.style.top = pos.top + "px";
   fitPopupToViewport(treeCtxInfoMenu);
 }
 // treeContextMenu's own content is rebuilt fresh on every open (innerHTML =
 // html in openTreeContextMenu below), so the "Info" trigger's hover/click
 // handling is delegated here once rather than re-attached per rebuild.
+// A tap synthesizes mouseover before its click: touch opens on the click only
+// (same as "Add to selection"), else the bubble would be placed twice.
+let treeCtxInfoPointerType = "mouse";
+const noteTreeInfoPointerType = ev => { treeCtxInfoPointerType = ev.pointerType || "mouse"; };
+treeContextMenu.addEventListener("pointerover", noteTreeInfoPointerType);
+treeContextMenu.addEventListener("pointerdown", noteTreeInfoPointerType);
 treeContextMenu.addEventListener("mouseover", ev => {
   const item = ev.target.closest('[data-action="info"]');
-  if (item) openTreeCtxInfoMenu(item, item.dataset.infoText || "");
+  if (item && treeCtxInfoPointerType !== "touch") openTreeCtxInfoMenu(item, item.dataset.infoNode);
 });
 // Stops a click inside the info bubble (e.g. selecting/copying the shown
 // text) from reaching the document-level "click outside closes the popup"
@@ -39538,17 +39711,17 @@ function describeSidebarToolbarActions() {
   const ft = filter ? filter.filterType : null;
   const target = node ? node.id : null;
   const actions = [
-    { action: "rename", label: "Rename…", icon: ICON_RENAME, target, disabled: !filter },
-    { action: "edit", label: ft === "link" ? "Edit link…" : "Edit filter…", icon: ICON_EDIT, target,
+    { action: "rename", label: "Rename…", short: "Rename", icon: ICON_RENAME, target, disabled: !filter },
+    { action: "edit", label: ft === "link" ? "Edit link…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target,
       disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || (ft === "link" && hasBakedSides(filter)))) },
-    { action: "linkWith", label: "Link with…", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
-    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", icon: ICON_INVERT, target,
+    { action: "linkWith", label: "Link with…", short: "Link", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
+    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", short: "NOT", icon: ICON_INVERT, target,
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
-    { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target,
+    { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", short: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target,
       disabled: !filter },
-    { action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK, target, separator: true,
+    { action: "clockOffset", label: "Adjust clock…", short: "Clock", icon: ICON_CLOCK, target, separator: true,
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
-    { action: "addToLibrary", label: "Add to library…", icon: ICON_DISK, target, separator: true, disabled: !filter },
+    { action: "addToLibrary", label: "Add to library…", short: "Library", icon: ICON_DISK, target, separator: true, disabled: !filter },
   ];
   // Phone has no #btnLibrary to apply a library preset, so saving one is pointless there.
   if (currentLayoutTier === "phone") actions.pop();
@@ -39784,7 +39957,7 @@ function openTreeContextMenu(ev, clickedId) {
     // trigger instead (see openTreeCtxInfoMenu), same shape as "Add to
     // selection" on the log-row context menu. data-info-text carries the
     // text for the delegated mouseover/click handlers below to show.
-    html = '<div class="ctx-item ctx-submenu-trigger" data-action="info" data-info-text="' + escapeHtml(nodeDisplayName(node)) + '">' +
+    html = '<div class="ctx-item ctx-submenu-trigger" data-action="info" data-info-node="' + node.id + '">' +
       ICON_INFO + " Info" +
       '<svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>' +
       '</div><div class="ctx-item" data-action="selectMultiple">' + ICON_CHECKLIST + " Select multiple</div>" +
@@ -39807,7 +39980,7 @@ treeContextMenu.addEventListener("click", ev => {
   // it (see the delegated listener above); a click (touch/no-hover) does
   // the same instead of closing the whole context menu like every other
   // item here does.
-  if (action === "info") { openTreeCtxInfoMenu(item, item.dataset.infoText || ""); return; }
+  if (action === "info") { openTreeCtxInfoMenu(item, item.dataset.infoNode); return; }
   closeTreeContextMenu();
   if (action === "selectMultiple") {
     if (treeCtxId && state.nodes[treeCtxId]) { setTreeSelectMode(true, treeCtxId); render(); }
@@ -40016,6 +40189,9 @@ function renderSidebarToolbar() {
     btn.title = a.label;
     const lbl = btn.querySelector(".row-action-label");
     if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
+    // Phone-only under-icon label (CSS shows .row-action-short on layout-phone), same source as the title.
+    const shortLbl = btn.querySelector(".row-action-short");
+    if (shortLbl && a.short && shortLbl.textContent !== a.short) shortLbl.textContent = a.short;
     // The mute button's glyph follows the selected node's state (eye / eye-off).
     if (a.action === "mute") {
       const hit = btn.querySelector(".row-action-hit"), svg = hit && hit.querySelector("svg");
