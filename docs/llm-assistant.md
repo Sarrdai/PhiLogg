@@ -126,7 +126,9 @@ every tool call left unanswered a "cancelled" tool message, as the
 chat-completions format requires.
 
 **Undo.** Every node a tool creates is recorded (`llmRoundCreated` →
-`round.created`, and `llmCreatedNodeIds` for the tree marker). When the round
+`round.created`, and `llmCreatedNodeIds` for the tree marker); tool runs execute
+inside `withoutCreateUndo`, so the generic per-creation undo step of user
+creations never fires for them. When the round
 ends, `llmPushRoundBatch` pushes one `"batch"` of `"create"` actions — Ctrl+Z
 takes back the whole round. **"Undo this round"** (`llmUndoRound(roundId,
 force)`): if that batch is still on top of the undo stack it is simply

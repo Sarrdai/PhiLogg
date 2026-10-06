@@ -1,0 +1,6 @@
+- **fix: usability round E3 — settings nav highlight, time-filter label, tablet level row, short hex ids (2026-10-06, person-reported)**
+  - Settings nav: the highlight is computed from the scroll position (last section above 30% of the viewport, last section at the bottom) instead of an IntersectionObserver, so it no longer sticks to a short section; a nav click keeps its item until the next hand scroll.
+  - Tree label of a time filter: the duration is its own non-shrinking element; a narrow tree cuts the bounds, never the duration. Tablet: the "level bar on its own row" decision now counts the toolbar children's margins and gaps, so the bar no longer overflows by a few dozen pixels.
+  - Patterns: hex ids of 4+ chars mixing letters and digits (`r-4f2d1a`) collapse to `<hex>` (was 8+), and a 4+ hex run with a letter right after a 1-3 letter prefix and dash (`r-dedcac`, `r-4e5123`) does too; `1e10` stays a number.
+  - Minimap draft: label and action bar sit side by side inside the strip and the label is never covered by a handle. Facets: columns are sized by their content when they fit one row.
+  - **Tests**: GROUP settings-scroll-spy, time-filter-label-duration, tablet-viewbar-fit, patterns-short-hex-id, minimap-draft-overlay-placement, facet-column-widths. Docs: docs/ui-and-views.md, docs/filters.md.

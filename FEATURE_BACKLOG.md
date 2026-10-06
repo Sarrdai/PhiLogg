@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 103
+LAST_ID: 104
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -56,6 +56,7 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 97 | Plot: bound the number of drawn marks for very large extractions | After the 2026-10-02 stack-overflow fix a 300k-point scatter renders, but every mark is an SVG element: about 2 s per redraw in Chromium, and the first draw runs several redraws. Drawing at most one mark per pixel cell (or a canvas layer) would keep hover/click mapping and the picture while bounding the cost. | mittel | 2 |
 | 98 | Extraction table: select-all on a big extraction is slow | `applyExtractSelectionClasses` (behind `selectCells`) runs one `querySelector` per selected cell; selecting every cell of a 200k-row extraction takes seconds. Toggle the classes by walking the rendered rows once instead (found while fixing the spread crash, 2026-10-02). | klein | 2 |
 | 102 | Check saving in the macOS/Linux desktop builds | WKWebView (macOS) and WebKitGTK (Linux) have no `showSaveFilePicker`, so every save (session, filter, Export / Share files, CSV, plot image, themes) falls back to an `<a download>` of a Blob, and the Tauri wrapper does not handle downloads explicitly. Whether a file is actually written there, and where, is unverified (the cloud container cannot run those builds); the app would toast "Downloaded …" either way. Candidate: a wrapper-side save dialog via the `window.philogg` contract, like `pick_folder`. | mittel | 2 |
+| 104 | Patterns view: group digit-only request ids with the hex ones | Since round E3 (2026-10-06) mixed hex ids like `r-4f2d1a`/`r-dedcac` collapse to `r-<hex>`, but digit-only ids such as `r-123456` (~6 % of the simulator's `reqId`) still become `r-<#>` and form a second group. Treating them as hex would break real numbers like `job=J-<#>`. Options: let the simulator's `reqId` always contain a letter (changes every seed's output), or merge an `X-<#>` group into a sibling `X-<hex>` group with the same remaining text. | klein | 2 |
 | 88 | Very large files (multi-GB) in the desktop build | Keep raw data and a line/time index on the Rust side and hand JS only the window it currently needs, instead of holding every entry in memory. Today the whole file lives in RAM — fine up to a few hundred MB, a hard limit beyond that; #54 (Prune) only mitigates it. | groß | 3 |
 | 99 | Carry `selectionOrdinal` through the filter-node copy table | `createSelectionFilterNode` sets it, but no carrier copies, saves or restores it: a pasted, undone or reloaded "Selection N" node has `selectionFilter` and no ordinal, so `specialChildRank` ranks it 3 like any other. One `FILTER_NODE_FIELDS` row plus the readers and a fixture (GROUP filter-node-carriers lists it as not carried). | klein | 3 |
 | 100 | `findRootIdForEntry` is a linear scan | About 5 ms of every bookmark/note toggle on a 300k-entry file (measured in a one-off probe after the 2026-10-02 cache-scope change, which brought a toggle from about 625 ms to about 17 ms); an `entryIndex`-side root lookup would make it constant. | klein | 3 |
