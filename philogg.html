@@ -941,6 +941,13 @@
     white-space:normal; line-height:1.3;
   }
   .tree-label-wrap .tl-seg{white-space:nowrap;}
+  /* With a duration: flex row, bounds shrink (2-line clamp + ellipsis), the duration never does. */
+  .tree-label.tree-label-dur{display:flex; align-items:baseline; gap:.3em;}
+  .tree-label-dur .tl-range{
+    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  }
+  .tree-label-dur .tl-dur{flex:none; white-space:nowrap;}
   [data-type="file"] > .tree-row .tree-label{font-weight:600; color:var(--text-primary);}
   .tree-rename-input{
     width:100%; min-width:0; font:inherit; font-size:12.3px; color:var(--text-primary);
@@ -1743,10 +1750,10 @@
   }
   #timelineMinimapDragRect.hidden{display:none;}
   #timelineMinimapDragLabel{
-    position:absolute; top:4px; transform:translateX(-50%);
+    position:absolute; top:4px;
     padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
     border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
-    pointer-events:none; white-space:nowrap; z-index:11;
+    pointer-events:none; white-space:nowrap; z-index:31; /* above the handles (12): text is never cut by one */
   }
   #timelineMinimapDragLabel.hidden{display:none;}
   /* Draft window: stays after a drag until filtered, zoomed into, edited or
@@ -1754,10 +1761,10 @@
      the svg). The rect reuses #timelineMinimapDragRect with .selected. */
   #timelineMinimapDragRect.selected{opacity:1; border-width:1px 0; pointer-events:none;}
   #timelineMinimapDraftLabel{
-    position:absolute; top:4px; transform:translateX(-50%);
+    position:absolute; top:4px;
     padding:3px 7px; background:var(--bg-elevated-2); border:1px solid var(--accent);
     border-radius:6px; font-size:10.5px; font-family:var(--font-mono); color:var(--text-secondary);
-    pointer-events:none; white-space:nowrap; z-index:11;
+    pointer-events:none; white-space:nowrap; z-index:31; /* above the handles (12): text is never cut by one */
   }
   .minimap-draft-handle{
     position:absolute; width:22px; margin-left:-11px; cursor:ew-resize; z-index:12; touch-action:none;
@@ -1768,12 +1775,12 @@
   }
   .minimap-draft-handle:hover::after, .minimap-draft-handle.dragging::after{background:var(--accent-strong);}
   .minimap-draft-bar{
-    position:absolute; display:flex; gap:4px; padding:3px; z-index:30;
-    background:var(--bg-elevated-2); border:1px solid var(--accent); border-radius:8px;
-    box-shadow:0 4px 14px rgba(0,0,0,.25);
+    position:absolute; display:flex; gap:3px; padding:2px; z-index:30;
+    background:var(--bg-elevated-2); border:1px solid var(--accent); border-radius:7px;
+    box-shadow:0 2px 8px rgba(0,0,0,.25);
   }
   .minimap-draft-bar button{
-    font:inherit; font-size:12px; min-height:26px; padding:0 10px; cursor:pointer;
+    font:inherit; font-size:11.5px; min-height:22px; padding:0 8px; cursor:pointer;
     color:var(--text-primary); background:var(--bg-panel); border:1px solid var(--border); border-radius:6px;
   }
   .minimap-draft-bar button:hover{border-color:var(--accent); background:var(--accent-soft);}
@@ -17026,8 +17033,12 @@ function finishAnalysisFilter(node, tab) {
    split back into literal text and placeholders without ambiguity when a
    filter pattern is built from it. One regex pass per message, alternatives
    in priority order: GUID, IPv4[:port], a "double" or 'single' quoted string (its content; quotes kept), a
-   Windows/UNC or multi-segment Unix path, a hex literal/hash (0x…, or 8+
-   hex digits mixing letters and digits), then any number — a sign only
+   Windows/UNC or multi-segment Unix path, a hex literal/hash (0x…, or 4+
+   hex chars with at least one letter right after a short letter prefix
+   and a dash — an id like "r-4f2d1a" / "r-dedcac" / "r-4e5123" (an all-digit
+   "J-00004" stays a number: it has its own [*:word] Extract handling) — or a free-standing
+   whole word of 4+ hex chars mixing letters and digits, except the float
+   exponent shape 1e10 / 2E5, which stays a number), then any number — a sign only
    when it isn't glued to a word ("Worker-3" keeps its dash), and grouped
    with thousands separators only when both separators are present
    ("1,234.5", same unambiguous shape a plain [*:float] accepts). */
@@ -17040,7 +17051,7 @@ const PATTERN_TOKEN_RE = new RegExp(
   "|((?<![\\w.])\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d{1,5})?(?![\\w.]))" +
   '|("[^"\\n]*"|(?<![\\w\'])\'[^\'\\n]*\'(?![\\w\']))' +
   "|((?:\\b[A-Za-z]:\\\\|\\\\\\\\)[^\\s\"'<>|,;]+|(?<![\\w.:/])\\/[\\w.-]+(?:\\/[\\w.-]*)+)" +
-  "|(\\b0[xX][0-9a-fA-F]+\\b|\\b(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{8,}\\b)" +
+  "|(\\b0[xX][0-9a-fA-F]+\\b|(?<=\\b[A-Za-z]{1,3}-)(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{4,}\\b|\\b(?!\\d+[eE]\\d+\\b)(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{4,}\\b)" +
   "|((?:(?<![\\w.])[-+])?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?))",
   "g"
 );
@@ -17460,7 +17471,57 @@ function renderFacetPanel() {
   });
   facetPanelBody.innerHTML = html;
   facetPanelBody._facetResult = c.result;
+  facetMeasureNeeds();
+  facetApplyColumns();
   fitFacetPathNames();
+}
+
+// Facet columns get their width from their content. Fixed per-row overhead
+// besides the value name: padding 28 + 8, count 42, pct 30, two 6px gaps, and
+// the section's 1px left border.
+const FACET_ROW_OVERHEAD = 28 + 8 + 42 + 30 + 12 + 1;
+const FACET_NAME_MIN = 90, FACET_NAME_MAX = 320;
+// Pure: grid-template-columns for per-section widths `needs` (px), or null when
+// they do not fit on one row of `availWidth` (the default wrapping grid stays).
+// Spare space is shared in proportion to each need (minmax(n px, n fr)).
+function facetColumnTemplate(needs, availWidth) {
+  if (!needs.length || !(availWidth > 0)) return null;
+  const sum = needs.reduce((a, n) => a + n, 0);
+  if (sum > availWidth) return null;
+  return needs.map(n => "minmax(" + Math.round(n) + "px, " + Math.round(n) + "fr)").join(" ");
+}
+// Measures each section's need (longest shown name, clamped, + row overhead)
+// into facetPanelBody._facetNeeds. No layout (hidden panel, jsdom) → null.
+function facetMeasureNeeds() {
+  facetPanelBody._facetNeeds = null;
+  if (!facetPanelBody.clientWidth) return;
+  const probe = document.createElement("span");
+  probe.className = "facet-value-name";
+  probe.style.cssText = "position:absolute; visibility:hidden; white-space:nowrap; overflow:visible; left:0; top:0;";
+  facetPanelBody.appendChild(probe);
+  const needs = [];
+  facetPanelBody.querySelectorAll(".facet-section").forEach(sec => {
+    let w = 0;
+    sec.querySelectorAll(".facet-value-name").forEach(nameEl => {
+      const full = nameEl.dataset.full != null ? nameEl.dataset.full : nameEl.textContent;
+      let text = full;
+      if (nameEl.classList.contains("facet-path")) { // the "…\Last.cs line 123" form fitFacetPathNames tries first
+        const sepAt = Math.max(full.lastIndexOf("\\", full.length - 2), full.lastIndexOf("/", full.length - 2));
+        text = "…" + full.slice(Math.max(0, sepAt));
+      }
+      probe.textContent = text;
+      w = Math.max(w, probe.offsetWidth);
+    });
+    needs.push(Math.ceil(Math.min(FACET_NAME_MAX, Math.max(FACET_NAME_MIN, w)) + FACET_ROW_OVERHEAD));
+  });
+  probe.remove();
+  facetPanelBody._facetNeeds = needs;
+}
+function facetApplyColumns() {
+  const needs = facetPanelBody._facetNeeds;
+  const phone = typeof currentLayoutTier !== "undefined" && currentLayoutTier === "phone";
+  const tpl = needs && !phone ? facetColumnTemplate(needs, facetPanelBody.clientWidth) : null;
+  facetPanelBody.style.gridTemplateColumns = tpl || "";
 }
 
 // Path-like facet values (contain \ or /) are shortened to start at the last
@@ -17493,7 +17554,7 @@ if (typeof ResizeObserver === "function") {
   let facetFitFrame = 0;
   new ResizeObserver(() => {
     if (facetFitFrame) return;
-    facetFitFrame = requestAnimationFrame(() => { facetFitFrame = 0; if (facetsActive()) fitFacetPathNames(); });
+    facetFitFrame = requestAnimationFrame(() => { facetFitFrame = 0; if (facetsActive()) { facetApplyColumns(); fitFacetPathNames(); } });
   }).observe(el("#facetPanelBody"));
 }
 
@@ -20205,14 +20266,33 @@ function renderNode(id, depth, opts) {
       // " – " / " · " separators: each segment is a nowrap span, the single
       // spaces between them are the only break opportunities. textContent
       // stays identical to the plain name.
+      // A timerange label with a duration ("… · 4.2s") keeps the duration in
+      // its own non-shrinking .tl-dur: when space runs out the bounds
+      // (.tl-range) get clamped/ellipsized, never the duration.
       label.classList.add("tree-label-wrap");
-      shownName.split(/(?<=[–·]) /).forEach((seg, i) => {
-        if (i) label.appendChild(document.createTextNode(" "));
+      const durAt = node.filterType === "timerange" ? shownName.lastIndexOf(" · ") : -1;
+      let rangeHost = label;
+      if (durAt > 0) {
+        label.classList.add("tree-label-dur");
+        rangeHost = document.createElement("span");
+        rangeHost.className = "tl-range";
+        label.appendChild(rangeHost);
+      }
+      const rangeText = durAt > 0 ? shownName.slice(0, durAt + 2) : shownName;
+      rangeText.split(/(?<=[–·]) /).forEach((seg, i) => {
+        if (i) rangeHost.appendChild(document.createTextNode(" "));
         const sp = document.createElement("span");
         sp.className = "tl-seg";
         sp.textContent = seg;
-        label.appendChild(sp);
+        rangeHost.appendChild(sp);
       });
+      if (durAt > 0) {
+        label.appendChild(document.createTextNode(" "));
+        const dur = document.createElement("span");
+        dur.className = "tl-dur";
+        dur.textContent = shownName.slice(durAt + 3);
+        label.appendChild(dur);
+      }
     } else label.textContent = shownName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
@@ -20694,10 +20774,18 @@ function updateLevelBarLayout() {
   if (tier === "compact") {
     const chips = [...levelBarEl.children];
     const chipsW = chips.reduce((a, c) => a + c.offsetWidth, 0) + Math.max(0, chips.length - 1) * 6;
-    const others = [...viewBar.children].filter(c => c !== levelBarEl).reduce((a, c) => a + c.offsetWidth, 0);
+    // Natural widths plus each child's horizontal margins (tab strip, separators,
+    // library button, ...) and #levelBar's own margins; display:none children
+    // take no space; a flex column-gap sits between every pair of children.
+    const marginsOf = c => { const m = getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
+    const shown = [...viewBar.children].filter(c => getComputedStyle(c).display !== "none");
+    const others = shown.filter(c => c !== levelBarEl).reduce((a, c) => a + c.offsetWidth + marginsOf(c), 0) +
+      (shown.includes(levelBarEl) ? marginsOf(levelBarEl) : 0);
     const cs = getComputedStyle(viewBar);
+    const gap = parseFloat(cs.columnGap) || 0;
+    const gaps = Math.max(0, shown.length - 1) * gap;
     const avail = viewBar.clientWidth - (parseFloat(cs.paddingLeft) || 0) - (parseFloat(cs.paddingRight) || 0);
-    own = chips.length > 0 && others + chipsW > avail;
+    own = chips.length > 0 && others + chipsW + gaps > avail;
   }
   viewBar.classList.toggle("level-own-row", own);
 }
@@ -29709,9 +29797,6 @@ function renderMinimapDraft() {
   const shortEl = timelineMinimapMetaEl.querySelector(".minimap-draft-text");
   if (shortEl) shortEl.textContent = minimapDraftLabelText(d, false);
   timelineMinimapDraftLabel.classList.remove("hidden");
-  const halfL = (timelineMinimapDraftLabel.offsetWidth || 0) / 2; // keep the whole label inside the strip
-  timelineMinimapDraftLabel.style.left = Math.max(halfL + 4, Math.min(W - halfL - 4, (lo + hi) / 2)).toFixed(1) + "px";
-  timelineMinimapDraftLabel.style.top = (top + 4) + "px";
   minimapDraftHandles.forEach(hd => {
     const bound = hd.dataset.side === "from" ? d.from : d.to;
     const x = hd.dataset.side === "from" ? xa : xb;
@@ -29722,15 +29807,56 @@ function renderMinimapDraft() {
     hd.style.height = h + "px";
   });
   // The action bar belongs to a user draft only, not to the adopted window.
-  if (!minimapDraft) { timelineMinimapDraftBar.classList.add("hidden"); return; }
-  const node = state.nodes[state.activeId];
-  const filterBtn = timelineMinimapDraftBar.querySelector('[data-act="filter"]');
-  filterBtn.textContent = node && isTimeFilterType(node.filterType) ? "Update filter" : "Filter";
-  timelineMinimapDraftBar.classList.remove("hidden");
-  const barW = timelineMinimapDraftBar.offsetWidth || 0;
-  const barLeft = Math.max(4, Math.min(W - barW - 4, (lo + hi) / 2 - barW / 2));
-  timelineMinimapDraftBar.style.left = barLeft.toFixed(1) + "px";
-  timelineMinimapDraftBar.style.top = (top + h + 3) + "px";
+  const bar = timelineMinimapDraftBar;
+  const phone = typeof currentLayoutTier !== "undefined" && currentLayoutTier === "phone";
+  const hasBar = !!minimapDraft;
+  if (hasBar) {
+    const node = state.nodes[state.activeId];
+    bar.querySelector('[data-act="filter"]').textContent = node && isTimeFilterType(node.filterType) ? "Update filter" : "Filter";
+    bar.classList.remove("hidden");
+  } else bar.classList.add("hidden");
+  const label = timelineMinimapDraftLabel;
+  const labelW = phone ? 0 : label.offsetWidth || 0, barW = hasBar ? bar.offsetWidth || 0 : 0;
+  const labelH = label.offsetHeight || 0, barH = bar.offsetHeight || 0;
+  const fromVisible = d.from != null && xa >= 0 && xa <= W, toVisible = d.to != null && xb >= 0 && xb <= W;
+  if (phone) { // the crumb line shows the text; the bar stays below the strip
+    if (hasBar) {
+      bar.style.left = Math.max(4, Math.min(W - barW - 4, (lo + hi) / 2 - barW / 2)).toFixed(1) + "px";
+      bar.style.top = (top + h + 3) + "px";
+    }
+    return;
+  }
+  // Label and bar are one group inside the strip: [label] 6px [bar].
+  const gap = hasBar ? 6 : 0;
+  const left = minimapDraftGroupLeft({ W, xa, xb, fromVisible, toVisible, groupW: labelW + gap + barW });
+  const compact = typeof currentLayoutTier !== "undefined" && currentLayoutTier === "compact";
+  let labelTop = top + 4, barTop = top + 4;
+  if (hasBar) {
+    if (compact) { barTop = top + 2; labelTop = barTop + (barH - labelH) / 2; }
+    else barTop = Math.max(top, labelTop + (labelH - barH) / 2);
+  }
+  label.style.left = left.toFixed(1) + "px";
+  label.style.top = labelTop.toFixed(1) + "px";
+  if (hasBar) {
+    bar.style.left = (left + labelW + gap).toFixed(1) + "px";
+    bar.style.top = barTop.toFixed(1) + "px";
+  }
+}
+// Pure: left edge of the draft label+bar group inside the minimap strip.
+// 1) centered on the window when it fits between the visible handles (22px
+// wide, centered on xa/xb) with 14px clearance each side; 2) else beside the
+// window on the roomier side (right of the to-handle / left of the from-handle);
+// 3) always clamped to [4, W - 4]. A hidden/off-screen handle is not in the way.
+function minimapDraftGroupLeft({ W, xa, xb, fromVisible, toVisible, groupW }) {
+  const clamp = l => Math.max(4, Math.min(W - 4 - groupW, l));
+  const lo = Math.min(W, Math.max(0, xa)), hi = Math.min(W, Math.max(0, xb));
+  const minL = fromVisible ? xa + 11 + 14 : 4, maxR = toVisible ? xb - 11 - 14 : W - 4;
+  const centered = (lo + hi) / 2 - groupW / 2;
+  if (centered >= minL && centered + groupW <= maxR) return clamp(centered);
+  const roomRight = toVisible ? W - 4 - (xb + 14) : -Infinity;
+  const roomLeft = fromVisible ? xa - 14 - 4 : -Infinity;
+  if (roomRight === -Infinity && roomLeft === -Infinity) return clamp(centered);
+  return clamp(roomRight >= roomLeft ? xb + 14 : xa - 14 - groupW);
 }
 function minimapSetDraft(from, to) {
   minimapDraft = { from, to };
@@ -43516,6 +43642,8 @@ function closeSettingsDialog() { settingsDialog.classList.add("hidden"); stopSho
 function openSettingsDialog() {
   settingsDialog.classList.remove("hidden");
   settingsEnsureNavItemVisible();
+  settingsNavPinned = false;
+  settingsUpdateActiveNav();
   renderFormatList();
   renderFormatRuleList();
   renderShortcutBindingsList();
@@ -43524,19 +43652,51 @@ settingsDialog.addEventListener("click", ev => { if (ev.target === settingsDialo
 el("#settingsClose").addEventListener("click", closeSettingsDialog);
 
 // Section nav (left column): click scrolls the still-single scrollable body
-// to that section; an IntersectionObserver keeps the nav highlighted on
-// whichever section is currently in view while scrolling by hand — same
-// "quick jump + always-correct highlight" idea as a table of contents.
+// to that section; a scroll-driven computation keeps the nav highlighted on
+// the section being read — same "quick jump + always-correct highlight" idea
+// as a table of contents. (Not an IntersectionObserver: it only fires on
+// transitions, so a long section that never left the band could not win back
+// the highlight from a short one that re-entered it.)
 const settingsNavItems = Array.from(document.querySelectorAll(".settings-nav-item"));
 const settingsPageBody = el(".settings-page-body");
+// Pure: the active section id. sections: [{id, top, height}] in scroll
+// coordinates (document order); hidden ones have height 0. The active one is
+// the last visible section whose top is at or above a line 30% down the
+// viewport; at the very bottom the last visible section wins.
+function settingsActiveSectionId(sections, scrollTop, clientHeight, scrollHeight) {
+  const vis = sections.filter(s => s.height > 0);
+  if (!vis.length) return null;
+  if (scrollTop + clientHeight >= scrollHeight - 2) return vis[vis.length - 1].id;
+  const line = scrollTop + clientHeight * 0.3;
+  let pick = vis[0];
+  for (const s of vis) if (s.top <= line) pick = s;
+  return pick.id;
+}
+let settingsNavPinned = false; // after a nav click: keep the clicked item until the user scrolls by hand
+function settingsUpdateActiveNav() {
+  if (settingsNavPinned) return;
+  const bodyTop = settingsPageBody.getBoundingClientRect().top;
+  const sections = Array.from(document.querySelectorAll(".settings-section")).map(sec => ({
+    id: sec.id, top: sec.getBoundingClientRect().top - bodyTop + settingsPageBody.scrollTop, height: sec.offsetHeight
+  }));
+  const id = settingsActiveSectionId(sections, settingsPageBody.scrollTop, settingsPageBody.clientHeight, settingsPageBody.scrollHeight);
+  const item = id && settingsNavItems.find(b => b.dataset.navTarget === id);
+  if (item && !item.classList.contains("active")) { settingsNavItems.forEach(b => b.classList.remove("active")); item.classList.add("active"); }
+}
+let settingsSpyRaf = 0;
+settingsPageBody.addEventListener("scroll", () => {
+  if (settingsSpyRaf) return;
+  settingsSpyRaf = requestAnimationFrame(() => { settingsSpyRaf = 0; settingsUpdateActiveNav(); });
+}, { passive: true });
+["wheel", "touchstart", "keydown", "pointerdown"].forEach(t =>
+  settingsPageBody.addEventListener(t, () => { settingsNavPinned = false; }, { passive: true }));
 settingsNavItems.forEach(btn => {
   btn.addEventListener("click", () => {
-    // Set .active directly instead of waiting on the IntersectionObserver
-    // below — when a section's short enough that scrollIntoView is a no-op
-    // (nothing to scroll to), the observer never fires again and a click
-    // would otherwise produce no visible feedback at all.
+    // Set .active directly: when a section is short enough that scrollIntoView
+    // is a no-op, no scroll event follows and a click would show no feedback.
     settingsNavItems.forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
+    settingsNavPinned = true;
     const target = document.getElementById(btn.dataset.navTarget);
     if (target && target.scrollIntoView) target.scrollIntoView({ block: "start" });
   });
@@ -43551,18 +43711,6 @@ function settingsEnsureNavItemVisible() {
   const first = settingsNavItems.find(b => b.dataset.navTarget === "settingsSectionAppearance");
   first.classList.add("active");
   settingsPageBody.scrollTop = 0;
-}
-// jsdom (the regression suite's DOM) has no IntersectionObserver — the nav
-// still works without it, just without the scroll-driven active highlight.
-if (typeof IntersectionObserver !== "undefined") {
-  const settingsSectionObserver = new IntersectionObserver(entries => {
-    entries.forEach(entry => {
-      if (!entry.isIntersecting) return;
-      const item = settingsNavItems.find(b => b.dataset.navTarget === entry.target.id);
-      if (item) { settingsNavItems.forEach(b => b.classList.remove("active")); item.classList.add("active"); }
-    });
-  }, { root: settingsPageBody, threshold: 0, rootMargin: "0px 0px -70% 0px" });
-  document.querySelectorAll(".settings-section").forEach(sec => settingsSectionObserver.observe(sec));
 }
 
 /* ===================== Shortcut Manager (Settings > Shortcuts) =====================

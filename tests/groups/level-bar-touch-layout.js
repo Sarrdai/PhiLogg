@@ -72,7 +72,10 @@ await withApp(async (w, d, T) => {
   const n = bar.children.length;
   const cs = w.getComputedStyle(viewBar);
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
-  const chipsW = n * 44 + (n - 1) * 6 + pad; // the padding counts against the available width
+  // The padding and every child's horizontal margins count against the available width.
+  const mg = c => { const m = w.getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
+  const margins = [...viewBar.children].reduce((a, c) => a + mg(c), 0);
+  const chipsW = n * 44 + (n - 1) * 6 + pad + margins;
   w.updateLevelBarLayout();
   assert(!viewBar.classList.contains("level-own-row"), "fits in one row: no own row");
   avail = others + chipsW - 1;

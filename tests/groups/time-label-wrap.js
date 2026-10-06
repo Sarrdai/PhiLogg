@@ -23,7 +23,8 @@ await withApp(async (w, d, T) => {
   const l = labelOf(node);
   assert(l && l.classList.contains("tree-label-wrap"), "time node label is a wrap label");
   const segs = [...l.querySelectorAll(".tl-seg")].map(s => s.textContent);
-  assert(segs.length === 3 && segs[0].endsWith(" –") && segs[1].endsWith(" ·") && /^\d/.test(segs[2]), "three segments, separator stays with the preceding one: " + JSON.stringify(segs));
+  const durEl = l.querySelector(".tl-dur");
+  assert(segs.length === 2 && segs[0].endsWith(" –") && segs[1].endsWith(" ·") && durEl && /^\d/.test(durEl.textContent), "two bound segments (separator stays with the preceding one) plus the duration element: " + JSON.stringify(segs));
   assert(l.textContent === w.nodeDisplayName(node), "textContent identical to the name: " + l.textContent);
   assert(segs.every(s => !/\d\s\d/.test(s)), "no segment is split inside a time");
   const lh = labelOf(half);
