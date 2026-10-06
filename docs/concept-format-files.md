@@ -10,7 +10,7 @@
 - [Open decisions](#open-decisions)
 <!-- /toc -->
 
-Status: proposal, not implemented. Decisions still open are listed at the
+Status: proposal, not implemented (FEATURE_BACKLOG.md #105). Decisions still open are listed at the
 end. Once implemented, the current state moves into `docs/log-formats.md`
 and this file into `docs/archive/`.
 
