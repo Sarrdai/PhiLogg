@@ -35,7 +35,6 @@ Wiedervorlage → empty, Verworfen → verworfen).
 
 | Nr | Vorschlag | Begründung | Aufwand | Prio |
 |---|---|---|---|---|
-| 38 | Replace the level-filter icon (three bars) | Not a bug; the current icon just isn't expressive enough. Wants a clearer/more meaningful glyph for the level filter. | klein | 1 |
 | 54 | "Prune" action when a filter and a file are both selected | Discards everything from memory/view that isn't part of the filter's result set, not just hides it. Especially useful for time filters (throw away everything outside the range) but not restricted to that case. Where content was pruned, insert a placeholder (at least in the Context view, whose gap strips are the natural home for it) so the cut is visible rather than silently making rows disappear. Also eases (but doesn't remove) the in-memory size limit for very large files, see #88. | mittel | 1 |
 | 19 | File-independent (universal) cache for the `.html` build | Today the cache appears keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed). | mittel | 2 |
 | 21 | Warn/migrate when an extraction pattern edit shifts columns | Assertions and ignored-columns are index-based and silently point at the wrong column otherwise. | klein–mittel | 2 |

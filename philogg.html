@@ -1145,6 +1145,19 @@
      in this row (person-requested, this session: one consistent divider
      rhythm instead of #levelBar's own special-cased blank gap). */
   #btnApplyLevelToTree{float:left; margin:0;}
+  /* "+" badge on #btnApplyLevelToTree (backlog #38): the level icon itself
+     (three dots in the ERROR/WARN/INFO theme colors, `i-level`) is shared
+     with the tree's level node, but only this button says "adds a node to the
+     tree" with a small accent disc + plus on its bottom-right edge. The
+     badge sits OUTSIDE the 28px box (-3px), so no ancestor of the button may
+     clip it (#viewBar's tablet overflow:hidden axis keeps the row's own
+     padding as headroom). Colors are tokens, so every theme follows. */
+  #btnApplyLevelToTree .level-add-badge{
+    position:absolute; right:-3px; bottom:-3px; width:11px; height:11px; border-radius:50%;
+    background:var(--accent); color:var(--accent-on);
+    display:grid; place-items:center; pointer-events:none;
+  }
+  #btnApplyLevelToTree .level-add-badge svg{width:7px; height:7px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;}
   /* The row-actions group (Bookmark/Note/Filter after/before/for this
      message/Time filter from selection/Add to selection — person-requested
      "Filter-Toolbar" placement, right of the level filter) is #viewBar's
@@ -5411,7 +5424,7 @@
     <symbol id="i-highlight-pen" viewBox="0 0 16 16"><path d="M9.5 2.5 13.5 6.5 7.25 12.75 3 13.5l.75-4.25Z"/><path d="M2.25 14.5h5"/></symbol>
     <symbol id="i-highlight-text" viewBox="0 0 16 16"><path d="M4 3.25h8M8 3.25v6M2.5 11.75h11M2.5 14.25h11"/></symbol>
     <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.25v3.5"/><circle cx="8" cy="5" r=".9" fill="currentColor" stroke="none"/></symbol>
-    <symbol id="i-level" viewBox="0 0 16 16"><path d="M3 12.5v-3M8 12.5v-6M13 12.5v-9"/></symbol>
+    <symbol id="i-level" viewBox="0 0 16 16"><circle cx="8" cy="4" r="2.4" fill="var(--level-error)" stroke="none"/><circle cx="4" cy="11.5" r="2.4" fill="var(--level-warn)" stroke="none"/><circle cx="12" cy="11.5" r="2.4" fill="var(--level-info)" stroke="none"/></symbol>
     <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="M9.5 4 5.5 8l4 4M12.5 3.5v9"/></symbol>
     <symbol id="i-chevron-right" viewBox="0 0 16 16"><path d="M6.5 4l4 4-4 4M3.5 3.5v9"/></symbol>
     <symbol id="i-chevron-down" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4M3.5 3.5h9"/></symbol>
@@ -50605,7 +50618,9 @@ btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
 btnFilePathLinks.forEach(b => b.innerHTML = ICON_FILE_PATH_LINKS);
-btnApplyLevelToTree.innerHTML = ICON_LEVEL;
+// The level icon plus a "+" badge (only on this button, not on the tree's level node).
+btnApplyLevelToTree.innerHTML = ICON_LEVEL +
+  '<span class="level-add-badge" aria-hidden="true"><svg viewBox="0 0 8 8"><path d="M4 1.5v5M1.5 4h5"/></svg></span>';
 btnApplyLevelToTree.addEventListener("click", () => {
   const levels = canonicalLevelOrder([...state.levelFilter]);
   if (!levels.length) return;
