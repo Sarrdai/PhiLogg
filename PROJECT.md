@@ -25,6 +25,7 @@
   - [docs/performance-testing.md](#docsperformance-testingmd)
   - [docs/homepage.md](#docshomepagemd)
   - [docs/testing-and-limitations.md](#docstesting-and-limitationsmd)
+  - [docs/device-test-checklist.md](#docsdevice-test-checklistmd)
   - [changelog.d/](#changelogd)
   - [docs/archive/](#docsarchive)
 - [Known gotchas — check before touching related code](#known-gotchas--check-before-touching-related-code)
@@ -257,6 +258,9 @@ The product homepage (`site/index.html`, one static file) and its GitHub Pages d
 
 ### `docs/testing-and-limitations.md`
 The jsdom-based testing approach (and its known blind spots — no real layout/paint engine), the log simulator (`tools/log-sim/`: deterministic sample logs in every format for tests, demos and screenshots), plus the running list of known limitations and intentionally-deferred items (assertions/ignored-columns keyed by index not name, no cross-file filter combination, no AND/OR over a `link` node, etc.).
+
+### `docs/device-test-checklist.md`
+Manual checks for a person with real devices — what the cloud container cannot verify: pinch zoom on the touch minimap, real-touch double-tap on a Link-view row, the Browser-Back guard in real Chrome (incl. a fast double Back), and whether saving writes a file in the macOS/Linux desktop builds (backlog #102). Steps and expected result per item.
 
 ### `changelog.d/`
 The dated history: what shipped, in what order, and why — one file per change, `changelog.d/YYYY-MM-DD-<slug>.md` (format and rules in `changelog.d/README.md`). `node scripts/changelog.js` prints it as one newest-first list; `grep -rl <term> changelog.d` answers "why/when did X change".
