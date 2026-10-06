@@ -22,8 +22,8 @@ await withApp(async (w, d, T) => {
   const has = (sel, decl, coarse = false) => find(sel, coarse).some(r => r.css.replace(/\s/g, "").includes(decl));
 
   section("find-bar-phone-layout a. Phone: full-width two-row grid");
-  assert(has("body.layout-phone #findBar", "left:8px") && has("body.layout-phone #findBar", "right:8px") && has("body.layout-phone #findBar", "max-width:none"),
-    "bar spans the full #fhSplit width");
+  assert(has("body.layout-phone #findBar", "margin:4px8px") && has("body.layout-phone #findBar", "position:relative") && has("body.layout-phone #findBar", "max-width:none"),
+    "bar spans the full #fhSplit width (in flow, 8px side margins; see phone-find-bar-in-flow)");
   assert(has("body.layout-phone #findBar", "display:grid"), "bar is a grid");
   const grid = find("body.layout-phone #findBar", false).map(r => r.css).join(" ");
   const iInput = grid.search(/"input input/), iCase = grid.search(/"case/);
