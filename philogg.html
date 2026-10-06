@@ -4845,7 +4845,16 @@
      tour banner, only the Patterns + Filtered tabs, one scrolling row of
      level pills, a slim minimap, and the entry detail as a bottom sheet.
      Editing is off (see PROJECT.md / docs/ui-and-views.md "Responsive layout"). */
-  #phoneTitle, #tourBannerMore, .tour-banner-hint, #detailGrab{display:none;}
+  #phoneTitle, #tourBannerMore, .tour-banner-hint, #detailGrab, #btnAnalyzePhone, #phoneExtractHint{display:none;}
+  .lt-short{display:none;}
+  body.layout-phone #btnAnalyzePhone{display:inline-flex;}
+  body.layout-phone #btnAnalyzePhone[aria-pressed="true"]{color:var(--accent-strong); background:var(--accent-soft);}
+  /* Phone, extraction node: Table/Plot cannot show here; one muted line above the cards (not part of the virtualized body). */
+  body.layout-phone #phoneExtractHint.show{
+    display:flex; align-items:flex-start; gap:8px; flex:0 0 auto; margin:8px; padding:7px 9px; font-size:12px; line-height:1.35;
+    color:var(--text-secondary); background:var(--bg-elevated); border:1px dashed var(--border); border-radius:8px;
+  }
+  body.layout-phone #phoneExtractHint .peh-icon{flex:0 0 auto; display:inline-flex; margin-top:1px; color:var(--accent);}
   body:not(.layout-phone) .detail-phone-btn{display:none;}
   body.layout-phone #toolbar{height:52px;}
   body.layout-phone .brand-name, body.layout-phone .brand-version, body.layout-phone #navHistoryGroup,
@@ -4856,7 +4865,7 @@
   body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone .toolbar-right{flex:0 0 auto; gap:6px;}
-  body.layout-phone #btnDrawer, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
+  body.layout-phone #btnDrawer, body.layout-phone #btnAnalyzePhone, body.layout-phone #btnFindPhone, body.layout-phone #btnSettings{width:40px; height:40px;}
 
   body.layout-phone #tourBanner{flex-wrap:wrap; gap:4px 8px; padding:6px 10px; font-size:12.5px;}
   body.layout-phone .tour-banner-text{flex:1 1 0; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -5101,11 +5110,22 @@
   body.layout-phone #detailGrab::before{content:""; width:40px; height:4px; border-radius:2px; background:var(--bg-elevated-2);}
   body.layout-phone #detailGrab.dragging::before{background:var(--accent);}
   body.layout-phone #detailPanelHeader{height:auto; flex-wrap:wrap; gap:2px 4px; padding:2px 6px 6px 14px;}
-  body.layout-phone #lowerTabs, body.layout-phone #facetPanelCount, body.layout-phone #detailToggle{display:none !important;}
-  body.layout-phone #detailMeta{order:1; flex:1 1 0;}
+  /* Sheet tabs "Entry | Facets" (JS: phoneSheetTab) share the first row with prev / next / close; the entry meta
+     (or the facet count) and the Raw/Parsed/Pretty switch follow on their own rows. */
+  body.layout-phone #detailToggle{display:none !important;}
+  body.layout-phone #lowerTabs{order:0; flex:1 1 auto; min-width:0; align-self:center;}
+  body.layout-phone .lt-full{display:none;}
+  body.layout-phone .lt-short{display:inline-block;}
+  body.layout-phone .lower-tab{min-height:40px; padding:0 12px; font-size:12px;}
+  body.layout-phone #detailMeta{order:3; flex:1 0 100%; min-width:0;}
+  body.layout-phone #facetPanelCount{order:3; flex:1 0 100%; padding:0 2px 4px;}
   body.layout-phone .detail-phone-btn{display:flex; order:2; width:40px; height:40px;}
+  body.layout-phone #detailPanel.lower-facets :is(#detailPrev, #detailNext){display:none;}
+  body.layout-phone .facet-value{min-height:36px; font-size:12.5px;} /* finger-sized value rows in the sheet */
+  body.layout-phone #facetValueMenu{z-index:60;} /* above the bottom sheet (z-index 50) */
+  body.layout-phone #detailPanel.lower-facets #facetPanelBody, body.layout-phone #detailPanel.lower-facets.collapsed:not(.peeking) #facetPanelBody{display:grid; align-content:start; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding:2px 0 24px;}
   body.layout-phone #detailMessage{white-space:pre-wrap; overflow-wrap:anywhere;}
-  body.layout-phone #detailViewTabs{order:3; flex:1 0 100%; height:34px;}
+  body.layout-phone #detailViewTabs{order:4; flex:1 0 100%; height:34px;}
   body.layout-phone #detailViewTabs .view-tab{flex:1; font-size:12.5px;}
 
   /* Card rows (layout-phone): the same .log-row element, restyled. Heights
@@ -5188,12 +5208,12 @@
     body.layout-compact #viewBar.level-own-row::before{content:""; flex-basis:100%; order:1; height:0;}
     body.layout-compact #viewBar.level-own-row > #levelBar{order:2; flex:1 1 auto; min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:6px;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
-    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
+    body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnAnalyzePhone, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
     body.layout-phone #sidebarToolbar .stb-btn, body.layout-compact #sidebarToolbar .stb-btn{height:44px; min-width:44px;}
     body.layout-phone .view-tabs, body.layout-compact .view-tabs, body.layout-phone #detailViewTabs, body.layout-compact #detailViewTabs{height:auto;}
     body.layout-phone .view-tab, body.layout-compact .view-tab, body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{height:44px;}
-    body.layout-compact .lower-tab{min-height:44px; padding:0 12px; font-size:12px;}
+    body.layout-phone .lower-tab, body.layout-compact .lower-tab{min-height:44px; padding:0 12px; font-size:12px;}
     body.layout-phone .tree-row, body.layout-compact .tree-row{min-height:48px;}
     body.layout-phone .tree-row, body.layout-compact .tree-row, body.layout-phone .log-row, body.layout-compact .log-row{-webkit-touch-callout:none;}
     body.layout-phone .tree-swatch, body.layout-compact .tree-swatch{position:relative; width:18px; height:18px;}
@@ -5451,6 +5471,10 @@
       <button type="button" id="btnAssistant" class="toolbar-icon-btn hidden" title="Assistant (local LLM)">
         <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z"/><path d="M5.5 7h.01M8 7h.01M10.5 7h.01"/></svg>
       </button>
+      <!-- Phone tier only: opens the bottom sheet on its Analyze tabs (Facets). -->
+      <button type="button" id="btnAnalyzePhone" class="toolbar-icon-btn" aria-label="Analyze" aria-pressed="false" title="Facets (Ctrl+I)" data-sc-title="Facets ({toggleFacets})">
+        <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 13.5V8M6.3 13.5V3.5M9.6 13.5V6.5M12.9 13.5V10"/></svg>
+      </button>
       <!-- Opens the find bar (Ctrl+F), in every layout. -->
       <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)" data-sc-title="Find in view ({findInView})">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
@@ -5526,7 +5550,7 @@
       <div id="tourBanner" class="hidden" role="note">
         <span class="tour-banner-text"></span>
         <button type="button" id="tourBannerMore" aria-expanded="false">more</button>
-        <span class="tour-banner-hint">Hands-on steps (TRY) need a desktop or tablet.</span>
+        <span class="tour-banner-hint">Hands-on steps (TRY) and the Table/Plot tabs need a desktop or tablet. Facets: the Analyze button.</span>
         <button type="button" id="tourBannerClose" aria-label="Close the tour hint">× close tour</button>
       </div>
 
@@ -5835,6 +5859,8 @@
               <span class="ctx-toolbar-sep"></span>
               <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
             </div>
+            <!-- Phone only, extraction node active: Table/Plot are not available here (updatePhoneExtractHint). -->
+            <div id="phoneExtractHint"><span class="peh-icon"></span><span>Table and Plot for this filter need a wider screen (tablet or desktop).</span></div>
             <div id="tableHeader">
               <!-- Content (including the out-of-flow .col-resize-handle
                    spans) is JS-built by renderColumnHeader (Custom Columns
@@ -6107,7 +6133,7 @@
           <div id="detailGrab" aria-hidden="true"></div>
           <div id="detailPanelHeader">
             <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
-              <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)">Entry detail</button>
+              <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)"><span class="lt-full">Entry detail</span><span class="lt-short">Entry</span></button>
               <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
             </div>
             <span id="facetPanelCount"></span>
@@ -17162,6 +17188,16 @@ const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
 const FACET_MORE_STEP = 25;
 let facetsOpen = false;
+// Phone: the bottom sheet's own state (plain UI state, never persisted — facetsOpen stays the
+// desktop/tablet selection). phoneSheetOpen: whether the sheet is shown (set by a card tap or the
+// Analyze button, see updateDetailPanel); phoneSheetTab: which tab it shows ("entry" | "facets";
+// step 2 adds "patterns" to PHONE_ANALYZE_TABS); phoneAnalyzeTab: the Analyze tab the header
+// button (re)opens, i.e. the last one used.
+let phoneSheetOpen = false;
+let phoneSheetTab = "entry";
+let phoneAnalyzeTab = "facets";
+const PHONE_ANALYZE_TABS = ["facets"];
+let phonePanelSig = ""; // syncPhoneSheetPanel's last applied signature
 try { facetsOpen = localStorage.getItem(FACETS_OPEN_KEY) === "1"; } catch { facetsOpen = false; }
 let facetsCollapsed = new Set();
 try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
@@ -17224,9 +17260,11 @@ function facetsAvailable() {
   return !!node && !isLinkNode(node);
 }
 
-// The Facets tab is selected AND can show: the phone has no Facets tab (a
-// persisted selection does nothing there; the phone sheet is the detail only).
-function facetsActive() { return facetsOpen && currentLayoutTier !== "phone"; }
+// The Facets tab is selected AND can show. Desktop/tablet: the persisted facetsOpen. Phone: exactly
+// while the bottom sheet is open on its Facets tab (phoneSheetTab; facetsOpen is not consulted).
+function facetsActive() {
+  return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "facets") : facetsOpen;
+}
 
 function lowerTabDetailTitle(offLog) {
   return offLog
@@ -17246,7 +17284,7 @@ function applyLowerPanel(offLog) {
   detailPanel.classList.toggle("detail-strip-only", !!offLog && !facets);
   lowerTabDetail.setAttribute("aria-selected", facets ? "false" : "true");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
-  lowerTabDetail.disabled = !!offLog;
+  lowerTabDetail.disabled = !!offLog || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
   lowerTabDetail.title = lowerTabDetailTitle(offLog);
   updateDetailResizerVisibility();
   renderFacetPanel();
@@ -17362,6 +17400,7 @@ function createFacetFilter(column, value, inverted) {
 // expands a collapsed panel. The panel height/visibility can change, hence the
 // full renderMainView (it re-measures the log like any layout change).
 function setFacetsOpen(open) {
+  if (currentLayoutTier === "phone") { setPhoneSheetTab(open ? "facets" : "entry"); return; }
   facetsOpen = !!open;
   try { localStorage.setItem(FACETS_OPEN_KEY, facetsOpen ? "1" : "0"); } catch {}
   if (facetsOpen && isDetailCollapsed()) toggleDetailCollapsed(false);
@@ -17371,13 +17410,14 @@ function setFacetsOpen(open) {
 }
 // Ctrl+I: Facets selected, expanded and visible -> back to Entry detail; otherwise Facets.
 function toggleFacets() {
+  if (currentLayoutTier === "phone") { toggleAnalyzeSheet("facets"); return; }
   const shown = facetsActive() && !isDetailCollapsed() && detailPanel.style.display !== "none";
   setFacetsOpen(!shown);
 }
 facetPanelBody.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
 [lowerTabDetail, lowerTabFacets].forEach(btn => {
   btn.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
-  btn.addEventListener("click", ev => { ev.stopPropagation(); if (!btn.disabled) setFacetsOpen(btn === lowerTabFacets); });
+  btn.addEventListener("click", ev => { ev.stopPropagation(); if (!btn.disabled) setFacetsOpen(btn === lowerTabFacets); }); // phone: setFacetsOpen switches the sheet tab
 });
 facetPanelBody.addEventListener("click", ev => {
   const section = ev.target.closest(".facet-section");
@@ -18386,7 +18426,7 @@ let renderDepth = 0; // > 0 while render() runs — see showFhTab's lazy Context
 function render() {
   renderDepth++;
   try { renderInner(); } finally { renderDepth--; }
-  if (renderDepth === 0) phoneEnforceTab();
+  if (renderDepth === 0) { phoneEnforceTab(); updatePhoneExtractHint(); }
 }
 let pairPick = null; // "Pair with…" pick mode: { startEntry, rootId, rootIds: Set of the file's entry ids, endEntry }
 function renderInner() {
@@ -29903,7 +29943,7 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
   logMultiSelectAnchorId = entryId;
   // Phone: tapping a card is the one explicit way to open the entry-detail
   // sheet (see phoneSheetOpen); find steps / minimap clicks only select.
-  if (currentLayoutTier === "phone") phoneSheetOpen = true;
+  if (currentLayoutTier === "phone") { phoneSheetOpen = true; phoneSheetTab = "entry"; }
   selectFn(entryId);
 }
 
@@ -30528,18 +30568,19 @@ function formatMessageWithHighlight(text) {
 // opening the sheet; once open, the sheet follows the selection (prev/next,
 // find, minimap). Closing hides it but keeps the selection; clearing the
 // selection resets it (updateDetailPanel).
-let phoneSheetOpen = false;
 function updateDetailPanel() {
   const entry = selectedEntry();
-  if (!entry) phoneSheetOpen = false;
+  // Entry tab: the sheet needs a selection. An Analyze tab (Facets) stays open without one.
+  if (!entry && phoneSheetTab === "entry") phoneSheetOpen = false;
   // phone: the bottom sheet (CSS only acts in layout-phone). It takes its
   // height out of the list's (body.sheet-open pads #content), so the visible
   // rows are re-rendered when it opens/closes.
-  const sheetNow = !!entry && phoneSheetOpen;
+  const sheetNow = phoneSheetOpen;
   const sheetWas = document.body.classList.contains("sheet-open");
   document.body.classList.toggle("sheet-open", sheetNow);
   if (!sheetNow && sheetWas) clearPhoneSheetHeight(); // a reopened sheet starts at the 62vh default again
   if (sheetWas !== sheetNow && currentLayoutTier === "phone") renderVisibleRows();
+  if (currentLayoutTier === "phone") syncPhoneSheetPanel(!!entry);
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -31262,7 +31303,8 @@ function applyLayoutTier() {
   document.body.classList.toggle("layout-compact", tier === "compact");
   document.body.classList.toggle("layout-phone", tier === "phone");
   setDrawerOpen(false);
-  if (tier !== "phone") clearPhoneSheetHeight();
+  if (tier !== "phone") { clearPhoneSheetHeight(); phoneSheetOpen = false; phoneSheetTab = "entry"; phonePanelSig = ""; document.body.classList.remove("sheet-open"); }
+  else phonePanelSig = "";
   if (tier === "phone") cancelLongPress();
   updateLevelBarLayout();
   if (first) return; // boot: render() has not run yet / applyRowGrid already read the tier
@@ -31311,6 +31353,42 @@ function closePhoneSheet() {
   phoneSheetOpen = false;
   updateDetailPanel();
 }
+// Switches the open phone sheet to another tab ("entry" needs a selection). Facets (re)render via
+// updateDetailPanel -> syncPhoneSheetPanel. A switch to an Analyze tab is remembered for the header button.
+function setPhoneSheetTab(tab) {
+  if (currentLayoutTier !== "phone") return;
+  if (tab === "entry" && !selectedEntry()) return;
+  phoneSheetTab = tab;
+  if (PHONE_ANALYZE_TABS.includes(tab)) phoneAnalyzeTab = tab;
+  phoneSheetOpen = true;
+  updateDetailPanel();
+}
+// Analyze button / Ctrl+I: closed or on Entry -> open on `tab` (default: the last-used Analyze tab);
+// already open on an Analyze tab -> close.
+function toggleAnalyzeSheet(tab) {
+  if (currentLayoutTier !== "phone") return;
+  if (phoneSheetOpen && PHONE_ANALYZE_TABS.includes(phoneSheetTab)) { closePhoneSheet(); return; }
+  setPhoneSheetTab(tab || phoneAnalyzeTab);
+}
+// Keeps the shared bottom-panel chrome (#lowerTabs state, lower-facets class, facet body) and the
+// Analyze button's pressed state in step with the phone sheet. Re-applies the panel only when the
+// open/tab/selection signature changed, so selection moves on the Entry tab never re-render the facets.
+function syncPhoneSheetPanel(hasEntry) {
+  const analyze = phoneSheetOpen && PHONE_ANALYZE_TABS.includes(phoneSheetTab);
+  document.getElementById("btnAnalyzePhone").setAttribute("aria-pressed", analyze ? "true" : "false");
+  const sig = phoneSheetOpen + "|" + phoneSheetTab + "|" + hasEntry;
+  if (sig === phonePanelSig) return;
+  phonePanelSig = sig;
+  applyLowerPanel(isOffLogTab(fhActiveTab));
+}
+// Phone + extraction node: one hint line above the cards (Table/Plot need a wider screen). Gone elsewhere.
+function updatePhoneExtractHint() {
+  const node = state.nodes[state.activeId];
+  const show = currentLayoutTier === "phone" && !!node && nodeIsExtractionView(node);
+  document.getElementById("phoneExtractHint").classList.toggle("show", show);
+}
+el("#phoneExtractHint .peh-icon").innerHTML = ICON_TABLE;
+el("#btnAnalyzePhone").addEventListener("click", ev => { ev.stopPropagation(); toggleAnalyzeSheet(); });
 // ---- Phone sheet grab: dragging #detailGrab resizes the bottom sheet ----
 // The sheet top follows the finger (inline --sheet-h on body, so the
 // #content padding follows too); on release it snaps to the nearest of
