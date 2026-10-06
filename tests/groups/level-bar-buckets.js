@@ -17,7 +17,9 @@ const lbbTour = () => {
 };
 const lbbChips = d => [...d.querySelectorAll("#levelBar .level-btn")];
 const lbbNum = s => Number(String(s).replace(/\./g, ""));
-const lbbCounts = d => Object.fromEntries(lbbChips(d).map(b => [b.dataset.level, lbbNum(b.querySelector(".level-count").textContent)]));
+// exact count: the in-circle .level-count is the short form, the phone chip text ("E 134") keeps the exact number
+const lbbExact = b => lbbNum(b.querySelector(".level-short").textContent.split(" ").pop());
+const lbbCounts = d => Object.fromEntries(lbbChips(d).map(b => [b.dataset.level, lbbExact(b)]));
 
 await withApp(async (w, d, T) => {
   section("level-bar-buckets a. levelBucket per raw level");

@@ -76,8 +76,8 @@ await withApp(async (w, d, T) => {
   const counts = w.getLevelCounts(f.id);
   const err = () => d.querySelector('.level-btn[data-level="ERROR"]');
   const cnt = () => err().querySelector(".level-count");
-  assert(cnt() && cnt().textContent === (counts.ERROR || 0).toLocaleString("de-DE"), "the ERROR circle carries its count, got " + (cnt() && cnt().textContent));
-  assert(w.getComputedStyle(cnt()).display === "none", "desktop: the count inside the circle is not shown");
+  assert(cnt() && cnt().textContent === w.levelCountShort(counts.ERROR || 0), "the ERROR circle carries its count, got " + (cnt() && cnt().textContent));
+  assert(w.getComputedStyle(cnt()).display !== "none", "desktop: the count is shown inside the circle too");
   thSetWidth(w, 800);
   assert(w.getComputedStyle(cnt()).display !== "none", "tablet: the count is shown in the circle");
   d.body.classList.add("filter-toolbar-labels-always");
@@ -91,7 +91,7 @@ await withApp(async (w, d, T) => {
   ["error", "warn", "info", "debug", "trace"].forEach(l => {
     assert(rules.some(r => r.selectorText === "body.filter-toolbar-labels-always .level-btn.lvl-" + l + ":not(.active) .row-action-label" && r.style.color === "var(--level-" + l + ")"),
       "'Always' mode: an unchecked " + l + " pill's label uses the level color");
-    assert(rules.some(r => r.selectorText === "body.layout-compact .level-btn.active.lvl-" + l + " .level-count" && /-on\)/.test(r.style.color)),
+    assert(rules.some(r => r.selectorText === ".level-btn.active.lvl-" + l + " .level-count" && /-on\)/.test(r.style.color)),
       "checked " + l + " circle: the count uses the fill's on-color");
   });
 });

@@ -1378,8 +1378,8 @@
   .level-btn.active.lvl-other{background:var(--text-secondary); color:var(--bg-app);}
   .level-btn.active.lvl-other:hover{background:color-mix(in srgb, var(--text-secondary) 85%, #fff);}
   .level-btn.lvl-other .row-action-label{background:var(--text-secondary); color:var(--bg-app); border-color:transparent;}
-  body.layout-compact .level-btn.lvl-other .level-count{color:var(--text-secondary);}
-  body.layout-compact .level-btn.active.lvl-other .level-count{color:var(--bg-app);}
+  .level-btn.lvl-other .level-count{color:var(--text-secondary);}
+  .level-btn.active.lvl-other .level-count{color:var(--bg-app);}
   body.filter-toolbar-labels-always .level-btn.lvl-other:not(.active) .row-action-label{color:var(--text-secondary);}
   /* Checked: the ring's own color fills the whole circle solid. */
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
@@ -1421,38 +1421,42 @@
   .level-btn.lvl-custom-4 .row-action-label{background:var(--level-custom-4); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-5 .row-action-label{background:var(--level-custom-5); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-6 .row-action-label{background:var(--level-custom-6); color:var(--level-custom-on); border-color:transparent;}
-  /* Count inside the level circle (compact tier only, "On hover" label mode —
-     "Always" pills already carry name + count in their label). Inactive circle:
-     the level's own color on the transparent ring; checked: the fill's "on" color. */
+  /* Count inside the level circle (desktop + compact tiers, "On hover" label mode —
+     "Always" pills already carry name + count in their label; the phone chips show
+     .level-short instead). The text is the short count (levelCountShort, max 4 chars),
+     always centered. Inactive circle: the level's own color on the transparent ring;
+     checked: the fill's "on" color. */
   .level-btn .level-count{display:none;}
-  body.layout-compact:not(.filter-toolbar-labels-always) .level-btn .level-count{
+  body:not(.layout-phone):not(.filter-toolbar-labels-always) .level-btn .level-count{
     display:flex; position:absolute; inset:0; align-items:center; justify-content:center;
-    font:600 10px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
+    font:600 9.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
   }
-  body.layout-compact .level-btn.lvl-error .level-count{color:var(--level-error);}
-  body.layout-compact .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
-  body.layout-compact .level-btn.lvl-warn .level-count{color:var(--level-warn);}
-  body.layout-compact .level-btn.active.lvl-warn .level-count{color:var(--level-warn-on);}
-  body.layout-compact .level-btn.lvl-info .level-count{color:var(--level-info);}
-  body.layout-compact .level-btn.active.lvl-info .level-count{color:var(--level-info-on);}
-  body.layout-compact .level-btn.lvl-debug .level-count{color:var(--level-debug);}
-  body.layout-compact .level-btn.active.lvl-debug .level-count{color:var(--level-debug-on);}
-  body.layout-compact .level-btn.lvl-fatal .level-count{color:var(--level-fatal);}
-  body.layout-compact .level-btn.lvl-trace .level-count{color:var(--level-trace);}
-  body.layout-compact .level-btn.active.lvl-fatal .level-count{color:var(--level-fatal-on);}
-  body.layout-compact .level-btn.active.lvl-trace .level-count{color:var(--level-trace-on);}
-  body.layout-compact .level-btn.lvl-custom-1 .level-count{color:var(--level-custom-1);}
-  body.layout-compact .level-btn.active.lvl-custom-1 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-2 .level-count{color:var(--level-custom-2);}
-  body.layout-compact .level-btn.active.lvl-custom-2 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-3 .level-count{color:var(--level-custom-3);}
-  body.layout-compact .level-btn.active.lvl-custom-3 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-4 .level-count{color:var(--level-custom-4);}
-  body.layout-compact .level-btn.active.lvl-custom-4 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-5 .level-count{color:var(--level-custom-5);}
-  body.layout-compact .level-btn.active.lvl-custom-5 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-6 .level-count{color:var(--level-custom-6);}
-  body.layout-compact .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
+  /* A 4-char short count ("1,3k") gets a notch smaller so it clears the 28px ring. */
+  body:not(.layout-phone):not(.filter-toolbar-labels-always) .level-btn .level-count.level-count-long{font-size:8.5px;}
+  .level-btn.lvl-error .level-count{color:var(--level-error);}
+  .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
+  .level-btn.lvl-warn .level-count{color:var(--level-warn);}
+  .level-btn.active.lvl-warn .level-count{color:var(--level-warn-on);}
+  .level-btn.lvl-info .level-count{color:var(--level-info);}
+  .level-btn.active.lvl-info .level-count{color:var(--level-info-on);}
+  .level-btn.lvl-debug .level-count{color:var(--level-debug);}
+  .level-btn.active.lvl-debug .level-count{color:var(--level-debug-on);}
+  .level-btn.lvl-fatal .level-count{color:var(--level-fatal);}
+  .level-btn.lvl-trace .level-count{color:var(--level-trace);}
+  .level-btn.active.lvl-fatal .level-count{color:var(--level-fatal-on);}
+  .level-btn.active.lvl-trace .level-count{color:var(--level-trace-on);}
+  .level-btn.lvl-custom-1 .level-count{color:var(--level-custom-1);}
+  .level-btn.active.lvl-custom-1 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-2 .level-count{color:var(--level-custom-2);}
+  .level-btn.active.lvl-custom-2 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-3 .level-count{color:var(--level-custom-3);}
+  .level-btn.active.lvl-custom-3 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-4 .level-count{color:var(--level-custom-4);}
+  .level-btn.active.lvl-custom-4 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-5 .level-count{color:var(--level-custom-5);}
+  .level-btn.active.lvl-custom-5 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-6 .level-count{color:var(--level-custom-6);}
+  .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
   /* "Always" pills: an unchecked pill is a transparent ring, so its label takes the
      level's own color (the -on color is meant for the solid fill and was white on light). */
   body.filter-toolbar-labels-always .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
@@ -5217,6 +5221,8 @@
     body.layout-phone #settingsClose, body.layout-compact #settingsClose, body.layout-phone .detail-phone-btn, body.layout-compact .detail-phone-btn{width:44px; height:44px;}
     body.layout-phone .level-btn{height:44px;}
     body.layout-compact .level-btn{width:44px; height:44px;}
+    /* .row-action-btn only raises specificity to beat the (0,4,1) base rule above */
+    body.layout-compact .level-btn.row-action-btn .level-count, body.layout-compact .level-btn.row-action-btn .level-count.level-count-long{font-size:11px;}
     body.layout-phone .view-tab, body.layout-compact .view-tab{padding:0 14px; font-size:12px;}
     body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
     body.layout-compact #btnLibrary{height:44px;}
@@ -20754,6 +20760,18 @@ function toggleLevelFromMinimap(rootId, level) {
   toggleLevelFilter(level);
 }
 
+// Count text inside a level-bar circle, at most 4 characters (exact count stays in the
+// title/hover label): 999 -> "999", 1327 -> "1,3k" (floored, German comma), 48211 -> "48k",
+// 1204551 -> "1,2M", 12e6 -> "12M".
+function levelCountShort(n) {
+  const one = (tenths, unit) => Math.floor(tenths / 10) + "," + (tenths % 10) + unit; // integer math: no float flooring errors
+  if (n < 1000) return String(n);
+  if (n < 10000) return one(Math.floor(n / 100), "k");
+  if (n < 1e6) return Math.floor(n / 1000) + "k";
+  if (n < 1e7) return one(Math.floor(n / 1e5), "M");
+  return Math.floor(n / 1e6) + "M";
+}
+
 function renderLevelBar() {
   levelBarEl.innerHTML = "";
   const counts = getLevelCounts(state.activeId) || {};
@@ -20773,10 +20791,11 @@ function renderLevelBar() {
     const label = levelBarTitle(lvl, counts[lvl] || 0);
     btn.title = label; // accessible name, since the button itself carries no visible text
     const n = counts[lvl] || 0;
-    const countText = n >= 100000 ? Math.round(n / 1000) + "k" : n.toLocaleString("de-DE"); // fits the 44px circle
-    // .level-short: the phone chip text ("F 15", "Other 33"); hidden on the other tiers.
-    const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + countText;
-    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
+    // .level-count: short count (max 4 chars) inside the circle; .level-short: the phone
+    // chip text with the exact count ("F 15", "Other 1.327"); each hidden on the other tiers.
+    const countText = levelCountShort(n);
+    const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + n.toLocaleString("de-DE");
+    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count' + (countText.length > 3 ? " level-count-long" : "") + '">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => toggleLevelFilter(lvl));
     levelBarEl.appendChild(btn);
   });
