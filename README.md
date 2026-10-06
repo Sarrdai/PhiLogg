@@ -557,6 +557,7 @@ scripts/
 .github/workflows/beta-release.yml        manual beta pre-release from main (e.g. v0.2.0-beta.3), variants picked per run
 .github/workflows/build-release-assets.yml  the build both release workflows share
 .github/workflows/tests.yml               runs the regression suite on every session-branch push and PR
+.github/workflows/rust-tests.yml          runs the Rust crate tests (`cargo test`: parser golden test, LLM loopback checks, path guard) when desktop/, the page or the golden fixtures change
 .github/workflows/docs.yml                checks the docs' tables of contents on Markdown changes
 release-please-config.json              release-please configuration (+ .release-please-manifest.json, the current version)
 PROJECT.md                              architecture entry point + index into docs/ (start here to work on the code)
