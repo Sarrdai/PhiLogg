@@ -117,11 +117,10 @@ await withApp(async (w, d, T) => {
 
   const a = await w.addFile("a.log", makeLog(0, 6, { levels: ["ERROR", "NOTICE", "AUDIT"] }), () => {}, "fmt-a");
   T.state.activeId = a.id;
-  await w.addFile("b.log", makeLog(0, 4, { levels: ["INFO", "CRITICAL"] }), () => {}, "fmt-b");
-  w.render();
-  const barLevels = [...d.querySelectorAll("#levelBar .level-btn")].map(b => b.dataset.level);
-  assert(barLevels.join(",") === "ERROR,NOTICE,AUDIT,INFO,CRITICAL",
-    "the bar unions both formats' lists, custom names included, got " + barLevels.join(","));
+  const b = await w.addFile("b.log", makeLog(0, 4, { levels: ["INFO", "CRITICAL"] }), () => {}, "fmt-b");
+  const barOf = id => { T.state.activeId = id; w.render(); return [...d.querySelectorAll("#levelBar .level-btn")].map(x => x.dataset.level).join(","); };
+  assert(barOf(a.id) === "ERROR,NOTICE,AUDIT", "each file's bar lists only its own format's levels, custom names included, got " + barOf(a.id));
+  assert(barOf(b.id) === "INFO,CRITICAL", "...the second file's bar likewise, got " + barOf(b.id));
 
   // Sorting by Level puts custom buckets between TRACE and OTHER, by slot.
   assert(w.levelSortRank("NOTICE", "fmt-a") === 6 && w.levelSortRank("AUDIT", "fmt-a") === 7,

@@ -17,7 +17,9 @@ const lbbTour = () => {
 };
 const lbbChips = d => [...d.querySelectorAll("#levelBar .level-btn")];
 const lbbNum = s => Number(String(s).replace(/\./g, ""));
-const lbbCounts = d => Object.fromEntries(lbbChips(d).map(b => [b.dataset.level, lbbNum(b.querySelector(".level-count").textContent)]));
+// exact count: the in-circle .level-count is the short form, the phone chip text ("E 134") keeps the exact number
+const lbbExact = b => lbbNum(b.querySelector(".level-short").textContent.split(" ").pop());
+const lbbCounts = d => Object.fromEntries(lbbChips(d).map(b => [b.dataset.level, lbbExact(b)]));
 
 await withApp(async (w, d, T) => {
   section("level-bar-buckets a. levelBucket per raw level");
@@ -86,10 +88,10 @@ await withApp(async (w, d, T) => {
   const g = await w.addFile("f.log", lines.slice(0, 3).join("\n") + "\n" + lbbTour().split("\n").find(l => /\tFATAL\t/.test(l)), () => {});
   T.state.activeId = g.id;
   w.render();
-  assert(lbbChips(d).some(x => x.dataset.level === "FATAL"), "a FATAL chip appears as soon as any open root file has FATAL");
+  assert(lbbChips(d).some(x => x.dataset.level === "FATAL"), "a FATAL chip appears as soon as the active root file has FATAL");
   T.state.activeId = f.id;
   w.render();
-  assert(lbbChips(d).some(x => x.dataset.level === "FATAL") && lbbCounts(d).FATAL === 0, "...and stays (with 0) while another root is active, so the bar does not jump");
+  assert(!lbbChips(d).some(x => x.dataset.level === "FATAL"), "...and is gone while another root without FATAL is active: the bar follows the active file (GROUP active-source-columns-levels)");
 });
 
 await withApp(async (w, d, T) => {

@@ -26,7 +26,9 @@ await withApp(async (w, d, T) => {
   assert(hot && hot.getAttribute("fill") === w.plotColorScale(1, T.plotConfig.colorMap), "the maximum gets the top of the colormap");
   assert(d.querySelector("#plotSvg .plot-axis-title").textContent === "t (ms)", "X defaults to t(ms)");
   fireClick(hot, w);
-  assert(T.fhActiveTab === "table", "clicking a cell reveals its row in the Table tab");
+  assert(T.fhActiveTab === "plot" && T.state.selectedId === T.extractRowsData[+hot.getAttribute("data-row")].entry.id, "clicking a cell selects its row's entry (the tab stays Plot)");
+  fireDblClick(hot, w);
+  assert(T.fhActiveTab === "table", "double-clicking a cell reveals its row in the Table tab");
   w.applyFhView("plot");
 
   fireClick(d.querySelector('.plot-type-btn[data-type="profile"]'), w);

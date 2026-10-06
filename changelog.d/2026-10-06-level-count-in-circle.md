@@ -1,0 +1,3 @@
+- **feat: entry count inside the level-bar circles on desktop too (2026-10-06, person-requested)**
+  - The desktop level buttons show their count inside the circle like the tablet ones. All circles use a short count of at most 4 characters (`163`, `1,3k`, `48k`, `1,2M`), so the number always fits and stays centered — before, a full `1.327` overflowed the 28px circle of a tablet-width window with a mouse. The exact count stays in the tooltip and hover label; the phone chips keep the exact number.
+  - **Tests**: GROUP level-count-in-circle; level-bar-buckets, 353 and tablet-header-find updated. Docs: docs/ui-and-views.md.

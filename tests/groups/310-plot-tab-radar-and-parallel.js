@@ -100,7 +100,11 @@ await withApp(async (w, d, T) => {
   const v = temps[+first.dataset.row];
   assert(d.querySelector("#plotColorMapSelect") && first.getAttribute("stroke") === w.plotColorScale((v - lo) / (hi - lo), T.plotConfig.colorMap), "color by temperature through the colormap");
   fireClick(first, w);
-  assert(T.fhActiveTab === "table", "clicking a line reveals its row");
+  assert(T.fhActiveTab === "plot" && T.state.selectedId === T.extractRowsData[+first.dataset.row].entry.id, "clicking a line selects its row's entry (the tab stays Plot)");
+  const ringPath = d.querySelector("#plotSelRing path.plot-sel-ring-line");
+  assert(ringPath && ringPath.getAttribute("d") === first.getAttribute("d"), "a thicker copy of the selected line marks it");
+  fireDblClick(first, w);
+  assert(T.fhActiveTab === "table", "double-clicking a line reveals its row");
 });
 
 await withApp(async (w, d, T) => {

@@ -201,17 +201,24 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector('.column-chip[data-col="thread"]'), "a column this format doesn't define (Thread) has no chip at all");
   w.closeFilterPopup();
 
-  // Union across loaded formats: a second file under the builtin default
+  // Scoped to the active root file: a second file under the builtin default
   // (Thread/Location/Method, no custom columns) joins the same session —
-  // the context menu / filter popup should now offer BOTH formats' columns.
+  // the context menu / filter popup offer only the ACTIVE file's columns.
   const g = await w.addFile("default.log", makeLog(0, 2), () => {});
+  T.state.activeId = g.id;
   w.render();
-  const unionKeys = w.activeColumnDefs().map(c => c.key);
-  assert(unionKeys.includes("reqId") && unionKeys.includes("thread") && unionKeys.includes("location") && unionKeys.includes("method"),
-    "activeColumnDefs() unions every currently-loaded format's columns, got " + unionKeys.join(","));
+  const keysNow = () => w.activeColumnDefs().map(c => c.key).join(",");
+  assert(keysNow() === "thread,location,method",
+    "activeColumnDefs() follows the active root file (default format), got " + keysNow());
   const chipCols = () => [...d.querySelectorAll(".column-chip")].map(c => c.dataset.col);
   w.openFilterPopup();
-  assert(chipCols().includes("reqId") && chipCols().includes("thread"), "the filter popup's chip list reflects the same union, even while the OTHER file is active");
+  assert(chipCols().includes("thread") && !chipCols().includes("reqId"), "the filter popup's chip list offers only the active file's columns");
+  w.closeFilterPopup();
+  T.state.activeId = f.id;
+  w.render();
+  assert(keysNow() === "reqId", "switching back to the custom-column file restores its columns, got " + keysNow());
+  w.openFilterPopup();
+  assert(chipCols().includes("reqId") && !chipCols().includes("thread"), "...and its filter popup chips");
   w.closeFilterPopup();
 });
 

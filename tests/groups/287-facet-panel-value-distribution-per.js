@@ -30,7 +30,7 @@ group(287);
     assert(!isVisible(panel, w), "closed by default");
     fireClick(d.querySelector("#lowerTabFacets"), w);
     assert(isVisible(panel, w) && d.querySelector("#lowerTabFacets").getAttribute("aria-selected") === "true", "the Facets tab opens it");
-    assert(w.localStorage.getItem("philogg-facets-open") === "1", "open state remembered");
+    assert(w.localStorage.getItem("philogg-lower-tab") === "facets", "open state remembered");
     const labels = [...d.querySelectorAll(".facet-section-head")].map(h => h.childNodes[1].textContent.trim());
     assert(labels.join(",") === "Thread,Location,Method,Level", "one section per middle column + Level, got " + labels);
     assert(d.querySelector("#facetPanelCount").textContent === "20 entries", "entry count in the header");

@@ -25,6 +25,10 @@
    more click gets you the same place a direct plot-to-Filtered jump used to.
    jumpToFullLog itself was left in place un-wired at the time and has since
    been removed as dead code.
+   2026-10-06 (person-requested): the Plot mark's plain click now only
+   SELECTS the entry (Entry detail shows it, selection ring, tab stays Plot —
+   GROUP entry-detail-table-plot); the double-click is what calls
+   revealInTableView, i.e. the click behaviour described above.
    ============================================================ */
 group(159);
 await withApp(async (w, d, T) => {
@@ -61,7 +65,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("159b. Clicking a Plot mark reveals the entry as the corresponding row in the SAME node's Table view");
+  section("159b. Double-clicking a Plot mark reveals the entry as the corresponding row in the SAME node's Table view (a plain click only selects it, see entry-detail-table-plot)");
 
   const rows = [[0, 0], [10, 10], [20, 20]];
   const log = rows.map(([x, y], i) =>
@@ -83,6 +87,8 @@ await withApp(async (w, d, T) => {
   const targetMark = marks.find(m => +m.dataset.row === 1);
   const targetEntry = T.extractRowsData[1].entry;
   fireClick(targetMark, w);
+  assert(T.fhActiveTab === "plot" && T.state.selectedId === targetEntry.id, "a plain click only selects the entry: still on Plot");
+  fireDblClick(targetMark, w);
 
   assert(T.state.activeId === node.id, "the active node stays the SAME extraction-capable node");
   assert(T.fhActiveTab === "table", "fhActiveTab switches to Table, not Filtered");

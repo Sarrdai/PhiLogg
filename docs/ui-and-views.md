@@ -447,8 +447,8 @@ shape:
   buttons reveal the same kind of floating hover label. Every plain
   `.toolbar-icon-btn` in those four toolbars (display toggles, Context's
   match-nav/expand-collapse, Export as CSV, Save as image, Fullscreen — the
-  Statistics toggle that used to live here is gone, moved into its own
-  `#statsPanel` header instead, see "Statistics panel" below) gets wrapped
+  Statistics toggle that used to live here is gone, it is now the Statistics
+  tab of the bottom panel, see "Facet panel" below) gets wrapped
   once, near the very end of the script (after every button's icon has
   already been assigned), by `makeToolbarBtnExpandable()` into a
   `.tb-hit`/`.tb-label` pair — same fixed-hit-zone idea as `.row-action-hit`
@@ -553,7 +553,7 @@ shape:
     `#contextToolbar`/`#filteredToolbar`. `#tableToolbar`/`#plotToolbar`
     have none — the column-statistics visibility toggle they briefly had
     (`#statsToggleTable`/`#statsTogglePlot`) is gone again, replaced by the
-    standalone `#statsPanel` (see "Statistics panel" in
+    bottom panel's Statistics tab (see "Statistics" in
     `docs/extraction-and-plotting.md`), which has no toolbar button at all.
   - **Actions** — one-off actions on the current row/selection, never
     persistent state: Bookmark this row/Add note/Add to selection (all
@@ -644,10 +644,9 @@ shape:
   **Statistics moved out of both toolbars entirely (person-requested,
   2026-09-05, superseding an earlier per-tab-toggle design from the same
   day)**: there is no Statistics control left in `#tableToolbar`/
-  `#plotToolbar` at all — it now lives in its own `#statsPanel`, Table-only,
-  positioned/behaving like Entry Detail (pin-or-hover, default pinned open).
-  See "Statistics panel" in `docs/extraction-and-plotting.md` for the full
-  mechanism.
+  `#plotToolbar` at all — since 2026-10-06 it is the Statistics tab of the
+  bottom panel (`#detailPanel`), offered on Table and Plot. See "Statistics"
+  in `docs/extraction-and-plotting.md` for the full mechanism.
 
 ## The three "active node" views
 
@@ -729,33 +728,47 @@ Filtered view lists, without pinned bookmarks — by message shape.
 
 ## Facet panel (value distribution per column)
 
-The second tab of the bottom panel (`#detailPanel`): **Entry detail | Facets**
-(`#lowerTabDetail` / `#lowerTabFacets`, `role="tab"`, `aria-selected`). The
-facets used to be a 280px side panel, which squeezed the log's Message column
-to a few pixels; now the log list keeps its full width and the panel's height
-comes from the existing `#detailResizer`. The selected tab is `facetsOpen`
-(persisted in `philogg-facets-open`, "1" = Facets); the only switches are the
-tabs and `Ctrl+I` (`toggleFacets`, rebindable, "Show/hide Facets (bottom panel
-tab)"): with Facets selected and the panel expanded and visible it goes back
-to Entry detail, otherwise it selects Facets and expands a collapsed panel.
+The bottom panel (`#detailPanel`) has three tabs: **Entry detail | Statistics |
+Facets** (`#lowerTabDetail` / `#lowerTabStats` / `#lowerTabFacets`,
+`role="tab"`, `aria-selected`). The facets used to be a 280px side panel, which
+squeezed the log's Message column to a few pixels; now the log list keeps its
+full width and the panel's height comes from the existing `#detailResizer`.
+The selected tab is the one `lowerTab` value (`"detail" | "stats" | "facets"`,
+persisted in `philogg-lower-tab`); the switches are the tabs and `Ctrl+I`
+(`toggleFacets`, rebindable, "Show/hide Facets (bottom panel tab)"): with
+Facets selected and the panel expanded and visible it goes back to Entry
+detail, otherwise it selects Facets and expands a collapsed panel.
+`setLowerTab(tab)` is the one writer (`setFacetsOpen(bool)` stays as the
+Facets/Entry detail wrapper, which on the phone switches the sheet tab).
 Selecting a log row keeps the tab (the detail content updates hidden).
 `Ctrl+J`, `#detailToggle`, peeking, focus mode and the resizer's double-click
-work for both tabs; the collapsed header shows both tabs.
+work for all tabs; the collapsed header shows all tabs.
 
 With Facets selected (`#detailPanel.lower-facets`) the header's meta and
 Raw/Parsed/Pretty are replaced by the entry count (`#facetPanelCount`) and
-`#facetPanelBody` replaces `#detailBody`. `applyLowerPanel(offLog)` (from
-`renderMainView`) sets the tab state; `renderFacetPanel()` fills the body.
-Visibility per view: Context/Filtered/link view as above; on
-Patterns/Table/Plot the panel is always there (Facets stay reachable by touch
-on every tab): with Facets selected as a normal panel, with Entry detail
-selected as a header-only strip (`.detail-strip-only`, Entry detail tab
-disabled, no resizer, no peeking; the persisted collapsed state and the
-remembered height stay untouched). Hidden with the inline viewer, folder
-minimap, empty state, plain-text roots and PiP; on the phone tier the Facets
-render in the bottom sheet's Facets tab (`facetsActive()` = sheet open on
-that tab, `facetsOpen` is not consulted; see "Responsive layout" → Bottom
-sheet; GROUP phone-analyze-sheet). A `link` node
+`#facetPanelBody` replaces `#detailBody`. With Statistics selected
+(`.lower-stats`) `#statsPanelBody` (the extraction's stats chips,
+`renderStatsBar`) replaces it and the header shows no Raw/Parsed/Pretty.
+`applyLowerPanel()` (from `renderMainView`) sets the tab state from
+`fhActiveTab`; `renderFacetPanel()` fills the facet body.
+Visibility per view: Context/Filtered/link view as above. **Table and Plot**
+show a normal panel with all three tabs: Entry detail shows the selected entry
+(`state.selectedId`; on Table a click on a body cell or row gutter selects
+that row's entry, see `docs/extraction-and-plotting.md` → "Entry detail on the
+Table"), and the Statistics tab is offered only there (`statsOffered()`; the
+button is `hidden` on every other view). If Statistics is the selected tab and
+the view changes to a log tab or Patterns, the panel shows Entry detail and
+the Statistics tab returns with Table/Plot (the choice is remembered, not
+reset). **Patterns** keeps the panel with Facets reachable (Facets stay
+reachable by touch on every tab): with Facets selected as a normal panel, with
+Entry detail selected as a header-only strip (`.detail-strip-only`, Entry
+detail tab disabled, no resizer, no peeking; the persisted collapsed state and
+the remembered height stay untouched). Hidden with the inline viewer, folder
+minimap, empty state, plain-text roots and PiP; on the phone tier (no
+Table/Plot, so no Statistics tab) the Facets render in the bottom sheet's
+Facets tab (`facetsActive()` = sheet open on that tab, `lowerTab` is not
+consulted; see "Responsive layout" → Bottom sheet; GROUP phone-analyze-sheet).
+GROUP entry-detail-table-plot covers the Table/Plot side. A `link` node
 reads "Not available for a link filter" (pair entries have no single column
 values).
 
@@ -775,8 +788,8 @@ values).
   vertically as a whole. A value row is name | count | % with the share bar
   (`.facet-bar`, soft accent) drawn absolutely *behind* the row.
 
-- **Sections** (`facetColumnsFor`): every middle column of the loaded
-  formats (`activeColumnDefs`: Thread/Location/Method/custom columns), then
+- **Sections** (`facetColumnsFor`): every middle column of the active
+  root file's formats (`activeColumnDefs`: Thread/Location/Method/custom columns), then
   Level (the bucket name, omitted when every file is plain text), then
   Source for a merged file (`root.sources`, by `entry.sourceId`). Time and
   Message are left out (near-unique). Each section lists the top
@@ -929,13 +942,13 @@ While the bar is open with a valid, non-empty query and at least two real file r
 
 ## Level bar: view filter and "Add to tree" (`FEATURE_BACKLOG.md` #10)
 
-The level chips (`#levelBar`) are a **pure view filter**. A click toggles the level in `state.levelFilter` (a plain `Set`), re-renders the bar and the main view, and reveals the Filtered tab; it never creates, edits or deletes a tree node. The set is applied only inside `getVisibleEntries` (`applyLevelFilter`), independent of which tree node is active (see "Context view" above, "What counts as a match", for why the Context view has never seen it), so the selection **stays lit and keeps narrowing the Filtered view while you switch tree nodes**. A level node does not light its chip either: the chips show the view filter only. Chip counts are those of the **active node** itself (`getLevelCounts(state.activeId)`), so they describe what the Filtered view currently holds, and sum to its entry count.
+The level chips (`#levelBar`) are a **pure view filter**. A click toggles the level in `state.levelFilter` (a plain `Set`), re-renders the bar and the main view, and reveals the Filtered tab; it never creates, edits or deletes a tree node. The set is applied only inside `getVisibleEntries` (`applyLevelFilter`), independent of which tree node is active (see "Context view" above, "What counts as a match", for why the Context view has never seen it), so the selection **stays lit and keeps narrowing the Filtered view while you switch tree nodes**. A level node does not light its chip either: the chips show the view filter only. Chip counts are those of the **active node** itself (`getLevelCounts(state.activeId)`), so they describe what the Filtered view currently holds, and sum to its entry count. **The count inside the circle** (desktop and tablet tiers, 28px with a mouse, 44px with touch; "On hover" label mode only, since the "Always" pills carry name + count in their label, and not on the phone, whose chips have their own text) is the **short count** `levelCountShort(n)`, at most 4 characters, always centered (`.level-count`, 9.5px mono, a 4-character count 8.5px via `.level-count-long` so it clears the 28px ring, 11px on the 44px circles; colour = the level's colour on the ring, the `-on` colour on the filled circle): below 1000 exact (`163`), up to 9999 one floored decimal with a German comma (`1327` -> `1,3k`), up to 999999 floored thousands (`48k`, never `1000k`), then `1,2M` / `12M`. The exact count stays in the button's `title` and the hover label (`levelBarTitle`, `ERROR 1.327`).
 
 **`#btnApplyLevelToTree` ("Add to tree")** is visible only while `state.levelFilter` is non-empty (`updateApplyLevelToTreeButtonVisibility()`, called from `renderLevelBar`). A click turns the selection into a real `filterType:"level"` node through `applyLevelSelectionToTree(canonicalLevelOrder([...state.levelFilter]))` and then **clears `state.levelFilter`**, because the node now does the filtering and the chips go back to off. The node's `value` is the array of selected names in canonical `activeLevelOrder()` order (see "Per-format log levels" below), evaluated like any other filter via `getEntries`'s `"level"` branch (`parentEntries.filter(e => node.value.includes(levelBucket(e.level)))`). If `state.activeId` is already a `"level"` node, it is **edited in place** (`updateFilterNodeWithUndo`, undoable) instead of nested under itself; otherwise a fresh child is created under the active node and becomes active. There is no Settings control for any of this (the former Behavior → "Level bar creates filter tree nodes" select and its `localStorage` key are gone). `state.levelFilter` is **not persisted**: neither the session cache (`buildCacheMeta`) nor a session export (`buildSessionExport`) carries it, and loading either leaves it empty. The minimap's clickable per-level counts are the same toggle (`toggleLevelFromMinimap`, below): no tree change either.
 
 A time window made while a level node is active is a normal child of it (`docs/filters.md` → "Time filters").
 
-**Touch layout** (`updateLevelBarLayout()`, run after every `renderLevelBar`, on `#levelBar` scroll, on resize and on a tier change; desktop never gets either class). **Phone** (`body.layout-phone`): one horizontally scrolling row; each chip shows its `.level-short` text, first letter plus count (`F 15`, `E 134`; Other is spelled `Other 33`), while the full "Error 134" / "Other 33 (VERBOSE 21 · NOTICE 12)" text stays in the `title`. A right-edge fade (a `mask-image`, class `.has-more-right`) is shown only while more chips are hidden to the right (`scrollWidth - clientWidth - scrollLeft > 1`). **Tablet** (`body.layout-compact`): the 44px circles stay; when `#viewBar`'s other children (`offsetWidth` plus their horizontal margins and `#levelBar`'s own, `display:none` children skipped, `column-gap` between children) plus the chips' natural width (chip `offsetWidth` + 6px gaps, not the current row) exceed its inner width, `#viewBar` gets `.level-own-row`: it wraps, a `::before` with `flex-basis:100%` (`order:1`) forces the line break, and `#levelBar` (`order:2; flex:1 1 auto`) take the row under the tabs and actions, so the toolbar no longer scrolls horizontally because of the chips. Measuring the natural width makes the decision independent of the class it toggles, so it cannot oscillate.
+**Touch layout** (`updateLevelBarLayout()`, run after every `renderLevelBar`, on `#levelBar` scroll, on resize and on a tier change; desktop never gets either class). **Phone** (`body.layout-phone`): one horizontally scrolling row; each chip shows its `.level-short` text, first letter plus the exact count (`D 1.327`, `F 15`, `E 134`; Other is spelled `Other 33`), while the full "Error 134" / "Other 33 (VERBOSE 21 · NOTICE 12)" text stays in the `title`. A right-edge fade (a `mask-image`, class `.has-more-right`) is shown only while more chips are hidden to the right (`scrollWidth - clientWidth - scrollLeft > 1`). **Tablet** (`body.layout-compact`): the 44px circles stay; when `#viewBar`'s other children (`offsetWidth` plus their horizontal margins and `#levelBar`'s own, `display:none` children skipped, `column-gap` between children) plus the chips' natural width (chip `offsetWidth` + 6px gaps, not the current row) exceed its inner width, `#viewBar` gets `.level-own-row`: it wraps, a `::before` with `flex-basis:100%` (`order:1`) forces the line break, and `#levelBar` (`order:2; flex:1 1 auto`) take the row under the tabs and actions, so the toolbar no longer scrolls horizontally because of the chips. Measuring the natural width makes the decision independent of the class it toggles, so it cannot oscillate.
 
 **No new persistence carrier work needed**: a `"level"` node's `value` is a plain array riding the existing generic `value` field every filter node already carries through `cloneSubtree`, `snapshotSubtree`/`restoreSubtree`, `serializeFilterBranch`/`importFilterJson`, and `serializeFilterTreeForCache`/`materializeCachedFilters` — the only change any of them needed was adding `"level"` to the shared `FILTER_TYPES` validation Set (otherwise `materializeCachedFilters`/`importFilterJson` would silently drop the node as an "unknown filter type"). Tree UI is equally generic: `typeTagFor`/`ghostTypeTag` gained a `"LVL"` case and `nodeIconHTML`/`ghostIconFor` a new ascending-bars `ICON_LEVEL`, same pattern every other filter type already follows.
 
@@ -955,7 +968,7 @@ Which level buttons the bar shows, and in what order, comes from the **log forma
 
 **FATAL colors**: `--level-fatal`, `-soft` and `--level-fatal-on` are defined in `:root` and every built-in theme block (a crimson/deep-red family, clearly distinct from ERROR in each theme; the `-on` text color is white and lives in `:root` only). Like the custom palette they are **not** in `THEME_COLOR_KEYS`, so an imported custom theme inherits the `:root` value. Every `lvl-*` consumer has its `lvl-fatal` twin (`.level-btn` and `.active`, `.col-bar`, `.level-badge`, `.log-row`, `.pair-row-bar`, `.facet-value-name`, `.minimap-lvl-fatal`, the format editor's level preview).
 
-**Which chips the bar shows** (`activeLevelOrder()`): the **union** of the open formats' level lists (`formatLevelUnion()`: each open root file's format list, concatenated in tree order, de-duplicated as names first appear; shown even with 0 entries; a `["ERROR","WARN","TRACE"]` file plus an `["INFO","ERROR"]` file gives `ERROR, WARN, TRACE, INFO`; with nothing open and not all plain text, the default `LEVELS`), **plus every bucket that actually occurs in an open root file and is not in that union** (`rootFileBucketLevels()`, counted from the root files' aggregates, never from the active node, so chips do not appear or vanish while filtering): `FATAL`, `TRACE`, `OTHER` or a level of another format. Extras are inserted by `levelSortRank` (FATAL before ERROR, TRACE after DEBUG, custom names after TRACE) and `OTHER` always goes last. So the chip counts of a node always sum to its entry count. The **Other** chip is labelled "Other" (neutral `--text-secondary` color, `.level-btn.lvl-other`) and its tooltip/accessible name lists the raw levels behind it, e.g. `Other 33 (VERBOSE 21 · NOTICE 12)` (`levelBarTitle`); a format that lists `NOTICE` gives that level its own chip and Other shrinks accordingly. Filtering by Other or FATAL needs no special handling, since the view filter and level nodes both go through `levelBucket`. The same order drives `canonicalLevelOrder(levels)`, which re-sorts a level node's `value` array (used by "Add to tree") — names outside the order (e.g. a custom name from a format no longer open, arriving via an imported filter file or a persisted tree) are kept and appended rather than dropped; such a node keeps its value, simply stops matching, and renders its label in the default text color instead of crashing. `getLevelCounts()` keys its counts off **each entry's own computed bucket** rather than iterating a fixed name list, so per-format custom buckets are counted for free. Entries are stamped with their `formatId` at both parse sites (`parseLogTextAsync`, `appendTailText`).
+**Which chips the bar shows** (`activeLevelOrder()`): scoped to the **active node's root file** (`scopeFileNodes()` = `getRootFileId(state.activeId)`; a source node under a merge's "Sources" is a `type:"file"` node and so its own root — that scopes a meta-format source to its own format; separately loaded files each show their own; with no active root — nothing open, folder view, inline viewer — the scope is every root file). The chips are the **union** of the level lists of the formats of that root (`formatLevelUnion()`; a root's formats are the distinct `formatId`s in its `fileAggregate().levelOrder` via `fileFormatIds()`, falling back to `root.formatId` for an empty/loading file, so a merge shows all its sources' formats; de-duplicated as names first appear; shown even with 0 entries; a merge of a `["ERROR","WARN","TRACE"]` and an `["INFO","ERROR"]` file gives `ERROR, WARN, TRACE, INFO`; with nothing open and not plain text, the default `LEVELS`), **plus every bucket that actually occurs in that root file and is not in that union** (`rootFileBucketLevels()`, counted from the root file's aggregate, never from the active filter node, so chips do not appear or vanish while filtering inside one file): `FATAL`, `TRACE`, `OTHER` or a level of another format, **plus every level currently lit in `state.levelFilter`** (the view filter survives node switches, so a lit chip never disappears just because the new scope does not list it; it shows the active node's count, often 0). Extras are inserted by `levelSortRank` (FATAL before ERROR, TRACE after DEBUG, custom names after TRACE) and `OTHER` always goes last. So the chip counts of a node always sum to its entry count. The **Other** chip is labelled "Other" (neutral `--text-secondary` color, `.level-btn.lvl-other`) and its tooltip/accessible name lists the raw levels behind it, e.g. `Other 33 (VERBOSE 21 · NOTICE 12)` (`levelBarTitle`); a format that lists `NOTICE` gives that level its own chip and Other shrinks accordingly. Filtering by Other or FATAL needs no special handling, since the view filter and level nodes both go through `levelBucket`. The same order drives `canonicalLevelOrder(levels)`, which re-sorts a level node's `value` array (used by "Add to tree") — names outside the order (e.g. a custom name from a format no longer open, arriving via an imported filter file or a persisted tree) are kept and appended rather than dropped; such a node keeps its value, simply stops matching, and renders its label in the default text color instead of crashing. `getLevelCounts()` keys its counts off **each entry's own computed bucket** rather than iterating a fixed name list, so per-format custom buckets are counted for free. Entries are stamped with their `formatId` at both parse sites (`parseLogTextAsync`, `appendTailText`).
 
 `TRACE` only became a level-bar button through this feature (and now also appears on its own whenever a file contains it), so it gained the `.level-btn.lvl-trace` / `.level-btn.active.lvl-trace` rules it never had; its active-state text color is a single `--level-trace-on: var(--level-debug-on)` in `:root`, resolving per theme via the `--level-debug-on` every theme already defines (same neutral grey family as `--level-trace`).
 
@@ -965,7 +978,7 @@ Which level buttons the bar shows, and in what order, comes from the **log forma
 
 Regression-tested: **Group 116** — default-format behavior unchanged, a custom format's own subset/order driving the bar, the two-format union, `canonicalLevelOrder`'s effect on a level node's `value` and its colored tree label, and the editor's save/reopen/IndexedDB round trip incl. the empty-selection guard and Reset — and **Group 117** for custom names: `levelBucket`'s three-step resolution (exact/cascade/OTHER, incl. case and whitespace normalization and the "another format's name isn't borrowed" case), per-format positional slot assignment and the resulting `lvl-custom-N` classes on bar buttons and log rows, custom buckets in the bar/counts/quick-filter/tree label, `levelSortRank` placing them between TRACE and OTHER, the editor's add/duplicate-reject/blank-reject/Enter/reorder/delete flow with an IndexedDB round trip, and a level filter node left pointing at a level its format no longer defines. **Group 260** (Custom Columns) adds int-mode value matching, the text-mode/int-mode `OTHER` fallback difference, explicit-color precedence over the automatic fixed-name/rotating-slot color, and the legacy plain-string-array upcast.
 
-Regression-tested: **Group 94** — "Add to tree" creation, in-place edit with undo and the `serializeFilterTreeForCache`/`materializeCachedFilters` round trip of a level node; **GROUP level-bar-buckets** — bucket per raw level, chip order/labels/tooltips on the simulator's tour demo log (counts sum to 2500), absent FATAL/TRACE/Other chips, a format listing NOTICE, the minimap line, FATAL colors in every built-in theme; **GROUP level-bar-view-filter** — chip clicks never touch the tree, the selection survives node switches, Add to tree visibility/creation/clearing/in-place edit, no setting, nothing persisted; **GROUP level-bar-touch-layout** — phone chip text and fade class, tablet own row without oscillation.
+Regression-tested: **Group 94** — "Add to tree" creation, in-place edit with undo and the `serializeFilterTreeForCache`/`materializeCachedFilters` round trip of a level node; **GROUP level-bar-buckets** — bucket per raw level, chip order/labels/tooltips on the simulator's tour demo log (counts sum to 2500), absent FATAL/TRACE/Other chips, a format listing NOTICE, the minimap line, FATAL colors in every built-in theme; **GROUP level-bar-view-filter** — chip clicks never touch the tree, the selection survives node switches, Add to tree visibility/creation/clearing/in-place edit, no setting, nothing persisted; **GROUP level-bar-touch-layout** — phone chip text and fade class, tablet own row without oscillation. **GROUP level-count-in-circle** — the short-count rule with its boundaries, the in-circle text on desktop/tablet, exact title and phone chips, "Always" mode and the colour rules.
 
 ## Tour banner
 
@@ -1137,7 +1150,7 @@ Fixed by adding a third scroll mode alongside `opts.center`: `opts.offset` (a pi
 - `revealInHighlightView(entry, sourceRowEl, sourceScrollEl)` now takes the clicked/Enter-selected row and its container, captures the offset into `state.highlightScrollTargetOffset` before `renderHighlightView()` runs, which passes it through to `scrollToHighlightIndex(idx, { offset, flash: true })` when known, falling back to `{ center: true, flash: true }` when not (e.g. the row happened to be off-screen already — nothing to preserve, same convention as `restoreViewAnchor`'s own off-screen fallback).
 - `revealInFilteredView(entry, sourceRowEl, sourceScrollEl)` (the extraction table row's double-click) does the same via `state.scrollTargetOffset`, consumed by `renderTable()`'s `scrollTargetId` branch (the removed `jumpToFullLog` used the same mechanism). `jumpToEntry()` (bookmark-panel jumps) deliberately passes no source row — a bookmark click has no "previous screen position" in a log view to preserve, so it keeps centering.
 - The Highlight view's own row double-click (self-reveal, previously always `{ center: true }`) now scrolls with no `opts` at all — the clicked row is already on screen at the moment of the dblclick, so the plain nearest-edge-snap default is a no-op there, same net effect without a special case.
-- The timeline minimap's click-to-jump still hard-centers — it has no meaningful "current screen position" to preserve (a minimap click can jump to an arbitrary, previously-invisible timestamp). A plot-mark click no longer goes through this mechanism at all (revised 2026-09-05, person-requested): `revealInTableView(entry)` jumps to the Table tab and scrolls/selects the matching row directly (`extractScroll.scrollTop`/`selectCells`), since the extraction table isn't one of `scrollTargetId`'s consumers.
+- The timeline minimap's click-to-jump still hard-centers — it has no meaningful "current screen position" to preserve (a minimap click can jump to an arbitrary, previously-invisible timestamp). A plot-mark double-click no longer goes through this mechanism at all (revised 2026-09-05, person-requested; since 2026-10-06 a plain click only selects the entry, see `docs/extraction-and-plotting.md`): `revealInTableView(entry)` jumps to the Table tab and scrolls/selects the matching row directly (`extractScroll.scrollTop`/`selectCells`), since the extraction table isn't one of `scrollTargetId`'s consumers.
 
 Regression-tested: **Group 118** — 118a: a double-click (`revealInHighlightView`) from a known 140px on-screen offset in the Filter view lands the entry at that exact 140px offset in the Highlight view, not centered. 118b: the same jump from a row too close to the top (2 rows / 56px above it, offset would need 300px) clamps to the top instead of centering. 118c: `revealInFilteredView` (the Extraction table row's double-click — see "filterType merge" in `docs/extraction-and-plotting.md`) preserves its own row's on-screen offset into the Filter view the same way.
 
@@ -1228,7 +1241,7 @@ Regression-tested: **Group 301**.
 
 ## Log view column visibility / width (`FEATURE_BACKLOG.md`; generalized for Custom Columns)
 
-`#btnColumns` (`#viewBar`, next to `#btnMultilineMsg`) opens `#columnsPanel`. **Since Custom Columns** (later session — per-format custom columns, see `docs/log-formats.md`), the checkbox list is no longer a fixed four: `renderColumnsPanel()` JS-renders it from **Δt** (fixed) + `activeColumnDefs()` (the dynamic union of every currently-loaded format's own Thread/Location/Method/custom columns) + **Message** (fixed — hideable per format now too, via a format's own `messageVisible` flag, though the panel's checkbox is still the one global user-preference layer on top, same as any other column). Time/Level stay always-visible, no checkbox, no width of their own beyond their fixed default. `#tableHeader`'s row-grid content (`.th` cells + `.col-resize-handle` drag handles) is likewise JS-built now (`renderColumnHeader`/`buildRowGridHeaderHtml`/`buildResizeHandlesHtml`), rebuilt whenever the active column set changes (`refreshColumnState()`, called from file add/remove and a Format Manager save); `columnResizeHandleEls`/`columnToggleInputs` are collected fresh each time rather than being fixed DOM refs grabbed once at load. Message still has no width of its own when shown — it's the grid's `1fr` flexible remainder — but the remainder track now writes an explicit `0px` instead of `1fr` when the format(s) in play hide it, so a hidden Message doesn't still silently claim the row's leftover width.
+`#btnColumns` (`#viewBar`, next to `#btnMultilineMsg`) opens `#columnsPanel`. **Since Custom Columns** (later session — per-format custom columns, see `docs/log-formats.md`), the checkbox list is no longer a fixed four: `renderColumnsPanel()` JS-renders it from **Δt** (fixed) + `activeColumnDefs()` (the active root file's own Thread/Location/Method/custom columns — scoped like the level bar, so a meta-format source shows only its own format's columns, a merge the union of its sources' formats; every root only with no active root) + **Message** (fixed — hideable per format now too, via a format's own `messageVisible` flag, though the panel's checkbox is still the one global user-preference layer on top, same as any other column). Time/Level stay always-visible, no checkbox, no width of their own beyond their fixed default. `#tableHeader`'s row-grid content (`.th` cells + `.col-resize-handle` drag handles) is likewise JS-built now (`renderColumnHeader`/`buildRowGridHeaderHtml`/`buildResizeHandlesHtml`), rebuilt whenever the active column set changes (`refreshColumnState()`, called from `render()`'s `columnStateKey` check — so also on a switch of the active root — and from a Format Manager save); `columnResizeHandleEls`/`columnToggleInputs` are collected fresh each time rather than being fixed DOM refs grabbed once at load. Message still has no width of its own when shown — it's the grid's `1fr` flexible remainder — but the remainder track now writes an explicit `0px` instead of `1fr` when the format(s) in play hide it, so a hidden Message doesn't still silently claim the row's leftover width.
 
 **Applied entirely through `--row-grid`, the CSS custom property `.row-grid` (shared by `#tableHeader`, `#highlightHeader`, and every `.log-row` data row in both Log views) already used as its `grid-template-columns`** — `applyRowGrid()` recomputes the whole string from `columnWidthFor(key)`/`columnVisibleFor(key)` (lookups into `state.columnWidths`/`state.columnVisible` with a sane per-key fallback — `FIXED_COLUMN_WIDTHS[key]` for a legacy column, `DEFAULT_CUSTOM_COLUMN_WIDTH` for a freshly-authored custom one — so neither object needs an entry pre-created for every possible key) and writes it via `document.documentElement.style.setProperty`. This is the reason the feature costs essentially nothing at render time: flipping a checkbox or dragging a handle just changes one CSS variable, and every row (Filter + Highlight, virtualized or not) reflows natively — no per-row DOM writes, no `render()` needed for the drag itself (only at drag-end, to persist). A hidden column's track collapses to `0px` (not removed from the grid, not `display:none` on the per-row `.col-*`/`.col-custom` spans) specifically to avoid corrupting CSS Grid's row auto-placement — see the mobile-breakpoint paragraph below for the bug this exact mistake caused elsewhere in the same feature.
 

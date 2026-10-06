@@ -83,10 +83,13 @@ await withApp(async (w, d, T) => {
   assert(targetMark, "row 1's mark carries a data-row attribute for the click handler to resolve");
 
   fireClick(targetMark, w);
-  assert(T.state.activeId === node.id,
-    "clicking a plot mark reveals the entry as the corresponding Table row (revealInTableView, person-requested this session) — it stays on the extraction-capable node rather than jumping away to the raw file");
-  assert(T.fhActiveTab === "table", "the Table tab becomes active, not Filtered — Filtered is one more step away via that row's own double-click");
+  assert(T.state.activeId === node.id && T.fhActiveTab === "plot",
+    "clicking a plot mark only selects its entry (2026-10-06: no tab switch any more) — same node, still on Plot");
   assert(T.state.selectedId === targetEntry.id, "the clicked mark's real underlying entry becomes selected");
+  fireDblClick(targetMark, w);
+  assert(T.state.activeId === node.id, "double-clicking a mark reveals the entry as the corresponding Table row (revealInTableView) — it stays on the extraction-capable node rather than jumping away to the raw file");
+  assert(T.fhActiveTab === "table", "the Table tab becomes active, not Filtered — Filtered is one more step away via that row's own double-click");
+  assert(T.state.selectedId === targetEntry.id, "the double-clicked mark's entry stays selected");
 
   // Clicking empty chart space (not a mark) is a no-op — sanity that the
   // delegated listener doesn't misfire on the axes/gridlines/background.

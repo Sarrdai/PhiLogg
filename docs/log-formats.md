@@ -46,8 +46,12 @@ its own `messageVisible: boolean` flag instead of an order position.
 `formatColumnDefs(formatId)`/`formatMessageVisible(formatId)` read one
 format's own list (falling back to the legacy fixed three / always-visible
 for a record predating this feature); `activeColumnDefs()`/
-`activeMessageVisible()` union every currently-loaded root file's own list
-— same idiom as `activeLevelOrder()` below — and drive the row/header
+`activeMessageVisible()` return the list of the **active scope** — the
+active node's root file (`scopeFileNodes()`; a meta-format source node under
+"Sources" is its own root), one format's columns for a plain file, the union
+of its sources' formats (distinct entry `formatId`s, `fileFormatIds()`) for a
+merge; the union over all roots only with no active root — same scope as
+`activeLevelOrder()` below — and drive the row/header
 renderers, the columns-visibility panel, the context menu's generalized
 "Filter for this ___" (`activeTextFilterColumns()`, replacing the old fixed
 6-entry `TEXT_FILTER_COLUMNS` table), and the filter popup's column-
@@ -89,7 +93,7 @@ lets `levelBucket(level, formatId)` resolve a raw level string (or, in int
 mode, a numeric code) against its *own* format's list before falling
 through the fixed prefix cascade (text mode only — a numeric code has no
 natural cascade). See `docs/ui-and-views.md` → "Level bar" for how several
-open formats combine (`activeLevelOrder`/`canonicalLevelOrder`).
+the active root file's formats combine (`activeLevelOrder`/`canonicalLevelOrder`).
 
 The builtin default (`fmt-default`, non-deletable, always sorts first in the
 Format Manager) is the original hardcoded log4net-style conversion pattern:

@@ -146,10 +146,11 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#plotTooltip").classList.contains("hidden"), "hovering exactly over a projected point shows the tooltip");
   assert(d.querySelector("#plotTooltip").innerHTML.includes("100"), "tooltip shows the hovered point's real underlying values, got " + d.querySelector("#plotTooltip").innerHTML);
 
-  fireClick(canvas, w);
-  assert(T.state.activeId === node.id, "clicking a 3D point reveals the entry as the corresponding Table row (revealInTableView, same as 2D scatter marks) rather than jumping to its root file");
-  assert(T.fhActiveTab === "table", "the Table tab becomes active, not Filtered");
+  canvas.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, clientX: 480, clientY: 120 }));
+  assert(T.state.activeId === node.id && T.fhActiveTab === "plot", "clicking a 3D point only selects it (2026-10-06): same node, still on Plot");
   assert(T.state.selectedId === targetEntry.id, "the clicked point's real underlying entry becomes selected");
+  canvas.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: 480, clientY: 120 }));
+  assert(T.fhActiveTab === "table", "double-clicking a 3D point reveals the entry as the corresponding Table row (revealInTableView, same as 2D scatter marks) rather than jumping to its root file");
 
   // Empty space (no point under the cursor) is a no-op.
   T.state.activeId = node.id;

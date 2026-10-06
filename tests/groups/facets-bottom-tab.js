@@ -7,8 +7,11 @@
    squeezed the log's Message column to a few pixels; the facets now live in
    #detailPanel as "Entry detail | Facets": sections side by side, the share
    bar behind the value row, a row click keeps the tab, Ctrl+I cycles, and on
-   Patterns/Table/Plot the panel stays (header-only strip with Entry detail
-   selected) so Facets are reachable on every tab. Phone: the Facets live in the bottom sheet (GROUP phone-analyze-sheet).
+   Patterns the panel stays (header-only strip with Entry detail selected) so
+   Facets are reachable on every tab. Phone: the Facets live in the bottom sheet (GROUP phone-analyze-sheet).
+   2026-10-06: the selected tab is one lower-tab value (key philogg-lower-tab:
+   detail | stats | facets); Table/Plot show a normal panel (Entry detail,
+   Statistics, Facets — GROUP entry-detail-table-plot).
    ============================================================ */
 group("facets-bottom-tab");
 
@@ -38,9 +41,9 @@ await withApp(async (w, d, T) => {
   assert(!isVisible(d.querySelector("#detailBody"), w) && !isVisible(d.querySelector("#detailMeta"), w) && !isVisible(d.querySelector("#detailViewTabs"), w), "detail body, meta and Raw/Parsed/Pretty hidden");
   assert(isVisible(d.querySelector("#facetPanelCount"), w) && d.querySelector("#facetPanelCount").textContent === "20 entries", "the entry count takes the meta's place");
   assert(isVisible(d.querySelector("#detailToggle"), w), "the collapse toggle stays");
-  assert(w.localStorage.getItem("philogg-facets-open") === "1", "persisted under philogg-facets-open");
+  assert(w.localStorage.getItem("philogg-lower-tab") === "facets", "persisted under philogg-lower-tab");
   fireClick(tabD, w);
-  assert(!isVisible(body, w) && isVisible(d.querySelector("#detailBody"), w) && w.localStorage.getItem("philogg-facets-open") === "0", "back to Entry detail");
+  assert(!isVisible(body, w) && isVisible(d.querySelector("#detailBody"), w) && w.localStorage.getItem("philogg-lower-tab") === "detail", "back to Entry detail");
 
   section("facets-bottom-tab c. layout: sections are grid columns, the bar sits behind the value row");
   const bodyRule = rules.find(r => r.selectorText === "#facetPanelBody");
@@ -85,7 +88,7 @@ await withApp(async (w, d, T) => {
   w.applyFhView("patterns");
   assert(T.fhActiveTab === "patterns" && panel.style.display === "flex", "the panel stays on Patterns");
   assert(panel.classList.contains("detail-strip-only"), "Entry detail selected: header-only strip");
-  assert(tabD.disabled && /Context\/Filtered/.test(tabD.title), "Entry detail tab disabled with an explaining title");
+  assert(tabD.disabled && /Context, Filtered, Table and Plot/.test(tabD.title), "Entry detail tab disabled with an explaining title");
   assert(!isVisible(d.querySelector("#detailBody"), w) && !isVisible(d.querySelector("#detailMeta"), w) && !isVisible(d.querySelector("#detailViewTabs"), w) && !isVisible(body, w), "strip: only the header");
   assert(d.querySelector("#detailResizer").style.display === "none", "no resizer for the strip");
   assert(!panel.classList.contains("collapsed") && w.localStorage.getItem("philogg-detail-collapsed") !== "1", "persisted collapsed state untouched");
@@ -100,12 +103,12 @@ await withApp(async (w, d, T) => {
   assert(!panel.classList.contains("detail-strip-only") && !tabD.disabled && panel.classList.contains("lower-facets"), "back on Filtered: normal panel, Entry detail tab enabled, Facets kept");
   w.setFacetsOpen(false);
 
-  section("facets-bottom-tab g. Table with an extraction node: panel and stats panel both present");
+  section("facets-bottom-tab g. Table with an extraction node: a normal panel (no strip), Facets tab reachable");
   const node = w.createFilterNode(f.id, "text", "[*:int]");
   T.state.activeId = node.id; w.render(); w.applyFhView("table");
-  assert(T.fhActiveTab === "table" && panel.style.display === "flex" && panel.classList.contains("detail-strip-only"), "Table: strip with Entry detail selected");
+  assert(T.fhActiveTab === "table" && panel.style.display === "flex" && !panel.classList.contains("detail-strip-only") && !tabD.disabled, "Table: normal panel with Entry detail selected");
   fireClick(tabF, w);
-  assert(isVisible(body, w) && !!d.querySelector("#statsPanel") && !d.querySelector("#extractWrap #detailPanel"), "Facets tab on Table; the panel sits outside #extractWrap");
+  assert(isVisible(body, w) && !d.querySelector("#statsPanel") && !d.querySelector("#extractWrap #detailPanel"), "Facets tab on Table; the panel sits outside #extractWrap");
   w.setFacetsOpen(false);
   T.state.activeId = f.id; w.applyFhView("filter"); w.render();
 
@@ -121,7 +124,7 @@ await withApp(async (w, d, T) => {
 
 await withApp(async (w, d, T) => {
   section("facets-bottom-tab i. phone tier: the persisted selection does not open anything, Facets live in the sheet (phone-analyze-sheet)");
-  try { w.localStorage.setItem("philogg-facets-open", "1"); } catch {}
+  try { w.localStorage.setItem("philogg-lower-tab", "facets"); } catch {}
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   T.state.activeId = f.id;
   w.setFacetsOpen(true); // desktop selection, persisted
@@ -133,7 +136,7 @@ await withApp(async (w, d, T) => {
   assert(!panel.classList.contains("lower-facets") && !isVisible(body, w), "no facet body while the sheet is closed, whatever the persisted key says");
   fireKeydown(d, w, "i", { ctrlKey: true });
   assert(d.body.classList.contains("sheet-open") && isVisible(body, w), "Ctrl+I opens the sheet on Facets on the phone");
-  assert(w.localStorage.getItem("philogg-facets-open") === "1", "the phone tab does not touch the persisted desktop selection");
+  assert(w.localStorage.getItem("philogg-lower-tab") === "facets", "the phone tab does not touch the persisted desktop selection");
   fireKeydown(d, w, "i", { ctrlKey: true });
   assert(!d.body.classList.contains("sheet-open") && !isVisible(body, w), "Ctrl+I again closes it");
 });

@@ -200,7 +200,7 @@ await withApp(async (w, d, T) => {
   svgEl.dispatchEvent(new w.MouseEvent("click", { bubbles: true, clientX: 450, clientY: 250 }));
   fireClick(d.querySelector("#plotZoomResetBtn"), w);
 
-  // A plain click (no drag) on a mark is unaffected — still jumps (Group 53
+  // A plain click (no drag) on a mark is unaffected — still selects (Group 53
   // covers this generally; this just confirms drag-to-zoom didn't regress it).
   const markRow0 = d.querySelector('#plotSvg circle.plot-mark[data-row="0"]');
   assert(markRow0, "row 0 has a mark to click");
@@ -208,8 +208,10 @@ await withApp(async (w, d, T) => {
   svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
   fireClick(markRow0, w);
-  assert(T.state.activeId === node.id && T.fhActiveTab === "table",
-    "a plain click (no drag) on a mark still reveals its log entry (as the corresponding Table row), unaffected by the new drag-to-zoom handling");
+  assert(T.state.activeId === node.id && T.fhActiveTab === "plot" && T.state.selectedId === T.extractRowsData[0].entry.id,
+    "a plain click (no drag) on a mark still selects its log entry, unaffected by the new drag-to-zoom handling");
+  fireDblClick(markRow0, w);
+  assert(T.fhActiveTab === "table", "...and its double-click still reveals the entry as the corresponding Table row");
   T.state.activeId = node.id;
   w.render();
   w.applyFhView("plot");

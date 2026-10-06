@@ -106,7 +106,7 @@ await withApp(async (w, d, T) => {
   // Table is Actions-only (just "Export as CSV…") — the Statistics
   // visibility Setting/toggle it briefly had is gone again (2026-09-05,
   // person-requested, later the same day): Statistics moved out into its
-  // own standalone #statsPanel (Entry-Detail-style pin/hover), so there's no
+  // own tab of the bottom panel (#lowerTabStats, 2026-10-06), so there's no
   // toolbar button for it anymore, on Table or Plot.
   w.applyFhView("table");
   const tableKinds = groupKinds(d.querySelector("#tableToolbar"));

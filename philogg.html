@@ -1378,8 +1378,8 @@
   .level-btn.active.lvl-other{background:var(--text-secondary); color:var(--bg-app);}
   .level-btn.active.lvl-other:hover{background:color-mix(in srgb, var(--text-secondary) 85%, #fff);}
   .level-btn.lvl-other .row-action-label{background:var(--text-secondary); color:var(--bg-app); border-color:transparent;}
-  body.layout-compact .level-btn.lvl-other .level-count{color:var(--text-secondary);}
-  body.layout-compact .level-btn.active.lvl-other .level-count{color:var(--bg-app);}
+  .level-btn.lvl-other .level-count{color:var(--text-secondary);}
+  .level-btn.active.lvl-other .level-count{color:var(--bg-app);}
   body.filter-toolbar-labels-always .level-btn.lvl-other:not(.active) .row-action-label{color:var(--text-secondary);}
   /* Checked: the ring's own color fills the whole circle solid. */
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
@@ -1421,38 +1421,42 @@
   .level-btn.lvl-custom-4 .row-action-label{background:var(--level-custom-4); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-5 .row-action-label{background:var(--level-custom-5); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-6 .row-action-label{background:var(--level-custom-6); color:var(--level-custom-on); border-color:transparent;}
-  /* Count inside the level circle (compact tier only, "On hover" label mode —
-     "Always" pills already carry name + count in their label). Inactive circle:
-     the level's own color on the transparent ring; checked: the fill's "on" color. */
+  /* Count inside the level circle (desktop + compact tiers, "On hover" label mode —
+     "Always" pills already carry name + count in their label; the phone chips show
+     .level-short instead). The text is the short count (levelCountShort, max 4 chars),
+     always centered. Inactive circle: the level's own color on the transparent ring;
+     checked: the fill's "on" color. */
   .level-btn .level-count{display:none;}
-  body.layout-compact:not(.filter-toolbar-labels-always) .level-btn .level-count{
+  body:not(.layout-phone):not(.filter-toolbar-labels-always) .level-btn .level-count{
     display:flex; position:absolute; inset:0; align-items:center; justify-content:center;
-    font:600 10px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
+    font:600 9.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
   }
-  body.layout-compact .level-btn.lvl-error .level-count{color:var(--level-error);}
-  body.layout-compact .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
-  body.layout-compact .level-btn.lvl-warn .level-count{color:var(--level-warn);}
-  body.layout-compact .level-btn.active.lvl-warn .level-count{color:var(--level-warn-on);}
-  body.layout-compact .level-btn.lvl-info .level-count{color:var(--level-info);}
-  body.layout-compact .level-btn.active.lvl-info .level-count{color:var(--level-info-on);}
-  body.layout-compact .level-btn.lvl-debug .level-count{color:var(--level-debug);}
-  body.layout-compact .level-btn.active.lvl-debug .level-count{color:var(--level-debug-on);}
-  body.layout-compact .level-btn.lvl-fatal .level-count{color:var(--level-fatal);}
-  body.layout-compact .level-btn.lvl-trace .level-count{color:var(--level-trace);}
-  body.layout-compact .level-btn.active.lvl-fatal .level-count{color:var(--level-fatal-on);}
-  body.layout-compact .level-btn.active.lvl-trace .level-count{color:var(--level-trace-on);}
-  body.layout-compact .level-btn.lvl-custom-1 .level-count{color:var(--level-custom-1);}
-  body.layout-compact .level-btn.active.lvl-custom-1 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-2 .level-count{color:var(--level-custom-2);}
-  body.layout-compact .level-btn.active.lvl-custom-2 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-3 .level-count{color:var(--level-custom-3);}
-  body.layout-compact .level-btn.active.lvl-custom-3 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-4 .level-count{color:var(--level-custom-4);}
-  body.layout-compact .level-btn.active.lvl-custom-4 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-5 .level-count{color:var(--level-custom-5);}
-  body.layout-compact .level-btn.active.lvl-custom-5 .level-count{color:var(--level-custom-on);}
-  body.layout-compact .level-btn.lvl-custom-6 .level-count{color:var(--level-custom-6);}
-  body.layout-compact .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
+  /* A 4-char short count ("1,3k") gets a notch smaller so it clears the 28px ring. */
+  body:not(.layout-phone):not(.filter-toolbar-labels-always) .level-btn .level-count.level-count-long{font-size:8.5px;}
+  .level-btn.lvl-error .level-count{color:var(--level-error);}
+  .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
+  .level-btn.lvl-warn .level-count{color:var(--level-warn);}
+  .level-btn.active.lvl-warn .level-count{color:var(--level-warn-on);}
+  .level-btn.lvl-info .level-count{color:var(--level-info);}
+  .level-btn.active.lvl-info .level-count{color:var(--level-info-on);}
+  .level-btn.lvl-debug .level-count{color:var(--level-debug);}
+  .level-btn.active.lvl-debug .level-count{color:var(--level-debug-on);}
+  .level-btn.lvl-fatal .level-count{color:var(--level-fatal);}
+  .level-btn.lvl-trace .level-count{color:var(--level-trace);}
+  .level-btn.active.lvl-fatal .level-count{color:var(--level-fatal-on);}
+  .level-btn.active.lvl-trace .level-count{color:var(--level-trace-on);}
+  .level-btn.lvl-custom-1 .level-count{color:var(--level-custom-1);}
+  .level-btn.active.lvl-custom-1 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-2 .level-count{color:var(--level-custom-2);}
+  .level-btn.active.lvl-custom-2 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-3 .level-count{color:var(--level-custom-3);}
+  .level-btn.active.lvl-custom-3 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-4 .level-count{color:var(--level-custom-4);}
+  .level-btn.active.lvl-custom-4 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-5 .level-count{color:var(--level-custom-5);}
+  .level-btn.active.lvl-custom-5 .level-count{color:var(--level-custom-on);}
+  .level-btn.lvl-custom-6 .level-count{color:var(--level-custom-6);}
+  .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
   /* "Always" pills: an unchecked pill is a transparent ring, so its label takes the
      level's own color (the -on color is meant for the solid fill and was white on light). */
   body.filter-toolbar-labels-always .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
@@ -2655,7 +2659,8 @@
     flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px;
     padding:0 8px 0 16px; border-bottom:1px solid var(--border-soft);
   }
-  /* Bottom-panel tabs: "Entry detail | Facets" (the selected one in the accent look). */
+  /* Bottom-panel tabs: "Entry detail | Statistics | Facets" (the selected one in the accent look). */
+  .lower-tab[hidden]{display:none;}
   #lowerTabs{flex:0 0 auto; display:flex; align-items:stretch; align-self:stretch; gap:2px;}
   .lower-tab{
     background:none; border:0; border-bottom:2px solid transparent; margin:0; padding:0 8px; cursor:pointer;
@@ -2665,7 +2670,7 @@
   .lower-tab[aria-selected="true"]{color:var(--accent-strong); border-bottom-color:var(--accent);}
   .lower-tab:disabled{opacity:.55; cursor:default;}
   .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
-  /* Patterns/Table/Plot with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
+  /* Patterns with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
   #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
   #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody){display:none !important;}
   #detailMeta{
@@ -2950,6 +2955,8 @@
   }
   #extractHead .extract-gutter{z-index:2; cursor:pointer;}
   tbody#extractBody tr:not(.extract-spacer):hover td{background:var(--bg-elevated);}
+  /* The row of the selected entry (state.selectedId; what Entry detail shows) — under the cell selection and the violation colours. */
+  tbody#extractBody tr.extract-current td:not(.assert-violation){background:color-mix(in srgb, var(--accent) 10%, transparent);}
   #extractTable td.cell-selected, #extractTable th.cell-selected{background:var(--accent-soft) !important;}
   #extractTable td.col-hover, #extractTable th.col-hover{background:var(--bg-elevated-2);}
   .extract-col-float, .extract-col-int, .extract-col-hex{text-align:right; font-variant-numeric:tabular-nums;}
@@ -2965,42 +2972,21 @@
   #extractTable td.assert-violation{background:var(--level-error-soft); color:var(--level-error);}
   #extractTable td.assert-violation.cell-selected{background:var(--level-error-soft) !important; box-shadow:inset 0 0 0 1.5px var(--level-error);}
 
-  /* ---------- Statistics panel ----------
-     Table-only now (person-requested, this session — Plot lost it
-     entirely). Position/behavior (including the pin-or-hover mechanism)
-     mirrors #detailPanel exactly, just nested inside #extractWrap's own
-     flex column instead of #content's, and with a header label ("Statistics")
-     instead of a toggle-only header. No manual drag-resizer — a fixed default
-     height is enough here, unlike Entry Detail's much more variable content. */
-  #statsPanel{
-    flex:0 0 auto; height:150px; position:relative;
-    background:var(--bg-panel); border-top:1px solid var(--border);
-    display:flex; flex-direction:column; min-height:0;
-  }
-  #statsPanelInner{display:flex; flex-direction:column; height:100%; min-height:0;}
-  #statsPanel.collapsed:not(.peeking) #statsPanelBody{display:none;}
-  #statsPanel.collapsed{overflow:visible; height:34px;}
-  #statsPanel.collapsed.peeking #statsPanelInner{
-    position:absolute; left:0; right:0; bottom:0; z-index:30;
-    height:auto; max-height:50vh;
-    background:var(--bg-panel); box-shadow:0 -14px 34px rgba(0,0,0,.45);
-  }
-  #statsPanelHeader{
-    flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px;
-    padding:0 8px 0 16px; border-bottom:1px solid var(--border-soft);
-  }
-  #statsPanelHeaderLabel{
-    flex:1 1 auto; font-size:11px; font-weight:650; letter-spacing:.7px;
-    text-transform:uppercase; color:var(--text-tertiary);
-  }
-  #statsPanelBody{flex:1 1 auto; overflow-y:auto; padding:8px 16px;}
+  /* ---------- Statistics tab (bottom panel) ----------
+     The third tab of #detailPanel ("Entry detail | Statistics | Facets"),
+     offered while Table or Plot is on screen. Collapse, peek, resizer and
+     remembered height are the bottom panel's own. */
+  #statsPanelBody{display:none; flex:1 1 auto; min-height:0; overflow-y:auto; padding:8px 16px;}
+  #detailPanel.lower-stats #statsPanelBody{display:block;}
+  #detailPanel.lower-stats.collapsed:not(.peeking) #statsPanelBody{display:none;}
+  #detailPanel.lower-stats #detailBody, #detailPanel.lower-stats #detailMeta, #detailPanel.lower-stats #detailViewTabs{display:none;}
   #extractStatsContent{
     display:flex; flex-wrap:wrap; gap:6px 16px;
     font-size:10.8px; color:var(--text-tertiary); font-family:var(--font-mono);
   }
   #statsPanelEmpty{display:none; color:var(--text-tertiary); font-size:12px;}
-  #statsPanel.stats-empty #extractStatsContent{display:none;}
-  #statsPanel.stats-empty #statsPanelEmpty{display:block;}
+  #statsPanelBody.stats-empty #extractStatsContent{display:none;}
+  #statsPanelBody.stats-empty #statsPanelEmpty{display:block;}
   .stat-chip-name{font-weight:650;}
   .stat-chip b{color:var(--text-secondary); font-weight:600;}
 
@@ -4235,6 +4221,10 @@
   .plot-empty-label{fill:var(--text-tertiary); font-size:12px; font-family:var(--font-ui);}
   .plot-mark{cursor:pointer;}
   .plot-mark:hover{opacity:.7;}
+  /* Selection ring of the selected entry's mark(s) (updatePlotSelectionRing). */
+  .plot-sel-ring{pointer-events:none;}
+  .plot-sel-ring circle, .plot-sel-ring rect{fill:none; stroke:var(--text-primary); stroke-width:2;}
+  .plot-sel-ring .plot-sel-ring-line{fill:none; stroke:var(--text-primary); stroke-width:3.5; stroke-opacity:.9;}
 
   /* ---------- Plot view's own toolbar (zoom/pan/filter/fullscreen/save) ----------
      Same "real row in normal flow, not an overlay" pattern as #contextToolbar
@@ -5217,6 +5207,8 @@
     body.layout-phone #settingsClose, body.layout-compact #settingsClose, body.layout-phone .detail-phone-btn, body.layout-compact .detail-phone-btn{width:44px; height:44px;}
     body.layout-phone .level-btn{height:44px;}
     body.layout-compact .level-btn{width:44px; height:44px;}
+    /* .row-action-btn only raises specificity to beat the (0,4,1) base rule above */
+    body.layout-compact .level-btn.row-action-btn .level-count, body.layout-compact .level-btn.row-action-btn .level-count.level-count-long{font-size:11px;}
     body.layout-phone .view-tab, body.layout-compact .view-tab{padding:0 14px; font-size:12px;}
     body.layout-phone #detailViewTabs .view-tab, body.layout-compact #detailViewTabs .view-tab{padding:0 12px; font-size:12px;}
     body.layout-compact #btnLibrary{height:44px;}
@@ -6055,31 +6047,6 @@
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
         </div>
-        <!-- Statistics panel — Table-only now (person-requested, this
-             session: it used to be a shared bar collapsible independently on
-             Table and Plot via #statsToggleTable/#statsTogglePlot; Plot lost
-             it entirely). Modeled directly on #detailPanel below (same
-             collapsed/peeking pin-or-hover mechanism, see its own CSS/JS
-             comments) rather than that old collapse-toggle-button pattern:
-             default pinned open (STATS_COLLAPSED_KEY unset = expanded), no
-             separate show/hide button anymore — the panel's own header
-             toggle (mirroring #detailToggle) is it. switchExtractView()
-             shows/hides the whole panel based on which of Table/Plot is
-             current. -->
-        <div id="statsPanel">
-          <div id="statsPanelInner">
-            <div id="statsPanelHeader">
-              <div id="statsPanelHeaderLabel">Statistics</div>
-              <button type="button" id="statsToggle" class="panel-toggle-btn" title="Collapse">
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
-              </button>
-            </div>
-            <div id="statsPanelBody">
-              <div id="extractStatsContent"></div>
-              <div id="statsPanelEmpty">No plottable columns in this pattern.</div>
-            </div>
-          </div>
-        </div>
         <div id="plotWrap" class="hidden">
           <!-- Plot view's own toolbar — a real row INSIDE the plot view,
                directly above its content, same pattern as #contextToolbar in
@@ -6161,6 +6128,7 @@
           <div id="detailPanelHeader">
             <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
               <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)"><span class="lt-full">Entry detail</span><span class="lt-short">Entry</span></button>
+              <button type="button" class="lower-tab" id="lowerTabStats" role="tab" aria-selected="false" title="Statistics — min / max / mean / σ of the numeric columns (Table and Plot)" hidden>Statistics</button>
               <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
               <button type="button" class="lower-tab" id="lowerTabPatterns" role="tab" aria-selected="false" title="Patterns — message shapes of this view">Patterns</button>
             </div>
@@ -6190,6 +6158,12 @@
                result; clicking a value adds a filter node (see "Facet panel" in
                the script). Self-contained so the phone sheet can reuse it. -->
           <div id="facetPanelBody"></div>
+          <!-- Statistics tab body (offered while Table or Plot is on screen): the
+               column stats chips of the extraction (renderStatsBar). -->
+          <div id="statsPanelBody">
+            <div id="extractStatsContent"></div>
+            <div id="statsPanelEmpty">No plottable columns in this pattern.</div>
+          </div>
           <!-- Phone sheet, Patterns tab body: virtualized fixed-height cards. -->
           <div id="phonePatternsBody"><div id="phonePatternsSpacer"><div id="phonePatternsRows"></div></div></div>
           <div id="detailBody">
@@ -9449,10 +9423,6 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
     updateDetailToggleIcon();
     updateDetailPanel();
   }
-  if (!hoverExpandDetail && statsPanel.classList.contains("peeking")) {
-    statsPanel.classList.remove("peeking");
-    updateStatsToggleIcon();
-  }
 });
 
 /* ===================== Timeline minimap: hide the "covered timespan" box
@@ -10270,32 +10240,58 @@ function levelColorVar(name, formatId) {
   return slot ? "var(--level-custom-" + slot + ")" : null;
 }
 
-// The union of the level lists of every format currently in play — each open
-// root file's format contributes its own list, concatenated in tree order and
-// de-duplicated as names first appear. This is what a level filter node's
-// value array is canonically ordered by (the level bar itself shows more, see
-// activeLevelOrder).
+// The file nodes the level bar / middle columns are scoped to: the ACTIVE
+// node's root file alone (a merge's source node under "Sources" is itself a
+// type:"file" node, so it is its own root — that is what scopes a meta-format
+// merge to one source's columns/levels). With no active root (nothing open,
+// folder view, inline viewer) every root file, like before the scoping.
+function scopeFileNodes() {
+  const rid = state.activeId ? getRootFileId(state.activeId) : null;
+  const root = rid ? state.nodes[rid] : null;
+  if (root) return [root];
+  return state.rootIds.map(id => state.nodes[id]).filter(Boolean);
+}
+
+// The distinct formatIds a file node's entries carry (stamped at parse time),
+// in order of first appearance. A merged root holds those of all its sources,
+// so it keeps showing the union of their formats; an empty / still-loading
+// file falls back to its own format.
+function fileFormatIds(node) {
+  const ids = [];
+  if (node.type === "file" && node.entries && !isPlainTextFormat(node.formatId)) {
+    for (const rec of fileAggregate(node).levelOrder) if (!ids.includes(rec.formatId)) ids.push(rec.formatId);
+  }
+  if (!ids.length) ids.push(node.formatId || DEFAULT_FORMAT_ID);
+  return ids;
+}
+
+// True when every node of the scope is plain text (no levels, no Level column).
+function scopeIsPlainText(nodes) {
+  return nodes.length > 0 && nodes.every(n => isPlainTextFormat(n.formatId));
+}
+
+// The union of the level lists of the formats in the active scope (the active
+// root file, see scopeFileNodes) — de-duplicated as names first appear. This
+// is what a level filter node's value array is canonically ordered by (the
+// level bar itself shows more, see activeLevelOrder).
 function formatLevelUnion() {
   const out = [];
   const push = l => { if (!out.includes(l)) out.push(l); };
-  state.rootIds.forEach(id => {
-    const n = state.nodes[id];
-    if (n) formatLevels(n.formatId || DEFAULT_FORMAT_ID).forEach(push);
-  });
-  if (!out.length && !allRootsPlainText()) LEVELS.forEach(push); // plain text has no levels: an empty level bar
+  const nodes = scopeFileNodes();
+  nodes.forEach(n => fileFormatIds(n).forEach(f => formatLevels(f).forEach(push)));
+  if (!out.length && !scopeIsPlainText(nodes)) LEVELS.forEach(push); // plain text has no levels: an empty level bar
   return out;
 }
 
-// The raw level names of each bucket that actually occurs in the open ROOT
-// files (never the active node, so the bar does not change shape while
-// filtering): Map bucket -> [{ level, n }] summed over roots, in order of first
-// appearance. Feeds the "extra" chips and the Other chip's tooltip.
+// The raw level names of each bucket that actually occurs in the scope's root
+// file (never the active filter node, so the bar does not change shape while
+// filtering): Map bucket -> [{ level, n }], in order of first appearance.
+// Feeds the "extra" chips and the Other chip's tooltip.
 function rootFileBucketLevels() {
   const out = new Map();
   const bucketOf = makeLevelBucketer();
-  state.rootIds.forEach(id => {
-    const node = state.nodes[id];
-    if (!node || node.type !== "file" || nodeIsPlainText(id)) return;
+  scopeFileNodes().forEach(node => {
+    if (node.type !== "file" || isPlainTextFormat(node.formatId)) return;
     for (const rec of fileAggregate(node).levelOrder) {
       const b = bucketOf(rec.level, rec.formatId);
       let list = out.get(b);
@@ -10308,14 +10304,17 @@ function rootFileBucketLevels() {
 }
 
 // The buckets the level bar (and the minimap's header line) show, in order:
-// the union of the open formats' level lists (shown even with 0 entries) PLUS
-// every bucket that occurs in an open root file but is not in that union
-// (FATAL, TRACE, OTHER, a level of another format) — so the chip counts always
-// add up to the entry count. Extras are placed by levelSortRank (FATAL before
-// ERROR, TRACE after DEBUG, custom names after TRACE, OTHER always last).
+// the union of the scope's formats' level lists (shown even with 0 entries)
+// PLUS every bucket that occurs in the scope's root file but is not in that
+// union (FATAL, TRACE, OTHER, a level of another format) — so the chip counts
+// always add up to the entry count — PLUS every level currently lit in the
+// view filter (it survives node switches, so its chip must stay to be turned
+// off). Extras are placed by levelSortRank (FATAL before ERROR, TRACE after
+// DEBUG, custom names after TRACE, OTHER always last).
 function activeLevelOrder() {
   const base = formatLevelUnion();
   const extras = [...rootFileBucketLevels().keys()].filter(b => !base.includes(b));
+  state.levelFilter.forEach(l => { if (!base.includes(l) && !extras.includes(l)) extras.push(l); });
   if (!extras.length) return base;
   const out = base.slice();
   extras.sort((a, b) => levelSortRank(a) - levelSortRank(b));
@@ -10402,35 +10401,32 @@ function formatMessageVisible(formatId) {
   return !fmt || fmt.messageVisible !== false;
 }
 
-// The union of every currently-loaded root file's middle-column list, each
-// contributing its own columns in tree order, de-duplicated by key as they
-// first appear — same union-of-loaded-formats idiom as activeLevelOrder().
-// This is what the columns panel, the row/header renderers, the context
-// menu, and the filter popup's column chips all iterate.
+// The middle-column list of the active scope (the active root file — a meta
+// format's source node counts as its own root, see scopeFileNodes), each
+// format contributing its own columns, de-duplicated by key as they first
+// appear: one file shows its format's columns, a merge the union of its
+// sources' formats. This is what the columns panel, the row/header renderers,
+// the context menu, and the filter popup's column chips all iterate.
 function activeColumnDefs() {
   const out = [];
   const seen = new Set();
   const push = d => { if (!seen.has(d.key)) { seen.add(d.key); out.push(d); } };
-  state.rootIds.forEach(id => {
-    const n = state.nodes[id];
-    if (n) formatColumnDefs(n.formatId || DEFAULT_FORMAT_ID).forEach(push);
-  });
+  const nodes = scopeFileNodes();
+  nodes.forEach(n => fileFormatIds(n).forEach(f => formatColumnDefs(f).forEach(push)));
   // Only the empty app falls back — loaded files that define no middle
   // columns (plain text) really have none.
-  if (!state.rootIds.length) DEFAULT_MIDDLE_COLUMNS.forEach(push);
+  if (!nodes.length) DEFAULT_MIDDLE_COLUMNS.forEach(push);
   return out;
 }
 
-// Message is visible if ANY currently-loaded format shows it — a merged
+// Message is visible if ANY format of the active scope shows it — a merged
 // session with sources from several formats shouldn't lose the column just
 // because one of them hides it (mirrors the "hidden collapses, doesn't
 // disappear" stance the rest of the column system takes).
 function activeMessageVisible() {
-  if (!state.rootIds.length) return true;
-  return state.rootIds.some(id => {
-    const n = state.nodes[id];
-    return n && formatMessageVisible(n.formatId || DEFAULT_FORMAT_ID);
-  });
+  const nodes = scopeFileNodes();
+  if (!nodes.length) return true;
+  return nodes.some(n => fileFormatIds(n).some(formatMessageVisible));
 }
 
 // Every column key known across ALL saved formats (not just currently
@@ -16863,8 +16859,7 @@ const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
 const extractToolbar = el("#extractToolbar");
-const statsPanel = el("#statsPanel");
-const statsToggleBtn = el("#statsToggle");
+const statsPanelBody = el("#statsPanelBody");
 const extractStatsContent = el("#extractStatsContent");
 
 /* ===================== Patterns tab + Facet panel =====================
@@ -16892,6 +16887,7 @@ const patternsRows = el("#patternsRows");
 const facetPanelBody = el("#facetPanelBody");
 const facetPanelCount = el("#facetPanelCount");
 const lowerTabDetail = el("#lowerTabDetail");
+const lowerTabStats = el("#lowerTabStats");
 const lowerTabFacets = el("#lowerTabFacets");
 const lowerTabPatterns = el("#lowerTabPatterns");
 
@@ -17309,14 +17305,17 @@ patternsRows.addEventListener("click", ev => {
    adds a filter node under the active node restricted to that exact value
    (Alt+click or right-click: the same as a NOT filter). Collapsed sections and the
    selected bottom-panel tab are remembered per browser (localStorage). The
-   facets are the second tab of the bottom panel (#detailPanel); facetsOpen
-   means "the Facets tab is selected". */
-const FACETS_OPEN_KEY = "philogg-facets-open";
+   facets are a tab of the bottom panel (#detailPanel: "Entry detail |
+   Statistics | Facets"); lowerTab is the selected one. */
+const LOWER_TAB_KEY = "philogg-lower-tab";
 const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
 const FACET_MORE_STEP = 25;
-let facetsOpen = false;
-// Phone: the bottom sheet's own state (plain UI state, never persisted — facetsOpen stays the
+// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" (persisted). "stats"
+// only shows while Table/Plot is on screen (statsActive), elsewhere the panel shows Entry detail
+// again without forgetting the choice.
+let lowerTab = "detail";
+// Phone: the bottom sheet's own state (plain UI state, never persisted — lowerTab stays the
 // desktop/tablet selection). phoneSheetOpen: whether the sheet is shown (set by a card tap or the
 // Analyze button, see updateDetailPanel); phoneSheetTab: which tab it shows ("entry" | "facets";
 // "patterns" is the third, see PHONE_ANALYZE_TABS); phoneAnalyzeTab: the Analyze tab the header
@@ -17331,7 +17330,7 @@ let phonePatternsTotal = 0;
 let phonePatternsNode = null; // active node the list was last drawn for (scroll resets on a change)
 const PHONE_PATTERN_ROW_H = 64;
 let phonePanelSig = ""; // syncPhoneSheetPanel's last applied signature
-try { facetsOpen = localStorage.getItem(FACETS_OPEN_KEY) === "1"; } catch { facetsOpen = false; }
+try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" ? t : "detail"; } catch { lowerTab = "detail"; }
 let facetsCollapsed = new Set();
 try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
 const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
@@ -17393,35 +17392,43 @@ function facetsAvailable() {
   return !!node && !isLinkNode(node);
 }
 
-// The Facets tab is selected AND can show. Desktop/tablet: the persisted facetsOpen. Phone: exactly
-// while the bottom sheet is open on its Facets tab (phoneSheetTab; facetsOpen is not consulted).
+// The Facets tab is selected AND can show. Desktop/tablet: the persisted lowerTab. Phone: exactly
+// while the bottom sheet is open on its Facets tab (phoneSheetTab; lowerTab is not consulted).
 function phonePatternsActive() { return currentLayoutTier === "phone" && phoneSheetOpen && phoneSheetTab === "patterns"; }
 function facetsActive() {
-  return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "facets") : facetsOpen;
+  return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "facets") : lowerTab === "facets";
 }
+// The Statistics tab is offered while Table or Plot is on screen (never on the phone, which has neither).
+function statsOffered() { return currentLayoutTier !== "phone" && (fhActiveTab === "table" || fhActiveTab === "plot"); }
+function statsActive() { return lowerTab === "stats" && statsOffered(); }
 
-function lowerTabDetailTitle(offLog) {
-  return offLog
-    ? "Entry detail is shown in Context/Filtered"
-    : "Entry detail — full message of the selected row (" + shortcutLabel("toggleDetail") + " collapses the panel)";
+function lowerTabDetailTitle(patterns) {
+  return patterns
+    ? "Entry detail is shown in Context, Filtered, Table and Plot"
+    : "Entry detail — full message of the selected entry (" + shortcutLabel("toggleDetail") + " collapses the panel)";
 }
 // Applies the bottom-panel tab state to #detailPanel: tab buttons, the
-// lower-facets / detail-strip-only classes and the resizer. Called from
-// renderMainView (log tabs and Patterns/Table/Plot) and the tab switches.
-// offLog: Patterns/Table/Plot are on screen. There the panel is always
-// present (Facets reachable by touch on every tab); with the Entry detail tab
-// selected it shrinks to a header-only strip, without touching the persisted
-// collapsed state or the remembered height.
-function applyLowerPanel(offLog) {
-  const facets = facetsActive(), patterns = phonePatternsActive();
+// lower-facets / lower-stats / detail-strip-only classes and the resizer.
+// Called from renderMainView (log tabs and Patterns/Table/Plot) and the tab
+// switches. The panel is always present (Facets reachable by touch on every
+// tab); only on Patterns, where there is no entry detail, the Entry detail
+// tab shrinks it to a header-only strip, without touching the persisted
+// collapsed state or the remembered height. Statistics is offered on
+// Table/Plot only (statsOffered).
+function applyLowerPanel() {
+  const facets = facetsActive(), patterns = phonePatternsActive(), stats = !facets && statsActive();
+  const onPatternsTab = fhActiveTab === "patterns";
   detailPanel.classList.toggle("lower-facets", facets);
+  detailPanel.classList.toggle("lower-stats", stats);
   detailPanel.classList.toggle("lower-patterns", patterns);
-  detailPanel.classList.toggle("detail-strip-only", !!offLog && !facets && !patterns);
-  lowerTabDetail.setAttribute("aria-selected", facets || patterns ? "false" : "true");
+  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns);
+  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats ? "false" : "true");
+  lowerTabStats.hidden = !statsOffered();
+  lowerTabStats.setAttribute("aria-selected", stats ? "true" : "false");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
   lowerTabPatterns.setAttribute("aria-selected", patterns ? "true" : "false");
-  lowerTabDetail.disabled = !!offLog || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
-  lowerTabDetail.title = lowerTabDetailTitle(offLog);
+  lowerTabDetail.disabled = onPatternsTab || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
+  lowerTabDetail.title = lowerTabDetailTitle(onPatternsTab);
   updateDetailResizerVisibility();
   renderFacetPanel();
   renderPhonePatterns();
@@ -17583,17 +17590,22 @@ function createFacetFilter(column, value, inverted) {
   finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
 }
 
-// Selects the Facets (true) or Entry detail (false) tab. Selecting Facets
-// expands a collapsed panel. The panel height/visibility can change, hence the
-// full renderMainView (it re-measures the log like any layout change).
+// Selects a bottom-panel tab ("detail" | "stats" | "facets"; desktop/tablet — the phone
+// sheet has its own, see setFacetsOpen). Selecting Statistics or Facets expands a collapsed
+// panel. The panel height/visibility can change, hence the full renderMainView (it
+// re-measures the log like any layout change).
+function setLowerTab(tab) {
+  lowerTab = tab === "stats" || tab === "facets" ? tab : "detail";
+  try { localStorage.setItem(LOWER_TAB_KEY, lowerTab); } catch {}
+  if (lowerTab !== "detail" && isDetailCollapsed()) toggleDetailCollapsed(false);
+  if (state.rootIds.length) renderMainView();
+  else applyLowerPanel();
+  updateDetailPanel(); // the detail content may have been skipped while another tab was shown
+}
+// Selects the Facets (true) or Entry detail (false) tab; on the phone it switches the sheet tab.
 function setFacetsOpen(open) {
   if (currentLayoutTier === "phone") { setPhoneSheetTab(open ? "facets" : "entry"); return; }
-  facetsOpen = !!open;
-  try { localStorage.setItem(FACETS_OPEN_KEY, facetsOpen ? "1" : "0"); } catch {}
-  if (facetsOpen && isDetailCollapsed()) toggleDetailCollapsed(false);
-  if (state.rootIds.length) renderMainView();
-  else applyLowerPanel(isOffLogTab(fhActiveTab));
-  updateDetailPanel(); // the detail content may have been skipped while the Facets tab was shown
+  setLowerTab(open ? "facets" : "detail");
 }
 // Ctrl+I: Facets selected, expanded and visible -> back to Entry detail; otherwise Facets.
 function toggleFacets() {
@@ -17602,9 +17614,14 @@ function toggleFacets() {
   setFacetsOpen(!shown);
 }
 facetPanelBody.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
-[lowerTabDetail, lowerTabFacets].forEach(btn => {
+[lowerTabDetail, lowerTabStats, lowerTabFacets].forEach(btn => {
   btn.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
-  btn.addEventListener("click", ev => { ev.stopPropagation(); if (!btn.disabled) setFacetsOpen(btn === lowerTabFacets); }); // phone: setFacetsOpen switches the sheet tab
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
+    if (btn.disabled) return;
+    if (btn === lowerTabStats) setLowerTab("stats"); // never shown on the phone
+    else setFacetsOpen(btn === lowerTabFacets); // phone: setFacetsOpen switches the sheet tab
+  });
 });
 lowerTabPatterns.addEventListener("mousedown", ev => ev.preventDefault());
 lowerTabPatterns.addEventListener("click", ev => { ev.stopPropagation(); setPhoneSheetTab("patterns"); });
@@ -18988,7 +19005,7 @@ function renderMainView() {
     linkWrap.style.display = "none";
     // No Entry detail here, but the bottom panel stays for the Facets tab.
     detailPanel.style.display = "flex";
-    applyLowerPanel(true);
+    applyLowerPanel();
     timelineMinimapEl.classList.remove("hidden");
     patternsWrap.style.display = "flex";
     renderPatternsView();
@@ -19000,9 +19017,10 @@ function renderMainView() {
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
-    // No entry-detail companion here; the bottom panel stays for the Facets tab.
+    // The bottom panel is a normal panel here: Entry detail (the selected row's entry),
+    // Statistics and Facets.
     detailPanel.style.display = "flex";
-    applyLowerPanel(true);
+    applyLowerPanel();
     // Unlike before this rework, the minimap is no longer hidden while an
     // extraction's Table/Plot tab is on screen (Schritt 5) — there is a real
     // underlying entry set behind this node now that Context/Filtered work
@@ -19037,7 +19055,7 @@ function renderMainView() {
   // collapsed panel has a fixed 34px header height, not a manually
   // resizable one, so the drag handle would be dead UI if left visible.
   detailPanel.style.display = "flex";
-  applyLowerPanel(false);
+  applyLowerPanel();
 
   if (isLink) {
     tableWrap.style.display = "none";
@@ -20728,6 +20746,18 @@ function toggleLevelFromMinimap(rootId, level) {
   toggleLevelFilter(level);
 }
 
+// Count text inside a level-bar circle, at most 4 characters (exact count stays in the
+// title/hover label): 999 -> "999", 1327 -> "1,3k" (floored, German comma), 48211 -> "48k",
+// 1204551 -> "1,2M", 12e6 -> "12M".
+function levelCountShort(n) {
+  const one = (tenths, unit) => Math.floor(tenths / 10) + "," + (tenths % 10) + unit; // integer math: no float flooring errors
+  if (n < 1000) return String(n);
+  if (n < 10000) return one(Math.floor(n / 100), "k");
+  if (n < 1e6) return Math.floor(n / 1000) + "k";
+  if (n < 1e7) return one(Math.floor(n / 1e5), "M");
+  return Math.floor(n / 1e6) + "M";
+}
+
 function renderLevelBar() {
   levelBarEl.innerHTML = "";
   const counts = getLevelCounts(state.activeId) || {};
@@ -20747,10 +20777,11 @@ function renderLevelBar() {
     const label = levelBarTitle(lvl, counts[lvl] || 0);
     btn.title = label; // accessible name, since the button itself carries no visible text
     const n = counts[lvl] || 0;
-    const countText = n >= 100000 ? Math.round(n / 1000) + "k" : n.toLocaleString("de-DE"); // fits the 44px circle
-    // .level-short: the phone chip text ("F 15", "Other 33"); hidden on the other tiers.
-    const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + countText;
-    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
+    // .level-count: short count (max 4 chars) inside the circle; .level-short: the phone
+    // chip text with the exact count ("F 15", "Other 1.327"); each hidden on the other tiers.
+    const countText = levelCountShort(n);
+    const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + n.toLocaleString("de-DE");
+    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count' + (countText.length > 3 ? " level-count-long" : "") + '">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => toggleLevelFilter(lvl));
     levelBarEl.appendChild(btn);
   });
@@ -22365,36 +22396,94 @@ function switchExtractView(view) {
   // whenever Plot was the active view (person-reported: left a toolbar-like
   // bar between the tab row and Plot's own toolbar).
   (view === "plot" ? plotBody : extractScroll).before(extractToolbar);
-  // Statistics panel is Table-only (person-requested, this session) — Plot
-  // has no Statistics panel at all anymore, unlike the old shared, per-tab-
-  // toggleable bar.
-  statsPanel.style.display = view === "table" ? "flex" : "none";
   if (view === "plot") { renderPlotControls(); renderPlotChart(); }
 }
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
 
 // Plot point/bar -> log entry: the Plot tab used to be a dead end (an
-// outlier was visible but not reachable) — clicking a mark now reveals its
-// underlying entry as the corresponding row in the Table view
-// (revealInTableView, person-requested this session — a plot click used to
-// jump straight into the Filtered view, skipping Table; that row's own
-// double-click already goes on into Filtered from there). One
-// delegated listener rather than one per mark, since renderPlotChart
-// rebuilds the SVG's innerHTML wholesale on every render. Kept as a single
-// click (not a double-click) — unlike the table's row, a mark has no other
-// single-click behavior to disambiguate from, so the extra click would only
-// add friction. plotDragSuppressClick (set by the drag-to-zoom handler
-// below) skips the jump when this click is really the mouseup end of a
-// drag, not a plain click — same pattern the timeline minimap's own
-// drag-select already uses for the identical reason.
+// outlier was visible but not reachable). A plain click on a mark SELECTS its
+// entry (state.selectedId, shown in Entry detail, the tab stays Plot) and draws
+// a selection ring around it; a double-click reveals the entry as the
+// corresponding Table row (revealInTableView — today's click behaviour; that
+// row's own double-click goes on into Filtered). One delegated listener rather
+// than one per mark, since renderPlotChart rebuilds the SVG's innerHTML
+// wholesale on every render. The click must NOT rebuild #plotSvg (DOM identity:
+// the second click of a double-click would land on a new element and the
+// native dblclick would never fire): the ring is one <g> that
+// updatePlotSelectionRing adds/moves in place. plotDragSuppressClick (set by
+// the drag-to-zoom handler below) skips the selection when this click is
+// really the mouseup end of a drag, not a plain click — same pattern the
+// timeline minimap's own drag-select already uses for the identical reason.
 let plotDragSuppressClick = false;
+function plotMarkEntry(ev) {
+  const mark = ev.target.closest(".plot-mark");
+  const row = mark ? extractRowsData[+mark.dataset.row] : null;
+  return row ? row.entry : null;
+}
+// A plot click selects the entry like a table click does (selectExtractRowEntry).
+function selectPlotEntry(entry) {
+  const previousId = applySelection(entry.id);
+  updateSelectedRowClass(previousId); // also refreshes the plot's ring/highlight, see refreshPlotSelection
+  updateDetailPanel();
+}
 plotSvg.addEventListener("click", ev => {
   if (plotDragSuppressClick) { plotDragSuppressClick = false; return; }
-  const mark = ev.target.closest(".plot-mark");
-  if (!mark) return;
-  const row = extractRowsData[+mark.dataset.row];
-  if (row) jumpAfterPip(revealInTableView, [row.entry]);
+  const entry = plotMarkEntry(ev);
+  if (entry) selectPlotEntry(entry);
 });
+plotSvg.addEventListener("dblclick", ev => {
+  const entry = plotMarkEntry(ev);
+  if (entry) jumpAfterPip(revealInTableView, [entry]);
+});
+
+// Selection ring of the 2D charts: one <g id="plotSelRing"> around every mark
+// of the selected entry (a circle gets a larger circle, a bar/heat cell a larger
+// rect, a parallel-coordinates line a thicker copy), added after each chart
+// build and moved in place on a selection change. Nothing when the selected
+// entry is not plotted. Inside the marks' own clip group so a mark panned out
+// of the plot rectangle does not leave a ring in the margin.
+function updatePlotSelectionRing() {
+  const old = plotSvg.querySelector("#plotSelRing");
+  if (old) old.remove();
+  if (!state.selectedId || plotConfig.type === "3d" || !extractRowsData.length) return;
+  const idx = extractRowsData.findIndex(r => r.entry.id === state.selectedId);
+  if (idx < 0) return;
+  const marks = plotSvg.querySelectorAll('.plot-mark[data-row="' + idx + '"]');
+  if (!marks.length) return;
+  const NS = "http://www.w3.org/2000/svg";
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("id", "plotSelRing");
+  g.setAttribute("class", "plot-sel-ring");
+  const clip = marks[0].closest("g[clip-path]");
+  if (clip) g.setAttribute("clip-path", clip.getAttribute("clip-path"));
+  const num = (m, a) => +m.getAttribute(a);
+  marks.forEach(m => {
+    const tag = m.localName;
+    let ring = null;
+    if (tag === "circle") {
+      ring = document.createElementNS(NS, "circle");
+      ring.setAttribute("cx", m.getAttribute("cx")); ring.setAttribute("cy", m.getAttribute("cy"));
+      ring.setAttribute("r", String(num(m, "r") + 3.5));
+    } else if (tag === "rect") {
+      ring = document.createElementNS(NS, "rect");
+      ring.setAttribute("x", String(num(m, "x") - 2)); ring.setAttribute("y", String(num(m, "y") - 2));
+      ring.setAttribute("width", String(num(m, "width") + 4)); ring.setAttribute("height", String(num(m, "height") + 4));
+    } else if (tag === "path") {
+      ring = document.createElementNS(NS, "path");
+      ring.setAttribute("d", m.getAttribute("d"));
+      ring.setAttribute("class", "plot-sel-ring-line");
+    }
+    if (ring) g.appendChild(ring);
+  });
+  if (g.firstChild) plotSvg.appendChild(g);
+}
+// Brings the plot in step with state.selectedId after a selection change made
+// anywhere (called from updateSelectedRowClass): the 2D ring is moved in place,
+// the 3D canvas redraws its highlight. No-op unless Plot is the tab on screen.
+function refreshPlotSelection() {
+  if (fhActiveTab !== "plot" || extractView !== "plot") return;
+  if (plotConfig.type === "3d") renderPlotChart(); else updatePlotSelectionRing();
+}
 
 // ---------- Plot zoom / pan / hover tooltip ----------
 // Interaction layer on top of renderPlotChart's plotZoom/plotLastRender
@@ -23239,7 +23328,7 @@ function renderValueChart() {
     parts.push('<text class="plot-axis-title" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(src.axisTitle) + "</text>");
     axisTitleY(src.valueTitle);
   }
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
 }
 function renderRadarChart(src, W, H, empty) {
   const cols = src.cols, rows = src.rows, n = cols.length;
@@ -23282,7 +23371,7 @@ function renderRadarChart(src, W, H, empty) {
   overlays.forEach((row, i) => drawRow(row, COLUMN_PALETTE[(i + 1) % COLUMN_PALETTE.length], 1.4, true));
   drawRow(main, COLUMN_PALETTE[0], 2.2, false);
   pushRowLegend(parts, [main].concat(overlays), PLOT_MARGIN.left);
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
 }
 function parallelRowInBrushes(row, cols) {
   for (const [ci, [lo, hi]] of plotParallelBrushes) {
@@ -23362,7 +23451,7 @@ function renderParallelChart(src, W, H) {
     pushColorbar(parts, left + plotW + 36, top, plotH, cRange.lo, cRange.hi);
   }
   plotParallelLayout = { W, H, top, plotH, axes };
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
   updateParallelBrushInfo(inRange, rows.length, stride);
 }
 // Every table row inside all parallel-coordinates ranges -> the Table tab's selection.
@@ -24096,7 +24185,7 @@ function renderPlotChart() {
     });
   }
 
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
 
   // Geometry/domain snapshot for the interaction layer (wheel zoom, drag-
   // rect zoom, middle-click pan, hover tooltip) — those are separate,
@@ -24299,6 +24388,21 @@ function renderPlot3D() {
     if (p.violated) { ctx.strokeStyle = PLOT_ASSERT_COLOR; ctx.lineWidth = 1.5; ctx.stroke(); }
     hoverPts.push({ px: p.sx, py: p.sy, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: plotConfig.yCols[0], zCol: plotConfig.zCol, colorCol: plotConfig.colorCol, seriesName: yCol.name });
   });
+  // Selection highlight: a ring around the selected entry's point(s), drawn on top (flagged on the hover point too).
+  const selRow = state.selectedId ? extractRowsData.findIndex(r => r.entry.id === state.selectedId) : -1;
+  if (selRow >= 0) {
+    const ringColor = styles.getPropertyValue("--text-primary").trim() || "#fff";
+    const haloColor = styles.getPropertyValue("--bg-app").trim() || "#000";
+    hoverPts.forEach(h => {
+      if (h.rowIndex !== selRow) return;
+      h.selected = true;
+      ctx.beginPath();
+      ctx.arc(h.px, h.py, PLOT_3D_POINT_R + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = haloColor; ctx.lineWidth = 5; ctx.stroke(); // dark halo: stays visible inside a dense cloud
+      ctx.strokeStyle = ringColor; ctx.lineWidth = 2; ctx.stroke();
+    });
+    ctx.lineWidth = 1;
+  }
 
   // Color-scale legend, same gradient strip as 2D scatter's — sized to span
   // the full chart height (minus the same 16px top/bottom margin) instead of
@@ -24386,22 +24490,35 @@ plot3dCanvas.addEventListener("wheel", ev => {
   renderPlotChart();
 }, { passive: false });
 
-plot3dCanvas.addEventListener("click", () => {
-  if (plot3dDragMoved) { plot3dDragMoved = false; return; } // a drag's trailing click shouldn't also jump to a log entry
-  if (!plot3dHoverHit) return;
-  const row = extractRowsData[plot3dHoverHit.rowIndex];
-  if (row) jumpAfterPip(revealInTableView, [row.entry]);
-});
-
-let plot3dHoverHit = null;
-plot3dCanvas.addEventListener("mousemove", ev => {
-  if (plot3dDragMode || extractView !== "plot" || plotConfig.type !== "3d" || !plot3dLastRender) return;
+// Nearest plotted point within PLOT_3D_HOVER_MAX_DIST_PX of the event (hover, click and double-click share it).
+function plot3dHitFromEvent(ev) {
+  if (!plot3dLastRender) return null;
   const pt = plot3dPointFromEvent(ev);
   let bestDist = PLOT_3D_HOVER_MAX_DIST_PX, hit = null;
   for (const p of plotHoverPoints) {
     const d = Math.hypot(pt.x - p.px, pt.y - p.py);
     if (d < bestDist) { bestDist = d; hit = p; }
   }
+  return hit;
+}
+// Click = select the nearest point's entry (Entry detail + canvas highlight; the canvas element stays, so a
+// double-click still arrives), double-click = reveal it in the Table. A rotate/pan drag never selects.
+plot3dCanvas.addEventListener("click", ev => {
+  if (plot3dDragMoved) { plot3dDragMoved = false; return; } // a drag's trailing click shouldn't also select
+  const hit = plot3dHitFromEvent(ev);
+  const row = hit ? extractRowsData[hit.rowIndex] : null;
+  if (row) selectPlotEntry(row.entry);
+});
+plot3dCanvas.addEventListener("dblclick", ev => {
+  const hit = plot3dHitFromEvent(ev);
+  const row = hit ? extractRowsData[hit.rowIndex] : null;
+  if (row) jumpAfterPip(revealInTableView, [row.entry]);
+});
+
+let plot3dHoverHit = null;
+plot3dCanvas.addEventListener("mousemove", ev => {
+  if (plot3dDragMode || extractView !== "plot" || plotConfig.type !== "3d" || !plot3dLastRender) return;
+  const hit = plot3dHitFromEvent(ev);
   plot3dHoverHit = hit;
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
@@ -24583,15 +24700,8 @@ function computeColumnStats(colIndex) {
   return { min, max, mean, stddev: Math.sqrt(sqDiff / vals.length), n: vals.length };
 }
 
-// Statistics panel: Table-only now (person-requested, this session — Plot
-// lost it entirely; see #statsPanel's own HTML/CSS comments). Pin-or-hover
-// mechanism modeled directly on #detailPanel/toggleDetailCollapsed below —
-// see isStatsCollapsed/isStatsPeeking/toggleStatsCollapsed further down,
-// near their #detailPanel counterparts. Default is pinned open (unset key =
-// expanded) — there's no separate show/hide button anymore, the panel's own
-// header toggle is it.
-const STATS_COLLAPSED_KEY = "philogg-stats-collapsed";
-
+// Statistics: the chips of the bottom panel's Statistics tab (#statsPanelBody), offered on
+// Table and Plot. Always kept current by renderExtractTable, whichever tab is selected.
 function renderStatsBar(node) {
   const plottable = extractColumns.map(c => ({ ...c, index: c.colIndex })).filter(c => isPlottableType(c.type));
   const chips = plottable.map(c => {
@@ -24602,7 +24712,7 @@ function renderStatsBar(node) {
       'mean <b>' + formatAxisNumber(stats.mean) + '</b> · σ <b>' + formatAxisNumber(stats.stddev) + '</b></span>';
   }).join("");
   extractStatsContent.innerHTML = chips;
-  statsPanel.classList.toggle("stats-empty", chips === "");
+  statsPanelBody.classList.toggle("stats-empty", chips === "");
 }
 
 function renderExtractTable(node) {
@@ -24897,6 +25007,8 @@ function renderExtractVisibleRows() {
     const row = extractRowsData[r];
     const tr = document.createElement("tr");
     tr.style.height = EXTRACT_ROW_HEIGHT + "px";
+    tr.dataset.extractEntryId = row.entry.id;
+    if (row.entry.id === state.selectedId) tr.className = "extract-current";
     let rowHtml = '<td class="extract-gutter" data-row="' + r + '" title="Select row · Ctrl+click add">' + (r + 1) + "</td>";
     extractColumns.forEach(c => {
       const ci = c.colIndex;
@@ -24989,6 +25101,7 @@ extractBody.addEventListener("mousedown", ev => {
       selectionAnchor = { row, col: 0 };
       selectCells(rowCells(row));
     }
+    selectExtractRowEntry(row);
     return;
   }
   const td = ev.target.closest("td[data-col]");
@@ -25004,6 +25117,7 @@ extractBody.addEventListener("mousedown", ev => {
     selectCells([[row, col]]);
     isCellDragging = true;
   }
+  selectExtractRowEntry(row);
 });
 extractBody.addEventListener("mouseover", ev => {
   if (!isCellDragging || !selectionAnchor) return;
@@ -28463,7 +28577,7 @@ function updateDetailToggleIcon() {
 // handle would be dead UI if left visible whenever it's collapsed, on top
 // of the existing no-files/extract-mode hide conditions.
 function updateDetailResizerVisibility() {
-  const strip = detailPanel.classList.contains("detail-strip-only"); // Patterns/Table/Plot with Entry detail selected
+  const strip = detailPanel.classList.contains("detail-strip-only"); // Patterns with Entry detail selected
   detailResizer.style.display = (state.rootIds.length > 0 && !strip && !isDetailCollapsed()) ? "block" : "none";
 }
 
@@ -28623,51 +28737,9 @@ function anyEscapeOverlayOpen() {
   return false;
 }
 
-// Statistics panel: same collapsed/peeking pin-or-hover mechanism as
-// #detailPanel above (isDetailCollapsed/isDetailPeeking/toggleDetailCollapsed
-// and their listeners just above), applied to #statsPanel instead — see its
-// own HTML/CSS comments. Default is pinned open (STATS_COLLAPSED_KEY unset =
-// expanded), unlike Entry Detail which defaults collapsed.
-function isStatsCollapsed() { return statsPanel.classList.contains("collapsed"); }
-function isStatsPeeking() { return statsPanel.classList.contains("peeking"); }
-function updateStatsToggleIcon() {
-  if (isStatsPeeking()) {
-    statsToggleBtn.innerHTML = ICON_PIN;
-    statsToggleBtn.title = "Pin open";
-  } else {
-    const collapsed = isStatsCollapsed();
-    statsToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
-    statsToggleBtn.title = collapsed ? "Expand" : "Collapse";
-  }
-}
-function toggleStatsCollapsed(collapsed) {
-  if (collapsed === undefined) collapsed = !isStatsCollapsed();
-  statsPanel.classList.remove("peeking");
-  statsPanel.classList.toggle("collapsed", collapsed);
-  localStorage.setItem(STATS_COLLAPSED_KEY, collapsed ? "1" : "0");
-  updateStatsToggleIcon();
-}
-statsToggleBtn.addEventListener("click", () => toggleStatsCollapsed());
-statsPanel.addEventListener("mouseenter", () => {
-  if (!isStatsCollapsed() || !hoverExpandDetail) return;
-  statsPanel.classList.add("peeking");
-  updateStatsToggleIcon();
-});
-statsPanel.addEventListener("mouseleave", () => {
-  if (!isStatsCollapsed()) return;
-  statsPanel.classList.remove("peeking");
-  updateStatsToggleIcon();
-});
-
-function initStatsCollapsed() {
-  if (localStorage.getItem(STATS_COLLAPSED_KEY) === "1") toggleStatsCollapsed(true);
-  else updateStatsToggleIcon();
-}
-
 function initCollapsePanels() {
   initSidebarCollapsed();
   initDetailCollapsed();
-  initStatsCollapsed();
 }
 
 /* ---------- Stacked-layout resizer (drag the handle between Full and
@@ -30240,10 +30312,34 @@ function updateSelectedRowClass(previousId) {
       if (curEl) curEl.classList.add("selected");
     }
   });
+  updateExtractCurrentRow();
+  refreshPlotSelection();
   // The Context toolbar shows which match of how many is selected, so it has to
   // follow the selection too — cheap, since contextMatchPos makes the lookup a
   // single Map read rather than a scan (see buildContextView).
   updateContextToolbar();
+}
+
+// The extraction table's "current row": the row of the selected entry
+// (state.selectedId, what Entry detail shows) carries .extract-current. In-place
+// toggle like updateSelectedRowClass — a cell click must not rebuild the rows
+// (the dblclick that may follow needs the same elements). Rows rendered later
+// get the class from renderExtractVisibleRows.
+function updateExtractCurrentRow() {
+  extractBody.querySelectorAll("tr.extract-current").forEach(tr => tr.classList.remove("extract-current"));
+  if (!state.selectedId) return;
+  const tr = extractBody.querySelector('tr[data-extract-entry-id="' + CSS.escape(state.selectedId) + '"]');
+  if (tr) tr.classList.add("extract-current");
+}
+// A click in the extraction table's body (cell or row gutter) selects that row's entry —
+// the same state.selectedId the log views use — so Entry detail shows it. With a
+// multi-cell selection (Shift/Ctrl/drag) it is the row of the last clicked cell.
+function selectExtractRowEntry(row) {
+  const r = extractRowsData[row];
+  if (!r) return;
+  const previousId = applySelection(r.entry.id);
+  updateSelectedRowClass(previousId);
+  updateDetailPanel();
 }
 
 // Same in-place-toggle technique as updateSelectedRowClass (see its comment
@@ -30576,7 +30672,7 @@ function markRawHtml(mm, text) {
 function selectedEntry() {
   const id = state.selectedId;
   if (!id) return null;
-  return entryIndex[id] || (id.startsWith("pair:") && currentViewEntries.find(e => e.id === id)) || null;
+  return entryIndex[id] || (id.startsWith("pair:") && (currentViewEntries.find(e => e.id === id) || (extractRowsData.find(r => r.entry.id === id) || {}).entry)) || null;
 }
 
 // Finds the end index of a balanced `{...}`/`[...]` span starting at
@@ -31163,6 +31259,7 @@ function revealInTableView(entry) {
     renderExtractVisibleRows();
   }
   updateSelectedRowClass(previousId);
+  updateDetailPanel();
   pushNavWaypoint();
 }
 
@@ -31756,7 +31853,7 @@ function syncPhoneSheetPanel(hasEntry) {
   const sig = phoneSheetOpen + "|" + phoneSheetTab + "|" + hasEntry;
   if (sig === phonePanelSig) return;
   phonePanelSig = sig;
-  applyLowerPanel(isOffLogTab(fhActiveTab));
+  applyLowerPanel();
 }
 // Phone + extraction node: one hint line above the cards (Table/Plot need a wider screen). Gone elsewhere.
 // Only for a deliberate extraction, i.e. a pattern with typed placeholders ([*:int], as Extract creates):
@@ -43874,7 +43971,7 @@ function refreshShortcutTooltips() {
   updateDetailToggleIcon();
   const railToggle = sidebarRailEl.querySelector(".panel-toggle-btn");
   if (railToggle) railToggle.title = "Expand (" + shortcutLabel("toggleSidebar") + ")";
-  lowerTabDetail.title = lowerTabDetailTitle(lowerTabDetail.disabled);
+  lowerTabDetail.title = lowerTabDetailTitle(fhActiveTab === "patterns");
 }
 // The action currently bound to a find-bar alias combo (Ctrl+G /
 // Ctrl+Shift+G), which therefore wins over the alias in handleFindShortcut.

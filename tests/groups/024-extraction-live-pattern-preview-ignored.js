@@ -108,7 +108,7 @@ await withApp(async (w, d, T) => {
   w.render();
   w.applyFhView("table");
   assert(w.computeColumnStats(0) === null, "computeColumnStats returns null for a currently-ignored column");
-  const statsText = d.querySelector("#statsPanel").textContent;
+  const statsText = d.querySelector("#statsPanelBody").textContent;
   assert(statsText.includes("score:") && !statsText.includes("id:"), "stats bar shows the visible numeric column (score) but omits the ignored one (id), got " + JSON.stringify(statsText));
   // 3, not 1: the synthetic Index/t(ms) columns are always visible/plottable
   // too, alongside the one visible pattern column ("score") — "id" stays

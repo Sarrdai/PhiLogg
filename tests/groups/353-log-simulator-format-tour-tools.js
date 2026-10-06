@@ -101,11 +101,11 @@ if (groupSelected()) {
     assert(d.querySelector("#tourBanner .tour-banner-text").textContent.endsWith("Reading view hides DEEP \u2013 click welcome.log at the top of the tree for the internals."),
       "the banner ends with the Reading view / welcome.log hint, got " + d.querySelector("#tourBanner .tour-banner-text").textContent);
     const deepChip = () => d.querySelector('#levelBar .level-btn[data-level="DEEP"]');
-    assert(Number(deepChip().querySelector(".level-count").textContent) === 0, "under the Reading view the DEEP chip counts 0 (the node hides them)");
+    assert(Number(deepChip().querySelector(".level-short").textContent.split(" ").pop()) === 0, "under the Reading view the DEEP chip counts 0 (the node hides them)");
     T.state.activeId = wel.id;
     w.render();
     assert(w.getEntries(wel.id).length === TOUR.ROWS.length, "the root file shows every row, DEEP included");
-    assert(Number(deepChip().querySelector(".level-count").textContent) === TOUR.ROWS.filter(r => r[0] === "DEEP").length, "...and its DEEP chip counts them");
+    assert(Number(deepChip().querySelector(".level-short").textContent.split(" ").pop()) === TOUR.ROWS.filter(r => r[0] === "DEEP").length, "...and its DEEP chip counts them");
   }, { indexedDB: new IDBFactory() });
 
   {
