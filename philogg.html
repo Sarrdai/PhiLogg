@@ -2659,7 +2659,8 @@
     flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px;
     padding:0 8px 0 16px; border-bottom:1px solid var(--border-soft);
   }
-  /* Bottom-panel tabs: "Entry detail | Facets" (the selected one in the accent look). */
+  /* Bottom-panel tabs: "Entry detail | Statistics | Facets" (the selected one in the accent look). */
+  .lower-tab[hidden]{display:none;}
   #lowerTabs{flex:0 0 auto; display:flex; align-items:stretch; align-self:stretch; gap:2px;}
   .lower-tab{
     background:none; border:0; border-bottom:2px solid transparent; margin:0; padding:0 8px; cursor:pointer;
@@ -2669,7 +2670,7 @@
   .lower-tab[aria-selected="true"]{color:var(--accent-strong); border-bottom-color:var(--accent);}
   .lower-tab:disabled{opacity:.55; cursor:default;}
   .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
-  /* Patterns/Table/Plot with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
+  /* Patterns with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
   #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
   #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody){display:none !important;}
   #detailMeta{
@@ -2954,6 +2955,8 @@
   }
   #extractHead .extract-gutter{z-index:2; cursor:pointer;}
   tbody#extractBody tr:not(.extract-spacer):hover td{background:var(--bg-elevated);}
+  /* The row of the selected entry (state.selectedId; what Entry detail shows) — under the cell selection and the violation colours. */
+  tbody#extractBody tr.extract-current td:not(.assert-violation){background:color-mix(in srgb, var(--accent) 10%, transparent);}
   #extractTable td.cell-selected, #extractTable th.cell-selected{background:var(--accent-soft) !important;}
   #extractTable td.col-hover, #extractTable th.col-hover{background:var(--bg-elevated-2);}
   .extract-col-float, .extract-col-int, .extract-col-hex{text-align:right; font-variant-numeric:tabular-nums;}
@@ -2969,42 +2972,21 @@
   #extractTable td.assert-violation{background:var(--level-error-soft); color:var(--level-error);}
   #extractTable td.assert-violation.cell-selected{background:var(--level-error-soft) !important; box-shadow:inset 0 0 0 1.5px var(--level-error);}
 
-  /* ---------- Statistics panel ----------
-     Table-only now (person-requested, this session — Plot lost it
-     entirely). Position/behavior (including the pin-or-hover mechanism)
-     mirrors #detailPanel exactly, just nested inside #extractWrap's own
-     flex column instead of #content's, and with a header label ("Statistics")
-     instead of a toggle-only header. No manual drag-resizer — a fixed default
-     height is enough here, unlike Entry Detail's much more variable content. */
-  #statsPanel{
-    flex:0 0 auto; height:150px; position:relative;
-    background:var(--bg-panel); border-top:1px solid var(--border);
-    display:flex; flex-direction:column; min-height:0;
-  }
-  #statsPanelInner{display:flex; flex-direction:column; height:100%; min-height:0;}
-  #statsPanel.collapsed:not(.peeking) #statsPanelBody{display:none;}
-  #statsPanel.collapsed{overflow:visible; height:34px;}
-  #statsPanel.collapsed.peeking #statsPanelInner{
-    position:absolute; left:0; right:0; bottom:0; z-index:30;
-    height:auto; max-height:50vh;
-    background:var(--bg-panel); box-shadow:0 -14px 34px rgba(0,0,0,.45);
-  }
-  #statsPanelHeader{
-    flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px;
-    padding:0 8px 0 16px; border-bottom:1px solid var(--border-soft);
-  }
-  #statsPanelHeaderLabel{
-    flex:1 1 auto; font-size:11px; font-weight:650; letter-spacing:.7px;
-    text-transform:uppercase; color:var(--text-tertiary);
-  }
-  #statsPanelBody{flex:1 1 auto; overflow-y:auto; padding:8px 16px;}
+  /* ---------- Statistics tab (bottom panel) ----------
+     The third tab of #detailPanel ("Entry detail | Statistics | Facets"),
+     offered while Table or Plot is on screen. Collapse, peek, resizer and
+     remembered height are the bottom panel's own. */
+  #statsPanelBody{display:none; flex:1 1 auto; min-height:0; overflow-y:auto; padding:8px 16px;}
+  #detailPanel.lower-stats #statsPanelBody{display:block;}
+  #detailPanel.lower-stats.collapsed:not(.peeking) #statsPanelBody{display:none;}
+  #detailPanel.lower-stats #detailBody, #detailPanel.lower-stats #detailMeta, #detailPanel.lower-stats #detailViewTabs{display:none;}
   #extractStatsContent{
     display:flex; flex-wrap:wrap; gap:6px 16px;
     font-size:10.8px; color:var(--text-tertiary); font-family:var(--font-mono);
   }
   #statsPanelEmpty{display:none; color:var(--text-tertiary); font-size:12px;}
-  #statsPanel.stats-empty #extractStatsContent{display:none;}
-  #statsPanel.stats-empty #statsPanelEmpty{display:block;}
+  #statsPanelBody.stats-empty #extractStatsContent{display:none;}
+  #statsPanelBody.stats-empty #statsPanelEmpty{display:block;}
   .stat-chip-name{font-weight:650;}
   .stat-chip b{color:var(--text-secondary); font-weight:600;}
 
@@ -6061,31 +6043,6 @@
         <div id="extractScroll">
           <table id="extractTable"><thead id="extractHead"></thead><tbody id="extractBody"></tbody></table>
         </div>
-        <!-- Statistics panel — Table-only now (person-requested, this
-             session: it used to be a shared bar collapsible independently on
-             Table and Plot via #statsToggleTable/#statsTogglePlot; Plot lost
-             it entirely). Modeled directly on #detailPanel below (same
-             collapsed/peeking pin-or-hover mechanism, see its own CSS/JS
-             comments) rather than that old collapse-toggle-button pattern:
-             default pinned open (STATS_COLLAPSED_KEY unset = expanded), no
-             separate show/hide button anymore — the panel's own header
-             toggle (mirroring #detailToggle) is it. switchExtractView()
-             shows/hides the whole panel based on which of Table/Plot is
-             current. -->
-        <div id="statsPanel">
-          <div id="statsPanelInner">
-            <div id="statsPanelHeader">
-              <div id="statsPanelHeaderLabel">Statistics</div>
-              <button type="button" id="statsToggle" class="panel-toggle-btn" title="Collapse">
-                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6.5 8 10.5l4-4"/><path d="M3.5 3.5h9"/></svg>
-              </button>
-            </div>
-            <div id="statsPanelBody">
-              <div id="extractStatsContent"></div>
-              <div id="statsPanelEmpty">No plottable columns in this pattern.</div>
-            </div>
-          </div>
-        </div>
         <div id="plotWrap" class="hidden">
           <!-- Plot view's own toolbar — a real row INSIDE the plot view,
                directly above its content, same pattern as #contextToolbar in
@@ -6167,6 +6124,7 @@
           <div id="detailPanelHeader">
             <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
               <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)"><span class="lt-full">Entry detail</span><span class="lt-short">Entry</span></button>
+              <button type="button" class="lower-tab" id="lowerTabStats" role="tab" aria-selected="false" title="Statistics — min / max / mean / σ of the numeric columns (Table and Plot)" hidden>Statistics</button>
               <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
               <button type="button" class="lower-tab" id="lowerTabPatterns" role="tab" aria-selected="false" title="Patterns — message shapes of this view">Patterns</button>
             </div>
@@ -6196,6 +6154,12 @@
                result; clicking a value adds a filter node (see "Facet panel" in
                the script). Self-contained so the phone sheet can reuse it. -->
           <div id="facetPanelBody"></div>
+          <!-- Statistics tab body (offered while Table or Plot is on screen): the
+               column stats chips of the extraction (renderStatsBar). -->
+          <div id="statsPanelBody">
+            <div id="extractStatsContent"></div>
+            <div id="statsPanelEmpty">No plottable columns in this pattern.</div>
+          </div>
           <!-- Phone sheet, Patterns tab body: virtualized fixed-height cards. -->
           <div id="phonePatternsBody"><div id="phonePatternsSpacer"><div id="phonePatternsRows"></div></div></div>
           <div id="detailBody">
@@ -9454,10 +9418,6 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
     detailPanel.classList.remove("peeking");
     updateDetailToggleIcon();
     updateDetailPanel();
-  }
-  if (!hoverExpandDetail && statsPanel.classList.contains("peeking")) {
-    statsPanel.classList.remove("peeking");
-    updateStatsToggleIcon();
   }
 });
 
@@ -16895,8 +16855,7 @@ const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
 const extractToolbar = el("#extractToolbar");
-const statsPanel = el("#statsPanel");
-const statsToggleBtn = el("#statsToggle");
+const statsPanelBody = el("#statsPanelBody");
 const extractStatsContent = el("#extractStatsContent");
 
 /* ===================== Patterns tab + Facet panel =====================
@@ -16924,6 +16883,7 @@ const patternsRows = el("#patternsRows");
 const facetPanelBody = el("#facetPanelBody");
 const facetPanelCount = el("#facetPanelCount");
 const lowerTabDetail = el("#lowerTabDetail");
+const lowerTabStats = el("#lowerTabStats");
 const lowerTabFacets = el("#lowerTabFacets");
 const lowerTabPatterns = el("#lowerTabPatterns");
 
@@ -17341,14 +17301,17 @@ patternsRows.addEventListener("click", ev => {
    adds a filter node under the active node restricted to that exact value
    (Alt+click or right-click: the same as a NOT filter). Collapsed sections and the
    selected bottom-panel tab are remembered per browser (localStorage). The
-   facets are the second tab of the bottom panel (#detailPanel); facetsOpen
-   means "the Facets tab is selected". */
-const FACETS_OPEN_KEY = "philogg-facets-open";
+   facets are a tab of the bottom panel (#detailPanel: "Entry detail |
+   Statistics | Facets"); lowerTab is the selected one. */
+const LOWER_TAB_KEY = "philogg-lower-tab";
 const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
 const FACET_MORE_STEP = 25;
-let facetsOpen = false;
-// Phone: the bottom sheet's own state (plain UI state, never persisted — facetsOpen stays the
+// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" (persisted). "stats"
+// only shows while Table/Plot is on screen (statsActive), elsewhere the panel shows Entry detail
+// again without forgetting the choice.
+let lowerTab = "detail";
+// Phone: the bottom sheet's own state (plain UI state, never persisted — lowerTab stays the
 // desktop/tablet selection). phoneSheetOpen: whether the sheet is shown (set by a card tap or the
 // Analyze button, see updateDetailPanel); phoneSheetTab: which tab it shows ("entry" | "facets";
 // "patterns" is the third, see PHONE_ANALYZE_TABS); phoneAnalyzeTab: the Analyze tab the header
@@ -17363,7 +17326,7 @@ let phonePatternsTotal = 0;
 let phonePatternsNode = null; // active node the list was last drawn for (scroll resets on a change)
 const PHONE_PATTERN_ROW_H = 64;
 let phonePanelSig = ""; // syncPhoneSheetPanel's last applied signature
-try { facetsOpen = localStorage.getItem(FACETS_OPEN_KEY) === "1"; } catch { facetsOpen = false; }
+try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" ? t : "detail"; } catch { lowerTab = "detail"; }
 let facetsCollapsed = new Set();
 try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
 const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
@@ -17425,35 +17388,43 @@ function facetsAvailable() {
   return !!node && !isLinkNode(node);
 }
 
-// The Facets tab is selected AND can show. Desktop/tablet: the persisted facetsOpen. Phone: exactly
-// while the bottom sheet is open on its Facets tab (phoneSheetTab; facetsOpen is not consulted).
+// The Facets tab is selected AND can show. Desktop/tablet: the persisted lowerTab. Phone: exactly
+// while the bottom sheet is open on its Facets tab (phoneSheetTab; lowerTab is not consulted).
 function phonePatternsActive() { return currentLayoutTier === "phone" && phoneSheetOpen && phoneSheetTab === "patterns"; }
 function facetsActive() {
-  return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "facets") : facetsOpen;
+  return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "facets") : lowerTab === "facets";
 }
+// The Statistics tab is offered while Table or Plot is on screen (never on the phone, which has neither).
+function statsOffered() { return currentLayoutTier !== "phone" && (fhActiveTab === "table" || fhActiveTab === "plot"); }
+function statsActive() { return lowerTab === "stats" && statsOffered(); }
 
-function lowerTabDetailTitle(offLog) {
-  return offLog
-    ? "Entry detail is shown in Context/Filtered"
-    : "Entry detail — full message of the selected row (" + shortcutLabel("toggleDetail") + " collapses the panel)";
+function lowerTabDetailTitle(patterns) {
+  return patterns
+    ? "Entry detail is shown in Context, Filtered, Table and Plot"
+    : "Entry detail — full message of the selected entry (" + shortcutLabel("toggleDetail") + " collapses the panel)";
 }
 // Applies the bottom-panel tab state to #detailPanel: tab buttons, the
-// lower-facets / detail-strip-only classes and the resizer. Called from
-// renderMainView (log tabs and Patterns/Table/Plot) and the tab switches.
-// offLog: Patterns/Table/Plot are on screen. There the panel is always
-// present (Facets reachable by touch on every tab); with the Entry detail tab
-// selected it shrinks to a header-only strip, without touching the persisted
-// collapsed state or the remembered height.
-function applyLowerPanel(offLog) {
-  const facets = facetsActive(), patterns = phonePatternsActive();
+// lower-facets / lower-stats / detail-strip-only classes and the resizer.
+// Called from renderMainView (log tabs and Patterns/Table/Plot) and the tab
+// switches. The panel is always present (Facets reachable by touch on every
+// tab); only on Patterns, where there is no entry detail, the Entry detail
+// tab shrinks it to a header-only strip, without touching the persisted
+// collapsed state or the remembered height. Statistics is offered on
+// Table/Plot only (statsOffered).
+function applyLowerPanel() {
+  const facets = facetsActive(), patterns = phonePatternsActive(), stats = !facets && statsActive();
+  const onPatternsTab = fhActiveTab === "patterns";
   detailPanel.classList.toggle("lower-facets", facets);
+  detailPanel.classList.toggle("lower-stats", stats);
   detailPanel.classList.toggle("lower-patterns", patterns);
-  detailPanel.classList.toggle("detail-strip-only", !!offLog && !facets && !patterns);
-  lowerTabDetail.setAttribute("aria-selected", facets || patterns ? "false" : "true");
+  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns);
+  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats ? "false" : "true");
+  lowerTabStats.hidden = !statsOffered();
+  lowerTabStats.setAttribute("aria-selected", stats ? "true" : "false");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
   lowerTabPatterns.setAttribute("aria-selected", patterns ? "true" : "false");
-  lowerTabDetail.disabled = !!offLog || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
-  lowerTabDetail.title = lowerTabDetailTitle(offLog);
+  lowerTabDetail.disabled = onPatternsTab || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
+  lowerTabDetail.title = lowerTabDetailTitle(onPatternsTab);
   updateDetailResizerVisibility();
   renderFacetPanel();
   renderPhonePatterns();
@@ -17615,17 +17586,22 @@ function createFacetFilter(column, value, inverted) {
   finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
 }
 
-// Selects the Facets (true) or Entry detail (false) tab. Selecting Facets
-// expands a collapsed panel. The panel height/visibility can change, hence the
-// full renderMainView (it re-measures the log like any layout change).
+// Selects a bottom-panel tab ("detail" | "stats" | "facets"; desktop/tablet — the phone
+// sheet has its own, see setFacetsOpen). Selecting Statistics or Facets expands a collapsed
+// panel. The panel height/visibility can change, hence the full renderMainView (it
+// re-measures the log like any layout change).
+function setLowerTab(tab) {
+  lowerTab = tab === "stats" || tab === "facets" ? tab : "detail";
+  try { localStorage.setItem(LOWER_TAB_KEY, lowerTab); } catch {}
+  if (lowerTab !== "detail" && isDetailCollapsed()) toggleDetailCollapsed(false);
+  if (state.rootIds.length) renderMainView();
+  else applyLowerPanel();
+  updateDetailPanel(); // the detail content may have been skipped while another tab was shown
+}
+// Selects the Facets (true) or Entry detail (false) tab; on the phone it switches the sheet tab.
 function setFacetsOpen(open) {
   if (currentLayoutTier === "phone") { setPhoneSheetTab(open ? "facets" : "entry"); return; }
-  facetsOpen = !!open;
-  try { localStorage.setItem(FACETS_OPEN_KEY, facetsOpen ? "1" : "0"); } catch {}
-  if (facetsOpen && isDetailCollapsed()) toggleDetailCollapsed(false);
-  if (state.rootIds.length) renderMainView();
-  else applyLowerPanel(isOffLogTab(fhActiveTab));
-  updateDetailPanel(); // the detail content may have been skipped while the Facets tab was shown
+  setLowerTab(open ? "facets" : "detail");
 }
 // Ctrl+I: Facets selected, expanded and visible -> back to Entry detail; otherwise Facets.
 function toggleFacets() {
@@ -17634,9 +17610,14 @@ function toggleFacets() {
   setFacetsOpen(!shown);
 }
 facetPanelBody.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
-[lowerTabDetail, lowerTabFacets].forEach(btn => {
+[lowerTabDetail, lowerTabStats, lowerTabFacets].forEach(btn => {
   btn.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
-  btn.addEventListener("click", ev => { ev.stopPropagation(); if (!btn.disabled) setFacetsOpen(btn === lowerTabFacets); }); // phone: setFacetsOpen switches the sheet tab
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
+    if (btn.disabled) return;
+    if (btn === lowerTabStats) setLowerTab("stats"); // never shown on the phone
+    else setFacetsOpen(btn === lowerTabFacets); // phone: setFacetsOpen switches the sheet tab
+  });
 });
 lowerTabPatterns.addEventListener("mousedown", ev => ev.preventDefault());
 lowerTabPatterns.addEventListener("click", ev => { ev.stopPropagation(); setPhoneSheetTab("patterns"); });
@@ -19020,7 +19001,7 @@ function renderMainView() {
     linkWrap.style.display = "none";
     // No Entry detail here, but the bottom panel stays for the Facets tab.
     detailPanel.style.display = "flex";
-    applyLowerPanel(true);
+    applyLowerPanel();
     timelineMinimapEl.classList.remove("hidden");
     patternsWrap.style.display = "flex";
     renderPatternsView();
@@ -19032,9 +19013,10 @@ function renderMainView() {
     fhSplit.style.display = "none";
     tableWrap.style.display = "none";
     linkWrap.style.display = "none";
-    // No entry-detail companion here; the bottom panel stays for the Facets tab.
+    // The bottom panel is a normal panel here: Entry detail (the selected row's entry),
+    // Statistics and Facets.
     detailPanel.style.display = "flex";
-    applyLowerPanel(true);
+    applyLowerPanel();
     // Unlike before this rework, the minimap is no longer hidden while an
     // extraction's Table/Plot tab is on screen (Schritt 5) — there is a real
     // underlying entry set behind this node now that Context/Filtered work
@@ -19069,7 +19051,7 @@ function renderMainView() {
   // collapsed panel has a fixed 34px header height, not a manually
   // resizable one, so the drag handle would be dead UI if left visible.
   detailPanel.style.display = "flex";
-  applyLowerPanel(false);
+  applyLowerPanel();
 
   if (isLink) {
     tableWrap.style.display = "none";
@@ -22410,10 +22392,6 @@ function switchExtractView(view) {
   // whenever Plot was the active view (person-reported: left a toolbar-like
   // bar between the tab row and Plot's own toolbar).
   (view === "plot" ? plotBody : extractScroll).before(extractToolbar);
-  // Statistics panel is Table-only (person-requested, this session) — Plot
-  // has no Statistics panel at all anymore, unlike the old shared, per-tab-
-  // toggleable bar.
-  statsPanel.style.display = view === "table" ? "flex" : "none";
   if (view === "plot") { renderPlotControls(); renderPlotChart(); }
 }
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
@@ -24628,15 +24606,8 @@ function computeColumnStats(colIndex) {
   return { min, max, mean, stddev: Math.sqrt(sqDiff / vals.length), n: vals.length };
 }
 
-// Statistics panel: Table-only now (person-requested, this session — Plot
-// lost it entirely; see #statsPanel's own HTML/CSS comments). Pin-or-hover
-// mechanism modeled directly on #detailPanel/toggleDetailCollapsed below —
-// see isStatsCollapsed/isStatsPeeking/toggleStatsCollapsed further down,
-// near their #detailPanel counterparts. Default is pinned open (unset key =
-// expanded) — there's no separate show/hide button anymore, the panel's own
-// header toggle is it.
-const STATS_COLLAPSED_KEY = "philogg-stats-collapsed";
-
+// Statistics: the chips of the bottom panel's Statistics tab (#statsPanelBody), offered on
+// Table and Plot. Always kept current by renderExtractTable, whichever tab is selected.
 function renderStatsBar(node) {
   const plottable = extractColumns.map(c => ({ ...c, index: c.colIndex })).filter(c => isPlottableType(c.type));
   const chips = plottable.map(c => {
@@ -24647,7 +24618,7 @@ function renderStatsBar(node) {
       'mean <b>' + formatAxisNumber(stats.mean) + '</b> · σ <b>' + formatAxisNumber(stats.stddev) + '</b></span>';
   }).join("");
   extractStatsContent.innerHTML = chips;
-  statsPanel.classList.toggle("stats-empty", chips === "");
+  statsPanelBody.classList.toggle("stats-empty", chips === "");
 }
 
 function renderExtractTable(node) {
@@ -24942,6 +24913,8 @@ function renderExtractVisibleRows() {
     const row = extractRowsData[r];
     const tr = document.createElement("tr");
     tr.style.height = EXTRACT_ROW_HEIGHT + "px";
+    tr.dataset.extractEntryId = row.entry.id;
+    if (row.entry.id === state.selectedId) tr.className = "extract-current";
     let rowHtml = '<td class="extract-gutter" data-row="' + r + '" title="Select row · Ctrl+click add">' + (r + 1) + "</td>";
     extractColumns.forEach(c => {
       const ci = c.colIndex;
@@ -25034,6 +25007,7 @@ extractBody.addEventListener("mousedown", ev => {
       selectionAnchor = { row, col: 0 };
       selectCells(rowCells(row));
     }
+    selectExtractRowEntry(row);
     return;
   }
   const td = ev.target.closest("td[data-col]");
@@ -25049,6 +25023,7 @@ extractBody.addEventListener("mousedown", ev => {
     selectCells([[row, col]]);
     isCellDragging = true;
   }
+  selectExtractRowEntry(row);
 });
 extractBody.addEventListener("mouseover", ev => {
   if (!isCellDragging || !selectionAnchor) return;
@@ -28508,7 +28483,7 @@ function updateDetailToggleIcon() {
 // handle would be dead UI if left visible whenever it's collapsed, on top
 // of the existing no-files/extract-mode hide conditions.
 function updateDetailResizerVisibility() {
-  const strip = detailPanel.classList.contains("detail-strip-only"); // Patterns/Table/Plot with Entry detail selected
+  const strip = detailPanel.classList.contains("detail-strip-only"); // Patterns with Entry detail selected
   detailResizer.style.display = (state.rootIds.length > 0 && !strip && !isDetailCollapsed()) ? "block" : "none";
 }
 
@@ -28668,51 +28643,9 @@ function anyEscapeOverlayOpen() {
   return false;
 }
 
-// Statistics panel: same collapsed/peeking pin-or-hover mechanism as
-// #detailPanel above (isDetailCollapsed/isDetailPeeking/toggleDetailCollapsed
-// and their listeners just above), applied to #statsPanel instead — see its
-// own HTML/CSS comments. Default is pinned open (STATS_COLLAPSED_KEY unset =
-// expanded), unlike Entry Detail which defaults collapsed.
-function isStatsCollapsed() { return statsPanel.classList.contains("collapsed"); }
-function isStatsPeeking() { return statsPanel.classList.contains("peeking"); }
-function updateStatsToggleIcon() {
-  if (isStatsPeeking()) {
-    statsToggleBtn.innerHTML = ICON_PIN;
-    statsToggleBtn.title = "Pin open";
-  } else {
-    const collapsed = isStatsCollapsed();
-    statsToggleBtn.innerHTML = collapsed ? ICON_CHEVRON_UP : ICON_CHEVRON_DOWN;
-    statsToggleBtn.title = collapsed ? "Expand" : "Collapse";
-  }
-}
-function toggleStatsCollapsed(collapsed) {
-  if (collapsed === undefined) collapsed = !isStatsCollapsed();
-  statsPanel.classList.remove("peeking");
-  statsPanel.classList.toggle("collapsed", collapsed);
-  localStorage.setItem(STATS_COLLAPSED_KEY, collapsed ? "1" : "0");
-  updateStatsToggleIcon();
-}
-statsToggleBtn.addEventListener("click", () => toggleStatsCollapsed());
-statsPanel.addEventListener("mouseenter", () => {
-  if (!isStatsCollapsed() || !hoverExpandDetail) return;
-  statsPanel.classList.add("peeking");
-  updateStatsToggleIcon();
-});
-statsPanel.addEventListener("mouseleave", () => {
-  if (!isStatsCollapsed()) return;
-  statsPanel.classList.remove("peeking");
-  updateStatsToggleIcon();
-});
-
-function initStatsCollapsed() {
-  if (localStorage.getItem(STATS_COLLAPSED_KEY) === "1") toggleStatsCollapsed(true);
-  else updateStatsToggleIcon();
-}
-
 function initCollapsePanels() {
   initSidebarCollapsed();
   initDetailCollapsed();
-  initStatsCollapsed();
 }
 
 /* ---------- Stacked-layout resizer (drag the handle between Full and
@@ -30285,10 +30218,33 @@ function updateSelectedRowClass(previousId) {
       if (curEl) curEl.classList.add("selected");
     }
   });
+  updateExtractCurrentRow();
   // The Context toolbar shows which match of how many is selected, so it has to
   // follow the selection too — cheap, since contextMatchPos makes the lookup a
   // single Map read rather than a scan (see buildContextView).
   updateContextToolbar();
+}
+
+// The extraction table's "current row": the row of the selected entry
+// (state.selectedId, what Entry detail shows) carries .extract-current. In-place
+// toggle like updateSelectedRowClass — a cell click must not rebuild the rows
+// (the dblclick that may follow needs the same elements). Rows rendered later
+// get the class from renderExtractVisibleRows.
+function updateExtractCurrentRow() {
+  extractBody.querySelectorAll("tr.extract-current").forEach(tr => tr.classList.remove("extract-current"));
+  if (!state.selectedId) return;
+  const tr = extractBody.querySelector('tr[data-extract-entry-id="' + CSS.escape(state.selectedId) + '"]');
+  if (tr) tr.classList.add("extract-current");
+}
+// A click in the extraction table's body (cell or row gutter) selects that row's entry —
+// the same state.selectedId the log views use — so Entry detail shows it. With a
+// multi-cell selection (Shift/Ctrl/drag) it is the row of the last clicked cell.
+function selectExtractRowEntry(row) {
+  const r = extractRowsData[row];
+  if (!r) return;
+  const previousId = applySelection(r.entry.id);
+  updateSelectedRowClass(previousId);
+  updateDetailPanel();
 }
 
 // Same in-place-toggle technique as updateSelectedRowClass (see its comment
@@ -30621,7 +30577,7 @@ function markRawHtml(mm, text) {
 function selectedEntry() {
   const id = state.selectedId;
   if (!id) return null;
-  return entryIndex[id] || (id.startsWith("pair:") && currentViewEntries.find(e => e.id === id)) || null;
+  return entryIndex[id] || (id.startsWith("pair:") && (currentViewEntries.find(e => e.id === id) || (extractRowsData.find(r => r.entry.id === id) || {}).entry)) || null;
 }
 
 // Finds the end index of a balanced `{...}`/`[...]` span starting at
@@ -31208,6 +31164,7 @@ function revealInTableView(entry) {
     renderExtractVisibleRows();
   }
   updateSelectedRowClass(previousId);
+  updateDetailPanel();
   pushNavWaypoint();
 }
 
@@ -31801,7 +31758,7 @@ function syncPhoneSheetPanel(hasEntry) {
   const sig = phoneSheetOpen + "|" + phoneSheetTab + "|" + hasEntry;
   if (sig === phonePanelSig) return;
   phonePanelSig = sig;
-  applyLowerPanel(isOffLogTab(fhActiveTab));
+  applyLowerPanel();
 }
 // Phone + extraction node: one hint line above the cards (Table/Plot need a wider screen). Gone elsewhere.
 // Only for a deliberate extraction, i.e. a pattern with typed placeholders ([*:int], as Extract creates):
@@ -43919,7 +43876,7 @@ function refreshShortcutTooltips() {
   updateDetailToggleIcon();
   const railToggle = sidebarRailEl.querySelector(".panel-toggle-btn");
   if (railToggle) railToggle.title = "Expand (" + shortcutLabel("toggleSidebar") + ")";
-  lowerTabDetail.title = lowerTabDetailTitle(lowerTabDetail.disabled);
+  lowerTabDetail.title = lowerTabDetailTitle(fhActiveTab === "patterns");
 }
 // The action currently bound to a find-bar alias combo (Ctrl+G /
 // Ctrl+Shift+G), which therefore wins over the alias in handleFindShortcut.

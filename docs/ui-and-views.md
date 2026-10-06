@@ -447,8 +447,8 @@ shape:
   buttons reveal the same kind of floating hover label. Every plain
   `.toolbar-icon-btn` in those four toolbars (display toggles, Context's
   match-nav/expand-collapse, Export as CSV, Save as image, Fullscreen — the
-  Statistics toggle that used to live here is gone, moved into its own
-  `#statsPanel` header instead, see "Statistics panel" below) gets wrapped
+  Statistics toggle that used to live here is gone, it is now the Statistics
+  tab of the bottom panel, see "Facet panel" below) gets wrapped
   once, near the very end of the script (after every button's icon has
   already been assigned), by `makeToolbarBtnExpandable()` into a
   `.tb-hit`/`.tb-label` pair — same fixed-hit-zone idea as `.row-action-hit`
@@ -553,7 +553,7 @@ shape:
     `#contextToolbar`/`#filteredToolbar`. `#tableToolbar`/`#plotToolbar`
     have none — the column-statistics visibility toggle they briefly had
     (`#statsToggleTable`/`#statsTogglePlot`) is gone again, replaced by the
-    standalone `#statsPanel` (see "Statistics panel" in
+    bottom panel's Statistics tab (see "Statistics" in
     `docs/extraction-and-plotting.md`), which has no toolbar button at all.
   - **Actions** — one-off actions on the current row/selection, never
     persistent state: Bookmark this row/Add note/Add to selection (all
@@ -644,10 +644,9 @@ shape:
   **Statistics moved out of both toolbars entirely (person-requested,
   2026-09-05, superseding an earlier per-tab-toggle design from the same
   day)**: there is no Statistics control left in `#tableToolbar`/
-  `#plotToolbar` at all — it now lives in its own `#statsPanel`, Table-only,
-  positioned/behaving like Entry Detail (pin-or-hover, default pinned open).
-  See "Statistics panel" in `docs/extraction-and-plotting.md` for the full
-  mechanism.
+  `#plotToolbar` at all — since 2026-10-06 it is the Statistics tab of the
+  bottom panel (`#detailPanel`), offered on Table and Plot. See "Statistics"
+  in `docs/extraction-and-plotting.md` for the full mechanism.
 
 ## The three "active node" views
 
@@ -729,33 +728,47 @@ Filtered view lists, without pinned bookmarks — by message shape.
 
 ## Facet panel (value distribution per column)
 
-The second tab of the bottom panel (`#detailPanel`): **Entry detail | Facets**
-(`#lowerTabDetail` / `#lowerTabFacets`, `role="tab"`, `aria-selected`). The
-facets used to be a 280px side panel, which squeezed the log's Message column
-to a few pixels; now the log list keeps its full width and the panel's height
-comes from the existing `#detailResizer`. The selected tab is `facetsOpen`
-(persisted in `philogg-facets-open`, "1" = Facets); the only switches are the
-tabs and `Ctrl+I` (`toggleFacets`, rebindable, "Show/hide Facets (bottom panel
-tab)"): with Facets selected and the panel expanded and visible it goes back
-to Entry detail, otherwise it selects Facets and expands a collapsed panel.
+The bottom panel (`#detailPanel`) has three tabs: **Entry detail | Statistics |
+Facets** (`#lowerTabDetail` / `#lowerTabStats` / `#lowerTabFacets`,
+`role="tab"`, `aria-selected`). The facets used to be a 280px side panel, which
+squeezed the log's Message column to a few pixels; now the log list keeps its
+full width and the panel's height comes from the existing `#detailResizer`.
+The selected tab is the one `lowerTab` value (`"detail" | "stats" | "facets"`,
+persisted in `philogg-lower-tab`); the switches are the tabs and `Ctrl+I`
+(`toggleFacets`, rebindable, "Show/hide Facets (bottom panel tab)"): with
+Facets selected and the panel expanded and visible it goes back to Entry
+detail, otherwise it selects Facets and expands a collapsed panel.
+`setLowerTab(tab)` is the one writer (`setFacetsOpen(bool)` stays as the
+Facets/Entry detail wrapper, which on the phone switches the sheet tab).
 Selecting a log row keeps the tab (the detail content updates hidden).
 `Ctrl+J`, `#detailToggle`, peeking, focus mode and the resizer's double-click
-work for both tabs; the collapsed header shows both tabs.
+work for all tabs; the collapsed header shows all tabs.
 
 With Facets selected (`#detailPanel.lower-facets`) the header's meta and
 Raw/Parsed/Pretty are replaced by the entry count (`#facetPanelCount`) and
-`#facetPanelBody` replaces `#detailBody`. `applyLowerPanel(offLog)` (from
-`renderMainView`) sets the tab state; `renderFacetPanel()` fills the body.
-Visibility per view: Context/Filtered/link view as above; on
-Patterns/Table/Plot the panel is always there (Facets stay reachable by touch
-on every tab): with Facets selected as a normal panel, with Entry detail
-selected as a header-only strip (`.detail-strip-only`, Entry detail tab
-disabled, no resizer, no peeking; the persisted collapsed state and the
-remembered height stay untouched). Hidden with the inline viewer, folder
-minimap, empty state, plain-text roots and PiP; on the phone tier the Facets
-render in the bottom sheet's Facets tab (`facetsActive()` = sheet open on
-that tab, `facetsOpen` is not consulted; see "Responsive layout" → Bottom
-sheet; GROUP phone-analyze-sheet). A `link` node
+`#facetPanelBody` replaces `#detailBody`. With Statistics selected
+(`.lower-stats`) `#statsPanelBody` (the extraction's stats chips,
+`renderStatsBar`) replaces it and the header shows no Raw/Parsed/Pretty.
+`applyLowerPanel()` (from `renderMainView`) sets the tab state from
+`fhActiveTab`; `renderFacetPanel()` fills the facet body.
+Visibility per view: Context/Filtered/link view as above. **Table and Plot**
+show a normal panel with all three tabs: Entry detail shows the selected entry
+(`state.selectedId`; on Table a click on a body cell or row gutter selects
+that row's entry, see `docs/extraction-and-plotting.md` → "Entry detail on the
+Table"), and the Statistics tab is offered only there (`statsOffered()`; the
+button is `hidden` on every other view). If Statistics is the selected tab and
+the view changes to a log tab or Patterns, the panel shows Entry detail and
+the Statistics tab returns with Table/Plot (the choice is remembered, not
+reset). **Patterns** keeps the panel with Facets reachable (Facets stay
+reachable by touch on every tab): with Facets selected as a normal panel, with
+Entry detail selected as a header-only strip (`.detail-strip-only`, Entry
+detail tab disabled, no resizer, no peeking; the persisted collapsed state and
+the remembered height stay untouched). Hidden with the inline viewer, folder
+minimap, empty state, plain-text roots and PiP; on the phone tier (no
+Table/Plot, so no Statistics tab) the Facets render in the bottom sheet's
+Facets tab (`facetsActive()` = sheet open on that tab, `lowerTab` is not
+consulted; see "Responsive layout" → Bottom sheet; GROUP phone-analyze-sheet).
+GROUP entry-detail-table-plot covers the Table/Plot side. A `link` node
 reads "Not available for a link filter" (pair entries have no single column
 values).
 

@@ -8,7 +8,7 @@
    an Analyze tab; the sheet has the tabs Entry | Facets (a third, Patterns,
    slots into PHONE_ANALYZE_TABS later). The phone tab is plain UI state
    (phoneSheetOpen / phoneSheetTab / phoneAnalyzeTab), never written to
-   philogg-facets-open. A facet value tap keeps the sheet open (the child node
+   philogg-lower-tab. A facet value tap keeps the sheet open (the child node
    becomes active, the facets recount). An extraction node shows a one-line
    hint above the cards on the phone; the tour banner's hint names the
    Analyze button. Desktop and compact are unchanged.
@@ -58,7 +58,7 @@ await withApp(async (w, d, T) => {
   assert(tabE.disabled, "Entry is disabled without a selection");
   assert(!isVisible(d.getElementById("detailPrev"), w) && !isVisible(d.getElementById("detailNext"), w) && isVisible(d.getElementById("detailClose"), w), "prev/next hidden, close stays");
   assert(!isVisible(d.getElementById("detailMeta"), w) && !isVisible(d.getElementById("detailViewTabs"), w), "no entry meta / Raw-Parsed-Pretty");
-  assert(w.localStorage.getItem("philogg-facets-open") !== "1", "the phone tab is not persisted into philogg-facets-open");
+  assert(w.localStorage.getItem("philogg-lower-tab") !== "facets", "the phone tab is not persisted into philogg-lower-tab");
   fireClick(tabE, w);
   assert(tabF.getAttribute("aria-selected") === "true" && open(), "clicking the disabled Entry tab does nothing");
 
@@ -120,20 +120,20 @@ await withApp(async (w, d, T) => {
   assert(open() && /Not available for a link filter/.test(body.textContent), "link node: the existing placeholder text");
   T.state.activeId = f.id; w.render();
 
-  section("phone-analyze-sheet h. Ctrl+I opens/closes the sheet and leaves philogg-facets-open alone");
+  section("phone-analyze-sheet h. Ctrl+I opens/closes the sheet and leaves philogg-lower-tab alone");
   fireClick(d.getElementById("detailClose"), w);
-  const key = w.localStorage.getItem("philogg-facets-open");
+  const key = w.localStorage.getItem("philogg-lower-tab");
   fireKeydown(d, w, "i", { ctrlKey: true });
   assert(open() && panel.classList.contains("lower-facets"), "Ctrl+I opens on Facets");
   fireKeydown(d, w, "i", { ctrlKey: true });
   assert(!open(), "Ctrl+I closes it");
-  assert(w.localStorage.getItem("philogg-facets-open") === key, "localStorage philogg-facets-open untouched");
+  assert(w.localStorage.getItem("philogg-lower-tab") === key, "localStorage philogg-lower-tab untouched");
 
-  section("phone-analyze-sheet i. Leaving the phone tier closes the sheet state; tablet/desktop follow facetsOpen");
+  section("phone-analyze-sheet i. Leaving the phone tier closes the sheet state; tablet/desktop follow lowerTab");
   fireClick(btn, w);
   assert(open(), "sheet open on the phone");
   paSetWidth(w, 1440);
-  assert(!open() && !panel.classList.contains("lower-facets"), "desktop: sheet gone, Entry detail selected (facetsOpen is false)");
+  assert(!open() && !panel.classList.contains("lower-facets"), "desktop: sheet gone, Entry detail selected (lowerTab is detail)");
   paSetWidth(w, 390);
   assert(!open(), "back on the phone it stays closed");
   w.setFacetsOpen(false);

@@ -44,7 +44,7 @@ await withApp(async (w, d, T) => {
   assert(!isVisible(tabP, w), "compact: no Patterns lower tab");
   ppSetWidth(w, 390);
   assert(isVisible(tabP, w) && tabP.textContent === "Patterns", "phone: Patterns tab shown");
-  assert([...d.querySelectorAll("#lowerTabs .lower-tab")].map(t => t.id).join() === "lowerTabDetail,lowerTabFacets,lowerTabPatterns", "order Entry | Facets | Patterns");
+  assert([...d.querySelectorAll("#lowerTabs .lower-tab")].map(t => t.id).join() === "lowerTabDetail,lowerTabStats,lowerTabFacets,lowerTabPatterns" && d.querySelector("#lowerTabStats").hidden, "order Entry | (Statistics, never offered on the phone) | Facets | Patterns");
   assert(btn.title === "Facets and patterns (Ctrl+I)", "Analyze tooltip");
 
   section("phone-patterns-sheet b. Switching to Patterns: header text, cards, constant height, clamp");
@@ -100,7 +100,7 @@ await withApp(async (w, d, T) => {
   fireClick(tabP, w);
   fireClick(btn, w);
   assert(!open(), "(back on Patterns as the last used tab, closed)");
-  assert(w.localStorage.getItem("philogg-facets-open") !== "1", "nothing persisted into philogg-facets-open");
+  assert(w.localStorage.getItem("philogg-lower-tab") !== "facets", "nothing persisted into philogg-lower-tab");
 
   section("phone-patterns-sheet e. Tap = show only: text filter, Filtered, sheet closes");
   fireClick(btn, w);
