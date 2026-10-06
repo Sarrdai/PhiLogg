@@ -42,9 +42,9 @@ await withApp(async (w, d, T) => {
   paSetWidth(w, 390);
   assert(d.body.classList.contains("layout-phone") && isVisible(btn, w), "phone: the button shows");
   assert(btn.nextElementSibling === d.getElementById("btnFindPhone"), "directly before #btnFindPhone");
-  assert(btn.getAttribute("aria-label") === "Analyze" && btn.title === "Facets (Ctrl+I)" && btn.getAttribute("aria-pressed") === "false", "label, tooltip, not pressed");
+  assert(btn.getAttribute("aria-label") === "Analyze" && btn.title === "Facets and patterns (Ctrl+I)" && btn.getAttribute("aria-pressed") === "false", "label, tooltip, not pressed");
   assert(btn.querySelector("svg path").getAttribute("d") === "M3 13.5V8M6.3 13.5V3.5M9.6 13.5V6.5M12.9 13.5V10", "four-bar icon");
-  assert(d.querySelector(".tour-banner-hint").textContent === "Hands-on steps (TRY) and the Table/Plot tabs need a desktop or tablet. Facets: the Analyze button.", "tour banner hint text");
+  assert(d.querySelector(".tour-banner-hint").textContent === "Hands-on steps (TRY) and the Table/Plot tabs need a desktop or tablet. Patterns and Facets: the Analyze button.", "tour banner hint text");
 
   section("phone-analyze-sheet c. Tap: opens on Facets without a selection");
   assert(!open() && !T.state.selectedId, "closed, nothing selected");

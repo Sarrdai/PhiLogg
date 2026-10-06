@@ -1,4 +1,5 @@
-- **feat: Facets on the phone via an Analyze button (2026-10-06, person-requested)**
-  - New header button "Analyze" (phone tier only) opens the bottom sheet on a Facets tab; the sheet now has the tabs Entry | Facets. A facet value tap keeps the sheet open on the new child node.
-  - Extraction nodes show a one-line hint on the phone that Table/Plot need a wider screen; the tour banner hint names the Analyze button.
-  - **Tests**: GROUP phone-analyze-sheet (facets-bottom-tab updated). Docs: docs/ui-and-views.md.
+- **feat: Facets and Patterns on the phone via an Analyze button (2026-10-06, person-requested)**
+  - New header button "Analyze" (phone tier only) opens the bottom sheet on its Facets/Patterns tabs; the sheet now has the tabs Entry | Facets | Patterns and the button reopens the last-used one. A facet value tap keeps the sheet open on the new child node.
+  - Patterns as fixed-height cards with a Count ↓/↑ chip: tap shows only that pattern, the 44px ⊘ hides it (sheet stays, 6s Undo toast), long-press offers Show only / Hide / Jump / Copy (no Extract).
+  - Extraction nodes show a one-line hint on the phone that Table/Plot need a wider screen; the tour banner hint names Table/Plot and the Analyze button. Context stays absent on the phone.
+  - **Tests**: GROUP phone-analyze-sheet, phone-patterns-sheet (facets-bottom-tab updated). Docs: docs/ui-and-views.md, README.
