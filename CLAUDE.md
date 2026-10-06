@@ -40,7 +40,12 @@ each round itself (full tests + real-app screenshots), and presents the
 result with screenshots. Pure questions and doc-only sessions don't need it.
 Every session that changed files ends with the `finish` skill
 (`.claude/skills/finish/`): merge current `main`, full suite, docs check,
-push, report — no PR.
+push, report — no PR. A round split into separate cloud sessions (one
+orchestrator, one session per package) follows the `package-sessions`
+skill: packages report back by message, the orchestrator does not poll.
+Work starts from one of three entry skills: `from-usability-test` (test
+findings → round), `from-backlog` (a `FEATURE_BACKLOG.md` number) or
+`from-request` (a new idea or bug from the prompt).
 
 **Process changes go through `main` on their own.** A change to
 `CLAUDE.md`, `.claude/**` or the rules in `tests/README.md` /

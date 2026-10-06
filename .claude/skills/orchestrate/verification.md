@@ -19,7 +19,7 @@ checked right after the step, no wall-clock-dependent paths).
 
 - `cd tests && npm test` — full suite, note the pass count, and look at the
   "Slowest groups" list above it: a new or changed group in it gets a look.
-- Before the session's final push: `SHARDS=8 npm test` once (more shards
+- The session's final run is `finish`'s `SHARDS=8 npm test` (more shards
   than cores). A failure only there is a load-dependent test bug: fix it,
   don't re-run it away.
 - Rust / Tauri changes: `cd desktop && npm run build`, plus
