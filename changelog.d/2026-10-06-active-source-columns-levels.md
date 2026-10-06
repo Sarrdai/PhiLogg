@@ -1,0 +1,4 @@
+- **feat: level bar and log columns follow the active source (2026-10-06, person-requested)**
+  - The level chips, the minimap's level counts and the middle columns come from the active node's root file instead of the union of every open file. A source under a meta-format merge's "Sources" is its own root, so it no longer shows the other grammar's empty columns and levels; a merge shows the union of its sources' formats.
+  - A level lit in the view filter keeps its chip after switching to a file that doesn't list it, so it can still be turned off.
+  - **Tests**: GROUP active-source-columns-levels; groups 116, 117, 260 and level-bar-buckets updated. Docs: docs/ui-and-views.md, docs/log-formats.md, docs/filters.md.

@@ -62,12 +62,23 @@ await withApp(async (w, d, T) => {
   assert(traceBtn && traceBtn.classList.contains("lvl-trace"), "the TRACE button carries its own lvl-trace class");
   assert(Number(traceBtn.title.match(/[\d.]+$/)[0]) === 2, "the TRACE button counts its entries, got " + traceBtn.title);
 
-  // Second file, different format: the bar becomes the union, first file first.
+  // Second file, different format: the bar follows the active file only.
   const b = await w.addFile("b.log", makeLog(0, 4, { levels: ["INFO"] }), () => {}, "fmt-terse");
+  T.state.activeId = b.id;
   w.render();
   assert(b.formatId === "fmt-terse", "sanity: the second file uses the other custom format");
+  assert(barLevels().join(",") === "INFO,ERROR",
+    "the bar shows only the active file's format list (not the other open file's), got " + barLevels().join(","));
+  T.state.activeId = a.id;
+  w.render();
+  assert(barLevels().join(",") === "ERROR,WARN,TRACE",
+    "switching the active file switches the bar back, got " + barLevels().join(","));
+  // The union survives for a merged root.
+  const m = await w.mergeFiles([a.id, b.id]);
+  T.state.activeId = m.id;
+  w.render();
   assert(barLevels().join(",") === "ERROR,WARN,TRACE,INFO",
-    "the bar shows the union of both formats' lists, concatenated in tree order and de-duplicated, got " + barLevels().join(","));
+    "a merge of both files shows the union of both formats' lists, de-duplicated, got " + barLevels().join(","));
   assert(b.entries.every(e => e.formatId === "fmt-terse"), "the second file's entries are stamped with their own format");
 });
 
