@@ -50,7 +50,7 @@ await withApp(async (w, d, T) => {
   // serializeFilterTreeForCache, materializeSerializedRoots,
   // materializeCachedFilters) change with it, and so does a fixture below.
   const COVERED_FIELDS = [
-    "name", "filterType", "value", "inverted", "muted", "label", "highlightColor", "selectionFilter", // every node
+    "name", "filterType", "value", "inverted", "muted", "label", "highlightColor", "selectionFilter", "selectionOrdinal", // every node
     "caseSensitive", "columns", "isRegex", "wholeWord", "ignoredColumns", "columnRenames", "assertions", // text
     "plotConfig", "arrayViews", // extraction view (nodeIsExtractionView)
     "baked", "bakedA", "bakedB", // and/or/link: baked conditions
@@ -61,7 +61,6 @@ await withApp(async (w, d, T) => {
   const NOT_CARRIED = {
     locked: "only the auto-managed Bookmarks/Notes/Sources nodes have it; they are never persisted, and cloneSubtree drops it on purpose (a copy of an auto-managed node is a plain node)",
     collapsed: "tree expand/collapse state: display-only, never persisted (renderNode's chevron)",
-    selectionOrdinal: "creation-order rank of a Selection N node (insertSpecialChild), assigned only by createSelectionFilterNode and carried by NO carrier, so a pasted/restored/reloaded selection node ranks as 3 - a pre-existing gap listed here so the guard is green on unchanged code",
   };
   const STRUCTURAL = new Set(["id", "type", "parentId", "children"]); // identity/tree shape: each carrier rebuilds them its own way
   const classify = k => STRUCTURAL.has(k) || k.startsWith("_") /* runtime caches */ || COVERED_FIELDS.includes(k) || k in NOT_CARRIED;
@@ -254,7 +253,7 @@ await withApp(async (w, d, T) => {
     after: { filterType: "after", name: "fx after", inverted: false, value: 1705312800000, highlightColor: "#f032e6", label: "label after" },
     before: { filterType: "before", name: "fx before", inverted: false, value: 1705312860000, highlightColor: "#bcf60c", label: "label before", muted: true },
     ids: { filterType: "idset", name: "fx ids", inverted: false, value: ["fx-e1", "fx-e2", "fx-e3"], highlightColor: "#fabed4", label: "label ids" },
-    sel: { filterType: "idset", name: "fx sel", inverted: false, value: ["fx-e4", "fx-e5"], selectionFilter: true, highlightColor: "#008080", label: "label sel" },
+    sel: { filterType: "idset", name: "fx sel", inverted: false, value: ["fx-e4", "fx-e5"], selectionFilter: true, selectionOrdinal: 1, highlightColor: "#008080", label: "label sel" },
     lvl: { filterType: "level", name: "fx lvl", inverted: true, value: ["ERROR", "WARN"], highlightColor: "#9a6324", label: "label lvl" },
     gap: { filterType: "gap", name: "fx gap", inverted: false, value: { ms: 500, per: "thread" }, highlightColor: "#800000", label: "label gap", muted: true },
     ctx: { filterType: "context", name: "fx ctx", inverted: false, contextBefore: 1000, contextAfter: 2000, highlightColor: "#aaffc3", label: "label ctx", muted: true },
@@ -389,5 +388,37 @@ await withApp(async (w, d, T) => {
     assert(kept.length === 1 && kept[0].name === "kept" && refMap[7] === kept[0].id && !(9 in refMap) && !(8 in refMap) && !(10 in refMap),
       "cache: a corrupt root is dropped with its whole subtree (a bakeless combiner below it, a foreign type), the other roots are kept (" + kept.map(n => n.name).join(", ") + ")");
     kept.forEach(n => dropSubtree(n.id));
+  }
+
+  /* ---------- h. selectionOrdinal keeps the rank of a Selection N node ---------- */
+  section("filter-node-carriers h. a pasted, undone, imported and cache-reloaded Selection N node keeps its specialChildRank");
+  {
+    const s2 = w.createSelectionFilterNode(f.id, ["fx-e6"]);
+    assert(s2.selectionOrdinal >= 2 && w.specialChildRank(s2) === 3 + s2.selectionOrdinal, "precondition: a later Selection N has ordinal " + s2.selectionOrdinal + " and ranks above 3");
+    const want = w.specialChildRank(s2);
+    const clone = w.cloneSubtree(s2.id, f.id);
+    assert(w.specialChildRank(clone) === want, "paste: the copy ranks like the original, got " + w.specialChildRank(clone));
+    const snap = w.snapshotSubtree(s2.id);
+    const restored = w.restoreSubtree(snap);
+    assert(w.specialChildRank(restored) === want, "undo: the restored node ranks like the original, got " + w.specialChildRank(restored));
+    const wire = JSON.parse(JSON.stringify(w.serializeFilterBranch(s2.id, false)));
+    assert(wire.roots[0].selectionOrdinal === s2.selectionOrdinal, "filter JSON writes the ordinal");
+    const imported = w.materializeSerializedRoots(wire.roots, () => f.id).created[0];
+    assert(w.specialChildRank(imported) === want, "import: the imported node ranks like the original, got " + w.specialChildRank(imported));
+    const cache = JSON.parse(JSON.stringify(w.serializeFilterTreeForCache(f))).roots.find(r => r.selectionOrdinal === s2.selectionOrdinal);
+    assert(cache, "the session cache writes the ordinal");
+    const n0 = f.children.length;
+    w.materializeCachedFilters(f, [cache]);
+    const reloaded = S.nodes[f.children[n0]];
+    assert(reloaded && w.specialChildRank(reloaded) === want, "cache reload: the node ranks like the original, got " + (reloaded && w.specialChildRank(reloaded)));
+    // Foreign data: only a positive integer is read back.
+    for (const bad of [0, -1, 1.5, "3", null]) {
+      const sn = { ref: 1, filterType: "idset", name: "foreign", inverted: false, value: ["x"], selectionFilter: true, selectionOrdinal: bad, children: [] };
+      const m = w.materializeSerializedRoots([sn], () => f.id).created[0];
+      assert(!("selectionOrdinal" in m), "an invalid selectionOrdinal (" + JSON.stringify(bad) + ") is not read");
+      dropSubtree(m.id);
+    }
+    [clone.id, restored.id, imported.id, reloaded.id].forEach(dropSubtree);
+    dropSubtree(s2.id);
   }
 });

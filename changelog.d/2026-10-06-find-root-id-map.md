@@ -1,0 +1,3 @@
+- **fix: bookmark/note toggles no longer scan every entry of every file for the owning file (2026-10-06, backlog #100)**
+  - `findRootIdForEntry` reads a lazily built entry id -> root id map (first root in tree order wins for entries a merge shares). It validates itself against each root's entries array and length, so no entry-mutating path (parse, tail, merge, delete/undo, restore) has to invalidate it; about 5 ms per toggle on a 300k-entry file become a lookup.
+  - **Tests**: GROUP find-root-id-for-entry-map.

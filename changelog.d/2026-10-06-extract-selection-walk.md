@@ -1,0 +1,3 @@
+- **fix: select-all on a big extraction table is fast (2026-10-06, backlog #98)**
+  - `applyExtractSelectionClasses` walks the rendered rows once and tests each cell against the selection set, instead of one `querySelector` per selected cell (seconds for every cell of a 200k-row extraction). Same marks as before, header cells included.
+  - **Tests**: GROUP extract-selection-classes-walk.

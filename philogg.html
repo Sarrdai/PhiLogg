@@ -14194,8 +14194,8 @@ function copyLinkOptions(src, dst) {
      byRef    the carriers that pass a json/array/object container through instead of copying it
               (default: restore, serialize; baked is copied by every carrier but restore)
    Never copied by any carrier: locked (only the auto-managed Bookmarks/Notes/Sources nodes
-   have it; a copy of one is a plain node), collapsed (display-only), selectionOrdinal and
-   the _-prefixed runtime caches. Row order = the key order of a serialized node in the files. */
+   have it; a copy of one is a plain node), collapsed (display-only) and the _-prefixed
+   runtime caches. Row order = the key order of a serialized node in the files. */
 const FILTER_NODE_FIELD_MODES = {
   clone: { gated: true },
   snapshot: { gated: false },
@@ -14230,6 +14230,7 @@ const FILTER_NODE_FIELDS = [
   { key: "label", kind: "scalar" },
   { key: "muted", kind: "flag" },
   { key: "selectionFilter", kind: "flag" },
+  { key: "selectionOrdinal", kind: "scalar" },
 ];
 
 // Copies src's table fields onto dst the way carrier `mode` does (see the table
@@ -14953,6 +14954,7 @@ function deleteNode(nodeId) {
 
   if (node.type === "file") {
     state.rootIds = state.rootIds.filter(id => id !== nodeId);
+    entryRootCache = null; // it holds this file's entries array and ids until the next lookup
     releaseEntriesFromIndex(node.entries, nodeId);
     cacheDeleteFile(node.cacheKey); // fire-and-forget; meta follows via render()'s debounced persist
     // This file was one of a merge's sources (see createMergeShell) —
@@ -21443,11 +21445,16 @@ function applyExtractSelectionClasses() {
   extractBody.querySelectorAll(".cell-selected").forEach(el => el.classList.remove("cell-selected"));
   const s = state.tableSelection;
   if (!s) return;
-  s.forEach(k => {
-    const [r, c] = k.split(",");
-    const td = extractBody.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
-    if (td) td.classList.add("cell-selected");
-  });
+  // One pass over the rendered cells (the table is virtualized: a few dozen
+  // rows), testing each against the selection set. The other way round — one
+  // querySelector per selected key — took seconds for a select-all on a
+  // 200k-row extraction. The gutter and spacer cells carry no data-col.
+  for (const tr of extractBody.rows) {
+    for (const td of tr.cells) {
+      const c = td.getAttribute("data-col");
+      if (c !== null && s.has(td.getAttribute("data-row") + "," + c)) td.classList.add("cell-selected");
+    }
+  }
   extractColumns.forEach(c => {
     if (isColumnFullySelected(c.colIndex)) {
       const th = extractHead.querySelector('th[data-col="' + c.colIndex + '"]');
@@ -31280,15 +31287,41 @@ function revealInTableView(entry) {
    currently active — a bookmark can be, and often is, clicked while a
    completely different file/filter is on screen. */
 
-// Finds which root (file) node currently contains a given entry id. O(root
-// file size) — only ever called from a bookmark jump, a rare user click, not
-// a render-path hot loop (unlike e.g. the timeline minimap's per-render pass).
-function findRootIdForEntry(entryId) {
+// Finds which root (file) node currently contains a given entry id (the first
+// one in state.rootIds order when a merge shares the entry object with its
+// sources). Constant time per call off a lazily built entry id -> root id map.
+// The map is self-validating, like a file's _agg: it remembers each root's
+// entries array and its length, and is rebuilt (one O(entries) pass, the cost
+// the old per-call scan had every time) whenever a root was added, removed or
+// reordered, replaced its array (rotation, restore) or grew/shrank it (tail
+// append, truncate). No entries-mutating path has to know about it. An id that
+// is in no root forces one rebuild per call, like the old scan.
+let entryRootCache = null; // { sig: [rootId, entries, length, ...], map: Map(entryId -> rootId) }
+function entryRootCacheCurrent() {
+  const c = entryRootCache;
+  if (!c || c.sig.length !== state.rootIds.length * 3) return false;
+  for (let i = 0; i < state.rootIds.length; i++) {
+    const root = state.nodes[state.rootIds[i]];
+    if (c.sig[i * 3] !== state.rootIds[i] || !root || c.sig[i * 3 + 1] !== root.entries || c.sig[i * 3 + 2] !== root.entries.length) return false;
+  }
+  return true;
+}
+function rebuildEntryRootCache() {
+  const sig = [], map = new Map();
   for (const rootId of state.rootIds) {
     const root = state.nodes[rootId];
-    if (root && root.entries.some(e => e.id === entryId)) return rootId;
+    if (!root) { sig.push(rootId, null, -1); continue; }
+    sig.push(rootId, root.entries, root.entries.length);
+    for (const e of root.entries) if (!map.has(e.id)) map.set(e.id, rootId);
   }
-  return null;
+  entryRootCache = { sig, map };
+}
+function findRootIdForEntry(entryId) {
+  const fresh = !entryRootCacheCurrent();
+  if (fresh) rebuildEntryRootCache();
+  let rootId = entryRootCache.map.get(entryId);
+  if (rootId === undefined && !fresh) { rebuildEntryRootCache(); rootId = entryRootCache.map.get(entryId); }
+  return rootId === undefined ? null : rootId;
 }
 
 // Jumps to an arbitrary entry regardless of which
@@ -42859,6 +42892,7 @@ function materializeFilterNode(sn, parentId, refMap) {
   if (sn.label && typeof sn.label === "string") node.label = sn.label;
   if (sn.muted === true) node.muted = true;
   if (sn.selectionFilter) node.selectionFilter = true;
+  if (Number.isInteger(sn.selectionOrdinal) && sn.selectionOrdinal > 0) node.selectionOrdinal = sn.selectionOrdinal;
   if (sn.baked) node.baked = sn.baked;
   if (sn.bakedA) node.bakedA = sn.bakedA;
   if (sn.bakedB) node.bakedB = sn.bakedB;
@@ -47257,10 +47291,12 @@ document.addEventListener("mousedown", ev => {
 
 // True while log-view shortcuts (bookmark, note, row copy, ...) may act: the
 // log areas have focus and a log view — not the extraction table, an inline
-// viewer or a folder view — is what is actually shown.
+// viewer or a folder view — is what is actually shown. A live active node is
+// part of that: with the tree cursor on an unloaded entry (placeCursorOnUnloaded)
+// nothing is shown, and state.selectedId still names the hidden file's row.
 function logKeysActive() {
   return state.focusRegion === "entries" && extractWrap.style.display === "none" &&
-    !state.inlineViewer && !state.folderView;
+    !state.inlineViewer && !state.folderView && !!state.nodes[state.activeId];
 }
 
 
