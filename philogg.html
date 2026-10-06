@@ -31547,9 +31547,16 @@ function syncPhoneSheetPanel(hasEntry) {
   applyLowerPanel(isOffLogTab(fhActiveTab));
 }
 // Phone + extraction node: one hint line above the cards (Table/Plot need a wider screen). Gone elsewhere.
+// Only for a deliberate extraction, i.e. a pattern with typed placeholders ([*:int], as Extract creates):
+// the plain [*] filters from the Patterns tab (tap / hide) also count as extractable for the desktop
+// Table tab (nodeIsExtractionView), but a hint after every pattern action would be noise.
+function phoneExtractHintNode(node) {
+  const ex = node ? findExtractionAncestor(node) : null;
+  return !!ex && typeof ex.value === "string" && ex.value.includes("[*:");
+}
 function updatePhoneExtractHint() {
   const node = state.nodes[state.activeId];
-  const show = currentLayoutTier === "phone" && !!node && nodeIsExtractionView(node);
+  const show = currentLayoutTier === "phone" && phoneExtractHintNode(node);
   document.getElementById("phoneExtractHint").classList.toggle("show", show);
 }
 el("#phoneExtractHint .peh-icon").innerHTML = ICON_TABLE;

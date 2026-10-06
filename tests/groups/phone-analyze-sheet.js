@@ -165,4 +165,22 @@ await withApp(async (w, d, T) => {
   assert(!shown(), "compact: no hint");
   paSetWidth(w, 1440);
   assert(!shown(), "desktop: no hint");
+
+  section("phone-analyze-sheet k. Plain [*] filters (Patterns tap / hide) get no hint; typed ones and their children do");
+  paSetWidth(w, 390);
+  const plain = w.createFilterNode(f.id, "text", "Heartbeat [*]");
+  T.state.activeId = plain.id; w.render();
+  assert(w.nodeIsExtractionView(T.state.nodes[plain.id]), "sanity: a plain [*] filter is extractable for the desktop Table tab");
+  assert(!shown(), "phone, plain [*] filter: no hint");
+  const notPlain = w.createFilterNode(f.id, "text", "Heartbeat [*]");
+  T.state.nodes[notPlain.id].inverted = true;
+  T.state.activeId = notPlain.id; w.render();
+  assert(!shown(), "phone, NOT plain [*] filter (pattern hide): no hint");
+  const child = w.createFilterNode(ex.id, "level", ["INFO"]);
+  T.state.activeId = child.id; w.render();
+  assert(child && shown(), "phone, child of a typed extraction node (inherits Table/Plot): hint shown");
+  paSetWidth(w, 1440);
+  T.state.activeId = plain.id; w.render();
+  const tableTab = d.querySelector('#fhTabs [data-fh-tab="table"]');
+  assert(tableTab && !tableTab.disabled, "desktop: the Table tab stays enabled for a plain [*] filter (predicate unchanged)");
 });
