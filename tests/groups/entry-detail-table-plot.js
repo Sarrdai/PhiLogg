@@ -13,8 +13,11 @@
    normal panel on Table and Plot (header-only strip only on Patterns) with the
    tabs "Entry detail | Statistics | Facets" (#lowerTabStats offered on
    Table/Plot only; the old standalone #statsPanel is gone), the selected tab
-   persisted as one value under philogg-lower-tab. The plot's own click
-   behaviour is unchanged in this step (GROUP 159).
+   persisted as one value under philogg-lower-tab.
+   Step 2 (same day): a plain click on a 2D plot mark / the 3D canvas SELECTS
+   the entry (Entry detail, selection ring / canvas highlight, tab stays Plot,
+   #plotSvg not rebuilt), a double-click reveals it in the Table
+   (revealInTableView), drags never select.
    ============================================================ */
 group("entry-detail-table-plot");
 
@@ -194,3 +197,121 @@ await withApp(async (w, d, T) => {
   w.applyFhView("table");
   assert(panel.classList.contains("lower-stats") && isVisible(d.querySelector("#statsPanelBody"), w), "on Table the stored selection shows Statistics");
 }, { beforeParse: window => { try { window.localStorage.setItem("philogg-lower-tab", "stats"); } catch {} } });
+
+async function edtpOpenPlot(w, d, T, type, entries) {
+  const [file] = LOGSIM.generateToStrings({ scenarios: ["position", "basic"], entries: entries || 40, seed: 5, start: "2026-01-15T10:00:00", rate: 1 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  w.render();
+  T.state.activeId = f.id;
+  const node = w.createFilterNode(f.id, "text", edtpPattern);
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="' + type + '"]'), w);
+  return { f, node };
+}
+const edtpSel = (d, w, id, v) => { const e = d.querySelector(id); e.value = v; e.dispatchEvent(new w.Event("change", { bubbles: true })); };
+
+await withApp(async (w, d, T) => {
+  section("entry-detail-table-plot l. 2D scatter: click selects + rings the mark, no tab switch, no rebuild; double-click reveals in Table");
+  await edtpOpenPlot(w, d, T, "scatter");
+  edtpSel(d, w, "#plotXSelect", "0"); edtpSel(d, w, "#plotYSelectSingle", "1");
+  const svg = d.querySelector("#plotSvg");
+  assert(!svg.querySelector("#plotSelRing"), "no ring while nothing is selected");
+  const markOf = r => svg.querySelector('circle.plot-mark[data-row="' + r + '"]');
+  const mark = markOf(3);
+  assert(mark, "row 3 has a mark");
+  const entry = T.extractRowsData[3].entry;
+  fireClick(mark, w);
+  assert(T.fhActiveTab === "plot" && T.state.selectedId === entry.id, "selected, still on Plot");
+  assert(d.querySelector("#detailMessage").textContent === entry.message && !d.querySelector("#detailPanel").classList.contains("detail-strip-only"), "Entry detail shows the entry");
+  const ring = svg.querySelector("#plotSelRing circle");
+  assert(ring && ring.getAttribute("cx") === mark.getAttribute("cx") && ring.getAttribute("cy") === mark.getAttribute("cy") && +ring.getAttribute("r") > +mark.getAttribute("r"), "a ring around the clicked mark");
+  assert(markOf(3) === mark && mark.isConnected, "the mark element was not rebuilt by the click (dblclick needs it)");
+  assert(svg.querySelectorAll("#plotSelRing").length === 1, "exactly one ring group");
+
+  fireClick(markOf(5), w);
+  const ring5 = svg.querySelector("#plotSelRing circle");
+  assert(svg.querySelectorAll("#plotSelRing").length === 1 && ring5.getAttribute("cx") === markOf(5).getAttribute("cx"), "the ring moves to the next clicked mark");
+
+  w.renderPlotChart();
+  assert(svg.querySelector("#plotSelRing circle") && svg.querySelector("#plotSelRing circle").getAttribute("cx") === markOf(5).getAttribute("cx"), "the ring is drawn again after a re-render (zoom, pan, ...)");
+  w.applyFhView("table");
+  assert(d.querySelectorAll("#extractBody tr.extract-current").length === 1 && d.querySelector("#extractBody tr.extract-current").dataset.extractEntryId === T.extractRowsData[5].entry.id, "Table shows the plot-selected entry as its current row");
+  w.applyFhView("plot");
+  assert(svg.querySelector("#plotSelRing circle"), "Table -> Plot: the ring is there");
+
+  fireDblClick(markOf(2), w);
+  assert(T.fhActiveTab === "table" && T.state.selectedId === T.extractRowsData[2].entry.id, "double-click: Table with row 2 selected");
+  assert(d.querySelector('#extractBody td.cell-selected[data-row="2"]') && d.querySelector("#extractBody tr.extract-current"), "...its cells selected and the current row marked");
+});
+
+await withApp(async (w, d, T) => {
+  section("entry-detail-table-plot m. the ring disappears when the selection is not plotted; a drag never selects");
+  const { f } = await edtpOpenPlot(w, d, T, "scatter");
+  edtpSel(d, w, "#plotXSelect", "0"); edtpSel(d, w, "#plotYSelectSingle", "1");
+  const svg = d.querySelector("#plotSvg");
+  fireClick(svg.querySelector('circle.plot-mark[data-row="1"]'), w);
+  assert(svg.querySelector("#plotSelRing"), "sanity: ring shown");
+  const other = f.entries.find(e => !/^Position update/.test(e.message));
+  assert(other, "sanity: the file has an entry the pattern does not match");
+  w.selectEntry(other.id);
+  assert(T.state.selectedId === other.id && !svg.querySelector("#plotSelRing"), "selecting an entry that is not plotted removes the ring");
+  w.applyFhView("filter"); w.applyFhView("plot");
+  assert(!svg.querySelector("#plotSelRing"), "...and it stays gone after a tab switch");
+
+  const m = svg.querySelector('circle.plot-mark[data-row="4"]');
+  const before = T.state.selectedId;
+  const cx = +m.getAttribute("cx"), cy = +m.getAttribute("cy");
+  svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: cx - 40, clientY: cy - 40, button: 0 }));
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: cx + 40, clientY: cy + 40 }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: cx + 40, clientY: cy + 40, button: 0 }));
+  const trailing = svg.querySelector('circle.plot-mark[data-row="4"]');
+  assert(trailing, "sanity: the zoomed view still shows mark 4 (the drag's trailing click lands on it)");
+  fireClick(trailing, w);
+  assert(T.state.selectedId === before, "the click ending a rectangle drag does not select");
+  fireClick(svg.querySelector('circle.plot-mark[data-row="4"]'), w);
+  assert(T.state.selectedId === T.extractRowsData[4].entry.id, "...while the next plain click on that mark does");
+});
+
+await withApp(async (w, d, T) => {
+  section("entry-detail-table-plot n. bar and line charts: ring on the bar (rect) and on the point");
+  await edtpOpenPlot(w, d, T, "bar");
+  const svg = d.querySelector("#plotSvg");
+  const bar = svg.querySelector('rect.plot-mark[data-row="2"]');
+  assert(bar, "row 2 has a bar");
+  fireClick(bar, w);
+  const rr = svg.querySelector("#plotSelRing rect");
+  assert(rr && +rr.getAttribute("width") > +bar.getAttribute("width") && T.fhActiveTab === "plot", "a larger rect around the bar, tab stays Plot");
+  fireClick(d.querySelector('.plot-type-btn[data-type="line"]'), w);
+  assert(!!svg.querySelector("#plotSelRing circle") && T.state.selectedId === T.extractRowsData[2].entry.id, "switching the chart type keeps the selection: ring on the line's point");
+});
+
+await withApp(async (w, d, T) => {
+  section("entry-detail-table-plot o. 3D: click selects the nearest point, double-click reveals, drags and empty space do not select");
+  await edtpOpenPlot(w, d, T, "3d", 12);
+  edtpSel(d, w, "#plotXSelect", "0"); edtpSel(d, w, "#plotYSelectSingle", "1"); edtpSel(d, w, "#plotZSelect", "2");
+  const canvas = d.querySelector("#plot3dCanvas");
+  assert(T.plotHoverPoints.length > 3, "sanity: 3D points projected");
+  const p = T.plotHoverPoints[2];
+  const at = (type, x, y) => canvas.dispatchEvent(new w.MouseEvent(type, { bubbles: true, cancelable: true, clientX: x, clientY: y, button: 0 }));
+  at("click", p.px + 2, p.py + 2); // no mousemove first: the click itself hit-tests
+  assert(T.fhActiveTab === "plot" && T.state.selectedId === T.extractRowsData[p.rowIndex].entry.id, "click selects the nearest point's entry, tab stays Plot");
+  assert(T.plotHoverPoints.filter(h => h.selected).length >= 1 && T.plotHoverPoints.find(h => h.selected).rowIndex === p.rowIndex, "the point is highlighted on the canvas (flagged selected)");
+  assert(d.querySelector("#detailMessage").textContent === T.extractRowsData[p.rowIndex].entry.message, "Entry detail shows it");
+
+  const sel = T.state.selectedId;
+  at("click", -500, -500);
+  assert(T.state.selectedId === sel, "a click on empty canvas space keeps the selection");
+  // A rotate drag followed by its trailing click at another point does not select.
+  const q = T.plotHoverPoints.find(h => h.rowIndex !== p.rowIndex);
+  at("mousedown", q.px, q.py);
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: q.px + 30, clientY: q.py }));
+  w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: q.px + 30, clientY: q.py, button: 0 }));
+  const q2 = T.plotHoverPoints.find(h => h.rowIndex === q.rowIndex);
+  at("click", q2.px, q2.py);
+  assert(T.state.selectedId === sel, "the click ending a rotate drag does not select");
+
+  at("dblclick", p.px, p.py);
+  assert(T.fhActiveTab === "table" && T.state.selectedId === T.extractRowsData[p.rowIndex].entry.id, "double-click reveals the entry in the Table");
+});

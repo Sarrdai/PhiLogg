@@ -4221,6 +4221,10 @@
   .plot-empty-label{fill:var(--text-tertiary); font-size:12px; font-family:var(--font-ui);}
   .plot-mark{cursor:pointer;}
   .plot-mark:hover{opacity:.7;}
+  /* Selection ring of the selected entry's mark(s) (updatePlotSelectionRing). */
+  .plot-sel-ring{pointer-events:none;}
+  .plot-sel-ring circle, .plot-sel-ring rect{fill:none; stroke:var(--text-primary); stroke-width:2;}
+  .plot-sel-ring .plot-sel-ring-line{fill:none; stroke:var(--text-primary); stroke-width:3.5; stroke-opacity:.9;}
 
   /* ---------- Plot view's own toolbar (zoom/pan/filter/fullscreen/save) ----------
      Same "real row in normal flow, not an overlay" pattern as #contextToolbar
@@ -22397,27 +22401,89 @@ function switchExtractView(view) {
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
 
 // Plot point/bar -> log entry: the Plot tab used to be a dead end (an
-// outlier was visible but not reachable) — clicking a mark now reveals its
-// underlying entry as the corresponding row in the Table view
-// (revealInTableView, person-requested this session — a plot click used to
-// jump straight into the Filtered view, skipping Table; that row's own
-// double-click already goes on into Filtered from there). One
-// delegated listener rather than one per mark, since renderPlotChart
-// rebuilds the SVG's innerHTML wholesale on every render. Kept as a single
-// click (not a double-click) — unlike the table's row, a mark has no other
-// single-click behavior to disambiguate from, so the extra click would only
-// add friction. plotDragSuppressClick (set by the drag-to-zoom handler
-// below) skips the jump when this click is really the mouseup end of a
-// drag, not a plain click — same pattern the timeline minimap's own
-// drag-select already uses for the identical reason.
+// outlier was visible but not reachable). A plain click on a mark SELECTS its
+// entry (state.selectedId, shown in Entry detail, the tab stays Plot) and draws
+// a selection ring around it; a double-click reveals the entry as the
+// corresponding Table row (revealInTableView — today's click behaviour; that
+// row's own double-click goes on into Filtered). One delegated listener rather
+// than one per mark, since renderPlotChart rebuilds the SVG's innerHTML
+// wholesale on every render. The click must NOT rebuild #plotSvg (DOM identity:
+// the second click of a double-click would land on a new element and the
+// native dblclick would never fire): the ring is one <g> that
+// updatePlotSelectionRing adds/moves in place. plotDragSuppressClick (set by
+// the drag-to-zoom handler below) skips the selection when this click is
+// really the mouseup end of a drag, not a plain click — same pattern the
+// timeline minimap's own drag-select already uses for the identical reason.
 let plotDragSuppressClick = false;
+function plotMarkEntry(ev) {
+  const mark = ev.target.closest(".plot-mark");
+  const row = mark ? extractRowsData[+mark.dataset.row] : null;
+  return row ? row.entry : null;
+}
+// A plot click selects the entry like a table click does (selectExtractRowEntry).
+function selectPlotEntry(entry) {
+  const previousId = applySelection(entry.id);
+  updateSelectedRowClass(previousId); // also refreshes the plot's ring/highlight, see refreshPlotSelection
+  updateDetailPanel();
+}
 plotSvg.addEventListener("click", ev => {
   if (plotDragSuppressClick) { plotDragSuppressClick = false; return; }
-  const mark = ev.target.closest(".plot-mark");
-  if (!mark) return;
-  const row = extractRowsData[+mark.dataset.row];
-  if (row) jumpAfterPip(revealInTableView, [row.entry]);
+  const entry = plotMarkEntry(ev);
+  if (entry) selectPlotEntry(entry);
 });
+plotSvg.addEventListener("dblclick", ev => {
+  const entry = plotMarkEntry(ev);
+  if (entry) jumpAfterPip(revealInTableView, [entry]);
+});
+
+// Selection ring of the 2D charts: one <g id="plotSelRing"> around every mark
+// of the selected entry (a circle gets a larger circle, a bar/heat cell a larger
+// rect, a parallel-coordinates line a thicker copy), added after each chart
+// build and moved in place on a selection change. Nothing when the selected
+// entry is not plotted. Inside the marks' own clip group so a mark panned out
+// of the plot rectangle does not leave a ring in the margin.
+function updatePlotSelectionRing() {
+  const old = plotSvg.querySelector("#plotSelRing");
+  if (old) old.remove();
+  if (!state.selectedId || plotConfig.type === "3d" || !extractRowsData.length) return;
+  const idx = extractRowsData.findIndex(r => r.entry.id === state.selectedId);
+  if (idx < 0) return;
+  const marks = plotSvg.querySelectorAll('.plot-mark[data-row="' + idx + '"]');
+  if (!marks.length) return;
+  const NS = "http://www.w3.org/2000/svg";
+  const g = document.createElementNS(NS, "g");
+  g.setAttribute("id", "plotSelRing");
+  g.setAttribute("class", "plot-sel-ring");
+  const clip = marks[0].closest("g[clip-path]");
+  if (clip) g.setAttribute("clip-path", clip.getAttribute("clip-path"));
+  const num = (m, a) => +m.getAttribute(a);
+  marks.forEach(m => {
+    const tag = m.localName;
+    let ring = null;
+    if (tag === "circle") {
+      ring = document.createElementNS(NS, "circle");
+      ring.setAttribute("cx", m.getAttribute("cx")); ring.setAttribute("cy", m.getAttribute("cy"));
+      ring.setAttribute("r", String(num(m, "r") + 3.5));
+    } else if (tag === "rect") {
+      ring = document.createElementNS(NS, "rect");
+      ring.setAttribute("x", String(num(m, "x") - 2)); ring.setAttribute("y", String(num(m, "y") - 2));
+      ring.setAttribute("width", String(num(m, "width") + 4)); ring.setAttribute("height", String(num(m, "height") + 4));
+    } else if (tag === "path") {
+      ring = document.createElementNS(NS, "path");
+      ring.setAttribute("d", m.getAttribute("d"));
+      ring.setAttribute("class", "plot-sel-ring-line");
+    }
+    if (ring) g.appendChild(ring);
+  });
+  if (g.firstChild) plotSvg.appendChild(g);
+}
+// Brings the plot in step with state.selectedId after a selection change made
+// anywhere (called from updateSelectedRowClass): the 2D ring is moved in place,
+// the 3D canvas redraws its highlight. No-op unless Plot is the tab on screen.
+function refreshPlotSelection() {
+  if (fhActiveTab !== "plot" || extractView !== "plot") return;
+  if (plotConfig.type === "3d") renderPlotChart(); else updatePlotSelectionRing();
+}
 
 // ---------- Plot zoom / pan / hover tooltip ----------
 // Interaction layer on top of renderPlotChart's plotZoom/plotLastRender
@@ -23262,7 +23328,7 @@ function renderValueChart() {
     parts.push('<text class="plot-axis-title" x="' + (left + plotW / 2) + '" y="' + (top + plotH + 34) + '" text-anchor="middle">' + escapeHtml(src.axisTitle) + "</text>");
     axisTitleY(src.valueTitle);
   }
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
 }
 function renderRadarChart(src, W, H, empty) {
   const cols = src.cols, rows = src.rows, n = cols.length;
@@ -23305,7 +23371,7 @@ function renderRadarChart(src, W, H, empty) {
   overlays.forEach((row, i) => drawRow(row, COLUMN_PALETTE[(i + 1) % COLUMN_PALETTE.length], 1.4, true));
   drawRow(main, COLUMN_PALETTE[0], 2.2, false);
   pushRowLegend(parts, [main].concat(overlays), PLOT_MARGIN.left);
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
 }
 function parallelRowInBrushes(row, cols) {
   for (const [ci, [lo, hi]] of plotParallelBrushes) {
@@ -23385,7 +23451,7 @@ function renderParallelChart(src, W, H) {
     pushColorbar(parts, left + plotW + 36, top, plotH, cRange.lo, cRange.hi);
   }
   plotParallelLayout = { W, H, top, plotH, axes };
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
   updateParallelBrushInfo(inRange, rows.length, stride);
 }
 // Every table row inside all parallel-coordinates ranges -> the Table tab's selection.
@@ -24119,7 +24185,7 @@ function renderPlotChart() {
     });
   }
 
-  plotSvg.innerHTML = parts.join("");
+  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
 
   // Geometry/domain snapshot for the interaction layer (wheel zoom, drag-
   // rect zoom, middle-click pan, hover tooltip) — those are separate,
@@ -24322,6 +24388,21 @@ function renderPlot3D() {
     if (p.violated) { ctx.strokeStyle = PLOT_ASSERT_COLOR; ctx.lineWidth = 1.5; ctx.stroke(); }
     hoverPts.push({ px: p.sx, py: p.sy, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: plotConfig.yCols[0], zCol: plotConfig.zCol, colorCol: plotConfig.colorCol, seriesName: yCol.name });
   });
+  // Selection highlight: a ring around the selected entry's point(s), drawn on top (flagged on the hover point too).
+  const selRow = state.selectedId ? extractRowsData.findIndex(r => r.entry.id === state.selectedId) : -1;
+  if (selRow >= 0) {
+    const ringColor = styles.getPropertyValue("--text-primary").trim() || "#fff";
+    const haloColor = styles.getPropertyValue("--bg-app").trim() || "#000";
+    hoverPts.forEach(h => {
+      if (h.rowIndex !== selRow) return;
+      h.selected = true;
+      ctx.beginPath();
+      ctx.arc(h.px, h.py, PLOT_3D_POINT_R + 4, 0, Math.PI * 2);
+      ctx.strokeStyle = haloColor; ctx.lineWidth = 5; ctx.stroke(); // dark halo: stays visible inside a dense cloud
+      ctx.strokeStyle = ringColor; ctx.lineWidth = 2; ctx.stroke();
+    });
+    ctx.lineWidth = 1;
+  }
 
   // Color-scale legend, same gradient strip as 2D scatter's — sized to span
   // the full chart height (minus the same 16px top/bottom margin) instead of
@@ -24409,22 +24490,35 @@ plot3dCanvas.addEventListener("wheel", ev => {
   renderPlotChart();
 }, { passive: false });
 
-plot3dCanvas.addEventListener("click", () => {
-  if (plot3dDragMoved) { plot3dDragMoved = false; return; } // a drag's trailing click shouldn't also jump to a log entry
-  if (!plot3dHoverHit) return;
-  const row = extractRowsData[plot3dHoverHit.rowIndex];
-  if (row) jumpAfterPip(revealInTableView, [row.entry]);
-});
-
-let plot3dHoverHit = null;
-plot3dCanvas.addEventListener("mousemove", ev => {
-  if (plot3dDragMode || extractView !== "plot" || plotConfig.type !== "3d" || !plot3dLastRender) return;
+// Nearest plotted point within PLOT_3D_HOVER_MAX_DIST_PX of the event (hover, click and double-click share it).
+function plot3dHitFromEvent(ev) {
+  if (!plot3dLastRender) return null;
   const pt = plot3dPointFromEvent(ev);
   let bestDist = PLOT_3D_HOVER_MAX_DIST_PX, hit = null;
   for (const p of plotHoverPoints) {
     const d = Math.hypot(pt.x - p.px, pt.y - p.py);
     if (d < bestDist) { bestDist = d; hit = p; }
   }
+  return hit;
+}
+// Click = select the nearest point's entry (Entry detail + canvas highlight; the canvas element stays, so a
+// double-click still arrives), double-click = reveal it in the Table. A rotate/pan drag never selects.
+plot3dCanvas.addEventListener("click", ev => {
+  if (plot3dDragMoved) { plot3dDragMoved = false; return; } // a drag's trailing click shouldn't also select
+  const hit = plot3dHitFromEvent(ev);
+  const row = hit ? extractRowsData[hit.rowIndex] : null;
+  if (row) selectPlotEntry(row.entry);
+});
+plot3dCanvas.addEventListener("dblclick", ev => {
+  const hit = plot3dHitFromEvent(ev);
+  const row = hit ? extractRowsData[hit.rowIndex] : null;
+  if (row) jumpAfterPip(revealInTableView, [row.entry]);
+});
+
+let plot3dHoverHit = null;
+plot3dCanvas.addEventListener("mousemove", ev => {
+  if (plot3dDragMode || extractView !== "plot" || plotConfig.type !== "3d" || !plot3dLastRender) return;
+  const hit = plot3dHitFromEvent(ev);
   plot3dHoverHit = hit;
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
@@ -30219,6 +30313,7 @@ function updateSelectedRowClass(previousId) {
     }
   });
   updateExtractCurrentRow();
+  refreshPlotSelection();
   // The Context toolbar shows which match of how many is selected, so it has to
   // follow the selection too — cheap, since contextMatchPos makes the lookup a
   // single Map read rather than a scan (see buildContextView).

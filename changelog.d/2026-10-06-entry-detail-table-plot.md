@@ -1,0 +1,4 @@
+- **feat: Entry detail for extraction table rows and plot points; Statistics as a bottom-panel tab (2026-10-06, person-requested)**
+  - A click on a Table cell or a Plot point (2D marks and the 3D canvas) selects that row's log entry and shows it in Entry detail; the selection is shared with Filtered and survives tab switches (current-row tint in the Table, a ring on the plot mark). A double-click on a plot point now jumps to the Table row (formerly a single click did).
+  - The Statistics panel is now the middle tab of the bottom panel (`Entry detail | Statistics | Facets`), offered on Table and Plot; its own collapse/peek state is gone, the bottom panel's applies.
+  - **Tests**: GROUP entry-detail-table-plot; groups 53, 54, 125, 159, 299, 310, facets-bottom-tab and phone sheet groups updated, 162 removed. Docs: docs/extraction-and-plotting.md, docs/ui-and-views.md, README.
