@@ -1,6 +1,6 @@
 ---
 name: finish
-description: PhiLogg's end-of-session routine for any session that changed files — merge current main with the repo's conflict rules, run the full suite (and one SHARDS=8 stress run) when code changed, check the docs, push the session branch and report without opening a PR. Use when the work of a session or round is done, before telling the user it is finished, and whenever the user invokes /finish.
+description: PhiLogg's end-of-session routine for any session that changed files — merge current main with the repo's conflict rules, run the full suite once with SHARDS=8 when code changed, check the docs, push the session branch and report without opening a PR. Use when the work of a session or round is done, before telling the user it is finished, and whenever the user invokes /finish.
 ---
 
 # Finish: merge main → test → docs → push → report
@@ -32,16 +32,19 @@ Never rebase or force-push a branch that is already pushed. Conflict rules:
 Code = `philogg.html`, `tests/**`, `scripts/**`, `tools/**`, or the
 `window.philogg`/`nativeDirHandle` contract (CLAUDE.md lists what doesn't
 count). Before a long run, put it on the status line ("Volle Suite läuft,
-ca. 2–3 min"), then:
+ca. 5 min"), then:
 
 ```bash
-cd tests && npm test            # full suite: pass count + "Slowest groups"
-SHARDS=8 npm test               # once before the final push: load stress
+cd tests && SHARDS=8 npm test   # full suite under load: pass count + "Slowest groups"
 ```
 
+- One run: `SHARDS=8` runs every group like a plain `npm test`, with more
+  shards than cores as load stress. A plain full run before it adds
+  nothing but ~5 minutes.
 - Compare the pass count with `main`'s: lower without a removed group means a
   group silently stopped running.
-- A failure only under `SHARDS=8` is a load-dependent test bug: fix it per
+- A failure: re-run that group alone (`GROUP=<id> npm test`). Green alone
+  means it fails only under load — a load-dependent test bug: fix it per
   `tests/README.md` → "Extending this suite", step 2. Never re-run it away.
 - Rust/Tauri-only changes (`desktop/src-tauri/**`, `desktop/frontend/`):
   the suite doesn't load them; run `cd desktop && npm run build`, plus
@@ -72,6 +75,6 @@ SHARDS=8 npm test               # once before the final push: load stress
 
 ## 5. Report
 
-Tell the user, in their language: what changed, test pass count (and the
-`SHARDS=8` result), branch name, open points. **Do not open a PR** and do
+Tell the user, in their language: what changed, test pass count of the
+`SHARDS=8` run, branch name, open points. **Do not open a PR** and do
 not request a review unless the user asked for one (CLAUDE.md).
