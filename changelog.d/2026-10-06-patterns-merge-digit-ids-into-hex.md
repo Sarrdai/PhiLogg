@@ -1,0 +1,4 @@
+- **fix: Patterns view groups digit-only request ids with the hex ones (2026-10-06, backlog #104)**
+  - An id like `r-123456` no longer forms its own `r-<#>` group next to `r-<hex>` (`r-4f2d1a`): when the accumulator finishes, a group whose `<#>` sits right after a 1-3 letter prefix and dash is merged into the sibling group that has `<hex>` there (count, levels, worst level, first/last time, float mask summed or remapped).
+  - With no hex sibling the group stays a number (`job=J-<#>`). The normalization regex itself is unchanged; the merged group's filter `r-[*]` and typed Extract (`r-[*]`, `[*:int]` for the rest) match both id shapes.
+  - **Tests**: GROUP patterns-merge-digit-ids-into-hex (patterns-short-hex-id updated). Docs: docs/ui-and-views.md.

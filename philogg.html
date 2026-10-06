@@ -17039,7 +17039,12 @@ function finishAnalysisFilter(node, tab) {
    exponent shape 1e10 / 2E5, which stays a number), then any number — a sign only
    when it isn't glued to a word ("Worker-3" keeps its dash), and grouped
    with thousands separators only when both separators are present
-   ("1,234.5", same unambiguous shape a plain [*:float] accepts). */
+   ("1,234.5", same unambiguous shape a plain [*:float] accepts).
+   Because an all-digit id can't be told from a number per message, the
+   accumulator's finish() merges a group whose "<#>" sits right after such a
+   letter prefix and dash into the sibling group that has "<hex>" there
+   (identical key otherwise), so "r-123456" joins "r-4f2d1a"; with no hex
+   sibling it stays a number ("job=J-<#>"). */
 const PATTERN_MAX_CHARS = 400;
 const PATTERN_PH_NUM = "";
 const PATTERN_PH_LABELS = { "": "<#>", "": "<guid>", "": "<ip>", "": "<str>", "": "<path>", "": "<hex>" };
@@ -17101,6 +17106,57 @@ function patternFilterValue(key, floatMask, typed) {
   return out;
 }
 
+const PATTERN_PH_HEX = "\uE005";
+// True when the placeholder at key[i] directly follows 1-3 letters and a dash
+// that are not themselves glued to a word char or placeholder — the same
+// prefix rule PATTERN_TOKEN_RE's hex alternative uses.
+function patternPrefixedAt(key, i) {
+  if (i < 2 || key[i - 1] !== "-") return false;
+  let n = 0, j = i - 2;
+  while (j >= 0 && n <= 3 && /[A-Za-z]/.test(key[j])) { n++; j--; }
+  if (n < 1 || n > 3) return false;
+  return j < 0 || !(/\w/.test(key[j]) || PATTERN_PH_LABELS[key[j]]);
+}
+// Merges digit-only id groups ("r-<#>") into the sibling hex group ("r-<hex>")
+// whose key differs only by prefixed number->hex swaps (see the block comment
+// above PATTERN_MAX_CHARS). Mutates `groups` (key -> group).
+function mergeDigitIdPatternGroups(groups) {
+  for (const x of [...groups.values()]) {
+    const key = x.key;
+    if (key.indexOf(PATTERN_PH_NUM) === -1) continue;
+    const pos = []; // [index in key, number-placeholder index] of every prefixed number
+    let numIdx = 0;
+    for (let i = 0; i < key.length; i++) {
+      if (key[i] !== PATTERN_PH_NUM) continue;
+      if (patternPrefixedAt(key, i)) pos.push([i, numIdx]);
+      numIdx++;
+    }
+    if (!pos.length || pos.length > 4) continue;
+    for (let s = 1; s < (1 << pos.length); s++) {
+      const chars = key.split("");
+      const removed = new Set();
+      pos.forEach((p, k) => { if (s & (1 << k)) { chars[p[0]] = PATTERN_PH_HEX; removed.add(p[1]); } });
+      const y = groups.get(chars.join(""));
+      if (!y) continue;
+      // Removing number placeholders shifts the float-mask bit of every later one down.
+      let mask = 0, out = 0;
+      for (let b = 0; b < 31; b++) {
+        if (removed.has(b)) continue;
+        if (x.floatMask & (1 << b)) mask |= 1 << out;
+        out++;
+      }
+      y.floatMask |= mask;
+      y.count += x.count;
+      for (const [b, n] of x.levels) y.levels.set(b, (y.levels.get(b) || 0) + n);
+      if (x.rank < y.rank) { y.rank = x.rank; y.level = x.level; y.levelFormatId = x.levelFormatId; }
+      if (x.firstTs < y.firstTs) { y.firstTs = x.firstTs; y.first = x.first; }
+      if (x.lastTs > y.lastTs) y.lastTs = x.lastTs;
+      groups.delete(key);
+      break;
+    }
+  }
+}
+
 function createPatternAcc() {
   const groups = new Map();
   const bucketOf = makeLevelBucketer();
@@ -17121,7 +17177,7 @@ function createPatternAcc() {
       if (e.ts < g.firstTs) g.firstTs = e.ts;
       if (e.ts > g.lastTs) g.lastTs = e.ts;
     },
-    finish() { return { groups: [...groups.values()] }; },
+    finish() { mergeDigitIdPatternGroups(groups); return { groups: [...groups.values()] }; },
   };
 }
 const patternsAnalysis = makeEntryAnalysis(createPatternAcc, () => "", c => {

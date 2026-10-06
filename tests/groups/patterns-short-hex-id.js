@@ -4,7 +4,7 @@ group("patterns-short-hex-id");
 
 if (groupSelected()) {
   await withApp(async (w, d, T) => {
-    section("patterns-short-hex-id a. simulator bursts: every Request r-<id> line is one group");
+    section("patterns-short-hex-id a. simulator bursts: every Request r-<id> line, digit-only ids included, is one group");
     await waitForFormatConfig(T);
     let digitOnly = 0, letterOnly = 0, expLike = 0;
     for (const seed of [11, 12, 13]) {
@@ -16,11 +16,10 @@ if (groupSelected()) {
       digitOnly += ids.filter(x => /^\d+$/.test(x)).length;
       letterOnly += ids.filter(x => /^[a-f]+$/.test(x)).length;
       expLike += ids.filter(x => /^\d+e\d+$/.test(x)).length;
-      // An all-digit id is a plain number (J-00004 must stay J-<#>), so it forms its own group.
-      const hexIds = ids.filter(x => !/^\d+$/.test(x)).length, numIds = ids.filter(x => /^\d+$/.test(x)).length;
+      // An all-digit id ("r-123456") has no marker of its own, but it joins the sibling r-<hex> group (backlog #104).
       const groups = T.patternsAnalysis(f.id).result.groups.filter(g => g.key.startsWith("Request r-"));
       const shapes = groups.map(g => w.patternDisplayText(g.key) + " x" + g.count).sort();
-      const want = ["Request r-<hex> rejected: <#> Service Unavailable x" + hexIds].concat(numIds ? ["Request r-<#> rejected: <#> Service Unavailable x" + numIds] : []).sort();
+      const want = ["Request r-<hex> rejected: <#> Service Unavailable x" + ids.length];
       assert(JSON.stringify(shapes) === JSON.stringify(want), "seed " + seed + ": groups " + JSON.stringify(shapes) + " want " + JSON.stringify(want));
     }
     assert(digitOnly > 0 && letterOnly > 0 && expLike > 0, "the sample contains digit-only (" + digitOnly + "), letter-only (" + letterOnly + ") and exponent-like (" + expLike + ") ids");

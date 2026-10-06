@@ -680,7 +680,7 @@ Filtered view lists, without pinned bookmarks — by message shape.
   (`PATTERN_TOKEN_RE`), alternatives in priority order: GUID → `<guid>`,
   IPv4 with optional port → `<ip>`, a `"double"` or `'single'` quoted string → `"<str>"` / `'<str>'` (quotes kept, content replaced; an apostrophe inside a word is not a quote),
   a Windows/UNC or multi-segment Unix path → `<path>`, a hex literal/hash
-  (`0x…`, or 4+ hex chars containing a letter right after a 1–3 letter prefix and a dash (`r-4f2d1a`, `r-dedcac`, `r-4e5123`; an all-digit `J-00004` stays a number), or a free-standing whole word of 4+ hex chars mixing letters and digits; the float-exponent shape `1e10` stays a number) → `<hex>`, any other
+  (`0x…`, or 4+ hex chars containing a letter right after a 1–3 letter prefix and a dash (`r-4f2d1a`, `r-dedcac`, `r-4e5123`; an all-digit `J-00004` normalizes to a number), or a free-standing whole word of 4+ hex chars mixing letters and digits; the float-exponent shape `1e10` stays a number) → `<hex>`, any other
   number → `<#>` (a sign only when not glued to a word: `Worker-3` →
   `Worker-<#>`). URLs keep their `//host/path` literal apart from numbers.
   Placeholders are private-use characters inside the group key, so a key
@@ -688,6 +688,20 @@ Filtered view lists, without pinned bookmarks — by message shape.
   (`PATTERN_PH_SPLIT_RE`); `patternDisplayText` renders them as `<#>` etc.
   A per-group float mask records which number placeholders ever held a
   decimal point.
+- **Digit-only ids join the hex group** (`mergeDigitIdPatternGroups`, run
+  by the accumulator's `finish()`): an all-digit id (`r-123456`) is
+  indistinguishable from a number per message, so after grouping a group
+  whose `<#>` directly follows a 1–3 letter prefix and dash (`patternPrefixedAt`,
+  same prefix rule as the hex alternative) merges into the sibling group
+  whose key is identical except for `<hex>` at that position. Several such
+  positions merge only into a sibling where every differing position is such a
+  num→hex swap (up to 4 candidate positions). Count and per-level counts are
+  summed, worst level / first / last are the more extreme, and the float
+  mask drops the removed placeholder's bit and shifts the higher ones down.
+  No hex sibling → the group stays (`job=J-<#>`). The merged group's filter
+  has `[*]` there, which matches both id shapes; typed Extract gives `[*]`
+  for the id column. The LLM tool `find_message_types` groups on its own and
+  does not merge.
 - **Columns**: Count, %, Max level (the group's most severe level —
   lowest `levelSortRank`; header tooltip "Most severe level in the group; n/total = how many entries have it"). The accumulator also counts entries per level bucket (`g.levels`): a mixed group shows the badge followed by a muted `n/total` (`WARN 3/179`, `.patterns-level-n`) and a cell tooltip with the breakdown in severity order (`INFO 176 · WARN 3`, `patternLevelTip`); a pure group shows the badge alone. The level column is 124px wide so the suffix does not clip. Pattern, First/Last (time of day; line numbers
   for a plain-text file). Header click sorts (`patternsComparator`): Count
