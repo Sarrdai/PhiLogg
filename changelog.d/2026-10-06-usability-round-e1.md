@@ -1,0 +1,5 @@
+- **fix: usability round E1 (2026-10-06, usability test)**
+  - Patterns "Extract" keeps an identifier-suffix number that never varies (`v2` in `.../v<#>/orders`) as literal text instead of a constant `[*:int]` Table column; free-standing and varying numbers stay captures.
+  - The "No line matches the log format" panel now also appears when the file was loaded through the Blob worker route or the native (desktop) parser, which never held the text.
+  - The minimap draft bar on a legacy "after"/"before" node says "Update filter" and updates it in place (converted to a time range, undoable) instead of nesting a new node; the same goes for the context-menu and dialog time-window actions.
+  - **Tests**: GROUP patterns-extract-constant-num, format-mismatch-native, time-window-legacy-node. Docs: docs/ui-and-views.md, docs/log-formats.md, docs/filters.md.

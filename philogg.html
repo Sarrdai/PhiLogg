@@ -10707,6 +10707,18 @@ function noteFormatMismatch(text, node) {
     node.noFormatMatch = { text, lines: text.replace(/\r?\n$/, "").split(/\r\n|\n/).length };
   } else delete node.noFormatMatch;
 }
+// noteFormatMismatch for the load routes that never hold the text (the Blob
+// byte-range worker route, the native Rust parser): only a 0-entry result pays
+// the read; `getBlob` yields the file's bytes. A read failure is swallowed —
+// the file just shows empty as it always did.
+async function noteFormatMismatchFromBlob(node, getBlob) {
+  if (state.nodes[node.id] !== node) return;
+  if (node.entries.length > 0 || isPlainTextFormat(node.formatId || DEFAULT_FORMAT_ID)) { delete node.noFormatMatch; return; }
+  try {
+    const text = await readFileWithProgress(await getBlob(), () => {});
+    noteFormatMismatch(text, node);
+  } catch (err) { /* unreadable: stays an empty file */ }
+}
 async function parseLogTextCore(text, node, onProgress, parseOpts) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
   const plainText = isPlainTextFormat(formatId);
@@ -12349,8 +12361,9 @@ async function parseLocalFileNatively(url, node, onFraction) {
   const localize = makeNaiveTsLocalizer();
   const start = node.entries.length;
   let orphaned = false;
+  let res;
   try {
-    return await window.philogg.parseLogFile(url, spec, msg => {
+    res = await window.philogg.parseLogFile(url, spec, msg => {
       if (orphaned) return;
       // Deleted mid-load — same rule as parseLogTextInWorker: stop feeding
       // the orphaned node; the caller's own existence check takes over.
@@ -12375,6 +12388,8 @@ async function parseLocalFileNatively(url, node, onFraction) {
     invalidateFileAggregate(node);
     throw err;
   }
+  await noteFormatMismatchFromBlob(node, () => urlTailHandle(url).getFile());
+  return res;
 }
 
 // Cheap, targeted update for JUST the loading file's own tree row (progress
@@ -13551,25 +13566,23 @@ function updateTimeRangeFilterNode(nodeId, from, to) {
 // The one entry point for "put a time window on this node" (minimap drag,
 // row context menu / row actions, time-range dialog in create mode): one
 // filter node per window instead of nested after/before nodes.
-//  - `targetId` is a "timerange" node: it is updated in place (undoable); a
+//  - `targetId` is a time node ("timerange", or a legacy "after"/"before"
+//    one, which becomes "timerange"): it is updated in place (undoable); a
 //    null bound keeps the node's existing bound, and an inverted result keeps
 //    only the new bound.
-//  - `targetId` is a "level" node in auto mode: the window is inserted ABOVE
-//    it (same tree position) and the level node stays active, so the level
-//    chips keep reading its selection. If that level node already sits under
-//    a "timerange" node, that node is updated instead.
 //  - otherwise a new "timerange" child is created under it.
 // Returns the node that carries the window, or null.
 function applyTimeWindow(targetId, from, to) {
   const target = state.nodes[targetId];
   if (!target) return null;
-  if (target.type === "filter" && target.filterType === "timerange") {
+  if (target.type === "filter" && isTimeFilterType(target.filterType)) {
+    const cur = timeRangeOfNode(target); // also a legacy "after"/"before" node: converted by the update
     let nf = from, nt = to;
     if (nf != null && nt != null) {
       if (nf > nt) { const t = nf; nf = nt; nt = t; }
     } else {
-      if (nf == null) nf = target.value.from;
-      if (nt == null) nt = target.value.to;
+      if (nf == null) nf = cur.from;
+      if (nt == null) nt = cur.to;
       if (nf != null && nt != null && nf > nt) { if (from != null) nt = null; else nf = null; }
     }
     updateTimeRangeFilterNodeWithUndo(targetId, nf, nt);
@@ -17192,11 +17205,37 @@ patternsScroll.addEventListener("scroll", makeScrollRenderer(renderPatternsVisib
 // the ⊘ button) add a message text filter with every placeholder as [*];
 // "extract" types the number placeholders so the node opens on Table;
 // "jump" reveals the group's first entry in the Filtered view.
+// Extract: a number glued to a word in the group key ("v<#>", "gen<#>", "T<#>") that has
+// the same value in every entry of the group is part of an identifier, not a measurement —
+// it goes back to literal text instead of becoming a constant Table column. Free-standing
+// numbers stay captures. One scan over the active node's entries of the group.
+function freezeConstantGluedNumbers(key, value) {
+  const glued = new Set();
+  let idx = 0, prev = "";
+  for (const part of key.split(PATTERN_PH_SPLIT_RE)) {
+    if (!part) continue;
+    if (part.length === 1 && PATTERN_PH_LABELS[part]) {
+      if (part === PATTERN_PH_NUM && /[A-Za-z_]$/.test(prev)) glued.add(idx);
+      idx++;
+    }
+    prev = part;
+  }
+  if (!glued.size) return value;
+  const base = getEntries(state.activeId);
+  const texts = [];
+  for (const e of state.levelFilter.size ? applyLevelFilter(base) : base) {
+    if (normalizeMessagePattern(e.message) !== key) continue;
+    const line = (e.message || "").split("\n")[0];
+    texts.push(line.length > PATTERN_MAX_CHARS ? line.slice(0, PATTERN_MAX_CHARS) : line);
+  }
+  return freezeConstantWordCaptures(value, texts, (c, i) => glued.has(i) && (c.type === "int" || c.type === "float"));
+}
 function applyPatternAction(group, action) {
   if (!group || !state.activeId) return;
   if (action === "jump") { revealInFilteredView(group.first); return; }
   const typed = action === "extract";
-  const value = patternFilterValue(group.key, group.floatMask, typed);
+  let value = patternFilterValue(group.key, group.floatMask, typed);
+  if (typed) value = freezeConstantGluedNumbers(group.key, value);
   const node = createFilterNode(state.activeId, "text", value, action === "hide", [], false, ["message"], false, false);
   finishAnalysisFilter(node, action === "hide" ? "patterns" : action === "extract" ? "table" : null);
 }
@@ -29639,7 +29678,7 @@ function renderMinimapDraft() {
   if (!minimapDraft) { timelineMinimapDraftBar.classList.add("hidden"); return; }
   const node = state.nodes[state.activeId];
   const filterBtn = timelineMinimapDraftBar.querySelector('[data-act="filter"]');
-  filterBtn.textContent = node && node.filterType === "timerange" ? "Update filter" : "Filter";
+  filterBtn.textContent = node && isTimeFilterType(node.filterType) ? "Update filter" : "Filter";
   timelineMinimapDraftBar.classList.remove("hidden");
   const barW = timelineMinimapDraftBar.offsetWidth || 0;
   const barLeft = Math.max(4, Math.min(W - barW - 4, (lo + hi) / 2 - barW / 2));
@@ -33728,6 +33767,7 @@ async function readParseFileNode(node, name, file, handle, parseOpts) {
           node.loadFraction = gzip ? READ_WEIGHT + PARSE_WEIGHT * f : f; // gzip: the inflate drove the first share
           scheduleLoadRender(node.id);
         }, parseOpts);
+        await noteFormatMismatchFromBlob(node, () => file);
         return { file, size, gzip };
       } catch (err) { /* fall back to the text route */ }
     }
@@ -38431,12 +38471,15 @@ function collapseNewlinesToWildcard(pattern) {
 // capture replaced by that literal value; the set of matching texts stays the
 // same. Only [*:word] is touched (numbers/times are variable by nature), a
 // single match proves nothing, and an invalid pattern comes back unchanged.
-// Pure: `texts` is any iterable of strings (the column values to match against).
-function freezeConstantWordCaptures(pattern, texts) {
+// Optional `candidate(col, index)` picks which captures may freeze instead of
+// the [*:word] ones (the Patterns "Extract" action passes identifier-suffix
+// number columns). Pure: `texts` is any iterable of strings (the column values
+// to match against).
+function freezeConstantWordCaptures(pattern, texts, candidate) {
   const spec = compileExtractPattern(pattern);
   if (!spec) return pattern;
   const wordCols = [];
-  spec.columns.forEach((c, i) => { if (c.type === "word") wordCols.push(i); });
+  spec.columns.forEach((c, i) => { if (candidate ? candidate(c, i) : c.type === "word") wordCols.push(i); });
   if (!wordCols.length) return pattern;
   const seen = wordCols.map(() => new Set());
   let matches = 0;

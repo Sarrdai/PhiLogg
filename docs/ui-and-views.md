@@ -698,7 +698,7 @@ Filtered view lists, without pinned bookmarks — by message shape.
   (`Axis [*] position [*] reached in [*] ms`) and lands on Filtered;
   Alt+click or the row's ⊘ adds the same as NOT and **stays on Patterns**,
   so noise can be peeled off step by step; the table icon ("Extract") types
-  the number placeholders (`[*:int]`/`[*:float]` per the float mask) and
+  the number placeholders (`[*:int]`/`[*:float]` per the float mask; a number glued to a word in the key — `v<#>`, `gen<#>`, `T<#>` — that is the same in every entry of the group goes back to literal text, `freezeConstantGluedNumbers`, so no constant Table column; free-standing numbers always stay captures) and
   opens the new node's Table; the arrow jumps to the group's first entry
   (`revealInFilteredView`). A plain click creates a node, so there is no
   double-click (the node switch would rebuild the row between the clicks).
