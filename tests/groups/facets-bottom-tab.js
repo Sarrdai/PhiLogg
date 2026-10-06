@@ -8,7 +8,7 @@
    #detailPanel as "Entry detail | Facets": sections side by side, the share
    bar behind the value row, a row click keeps the tab, Ctrl+I cycles, and on
    Patterns/Table/Plot the panel stays (header-only strip with Entry detail
-   selected) so Facets are reachable on every tab. Phone: no Facets tab.
+   selected) so Facets are reachable on every tab. Phone: the Facets live in the bottom sheet (GROUP phone-analyze-sheet).
    ============================================================ */
 group("facets-bottom-tab");
 
@@ -120,17 +120,20 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("facets-bottom-tab i. phone tier: no Facets tab, facets never render even with the key set");
+  section("facets-bottom-tab i. phone tier: the persisted selection does not open anything, Facets live in the sheet (phone-analyze-sheet)");
   try { w.localStorage.setItem("philogg-facets-open", "1"); } catch {}
   const f = await w.addFile("a.log", makeLog(0, 10), () => {});
   T.state.activeId = f.id;
-  w.setFacetsOpen(true);
+  w.setFacetsOpen(true); // desktop selection, persisted
   w.innerWidth = 400; w.dispatchEvent(new w.Event("resize"));
   assert(d.body.classList.contains("layout-phone"), "sanity: phone tier");
   w.render();
   const panel = d.querySelector("#detailPanel"), body = d.querySelector("#facetPanelBody");
-  assert(!isVisible(d.querySelector("#lowerTabs"), w), "the tab strip (and so the Facets tab) is hidden");
-  assert(!panel.classList.contains("lower-facets") && !isVisible(body, w), "no facet body on the phone");
+  assert(!d.body.classList.contains("sheet-open"), "the sheet is closed");
+  assert(!panel.classList.contains("lower-facets") && !isVisible(body, w), "no facet body while the sheet is closed, whatever the persisted key says");
   fireKeydown(d, w, "i", { ctrlKey: true });
-  assert(!isVisible(body, w), "Ctrl+I does not show facets on the phone");
+  assert(d.body.classList.contains("sheet-open") && isVisible(body, w), "Ctrl+I opens the sheet on Facets on the phone");
+  assert(w.localStorage.getItem("philogg-facets-open") === "1", "the phone tab does not touch the persisted desktop selection");
+  fireKeydown(d, w, "i", { ctrlKey: true });
+  assert(!d.body.classList.contains("sheet-open") && !isVisible(body, w), "Ctrl+I again closes it");
 });
