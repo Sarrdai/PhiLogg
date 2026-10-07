@@ -57,6 +57,12 @@ deployments possible:
 
 ## Key features
 
+- **Collapse repeats** — a toggle in the Filtered view's toolbar folds consecutive
+  repeated rows (log spam, retry loops) into one row with a **×N** badge: either
+  *Identical* (all columns equal except the time) or *Same pattern* (numbers, IDs and
+  quoted text may differ, the changing numbers are underlined). Click the badge or press
+  `→`/`←` to open or fold a run in place; find, jumps and bookmarks open the run they
+  land in.
 - **Nested filter tree** — chain text, time-range, value-extraction, AND/OR,
   and nearest-neighbor link filters (time-context and count-context filters
   also exist and fully work, but creating a new one is temporarily

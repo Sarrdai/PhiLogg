@@ -2832,6 +2832,7 @@
   #detailOutside{
     margin:0 0 10px; font-family:var(--font-ui); font-size:11.5px; color:var(--text-tertiary); font-style:italic;
   }
+  #detailRepeat{margin:0 0 6px; font-size:11px; color:var(--accent-strong); font-family:var(--font-mono);}
   #detailNote{
     margin:10px 0 0; padding-top:10px; border-top:1px dashed var(--border-soft);
     font-family:var(--font-ui); font-size:12px; line-height:1.6; font-style:italic;
@@ -6385,6 +6386,7 @@
           <div id="detailBody">
             <div id="detailPlaceholder"><span class="dp-desktop">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</span><span class="dp-touch">Tap a row to see its full message here.</span></div>
             <div id="detailOutside" style="display:none">This entry is not part of the current filter.</div>
+            <div id="detailRepeat" style="display:none"></div>
             <div id="detailMessage"></div>
             <div id="detailNote"></div>
           </div>
@@ -17892,6 +17894,7 @@ const detailMeta = el("#detailMeta");
 const detailMessageEl = el("#detailMessage");
 const detailNoteEl = el("#detailNote");
 const detailOutsideEl = el("#detailOutside");
+const detailRepeatEl = el("#detailRepeat");
 const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
@@ -27148,10 +27151,22 @@ try {
 let repeatExpanded = new Set();
 let repeatRunByEntry = new Map();
 let repeatLastNodeId = null;
+let repeatUnfolded = []; // the chronological list (temp anchor spliced) behind currentViewEntries; the find bar walks this one
 const REPEAT_RESERVED_COLS = new Set(["time", "level", "thread", "location", "method", "message"]);
 
 function repeatFoldActive() { return repeatCollapseOn && !state.sortColumn; }
 
+// "Same pattern" keys, cached per entry: a refold (expand/collapse, bookmark, rule toggle) re-runs
+// the fold, and the token regex per entry is what costs (~1 s on 650k rows).
+let repeatNormCache = new WeakMap();
+function repeatNormOf(e) {
+  let n = repeatNormCache.get(e);
+  if (n === undefined) { n = normalizeRepeatMessage(e.message); repeatNormCache.set(e, n); }
+  return n;
+}
+// aNorm: the head's normalized message, computed on demand (aNorm()) — only
+// when every other field already matches, so the token regex runs for a
+// fraction of the entries (a file where nothing folds pays ~nothing).
 function repeatSameRow(a, b, customKeys, pattern, aNorm) {
   if (a.formatId !== b.formatId || a.sourceId !== b.sourceId || a.level !== b.level ||
       a.thread !== b.thread || a.location !== b.location || a.method !== b.method) return false;
@@ -27159,11 +27174,12 @@ function repeatSameRow(a, b, customKeys, pattern, aNorm) {
     const key = customKeys[k];
     if (((a.fields && a.fields[key]) || "") !== ((b.fields && b.fields[key]) || "")) return false;
   }
-  return pattern ? aNorm === normalizeRepeatMessage(b.message) : a.message === b.message;
+  return pattern ? (a.message === b.message || aNorm() === repeatNormOf(b)) : a.message === b.message;
 }
 
 // Chronological list -> row list; (re)builds repeatRunByEntry. Temp-anchor
-// clones never fold and end the run before them.
+// clones, bookmarked and noted entries never fold: each is its own row, ends
+// the run before it and the entries after it start a new one.
 function foldRepeats(list) {
   repeatRunByEntry = new Map();
   const n = list.length;
@@ -27171,7 +27187,8 @@ function foldRepeats(list) {
   const pattern = repeatRule === "pattern";
   const customKeys = activeColumnDefs().map(c => c.key).filter(k => !REPEAT_RESERVED_COLS.has(k));
   const rows = [];
-  let head = null, headIdx = 0, headNorm = "";
+  let head = null, headIdx = 0, headNorm = null;
+  const headNormOf = () => headNorm === null ? (headNorm = repeatNormOf(head)) : headNorm;
   const flush = end => { // the open run is list[headIdx, end)
     if (!head) return;
     rows.push(head);
@@ -27185,11 +27202,12 @@ function foldRepeats(list) {
   };
   for (let i = 0; i < n; i++) {
     const e = list[i];
-    if (e._tempAnchor) { flush(i); rows.push(e); continue; }
-    if (head && repeatSameRow(head, e, customKeys, pattern, headNorm)) continue;
+    // Barriers are always their own row and end the run: the temp anchor, a bookmarked or a noted entry.
+    if (e._tempAnchor || state.bookmarks.has(e.id) || state.notes.has(e.id)) { flush(i); rows.push(e); continue; }
+    if (head && repeatSameRow(head, e, customKeys, pattern, headNormOf)) continue;
     flush(i);
     head = e; headIdx = i;
-    if (pattern) headNorm = normalizeRepeatMessage(e.message);
+    headNorm = null;
   }
   flush(n);
   return rows;
@@ -27238,10 +27256,11 @@ function repeatVaryRanges(run) {
 }
 
 function repeatBadgeHtml(run, zero) {
-  const n = run.members.length, first = run.members[0], last = run.members[n - 1];
+  const n = run.members.length;
   const open = repeatExpanded.has(run.head.id);
   let tip = n + " repeats";
-  if (!isPlainTextFormat(first.formatId)) tip += " · " + displayTimeText(first, zero) + " – " + displayTimeText(last, zero) + " (" + formatDelta(last.ts - first.ts) + ")";
+  const spanText = repeatSpanText(run, zero);
+  if (spanText) tip += " \u00b7 " + spanText;
   tip += " · click to " + (open ? "collapse" : "expand");
   return '<span class="repeat-badge' + (repeatRule === "pattern" ? " repeat-pattern" : "") + '" data-repeat-badge="1" title="' + escapeHtml(tip) + '">×' + n +
     (open ? ' <span class="repeat-caret">▾</span>' : "") + '</span>';
@@ -27262,7 +27281,10 @@ function applyViewMembers(members) {
     currentViewEntries = withAnchor.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
   } else {
     currentViewEntries = foldRepeats(withAnchor);
+    // A pending jump target (scrollTargetId) hidden in a folded run opens that run first.
+    if (state.scrollTargetId && repeatExpandFor(state.scrollTargetId)) currentViewEntries = foldRepeats(withAnchor);
   }
+  repeatUnfolded = state.sortColumn ? currentViewEntries : withAnchor;
   tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
   {
     const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
@@ -27281,17 +27303,66 @@ function applyViewMembers(members) {
   }
 }
 
-// Re-fold the current view in place (expand/collapse): keeps the reading position
-// like the other in-place repaints, never a full render().
-function refoldRepeatView() {
+// Opens the run that hides entry `id` (no repaint). True when one was opened.
+function repeatExpandFor(id) {
+  const run = repeatRunByEntry.get(id);
+  if (!run || run.head.id === id || repeatExpanded.has(run.head.id)) return false;
+  repeatExpanded.add(run.head.id);
+  return true;
+}
+// Every path that scrolls to an entry by id calls this first, so a jump never
+// lands on nothing: the run hiding `id` unfolds in place.
+function revealRepeatMember(id) {
+  if (!repeatExpandFor(id)) return false;
+  refoldRepeatView();
+  return true;
+}
+
+// Re-fold the current view in place (expand/collapse, bookmark/note change):
+// keeps the reading position like the other in-place repaints, never a full render().
+function refoldRepeatView(members) {
   const anchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
-  applyViewMembers(viewMembers);
+  applyViewMembers(members || viewMembers);
   if (anchor) anchor.id = repeatRowIdFor(anchor.id);
   renderDetailOutsideNotice(selectedEntry());
   syncTableRowsWidth();
   restoreViewAnchor(anchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical);
   renderVisibleRows();
   updateMinimapRenderedRange();
+  updateRepeatMeta();
+}
+// " · <rows> rows (<k> folded)" for the minimap stats line while folding hides something.
+function repeatMetaHtml() {
+  if (!repeatFoldActive()) return "";
+  const k = repeatUnfolded.length - currentViewEntries.length;
+  if (k <= 0) return "";
+  return '<span class="minimap-meta-repeat"> \u00b7 ' + currentViewEntries.length.toLocaleString("de-DE") + " rows (" + k.toLocaleString("de-DE") + " folded)</span>";
+}
+function updateRepeatMeta() {
+  const rest = timelineMinimapMetaEl.querySelector(".minimap-meta-rest");
+  if (!rest) return;
+  const old = rest.querySelector(".minimap-meta-repeat");
+  if (old) old.remove();
+  rest.insertAdjacentHTML("beforeend", repeatMetaHtml());
+}
+// Entry detail: the line above the message of a run's head.
+function repeatSpanText(run, zero) {
+  const first = run.members[0], last = run.members[run.members.length - 1];
+  if (isPlainTextFormat(first.formatId)) return "";
+  return displayTimeText(first, zero) + " \u2013 " + displayTimeText(last, zero) + " (" + formatDelta(last.ts - first.ts) + ")";
+}
+function renderDetailRepeat(entry) {
+  const run = entry && repeatRunByEntry.size ? repeatRunByEntry.get(entry.id) : null;
+  if (!run || run.head !== entry) { detailRepeatEl.style.display = "none"; detailRepeatEl.textContent = ""; return; }
+  let text = "Repeated \u00d7" + run.members.length;
+  const span = repeatSpanText(run, timeZeroContext());
+  if (span) text += " \u00b7 " + span;
+  if (repeatRule === "pattern") {
+    const vary = repeatVaryRanges(run);
+    if (vary.length) text += " \u00b7 varying: " + vary.map(v => v.title.replace(" \u2013 ", "\u2013")).join(", ");
+  }
+  detailRepeatEl.textContent = text;
+  detailRepeatEl.style.display = "block";
 }
 function setRepeatRunOpen(headId, open) {
   if (open === repeatExpanded.has(headId)) return;
@@ -31012,7 +31083,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
   timelineMinimapMetaEl.innerHTML = (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
-    '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + "</span>";
+    '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + repeatMetaHtml() + "</span>";
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
@@ -32270,9 +32341,20 @@ function selectRowForContextMenu(entryId, selectFn) {
 function formatEntriesForClipboard(entries) {
   return entries.map(e => e.raw).join("\n");
 }
+// Collapse repeats: a folded head stands for its whole run when copying.
+function expandRepeatHeads(entries) {
+  if (!repeatRunByEntry.size || state.entriesView !== "filter") return entries;
+  const out = [], seen = new Set();
+  for (const e of entries) {
+    const run = repeatRunByEntry.get(e.id);
+    const list = run && run.head === e && !repeatExpanded.has(e.id) ? run.members : [e];
+    for (const m of list) if (!seen.has(m.id)) { seen.add(m.id); out.push(m); }
+  }
+  return out;
+}
 function copyLogSelectionToClipboard() {
   const ids = state.logMultiSelect.size ? [...state.logMultiSelect] : (state.selectedId ? [state.selectedId] : []);
-  const entries = ids.map(id => entryIndex[id]).filter(Boolean).sort(chronoComparator(buildOrderIndexMap(getRootFileId(state.activeId))));
+  const entries = expandRepeatHeads(ids.map(id => entryIndex[id]).filter(Boolean)).sort(chronoComparator(buildOrderIndexMap(getRootFileId(state.activeId))));
   if (!entries.length) return;
   copyTextToClipboard(formatEntriesForClipboard(entries));
   showCopyToast(entries.length === 1 ? "Line copied" : entries.length + " lines copied");
@@ -32317,6 +32399,7 @@ function selectEntry(entryId, opts) {
   state.entriesView = "filter";
   const previousId = applySelection(entryId);
   if (opts.scroll) {
+    revealRepeatMember(entryId); // Collapse repeats: a hit/jump into a folded run opens it first
     // opts.index: callers that already know the entry's position (arrow-key
     // navigation, minimap click) pass it along so a large view isn't scanned
     // twice per keypress (moveSelection's own findIndex + this one).
@@ -32880,12 +32963,14 @@ function updateDetailPanel() {
     detailNoteEl.style.display = "none";
     detailNoteEl.textContent = "";
     detailOutsideEl.style.display = "none";
+    renderDetailRepeat(null);
     return;
   }
 
   detailPanel.classList.remove("empty");
   detailMeta.className = levelClass(entry.level, entry.formatId);
   renderDetailOutsideNotice(entry); // before the Raw branch below returns early
+  renderDetailRepeat(entry); // Collapse repeats: "Repeated ×N · ..." line of a run's head
 
   // Match marking (see the section above textFilterMatches) — same
   // computation as renderVisibleRows, with the filter-path half gated by the
@@ -33050,6 +33135,7 @@ function revealInFilteredView(entry, sourceRowEl, sourceScrollEl) {
   // #fhSplit when coming from either of those tabs (see its own comment) —
   // this call site doesn't need to duplicate that anymore.
   if (fhLayout === "stacked") applyFhView("stacked"); else applyFhView("filter");
+  revealRepeatMember(entry.id); // Collapse repeats: the entry may sit inside a folded run
   updateSelectedRowClass(previousId);
   updateDetailPanel();
   pushNavWaypoint(); // A2-equivalent: the Filtered-pane spot we landed on
@@ -33322,7 +33408,10 @@ function toggleBookmark(entryId) {
   // fine, but toggling a bookmark afterwards (button/context-menu/"B") left
   // the Filtered view showing the stale pre-change set until some UNRELATED
   // full render happened to run.
-  if (state.pinBookmarksInFilteredView) {
+  if (repeatFoldActive()) {
+    // Bookmarked/noted entries are fold barriers: refold in place, reading position kept.
+    refoldRepeatView(state.pinBookmarksInFilteredView ? getVisibleEntries() : undefined);
+  } else if (state.pinBookmarksInFilteredView) {
     applyViewMembers(getVisibleEntries());
     renderDetailOutsideNotice(selectedEntry());
     syncTableRowsWidth();
@@ -40069,7 +40158,8 @@ function findTargetView() {
     ? (fhActiveTab === "highlight" ? "highlight" : "filter")
     : (state.entriesView === "highlight" ? "highlight" : "filter");
   if (kind === "filter" && linkWrap.style.display !== "none") return null;
-  return { kind, entries: kind === "highlight" ? currentHighlightViewEntries : currentViewEntries };
+  // Filtered view: the unfolded list (Collapse repeats walks entries, not rows).
+  return { kind, entries: kind === "highlight" ? currentHighlightViewEntries : repeatUnfolded };
 }
 
 function pressedGet(btn) { return btn.classList.contains("active"); }
@@ -40378,7 +40468,8 @@ function findAnchor(entries) {
   const isHl = findState.kind === "highlight";
   const offsets = isHl ? highlightRowOffsets : (needsRowOffsets() ? tableRowOffsets : null);
   const scrollTop = isHl ? highlightBody.scrollTop : physicalToLogicalScrollPx(tableBody.scrollTop);
-  const topId = topVisibleEntryId(entries, offsets, scrollTop, isHl ? ROW_HEIGHT : tableRowH());
+  // offsets/scroll describe the ROWS (folded) of the Filtered view; the id found there is a head or a plain row, also in `entries`.
+  const topId = topVisibleEntryId(isHl ? entries : currentViewEntries, offsets, scrollTop, isHl ? ROW_HEIGHT : tableRowH());
   const idx = topId ? entries.findIndex(e => e.id === topId) : -1;
   return { idx: Math.max(0, idx), fromSelection: false };
 }
@@ -40793,7 +40884,7 @@ el("#ctxCopy").addEventListener("click", () => {
   closeContextMenu();
   if (!entry) return;
   if (state.logMultiSelect.has(entry.id)) { copyLogSelectionToClipboard(); return; }
-  copyTextToClipboard(formatEntriesForClipboard([entry]));
+  copyTextToClipboard(formatEntriesForClipboard(expandRepeatHeads([entry])));
   showCopyToast("Line copied");
 });
 
@@ -44799,8 +44890,9 @@ function setNoteAndRepaint(entryId, text) {
   const rootId = findRootIdForEntry(entryId);
   if (rootId) syncNotesFilterNode(rootId);
   renderTree(); // repaint the sidebar in case the auto "Notes" node just appeared/disappeared
-  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  {
+  if (repeatFoldActive()) refoldRepeatView(); // a noted entry is a fold barrier (offsets, spacer and repaint included)
+  else {
+    tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
     const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
     tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
   }

@@ -23,7 +23,8 @@ function rcRef(entries, opts) {
   const rows = [];
   for (const e of entries) {
     const last = rows[rows.length - 1];
-    if (last && last.key === key(e)) last.n++;
+    if (opts.barrier && opts.barrier.has(e.id)) { rows.push({ head: e, n: 1, key: null }); continue; } // bookmarked/noted: own row, ends the run
+    if (last && last.key !== null && last.key === key(e)) last.n++;
     else rows.push({ head: e, n: 1, key: key(e) });
   }
   return rows;
@@ -235,3 +236,129 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#repeatMenu [data-repeat-rule=pattern]").classList.contains("on"), "...with the stored rule");
   assert(T.currentViewEntries.length === rcRef(f.entries, { pattern: true }).length, "...and the rows are folded by that rule");
 }, { beforeParse(win) { win.localStorage.setItem("philogg-repeat-collapse", "1"); win.localStorage.setItem("philogg-repeat-rule", "pattern"); } });
+
+// A medium identical run (>= 6 entries) with a following row, plus its entries.
+function rcMediumRun(entries) {
+  const ref = rcRef(entries);
+  const i = ref.findIndex((r, k) => r.n >= 6 && r.n <= 40 && k + 1 < ref.length);
+  assert(i !== -1, "a medium identical run exists");
+  const start = entries.indexOf(ref[i].head);
+  return { ref, i, run: ref[i], members: entries.slice(start, start + ref[i].n) };
+}
+
+await withApp(async (w, d, T) => {
+  section("repeat-collapse f. Jumps never land on nothing: selectEntry, revealInFilteredView, bookmark jump open the run hiding the entry");
+  const f = await rcOpen(w, T);
+  fireClick(rcBtn(d), w);
+  const { run, members } = rcMediumRun(f.entries);
+  const base = T.currentViewEntries.length;
+  const fold = () => { w.setRepeatRunOpen(run.head.id, false); };
+
+  w.selectEntry(members[3].id, { scroll: true, center: true });
+  assert(T.currentViewEntries.length === base + run.n - 1 && T.state.selectedId === members[3].id, "selectEntry(id, {scroll}) on a hidden member unfolds its run and keeps the member selected");
+  const row = rcRowFor(d, members[3].id);
+  assert(row && row.classList.contains("repeat-member") && row.classList.contains("selected"), "...the member's row is rendered and selected");
+
+  T.state.selectedId = run.head.id; fold();
+  assert(T.currentViewEntries.length === base, "folded again");
+  w.revealInFilteredView(members[2], null, null);
+  assert(T.currentViewEntries.length === base + run.n - 1 && rcRowFor(d, members[2].id), "revealInFilteredView (Context double-click, extraction row) opens the run and renders the row");
+
+  T.state.selectedId = run.head.id; fold();
+  w.jumpToEntry(members[4].id);
+  assert(T.currentViewEntries.length === base + run.n - 1 && T.state.selectedId === members[4].id && rcRowFor(d, members[4].id), "jumpToEntry (bookmark panel, next/prev bookmark) opens the run and lands on the entry");
+});
+
+await withApp(async (w, d, T) => {
+  section("repeat-collapse g. Find walks entries, not rows; a hit inside a folded run opens it and selects the member");
+  const fb = d.createElement("script");
+  fb.textContent = "window.__find = { get state() { return findState; } };";
+  d.body.appendChild(fb);
+  const F = () => w.__find.state;
+  const f = await rcOpen(w, T);
+  const entries = f.entries;
+  const counter = entries.findIndex(e => /^Retry 1\/\d+: /.test(e.message));
+  fireClick(d.querySelector("#btnRepeatMenu"), w);
+  fireClick(d.querySelector('#repeatMenu [data-repeat-rule="pattern"]'), w);
+  const rows = T.currentViewEntries.length;
+  assert(!T.currentViewEntries.some(e => e.id === entries[counter + 3].id), "the 4th counter line has no row of its own");
+
+  fireKeydown(d, w, "f", { ctrlKey: true });
+  const input = d.getElementById("findInput");
+  input.value = "Retry 4/";
+  fireInput(input, w);
+  await waitFor(() => F().done && F().hits.length > 0);
+  const expected = entries.filter(e => e.message.toLowerCase().includes("retry 4/")).length;
+  assert(F().hits.length === expected, "the counter counts entries (" + expected + "), got " + F().hits.length);
+  assert(F().entries.length === entries.length && F().entries.length > rows, "the find bar walks the unfolded list, not the rows");
+  const hit = F().entries[F().hits[0]];
+  assert(T.state.selectedId === hit.id, "the first hit is selected");
+  assert(T.currentViewEntries.some(e => e.id === hit.id) && rcRowFor(d, hit.id), "...its run opened, the member has a row");
+  assert(d.getElementById("findCount").textContent === "1 / " + expected, "counter reads 1 / " + expected + ", got " + d.getElementById("findCount").textContent);
+});
+
+await withApp(async (w, d, T) => {
+  section("repeat-collapse h. Bookmarks and notes split runs and refold in place; stats line; copy; entry detail");
+  const f = await rcOpen(w, T);
+  const entries = f.entries;
+  fireClick(rcBtn(d), w);
+  const { run, members, ref } = rcMediumRun(entries);
+  const rowsBefore = T.currentViewEntries.length;
+  const meta = () => d.querySelector("#timelineMinimapMeta").textContent;
+  assert(new RegExp(" \u00b7 " + rowsBefore.toLocaleString("de-DE").replace(".", "\\.") + " rows \\(" + (entries.length - rowsBefore).toLocaleString("de-DE").replace(".", "\\.") + " folded\\)").test(meta()), "the stats line shows rows and folded count, got " + meta());
+
+  // entry detail of a head
+  w.selectEntry(run.head.id);
+  const det = d.querySelector("#detailRepeat");
+  assert(det.style.display !== "none" && det.textContent.startsWith("Repeated \u00d7" + run.n + " \u00b7 ") && /\(.+\)$/.test(det.textContent), "detail line above the message: " + det.textContent);
+  assert(!/varying/.test(det.textContent), "Identical: no varying list");
+  w.selectEntry(rcRef(entries).find(r => r.n === 1).head.id);
+  assert(d.querySelector("#detailRepeat").style.display === "none", "no detail line for a plain row");
+
+  // copy: a selected folded head copies the whole run (and so does a multi-select)
+  const copied = [];
+  w.navigator.clipboard.writeText = t => { copied.push(t); return Promise.resolve(); };
+  w.selectEntry(run.head.id);
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(copied.length === 1 && copied[0] === members.map(e => e.raw).join("\n"), "Ctrl+C on a folded head copies all " + run.n + " members");
+  const other = ref.find((r, k) => k > 0 && r.n >= 2 && r.head !== run.head);
+  if (other) {
+    const otherMembers = entries.slice(entries.indexOf(other.head), entries.indexOf(other.head) + other.n);
+    T.state.logMultiSelect = new Set([run.head.id, other.head.id]);
+    fireKeydown(d, w, "c", { ctrlKey: true });
+    const lines = copied[copied.length - 1].split("\n");
+    assert(lines.length === run.n + other.n && copied[copied.length - 1] === members.concat(otherMembers).sort((a, b) => entries.indexOf(a) - entries.indexOf(b)).map(e => e.raw).join("\n"), "multi-select copy expands every selected head");
+    T.state.logMultiSelect = new Set();
+  }
+  // an open run copies just the head (its members are separate rows)
+  w.setRepeatRunOpen(run.head.id, true);
+  w.selectEntry(run.head.id);
+  fireKeydown(d, w, "c", { ctrlKey: true });
+  assert(copied[copied.length - 1] === run.head.raw, "a head of an OPEN run copies only itself");
+  w.setRepeatRunOpen(run.head.id, false);
+
+  // bookmark a middle member: it becomes its own row, the entries after it start a new run
+  const mark = members[2];
+  w.toggleBookmark(mark.id);
+  let expect = rcRef(entries, { barrier: new Set([mark.id]) });
+  assert(T.currentViewEntries.length === expect.length && T.currentViewEntries.length > rowsBefore, "a bookmarked entry splits the run in place: " + expect.length + " rows");
+  assert(T.currentViewEntries.some(e => e.id === mark.id) && T.currentViewEntries.some(e => e.id === members[3].id), "...the bookmarked row and the new run's head both have rows");
+  const headRow = rcShow(w, T, d, run.head.id);
+  assert(rcBadgeNum(headRow) === 2, "the run before the bookmark is x2, got " + rcBadgeNum(headRow));
+  w.toggleBookmark(mark.id);
+  assert(T.currentViewEntries.length === rowsBefore, "removing the bookmark merges the run again");
+
+  // a note does the same
+  w.setNoteAndRepaint(mark.id, "look here");
+  expect = rcRef(entries, { barrier: new Set([mark.id]) });
+  assert(T.currentViewEntries.length === expect.length && T.currentViewEntries.length > rowsBefore, "a noted entry is a fold barrier too");
+  w.setNoteAndRepaint(mark.id, "");
+  assert(T.currentViewEntries.length === rowsBefore, "deleting the note merges the run again");
+
+  // Same pattern: varying list in the detail line
+  fireClick(d.querySelector("#btnRepeatMenu"), w);
+  fireClick(d.querySelector('#repeatMenu [data-repeat-rule="pattern"]'), w);
+  const ctr = entries.find(e => /^Retry 1\/\d+: /.test(e.message));
+  w.selectEntry(ctr.id);
+  assert(/ \u00b7 varying: 1\u2013\d+/.test(d.querySelector("#detailRepeat").textContent), "Same pattern: the detail line lists the varying numbers, got " + d.querySelector("#detailRepeat").textContent);
+});
