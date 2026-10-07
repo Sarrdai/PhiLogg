@@ -1,0 +1,4 @@
+- **feat: editing an extraction pattern keeps its per-column settings (2026-10-07, FEATURE_BACKLOG #21)**
+  - Inserting, removing or reordering placeholders re-keys ignored columns, assertions, renames, array views and plot axes/colors (also on child views) by label and type; settings of a removed column are dropped.
+  - One toast ("Pattern changed: 2 column settings moved, 1 removed") only when something moved; pattern and settings are one undo step.
+  - **Tests**: GROUP extract-column-migration. Docs: docs/extraction-and-plotting.md.

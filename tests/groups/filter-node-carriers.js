@@ -50,7 +50,7 @@ await withApp(async (w, d, T) => {
   // serializeFilterTreeForCache, materializeSerializedRoots,
   // materializeCachedFilters) change with it, and so does a fixture below.
   const COVERED_FIELDS = [
-    "name", "filterType", "value", "inverted", "muted", "label", "highlightColor", "selectionFilter", "selectionOrdinal", // every node
+    "name", "filterType", "value", "inverted", "muted", "alert", "label", "highlightColor", "selectionFilter", "selectionOrdinal", // every node
     "caseSensitive", "columns", "isRegex", "wholeWord", "ignoredColumns", "columnRenames", "assertions", // text
     "plotConfig", "arrayViews", // extraction view (nodeIsExtractionView)
     "baked", "bakedA", "bakedB", // and/or/link: baked conditions
@@ -137,6 +137,7 @@ await withApp(async (w, d, T) => {
   });
   w.toggleMuteWithUndo([FX.before, FX.ctx, FX.gap, FX.wildLvl, FX.or, FX.link2]);
   w.toggleInvertWithUndo(FX.cctx);
+  [FX.lit, FX.tr, FX.wildLvl].forEach(id => w.toggleAlertWithUndo(id)); // 'Alert on new matches' (#87)
   at("wild").collapsed = true; // what renderNode's chevron does
   ALL_KEYS.forEach(k => { at(k).name = "fx " + k; }); // explicit names: the auto names of the time nodes depend on the time zone
   // The auto-managed nodes (locked) are filter nodes too.
@@ -244,12 +245,12 @@ await withApp(async (w, d, T) => {
   // on purpose - the carriers treat them as opaque data.
   const strip = sn => { const { ref, children, attach, ...rest } = sn; return canon(rest); };
   const WIRE = {
-    lit: { filterType: "text", name: "fx lit", inverted: true, value: "Queue depth", caseSensitive: true, columns: ["message", "thread"], wholeWord: true, highlightColor: "#e6194b", label: "label lit" },
+    lit: { filterType: "text", name: "fx lit", inverted: true, value: "Queue depth", caseSensitive: true, columns: ["message", "thread"], wholeWord: true, highlightColor: "#e6194b", label: "label lit", alert: true },
     rx: { filterType: "text", name: "fx rx", inverted: false, value: "Queue.*depth", caseSensitive: true, columns: ["message"], isRegex: true, highlightColor: "#3cb44b", label: "label rx" },
     wild: { filterType: "text", name: "fx wild", inverted: false, value: "Queue depth [*:int] of [*:word]", assertions: { 0: { mode: "range", min: 1, max: 9 }, 1: { mode: "target", target: 5, tolerance: 0.5 } }, columnRenames: { 0: "Depth" }, ignoredColumns: [1], plotConfig: null /* filled in below: the full default config + the edits */, arrayViews: { 0: "aggregate", 1: "explode" }, highlightColor: "#4363d8", label: "label wild" },
     wildTr: { filterType: "timerange", name: "fx wildTr", inverted: false, value: { from: 1705312800000, to: 1705312860000 }, plotConfig: null, arrayViews: { 0: "index" }, highlightColor: "#f58231", label: "label wildTr" },
-    wildLvl: { filterType: "level", name: "fx wildLvl", inverted: false, value: ["WARN"], highlightColor: "#911eb4", label: "label wildLvl", muted: true },
-    tr: { filterType: "timerange", name: "fx tr", inverted: false, value: { from: 1705312900000, to: null }, highlightColor: "#46f0f0", label: "label tr" },
+    wildLvl: { filterType: "level", name: "fx wildLvl", inverted: false, value: ["WARN"], highlightColor: "#911eb4", label: "label wildLvl", muted: true, alert: true },
+    tr: { filterType: "timerange", name: "fx tr", inverted: false, value: { from: 1705312900000, to: null }, highlightColor: "#46f0f0", label: "label tr", alert: true },
     after: { filterType: "after", name: "fx after", inverted: false, value: 1705312800000, highlightColor: "#f032e6", label: "label after" },
     before: { filterType: "before", name: "fx before", inverted: false, value: 1705312860000, highlightColor: "#bcf60c", label: "label before", muted: true },
     ids: { filterType: "idset", name: "fx ids", inverted: false, value: ["fx-e1", "fx-e2", "fx-e3"], highlightColor: "#fabed4", label: "label ids" },

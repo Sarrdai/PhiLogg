@@ -10,6 +10,12 @@
 //                              tour's format, its filter tree, the banner
 //   demo/app.log               the log the "TRY" steps work on (default
 //                              format, fixed seed, all scenarios + grouped)
+//   cards/app.log              the log behind the homepage's feature-card
+//                              screenshots (docs/screenshots/generate.sh data)
+//   cards/<card>.session.json  one session per homepage feature card
+//                              (filters, link, patterns, plot): the screenshot's
+//                              filter tree and active node, no banner. The
+//                              card's tab comes from the link's `&view=` param.
 //
 // The texts below are DATA: one row per log entry (level, chapter, message,
 // explanation as continuation lines). Every claim in them was checked
@@ -30,6 +36,8 @@ const MS_PER_WORD = 280;
 const DEMO_ENTRIES = 2500;
 const DEMO_SEED = 7;
 const DEMO_NAME = "app.log";
+const CARD_ENTRIES = 6000;
+const CARD_SEED = 7;
 
 const BANNER = "You're reading the manual **as a log**. Its levels are custom: **WHAT**, **HOW**, **TRY**, **GOTCHA**, **DONT**, **DEEP**. **Reading view** hides DEEP – click **welcome.log** at the top of the tree for the internals.";
 
@@ -201,6 +209,59 @@ function demoLog() {
   })[0].text;
 }
 
+// The homepage cards' log: the data of docs/screenshots/generate.sh
+// (6000 entries, seed 7, every scenario except text and gaps).
+function cardLog() {
+  return sim.generateToStrings({
+    format: "default", seed: CARD_SEED, entries: CARD_ENTRIES, singleName: DEMO_NAME,
+    scenarios: sim.normalizeScenarios("all,-text,-gaps"),
+  })[0].text;
+}
+
+// The filter tree of docs/screenshots/scenes/common.js as session nodes. The
+// plot of "Position" is the one of scenes/03-plot.js (scatter x/y, colored by
+// t (ms), equal axes); its column numbers are the table's, negatives are the
+// built-in columns.
+function cardTree() {
+  const text = (name, value, extra) => Object.assign({ filterType: "text", name, inverted: false, value, children: [] }, extra);
+  const level = (v, color) => ({ filterType: "level", name: v, inverted: false, value: [v], highlightColor: color, children: [] });
+  const bakedText = value => ({ filterType: "text", value, inverted: false });
+  const roots = [
+    { filterType: "link", name: "\u201cMove requested\u201d \u2192 \u201cPosition reached\u201d [same job=[*]]", inverted: false, children: [],
+      bakedA: bakedText("Move requested"), bakedB: bakedText("Position reached"),
+      linkDirection: "after", linkN: 1, linkOrderEnforced: false, linkExclusive: false, linkKey: { pattern: "job=[*]" } },
+    level("ERROR", "#d9534f"),
+    level("WARN", "#e0a030"),
+    text("Request durations", "completed in [*:int]ms status=[*:int]"),
+    text("Position", "Position update x=[*:float] y=[*:float] z=[*:float]", { plotConfig: {
+      type: "scatter", xCol: 0, yCols: [1], yColsMulti: [0], zCol: -2, colorCol: -1, colorMap: "default",
+      xMin: "", xMax: "", yMin: "", yMax: "", zMin: "", zMax: "", normalize: false, axisEqual: true, axisEqual3d: "off",
+      yColsInit: true, arrayCol: null, profileRow: -1, arraySource: "array", multiCols: [], multiColsInit: false } }),
+    text("Spectrum A", "Spectrum channel=A bins=[*]"),
+    text("\u201cMove requested\u201d", "Move requested"),
+    text("\u201cPosition reached\u201d", "Position reached"),
+    text("Thread axis-2", "axis-2", { columns: ["thread"] }),
+  ];
+  const byName = {};
+  let ref = 0;
+  roots.forEach(n => { n.ref = ++ref; byName[n.name] = n.ref; });
+  return { roots, ref: byName };
+}
+
+// card -> [file name, active filter]; null = the file itself (Patterns).
+const CARDS = { filters: "Thread axis-2", link: roots => roots[0].name, patterns: null, plot: "Position" };
+function cardSession(card) {
+  const tree = cardTree();
+  const name = typeof CARDS[card] === "function" ? CARDS[card](tree.roots) : CARDS[card];
+  return {
+    format: "philogg-session-export",
+    version: 1,
+    exportedAt: "2026-01-01T00:00:00.000Z",
+    files: [{ exportId: "app", name: DEMO_NAME, url: DEMO_NAME, merged: false, filters: tree.roots, bookmarks: [], notes: [], clockOffset: 0 }],
+    settings: { levelFilter: [], sortColumn: null, sortDir: "asc", pinBookmarksInFilteredView: false, active: { exportId: "app", ref: name == null ? null : tree.ref[name] } },
+  };
+}
+
 function sessionFile() {
   const tree = filterTree();
   const rec = (exportId, name, url, extra) => Object.assign({ exportId, name, url, merged: false, filters: [], bookmarks: [], notes: [], clockOffset: 0 }, extra);
@@ -224,7 +285,8 @@ function generateTour() {
     { path: "welcome.logformat.json", text: JSON.stringify(formatExport(), null, 2) + "\n" },
     { path: "welcome.session.json", text: JSON.stringify(sessionFile(), null, 2) + "\n" },
     { path: "demo/" + DEMO_NAME, text: demoLog() },
-  ];
+    { path: "cards/" + DEMO_NAME, text: cardLog() },
+  ].concat(Object.keys(CARDS).map(c => ({ path: "cards/" + c + ".session.json", text: JSON.stringify(cardSession(c), null, 2) + "\n" })));
 }
 
-module.exports = { generateTour, formatExport, sessionFile, logFormat, demoLog, tourLogLines, ROWS, LEVELS, BANNER, FORMAT_NAME, DEMO_NAME };
+module.exports = { generateTour, cardSession, CARDS, formatExport, sessionFile, logFormat, demoLog, tourLogLines, ROWS, LEVELS, BANNER, FORMAT_NAME, DEMO_NAME };

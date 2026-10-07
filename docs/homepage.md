@@ -22,11 +22,11 @@ domain root alike.
 - **Hero terminal** (`welcome.log · tail -f`): at runtime the page fetches
   `app/tour/welcome.log`, takes the header lines of the first six non-DEEP
   entries (indented continuation lines are skipped) and replays them once as a
-  tail with level colors (all at once under `prefers-reduced-motion`). When the
+  tail with level colors; long messages wrap inside their column (time and level stay on one line, tighter columns at phone width) instead of being cut (all at once under `prefers-reduced-motion`). When the
   fetch fails (e.g. opened from `file://`) the panel stays hidden. No log line
   is written by hand in the page.
 - **Facts row**, **Features** (four cards, screenshots from
-  `docs/screenshots/`, each linking to the tour), **Three ways to run it**.
+  `docs/screenshots/`, shot with the Entry detail panel collapsed so only the card's point shows; each card's screenshot and "Try this →" link open the hosted app in the state the screenshot shows: `app/?session=tour/cards/<filters|link|patterns|plot>.session.json&view=<filtered|filtered|patterns|plot>`; the session files come from the simulator, see `tools/log-sim/README.md` → "The tour"), **Three ways to run it**.
 - **Download** (`#download`): fetches
   `https://api.github.com/repos/Sarrdai/PhiLogg/releases?per_page=20` in the
   visitor's browser, ignores drafts, shows the latest stable release and, when
@@ -57,7 +57,7 @@ The page's script exposes its functions as `window.PhiloggSite`
 | `img/*.png` | `docs/screenshots/` (the four the page shows) |
 | `app/index.html` | `philogg.html` through `scripts/strip-comments.js` |
 | `app/LICENSE.md` | `LICENSE.md` |
-| `app/tour/` | `node tools/log-sim/cli.js -f tour` (welcome.log, welcome.logformat.json, welcome.session.json, demo/app.log) |
+| `app/tour/` | `node tools/log-sim/cli.js -f tour` (welcome.log, welcome.logformat.json, welcome.session.json, demo/app.log, cards/app.log, cards/*.session.json) |
 | `.nojekyll` | empty |
 
 Version stamping is not part of it: the workflow stamps its throwaway checkout

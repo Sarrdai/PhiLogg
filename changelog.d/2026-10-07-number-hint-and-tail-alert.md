@@ -1,0 +1,4 @@
+- **feat: "Narrow" hint row for numeric conditions and alerts on new matches while tailing (2026-10-07, person-requested)**
+  - Filter popup: an int/float placeholder brings up a row of tappable conditions (`>=10`, `<20,>10`, `|>=10`, `@en`, `@de`) that write into the token — the syntax was only in a tooltip before (backlog #111).
+  - Filter context menu "Alert on new matches": tail growth into such a filter shows a bell toast (at most every 5 s, summarized) and a `+N` badge until the filter is viewed; the flag travels with the node (backlog #87).
+  - **Tests**: GROUP filter-number-hint, tail-alert, filter-node-carriers. Docs: docs/filters.md, docs/persistence-and-sync.md, README.

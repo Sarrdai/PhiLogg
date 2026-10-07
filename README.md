@@ -197,7 +197,8 @@ deployments possible:
   to compare against the absolute value — so a pattern matches/extracts only
   the entries whose value actually satisfies it. Numbers with thousands separators
   (`1,234.5`, `1.234,5`) are read as one value; `[*:float@en]` /
-  `[*:float@de]` pin the number format where it is ambiguous (`12,345`).
+  `[*:float@de]` pin the number format where it is ambiguous (`12,345`). When a pattern holds an int/float placeholder, the filter popup shows a
+  "Narrow" row whose chips write these conditions into it with one tap.
 - **Link filter** — pair up nearest-preceding/following entries (e.g. each
   "Move requested" with its "Position reached") to measure how long things take.
   Right-click a row → **Pair with…**, click the end row: the Δt between the two
@@ -221,7 +222,9 @@ deployments possible:
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
   Filtered views auto-following the newest entry; a watched folder picks up
-  new files automatically. Each folder's own cog-icon settings dialog
+  new files automatically. Right-click a filter → **Alert on new matches**: while
+  the file is tailed, new matches show a bell toast and a `+N` badge on the
+  filter until you look at it. Each folder's own cog-icon settings dialog
   configures filename patterns (e.g. `App*.log`, `Input*.log`, each with its
   own auto-open-newest-file / auto-close-keep-N-open / show-M-newest-files
   rules — for every file type the folder lists, so a folder of `.json` or
@@ -323,6 +326,13 @@ deployments possible:
   sheet opened by tapping a card (drag its handle to resize or close it; the header's Analyze button opens the same sheet on Facets or Patterns, to drill into a value or hide a noisy message pattern with one tap; read-only: no editing; Settings is a full-screen page), and touch devices get larger hit targets and
   long-press for the context menu.
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with zoom and drag-to-select time windows.**
+- **Prune a file to a filter's result** — a filter's context menu offers
+  "Prune file to this result…": after a confirmation the file keeps only
+  that result in memory and drops the rest (not undoable; reopen the file to
+  get it back), which frees memory on huge logs. Cuts show as "N entries
+  pruned" strips in the Context view and as dashed boundary lines in the
+  Filtered view; it survives a reload and a session export with the log
+  embedded.
 - **Per-file clock offset** — a file's tree context menu ("Adjust clock…")
   applies a manual clock correction to one file's timestamps, for when one
   device's log is skewed relative to another's before you compare or merge.

@@ -29,7 +29,7 @@ if (groupSelected()) {
   {
     section("353a. Deterministic, the four files, the format export imports");
     const again = Object.fromEntries(TOUR.generateTour().map(f => [f.path, f.text]));
-    assert(JSON.stringify(Object.keys(files)) === JSON.stringify(["welcome.log", "welcome.logformat.json", "welcome.session.json", "demo/app.log"]), "four files: " + Object.keys(files));
+    assert(JSON.stringify(Object.keys(files).slice(0, 4)) === JSON.stringify(["welcome.log", "welcome.logformat.json", "welcome.session.json", "demo/app.log"]), "the tour's four files come first: " + Object.keys(files));
     assert(Object.keys(files).every(k => files[k] === again[k]), "same bytes on every run");
   }
 

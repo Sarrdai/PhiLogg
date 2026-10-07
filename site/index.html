@@ -70,16 +70,17 @@ img{max-width:100%}
 .term{background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;overflow:hidden;min-width:0}
 .term-head{display:flex;justify-content:space-between;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border-soft);font:12px var(--font-log);color:var(--text-tertiary)}
 .term-body{padding:12px 0;font:12.5px/1.75 var(--font-log);overflow-x:auto;min-height:220px}
-.tl{display:grid;grid-template-columns:3px 92px 56px minmax(0,1fr);gap:10px;padding:0 12px 0 0;white-space:nowrap}
+.tl{display:grid;grid-template-columns:3px 92px 56px minmax(0,1fr);gap:10px;padding:0 12px 0 0}
 .tl .bar{align-self:stretch}
-.tl .ts{color:var(--text-tertiary)}
-.tl .msg{overflow:hidden;text-overflow:ellipsis}
-.lv{font-weight:600;color:var(--c,var(--text-secondary))}
+.tl .ts{color:var(--text-tertiary);white-space:nowrap}
+.tl .msg{overflow-wrap:anywhere}
+.lv{white-space:nowrap;font-weight:600;color:var(--c,var(--text-secondary))}
 .bar{background:var(--c,transparent)}
 .l-WHAT{--c:var(--lv-what)} .l-HOW{--c:var(--lv-how)} .l-TRY{--c:var(--lv-try)}
 .l-GOTCHA{--c:var(--lv-gotcha)} .l-DONT{--c:var(--lv-dont)} .l-DEEP{--c:var(--lv-deep)}
 .caret{display:inline-block;width:.6em;height:1.1em;vertical-align:-2px;background:var(--accent);animation:blink 1s steps(1) infinite;margin-left:105px}
 @keyframes blink{50%{opacity:0}}
+@media (max-width:520px){.term-body{font-size:11.5px}.tl{grid-template-columns:3px 82px 46px minmax(0,1fr);gap:6px}.caret{margin-left:57px}}
 @media (prefers-reduced-motion:reduce){.caret{animation:none}}
 
 .facts{display:flex;flex-wrap:wrap;border-block:1px solid var(--border-soft);font:13px var(--font-log)}
@@ -180,23 +181,23 @@ img{max-width:100%}
     </div>
 
     <section class="sec" id="features">
-      <div class="sec-head"><h2>What it does</h2><span class="mono">every screenshot opens the tour &rarr;</span></div>
+      <div class="sec-head"><h2>What it does</h2><span class="mono">every screenshot opens that view &rarr;</span></div>
       <div class="features">
         <article class="feat">
-          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/01-log-view.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
-          <div class="feat-body"><h3>Filters that nest</h3><p>Each filter narrows the result of the one above it. The tree is your investigation, readable later.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+          <a class="shot" href="app/?session=tour/cards/filters.session.json&amp;view=filtered" tabindex="-1" aria-hidden="true"><img src="img/01-log-view.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Filters that nest</h3><p>Each filter narrows the result of the one above it. The tree is your investigation, readable later.</p><a class="try" href="app/?session=tour/cards/filters.session.json&amp;view=filtered">Try this &rarr;</a></div>
         </article>
         <article class="feat">
-          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/04-link-view.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
-          <div class="feat-body"><h3>Link start and end</h3><p>Pair &ldquo;job started&rdquo; with &ldquo;job finished&rdquo; by thread or captured id, then keep only the slow pairs.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+          <a class="shot" href="app/?session=tour/cards/link.session.json&amp;view=filtered" tabindex="-1" aria-hidden="true"><img src="img/04-link-view.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Link start and end</h3><p>Pair &ldquo;job started&rdquo; with &ldquo;job finished&rdquo; by thread or captured id, then keep only the slow pairs.</p><a class="try" href="app/?session=tour/cards/link.session.json&amp;view=filtered">Try this &rarr;</a></div>
         </article>
         <article class="feat">
-          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/09-patterns.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
-          <div class="feat-body"><h3>Patterns</h3><p>Numbers, GUIDs and paths become placeholders, so 40,000 lines turn into 60 message shapes with counts.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+          <a class="shot" href="app/?session=tour/cards/patterns.session.json&amp;view=patterns" tabindex="-1" aria-hidden="true"><img src="img/09-patterns.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Patterns</h3><p>Numbers, GUIDs and paths become placeholders, so 40,000 lines turn into 60 message shapes with counts.</p><a class="try" href="app/?session=tour/cards/patterns.session.json&amp;view=patterns">Try this &rarr;</a></div>
         </article>
         <article class="feat">
-          <a class="shot" href="app/?session=tour/welcome.session.json" tabindex="-1" aria-hidden="true"><img src="img/03-plot.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
-          <div class="feat-body"><h3>Extract &amp; plot</h3><p>Write <code>position [*:float] reached</code>, get a table column, plot it over time or against another value.</p><a class="try" href="app/?session=tour/welcome.session.json">Take the tour &rarr;</a></div>
+          <a class="shot" href="app/?session=tour/cards/plot.session.json&amp;view=plot" tabindex="-1" aria-hidden="true"><img src="img/03-plot.png" width="1440" height="900" loading="lazy" decoding="async" alt=""></a>
+          <div class="feat-body"><h3>Extract &amp; plot</h3><p>Write <code>position [*:float] reached</code>, get a table column, plot it over time or against another value.</p><a class="try" href="app/?session=tour/cards/plot.session.json&amp;view=plot">Try this &rarr;</a></div>
         </article>
       </div>
     </section>

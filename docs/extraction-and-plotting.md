@@ -4,6 +4,7 @@
 - [filterType merge: there is no separate "extract" filterType (this session, follow-up to docs/archive/ui-implementation-plan.md)](#filtertype-merge-there-is-no-separate-extract-filtertype-this-session-follow-up-to-docsarchiveui-implementation-planmd)
 - [Extraction table: synthetic Index + t(ms) columns](#extraction-table-synthetic-index--tms-columns)
   - [Copying and exporting the extraction table](#copying-and-exporting-the-extraction-table)
+- [Editing a pattern keeps the per-column settings (2026-10-07)](#editing-a-pattern-keeps-the-per-column-settings-2026-10-07)
 - [Pattern restricted to columns](#pattern-restricted-to-columns)
 - [Thousands separators in numeric placeholders](#thousands-separators-in-numeric-placeholders)
 - [Array columns](#array-columns)
@@ -171,6 +172,16 @@ Every extraction table leads with two synthetic columns, ahead of the pattern's 
 **Gotcha fixed while adding this**: `columnColor(i)` used a naive `i % COLUMN_PALETTE.length`, which returns a negative result for JS's `%` on negative `i` (e.g. `-1 % 6 === -1`), indexing before the array and silently producing `undefined` → an invalid `background:undefined` inline style. Fixed to `((i % n) + n) % n`. This is exercised anywhere a negative `colIndex` reaches `columnColor` — the header swatch (moot now that the badge is skipped for negatives, but the call still happens), and, non-moot, the Plot tab's Y-column-list swatches and multi-series legend, where t(ms) can legitimately be selected as a Y series.
 
 Regression-tested: **Group 42**, rewritten in place the same session for the cumulative correction — column descriptors/ordering, computed values (explicitly checked against what the wrong per-step value would have been), header DOM (badge presence/absence), body rendering, sorting (descending reverses order, now that every row's value is parseable — unlike the old blank-first-row delta), copy/export, the Plot tab's X/Y defaults, and the `columnColor` fix. **Group 5** targets its sort button by `data-sort-col` instead of "first one in the DOM"; **Group 24**'s column/button counts and copy-export text were bumped by the 2 new always-visible columns (its assertability check now goes through `assertableSelectedColumns()` rather than counting header buttons — see "Value assertions" above).
+
+## Editing a pattern keeps the per-column settings (2026-10-07)
+
+Per-column settings are keyed by the placeholder's index in the pattern: `ignoredColumns`, `assertions`, `columnRenames`, `arrayViews`, and `plotConfig`'s column refs (`xCol`, `zCol`, `colorCol`, `arrayCol`, `yCols`, `yColsMulti`, `multiCols`). A derived array column carries its base index inside its negative colIndex (`arrayDerivedColIndex`) and is re-based with it; the synthetic Index/t(ms)/Δt columns never move. Saving an edit of the pattern in the filter popup (`commitFilter` -> `updateFilterNodeWithUndo`) re-keys all of them (`extractColumnMigrationMap`, `migrateExtractionColumns`, `remapColumnSettings`):
+
+- **Pairing**: each old placeholder is paired with its best new one, best score first, ties towards the same position. Same type always qualifies; another type only when its label or both neighboring literals are unchanged. The label (last word of the literal right before the placeholder, `pressure=`) weighs most, so a column follows its name when placeholders are inserted, removed or reordered; unlabeled runs keep their order. A column with no counterpart loses its settings. Either side not being a valid extraction pattern (or a regex), or an unchanged layout, migrates nothing.
+- **Scope**: the edited node and every descendant whose Table/Plot view inherits its pattern (`findExtractionAncestor`), since their assertions, renames and plot are keyed by the same columns. The table sort, cell selection and parallel-axis brushes of that view are reset (all positional).
+- **Undo**: pattern and settings are one undo step (a `batch` of `edit` actions); `captureNodeFields(node, true)` additionally captures `plotConfig`/`arrayViews` for it — other edits' undo never touches them.
+- **Ignore set**: the popup's set is still in the old pattern's indices when untouched (re-keyed with the rest); once toggled in the preview of the new pattern it is taken as typed.
+- **Toast**: only when a setting moved or was dropped, e.g. "Pattern changed: 2 column settings moved, 1 removed". Nothing for an unchanged layout. Extraction is JS-only, so the Rust parser is unaffected.
 
 ## Pattern restricted to columns
 

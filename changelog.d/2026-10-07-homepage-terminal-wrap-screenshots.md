@@ -1,0 +1,4 @@
+- **fix: homepage hero terminal wraps long lines; feature-card screenshots without the empty detail panel (2026-10-07, person-requested)**
+  - The `welcome.log · tail -f` lines wrap in their message column instead of ending in an ellipsis (tighter columns at phone width), so the sample text reads completely.
+  - The log-view, link-view and plot screenshots are shot with the Entry detail panel collapsed (scenes, regenerated; README uses the same pictures).
+  - **Tests**: GROUP homepage-terminal-wrap. Docs: docs/homepage.md.
