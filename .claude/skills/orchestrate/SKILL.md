@@ -111,6 +111,9 @@ Spawning — see `delegation.md` for the brief template:
   `isolation: "worktree"` if they could touch shared files.
 - Split big plans into steps of at most ~30–45 minutes of implementer
   work and hand them out one at a time; verify each step before the next.
+- **Usage budget** before each step: if the five-hour window can't carry
+  it, don't start it; near the limit, pause with a handover for a fresh
+  session instead of running into the limit (`usage-budget.md`).
 - **Keep the user's view current.** A background implementer is invisible
   to the user. Give each step its own line in the status checklist, and
   tell the implementer its progress file
