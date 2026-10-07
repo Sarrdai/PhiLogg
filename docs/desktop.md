@@ -5,6 +5,7 @@
 - [The philogg:// scheme, and why there is a fetch shim](#the-philogg-scheme-and-why-there-is-a-fetch-shim)
 - [One injected script](#one-injected-script)
 - [Folder watch without the File System Access API](#folder-watch-without-the-file-system-access-api)
+- [Saving files](#saving-files)
 - [Native parsing](#native-parsing)
 - [Windows Explorer context-menu integration](#windows-explorer-context-menu-integration)
 - ["Open File Location" and "Copy Path"](#open-file-location-and-copy-path)
@@ -111,7 +112,8 @@ platform's real scheme base, and whether this is macOS. Its `DOMContentLoaded` h
 reporting "painted" (the `app_ready` command, see "Main window" below).
 
 **Bridge.** `window.philogg` is the narrow surface `philogg.html` feature-detects on
-(`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`,
+(`window.philogg` exists → desktop build): `pickFiles`, `pickFolder`, `listFolder`, `saveFile`
+(see "Saving files" below),
 `pathForLocalUrl`, `revealPath`, `revealLocalUrl`, `listSystemFonts`, `exitPip`,
 `parseLogFile` (see "Native parsing" below), `llmModels`/`llmChat`/`llmCancel`/`llmChatWindow`/`llmViewNotify` (the LLM
 assistant and its chat window `desktop/chat.html`, see `docs/llm-assistant.md`), and `getPathForFile`. That last one returns `null` permanently — no system webview can
@@ -345,6 +347,33 @@ the folder is re-listed on every poll and heals on the first success (see
 `docs/persistence-and-sync.md` → "Folder watch + lazy loading").
 
 Covered by test **Group 145** (and **Group 342** for the failed/heal behavior).
+
+## Saving files
+
+Every file the page writes (session, filter, filter preset, Export / Share file, Table
+CSV, plot image, theme / syntax scheme / log format) goes through `philogg.html`'s one
+`saveFileWithFeedback`. In a browser that is `showSaveFilePicker` or, without it, an
+`<a download>` of a Blob. Neither works under this wrapper off Windows: WKWebView and
+WebKitGTK have no save picker, and the download goes nowhere useful —
+
+- **Linux (verified in the real app under Xvfb):** WebKitGTK writes the file silently
+  into the XDG Downloads folder, or into the process's working directory when no
+  Downloads folder is configured; no dialog, and the page toasted "Downloaded …".
+- **macOS (from wry's source, not run):** wry answers a download navigation with
+  `WKNavigationActionPolicy::Cancel` unless the app registered an `on_download` handler
+  (`wry/src/wkwebview/navigation.rs`), and this wrapper registers none — so nothing was
+  written while the page still toasted "Downloaded …".
+
+So the wrapper saves itself: `commands.rs::save_file` shows the OS save dialog
+(suggested name, one filter from the page's description and extension) and writes the
+bytes to the path it returns, exposed as `philogg.saveFile(name, bytes, { description,
+ext })` → the saved file's name, `null` on cancel, a rejection with the IO error. The
+bytes travel as the raw IPC body (a `Uint8Array`, not a JSON number array — exports can
+be tens of MB); name, description and extension as URI-encoded `x-philogg-*` headers.
+The page never names a path, so this grants no general write access. `saveFileWithFeedback`
+prefers `philogg.saveFile` whenever it exists — on every platform, Windows included, so
+there is one desktop route — and toasts "Saved <name>", "Not saved" or "Couldn't save
+<name> — <reason>"; a desktop save never falls back to a download.
 
 ## Native parsing
 

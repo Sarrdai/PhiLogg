@@ -132,7 +132,7 @@ await withApp(async (w, d, T) => {
   const { f, node } = await edtpOpenTable(w, d, T);
   const panel = d.querySelector("#detailPanel"), tabD = d.querySelector("#lowerTabDetail"), tabS = d.querySelector("#lowerTabStats"), tabF = d.querySelector("#lowerTabFacets");
   const body = d.querySelector("#statsPanelBody");
-  assert([...d.querySelectorAll("#lowerTabs .lower-tab")].map(t => t.id).slice(0, 3).join() === "lowerTabDetail,lowerTabStats,lowerTabFacets", "tab order Entry detail | Statistics | Facets");
+  assert([...d.querySelectorAll("#lowerTabs .lower-tab")].map(t => t.id).slice(0, 4).join() === "lowerTabDetail,lowerTabWhy,lowerTabStats,lowerTabFacets", "tab order Entry detail | Why | Statistics | Facets");
   assert(tabS.getAttribute("role") === "tab" && isVisible(tabS, w), "the Statistics tab is shown on Table");
   assert(!d.querySelector("#statsPanel") && !d.querySelector("#statsToggle") && !d.querySelector("#extractWrap #extractStatsContent"), "the standalone #statsPanel (and its toggle) is gone");
   assert(body.closest("#detailPanelInner") && body.contains(d.querySelector("#extractStatsContent")), "the stats chips live in the bottom panel");

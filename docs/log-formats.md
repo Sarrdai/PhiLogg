@@ -261,6 +261,25 @@ takes over). Defined in the format dialog's JSON Lines kind
 (`docs/ui-and-views.md`); exported/imported like any format (`tsKey`/
 `levelKey`/`messageKey` are export fields).
 
+**logfmt formats (`mode: "logfmt"`, FEATURE_BACKLOG.md #82).** The
+`key=value` sibling of the JSON Lines mode (Go `slog`/logrus text handlers,
+Heroku): `compileLogfmtFormat` is another branch of `compileOneFormat`
+(workers get `parseLogfmtLine`/`compileLogfmtFormat` and `LOGFMT_HEADER_RE`
+through `buildLogParseWorkerSrc`), same `tsKey`/`levelKey`/`messageKey`,
+same time rules (`parseJsonTimestamp`: epoch number or ISO/`tsFormat`), same
+defaults (no level → `INFO`, no message key → the whole line). A line is an
+entry when it **starts with a `key=` pair** (`LOGFMT_HEADER_RE`); any other
+line (stack trace) continues the previous entry. `parseLogfmtLine` reads
+`key=value`, `key="quoted value"` (escapes `\"` `\\` `\n` `\r` `\t`; an
+unterminated quote runs to the line end), `key=` (empty) and a bare `key`
+(= `"true"`); a repeated key keeps its last value. Custom columns are
+`columnDefs` entries whose `path` is the plain key name — flat, never split at
+dots; the column `key` is sanitized like JSON's (`jsonColumnKey`, so
+`thread` → `thread_`). Values land on `entry.fields` as text. No native
+parse (`nativeFormatSpec` → null). Defined in the format dialog's logfmt kind
+(`docs/ui-and-views.md`); exports/imports and session records carry it like
+any format. Simulator: `-f logfmt`. Tested: GROUP format-logfmt.
+
 **Plain text: `fmt-plaintext`.** A code-level builtin (`PLAINTEXT_LOG_FORMAT`,
 `mode: "plaintext"`) that isn't stored in `state.logFormats` and so isn't
 editable — `findLogFormat(id)` resolves it next to the stored ones. Every

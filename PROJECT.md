@@ -37,7 +37,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~51,100 lines, the one place this number is kept: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~52,700 lines, the one place this number is kept: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -200,7 +200,7 @@ performance baselines.
 The sections below used to live directly in this file. They've moved to `docs/*.md` (grouped by topic, current-state description only — no session dates, no "pass 1 then pass 2" narrative) and to `changelog.d/` (the chronological history, one file per change). This section is the index: enough orientation per topic to know where to look, not the material itself.
 
 ### `docs/log-formats.md`
-How a file is parsed: `LogFormat` definitions (pattern vs. regex mode, custom columns, filename rules), the format dialog, JSON Lines, the Plain text format, worker and native parsing, multi-pattern `meta` formats, and how merged files load.
+How a file is parsed: `LogFormat` definitions (pattern vs. regex mode, custom columns, filename rules), the format dialog, JSON Lines and logfmt, the Plain text format, worker and native parsing, multi-pattern `meta` formats, and how merged files load.
 
 ### `docs/ui-standard.md`
 The binding UI canon for dialogs and controls: design tokens, buttons, segmented selectors, toggles, settings rows, dialog shell. Every new or changed dialog follows it.

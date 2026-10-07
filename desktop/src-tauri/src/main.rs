@@ -91,6 +91,7 @@ fn main() {
             commands::reveal_path,
             commands::reveal_local_url,
             commands::open_extracted_entry,
+            commands::save_file,
             commands::pick_files,
             commands::pick_folder,
             commands::list_folder,

@@ -6,8 +6,8 @@
    Origin: 2026-10-07 (FEATURE_BACKLOG #112). The optional top-level session-file
    field `detailCollapsed: true` collapses the Entry detail panel after the load
    (the filters/link/plot card sessions set it, like their scenes; patterns does
-   not), and a ?session= load that skipped nothing shows no "Session: N files
-   loaded" summary toast (skips still toast). Data: the simulator's tour output.
+   not), and a ?session= load that skipped nothing and has no bookmarks/notes shows no
+   "Session: N files loaded" summary toast (skips, bookmarks, notes still toast; #114). Data: the simulator's tour output.
    ============================================================ */
 group("session-detail-collapsed-quiet-load");
 if (groupSelected()) {
@@ -56,6 +56,20 @@ if (groupSelected()) {
       section("session-detail-collapsed-quiet-load d. A skipped record still toasts, and detailCollapsed still applies");
       assert(/1 file loaded/.test(toast(d)) && /1 skipped/.test(toast(d)), "summary toast with the skip, got: " + toast(d));
       assert(w.isDetailCollapsed(), "the panel is collapsed");
+    }, { [BASE + "cards/x.session.json"]: JSON.stringify(doc) });
+  }
+
+  // GROUP extension (2026-10-07, FEATURE_BACKLOG #114): bookmarks or notes in the session keep the summary toast.
+  for (const [kind, field, rec, re] of [
+    ["bookmarks", "bookmarks", { ordinal: 3, ts: 0, raw: "" }, /Session: 1 file loaded, \d+ of 1 bookmark placed/],
+    ["notes", "notes", { ordinal: 4, ts: 0, raw: "", text: "look here" }, /Session: 1 file loaded, \d+ of 1 note placed/],
+  ]) {
+    const doc = JSON.parse(files["cards/filters.session.json"]);
+    doc.files[0][field] = [rec];
+    await load(BASE + "cards/x.session.json", async (w, d) => {
+      section("session-detail-collapsed-quiet-load e. A fresh load with " + kind + " still toasts the placed detail");
+      assert(re.test(toast(d)), "summary toast names the placed " + kind + ", got: " + toast(d));
+      assert(w.isDetailCollapsed(), "detailCollapsed still applies");
     }, { [BASE + "cards/x.session.json"]: JSON.stringify(doc) });
   }
 }

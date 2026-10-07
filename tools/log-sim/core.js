@@ -465,7 +465,7 @@
           return { level: "DEBUG", cls: "l10n", method: "Trace", msg: "Long payload: " + parts.join("; ") };
         }
         return g.pick([
-          { level: "INFO", cls: "l10n", method: "Audit", msg: "Benutzer „Jürgen Müller“ hat Auftrag " + n + " geändert ✓" },
+          { level: "INFO", cls: "l10n", method: "Audit", msg: "Benutzer „Jürgen Müller“ hat Auftrag " + n + " (Summe " + n + ",50 €) geändert ✓" },
           { level: "INFO", cls: "l10n", method: "Audit", msg: "注文 " + n + " を処理しました" },
           { level: "INFO", cls: "l10n", method: "Deploy", msg: "Deploy " + n + " finished 🚀 status=green 🎉" },
           { level: "WARN", cls: "l10n", method: "Render", msg: "Glyph missing for 'Ω≈ç√∫' in font \"Segoe UI\"" },
@@ -557,6 +557,8 @@
     ["channel", "channel"], ["spectrum", "spectrum"], ["exception", "exception"],
   ];
 
+  const LOGFMT_COLUMNS = ["thread", "logger", "req_id", "user", "tenant", "status", "duration_ms", "failed"];
+
   const FORMATS = {
     default: {
       label: "Default (log4net-style, builtin)",
@@ -624,6 +626,30 @@
         tsKey: "ts", levelKey: "level", messageKey: "msg", tsFormat: "",
         levels: textLevelDefs(),
         columnDefs: JSON_COLUMNS.map(([key, path]) => ({ key, kind: "custom", label: path, path })),
+        messageVisible: true,
+      }, prefix, ext),
+    },
+    logfmt: {
+      label: "logfmt (key=value)",
+      ext: ".logfmt",
+      hint: "One line of key=value pairs (Go slog / logrus / Heroku style): quoted values with escapes, bare keys (failed), missing keys, stack-trace continuation lines. Needs the format definition PhiLogg imports (written next to the output). logfmt kind, automatic key columns.",
+      render(e, g) {
+        const q = v => { const t = String(v); return /^[^\s="\\]+$/.test(t) ? t : '"' + t.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\r/g, "\\r").replace(/\n/g, "\\n").replace(/\t/g, "\\t") + '"'; };
+        const parts = ["time=" + (formatTsOffset(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS", g) || formatTs(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS")), "level=" + e.level.toLowerCase(), "msg=" + q(e.msg), "thread=" + q(e.thread), "logger=" + q(e.logger)];
+        if (e.ctx.req) parts.push("req_id=" + q(e.ctx.req));
+        if (e.ctx.user) parts.push("user=" + q(e.ctx.user));
+        if (e.ctx.tenant) parts.push("tenant=" + q(e.ctx.tenant));
+        if (e.json["http.status"] !== undefined) parts.push("status=" + e.json["http.status"]);
+        if (e.json.durationMs !== undefined) parts.push("duration_ms=" + e.json.durationMs);
+        if (e.level === "ERROR") parts.push("failed");
+        return [parts.join(" ")].concat(e.cont || []);
+      },
+      exportFormat: (prefix, ext) => exportDoc({
+        name: "Simulator: logfmt",
+        mode: "logfmt",
+        tsKey: "time", levelKey: "level", messageKey: "msg", tsFormat: "",
+        levels: textLevelDefs(),
+        columnDefs: LOGFMT_COLUMNS.map(key => ({ key: key === "thread" ? "thread_" : key, kind: "custom", label: key, path: key })), // "thread" is a reserved column key (jsonColumnKey)
         messageVisible: true,
       }, prefix, ext),
     },

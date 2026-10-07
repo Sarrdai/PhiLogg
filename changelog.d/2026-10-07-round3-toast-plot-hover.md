@@ -1,0 +1,4 @@
+- **fix: session deep links keep the placed bookmarks/notes toast; plot marks highlight on hover (2026-10-07, FEATURE_BACKLOG #114, #115)**
+  - A fresh `?session=` load is silent only when there is nothing beyond the files to report; with bookmarks or notes (or skips) the "Session: … N of M bookmarks placed" toast shows again. Homepage card sessions have none, so they still open quietly.
+  - Hovering a line/scatter point or a bar draws a ring/outline in the SVG overlay (no canvas redraw); it disappears on mouse-out and on every re-render.
+  - **Tests**: GROUP session-detail-collapsed-quiet-load, GROUP plot-hover-highlight. Docs: docs/persistence-and-sync.md, docs/homepage.md, docs/extraction-and-plotting.md.

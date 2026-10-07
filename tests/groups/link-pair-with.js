@@ -39,7 +39,7 @@ if (groupSelected()) {
     w.openContextMenu(ctxEv(), start);
     const item = d.querySelector("#ctxPairWith");
     assert(isVisible(item, w) && txt(item) === "Pair with…" && item.querySelector("svg"), "'Pair with…' with the link icon on a real row");
-    assert(item.nextElementSibling === d.querySelector("#ctxOpenInVs") && item.previousElementSibling === d.querySelector("#ctxExtractMessage"), "placed right after Extract");
+    assert(item.nextElementSibling === d.querySelector("#ctxWhyRow") && item.previousElementSibling === d.querySelector("#ctxExtractMessage"), "placed right after Extract");
     w.closeContextMenu();
     w.openContextMenu(ctxEv(), { isPair: true, id: "pair1", ts: 1, message: "x", first: start, second: end });
     assert(!isVisible(d.querySelector("#ctxPairWith"), w), "hidden for a link-view pair");

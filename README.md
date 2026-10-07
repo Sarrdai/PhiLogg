@@ -205,6 +205,7 @@ deployments possible:
   rows shows at once, and **Pair all like these…** opens the link dialog
   prefilled. Also reachable from the new-filter popup ("Link two events…") and
   the tree menu ("Link with…", "Edit link…"); chainable into multi-hop tuples.
+- **Why is this row here?** — the **Why** tab of the bottom panel (also in the row's right-click menu) lists, for the selected row, every node of the active filter chain with kept / rejected / muted and the reason, and names the node that rejects it.
 - **Context/Filtered split** — the narrowed "Filtered" view plus a
   "Context" view showing the same result *with the log around it*: the
   matches, and everything the filter rejected hidden between them,
@@ -258,6 +259,9 @@ deployments possible:
   once opened), and no extra library: uses the browser's native
   `DecompressionStream` Web API, identically in the plain-browser build and
   the desktop build.
+- **Watched folders list every log PhiLogg can open** — besides `.log`, a
+  `.jsonl` file or any file a log format's filename rule matches (e.g.
+  `app-*.txt`) shows up in the folder listing, so the auto rules reach it.
 - **Open gzip-compressed logs** — a rotated `app.log.1.gz` opens like any
   other log, however it arrives: drag-drop, the file picker, a watched
   folder (where `*.log` patterns also pick up the `.gz` rotations), a ZIP
@@ -406,6 +410,8 @@ deployments possible:
   which ones hold time, level and message, and which paths become columns —
   nested keys as `ctx.req.id`, array elements as `tags[0]`, keys containing
   a dot as `["http.status"]`.
+  **logfmt** (`key=value` lines — Go `slog`/logrus, Heroku): every key becomes
+  a column automatically; time, level and message come from keys you pick.
   **Time zone and encoding per format**: a timestamp with an offset (`Z`,
   `+02:00` — token `XXX` in the timestamp format, detected automatically) is
   read as that instant; for times without one, the format declares their zone
@@ -515,7 +521,8 @@ Thread/Location/Method/Message are each individually optional per format,
 and any other named regex group (`(?<name>...)`) becomes a **custom
 column** of its own, in whatever order you arrange the format's columns.
 **JSON Lines** files (one JSON object per line) get a format kind of their
-own, with nested keys and array elements addressable by path. Filters, sorting,
+own, with nested keys and array elements addressable by path; **logfmt**
+(`key=value`) files turn every key into a column. Filters, sorting,
 and export all work the same regardless of which format parsed a given file
 or which columns it defines.
 
@@ -602,7 +609,7 @@ npm test
 
 See `tests/README.md` for the suite's conventions before extending it.
 The **log simulator** generates realistic sample logs in every format
-PhiLogg parses (default, custom columns, bracket, JSON Lines, syslog, mixed,
+PhiLogg parses (default, custom columns, bracket, JSON Lines, logfmt, syslog, mixed,
 plain text), with content for each feature (link pairs, plots, array
 columns, embedded XML/JSON, stack traces, bursts, gaps, …) — as files by
 entry count or approximate size, or growing live for tailing and folder

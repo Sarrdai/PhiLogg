@@ -2744,7 +2744,7 @@
   .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
   /* Patterns with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
   #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
-  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody){display:none !important;}
+  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody, #whyPanelBody){display:none !important;}
   #detailMeta{
     flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
   }
@@ -2885,6 +2885,35 @@
   .pattern-act:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   .pattern-act.pattern-act-hide:hover{color:var(--level-error);}
   #patternsEmpty{padding:24px 16px; color:var(--text-tertiary); font-size:12px;}
+
+  /* ---------- Why tab (bottom panel): which filter node keeps / rejects the selected entry ---------- */
+  #whyPanelBody{display:none; flex:1 1 auto; min-height:0; overflow-y:auto; padding:8px 16px 12px; user-select:text;}
+  #detailPanel.lower-why #whyPanelBody{display:block;}
+  #detailPanel.lower-why.collapsed:not(.peeking) #whyPanelBody{display:none;}
+  #detailPanel.lower-why :is(#detailBody, #detailMeta, #detailViewTabs){display:none;}
+  .why-head{font-size:12.5px; font-weight:650; margin-bottom:8px; color:var(--text-primary);}
+  .why-head.why-match{color:var(--status-ok);}
+  .why-head.why-reject{color:var(--level-error);}
+  .why-note{font-size:12px; color:var(--text-tertiary);}
+  .why-steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;}
+  .why-step{display:grid; grid-template-columns:18px minmax(0,1fr) auto; column-gap:8px; align-items:baseline; padding:4px 8px; border-left:3px solid var(--status-ok); border-radius:3px; font-size:12px;}
+  .why-step.why-kept{border-left-color:var(--status-ok);}
+  .why-step.why-rejected{border-left-color:var(--level-error); background:var(--level-error-soft);}
+  .why-step.why-skipped{border-left-color:var(--border); opacity:.5;}
+  .why-step.why-muted{border-left-color:var(--text-tertiary); color:var(--text-secondary);}
+  .why-num{color:var(--text-tertiary); font-family:var(--font-mono); font-size:10.5px; text-align:right;}
+  .why-node{justify-self:start; max-width:100%; background:none; border:0; padding:0; font:inherit; font-weight:650; color:var(--accent-strong); cursor:pointer; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .why-node:hover{text-decoration:underline;}
+  .why-badge{font-size:10.5px; font-weight:650; text-transform:uppercase; letter-spacing:.6px; color:var(--status-ok);}
+  .why-rejected .why-badge{color:var(--level-error);}
+  .why-skipped .why-badge, .why-muted .why-badge{color:var(--text-tertiary);}
+  .why-reason{grid-column:2 / 4; color:var(--text-secondary); font-family:var(--font-mono); font-size:11.5px; overflow-wrap:anywhere;}
+  .why-subs{grid-column:2 / 4; list-style:none; margin:2px 0 0; padding:0 0 0 12px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-secondary);}
+  .why-subs li{overflow-wrap:anywhere;}
+  .why-subs .why-sub-ok{color:var(--status-ok);}
+  .why-subs .why-sub-no{color:var(--level-error);}
+  .why-view{margin-top:8px; padding:4px 8px; border-left:3px solid var(--warn); font-size:12px; color:var(--text-secondary);}
+  body.layout-phone .why-node{min-height:32px;}
 
   /* ---------- Facet panel (value distribution per column) ----------
      The second tab of the bottom panel (#detailPanel, "Entry detail | Facets"):
@@ -4327,6 +4356,8 @@
   .plot-mark:hover{opacity:.7;} /* value charts; line/bar/scatter marks are canvas (see #plotSvg.plot-over-mark) */
   /* Selection ring of the selected entry's mark(s) (updatePlotSelectionRing). */
   .plot-sel-ring{pointer-events:none;}
+  /* Hover highlight of a canvas mark (line/bar/scatter): one ring/outline in the SVG overlay (plotSetHoverHighlight). */
+  #plotHoverHi{pointer-events:none; fill:none; stroke:var(--accent); stroke-width:2;}
   .plot-sel-ring circle, .plot-sel-ring rect{fill:none; stroke:var(--text-primary); stroke-width:2;}
   .plot-sel-ring .plot-sel-ring-line{fill:none; stroke:var(--text-primary); stroke-width:3.5; stroke-opacity:.9;}
 
@@ -5236,7 +5267,7 @@
   body.layout-phone #detailPanel.lower-facets :is(#detailPrev, #detailNext){display:none;}
   body.layout-phone .facet-value{min-height:36px; font-size:12.5px;} /* finger-sized value rows in the sheet */
   body.layout-phone #lowerTabPatterns{display:block;}
-  body.layout-phone #detailPanel.lower-patterns :is(#detailBody, #detailMeta, #detailViewTabs, #facetPanelBody, #facetPanelCount, #detailPrev, #detailNext){display:none !important;}
+  body.layout-phone #detailPanel.lower-patterns :is(#detailBody, #detailMeta, #detailViewTabs, #facetPanelBody, #whyPanelBody, #facetPanelCount, #detailPrev, #detailNext){display:none !important;}
   body.layout-phone #detailPanel.lower-patterns #phonePatternsHead{display:flex; order:3; flex:1 0 100%; align-items:center; gap:8px; padding:0 2px 4px;}
   #phonePatternsInfo{flex:1 1 auto; min-width:0; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .pp-sort{flex:0 0 auto; border:1px solid var(--border); border-radius:12px; padding:3px 10px; font:inherit; font-size:11.5px; color:var(--text-primary); background:var(--bg-elevated-2); cursor:pointer;}
@@ -5255,6 +5286,7 @@
   #patternMenu .ctx-meta{user-select:text; -webkit-user-select:text; font-size:11.5px; color:var(--text-primary); overflow-wrap:anywhere;}
   body.layout-phone #facetValueMenu{z-index:60;} /* above the bottom sheet (z-index 50) */
   body.layout-phone #detailPanel.lower-facets #facetPanelBody, body.layout-phone #detailPanel.lower-facets.collapsed:not(.peeking) #facetPanelBody{display:grid; align-content:start; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding:2px 0 24px;}
+  body.layout-phone #detailPanel.lower-why #whyPanelBody, body.layout-phone #detailPanel.lower-why.collapsed:not(.peeking) #whyPanelBody{display:block; order:5; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 8px 24px;}
   body.layout-phone #detailMessage{white-space:pre-wrap; overflow-wrap:anywhere;}
   body.layout-phone #detailViewTabs{order:4; flex:1 0 100%; height:34px;}
   body.layout-phone #detailViewTabs .view-tab{flex:1; font-size:12.5px;}
@@ -6253,6 +6285,7 @@
           <div id="detailPanelHeader">
             <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
               <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)"><span class="lt-full">Entry detail</span><span class="lt-short">Entry</span></button>
+              <button type="button" class="lower-tab" id="lowerTabWhy" role="tab" aria-selected="false" title="Why is this row here? — which filter node keeps or rejects the selected entry">Why</button>
               <button type="button" class="lower-tab" id="lowerTabStats" role="tab" aria-selected="false" title="Statistics — min / max / mean / σ of the numeric columns (Table and Plot)" hidden>Statistics</button>
               <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
               <button type="button" class="lower-tab" id="lowerTabPatterns" role="tab" aria-selected="false" title="Patterns — message shapes of this view">Patterns</button>
@@ -6283,6 +6316,8 @@
                result; clicking a value adds a filter node (see "Facet panel" in
                the script). Self-contained so the phone sheet can reuse it. -->
           <div id="facetPanelBody"></div>
+          <!-- Why tab body: which nodes of the active filter chain keep or reject the selected entry (renderWhyPanel). -->
+          <div id="whyPanelBody"></div>
           <!-- Statistics tab body (offered while Table or Plot is on screen): the
                column stats chips of the extraction (renderStatsBar). -->
           <div id="statsPanelBody">
@@ -6339,6 +6374,7 @@
       Extract
     </div>
     <div class="ctx-item" id="ctxPairWith"><span>Pair with…</span></div>
+    <div class="ctx-item" id="ctxWhyRow"><span>Why is this row here?</span></div>
     <div class="ctx-item" id="ctxOpenInVs">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
       Open in Visual Studio
@@ -7746,6 +7782,7 @@ SOFTWARE.</pre>
           <div class="assert-mode-row">
             <button type="button" class="assert-mode-btn" id="formatEditModeRegex" data-mode="regex">Log format</button>
             <button type="button" class="assert-mode-btn" id="formatEditModeJson" data-mode="json">JSON Lines</button>
+            <button type="button" class="assert-mode-btn" id="formatEditModeLogfmt" data-mode="logfmt">logfmt</button>
             <button type="button" class="assert-mode-btn" id="formatEditModeMeta" data-mode="meta">Meta (combines formats)</button>
           </div>
         </div>
@@ -7774,11 +7811,11 @@ SOFTWARE.</pre>
           </div>
           <div id="fwzColumnError" class="format-column-error hidden"></div>
           </div>
-          <!-- JSON Lines kind: which keys hold time/level/message, and which
+          <!-- JSON Lines / logfmt kind (shared panel): which keys hold time/level/message, and which
                paths become columns (see fwzJsonSync / compileJsonFormat). -->
           <div id="fwzJsonCols" class="hidden">
             <div class="fwz-section-title">Keys</div>
-            <div class="fwz-hint">Detected in the example lines. Checked paths become columns — nested keys as <code>a.b</code>, array elements as <code>a[0]</code>, keys containing a dot as <code>["a.b"]</code>.</div>
+            <div class="fwz-hint" id="fwzJsonHint">Detected in the example lines. Checked paths become columns — nested keys as <code>a.b</code>, array elements as <code>a[0]</code>, keys containing a dot as <code>["a.b"]</code>.</div>
             <div class="fwz-json-map">
               <label for="fwzJsonTsKey">Time</label><select id="fwzJsonTsKey"></select>
               <label for="fwzJsonLevelKey">Level</label><select id="fwzJsonLevelKey"></select>
@@ -11048,7 +11085,11 @@ function compileDateFormat(fmt, timeZone) {
   let matchRegex;
   try { matchRegex = new RegExp("^" + regexStr + "$"); } catch (e) { return null; }
   const offsetIdx = order.indexOf("XXX");
-  return { regexStr, plainRegexStr, matchRegex, order, offsetIdx, zone: timeZone ? makeZoneLocalizer(timeZone) : null };
+  // timeOnly: no date token (HH:mm:ss.SSS) — the timestamp is a time of day on
+  // the 1970-01-01 placeholder date, which a zone/offset shift must never roll
+  // into another day (see parseTimestampGeneric).
+  const timeOnly = !order.some(t => t === "yyyy" || t === "MM" || t === "dd");
+  return { regexStr, plainRegexStr, matchRegex, order, offsetIdx, timeOnly, zone: timeZone ? makeZoneLocalizer(timeZone) : null };
 }
 
 // compileDateFormat, plus — for no tsFormat but a time zone — a marker object
@@ -11175,8 +11216,12 @@ function parseTimestampGeneric(raw, compiledDate) {
   // Naive wall clock as UTC ms (Date.UTC maps years 0..99 like the constructor).
   const naive = Date.UTC(y, mo, d, h, mi, s, ms);
   // An offset on the timestamp itself always wins over the format's time zone.
-  if (parts.XXX !== undefined) return naive - parseUtcOffsetMinutes(parts.XXX) * 60000;
-  return compiledDate.zone(naive);
+  const abs = parts.XXX !== undefined ? naive - parseUtcOffsetMinutes(parts.XXX) * 60000 : compiledDate.zone(naive);
+  if (!compiledDate.timeOnly) return abs;
+  // A time-only format: keep the shifted local time of day, back on the
+  // placeholder date (modulo 24 h), so formatTime never shows a rolled day.
+  const x = new Date(abs);
+  return new Date(1970, 0, 1, x.getHours(), x.getMinutes(), x.getSeconds(), x.getMilliseconds()).getTime();
 }
 
 // Longer word-forms listed before their single-letter alias in each
@@ -11687,6 +11732,107 @@ function compileJsonFormat(fmt) {
     },
   };
 }
+/* ---- logfmt format mode (mode "logfmt", FEATURE_BACKLOG.md #82) ----
+   Every line that STARTS with a key=value pair is one entry (Go slog /
+   logrus text handlers, Heroku): `key=value`, `key="quoted value with
+   spaces and \"escapes\""`, a bare `key` (no "=") is true. Keys, values and
+   the timestamp are read like the JSON Lines mode reads its paths — the
+   same tsKey/levelKey/messageKey and columnDefs {key, kind:"custom",
+   label, path}, but `path` is the plain key name (flat, never split at
+   dots). A repeated key keeps its last value. A line that doesn't start
+   with a pair is a continuation of the previous entry (stack traces). */
+const LOGFMT_HEADER_RE = /^\s*[^\s="]+=/;
+// One line -> { key: text } (null-prototype object), or null when the line
+// has no key=value pair at all. Escapes in quoted values: \" \\ \n \r \t,
+// any other backslash pair keeps the character after it.
+function parseLogfmtLine(line) {
+  const n = line.length;
+  const out = Object.create(null);
+  let found = false;
+  let i = 0;
+  while (i < n) {
+    while (i < n && (line.charCodeAt(i) <= 32)) i++;
+    if (i >= n) break;
+    const ks = i;
+    while (i < n && line.charCodeAt(i) > 32 && line[i] !== "=" && line[i] !== '"') i++;
+    const key = line.slice(ks, i);
+    if (i < n && line[i] === '"' && i === ks) {      // stray quote: skip the quoted run
+      i++;
+      while (i < n && line[i] !== '"') i += line[i] === "\\" ? 2 : 1;
+      i++;
+      continue;
+    }
+    if (i >= n || line[i] !== "=") {                  // bare key
+      if (key) out[key] = "true";
+      if (i < n && line[i] === '"') i++;
+      continue;
+    }
+    i++;                                              // "="
+    let value = "";
+    if (i < n && line[i] === '"') {
+      i++;
+      let vs = i;
+      while (i < n && line[i] !== '"') {
+        if (line[i] === "\\" && i + 1 < n) {
+          value += line.slice(vs, i);
+          const c = line[i + 1];
+          value += c === "n" ? "\n" : c === "t" ? "\t" : c === "r" ? "\r" : c;
+          i += 2;
+          vs = i;
+        } else i++;
+      }
+      value += line.slice(vs, i);
+      i++;                                            // closing quote (or end of line)
+    } else {
+      const vs = i;
+      while (i < n && line.charCodeAt(i) > 32) i++;
+      value = line.slice(vs, i);
+    }
+    if (key) { out[key] = value; found = true; }
+  }
+  return found ? out : null;
+}
+function compileLogfmtFormat(fmt) {
+  const dateFrag = compileDateFormat(fmt.tsFormat, fmt.timeZone);
+  const freeZone = !dateFrag && fmt.timeZone ? makeZoneLocalizer(fmt.timeZone) : null;
+  const cols = (Array.isArray(fmt.columnDefs) ? fmt.columnDefs : [])
+    .filter(d => d && d.key && d.path)
+    .map(d => ({ key: d.key, path: d.path }));
+  return {
+    isHeaderLine: line => LOGFMT_HEADER_RE.test(line),
+    parseHeader: line => {
+      const obj = parseLogfmtLine(line);
+      if (!obj) {
+        const e = applyFormatMatch({}, line, null);
+        e.message = line;
+        return e;
+      }
+      const tsV = fmt.tsKey ? obj[fmt.tsKey] : undefined;
+      const levelV = fmt.levelKey ? obj[fmt.levelKey] : undefined;
+      let fields = null;
+      for (const c of cols) {
+        const v = obj[c.path];
+        if (v === undefined) continue;
+        if (!fields) fields = {};
+        fields[c.key] = v;
+      }
+      const msgV = fmt.messageKey ? obj[fmt.messageKey] : undefined;
+      return {
+        id: uid("e"),
+        tsRaw: tsV === undefined ? "" : tsV,
+        ts: tsV === undefined ? NaN : parseJsonTimestamp(tsV, dateFrag, freeZone),
+        level: levelV == null || levelV === "" ? "INFO" : levelV.trim().toUpperCase(),
+        thread: "",
+        location: "",
+        method: "",
+        message: fmt.messageKey ? (msgV === undefined ? "" : msgV) : line,
+        raw: line,
+        fields: fields || EMPTY_ENTRY_FIELDS,
+      };
+    },
+  };
+}
+
 // A JSON path -> a column key that is safe everywhere a key goes (data-col
 // attributes, fields bag, filter column restrictions): non-identifier
 // characters become "_", reserved names get a "_" suffix, and `taken`
@@ -11722,6 +11868,7 @@ function compileOneFormat(fmt) {
     };
   }
   if (fmt.mode === "json") return compileJsonFormat(fmt);
+  if (fmt.mode === "logfmt") return compileLogfmtFormat(fmt);
   if (fmt.builtin && !fmt.edited) {
     return { isHeaderLine: line => HEADER_RE.test(line), parseHeader: line => parseHeaderLine(line) };
   }
@@ -11776,7 +11923,7 @@ function compileFormatRegex(fmt) {
 // defined here. Mirrors compileOneFormat branch for branch; null for a
 // meta-format, which is split in JS before any per-line parsing.
 function nativeFormatSpec(fmt) {
-  if (fmt.mode === "meta" || fmt.mode === "plaintext" || fmt.mode === "json") return null;
+  if (fmt.mode === "meta" || fmt.mode === "plaintext" || fmt.mode === "json" || fmt.mode === "logfmt") return null;
   // `encoding`: Rust decodes the file itself and resolves Auto (BOM, else
   // UTF-8 if the head is valid, else windows-1252) like resolveFileEncoding.
   const encoding = typeof fmt.encoding === "string" ? fmt.encoding : "";
@@ -12366,6 +12513,7 @@ function buildLogParseWorkerSrc() {
     ["FORMAT_TOKEN_RE", FORMAT_TOKEN_RE],
     ["FORMAT_TOKEN_FIELD", FORMAT_TOKEN_FIELD],
     ["HEADER_RE", HEADER_RE],
+    ["LOGFMT_HEADER_RE", LOGFMT_HEADER_RE],
     ["PARSE_CHUNK_LINES", PARSE_CHUNK_LINES],
     ["RESERVED_FIELD_KEYS", RESERVED_FIELD_KEYS],
   ].map(([name, val]) => "const " + name + " = " + (
@@ -12380,6 +12528,7 @@ function buildLogParseWorkerSrc() {
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
     compileFormatRegex, encodeEntryBatch, findHeaderLineStartInBlob, parseBlobRangeEntries,
     parseJsonPath, resolveJsonPath, jsonValueText, parseJsonTimestamp, compileJsonFormat,
+    parseLogfmtLine, compileLogfmtFormat,
     compileTsDate, parseUtcOffsetMinutes, makeNaiveTsLocalizer, makeZoneLocalizer, parseFreeTimestamp,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
@@ -12757,6 +12906,9 @@ async function parseLocalFileNatively(url, node, onFraction) {
   // The format's own time zone (naive from Rust -> the real instant).
   const localize = makeZoneLocalizer(fmt.timeZone);
   const freeZone = freeDate && fmt.timeZone ? localize : null;
+  // Time-only tsFormat: same rule as parseTimestampGeneric (no rolled day).
+  const timeOnly = !freeDate && !spec.builtin && !spec.dateOrder.some(t => t === "yyyy" || t === "MM" || t === "dd");
+  const wrapTimeOfDay = ms => { const x = new Date(ms); return new Date(1970, 0, 1, x.getHours(), x.getMinutes(), x.getSeconds(), x.getMilliseconds()).getTime(); };
   const start = node.entries.length;
   let orphaned = false;
   let res;
@@ -12775,7 +12927,7 @@ async function parseLocalFileNatively(url, node, onFraction) {
           e.id = uid("e");
           // An XXX offset made ts absolute on the Rust side already.
           e.ts = freeDate ? (e.tsRaw ? parseFreeTimestamp(e.tsRaw.trim(), freeZone) : NaN)
-            : isNaN(e.ts) ? NaN : abs && abs[i] ? e.ts : localize(e.ts);
+            : isNaN(e.ts) ? NaN : timeOnly ? wrapTimeOfDay(abs && abs[i] ? e.ts : localize(e.ts)) : abs && abs[i] ? e.ts : localize(e.ts);
           e.formatId = formatId;
           entryIndex[e.id] = e;
           node.entries.push(e);
@@ -16537,6 +16689,148 @@ function getEntriesUncached(node, parentOverride) {
   return result;
 }
 
+/* ===================== "Why is this row here?" (FEATURE_BACKLOG #15) =====================
+   Read-only explanation of one entry against the active filter chain: which
+   nodes keep it and which one rejects it. Evaluates nothing new — membership
+   is "the entry's id is in getEntries(node.id)" (the engine's own, cached
+   results; link nodes return synthetic pairs, so a result's ids are expanded
+   through getTupleEntries), the reason line re-tests the node's own condition
+   on [entry] through evaluateFilterCondition. No filter semantics live here. */
+const explainKeptIdsMemo = new WeakMap(); // result array -> Set of original entry ids; the array identity changes with every recompute
+function explainKeptIds(entries) {
+  let ids = explainKeptIdsMemo.get(entries);
+  if (!ids) {
+    ids = new Set();
+    for (const e of entries) {
+      if (e.isPair) getTupleEntries(e).forEach(x => ids.add(x.id)); else ids.add(e.id);
+    }
+    explainKeptIdsMemo.set(entries, ids);
+  }
+  return ids;
+}
+
+// One condition (a filter node or a baked side) against one entry:
+// { ok, reason, subs? }. `ctx` = { fileId, nodeId, pool() } — the owning
+// node's id and its lazily fetched input pool, for baked sides that need more
+// than the entry itself. `getResult()` returns what the condition keeps of
+// its pool (the node's cached result, or a baked side evaluated over the pool).
+// A sub-line's name is left out when its reason already quotes it
+// ('"timeout" not found', 'Level ERROR is in WARN, ERROR').
+function whySubNameRedundant(sb) {
+  const bare = (sb.name || "").replace(/[“”"]/g, "").trim();
+  return !bare || sb.reason.includes(bare);
+}
+function explainCondition(cond, entry, ctx, getResult, name) {
+  const t = cond.filterType;
+  const inv = !!cond.inverted;
+  if (PER_ENTRY_FILTER_TYPES.has(t)) {
+    const hit = getEntriesFromBaked(Object.assign({}, cond, { inverted: false }), [entry], ctx.fileId).length > 0;
+    const ok = inv ? !hit : hit;
+    const arrow = inv ? (hit ? " → excluded" : " → kept") : "";
+    if (t === "text") {
+      const q = cond.isRegex ? "/" + cond.value + "/" : '"' + cond.value + '"';
+      let cols = "";
+      if (cond.columns && cond.columns.length) {
+        const labels = new Map(activeTextFilterColumns().map(c => [c.key, c.label]));
+        cols = " in " + cond.columns.map(k => labels.get(k) || k).join(", ");
+      }
+      return { ok, reason: q + (hit ? " found" : " not found") + cols + arrow };
+    }
+    if (t === "level") {
+      const lvl = makeLevelBucketer()(entry.level, entry.formatId);
+      const list = (cond.value || []).join(", ");
+      return { ok, reason: "Level " + lvl + (hit ? " is in " : " is not in ") + list + arrow };
+    }
+    return { ok, reason: (hit ? "Matches " : "Does not match ") + name + arrow };
+  }
+  if (t === "and" || t === "or") {
+    const subs = (cond.baked || []).map(b => {
+      const sub = explainCondition(b, entry, ctx, () => getEntriesFromBaked(b, ctx.pool(), ctx.fileId), bakedConditionName(b));
+      sub.name = bakedConditionName(b);
+      return sub;
+    });
+    const n = subs.filter(s => s.ok).length;
+    const raw = t === "and" ? n === subs.length : n > 0;
+    return { ok: inv ? !raw : raw, reason: n + " of " + subs.length + " matched (" + t.toUpperCase() + ")" + (inv ? (raw ? " → excluded" : " → kept") : ""), subs };
+  }
+  // Everything else looks at other entries: membership of the condition's own result.
+  const result = getResult();
+  const ok = explainKeptIds(result).has(entry.id);
+  if (t === "link") {
+    if (!ok) return { ok, reason: "No partner found" };
+    const pair = result.find(p => p.isPair && getTupleEntries(p).some(x => x.id === entry.id));
+    const partners = pair ? getTupleEntries(pair).filter(x => x.id !== entry.id) : [];
+    const more = partners.length === 1 ? " with " + formatTsFor(ctx.nodeId, partners[0].ts) + " (Δt " + formatDuration(pair.dtMs) + ")" : "";
+    return { ok, reason: "Part of a pair" + more };
+  }
+  if (t === "context" || t === "countContext") {
+    return { ok, reason: ok ? "Within the window around a reference entry" : "Outside every window" };
+  }
+  return { ok, reason: (ok ? "Matches " : "Does not match ") + name };
+}
+
+// Explains `entryId` against the chain ending at `activeId`:
+//   { entryId, activeId, match, head, total, rejectIndex, steps, view, note }
+// match: the entry is in the active node's result (a link node: part of a pair).
+// head: the ready-made header line. steps: one per chain node from the top
+// (first node under the file) down to the active node, "sources" nodes left out:
+//   { nodeId, name, filterType, status: "kept"|"rejected"|"skipped"|"muted",
+//     reason, subs: [{ ok, name, reason, subs? }] }
+// "skipped" = after the first rejecting node (shown as "not reached"); rejectIndex
+// is that node's index, -1 when nothing rejects. A node missing the entry while
+// the entry still reaches the active result (a later context node brought it
+// back) stays "kept" with a note in its reason.
+// view: null, or { kind: "level"|"pinned", text } — the view filters on top of
+// the node result. note: set instead of steps when there is nothing to walk
+// (no entry, the file itself active, entry from another file).
+function explainEntry(entryId, activeId) {
+  const out = { entryId, activeId, match: false, head: "", total: 0, rejectIndex: -1, steps: [], view: null, note: "" };
+  const entry = entryId && entryIndex[entryId];
+  const active = activeId && state.nodes[activeId];
+  if (!entry || !active) { out.note = "Select a row to see which filters keep or reject it."; return out; }
+  const fileId = getRootFileId(activeId);
+  if (!fileId || !buildOrderIndexMap(fileId).has(entry.id)) { out.note = "This entry is not in the active file."; return out; }
+  if (active.type === "file") {
+    out.match = true;
+    out.note = "No filter is active — every entry of the file is shown.";
+    return out;
+  }
+  const chain = [];
+  for (let n = active; n && n.type !== "file"; n = state.nodes[n.parentId]) if (n.filterType !== "sources") chain.unshift(n);
+  out.total = chain.length;
+  out.match = explainKeptIds(getEntries(activeId)).has(entry.id);
+  for (let i = 0; i < chain.length; i++) {
+    const node = chain[i];
+    const step = { nodeId: node.id, name: (node.inverted ? "¬ " : "") + nodeDisplayName(node), filterType: node.filterType, status: "skipped", reason: "", subs: [] };
+    out.steps.push(step);
+    if (out.rejectIndex >= 0) continue;
+    if (node.muted) { step.status = "muted"; step.reason = "Muted — passes everything"; continue; }
+    const member = explainKeptIds(getEntries(node.id)).has(entry.id);
+    const ctx = { fileId, nodeId: node.id, pool: () => getEntries(node.parentId) };
+    const r = explainCondition(node, entry, ctx, () => getEntries(node.id), step.name);
+    step.reason = r.reason;
+    step.subs = r.subs || [];
+    if (member || out.match) {
+      step.status = "kept";
+      if (!member) step.reason += " — brought back by a later context node";
+    } else {
+      step.status = "rejected";
+      out.rejectIndex = i;
+    }
+  }
+  if (out.match) out.head = "✓ In the result of " + (active.inverted ? "¬ " : "") + nodeDisplayName(active) + " · kept by all " + out.total + (out.total === 1 ? " node" : " nodes");
+  else out.head = "✗ Not in the result" + (out.rejectIndex >= 0 ? " · rejected by " + out.steps[out.rejectIndex].name + " (step " + (out.rejectIndex + 1) + " of " + out.total + ")" : "");
+  // View filters on top of the node result (see getVisibleEntries).
+  const pinned = state.pinBookmarksInFilteredView && state.bookmarks.has(entry.id);
+  const levelHidden = out.match && applyLevelFilter([entry]).length === 0;
+  if (pinned && (!out.match || levelHidden)) {
+    out.view = { kind: "pinned", text: "Shown because it is bookmarked and Pin bookmarks is on" };
+  } else if (levelHidden) {
+    out.view = { kind: "level", text: "Hidden by the level bar (" + makeLevelBucketer()(entry.level, entry.formatId) + " off)" };
+  }
+  return out;
+}
+
 // Clears every node's cached entries — the trivially-correct sweep. Only the
 // rare whole-file / whole-tree changes still use it (undo/redo, unpack, a
 // clock offset; each says so at its call site). Everything that changes ONE
@@ -17568,6 +17862,8 @@ const lowerTabDetail = el("#lowerTabDetail");
 const lowerTabStats = el("#lowerTabStats");
 const lowerTabFacets = el("#lowerTabFacets");
 const lowerTabPatterns = el("#lowerTabPatterns");
+const lowerTabWhy = el("#lowerTabWhy");
+const whyPanelBody = el("#whyPanelBody");
 
 // Tabs that replace #fhSplit with a content component of their own —
 // "not a log view" for every check that used to read `table || plot`.
@@ -18045,13 +18341,13 @@ const LOWER_TAB_KEY = "philogg-lower-tab";
 const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
 const FACET_MORE_STEP = 25;
-// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" (persisted). "stats"
+// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" | "why" (persisted). "stats"
 // only shows while Table/Plot is on screen (statsActive), elsewhere the panel shows Entry detail
 // again without forgetting the choice.
 let lowerTab = "detail";
 // Phone: the bottom sheet's own state (plain UI state, never persisted — lowerTab stays the
 // desktop/tablet selection). phoneSheetOpen: whether the sheet is shown (set by a card tap or the
-// Analyze button, see updateDetailPanel); phoneSheetTab: which tab it shows ("entry" | "facets";
+// Analyze button, see updateDetailPanel); phoneSheetTab: which tab it shows ("entry" | "why" | "facets";
 // "patterns" is the third, see PHONE_ANALYZE_TABS); phoneAnalyzeTab: the Analyze tab the header
 // button (re)opens, i.e. the last one used.
 let phoneSheetOpen = false;
@@ -18064,7 +18360,7 @@ let phonePatternsTotal = 0;
 let phonePatternsNode = null; // active node the list was last drawn for (scroll resets on a change)
 const PHONE_PATTERN_ROW_H = 64;
 let phonePanelSig = ""; // syncPhoneSheetPanel's last applied signature
-try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" ? t : "detail"; } catch { lowerTab = "detail"; }
+try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" || t === "why" ? t : "detail"; } catch { lowerTab = "detail"; }
 let facetsCollapsed = new Set();
 try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
 const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
@@ -18135,6 +18431,10 @@ function facetsActive() {
 // The Statistics tab is offered while Table or Plot is on screen (never on the phone, which has neither).
 function statsOffered() { return currentLayoutTier !== "phone" && (fhActiveTab === "table" || fhActiveTab === "plot"); }
 function statsActive() { return lowerTab === "stats" && statsOffered(); }
+// The Why tab is selected. Desktop/tablet: the persisted lowerTab. Phone: while the sheet is open on its Why tab.
+function whyActive() {
+  return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "why") : lowerTab === "why";
+}
 
 function lowerTabDetailTitle(patterns) {
   return patterns
@@ -18150,13 +18450,16 @@ function lowerTabDetailTitle(patterns) {
 // collapsed state or the remembered height. Statistics is offered on
 // Table/Plot only (statsOffered).
 function applyLowerPanel() {
-  const facets = facetsActive(), patterns = phonePatternsActive(), stats = !facets && statsActive();
+  const facets = facetsActive(), patterns = phonePatternsActive(), why = !facets && !patterns && whyActive(), stats = !facets && !why && statsActive();
   const onPatternsTab = fhActiveTab === "patterns";
   detailPanel.classList.toggle("lower-facets", facets);
   detailPanel.classList.toggle("lower-stats", stats);
+  detailPanel.classList.toggle("lower-why", why);
   detailPanel.classList.toggle("lower-patterns", patterns);
-  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns);
-  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats ? "false" : "true");
+  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns && !why);
+  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats || why ? "false" : "true");
+  lowerTabWhy.setAttribute("aria-selected", why ? "true" : "false");
+  lowerTabWhy.disabled = currentLayoutTier === "phone" && !selectedEntry(); // phone: like Entry, needs a selection
   lowerTabStats.hidden = !statsOffered();
   lowerTabStats.setAttribute("aria-selected", stats ? "true" : "false");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
@@ -18165,8 +18468,54 @@ function applyLowerPanel() {
   lowerTabDetail.title = lowerTabDetailTitle(onPatternsTab);
   updateDetailResizerVisibility();
   renderFacetPanel();
+  renderWhyPanel();
   renderPhonePatterns();
 }
+
+// (Re)fills the Why tab body from explainEntry for the selected entry; nothing to do while another
+// tab shows. Writes only into #whyPanelBody (called on every selection change from updateDetailPanel).
+function renderWhyPanel() {
+  if (!whyActive()) return;
+  const entry = selectedEntry();
+  const r = explainEntry(entry && entry.id, state.activeId);
+  let html = "";
+  if (r.note) html = '<div class="why-note">' + escapeHtml(r.note) + "</div>";
+  else {
+    html = '<div class="why-head ' + (r.match ? "why-match" : "why-reject") + '">' + escapeHtml(r.head) + "</div>";
+    html += '<ol class="why-steps">' + r.steps.map((st, i) => {
+      const badge = st.status === "skipped" ? "not reached" : st.status;
+      let h = '<li class="why-step why-' + st.status + '" data-node-id="' + escapeHtml(st.nodeId) + '">' +
+        '<span class="why-num">' + (i + 1) + '</span>' +
+        '<button type="button" class="why-node" title="Activate this filter">' + escapeHtml(st.name) + "</button>" +
+        '<span class="why-badge">' + badge + "</span>";
+      if (st.reason) h += '<div class="why-reason">' + escapeHtml(st.reason) + "</div>";
+      const subHtml = subs => '<ul class="why-subs">' + subs.map(sb =>
+        '<li><span class="' + (sb.ok ? "why-sub-ok" : "why-sub-no") + '">' + (sb.ok ? "✓" : "✗") + "</span> " +
+        (whySubNameRedundant(sb) ? "" : escapeHtml(sb.name || "") + " — ") + escapeHtml(sb.reason) + (sb.subs ? subHtml(sb.subs) : "") + "</li>").join("") + "</ul>";
+      if (st.subs.length) h += subHtml(st.subs);
+      return h + "</li>";
+    }).join("") + "</ol>";
+    if (r.view) html += '<div class="why-view why-view-' + r.view.kind + '">' + escapeHtml(r.view.text) + "</div>";
+  }
+  whyPanelBody.innerHTML = html;
+}
+whyPanelBody.addEventListener("mousedown", ev => { if (ev.target.closest(".why-node")) ev.preventDefault(); }); // never takes keyboard focus from the log view
+whyPanelBody.addEventListener("click", ev => {
+  const btn = ev.target.closest(".why-node");
+  if (!btn) return;
+  ev.stopPropagation();
+  const id = btn.closest("[data-node-id]").dataset.nodeId;
+  if (!state.nodes[id]) return;
+  // Same as a plain tree-row click; the entry selection is left alone.
+  state.multiSelect = new Set([id]);
+  applyTempAnchorOnActiveNodeSwitch(id);
+  state.activeId = id;
+  state.inlineViewer = null;
+  state.folderView = null;
+  state.treeCursor = null;
+  revealFilteredView();
+  render();
+});
 
 // (Re)fills the Facets tab body; nothing to do while another tab shows.
 function renderFacetPanel() {
@@ -18324,12 +18673,12 @@ function createFacetFilter(column, value, inverted) {
   finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
 }
 
-// Selects a bottom-panel tab ("detail" | "stats" | "facets"; desktop/tablet — the phone
+// Selects a bottom-panel tab ("detail" | "stats" | "facets" | "why"; desktop/tablet — the phone
 // sheet has its own, see setFacetsOpen). Selecting Statistics or Facets expands a collapsed
 // panel. The panel height/visibility can change, hence the full renderMainView (it
 // re-measures the log like any layout change).
 function setLowerTab(tab) {
-  lowerTab = tab === "stats" || tab === "facets" ? tab : "detail";
+  lowerTab = tab === "stats" || tab === "facets" || tab === "why" ? tab : "detail";
   try { localStorage.setItem(LOWER_TAB_KEY, lowerTab); } catch {}
   if (lowerTab !== "detail" && isDetailCollapsed()) toggleDetailCollapsed(false);
   if (state.rootIds.length) renderMainView();
@@ -18348,6 +18697,16 @@ function toggleFacets() {
   setFacetsOpen(!shown);
 }
 facetPanelBody.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
+lowerTabWhy.addEventListener("mousedown", ev => ev.preventDefault());
+lowerTabWhy.addEventListener("click", ev => {
+  ev.stopPropagation();
+  if (lowerTabWhy.disabled) return;
+  openWhyTab();
+});
+// Opens the Why tab: desktop/tablet selects it (expanding a collapsed panel), the phone opens the sheet on it.
+function openWhyTab() {
+  if (currentLayoutTier === "phone") setPhoneSheetTab("why"); else setLowerTab("why");
+}
 [lowerTabDetail, lowerTabStats, lowerTabFacets].forEach(btn => {
   btn.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
   btn.addEventListener("click", ev => {
@@ -22046,13 +22405,32 @@ function showCopyToast(message, opts) {
 }
 
 // The one save flow behind every file the app writes. `data` is a Blob or a
-// string. Uses the File System Access save picker where the engine has it,
-// else (or when the picker itself is unusable here) one <a download>. Shows
-// the outcome toast itself and returns "saved" | "downloaded" | "cancelled" |
-// "failed". A failure while WRITING to an already chosen file is reported, not
-// papered over with a download.
+// string. Under the desktop wrapper its native save (window.philogg.saveFile:
+// OS dialog + write in Rust; WKWebView/WebKitGTK have no save picker and their
+// <a download> is cancelled or lands unasked in ~/Downloads, see
+// docs/desktop.md); elsewhere the File System Access save picker where the
+// engine has it, else (or when the picker itself is unusable here) one
+// <a download>. Shows the outcome toast itself and returns "saved" |
+// "downloaded" | "cancelled" | "failed". A failure while WRITING to an already
+// chosen file is reported, not papered over with a download.
 async function saveFileWithFeedback(data, filename, { description, mime, ext }) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  const failed = (name, err) => {
+    const reason = String(err && (err.message || err.name) || err || "unknown error").trim().slice(0, 120);
+    showCopyToast("Couldn't save " + name + " \u2014 " + reason, { kind: "error", duration: 6000 });
+    return "failed";
+  };
+  const notSaved = () => { showCopyToast("Not saved", { kind: "neutral" }); return "cancelled"; };
+  const saved = name => { showCopyToast("Saved " + name, { kind: "ok", duration: 3000 }); return "saved"; };
+  if (window.philogg && typeof window.philogg.saveFile === "function") {
+    let name;
+    try {
+      name = await window.philogg.saveFile(filename, new Uint8Array(await blob.arrayBuffer()), { description, ext });
+    } catch (err) {
+      return failed(filename, err);
+    }
+    return name ? saved(name) : notSaved();
+  }
   let handle = null;
   if (window.showSaveFilePicker) {
     try {
@@ -22061,10 +22439,7 @@ async function saveFileWithFeedback(data, filename, { description, mime, ext }) 
         types: [{ description, accept: { [mime.split(";")[0]]: [ext] } }],
       });
     } catch (err) {
-      if (err && err.name === "AbortError") {
-        showCopyToast("Not saved", { kind: "neutral" });
-        return "cancelled";
-      }
+      if (err && err.name === "AbortError") return notSaved();
       // API present but unusable in this context — fall through to a download
     }
   }
@@ -22075,12 +22450,9 @@ async function saveFileWithFeedback(data, filename, { description, mime, ext }) 
       await writable.write(blob);
       await writable.close();
     } catch (err) {
-      const reason = String(err && (err.message || err.name) || "unknown error").trim().slice(0, 120);
-      showCopyToast("Couldn't save " + name + " \u2014 " + reason, { kind: "error", duration: 6000 });
-      return "failed";
+      return failed(name, err);
     }
-    showCopyToast("Saved " + name, { kind: "ok", duration: 3000 });
-    return "saved";
+    return saved(name);
   }
   downloadBlobFallback(blob, filename);
   showCopyToast("Downloaded " + filename, { kind: "download", duration: 3000 });
@@ -23721,10 +24093,33 @@ function plotHitTest(svgPt) {
   }
   return hit;
 }
+// Hover feedback of the canvas marks (they have no :hover): one lightweight
+// element in the SVG overlay, a ring around the hit point (line/scatter) or an
+// outline around the hit bar, moved in place; null removes it. No canvas redraw.
+function plotSetHoverHighlight(hit) {
+  let el = plotSvg.querySelector("#plotHoverHi");
+  if (!hit) { if (el) el.remove(); return; }
+  const isBar = hit.kind === "bar";
+  const tag = isBar ? "rect" : "circle";
+  if (el && el.localName !== tag) { el.remove(); el = null; }
+  if (!el) {
+    el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    el.setAttribute("id", "plotHoverHi");
+  }
+  if (isBar) {
+    el.setAttribute("x", String(hit.bx - 2)); el.setAttribute("y", String(hit.by - 2));
+    el.setAttribute("width", String(hit.bw + 4)); el.setAttribute("height", String(hit.bh + 4));
+  } else {
+    el.setAttribute("cx", String(hit.px)); el.setAttribute("cy", String(hit.py));
+    el.setAttribute("r", String((plotConfig.type === "line" ? 2.6 : 4) + 3.5));
+  }
+  plotSvg.appendChild(el); // keeps it last (above the selection ring); a no-op move when already last
+}
 function plotHandleHoverMove(ev) {
   const svgPt = plotLastRender && plotHoverPoints.length ? plotSvgPointFromEvent(ev) : null;
   const hit = svgPt ? plotHitTest(svgPt) : null;
   plotSvg.classList.toggle("plot-over-mark", !!hit); // the canvas marks have no :hover of their own
+  plotSetHoverHighlight(hit);
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
   if (!row) { plotTooltip.classList.add("hidden"); return; }
@@ -23734,7 +24129,7 @@ function plotHandleHoverMove(ev) {
   plotTooltip.classList.remove("hidden"); // needs to be visible (not display:none) before offsetWidth/Height below can measure it
   positionPlotTooltip(plotChartAreaPointFromEvent(ev));
 }
-plotChartArea.addEventListener("mouseleave", () => { plotTooltip.classList.add("hidden"); plotSvg.classList.remove("plot-over-mark"); });
+plotChartArea.addEventListener("mouseleave", () => { plotTooltip.classList.add("hidden"); plotSvg.classList.remove("plot-over-mark"); plotSetHoverHighlight(null); });
 
 const PLOT_TOOLTIP_GAP = 12; // clearance kept between the cursor point and the tooltip's nearest edge
 const PLOT_TOOLTIP_MARGIN = 4; // min distance from the chart area's own edges
@@ -24803,6 +25198,7 @@ function clearPlotMarks() {
   plotSelRingOps = [];
   plotMarksCanvas.classList.add("hidden");
   plotSvg.classList.remove("plot-over-mark");
+  plotSetHoverHighlight(null); // every re-render starts without a (possibly stale) hover highlight
 }
 
 function renderPlotChart() {
@@ -31519,7 +31915,7 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
   logMultiSelectAnchorId = entryId;
   // Phone: tapping a card is the one explicit way to open the entry-detail
   // sheet (see phoneSheetOpen); find steps / minimap clicks only select.
-  if (currentLayoutTier === "phone") { phoneSheetOpen = true; phoneSheetTab = "entry"; }
+  if (currentLayoutTier === "phone") { phoneSheetOpen = true; if (phoneSheetTab !== "why") phoneSheetTab = "entry"; }
   selectFn(entryId);
 }
 
@@ -32147,7 +32543,7 @@ function formatMessageWithHighlight(text) {
 function updateDetailPanel() {
   const entry = selectedEntry();
   // Entry tab: the sheet needs a selection. An Analyze tab (Facets) stays open without one.
-  if (!entry && phoneSheetTab === "entry") phoneSheetOpen = false;
+  if (!entry && (phoneSheetTab === "entry" || phoneSheetTab === "why")) phoneSheetOpen = false;
   // phone: the bottom sheet (CSS only acts in layout-phone). It takes its
   // height out of the list's (body.sheet-open pads #content), so the visible
   // rows are re-rendered when it opens/closes.
@@ -32157,6 +32553,7 @@ function updateDetailPanel() {
   if (!sheetNow && sheetWas) clearPhoneSheetHeight(); // a reopened sheet starts at the 62vh default again
   if (sheetWas !== sheetNow && currentLayoutTier === "phone") renderVisibleRows();
   if (currentLayoutTier === "phone") syncPhoneSheetPanel(!!entry);
+  renderWhyPanel(); // follows the selection; no-op unless the Why tab shows
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -32960,7 +33357,7 @@ function closePhoneSheet() {
 // updateDetailPanel -> syncPhoneSheetPanel. A switch to an Analyze tab is remembered for the header button.
 function setPhoneSheetTab(tab) {
   if (currentLayoutTier !== "phone") return;
-  if (tab === "entry" && !selectedEntry()) return;
+  if ((tab === "entry" || tab === "why") && !selectedEntry()) return;
   phoneSheetTab = tab;
   if (PHONE_ANALYZE_TABS.includes(tab)) phoneAnalyzeTab = tab;
   phoneSheetOpen = true;
@@ -34179,7 +34576,8 @@ function renderZipEntryRow(zip, entry, depth) {
 // answers (FOLDER_WATCH_EXTENSIONS/isCompatibleFolderFile, above) — reused
 // as-is rather than inventing a second notion of "log file", per the plan.
 // `entry.name` is the ZIP entry's full relative path (e.g. "sub/app.log"),
-// but only the extension matters here, same as isCompatibleFolderFile itself.
+// but only the name matters here, same as isCompatibleFolderFile itself
+// (so a ZIP entry matching a format's filename rule opens as a log too).
 function isLogZipEntry(entry) { return isCompatibleFolderFile(entry.name); }
 
 // Minimal extension -> MIME map for the "open externally" path (item 3):
@@ -34273,8 +34671,8 @@ async function openZipEntryExternally(entry, zip) {
 // browser-tab fallback. Deliberately zip-specific, matching
 // openZipEntryExternally's own scope — checked, per the plan, whether any
 // OTHER route in this app hands a non-log file to that function (folder
-// watch, plain drag/drop): it doesn't — FOLDER_WATCH_EXTENSIONS/
-// isCompatibleFolderFile only ever lists .log for folder watch, and a
+// watch, plain drag/drop): it doesn't — isCompatibleFolderFile only
+// lists logs for folder watch (.log/.jsonl/format-rule names), and a
 // dropped non-log file simply fails to parse as a log via the ordinary
 // loadFileDescriptors path (see docs/persistence-and-sync.md). So there is
 // no existing "open any file" mechanism elsewhere to generalize this into.
@@ -35667,8 +36065,7 @@ function nativeDirHandle(path, name) {
       // too, or it filters them out on the Rust side before scanFolderHandle
       // ever gets a chance to widen anything.
       const [listed, subdirs] = await Promise.all([
-        window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS.concat([GZIP_LOG_EXTENSION],
-          TEXT_FILE_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e))),
+        window.philogg.listFolder(path, folderListingExtensions()),
         typeof window.philogg.listSubfolders === "function"
           ? window.philogg.listSubfolders(path) : Promise.resolve([]),
       ]);
@@ -36548,23 +36945,38 @@ setInterval(tailTick, TAIL_POLL_MS);
    satisfy. */
 const FOLDER_SCAN_MS = 3000;
 
-// Currently only *.log (CLAUDE.md/PROJECT.md's one supported log format) —
-// an array so a future "pluggable parser" session (FEATURE_BACKLOG.md) has
-// one obvious place to widen this.
+// "Is this a log PhiLogg can open?": a `.log` / `.jsonl` name, or any name
+// matched by a stored log format's filename rule (state.formatRules — "app-*.txt",
+// "*.out", ...). A rule match wins over the inline text viewers
+// (isTextFileName): a name a format claims is a log, not a viewer. The rules
+// are tested against the base name (a ZIP entry or a clicked path carries
+// directories). The same question is asked for ZIP entries (isLogZipEntry),
+// the clickable-path "Open here" item and the folder scan, so all agree.
 // A gzip-compressed log counts too (see "gzip-compressed logs"): its name
 // minus ".gz" must be a log name, where a rotation counter is allowed —
 // "app.log.gz" and logrotate's "app.log.1.gz" both qualify, a bare
 // "data.gz" or "app.tar.gz" does not. GZIP_LOG_EXTENSION is what the
 // desktop wrapper's native listing is additionally told to let through
 // (nativeDirHandle) — it filters by suffix only, the page refines here.
-const FOLDER_WATCH_EXTENSIONS = [".log"];
+// Once any format rule exists the native listing is asked for every file
+// instead (folderListingExtensions), since a rule's glob can name any suffix.
+const FOLDER_WATCH_EXTENSIONS = [".log", ".jsonl"];
 const GZIP_LOG_EXTENSION = ".gz";
 function isCompatibleFolderFile(name) {
   const lower = name.toLowerCase();
   if (FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext))) return true;
+  const base = name.slice(Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\")) + 1);
+  if (state.formatRules.some(r => fileNameGlobTest(r.glob, base))) return true;
   if (!lower.endsWith(GZIP_LOG_EXTENSION)) return false;
   const inner = stripGzipExt(lower).replace(/\.\d+$/, "");
   return FOLDER_WATCH_EXTENSIONS.some(ext => inner.endsWith(ext));
+}
+// Suffix list for the desktop wrapper's native listing: [] (= every file)
+// when a format rule could match any name, else the known suffixes.
+function folderListingExtensions() {
+  if (state.formatRules.length) return [];
+  return FOLDER_WATCH_EXTENSIONS.concat([GZIP_LOG_EXTENSION],
+    TEXT_FILE_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e));
 }
 
 // A pattern's fields double as the per-pattern "auto rules" (see
@@ -39888,6 +40300,7 @@ const ctxTimeZeroLabel = el("#ctxTimeZeroLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 const ctxExtractMessage = el("#ctxExtractMessage");
 const ctxPairWith = el("#ctxPairWith");
+const ctxWhyRow = el("#ctxWhyRow");
 const ctxOpenInVs = el("#ctxOpenInVs");
 const ctxOpenInRider = el("#ctxOpenInRider");
 const ctxAddToSelection = el("#ctxAddToSelection");
@@ -39961,6 +40374,8 @@ function openContextMenu(ev, entry) {
     currentLayoutTier !== "phone" && buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
   // "Pair with…": a real row only (never a link-view pair brace), and only where timestamps exist.
   ctxPairWith.style.display = !entry.isPair && bookmarkable && !isPlainTextFormat(entry.formatId) ? "" : "none";
+  // "Why is this row here?": a real row only (the explanation is per log entry, never a link-view pair).
+  ctxWhyRow.style.display = !entry.isPair && entryIndex[entry.id] ? "" : "none";
   // IDE Integration: row-level (not column-gated like "Filter for this
   // ___" above) — the Method column carries no file/line data of its own,
   // so gating strictly on which column was clicked would make these items
@@ -40349,6 +40764,14 @@ pairPickBanner.addEventListener("click", ev => {
   if (!btn) return;
   ev.stopPropagation();
   if (btn.dataset.pp === "pairall") pairAllFromPick(); else cancelPairPick();
+});
+ctxWhyRow.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  if (!entry || entry.isPair) return;
+  if (state.selectedId !== entry.id) selectEntry(entry.id);
+  openWhyTab();
 });
 ctxPairWith.addEventListener("click", ev => {
   ev.stopPropagation();
@@ -45651,7 +46074,7 @@ function renderFormatList() {
     const main = document.createElement("div");
     main.className = "filter-library-row-main";
     const modeLabel = fmt.mode === "meta" ? "Meta · " + (fmt.targetFormatIds || []).length + " targets"
-      : fmt.mode === "json" ? "JSON Lines" : fmt.mode === "regex" ? "Regex" : "Pattern";
+      : fmt.mode === "json" ? "JSON Lines" : fmt.mode === "logfmt" ? "logfmt" : fmt.mode === "regex" ? "Regex" : "Pattern";
     main.innerHTML =
       '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
       '<div class="filter-library-row-meta">' + modeLabel +
@@ -45787,8 +46210,8 @@ function parseLogFormatExport(text) {
 // Returns { logFormat, fileNamePatterns } or { error }.
 function normalizeLogFormatExport(src, rawFileNamePatterns) {
   if (!src || typeof src !== "object" || typeof src.name !== "string") return { error: "Log format file is incomplete" };
-  if (src.mode !== "regex" && src.mode !== "pattern" && src.mode !== "json") return { error: "Log format file uses an unsupported format mode" };
-  const compiled = src.mode === "json" ? {} : src.mode === "regex" ? validateFormatRegex(String(src.regex || "")) : compileFormatPattern(String(src.pattern || ""), String(src.tsFormat || ""));
+  if (src.mode !== "regex" && src.mode !== "pattern" && src.mode !== "json" && src.mode !== "logfmt") return { error: "Log format file uses an unsupported format mode" };
+  const compiled = src.mode === "json" || src.mode === "logfmt" ? {} : src.mode === "regex" ? validateFormatRegex(String(src.regex || "")) : compileFormatPattern(String(src.pattern || ""), String(src.tsFormat || ""));
   if (compiled.error) return { error: "Log format file has an invalid pattern: " + compiled.error };
   const logFormat = {};
   LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (src[k] !== undefined) logFormat[k] = src[k]; });
@@ -45911,6 +46334,15 @@ let formatEditAfterSave = null; // optional callback(formatId) run once after a 
 // "regex" (an ordinary log format — the dialog only ever writes Regex
 // mode; a stored Pattern-mode format opens as its compiled regex) or "meta".
 let formatEditMode = "regex";
+// JSON Lines and logfmt share one dialog panel (keys → columns).
+function fwzKv() { return formatEditMode === "json" || formatEditMode === "logfmt"; }
+const FWZ_JSON_HINT_HTML = 'Detected in the example lines. Checked paths become columns — nested keys as <code>a.b</code>, array elements as <code>a[0]</code>, keys containing a dot as <code>["a.b"]</code>.';
+// Switching between the two key/value kinds: their key names are not
+// interchangeable, so detection and the mapping start over.
+function fwzSwitchKvMode(mode) {
+  if (fwz && formatEditMode !== mode) Object.assign(fwz.json, { tsKey: "", levelKey: "", messageKey: "", cols: [], touched: false });
+  formatEditMode = mode;
+}
 // Working state of the editor's level list: the arranged order of every row
 // (the five fixed ALL_LEVELS rows, which are always present and merely
 // checked/unchecked, plus any CUSTOM names this format defines, which exist
@@ -46196,9 +46628,14 @@ function formatCapturedGroupNames(regex) {
 // or a meta-format combining others (only its ordered target list — see
 // DEFAULT_LOG_FORMAT's mode comment).
 function updateFormatEditModeUI() {
-  const isMeta = formatEditMode === "meta", isJson = formatEditMode === "json";
+  const isMeta = formatEditMode === "meta", isJson = fwzKv();
+  el("#formatEditModeLogfmt").classList.toggle("active", formatEditMode === "logfmt");
+  el("#fwzJsonHint").innerHTML = formatEditMode === "logfmt"
+    ? "Detected in the example lines. Checked keys become columns; a line must start with <code>key=value</code>."
+    : FWZ_JSON_HINT_HTML;
+  el("#fwzJsonPathNew").placeholder = formatEditMode === "logfmt" ? "Key, e.g. user_id" : "Path, e.g. items[0].sku";
   el("#formatEditModeRegex").classList.toggle("active", formatEditMode === "regex");
-  el("#formatEditModeJson").classList.toggle("active", isJson);
+  el("#formatEditModeJson").classList.toggle("active", formatEditMode === "json");
   el("#formatEditModeMeta").classList.toggle("active", isMeta);
   el("#fwzNormalBody").classList.toggle("hidden", isMeta);
   el("#formatEditMetaField").classList.toggle("hidden", !isMeta);
@@ -46212,7 +46649,13 @@ function updateFormatEditModeUI() {
 }
 el("#formatEditModeRegex").addEventListener("click", () => { formatEditMode = "regex"; updateFormatEditModeUI(); if (fwz) fwzUpdate(); });
 el("#formatEditModeJson").addEventListener("click", () => {
-  formatEditMode = "json";
+  fwzSwitchKvMode("json");
+  if (fwz && !fwz.tsTouched) fwzTsFormatEl.value = "";
+  updateFormatEditModeUI();
+  if (fwz) fwzUpdate();
+});
+el("#formatEditModeLogfmt").addEventListener("click", () => {
+  fwzSwitchKvMode("logfmt");
   if (fwz && !fwz.tsTouched) fwzTsFormatEl.value = "";
   updateFormatEditModeUI();
   if (fwz) fwzUpdate();
@@ -46312,11 +46755,14 @@ const SAMPLE_LEVEL_RE = /\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b/;
 // so it round-trips into tsFormat instead of being hardcoded to ",": a
 // separator baked in as literal text would only match the one sample line
 // that happens to share its millisecond value.
+function sampleOffsetToken(off) { return off ? (/^\s/.test(off) ? " " : "") + "XXX" : ""; }
 const SAMPLE_TS_CANDIDATES = [
   // An offset right behind the seconds (Z, +02:00, -0500) is part of the
   // timestamp and becomes the XXX token.
-  { re: /\d{4}-\d{2}-\d{2}([ T])\d{2}:\d{2}:\d{2}([.,;])\d{1,3}(Z|[+-]\d{2}:?\d{2})?/, fmt: m => `yyyy-MM-dd${m[1]}HH:mm:ss${m[2]}SSS${m[3] ? "XXX" : ""}` },
-  { re: /\d{4}-\d{2}-\d{2}([ T])\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:?\d{2})?/, fmt: m => `yyyy-MM-dd${m[1]}HH:mm:ss${m[2] ? "XXX" : ""}` },
+  // The offset may follow after one space ("... 10:00:00.127 +0200"); that
+  // space stays a literal in front of the token.
+  { re: /\d{4}-\d{2}-\d{2}([ T])\d{2}:\d{2}:\d{2}([.,;])\d{1,3}(Z|\s?[+-]\d{2}:?\d{2}(?!\d))?/, fmt: m => `yyyy-MM-dd${m[1]}HH:mm:ss${m[2]}SSS${sampleOffsetToken(m[3])}` },
+  { re: /\d{4}-\d{2}-\d{2}([ T])\d{2}:\d{2}:\d{2}(Z|\s?[+-]\d{2}:?\d{2}(?!\d))?/, fmt: m => `yyyy-MM-dd${m[1]}HH:mm:ss${sampleOffsetToken(m[2])}` },
   { re: /\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/, fmt: () => "MM/dd/yyyy HH:mm:ss" },
   { re: /\d{2}:\d{2}:\d{2}([.,;])\d{1,3}/, fmt: m => `HH:mm:ss${m[1]}SSS` },
   { re: /\d{2}:\d{2}:\d{2}/, fmt: () => "HH:mm:ss" },
@@ -46344,6 +46790,13 @@ function suggestPatternFromSample(sampleText) {
   const spans = []; // {start, end, token}
   const isFree = (start, end) => !spans.some(s => start < s.end && end > s.start);
 
+  // A syslog priority at the very start ("<135>") is the protocol's severity:
+  // its digits are the level (an integer level, like the simulator's syslog
+  // format), not a literal that only the sample's own priority would match.
+  // It wins over a level word elsewhere in the line.
+  const priM = /^<(\d{1,3})>/.exec(line);
+  if (priM) spans.push({ start: 1, end: 1 + priM[1].length, token: "%p" });
+
   let tsFormat = "";
   for (const cand of SAMPLE_TS_CANDIDATES) {
     const m = cand.re.exec(line);
@@ -46354,7 +46807,7 @@ function suggestPatternFromSample(sampleText) {
     }
   }
 
-  const levelM = SAMPLE_LEVEL_RE.exec(line);
+  const levelM = priM ? null : SAMPLE_LEVEL_RE.exec(line);
   if (levelM && isFree(levelM.index, levelM.index + levelM[0].length)) {
     spans.push({ start: levelM.index, end: levelM.index + levelM[0].length, token: "%p" });
   }
@@ -46804,7 +47257,7 @@ function fwzParsePreview(lines, source, tsFormat, timeZone) {
 // The example lines parsed under the dialog's current state (the preview
 // table's rows) — either kind.
 function fwzPreviewEntries() {
-  if (formatEditMode === "json") return fwzJsonPreviewEntries();
+  if (fwzKv()) return fwzJsonPreviewEntries();
   const re = fwzCurrentRegex();
   return re ? fwzParsePreview(fwz.lines, re.source, fwzTsFormatEl.value.trim(), fwzTimeZoneValue()) : [];
 }
@@ -46857,6 +47310,35 @@ function detectJsonKeys(lines) {
   });
   return { objects, keys: [...byPath.values()] };
 }
+const LOGFMT_TS_KEY_NAMES = ["time", "ts", "timestamp", "t", "at", "datetime", "date"];
+const LOGFMT_LEVEL_KEY_NAMES = ["level", "lvl", "severity", "loglevel"];
+const LOGFMT_MESSAGE_KEY_NAMES = ["msg", "message", "event", "text"];
+// A first line with at least two key=value pairs, the first at its start.
+function fwzLinesLookLikeLogfmt(lines) {
+  const first = lines.find(l => l.trim() !== "");
+  if (!first || !LOGFMT_HEADER_RE.test(first)) return false;
+  const o = parseLogfmtLine(first);
+  return !!o && Object.keys(o).length >= 2;
+}
+// Same result shape as detectJsonKeys: every key of the example lines is a
+// leaf (logfmt has no nesting), `objects` counts the lines that parse.
+function detectLogfmtKeys(lines) {
+  const byKey = new Map();
+  let objects = 0;
+  lines.forEach(line => {
+    if (!LOGFMT_HEADER_RE.test(line)) return;
+    const o = parseLogfmtLine(line);
+    if (!o) return;
+    objects++;
+    Object.keys(o).forEach(k => {
+      let rec = byKey.get(k);
+      if (!rec) byKey.set(k, rec = { path: k, types: new Set(["text"]), count: 0, sample: "" });
+      rec.count++;
+      if (!rec.sample && o[k] !== "") rec.sample = o[k].slice(0, 80);
+    });
+  });
+  return { objects, keys: [...byKey.values()] };
+}
 function guessJsonKey(keys, names) {
   for (const n of names) {
     const hit = keys.find(k => k.path.toLowerCase() === n || k.path.toLowerCase() === '["' + n + '"]');
@@ -46869,13 +47351,14 @@ function guessJsonKey(keys, names) {
 // path is a column; afterwards newly seen paths are only added, unchecked.
 function fwzJsonSync() {
   const j = fwz.json;
-  const det = detectJsonKeys(fwz.lines);
+  const logfmt = formatEditMode === "logfmt";
+  const det = logfmt ? detectLogfmtKeys(fwz.lines) : detectJsonKeys(fwz.lines);
   j.detected = det.keys;
   j.objects = det.objects;
   if (!j.touched) {
-    j.tsKey = guessJsonKey(det.keys, JSON_TS_KEY_NAMES);
-    j.levelKey = guessJsonKey(det.keys, JSON_LEVEL_KEY_NAMES);
-    j.messageKey = guessJsonKey(det.keys, JSON_MESSAGE_KEY_NAMES);
+    j.tsKey = guessJsonKey(det.keys, logfmt ? LOGFMT_TS_KEY_NAMES : JSON_TS_KEY_NAMES);
+    j.levelKey = guessJsonKey(det.keys, logfmt ? LOGFMT_LEVEL_KEY_NAMES : JSON_LEVEL_KEY_NAMES);
+    j.messageKey = guessJsonKey(det.keys, logfmt ? LOGFMT_MESSAGE_KEY_NAMES : JSON_MESSAGE_KEY_NAMES);
     const keyOf = new Map(j.cols.map(c => [c.path, c.key]));
     j.cols = det.keys.map(k => ({ path: k.path, key: keyOf.get(k.path) || null, on: true }));
   } else {
@@ -46896,13 +47379,14 @@ function fwzJsonColumnDefs() {
 }
 function fwzJsonDraftFormat() {
   return {
-    mode: "json", tsKey: fwz.json.tsKey, levelKey: fwz.json.levelKey, messageKey: fwz.json.messageKey,
+    mode: formatEditMode, tsKey: fwz.json.tsKey, levelKey: fwz.json.levelKey, messageKey: fwz.json.messageKey,
     tsFormat: fwzTsFormatEl.value.trim(), timeZone: fwzTimeZoneValue(), columnDefs: fwzJsonColumnDefs(),
   };
 }
 // The examples parsed under the draft — same shape fwzParsePreview returns.
 function fwzJsonPreviewEntries() {
-  const c = compileJsonFormat(fwzJsonDraftFormat());
+  const draft = fwzJsonDraftFormat();
+  const c = formatEditMode === "logfmt" ? compileLogfmtFormat(draft) : compileJsonFormat(draft);
   const out = [];
   let cur = null;
   fwz.lines.forEach((line, i) => {
@@ -46919,8 +47403,9 @@ function fwzJsonPreviewEntries() {
   return out;
 }
 function fwzJsonSaveBlocker() {
-  if (!fwz.lines.length) return "Paste or drop example JSON lines.";
-  if (!fwz.json.objects) return "None of the example lines is a JSON object — use the Log format kind instead.";
+  const logfmt = formatEditMode === "logfmt";
+  if (!fwz.lines.length) return logfmt ? "Paste or drop example logfmt lines." : "Paste or drop example JSON lines.";
+  if (!fwz.json.objects) return logfmt ? "None of the example lines starts with key=value — use the Log format kind instead." : "None of the example lines is a JSON object — use the Log format kind instead.";
   if (!fwz.json.tsKey) return "Time is required — pick the key that holds the timestamp.";
   return "";
 }
@@ -46928,7 +47413,7 @@ function renderFwzJsonSample() {
   const frag = document.createDocumentFragment();
   let inEntry = false;
   fwz.lines.forEach((text, li) => {
-    const header = /^\s*\{/.test(text);
+    const header = formatEditMode === "logfmt" ? LOGFMT_HEADER_RE.test(text) : /^\s*\{/.test(text);
     if (header) inEntry = true;
     const row = document.createElement("div");
     row.className = "fwz-line" + (!header && inEntry ? " fwz-cont" : "");
@@ -47224,8 +47709,8 @@ function openFormatEditDialog(id, importData) {
   const isMeta = !!(fmt && fmt.mode === "meta");
   el("#formatEditTitle").textContent = importData ? "Import log format" : fmt ? "Edit log format" : "Add log format";
   formatEditName.value = fmt ? fmt.name : "";
-  const isJson = !!(fmt && fmt.mode === "json");
-  formatEditMode = isMeta ? "meta" : isJson ? "json" : "regex";
+  const isJson = !!(fmt && (fmt.mode === "json" || fmt.mode === "logfmt"));
+  formatEditMode = isMeta ? "meta" : isJson ? fmt.mode : "regex";
   formatEditMetaTargets = isMeta ? (fmt.targetFormatIds || []).slice() : [];
   formatEditTsFormat.value = fmt && !isMeta ? (fmt.tsFormat || "") : "";
   fwzSetTimeZoneValue(fmt && !isMeta ? fmt.timeZone : "");
@@ -47536,11 +48021,13 @@ function fwzAppendText(text) {
   fwz.notice = incoming.length > room ? "Only the first " + FWZ_MAX_LINES + " lines are kept as examples." : "";
   // A new format whose first examples are JSON objects starts as the JSON
   // Lines kind — "Log format" is one click away if that guess is wrong.
-  if (wasEmpty && !formatEditId && formatEditMode === "regex" && !fwz.marks.length && fwz.manualSrc == null && fwzLinesLookLikeJson(fwz.lines)) {
-    formatEditMode = "json";
+  const guessedKv = wasEmpty && !formatEditId && formatEditMode === "regex" && !fwz.marks.length && fwz.manualSrc == null
+    ? (fwzLinesLookLikeJson(fwz.lines) ? "json" : fwzLinesLookLikeLogfmt(fwz.lines) ? "logfmt" : "") : "";
+  if (guessedKv) {
+    formatEditMode = guessedKv;
     if (!fwz.tsTouched) fwzTsFormatEl.value = "";
     updateFormatEditModeUI();
-    fwz.notice = (fwz.notice ? fwz.notice + " " : "") + "The examples are JSON objects — switched to JSON Lines.";
+    fwz.notice = (fwz.notice ? fwz.notice + " " : "") + (guessedKv === "json" ? "The examples are JSON objects — switched to JSON Lines." : "The examples are key=value pairs — switched to logfmt.");
   }
   fwzUpdate();
 }
@@ -47666,7 +48153,7 @@ function fwzMoveColumn(key, delta) {
 }
 
 function fwzUpdate() {
-  if (formatEditMode === "json") {
+  if (fwzKv()) {
     fwzJsonSync();
     fwzSyncLevels(fwzJsonPreviewEntries());
     renderFwzJsonKeys();
@@ -47746,7 +48233,7 @@ function renderFwzSample() {
     fwzSampleEl.innerHTML = '<div class="fwz-empty">Paste log lines here (Ctrl+V) or drop a log file.<br>Then pick a column on the left and select its value in a line.</div>';
     return;
   }
-  if (formatEditMode === "json") { renderFwzJsonSample(); return; }
+  if (fwzKv()) { renderFwzJsonSample(); return; }
   const hueOf = {};
   fwz.columns.forEach(c => { hueOf[c.key] = c.hue; });
   const labels = fwzLabels();
@@ -47851,16 +48338,17 @@ const FWZ_FALLBACK_HINT = {
 };
 
 function renderFwzResult() {
-  if (formatEditMode === "json") {
+  if (fwzKv()) {
     const status = [];
     if (fwz.notice) status.push({ text: fwz.notice, cls: "fwz-warn" });
     const blocker = fwzJsonSaveBlocker();
     if (blocker) status.push({ text: blocker });
     else {
+      const logfmt = formatEditMode === "logfmt";
       const headerLines = fwz.lines.filter(l => /^\s*\{/.test(l)).length;
       if (fwz.json.objects < fwz.lines.length) {
-        status.push({ text: fwz.json.objects + " of " + fwz.lines.length + " lines are JSON objects" +
-          (headerLines > fwz.json.objects ? " (" + (headerLines - fwz.json.objects) + " start with { but don't parse — kept as a whole-line message)" : "") +
+        status.push({ text: fwz.json.objects + " of " + fwz.lines.length + (logfmt ? " lines are key=value lines" : " lines are JSON objects") +
+          (!logfmt && headerLines > fwz.json.objects ? " (" + (headerLines - fwz.json.objects) + " start with { but don't parse — kept as a whole-line message)" : "") +
           "; other lines continue the previous entry's message." });
       }
       if (fwzJsonPreviewEntries().some(e => e.unmatched == null && isNaN(e.ts) && e.tsRaw)) {
@@ -48051,12 +48539,12 @@ function fwzRevealLevel(name) {
 function renderFwzPreview() {
   const box = el("#fwzPreview");
   box.innerHTML = "";
-  const isJson = formatEditMode === "json";
+  const isJson = fwzKv();
   const re = isJson ? null : fwzCurrentRegex();
   const entries = fwzPreviewEntries();
   if (!entries.length) {
     box.innerHTML = '<div class="format-preview-empty">' + (!fwz.lines.length ? "Add example lines to see a preview."
-      : isJson ? "No preview yet — none of the example lines is a JSON object."
+      : isJson ? "No preview yet — none of the example lines is " + (formatEditMode === "logfmt" ? "a key=value line." : "a JSON object.")
       : "No preview yet — mark columns in an example line, or fix the regex.") + '</div>';
     return;
   }
@@ -48140,7 +48628,7 @@ async function saveFormatEdit() {
   }
   if (formatEditMode === "meta") {
     if (formatEditMetaTargets.length < 2) return fail("Pick at least 2 target formats.");
-  } else if (formatEditMode === "json") {
+  } else if (fwzKv()) {
     const blocker = fwzJsonSaveBlocker();
     if (blocker) return fail(blocker);
     if (!levelNames.length) return fail("Pick at least one log level.");
@@ -48169,7 +48657,7 @@ async function saveFormatEdit() {
     delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.timeZone; delete fmt.levels;
     delete fmt.levelValueType; delete fmt.columnDefs; delete fmt.messageVisible; delete fmt.sampleSetup;
     delete fmt.tsKey; delete fmt.levelKey; delete fmt.messageKey;
-  } else if (formatEditMode === "json") {
+  } else if (fwzKv()) {
     fmt.pattern = "";
     fmt.regex = "";
     fmt.tsFormat = formatEditTsFormat.value.trim();
@@ -48293,7 +48781,7 @@ function fwzOffsetIn(container, node, offset) {
 // becomes a mark for the active column; a plain click on a manual mark
 // removes it.
 function fwzHandleSampleMouseUp(ev) {
-  if (!fwz || formatEditMode === "json") return;
+  if (!fwz || fwzKv()) return;
   const sel = window.getSelection ? window.getSelection() : null;
   if (sel && !sel.isCollapsed && sel.rangeCount) {
     const range = sel.getRangeAt(0);
@@ -48369,7 +48857,7 @@ fwzColumnLabelNew.addEventListener("keydown", ev => {
 fwzTsFormatEl.addEventListener("input", () => {
   // Emptying the field hands timestamp detection back to the wizard.
   fwz.tsTouched = fwzTsFormatEl.value.trim() !== "";
-  if (formatEditMode === "json") { renderFwzResult(); return; }
+  if (fwzKv()) { renderFwzResult(); return; }
   fwzDerive();
   renderFwzResult();
 });
@@ -50345,8 +50833,9 @@ async function runSessionImport(data, opts = {}) {
   updatePinBookmarksButton();
   render();
 
-  // A clean ?session= load (nothing skipped) is silent: the opened view is the feedback.
-  if (opts.fresh && !summary.skipped) return;
+  // A fresh ?session= load with nothing beyond the files to report (nothing skipped or resolved
+  // manually, no bookmarks, no notes) is silent: the opened view is the feedback.
+  if (opts.fresh && !summary.skipped && !summary.manual && !summary.totalBookmarks && !summary.totalNotes) return;
   const parts = [];
   if (opts.fresh) parts.push(summary.loaded + " file" + (summary.loaded === 1 ? "" : "s") + " loaded");
   if (!opts.fresh || summary.auto) parts.push(summary.auto + " file" + (summary.auto === 1 ? "" : "s") + " matched automatically");

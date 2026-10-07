@@ -745,12 +745,12 @@ Filtered view lists, without pinned bookmarks — by message shape.
 
 ## Facet panel (value distribution per column)
 
-The bottom panel (`#detailPanel`) has three tabs: **Entry detail | Statistics |
-Facets** (`#lowerTabDetail` / `#lowerTabStats` / `#lowerTabFacets`,
+The bottom panel (`#detailPanel`) has four tabs: **Entry detail | Why | Statistics |
+Facets** (`#lowerTabDetail` / `#lowerTabWhy` / `#lowerTabStats` / `#lowerTabFacets`,
 `role="tab"`, `aria-selected`). The facets used to be a 280px side panel, which
 squeezed the log's Message column to a few pixels; now the log list keeps its
 full width and the panel's height comes from the existing `#detailResizer`.
-The selected tab is the one `lowerTab` value (`"detail" | "stats" | "facets"`,
+The selected tab is the one `lowerTab` value (`"detail" | "stats" | "facets" | "why"`,
 persisted in `philogg-lower-tab`); the switches are the tabs and `Ctrl+I`
 (`toggleFacets`, rebindable, "Show/hide Facets (bottom panel tab)"): with
 Facets selected and the panel expanded and visible it goes back to Entry
@@ -768,6 +768,24 @@ Raw/Parsed/Pretty are replaced by the entry count (`#facetPanelCount`) and
 `renderStatsBar`) replaces it and the header shows no Raw/Parsed/Pretty.
 `applyLowerPanel()` (from `renderMainView`) sets the tab state from
 `fhActiveTab`; `renderFacetPanel()` fills the facet body.
+
+**Why tab** ("Why is this row here?", FEATURE_BACKLOG #15). With Why selected
+(`.lower-why`, `whyActive()`) `#whyPanelBody` replaces the entry body. It shows
+`explainEntry(selectedEntry, activeId)` (see docs/filters.md → "Why is this row
+here?") and follows the selection: `updateDetailPanel()` calls
+`renderWhyPanel()` on every selection change, which writes only into its own
+body (never `render()`/`renderTree()`). Head line (green when the entry is in
+the active node's result, red when not), then one step per chain node, top-down:
+number, node name (a button that activates the node like a plain tree click and
+leaves the entry selected), badge `kept` / `rejected` / `not reached` / `muted`,
+the reason line, and for AND/OR one indented ✓/✗ line per baked condition. The
+rejecting step is red, `not reached` steps are dimmed, a last line names a
+view filter that hides the row (level bar) or the pin that shows it. Colors are
+`--status-ok` / `--level-error` / `--accent-strong`. Row context menu: **Why is
+this row here?** (`#ctxWhyRow`, after Pair with…, real rows only) selects the row
+and opens the tab (`openWhyTab()`; expands a collapsed panel). Phone: `Why` is a
+sheet tab beside Entry (`phoneSheetTab` `"why"`, enabled only with a selection,
+not persisted; a card tap keeps it). GROUP explain-row.
 Visibility per view: Context/Filtered/link view as above. **Table and Plot**
 show a normal panel with all three tabs: Entry detail shows the selected entry
 (`state.selectedId`; on Table a click on a body cell or row gutter selects
@@ -1005,7 +1023,7 @@ Regression-tested: **Group 94** — "Add to tree" creation, in-place edit with u
 
 ## Timestamps without a date
 
-A format whose `tsFormat` has no date tokens (e.g. `HH:mm:ss.SSS`) parses to 1970-01-01 local time (`parseTimestampGeneric`'s defaults); order, Δt and time filters work as usual, and the format dialog's suggestion already proposes `HH:mm:ss.SSS` for such lines. `formatTime` omits the date for any timestamp on 1970-01-01 local, so these show as `00:01:03.700` everywhere the app prints a time (the time-range dialog's fields show only the time of day). Group 352g/h.
+A format whose `tsFormat` has no date tokens (e.g. `HH:mm:ss.SSS`) parses to 1970-01-01 local time (`parseTimestampGeneric`'s defaults); order, Δt and time filters work as usual, and the format dialog's suggestion already proposes `HH:mm:ss.SSS` for such lines. `formatTime` omits the date for any timestamp on 1970-01-01 local, so these show as `00:01:03.700` everywhere the app prints a time (the time-range dialog's fields show only the time of day). With a format time zone or an `XXX` offset, the shifted time of day stays on 1970-01-01 (modulo 24 h, shown in local time) on every parse path: `compileDateFormat` flags `timeOnly`, `parseTimestampGeneric` and `parseLocalFileNatively` wrap the converted instant, so a zone east or west of the viewer never rolls the time into another day. Group 352g/h, format-time-only-zone.
 
 ## Log format export/import (JSON)
 
@@ -1019,7 +1037,7 @@ The one place a log format is defined. Settings → Log Formats → **"+ Add for
 
 **Top row**:
 - **Name**.
-- **Kind** toggle: **Log format** (`formatEditMode = "regex"`), **JSON Lines** (`"json"`, see "JSON Lines kind" below) or **Meta (combines formats)**. Meta swaps the whole body below for the ordered target-format list (`#formatEditMetaField`, same picker as before) — a meta-format has no examples, columns, levels, or regex of its own.
+- **Kind** toggle: **Log format** (`formatEditMode = "regex"`), **JSON Lines** (`"json"`, see "JSON Lines kind" below), **logfmt** (`"logfmt"`) or **Meta (combines formats)**. Meta swaps the whole body below for the ordered target-format list (`#formatEditMetaField`, same picker as before) — a meta-format has no examples, columns, levels, or regex of its own.
 - **Use for files matching** (`#formatEditRuleGlob`, optional): on Save, a non-empty glob adds an ordinary filename rule for this format, appended **last** (`order` = max + 1, since the first matching rule wins), unless the same glob already points at this format. The field only ever *adds*. Reordering, editing, and removing rules stays in Settings → Filename rules, and the dialog lists the rules already using this format underneath (`renderFormatRuleInfo`). A file dropped or opened as examples pre-fills the still-empty field from its name (`fwzSuggestGlob`: `app-2026-09-23.log` → `app-*.log` — digit runs become `*`, and `*`s joined only by separators collapse). Nothing is saved on Cancel.
 
 **Body** (ordinary format): the sidebar holds **Columns** (+ "Show Message column") and **Log levels**. The main area holds the example lines, the **Regex**, **Timestamp format** and **Time zone** fields, a status line, and the table **Preview**. The **Time zone** field (both kinds, right of Timestamp format; `#fwzTzMode` Local time (this computer) / UTC / Fixed offset / Time zone, plus `#fwzTzFixed` or `#fwzTzNamed` with a `<datalist>` of `Intl.supportedValuesOf("timeZone")`, filled on first open) writes the format's `timeZone` (`docs/log-formats.md` → "Time zone and the `XXX` token"); an invalid fixed offset or unknown name is an inline error (`fwzTimeZoneError`) and blocks Save with the same message. The status line's last row (`fwzAddTimeStatus`) shows the first example timestamp as `<raw> → <time> shown in your local time · source: <offset Z from the line | UTC (format) | UTC-05:00 (format) | America/New_York (format) | local time (format)>`, with ` · line has an offset, add XXX to use it` when the line carries an offset the format doesn't read (then the timestamp is "not recognized"); the preview's Time column is the normalized time. The **Encoding** select sits in the example-lines toolbar right before "Open file…" (Log format and JSON Lines kinds; the Meta kind has the same select as a field) and sets the format's `encoding` (`docs/log-formats.md` → "Text encoding"): lines from "Open file…"/a drop keep their bytes (`fwz.fileSource`) and are decoded again when the select changes, pasted lines stay.
@@ -1040,6 +1058,7 @@ The one place a log format is defined. Settings → Log Formats → **"+ Add for
 2. When **editing** a format: that format's **own** regex, always — even if newly pasted examples don't match it. The status line then warns that it matches none of them. For a Pattern-mode format this is its compiled pattern, with the date's inner groups made non-capturing (`compileFormatPattern(..., {plainDateGroups: true})`). The format's own timestamp format is left alone too.
 3. For a **new** format, or after **Re-suggest**: the **automatic suggestion** (`fwzSuggestFromLines`). It runs `suggestPatternFromSample` on the first line that starts with a recognizable timestamp.
    - **What it claims**: timestamp, level word, quoted/parenthesized thread, bracketed method, and a **path-like field** between two of those as **Location** (e.g. the default format's `C:\src\App.cs\tline 12`). Left literal, a path would pin the suggestion to that one line's file and match no other line. The rest after a short separator becomes the Message, minus a closing quote that matches an opening one.
+   - **Syslog priority**: a leading `<135>` is claimed as the **Level** (`<%p>`; it wins over a level word in the line), not kept as literal text that only the sample's own priority would match. The values are numeric, so the dialog's level list switches to Integer mode with one level per priority found. An offset right behind the seconds, directly or after one space (`10:00:00.127 +0200`), becomes the `XXX` token. Group format-suggest-syslog.
    - **Generalizing**: its claimed spans (`fields`, on the trimmed line) are fed straight into `deriveFormatRegexFromMarks` as virtual marks, so the suggestion generalizes exactly like hand marks (space padding, "up to the next separator" classes). They're deliberately NOT re-derived by running the raw suggestion regex, which can fail even on its own line — its thread is `\S+`, and a quoted thread like `"(1) "` contains a space.
    - **Timestamp**: it also fills the timestamp field, unless that was edited by hand.
 
@@ -1131,6 +1150,8 @@ The same dialog defines a `mode: "json"` format (parsing: `PROJECT.md` → "JSON
 - **Save** requires a Time key and at least one JSON object among the examples (no Level key required — Serilog compact omits `@l` for Information, which then parses as INFO). Column keys: a saved column keeps its `key` across edits (filters restricted to a column refer to it by key); a new one gets `jsonColumnKey(path)`. `sampleSetup` stores the lines with no marks.
 
 Tested: GROUP 297d.
+
+**logfmt kind** (`formatEditMode = "logfmt"`, parsing: `docs/log-formats.md` → "logfmt formats"): the same panel and state (`fwz.json`, `fwzKv()` is true for both kinds) with a different parser. `detectLogfmtKeys` lists every key of the examples (flat, type "text"), the guesses are `time`/`ts`/`timestamp`, `level`/`lvl`/`severity`, `msg`/`message` (`LOGFMT_*_KEY_NAMES`), the hint and the add-field placeholder talk about keys, and the status line counts "key=value lines". A NEW format whose first example line has at least two `key=value` pairs (`fwzLinesLookLikeLogfmt`; JSON objects are checked first) switches to logfmt with a notice. Switching between the JSON Lines and logfmt buttons resets the detection (`fwzSwitchKvMode`), because key names don't carry over. Tested: GROUP format-logfmt.
 
 ## General "don't jump" scroll anchoring + auto-reveal Filtered
 
@@ -1251,6 +1272,7 @@ Per entry kind:
 
 - **Formatted logs** (default, pattern, regex): the header line plus its continuation lines, exactly as read (CRLF line ends normalized to `\n`).
 - **JSON Lines**: the compact JSON line from the file; Parsed shows the message key's value.
+- **logfmt**: the whole `key=value` line; Parsed shows the message key's value.
 - **Plain text**: the line itself — identical to Parsed.
 - **Link pairs**: a filter *under* a link node lists pairs in the ordinary log table, and a pair row now reaches the detail panel too (`selectedEntry()` looks a `pair:` id up in `currentViewEntries`, since pairs never enter `entryIndex`; row actions still resolve via `currentRowActionEntry()`, which returns `null` for a pair instead of throwing). A pair's `raw` is not a contiguous piece of any file (`buildPairEntry` joins the sides with ` ⟶ `), so Raw shows each real entry's own `raw` in its own block (`entryRawParts` → `getTupleEntries`, `.detail-raw-part` with a dashed separator) and no synthetic separator. The Link view itself (`renderLinkView`) has no detail-panel wiring; its pair blocks are unaffected.
 

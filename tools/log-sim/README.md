@@ -44,6 +44,7 @@ node tools/log-sim/cli.js --size 100MB -o /tmp/big.log  # ~6 s
 | `custom` | log4j-like line + custom columns `requestId`/`user`/`tenant` | import `<prefix>.logformat.json` |
 | `bracket` | `[ts] LEVEL (thread) message` | import `<prefix>.logformat.json` |
 | `jsonl` | JSON Lines: nested `ctx`, literal dotted key `"http.status"`, arrays, objects | import `<prefix>.logformat.json` |
+| `logfmt` | logfmt `key=value` lines: quoted values with escapes, bare key `failed`, stack-trace continuation lines | import `<prefix>.logformat.json` |
 | `syslog` | RFC 5424, numeric PRI as level (Integer level mode) | import `<prefix>.logformat.json` |
 | `mixed` | default lines interleaved with syslog lines | import the syslog definition, then add a Meta format `[syslog, Default]` |
 | `plain` | bare messages, `.txt` | opens as one plain-text file node |
@@ -126,7 +127,7 @@ column names from a name list (`-s tuples,basic`).
   (folder watch); `--layout parallel` gives each file its own service over
   the same time range (merge, Sources), `--skew 1500` shifts each file's
   clock by 1.5 s per index (per-file clock offset).
-- `--ts-offset Z|+05:30|+0530|-05:00` (syslog, jsonl, mixed): writes the ISO
+- `--ts-offset Z|+05:30|+0530|-05:00` (syslog, jsonl, logfmt, mixed): writes the ISO
   timestamps (the compact `+0530` shape is kept as given) as that zone's wall clock plus the offset suffix — the same
   instant as without the option (the simulator's clock is read as UTC).
   Default: syslog `…Z`, jsonl no suffix. The syslog format definition reads
@@ -137,7 +138,9 @@ column names from a name list (`-s tuples,basic`).
   writes the files in that encoding (also inside `--gzip`/`--zip`, and with
   `--follow`); characters the encoding lacks become `?`, like .NET's
   `Encoding.GetEncoding(1252)`. The `text` scenario's umlaut lines
-  ("Benutzer „Jürgen Müller“ …") make a Windows-1252 file recognizable.
+  ("Benutzer „Jürgen Müller“ hat Auftrag N (Summe N,50 €) …") make a Windows-1252 file
+  recognizable and carry a `€` (byte 0x80 in Windows-1252/-1250, 0x88 in
+  Windows-1251, 0xA4 in ISO-8859-15), which the golden parser fixture pins.
   Needs no format change in PhiLogg: Auto detects it, or set the format's
   Encoding. In code: `encodeText(text, label)`.
 - `--gzip` (each file `.gz`), `--zip -o out.zip` (one archive, stored),
