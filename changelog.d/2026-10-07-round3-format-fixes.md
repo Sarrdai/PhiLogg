@@ -1,0 +1,5 @@
+- **fix: Syslog format suggestion, time-only formats with a time zone, € in the simulator (2026-10-07, backlog #118, #116, #117)**
+  - The sample-based format suggestion no longer pins a syslog line's `<PRI>`: the priority becomes the custom column `pri`, so lines with another priority match; an offset after a space (`... 10:00:00.127 +0200`) is read as the `XXX` token.
+  - A `tsFormat` without date tokens keeps its time of day on the placeholder date under a format time zone or `XXX` offset (modulo 24 h), so `formatTime` never shows a rolled day.
+  - The simulator's `text` scenario writes a `€`; the JS/Rust golden fixture now covers a Windows-1252 0x80 byte.
+  - **Tests**: GROUP format-suggest-syslog, format-time-only-zone, log-sim-euro (264 fixtures regenerated). Docs: docs/ui-and-views.md, tools/log-sim/README.md.

@@ -137,7 +137,9 @@ column names from a name list (`-s tuples,basic`).
   writes the files in that encoding (also inside `--gzip`/`--zip`, and with
   `--follow`); characters the encoding lacks become `?`, like .NET's
   `Encoding.GetEncoding(1252)`. The `text` scenario's umlaut lines
-  ("Benutzer „Jürgen Müller“ …") make a Windows-1252 file recognizable.
+  ("Benutzer „Jürgen Müller“ hat Auftrag N (Summe N,50 €) …") make a Windows-1252 file
+  recognizable and carry a `€` (byte 0x80 in Windows-1252/-1250, 0x88 in
+  Windows-1251, 0xA4 in ISO-8859-15), which the golden parser fixture pins.
   Needs no format change in PhiLogg: Auto detects it, or set the format's
   Encoding. In code: `encodeText(text, label)`.
 - `--gzip` (each file `.gz`), `--zip -o out.zip` (one archive, stored),

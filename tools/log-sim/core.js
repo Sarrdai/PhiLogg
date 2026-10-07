@@ -465,7 +465,7 @@
           return { level: "DEBUG", cls: "l10n", method: "Trace", msg: "Long payload: " + parts.join("; ") };
         }
         return g.pick([
-          { level: "INFO", cls: "l10n", method: "Audit", msg: "Benutzer „Jürgen Müller“ hat Auftrag " + n + " geändert ✓" },
+          { level: "INFO", cls: "l10n", method: "Audit", msg: "Benutzer „Jürgen Müller“ hat Auftrag " + n + " (Summe " + n + ",50 €) geändert ✓" },
           { level: "INFO", cls: "l10n", method: "Audit", msg: "注文 " + n + " を処理しました" },
           { level: "INFO", cls: "l10n", method: "Deploy", msg: "Deploy " + n + " finished 🚀 status=green 🎉" },
           { level: "WARN", cls: "l10n", method: "Render", msg: "Glyph missing for 'Ω≈ç√∫' in font \"Segoe UI\"" },

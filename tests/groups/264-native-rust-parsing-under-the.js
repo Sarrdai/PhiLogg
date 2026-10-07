@@ -11,7 +11,9 @@
    to it, the crate pins the Rust parser to it — so the two can't drift
    apart silently. Regenerate after a deliberate JS parsing change with
    `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test`, then make the crate
-   pass again.
+   pass again. The encoding-* cases' bytes are the simulator's output (format
+   default, scenario text, seed 5, 12 entries) in each case's encoding (bom case:
+   UTF-8 with BOM); rewrite their base64 from it when the text scenario changes.
    ============================================================ */
 group(264);
 {
