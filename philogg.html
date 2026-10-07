@@ -4283,6 +4283,9 @@
   #plotChartArea{flex:1 1 auto; min-width:0; display:flex; align-items:stretch; justify-content:stretch; padding:14px; position:relative;}
   #plotSvg{width:100%; height:100%; overflow:visible; touch-action:none; cursor:crosshair;}
   #plotSvg.hidden{display:none;}
+  #plotSvg.plot-over-mark{cursor:pointer;}
+  #plotMarksCanvas{position:absolute; pointer-events:none;}
+  #plotMarksCanvas.hidden{display:none;}
   #plot3dCanvas{width:100%; height:100%; touch-action:none; cursor:grab;}
   #plot3dCanvas.dragging{cursor:grabbing;}
   #plot3dCanvas.hidden{display:none;}
@@ -4293,7 +4296,7 @@
   .plot-axis-title{fill:var(--text-secondary); font-size:10.5px; font-weight:650; font-family:var(--font-ui);}
   .plot-empty-label{fill:var(--text-tertiary); font-size:12px; font-family:var(--font-ui);}
   .plot-mark{cursor:pointer;}
-  .plot-mark:hover{opacity:.7;}
+  .plot-mark:hover{opacity:.7;} /* value charts; line/bar/scatter marks are canvas (see #plotSvg.plot-over-mark) */
   /* Selection ring of the selected entry's mark(s) (updatePlotSelectionRing). */
   .plot-sel-ring{pointer-events:none;}
   .plot-sel-ring circle, .plot-sel-ring rect{fill:none; stroke:var(--text-primary); stroke-width:2;}
@@ -6179,6 +6182,7 @@
             <div id="plotControls"></div>
             <div id="plotChartArea">
               <svg id="plotSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+              <canvas id="plotMarksCanvas" class="hidden"></canvas>
               <canvas id="plot3dCanvas" class="hidden"></canvas>
               <div id="plotDragRect" class="plot-drag-rect hidden"></div>
               <div id="plotTooltip" class="hidden"></div>
@@ -18140,6 +18144,7 @@ const plotBody = el("#plotBody");
 const plotControls = el("#plotControls");
 const plotChartArea = el("#plotChartArea");
 const plotSvg = el("#plotSvg");
+const plotMarksCanvas = el("#plotMarksCanvas");
 const plot3dCanvas = el("#plot3dCanvas");
 const tableToolbar = el("#tableToolbar");
 const plot2dToolsGroup = el("#plot2dToolsGroup");
@@ -22599,6 +22604,17 @@ function visiblePlotPoints() {
 // the exact value up live from extractRowsData at hover time rather than
 // caching a formatted copy, so it always shows the real extracted string.
 let plotHoverPoints = [];
+// Line/bar/scatter marks are painted on #plotMarksCanvas (an SVG element per
+// mark does not scale to 100k+ points), from this paint-order op list in SVG
+// user units, built by renderPlotChart already reduced to one op per pixel —
+// plotHoverPoints keeps every point for the exact hover/click mapping. Ops:
+// {kind:"path",pts,color,width} | {kind:"circle",x,y,r,fill,alpha,rowIndex} |
+// {kind:"rect",x,y,w,h,fill,rowIndex} | {kind:"ring",x,y,r,color,width} |
+// {kind:"rectStroke",x,y,w,h,color,width}. plotSelRingOps is the selection
+// ring (same op kinds), drawn on top of the cached mark layer.
+let plotMarkOps = [];
+let plotSelRingOps = [];
+let plotMarkLayer = null; // offscreen canvas holding the painted plotMarkOps, re-blitted on a selection change
 
 // --- 3D scatter view state (ephemeral, like plotZoom — rotate/zoom/pan are
 // pure presentation, never persisted through any filter/cache carrier) ---
@@ -22754,6 +22770,14 @@ window.addEventListener("resize", () => { if (extractView === "plot") renderPlot
 // timeline minimap's own drag-select already uses for the identical reason.
 let plotDragSuppressClick = false;
 function plotMarkEntry(ev) {
+  if (plotLastRender) {
+    // line/bar/scatter marks live on a canvas: the click selects what the
+    // hover tooltip shows (the hit-test over every point, not the reduced ops)
+    const svgPt = plotSvgPointFromEvent(ev);
+    const hit = svgPt ? plotHitTest(svgPt) : null;
+    const hrow = hit ? extractRowsData[hit.rowIndex] : null;
+    return hrow ? hrow.entry : null;
+  }
   const mark = ev.target.closest(".plot-mark");
   const row = mark ? extractRowsData[+mark.dataset.row] : null;
   return row ? row.entry : null;
@@ -22783,6 +22807,7 @@ plotSvg.addEventListener("dblclick", ev => {
 function updatePlotSelectionRing() {
   const old = plotSvg.querySelector("#plotSelRing");
   if (old) old.remove();
+  if (plotLastRender && !isValueChartType(plotConfig.type) && plotConfig.type !== "3d") { updatePlotCanvasSelectionRing(); return; }
   if (!state.selectedId || plotConfig.type === "3d" || !extractRowsData.length) return;
   const idx = extractRowsData.findIndex(r => r.entry.id === state.selectedId);
   if (idx < 0) return;
@@ -22814,6 +22839,24 @@ function updatePlotSelectionRing() {
     if (ring) g.appendChild(ring);
   });
   if (g.firstChild) plotSvg.appendChild(g);
+}
+// Selection ring of line/bar/scatter: ring ops around every plotted point /
+// bar of the selected entry, drawn on #plotMarksCanvas over the cached mark
+// layer (no re-paint of the marks).
+function updatePlotCanvasSelectionRing() {
+  const ring = [];
+  const idx = state.selectedId && extractRowsData.length ? extractRowsData.findIndex(r => r.entry.id === state.selectedId) : -1;
+  if (idx >= 0) {
+    const color = getComputedStyle(document.documentElement).getPropertyValue("--text-primary").trim() || "#fff";
+    const markR = plotConfig.type === "line" ? 2.6 : 4;
+    for (const h of plotHoverPoints) {
+      if (h.rowIndex !== idx) continue;
+      if (h.kind === "bar") ring.push({ kind: "rectStroke", x: h.bx - 2, y: h.by - 2, w: h.bw + 4, h: h.bh + 4, color, width: 2 });
+      else ring.push({ kind: "ring", x: h.px, y: h.py, r: markR + 3.5, color, width: 2 });
+    }
+  }
+  plotSelRingOps = ring;
+  blitPlotMarksCanvas();
 }
 // Brings the plot in step with state.selectedId after a selection change made
 // anywhere (called from updateSelectedRowClass): the 2D ring is moved in place,
@@ -23217,10 +23260,11 @@ window.addEventListener("mouseup", ev => {
 // Reads plotHoverPoints (rebuilt every renderPlotChart alongside the marks
 // themselves) and looks the value up live from extractRowsData rather than
 // caching a formatted copy, so it always shows the real extracted string.
-function plotHandleHoverMove(ev) {
-  if (!plotLastRender || plotHoverPoints.length === 0) { plotTooltip.classList.add("hidden"); return; }
-  const svgPt = plotSvgPointFromEvent(ev);
-  if (!svgPt || !plotPointInPlotArea(svgPt)) { plotTooltip.classList.add("hidden"); return; }
+// The plotHoverPoints entry under an SVG-space point (bar charts hit-test the
+// bar rect, line/scatter the nearest point within PLOT_HOVER_MAX_DIST_PX), or
+// null. Shared by the tooltip and the click/double-click selection.
+function plotHitTest(svgPt) {
+  if (!plotLastRender || plotHoverPoints.length === 0 || !plotPointInPlotArea(svgPt)) return null;
   let hit = null;
   if (plotLastRender.isBarChart) {
     for (const p of plotHoverPoints) {
@@ -23233,6 +23277,12 @@ function plotHandleHoverMove(ev) {
       if (d < bestDist) { bestDist = d; hit = p; }
     }
   }
+  return hit;
+}
+function plotHandleHoverMove(ev) {
+  const svgPt = plotLastRender && plotHoverPoints.length ? plotSvgPointFromEvent(ev) : null;
+  const hit = svgPt ? plotHitTest(svgPt) : null;
+  plotSvg.classList.toggle("plot-over-mark", !!hit); // the canvas marks have no :hover of their own
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
   if (!row) { plotTooltip.classList.add("hidden"); return; }
@@ -23242,7 +23292,7 @@ function plotHandleHoverMove(ev) {
   plotTooltip.classList.remove("hidden"); // needs to be visible (not display:none) before offsetWidth/Height below can measure it
   positionPlotTooltip(plotChartAreaPointFromEvent(ev));
 }
-plotChartArea.addEventListener("mouseleave", () => plotTooltip.classList.add("hidden"));
+plotChartArea.addEventListener("mouseleave", () => { plotTooltip.classList.add("hidden"); plotSvg.classList.remove("plot-over-mark"); });
 
 const PLOT_TOOLTIP_GAP = 12; // clearance kept between the cursor point and the tooltip's nearest edge
 const PLOT_TOOLTIP_MARGIN = 4; // min distance from the chart area's own edges
@@ -24195,8 +24245,127 @@ function updatePlotFilterInfo() {
   infoEl.textContent = parts.join(" · ");
 }
 
+// Line polyline reduced to what is visible: consecutive points sharing a
+// pixel column collapse to the first / lowest / highest / last of the column
+// (kept in order of occurrence). xs/ys in SVG user units.
+function plotReducePolyline(xs, ys) {
+  const n = xs.length, out = [];
+  let i = 0;
+  while (i < n) {
+    const col = Math.round(xs[i]);
+    let j = i, iMin = i, iMax = i;
+    while (j + 1 < n && Math.round(xs[j + 1]) === col) {
+      j++;
+      if (ys[j] < ys[iMin]) iMin = j;
+      if (ys[j] > ys[iMax]) iMax = j;
+    }
+    if (j === i) out.push([xs[i], ys[i]]);
+    else for (const k of [...new Set([i, iMin, iMax, j])].sort((a, b) => a - b)) out.push([xs[k], ys[k]]);
+    i = j + 1;
+  }
+  return out;
+}
+
+// Paints an op list (see plotMarkOps) clipped to the plot rect, then the
+// optional ring ops on top. ctx's transform maps SVG user units to pixels.
+function paintPlotMarkOps(ctx, ops, clip, ringOps) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(clip.left, clip.top, clip.plotW, clip.plotH);
+  ctx.clip();
+  const draw = list => {
+    for (const op of list) {
+      if (op.kind === "path") {
+        const pts = op.pts;
+        if (pts.length === 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+        ctx.strokeStyle = op.color; ctx.lineWidth = op.width; ctx.lineJoin = "round"; ctx.globalAlpha = 1;
+        ctx.stroke();
+      } else if (op.kind === "circle") {
+        ctx.beginPath();
+        ctx.arc(op.x, op.y, op.r, 0, Math.PI * 2);
+        ctx.fillStyle = op.fill; ctx.globalAlpha = op.alpha;
+        ctx.fill();
+      } else if (op.kind === "rect") {
+        ctx.globalAlpha = 1; ctx.fillStyle = op.fill;
+        ctx.fillRect(op.x, op.y, op.w, op.h);
+      } else if (op.kind === "ring") {
+        ctx.beginPath();
+        ctx.arc(op.x, op.y, op.r, 0, Math.PI * 2);
+        ctx.strokeStyle = op.color; ctx.lineWidth = op.width; ctx.globalAlpha = 1;
+        ctx.stroke();
+      } else if (op.kind === "rectStroke") {
+        ctx.strokeStyle = op.color; ctx.lineWidth = op.width; ctx.globalAlpha = 1;
+        ctx.strokeRect(op.x, op.y, op.w, op.h);
+      }
+    }
+  };
+  draw(ops);
+  if (ringOps && ringOps.length) draw(ringOps);
+  ctx.restore();
+}
+
+// The canvas-to-SVG mapping of the live chart: the SVG's own viewBox "meet"
+// scaling (via its screen CTM), so the marks sit exactly where SVG marks
+// would. No CTM (jsdom) = identity.
+function plotMarksTransform(svgRect, dpr) {
+  const m = plotSvg.getScreenCTM && plotSvg.getScreenCTM();
+  if (!m) return [dpr, 0, 0, dpr, 0, 0];
+  return [dpr * m.a, 0, 0, dpr * m.d, dpr * (m.e - svgRect.left), dpr * (m.f - svgRect.top)];
+}
+
+// Sizes/positions #plotMarksCanvas over #plotSvg and paints plotMarkOps into
+// the offscreen layer (once per renderPlotChart), then blits it. Without a 2D
+// context (jsdom) nothing is painted; the ops stay inspectable.
+function drawPlotMarksCanvas() {
+  plotMarksCanvas.classList.remove("hidden");
+  const r = plotLastRender;
+  const svgRect = plotSvg.getBoundingClientRect();
+  const areaRect = plotChartArea.getBoundingClientRect();
+  const cssW = svgRect.width, cssH = svgRect.height;
+  plotMarksCanvas.style.left = (svgRect.left - areaRect.left) + "px";
+  plotMarksCanvas.style.top = (svgRect.top - areaRect.top) + "px";
+  plotMarksCanvas.style.width = cssW + "px";
+  plotMarksCanvas.style.height = cssH + "px";
+  const ctx = plotMarksCanvas.getContext("2d");
+  if (!ctx) return;
+  const dpr = window.devicePixelRatio || 1;
+  const bw = Math.max(1, Math.round(cssW * dpr)), bh = Math.max(1, Math.round(cssH * dpr));
+  plotMarksCanvas.width = bw; plotMarksCanvas.height = bh;
+  if (!plotMarkLayer) plotMarkLayer = document.createElement("canvas");
+  plotMarkLayer.width = bw; plotMarkLayer.height = bh;
+  const lctx = plotMarkLayer.getContext("2d");
+  if (!lctx) return;
+  lctx.setTransform(...plotMarksTransform(svgRect, dpr));
+  paintPlotMarkOps(lctx, plotMarkOps, r, null);
+  blitPlotMarksCanvas();
+}
+// Copies the painted layer to the visible canvas and draws the selection ring
+// on top — all a selection change needs.
+function blitPlotMarksCanvas() {
+  const ctx = plotMarksCanvas.getContext("2d");
+  if (!ctx || !plotMarkLayer || !plotLastRender) return;
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.clearRect(0, 0, plotMarksCanvas.width, plotMarksCanvas.height);
+  ctx.drawImage(plotMarkLayer, 0, 0);
+  if (plotSelRingOps.length) {
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(...plotMarksTransform(plotSvg.getBoundingClientRect(), dpr));
+    paintPlotMarkOps(ctx, [], plotLastRender, plotSelRingOps);
+  }
+}
+function clearPlotMarks() {
+  plotMarkOps = [];
+  plotSelRingOps = [];
+  plotMarksCanvas.classList.add("hidden");
+  plotSvg.classList.remove("plot-over-mark");
+}
+
 function renderPlotChart() {
   refreshPlotRoleBadges();
+  clearPlotMarks();
   if (isValueChartType(plotConfig.type)) {
     plotSvg.classList.remove("hidden");
     plot3dCanvas.classList.add("hidden");
@@ -24447,19 +24616,47 @@ function renderPlotChart() {
   // Wrapped in a clip-path group: at any zoom/pan other than the home view,
   // a line segment, bar, or point can legitimately extend beyond the plot
   // rectangle, and SVG doesn't clip that on its own.
-  parts.push('<g clip-path="url(#plotClip)">');
+  // The marks are not SVG: they go to the plotMarkOps list painted on
+  // #plotMarksCanvas (see plotMarkOps), reduced to one op per pixel so 100k+
+  // points stay cheap; plotHoverPoints below still holds every point.
+  const ops = [];
+  const cullX0 = left - 12, cullX1 = left + plotW + 12, cullY0 = top - 12, cullY1 = top + plotH + 12; // marks fully outside the plot rect are clipped anyway
+  const inCull = (x, y) => x >= cullX0 && x <= cullX1 && y >= cullY0 && y <= cullY1;
+  const cellKey = (x, y) => (Math.round(x) + 100) * 65536 + (Math.round(y) + 100);
+  // Circles per series: one op per pixel cell, a later point in the cell
+  // replaces the data of the earlier one (it was painted on top of it); the
+  // assertion rings of the series follow its markers.
+  const addCircle = (cells, rings, p, px, py, r, ringR, fill, alpha) => {
+    if (!inCull(px, py)) return;
+    const key = cellKey(px, py);
+    const op = cells.get(key);
+    if (op) { op.fill = fill; op.rowIndex = p.rowIndex; }
+    else { const c = { kind: "circle", x: px, y: py, r, fill, alpha, rowIndex: p.rowIndex }; cells.set(key, c); ops.push(c); }
+    if (p.violated && !rings.has(key)) rings.set(key, { kind: "ring", x: px, y: py, r: ringR, color: PLOT_ASSERT_COLOR, width: 1.6 });
+  };
   let scatterColorMin = 0, scatterColorMax = 1; // set inside the scatter branch below, read afterward by its (unclipped) legend
   if (plotConfig.type === "line") {
     series.forEach(s => {
-      if (s.pts.length === 0) return;
-      const d = s.pts.map((p, i) => (i === 0 ? "M" : "L") + xPix(p.x).toFixed(1) + "," + yPix(p.y).toFixed(1)).join(" ");
-      parts.push('<path d="' + d + '" fill="none" stroke="' + s.color + '" stroke-width="1.8"/>');
-      s.pts.forEach(p => {
+      const n = s.pts.length;
+      if (n === 0) return;
+      const xs = new Float64Array(n), ys = new Float64Array(n);
+      const cells = new Map(), rings = new Map();
+      const markOps = [];
+      for (let i = 0; i < n; i++) {
+        const p = s.pts[i];
         const px = xPix(p.x), py = yPix(p.y);
-        parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="2.6" fill="' + s.color + '"/>');
-        if (p.violated) parts.push('<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
+        xs[i] = px; ys[i] = py;
         plotHoverPoints.push({ kind: "point", px, py, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, seriesName: s.name, seriesColor: s.color });
-      });
+        if (!inCull(px, py)) continue;
+        const key = cellKey(px, py);
+        const op = cells.get(key);
+        if (op) op.rowIndex = p.rowIndex;
+        else { const c = { kind: "circle", x: px, y: py, r: 2.6, fill: s.color, alpha: 1, rowIndex: p.rowIndex }; cells.set(key, c); markOps.push(c); }
+        if (p.violated && !rings.has(key)) rings.set(key, { kind: "ring", x: px, y: py, r: 5, color: PLOT_ASSERT_COLOR, width: 1.6 });
+      }
+      ops.push({ kind: "path", pts: plotReducePolyline(xs, ys), color: s.color, width: 1.8 });
+      for (const c of markOps) ops.push(c);
+      for (const r of rings.values()) ops.push(r);
     });
   } else if (plotConfig.type === "bar") {
     // Row placement now goes through xPix like every other axis mapping
@@ -24470,16 +24667,34 @@ function renderPlotChart() {
     const barW = (groupW * 0.7) / series.length;
     const zeroY = yPix(0);
     series.forEach((s, si) => {
+      // Bars of one series sharing a pixel column and width all contain the
+      // zero line, so their union is one rect from the highest top to the
+      // lowest bottom.
+      const bars = new Map(), strokes = new Set(), strokeOps = [];
       s.pts.forEach(p => {
         const groupX = xPix(p.rowIndex) + groupW * 0.15;
         const bx = groupX + si * barW;
         const by = yPix(p.y);
         const h = zeroY - by;
         const w = Math.max(1, barW - 1);
-        parts.push('<rect class="plot-mark" data-row="' + p.rowIndex + '" x="' + bx.toFixed(1) + '" y="' + Math.min(by, zeroY).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + Math.abs(h).toFixed(1) + '" fill="' + s.color + '"' +
-          (p.violated ? ' stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"' : '') + '/>');
-        plotHoverPoints.push({ kind: "bar", bx, by: Math.min(by, zeroY), bw: w, bh: Math.abs(h) || 1, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, seriesName: s.name, seriesColor: s.color });
+        const top = Math.min(by, zeroY), bh = Math.abs(h);
+        plotHoverPoints.push({ kind: "bar", bx, by: top, bw: w, bh: bh || 1, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, seriesName: s.name, seriesColor: s.color });
+        if (bx + w < left - 2 || bx > left + plotW + 2) return;
+        const key = (Math.round(bx) + 100) * 1000000 + Math.min(999999, Math.round(w));
+        const op = bars.get(key);
+        if (op) {
+          const bottom = Math.max(op.y + op.h, top + bh);
+          op.y = Math.min(op.y, top); op.h = bottom - op.y; op.rowIndex = p.rowIndex;
+        } else {
+          const r = { kind: "rect", x: bx, y: top, w, h: bh, fill: s.color, rowIndex: p.rowIndex };
+          bars.set(key, r); ops.push(r);
+        }
+        if (p.violated) {
+          const sk = Math.round(bx) + "," + Math.round(w) + "," + Math.round(top) + "," + Math.round(top + bh);
+          if (!strokes.has(sk)) { strokes.add(sk); strokeOps.push({ kind: "rectStroke", x: bx, y: top, w, h: bh, color: PLOT_ASSERT_COLOR, width: 1.6 }); }
+        }
       });
+      for (const r of strokeOps) ops.push(r);
     });
   } else { // scatter
     const s = series[0];
@@ -24489,15 +24704,16 @@ function renderPlotChart() {
       scatterColorMin = vals.length ? arrayMin(vals) : 0;
       scatterColorMax = vals.length ? arrayMax(vals) : 1;
     }
+    const cells = new Map(), rings = new Map();
     s.pts.forEach(p => {
       const px = xPix(p.x), py = yPix(p.y);
       const fill = hasColorScale && p.colorVal != null ? plotColorScale((p.colorVal - scatterColorMin) / ((scatterColorMax - scatterColorMin) || 1), plotConfig.colorMap) : s.color;
-      parts.push('<circle class="plot-mark" data-row="' + p.rowIndex + '" cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="4" fill="' + fill + '" fill-opacity="0.85"/>');
-      if (p.violated) parts.push('<circle cx="' + px.toFixed(1) + '" cy="' + py.toFixed(1) + '" r="6.5" fill="none" stroke="' + PLOT_ASSERT_COLOR + '" stroke-width="1.6"/>');
+      addCircle(cells, rings, p, px, py, 4, 6.5, fill, 0.85);
       plotHoverPoints.push({ kind: "point", px, py, rowIndex: p.rowIndex, xCol: plotConfig.xCol, yCol: s.col, colorCol: hasColorScale ? plotConfig.colorCol : null, seriesName: s.name, seriesColor: fill });
     });
+    for (const r of rings.values()) ops.push(r);
   }
-  parts.push('</g>'); // close the clip group before any legend, which is drawn to the right of/above the plot rect and must not itself be clipped
+  plotMarkOps = ops;
 
   if (hasColorScale) {
     const legendX = left + plotW + 24, legendTop = top, legendH = plotH;
@@ -24523,7 +24739,7 @@ function renderPlotChart() {
     });
   }
 
-  plotSvg.innerHTML = parts.join(""); updatePlotSelectionRing();
+  plotSvg.innerHTML = parts.join("");
 
   // Geometry/domain snapshot for the interaction layer (wheel zoom, drag-
   // rect zoom, middle-click pan, hover tooltip) — those are separate,
@@ -24536,6 +24752,8 @@ function renderPlotChart() {
     xHomeDomainMin, xHomeDomainMax, yHomeDomainMin, yHomeDomainMax,
   };
   plotLastSeries = series;
+  drawPlotMarksCanvas();
+  updatePlotSelectionRing();
   updatePlotZoomIndicator();
 
   // Keep the minimap's background/full-range in sync with what's actually

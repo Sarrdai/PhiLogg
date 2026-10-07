@@ -202,15 +202,15 @@ await withApp(async (w, d, T) => {
 
   // A plain click (no drag) on a mark is unaffected — still selects (Group 53
   // covers this generally; this just confirms drag-to-zoom didn't regress it).
-  const markRow0 = d.querySelector('#plotSvg circle.plot-mark[data-row="0"]');
+  const markRow0 = plotHoverOfRow(T, 0);
   assert(markRow0, "row 0 has a mark to click");
-  const cx0 = +markRow0.getAttribute("cx"), cy0 = +markRow0.getAttribute("cy");
+  const cx0 = markRow0.px, cy0 = markRow0.py;
   svgEl.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: cx0, clientY: cy0, button: 0 }));
-  fireClick(markRow0, w);
+  fireClickAt(svgEl, w, cx0, cy0);
   assert(T.state.activeId === node.id && T.fhActiveTab === "plot" && T.state.selectedId === T.extractRowsData[0].entry.id,
     "a plain click (no drag) on a mark still selects its log entry, unaffected by the new drag-to-zoom handling");
-  fireDblClick(markRow0, w);
+  fireDblClickAt(svgEl, w, cx0, cy0);
   assert(T.fhActiveTab === "table", "...and its double-click still reveals the entry as the corresponding Table row");
   T.state.activeId = node.id;
   w.render();
@@ -228,18 +228,17 @@ await withApp(async (w, d, T) => {
   /* ---------- Hover tooltip: exact underlying value, point- and rect-based hit-testing ---------- */
   const tooltipEl = d.querySelector("#plotTooltip");
   assert(tooltipEl.classList.contains("hidden"), "tooltip starts hidden");
-  const mark3 = d.querySelector('#plotSvg circle.plot-mark[data-row="3"]');
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: +mark3.getAttribute("cx"), clientY: +mark3.getAttribute("cy") }));
+  const mark3 = plotHoverOfRow(T, 3);
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: mark3.px, clientY: mark3.py }));
   assert(!tooltipEl.classList.contains("hidden"), "hovering directly over a point mark shows the tooltip");
   assert(tooltipEl.textContent.includes("30"), "tooltip shows the point's exact underlying value (row 3 is x=30, y=30), got: " + tooltipEl.textContent);
   w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: 5, clientY: 5 })); // back into the margin, away from any mark
   assert(tooltipEl.classList.contains("hidden"), "moving away from any mark hides the tooltip again");
 
   fireClick(d.querySelector('.plot-type-btn[data-type="bar"]'), w);
-  const barRect3 = d.querySelector('#plotSvg rect.plot-mark[data-row="3"]');
-  assert(barRect3, "bar chart renders a rect mark for row 3");
-  const bx3 = +barRect3.getAttribute("x"), by3 = +barRect3.getAttribute("y");
-  const bw3 = +barRect3.getAttribute("width"), bh3 = +barRect3.getAttribute("height");
+  const barRect3 = plotHoverOfRow(T, 3);
+  assert(barRect3 && barRect3.kind === "bar" && T.plotMarkOps.some(o => o.kind === "rect" && o.rowIndex === 3), "bar chart renders a rect mark for row 3");
+  const bx3 = barRect3.bx, by3 = barRect3.by, bw3 = barRect3.bw, bh3 = barRect3.bh;
   w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: bx3 + bw3 / 2, clientY: by3 + bh3 / 2 }));
   assert(!tooltipEl.classList.contains("hidden"), "hovering inside a bar's rect shows the tooltip too — bar hit-testing is rect-based, not nearest-point");
   assert(tooltipEl.textContent.includes("30"), "bar tooltip shows the exact underlying value, got: " + tooltipEl.textContent);
@@ -259,9 +258,9 @@ await withApp(async (w, d, T) => {
   Object.defineProperty(tooltipEl, "offsetHeight", { value: 50, configurable: true });
   // Row 10 is the last row (x=100, y=100) — the chart's top-right corner
   // point, at pixel (780, 16) per the home-domain math established above.
-  const markFarRight = d.querySelector('#plotSvg circle.plot-mark[data-row="10"]');
+  const markFarRight = plotHoverOfRow(T, 10);
   assert(markFarRight, "row 10's mark exists");
-  const cxFar = +markFarRight.getAttribute("cx"), cyFar = +markFarRight.getAttribute("cy");
+  const cxFar = markFarRight.px, cyFar = markFarRight.py;
   w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: cxFar, clientY: cyFar }));
   assert(!tooltipEl.classList.contains("hidden"), "tooltip shows for the far-right/top mark too");
   const leftPx = parseFloat(tooltipEl.style.left), topPx = parseFloat(tooltipEl.style.top);

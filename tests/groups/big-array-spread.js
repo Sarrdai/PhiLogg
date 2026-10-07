@@ -94,14 +94,15 @@ await withApp(async (w, d, T) => {
     } catch (e) { return e; }
   };
   const countIn = (needle) => svgMarkup.split(needle).length - 1;
-  const marks = tag => countIn("<" + tag + ' class="plot-mark"');
+  // 2D marks are canvas ops reduced to one per pixel (GROUP plot-marks-canvas); the hover targets stay one per row.
+  const opCount = kind => T.plotMarkOps.filter(o => o.kind === kind).length;
   // The home domain is the data extent snapped outwards to nice ticks: it
   // must contain the whole data range, and not be wildly bigger than it.
   const domainCovers = (lo, hi, [dataLo, dataHi]) => lo <= dataLo && hi >= dataHi && (hi - lo) < 3 * (dataHi - dataLo);
 
   err = drawPlot({ type: "scatter", xCol: 0, yCols: [1], colorCol: 2 });
   assert(err === null, "scatter over " + N + " rows (with a colour column) renders without throwing, got " + err);
-  assert(marks("circle") === N, "scatter: one mark per row, got " + marks("circle"));
+  assert(opCount("circle") > 0 && opCount("circle") < N / 4 && countIn('class="plot-mark"') === 0, "scatter: marks are reduced canvas ops, not " + N + " SVG elements, got " + opCount("circle"));
   assert(T.plotHoverPoints.length === N, "scatter: one hover target per row, got " + T.plotHoverPoints.length);
   let lr = T.plotLastRender || {}; // empty when the render threw, so the assertion below fails instead of crashing
   assert(domainCovers(lr.xHomeDomainMin, lr.xHomeDomainMax, ext.x) && domainCovers(lr.yHomeDomainMin, lr.yHomeDomainMax, ext.y),
@@ -111,14 +112,14 @@ await withApp(async (w, d, T) => {
 
   err = drawPlot({ type: "line", xCol: 0, yCols: [1, 2], colorCol: null, normalize: false });
   assert(err === null, "line over " + N + " rows and two series renders without throwing, got " + err);
-  assert(countIn("<path ") >= 2, "line: one path per series, got " + countIn("<path "));
+  assert(opCount("path") === 2, "line: one path op per series, got " + opCount("path"));
   assert(T.plotLastSeries.length === 2 && T.plotLastSeries.every(s => s.pts.length === N), "line: both series carry all " + N + " points");
   lr = T.plotLastRender || {};
   assert(domainCovers(lr.xHomeDomainMin, lr.xHomeDomainMax, ext.x), "line: the X axis covers the data's range");
 
   err = drawPlot({ type: "bar", xCol: 0, yCols: [1], normalize: false });
   assert(err === null, "bar over " + N + " rows renders without throwing, got " + err);
-  assert(marks("rect") === N, "bar: one bar per row, got " + marks("rect"));
+  assert(opCount("rect") > 0 && opCount("rect") < N / 4 && T.plotHoverPoints.length === N, "bar: reduced rect ops (got " + opCount("rect") + "), one hover target per row");
 
   /* ---------- normalize (needs two or more Y series) ---------- */
   section("big-array-spread c. normalize each series with 200,000 points");
@@ -139,7 +140,7 @@ await withApp(async (w, d, T) => {
 
   err = drawPlot({ type: "bar", xCol: 0, yCols: [1, 2], normalize: true });
   assert(err === null, "normalized bars over " + N + " rows and two series render without throwing, got " + err);
-  assert(marks("rect") === 2 * N, "normalized bars: one bar per row and series, got " + marks("rect"));
+  assert(opCount("rect") > 0 && opCount("rect") < N && T.plotHoverPoints.length === 2 * N, "normalized bars: reduced rect ops (got " + opCount("rect") + "), one hover target per row and series, got " + T.plotHoverPoints.length);
   T.plotConfig.normalize = false;
 
   /* ---------- 3D scatter ---------- */

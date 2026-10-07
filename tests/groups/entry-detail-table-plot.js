@@ -217,31 +217,31 @@ await withApp(async (w, d, T) => {
   await edtpOpenPlot(w, d, T, "scatter");
   edtpSel(d, w, "#plotXSelect", "0"); edtpSel(d, w, "#plotYSelectSingle", "1");
   const svg = d.querySelector("#plotSvg");
-  assert(!svg.querySelector("#plotSelRing"), "no ring while nothing is selected");
-  const markOf = r => svg.querySelector('circle.plot-mark[data-row="' + r + '"]');
-  const mark = markOf(3);
+  assert(T.plotSelRingOps.length === 0 && !svg.querySelector("#plotSelRing"), "no ring while nothing is selected");
+  const markOf = r => plotHitXY(plotHoverOfRow(T, r));
+  const mark = plotHoverOfRow(T, 3);
   assert(mark, "row 3 has a mark");
+  assert(svg.querySelectorAll(".plot-mark").length === 0, "the marks are canvas ops, not SVG elements");
   const entry = T.extractRowsData[3].entry;
-  fireClick(mark, w);
+  const clickRow = r => { const p = markOf(r); fireClickAt(svg, w, p.x, p.y); };
+  clickRow(3);
   assert(T.fhActiveTab === "plot" && T.state.selectedId === entry.id, "selected, still on Plot");
   assert(d.querySelector("#detailMessage").textContent === entry.message && !d.querySelector("#detailPanel").classList.contains("detail-strip-only"), "Entry detail shows the entry");
-  const ring = svg.querySelector("#plotSelRing circle");
-  assert(ring && ring.getAttribute("cx") === mark.getAttribute("cx") && ring.getAttribute("cy") === mark.getAttribute("cy") && +ring.getAttribute("r") > +mark.getAttribute("r"), "a ring around the clicked mark");
-  assert(markOf(3) === mark && mark.isConnected, "the mark element was not rebuilt by the click (dblclick needs it)");
-  assert(svg.querySelectorAll("#plotSelRing").length === 1, "exactly one ring group");
+  const ring = T.plotSelRingOps[0];
+  assert(T.plotSelRingOps.length === 1 && ring.kind === "ring" && ring.x === mark.px && ring.y === mark.py && ring.r > 4, "a ring op around the clicked mark");
+  assert(d.querySelector("#plotMarksCanvas") && !d.querySelector("#plotMarksCanvas").classList.contains("hidden"), "the marks canvas is shown");
 
-  fireClick(markOf(5), w);
-  const ring5 = svg.querySelector("#plotSelRing circle");
-  assert(svg.querySelectorAll("#plotSelRing").length === 1 && ring5.getAttribute("cx") === markOf(5).getAttribute("cx"), "the ring moves to the next clicked mark");
+  clickRow(5);
+  assert(T.plotSelRingOps.length === 1 && T.plotSelRingOps[0].x === plotHoverOfRow(T, 5).px, "the ring moves to the next clicked mark");
 
   w.renderPlotChart();
-  assert(svg.querySelector("#plotSelRing circle") && svg.querySelector("#plotSelRing circle").getAttribute("cx") === markOf(5).getAttribute("cx"), "the ring is drawn again after a re-render (zoom, pan, ...)");
+  assert(T.plotSelRingOps.length === 1 && T.plotSelRingOps[0].x === plotHoverOfRow(T, 5).px, "the ring is drawn again after a re-render (zoom, pan, ...)");
   w.applyFhView("table");
   assert(d.querySelectorAll("#extractBody tr.extract-current").length === 1 && d.querySelector("#extractBody tr.extract-current").dataset.extractEntryId === T.extractRowsData[5].entry.id, "Table shows the plot-selected entry as its current row");
   w.applyFhView("plot");
-  assert(svg.querySelector("#plotSelRing circle"), "Table -> Plot: the ring is there");
+  assert(T.plotSelRingOps.length === 1, "Table -> Plot: the ring is there");
 
-  fireDblClick(markOf(2), w);
+  fireDblClickAt(svg, w, markOf(2).x, markOf(2).y);
   assert(T.fhActiveTab === "table" && T.state.selectedId === T.extractRowsData[2].entry.id, "double-click: Table with row 2 selected");
   assert(d.querySelector('#extractBody td.cell-selected[data-row="2"]') && d.querySelector("#extractBody tr.extract-current"), "...its cells selected and the current row marked");
 });
@@ -251,26 +251,26 @@ await withApp(async (w, d, T) => {
   const { f } = await edtpOpenPlot(w, d, T, "scatter");
   edtpSel(d, w, "#plotXSelect", "0"); edtpSel(d, w, "#plotYSelectSingle", "1");
   const svg = d.querySelector("#plotSvg");
-  fireClick(svg.querySelector('circle.plot-mark[data-row="1"]'), w);
-  assert(svg.querySelector("#plotSelRing"), "sanity: ring shown");
+  fireClickAt(svg, w, plotHoverOfRow(T, 1).px, plotHoverOfRow(T, 1).py);
+  assert(T.plotSelRingOps.length === 1, "sanity: ring shown");
   const other = f.entries.find(e => !/^Position update/.test(e.message));
   assert(other, "sanity: the file has an entry the pattern does not match");
   w.selectEntry(other.id);
-  assert(T.state.selectedId === other.id && !svg.querySelector("#plotSelRing"), "selecting an entry that is not plotted removes the ring");
+  assert(T.state.selectedId === other.id && T.plotSelRingOps.length === 0, "selecting an entry that is not plotted removes the ring");
   w.applyFhView("filter"); w.applyFhView("plot");
-  assert(!svg.querySelector("#plotSelRing"), "...and it stays gone after a tab switch");
+  assert(T.plotSelRingOps.length === 0, "...and it stays gone after a tab switch");
 
-  const m = svg.querySelector('circle.plot-mark[data-row="4"]');
+  const m = plotHoverOfRow(T, 4);
   const before = T.state.selectedId;
-  const cx = +m.getAttribute("cx"), cy = +m.getAttribute("cy");
+  const cx = m.px, cy = m.py;
   svg.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, clientX: cx - 40, clientY: cy - 40, button: 0 }));
   w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: cx + 40, clientY: cy + 40 }));
   w.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true, clientX: cx + 40, clientY: cy + 40, button: 0 }));
-  const trailing = svg.querySelector('circle.plot-mark[data-row="4"]');
-  assert(trailing, "sanity: the zoomed view still shows mark 4 (the drag's trailing click lands on it)");
-  fireClick(trailing, w);
+  const trailing = plotHoverOfRow(T, 4);
+  assert(T.plotZoom && trailing, "sanity: the zoomed view still shows mark 4 (the drag's trailing click lands on it)");
+  fireClickAt(svg, w, trailing.px, trailing.py);
   assert(T.state.selectedId === before, "the click ending a rectangle drag does not select");
-  fireClick(svg.querySelector('circle.plot-mark[data-row="4"]'), w);
+  fireClickAt(svg, w, trailing.px, trailing.py);
   assert(T.state.selectedId === T.extractRowsData[4].entry.id, "...while the next plain click on that mark does");
 });
 
@@ -278,13 +278,13 @@ await withApp(async (w, d, T) => {
   section("entry-detail-table-plot n. bar and line charts: ring on the bar (rect) and on the point");
   await edtpOpenPlot(w, d, T, "bar");
   const svg = d.querySelector("#plotSvg");
-  const bar = svg.querySelector('rect.plot-mark[data-row="2"]');
-  assert(bar, "row 2 has a bar");
-  fireClick(bar, w);
-  const rr = svg.querySelector("#plotSelRing rect");
-  assert(rr && +rr.getAttribute("width") > +bar.getAttribute("width") && T.fhActiveTab === "plot", "a larger rect around the bar, tab stays Plot");
+  const bar = plotHoverOfRow(T, 2);
+  assert(bar && bar.kind === "bar", "row 2 has a bar");
+  fireClickAt(svg, w, bar.bx + bar.bw / 2, bar.by + bar.bh / 2);
+  const rr = T.plotSelRingOps[0];
+  assert(rr && rr.kind === "rectStroke" && rr.w > bar.bw && rr.h > bar.bh && T.fhActiveTab === "plot", "a larger rect around the bar, tab stays Plot");
   fireClick(d.querySelector('.plot-type-btn[data-type="line"]'), w);
-  assert(!!svg.querySelector("#plotSelRing circle") && T.state.selectedId === T.extractRowsData[2].entry.id, "switching the chart type keeps the selection: ring on the line's point");
+  assert(T.plotSelRingOps.length === 1 && T.plotSelRingOps[0].kind === "ring" && T.state.selectedId === T.extractRowsData[2].entry.id, "switching the chart type keeps the selection: ring on the line's point");
 });
 
 await withApp(async (w, d, T) => {

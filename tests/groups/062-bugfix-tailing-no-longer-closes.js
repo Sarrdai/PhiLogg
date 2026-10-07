@@ -83,7 +83,7 @@ await withApp(async (w, d, T) => {
   assert(T.extractRowsData.length === 4, "sanity: the tail tick actually added a new extraction row (not a no-op tick)");
   assert(d.querySelector("#plotXSelect") === xSelBefore, "X-axis dropdown is the SAME DOM node after a tail tick (not torn down and recreated)");
   assert(d.querySelector("#plotYSelectSingle") === ySelBefore, "Y-axis dropdown is the SAME DOM node after a tail tick");
-  assert(d.querySelectorAll("#plotSvg circle.plot-mark").length === 4, "the chart itself DID update to reflect the new tailed row — only the CONTROLS were left untouched, not the data");
+  assert(T.plotMarkOps.filter(o => o.kind === "circle").length === 4, "the chart itself DID update to reflect the new tailed row — only the CONTROLS were left untouched, not the data");
 
   // A second, back-to-back tick with genuinely no new content (the common
   // steady-state case between bursts of log activity) must be just as inert.

@@ -357,6 +357,8 @@ async function withApp(run, opts = {}) {
       set plot3dView(v) { plot3dView = v; },
       get plot3dLastRender() { return plot3dLastRender; },
       get plotHoverPoints() { return plotHoverPoints; },
+      get plotMarkOps() { return plotMarkOps; },
+      get plotSelRingOps() { return plotSelRingOps; },
       get linkPairsData() { return linkPairsData; },
       get linkBlockOffsets() { return linkBlockOffsets; },
       get linkSelectedPairIndex() { return linkSelectedPairIndex; },
@@ -476,6 +478,13 @@ async function withApp(run, opts = {}) {
 function fireClick(el, w) { el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true })); }
 function fireContextMenu(el, w, x = 50, y = 50) { el.dispatchEvent(new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }
 function fireDblClick(el, w) { el.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true })); }
+// Line/bar/scatter marks are canvas ops (no DOM element to click): a click goes to
+// #plotSvg at the mark's SVG-space coordinates (jsdom's plotSvg rect is 1:1 with them).
+function fireClickAt(el, w, x, y) { el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }
+function fireDblClickAt(el, w, x, y) { el.dispatchEvent(new w.MouseEvent("dblclick", { bubbles: true, cancelable: true, clientX: x, clientY: y })); }
+// The plotHoverPoints entry of a row (first series) and its centre in SVG space.
+function plotHoverOfRow(T, row) { return T.plotHoverPoints.find(h => h.rowIndex === row); }
+function plotHitXY(h) { return h.kind === "bar" ? { x: h.bx + h.bw / 2, y: h.by + h.bh / 2 } : { x: h.px, y: h.py }; }
 function fireInput(el, w) { el.dispatchEvent(new w.Event("input", { bubbles: true })); }
 function fireSubmit(el, w) { el.dispatchEvent(new w.Event("submit", { bubbles: true, cancelable: true })); }
 // Boolean pill toggles (docs/ui-standard.md #69) are <button role="switch"

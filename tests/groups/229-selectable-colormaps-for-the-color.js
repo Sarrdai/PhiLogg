@@ -71,15 +71,15 @@ await withApp(async (w, d, T) => {
   assert(legendTexts.some(t => t.getAttribute("y") === "348"), "legend's min-value label sits at y = top(16) + plotH(332) = 348 — i.e. the legend spans the full plot height, not a capped fraction of it");
 
   // A mark's own fill also follows the colormap: row 2 (c=100, the max) sits at t=1.
-  const markRow2 = d.querySelector('#plotSvg circle.plot-mark[data-row="2"]');
-  assert(markRow2.getAttribute("fill") === w.plotColorScale(1, "default"), "the max-value point's fill is plotColorScale(1, \"default\")");
+  const markRow2 = T.plotMarkOps.find(o => o.kind === "circle" && o.rowIndex === 2);
+  assert(markRow2.fill === w.plotColorScale(1, "default"), "the max-value point's fill is plotColorScale(1, \"default\")");
 
   // Switching the colormap re-renders both the legend and the marks with the new scale.
   cmSel.value = "viridis"; cmSel.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(T.plotConfig.colorMap === "viridis", "changing the select writes plotConfig.colorMap");
   const newTopFill = legendRects()[0].getAttribute("fill");
   assert(newTopFill === expectedTopFill("viridis") && newTopFill !== expectedTopFill("default"), "legend's top stop now follows the chosen colormap (viridis), and differs from the default scale's own color, got " + newTopFill);
-  const newMarkRow2 = d.querySelector('#plotSvg circle.plot-mark[data-row="2"]').getAttribute("fill");
+  const newMarkRow2 = T.plotMarkOps.find(o => o.kind === "circle" && o.rowIndex === 2).fill;
   assert(newMarkRow2 === w.plotColorScale(1, "viridis") && newMarkRow2 !== w.plotColorScale(1, "default"), "the max-value point's fill also switched to viridis");
 
   // Reverting "Color by" back to None hides the picker again — the chosen

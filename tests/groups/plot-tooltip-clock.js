@@ -28,9 +28,9 @@ await withApp(async (w, d, T) => {
   section("plot-tooltip-clock: 2D scatter, X = time column, no midnight crossing");
   const f = await openPositionPlot(w, d, T, "2026-01-15T10:00:00");
   const tip = d.querySelector("#plotTooltip");
-  const mark = d.querySelector('#plotSvg circle.plot-mark[data-row="3"]');
+  const mark = plotHoverOfRow(T, 3);
   assert(mark, "row 3 has a mark");
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: +mark.getAttribute("cx"), clientY: +mark.getAttribute("cy") }));
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: mark.px, clientY: mark.py }));
   assert(!tip.classList.contains("hidden"), "tooltip shown");
   const expected = clockOf(f.entries[0].ts + Number(T.extractRowsData[3].values[-1]));
   assert(tip.textContent.includes("Time: " + expected), "tooltip shows 'Time: " + expected + "', got: " + tip.textContent);
@@ -42,8 +42,8 @@ await withApp(async (w, d, T) => {
   section("plot-tooltip-clock: span crossing midnight prepends the date");
   const f = await openPositionPlot(w, d, T, "2026-01-15T23:59:57");
   const tip = d.querySelector("#plotTooltip");
-  const last = d.querySelector('#plotSvg circle.plot-mark[data-row="7"]');
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: +last.getAttribute("cx"), clientY: +last.getAttribute("cy") }));
+  const last = plotHoverOfRow(T, 7);
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: last.px, clientY: last.py }));
   const expected = clockOf(f.entries[0].ts + Number(T.extractRowsData[7].values[-1]), true);
   assert(expected.startsWith("2026-01-16 00:"), "sanity: last row is after midnight, got " + expected);
   assert(tip.textContent.includes("Time: " + expected), "tooltip shows 'Time: " + expected + "', got: " + tip.textContent);
@@ -80,8 +80,8 @@ await withApp(async (w, d, T) => {
   w.applyFhView("table");
   w.applyFhView("plot");
   assert(T.extractTimeBase == null, "sanity: no time base for plain text");
-  const mark = d.querySelector('#plotSvg circle.plot-mark[data-row="2"]');
-  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: +mark.getAttribute("cx"), clientY: +mark.getAttribute("cy") }));
+  const mark = plotHoverOfRow(T, 2);
+  w.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, clientX: mark.px, clientY: mark.py }));
   const tip = d.querySelector("#plotTooltip");
   assert(!tip.classList.contains("hidden") && tip.textContent.includes("Line: " + T.extractRowsData[2].values[-1]) && !tip.textContent.includes("Time:"),
     "plain text tooltip keeps 'Line: <n>', got: " + tip.textContent);
