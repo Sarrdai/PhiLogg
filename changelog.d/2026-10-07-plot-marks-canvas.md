@@ -1,0 +1,5 @@
+- **feat: very large 2D plots draw in a fraction of a second (2026-10-07, FEATURE_BACKLOG #97)**
+  - Line, bar and scatter marks are painted on a canvas layer over the SVG chart instead of one SVG element per point, reduced to at most one mark per pixel; the picture stays the same. A 300k-point scatter redraws in 0.3 s instead of 11 s (headless Chromium, cloud container).
+  - Hover, click and double-click hit-test every point, so a click selects exactly the entry the tooltip shows; the selection ring and the PNG export include the canvas marks. Hovering a mark shows a pointer cursor instead of fading the mark.
+  - Showing the Plot tab draws the chart once per trigger (a `render()` on Plot drew it twice, re-selecting a node that lands on Plot four times).
+  - **Tests**: GROUP plot-marks-canvas; plot groups moved from `.plot-mark` elements to the drawn ops. Docs: docs/extraction-and-plotting.md, docs/performance-testing.md (Level 2e).

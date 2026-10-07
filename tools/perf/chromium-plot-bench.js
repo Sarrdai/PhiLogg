@@ -49,9 +49,9 @@ const PATTERN = "Position update x=[*:float] y=[*:float] z=[*:float]";
     const t = performance.now();
     applyFhView("plot");
     await paint();
-    return { ms: performance.now() - t, calls: window.__plotCalls, type: plotConfig.type, marks: document.querySelectorAll("#plotSvg .plot-mark").length };
+    return { ms: performance.now() - t, calls: window.__plotCalls, type: plotConfig.type, marks: typeof plotMarkOps !== "undefined" ? plotMarkOps.length : document.querySelectorAll("#plotSvg .plot-mark").length };
   });
-  console.log(`${rows} rows | first draw (${first.type}) ${Math.round(first.ms)} ms, ${first.calls} renderPlotChart calls, ${first.marks} SVG marks`);
+  console.log(`${rows} rows | first draw (${first.type}) ${Math.round(first.ms)} ms, ${first.calls} renderPlotChart calls, ${first.marks} marks drawn`);
 
   for (const type of ["scatter", "line", "bar"]) {
     const res = await page.evaluate(async ({ type, runs }) => {
@@ -67,9 +67,9 @@ const PATTERN = "Position update x=[*:float] y=[*:float] z=[*:float]";
         times.push(performance.now() - t);
       }
       times.sort((a, b) => a - b);
-      return { median: times[Math.floor(times.length / 2)], marks: document.querySelectorAll("#plotSvg .plot-mark").length, nodes: document.querySelectorAll("#plotSvg *").length };
+      return { median: times[Math.floor(times.length / 2)], marks: typeof plotMarkOps !== "undefined" ? plotMarkOps.length : document.querySelectorAll("#plotSvg .plot-mark").length, nodes: document.querySelectorAll("#plotSvg *").length };
     }, { type, runs: RUNS });
-    console.log(`  redraw ${type.padEnd(7)} ${Math.round(res.median)} ms (median of ${RUNS}) | ${res.marks} SVG marks, ${res.nodes} SVG elements`);
+    console.log(`  redraw ${type.padEnd(7)} ${Math.round(res.median)} ms (median of ${RUNS}) | ${res.marks} marks drawn, ${res.nodes} SVG elements`);
   }
   await browser.close();
 })();
