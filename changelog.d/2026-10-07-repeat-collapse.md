@@ -1,0 +1,4 @@
+- **feat: Collapse repeats folds consecutive repeated rows into one row with a ×N badge (2026-10-07, FEATURE_BACKLOG #7, person-requested)**
+  - New toggle in the Filtered toolbar (chevron menu: **Identical** = every column equal except the time, or **Same pattern** = numbers, IDs and quoted text may differ). Click the badge or press `→` to expand a run inline, `←` to fold it. Jumps, the find bar and bookmarks always open the run that hides their target; bookmarked or noted entries are never folded; copying a folded row copies the whole run; the minimap stats line shows `rows (k folded)`.
+  - Global preference in `localStorage`, off by default; disabled under a column sort. The log simulator's opt-in `spam` scenario produces the loops: `node tools/log-sim/cli.js -f default -s basic,spam -n 1200 --seed 22`.
+  - **Tests**: GROUP repeat-collapse (+ GROUP 300, 215). Docs: docs/ui-and-views.md, README, tools/log-sim/README.md.

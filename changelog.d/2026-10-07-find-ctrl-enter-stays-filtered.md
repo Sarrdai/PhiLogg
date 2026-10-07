@@ -1,0 +1,3 @@
+- **fix: Ctrl+Enter in the find bar no longer jumps to Context (2026-10-07)**
+  - Person-reported: after stepping to a hit, Ctrl+Enter added the filter and then also acted as Enter on the selected row, switching from Filtered to Context. The find input now stops the event's propagation.
+  - **Tests**: GROUP find-ctrl-enter-stays-filtered. Docs: docs/ui-and-views.md → find bar shortcuts.

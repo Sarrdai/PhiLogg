@@ -515,6 +515,7 @@
     width:60%; height:2px; border-radius:1px; background:transparent; transition:background .12s;
   }
   .toolbar-icon-btn.icon-toggle.active::after{background:var(--accent-strong);}
+  .toolbar-icon-btn.toggle-repeat:disabled, .toolbar-icon-btn.repeat-chevron:disabled{pointer-events:auto; cursor:default;} /* keep the tooltip that says why */
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
     border-radius:8px; background:var(--accent); color:var(--accent-on);
@@ -2831,6 +2832,7 @@
   #detailOutside{
     margin:0 0 10px; font-family:var(--font-ui); font-size:11.5px; color:var(--text-tertiary); font-style:italic;
   }
+  #detailRepeat{margin:0 0 6px; font-size:11px; color:var(--accent-strong); font-family:var(--font-mono);}
   #detailNote{
     margin:10px 0 0; padding-top:10px; border-top:1px dashed var(--border-soft);
     font-family:var(--font-ui); font-size:12px; line-height:1.6; font-style:italic;
@@ -3157,11 +3159,11 @@
   }
 
   /* ---------- Link dialog ---------- */
-  #linkDialog, #gapDialog{
+  #linkDialog, #gapDialog, #andOrDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center;
   }
-  #linkDialog.hidden, #gapDialog.hidden{display:none;}
+  #linkDialog.hidden, #gapDialog.hidden, #andOrDialog.hidden{display:none;}
   .link-dialog-card{
     width:min(400px, 88%); background:var(--bg-elevated); border:1px solid var(--border);
     border-radius:12px; padding:20px 22px; box-shadow:0 20px 45px rgba(0,0,0,.5);
@@ -3213,7 +3215,7 @@
 
   /* Link dialog v2: Start / End side rows, the sentence between them, the
      "Same" key chips, the "▾" filter picker menu. */
-  #linkDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
+  #linkDialog .link-dialog-card, #andOrDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
   .link-side{display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;}
   .link-side-lab{flex:0 0 40px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
   .link-side input.link-side-input{flex:1 1 auto; min-width:0; width:auto;}
@@ -3234,6 +3236,8 @@
   .link-sentence input[type="number"]{width:48px !important; margin:0;}
   .link-sentence .link-hop-ord{margin-left:-4px;}
   .link-dialog-card .link-side input.link-side-input[type="text"]:not(.stepper-value){width:auto; flex:1 1 0;}
+  #andOrDialog .link-sentence{margin-left:0; margin-bottom:10px;}
+  #andOrDialog .link-addstep{margin-bottom:10px;}
   .link-seg{display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden;}
   .link-seg button{font:inherit; font-size:11.5px; font-weight:600; border:0; background:transparent; color:var(--text-secondary); padding:0 10px; height:26px; cursor:pointer;}
   .link-seg button + button{border-left:1px solid var(--border);}
@@ -3484,6 +3488,7 @@
   #filterLibrarySaveDialog.hidden, #filterLibraryDialog.hidden{display:none;}
   #filterLibraryDialog .link-dialog-card{width:min(500px, 92%);}
   #filterLibraryList{max-height:min(360px, 50vh); overflow-y:auto; margin:-2px 0 14px;}
+  #formatProvidedNotice:empty{display:none;}
   .filter-library-empty{padding:14px 2px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
   .filter-library-row{display:flex; align-items:center; gap:8px; padding:8px 2px; border-bottom:1px solid var(--border-soft);}
   .filter-library-row:last-child{border-bottom:none;}
@@ -4856,6 +4861,55 @@
   }
   .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
+  /* ---------- Collapse repeats (×N), Filtered view — FEATURE_BACKLOG #7 ----------
+     .repeat-badge sits in front of the head row's message; .repeat-member rows
+     (an expanded run) carry a 2px accent bar in the left gutter, .repeat-vary
+     underlines the numbers that differ inside a "Same pattern" run. */
+  .repeat-badge{
+    display:inline-flex; align-items:center; gap:3px; height:17px; padding:0 6px; margin-right:7px;
+    box-sizing:border-box; vertical-align:middle; border-radius:9px; cursor:pointer;
+    background:var(--accent-soft); border:1px solid var(--accent); color:var(--accent-strong);
+    font-family:var(--font-mono); font-size:10.5px; font-weight:700; line-height:1; white-space:nowrap;
+  }
+  .repeat-badge:hover{border-color:var(--accent-strong);}
+  .repeat-badge.repeat-pattern{border-style:dashed;}
+  .repeat-badge .repeat-caret{font-size:8px;}
+  .repeat-vary{text-decoration:underline dotted; text-decoration-color:var(--accent-strong); text-underline-offset:2px; cursor:help;}
+  .log-row.repeat-member::before, .log-row.repeat-head-open::before{
+    content:""; position:absolute; left:-9px; top:0; bottom:0; width:2px; background:var(--accent); pointer-events:none;
+  }
+  .log-row.repeat-head-open::before{top:50%;}
+  .log-row.repeat-member-last::before{bottom:4px; border-bottom-left-radius:2px; border-bottom-right-radius:2px;}
+  .log-row.repeat-member .col-msg, .log-row.repeat-member .col-text{opacity:.88;}
+  /* Collapse-repeats options menu (chevron next to the toggle), same shell as #columnsPanel. */
+  .repeat-split{display:flex; align-items:center;}
+  .toolbar-icon-btn.repeat-chevron{width:14px; margin-left:-6px; background:none; border:none; color:var(--text-secondary);}
+  .toolbar-icon-btn.repeat-chevron:hover{background:var(--bg-elevated-2);}
+  .toolbar-icon-btn.repeat-chevron .icon{--icon-md:10px;}
+  #repeatMenu{
+    position:fixed; z-index:60; width:260px; padding:5px;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
+    box-shadow:0 16px 36px rgba(0,0,0,.5); display:flex; flex-direction:column;
+  }
+  #repeatMenu.hidden{display:none;}
+  .repeat-menu-item{
+    display:flex; align-items:flex-start; gap:8px; padding:6px 8px; border:none; background:none; text-align:left;
+    border-radius:5px; cursor:pointer; color:var(--text-secondary); font:inherit; font-size:11.5px;
+  }
+  .repeat-menu-item:hover{background:var(--bg-elevated-2);}
+  .repeat-menu-item .rm-mark{
+    flex:0 0 auto; width:13px; height:13px; margin-top:1px; box-sizing:border-box;
+    border:1.5px solid var(--border-hover); background:transparent;
+  }
+  .repeat-menu-item .rm-check{border-radius:3px;}
+  .repeat-menu-item .rm-radio{border-radius:50%;}
+  .repeat-menu-item.on .rm-mark{border-color:var(--accent-strong); background:var(--accent-strong); box-shadow:inset 0 0 0 2.5px var(--bg-elevated);}
+  .repeat-menu-item .rm-check, .repeat-menu-item.on .rm-check{box-shadow:none;}
+  .repeat-menu-item.on .rm-check{background:var(--accent-strong);}
+  .repeat-menu-item .rm-title{display:block; color:var(--text-primary); font-weight:600;}
+  .repeat-menu-item .rm-sub{display:block; margin-top:1px; font-size:10.5px; color:var(--text-tertiary); line-height:1.35;}
+  .repeat-menu-sep{height:1px; margin:4px 2px; background:var(--border-soft);}
+
   /* ---------- Log view columns popup (#btnColumns) — own fixed-position/
      toggle pattern (used to share it with the License popup, which has
      since moved into Settings as its own section — see #licenseContent
@@ -5151,8 +5205,9 @@
   body.layout-phone .link-dialog-card .link-dialog-actions{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); margin-top:8px; padding:10px 0 16px;}
   /* Link dialog v2 on the phone: a full-screen sheet (the sticky action row above stays
      pinned to its bottom), 40px controls, rows stacked under their labels. */
-  body.layout-phone #linkDialog{align-items:stretch; justify-content:stretch;}
+  body.layout-phone #linkDialog, body.layout-phone #andOrDialog{align-items:stretch; justify-content:stretch;}
   body.layout-phone #linkDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
+  body.layout-phone #andOrDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
   body.layout-phone .link-side{flex-wrap:wrap;}
   body.layout-phone .link-side-lab{flex:1 0 100%;}
   body.layout-phone .link-sentence, body.layout-phone .link-addstep{margin-left:0;}
@@ -5555,6 +5610,7 @@
     <symbol id="i-note" viewBox="0 0 16 16"><path d="M3.25 2.25h9.5v11l-2.75-1.75H3.25Z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h2.75"/></symbol>
     <symbol id="i-multiline" viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></symbol>
     <symbol id="i-wrap" viewBox="0 0 16 16"><path d="M2.5 3.75h11"/><path d="M2.5 8h9a2.25 2.25 0 0 1 0 4.5H7.5"/><path d="M9.25 10.5 7.25 12.5l2 2"/><path d="M2.5 12.5h2.5"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="4" rx="1"/><path d="M4.5 9h7M6.25 11.75h3.5M7.5 14h1"/></symbol>
     <symbol id="i-columns" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.25"/><path d="M6 2.75v10.5M10 2.75v10.5"/></symbol>
     <symbol id="i-highlight-pen" viewBox="0 0 16 16"><path d="M9.5 2.5 13.5 6.5 7.25 12.75 3 13.5l.75-4.25Z"/><path d="M2.25 14.5h5"/></symbol>
     <symbol id="i-highlight-text" viewBox="0 0 16 16"><path d="M4 3.25h8M8 3.25v6M2.5 11.75h11M2.5 14.25h11"/></symbol>
@@ -6027,6 +6083,11 @@
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" title="Columns"></button>
+                <!-- Collapse repeats (FEATURE_BACKLOG #7): toggle + chevron opening #repeatMenu (rule choice). -->
+                <span class="repeat-split">
+                  <button type="button" class="toolbar-icon-btn icon-toggle toggle-repeat" id="btnRepeatCollapse" title="Collapse repeats"></button>
+                  <button type="button" class="toolbar-icon-btn repeat-chevron" id="btnRepeatMenu" title="Collapse repeats: choose the rule" aria-haspopup="true"></button>
+                </span>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" title="Underline highlights"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" title="Clickable file paths"></button>
@@ -6329,6 +6390,7 @@
           <div id="detailBody">
             <div id="detailPlaceholder"><span class="dp-desktop">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</span><span class="dp-touch">Tap a row to see its full message here.</span></div>
             <div id="detailOutside" style="display:none">This entry is not part of the current filter.</div>
+            <div id="detailRepeat" style="display:none"></div>
             <div id="detailMessage"></div>
             <div id="detailNote"></div>
           </div>
@@ -6534,6 +6596,33 @@
         <button type="button" id="linkDialogCreate" class="btn-mini">Create</button>
       </div>
       <div id="linkSideMenu" class="link-side-menu hidden" role="menu"></div>
+    </div>
+  </div>
+
+  <!-- Edit conditions (FEATURE_BACKLOG.md #58): the baked conditions of an AND/OR combiner node,
+       rows JS-built into #andOrSides by renderAndOrRows. -->
+  <div id="andOrDialog" class="hidden">
+    <div class="link-dialog-card link-dialog-card-wide" id="andOrDialogCard">
+      <div class="link-dialog-title">Edit conditions</div>
+      <div class="link-sentence">Match
+        <span class="link-seg" id="andOrMode" role="group" aria-label="Combine with">
+          <button type="button" data-mode="and" aria-pressed="true">all (AND)</button><button type="button" data-mode="or" aria-pressed="false">any (OR)</button>
+        </span> of these conditions</div>
+      <div id="andOrSides"></div>
+      <button type="button" class="link-addstep" id="andOrAddStep">+ Add condition</button>
+      <div id="andOrHint" class="link-hint hidden"></div>
+      <div id="andOrResults" class="live-results hidden">
+        <div class="filter-results-head">
+          <div id="andOrLiveMatch" class="live-match"></div>
+          <svg id="andOrResultsMinimap" class="live-minimap hidden" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="andOrResultsSamples" class="live-samples"></div>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="andOrDialogCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="andOrDialogSave" class="btn-mini">Save</button>
+      </div>
+      <div id="andOrSideMenu" class="link-side-menu hidden" role="menu"></div>
     </div>
   </div>
 
@@ -7556,6 +7645,7 @@
 
           <div class="settings-card" id="formatListCard">
           <div id="formatList"></div>
+          <div id="formatProvidedNotice" class="filter-library-empty"></div>
           <div class="settings-card-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button></div>
           </div>
 
@@ -8044,6 +8134,13 @@ SOFTWARE.</pre>
        JS-rendered here by renderColumnsPanel, since the set of hideable
        columns is now dynamic. Widths are drag-resized from #tableHeader's
        own resize handles instead, not from here. -->
+  <!-- Collapse repeats rule menu (chevron next to #btnRepeatCollapse), built like #columnsPanel. -->
+  <div id="repeatMenu" class="hidden">
+    <button type="button" class="repeat-menu-item" data-repeat-action="toggle"><span class="rm-mark rm-check"></span><span><span class="rm-title">Collapse repeats</span><span class="rm-sub">Fold consecutive repeated rows into one row &times;N</span></span></button>
+    <div class="repeat-menu-sep"></div>
+    <button type="button" class="repeat-menu-item" data-repeat-rule="identical"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Identical</span><span class="rm-sub">All columns equal except the time</span></span></button>
+    <button type="button" class="repeat-menu-item" data-repeat-rule="pattern"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Same pattern</span><span class="rm-sub">Numbers, IDs, quoted text may differ; same level, thread and source</span></span></button>
+  </div>
   <div id="columnsPanel" class="hidden">
     <div class="bookmarks-panel-title">Columns</div>
     <div id="columnsList"></div>
@@ -8207,6 +8304,8 @@ const ICON_MULTILINE = icon("multiline");
 // wraps back". Distinct from ICON_MULTILINE's plain stacked lines.
 const ICON_WRAP = icon("wrap");
 const ICON_COLUMNS = icon("columns");
+// Collapse-repeats toggle (.toggle-repeat, FEATURE_BACKLOG #7): one row over a shortened stack; the caret opens its rule menu.
+const ICON_REPEAT = icon("repeat");
 // Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
 // underline stroke, standing in for "mark/highlight" the same way
 // ICON_MULTILINE's stacked lines stand in for "multi-line text".
@@ -10332,6 +10431,9 @@ const state = {
   // serializeFilterBranch/serializeFilterTreeForCache carriers apply here.
   logFormats: [],
   formatRules: [],
+  // Provided-format files that were skipped at boot: [{name, reason}] (see
+  // loadProvidedFormats). Shown as a notice in Settings -> Log Formats.
+  providedSkipped: [],
 };
 
 // The six level buckets that have a dedicated --level-* theme var of their
@@ -14778,6 +14880,39 @@ function updateLinkNodeWithUndo(nodeId, chain) {
   return true;
 }
 
+// Auto name of an AND/OR node: its conditions joined with " ∧ " / " ∨ ". createAndOrNode names
+// each part by the source node's display name, which is the same text as bakedConditionName for a
+// text/level/idset filter but not for a time filter (parent-relative timestamps), so the check for
+// "still auto" accepts either wording.
+function andOrAutoNames(mode, bakedList, parentId) {
+  const sym = mode === "and" ? " ∧ " : " ∨ ";
+  const viaNode = b => {
+    if (b.label) return b.label;
+    if (b.filterType === "after") return "≥ " + formatTsFor(parentId, b.value);
+    if (b.filterType === "before") return "≤ " + formatTsFor(parentId, b.value);
+    if (b.filterType === "timerange") return timeRangeFilterName(b.value, parentId);
+    return bakedConditionName(b);
+  };
+  return [bakedList.map(bakedConditionName).join(sym), bakedList.map(viaNode).join(sym)];
+}
+
+// Replaces an AND/OR node's operator and baked conditions (the "Edit conditions" dialog's Save) as
+// ONE undo step. The name is regenerated only while it is still the auto-generated one; a renamed
+// node keeps its name. node.baked is assigned a NEW array (never mutated in place).
+function updateAndOrNodeWithUndo(nodeId, mode, bakedList) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter" || (node.filterType !== "and" && node.filterType !== "or")) return false;
+  if ((mode !== "and" && mode !== "or") || !isBakedList(bakedList)) return false;
+  withFieldEditUndo(nodeId, n => {
+    const auto = !n.label && Array.isArray(n.baked) && andOrAutoNames(n.filterType, n.baked, n.parentId).includes(n.name);
+    n.baked = bakedList.map(cloneBaked);
+    n.filterType = mode;
+    if (auto) n.name = andOrAutoNames(mode, n.baked, n.parentId)[1];
+    invalidateNodeSubtreeCaches(nodeId);
+  });
+  return true;
+}
+
 // Correlation-key suggestions for a start/end pair of entry lists: every
 // `name=` field (\w+) present in the first message of both sides becomes a
 // candidate, key pattern "name=[*:word]" (the value token up to the next
@@ -16281,7 +16416,7 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
     if (hasTok) {
       while (ti < tokRanges.length && tokRanges[ti].end <= s) ti++;
       const t = tokRanges[ti];
-      if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '">' + slice + "</span>";
+      if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '"' + (t.title ? ' title="' + escapeHtml(t.title) + '"' : "") + '>' + slice + "</span>";
     }
     const marked = ranges.some(r => r[0] <= s && r[1] >= e);
     // Find-bar hit (FEATURE_BACKLOG.md #3): its own background class, which
@@ -17351,6 +17486,7 @@ function captureNodeFields(node, withViews) {
     assertions: node.assertions ? JSON.parse(JSON.stringify(node.assertions)) : undefined,
     columnRenames: node.columnRenames ? JSON.parse(JSON.stringify(node.columnRenames)) : undefined,
     link: node.filterType === "link" ? captureLinkFields(node) : undefined,
+    combine: (node.filterType === "and" || node.filterType === "or") && Array.isArray(node.baked) ? { baked: cloneBaked(node.baked) } : undefined,
   };
 }
 // A link node's own definition (updateLinkNodeWithUndo's edit), as fresh copies.
@@ -17370,6 +17506,10 @@ function applyNodeFields(node, fields) {
     node.linkDirection = fields.link.linkDirection; node.linkN = fields.link.linkN;
     node.linkOrderEnforced = fields.link.linkOrderEnforced; node.linkExclusive = fields.link.linkExclusive;
     copyLinkOptions(fields.link, node);
+    invalidateNodeSubtreeCaches(node.id);
+  }
+  if (fields.combine) {
+    node.baked = cloneBaked(fields.combine.baked);
     invalidateNodeSubtreeCaches(node.id);
   }
   if (fields.views) {
@@ -17827,6 +17967,7 @@ const detailMeta = el("#detailMeta");
 const detailMessageEl = el("#detailMessage");
 const detailNoteEl = el("#detailNote");
 const detailOutsideEl = el("#detailOutside");
+const detailRepeatEl = el("#detailRepeat");
 const sidebarEl = el("#sidebar");
 const sidebarResizer = el("#sidebarResizer");
 const extractWrap = el("#extractWrap");
@@ -18056,6 +18197,13 @@ function normalizeMessagePattern(message) {
   patternFloatMask = 0;
   patternNumIdx = 0;
   return line.replace(PATTERN_TOKEN_RE, patternTokenReplacer);
+}
+// "Same pattern" key of the Filtered view's collapse-repeats rule: the WHOLE
+// message (every line, no PATTERN_MAX_CHARS cut) with the same token rules as
+// normalizeMessagePattern. A separate function so the Patterns tab keeps its
+// first-line/400-char behaviour.
+function normalizeRepeatMessage(message) {
+  return (message || "").replace(PATTERN_TOKEN_RE, patternTokenReplacer);
 }
 // Human-readable form of a group key ("Axis <#> position <#> ...").
 function patternDisplayText(key) {
@@ -18943,6 +19091,9 @@ const linkBody = el("#linkBody");
 const tableHeaderEl = el("#tableHeader");
 const highlightHeaderEl = el("#highlightHeader");
 const btnColumns = elAll(".toggle-columns");
+const btnRepeat = elAll(".toggle-repeat");
+const btnRepeatMenu = elAll(".repeat-chevron");
+const repeatMenu = el("#repeatMenu");
 const btnTextMatchHighlight = elAll(".toggle-textmatch");
 const btnHighlightMatchText = elAll(".toggle-highlightmatch");
 const btnFilePathLinks = elAll(".toggle-filepaths");
@@ -21088,6 +21239,11 @@ function editFilterNode(nodeId) {
   }
   if (node.filterType === "gap") {
     openGapDialog(node.id, true);
+    return true;
+  }
+  if (node.filterType === "and" || node.filterType === "or") {
+    if (!hasBakedSides(node)) return false;
+    openAndOrDialog(node.id);
     return true;
   }
   if (node.filterType === "link") {
@@ -27047,6 +27203,290 @@ function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
 let viewMembers = []; // the Filtered view's real members (chronological, no temp anchor) — membership check of the detail notice
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
+/* ===================== Collapse repeats (×N) — FEATURE_BACKLOG #7 =========
+   Filtered view only. Consecutive rows of the CURRENT view (after node filter
+   + level bar) that are "the same" fold into one head row (the run's first
+   entry) with a ×N badge. Two rules (repeatRule): "identical" — every parsed
+   field except the time equal (level, thread, location, method, custom
+   columns, full message, same source file); "pattern" — the same, but the
+   message compared through the Patterns tab's token rules
+   (normalizeRepeatMessage). A global preference in localStorage, off by
+   default; disabled under a column sort (rows must stay chronological).
+   foldRepeats() turns the chronological list into currentViewEntries (the
+   ROW list); viewMembers stays the unfolded one. repeatRunByEntry maps the id
+   of every entry of a run of 2+ (head included) to its run object
+   { head, members, vary }. repeatExpanded holds the head ids of runs shown
+   inline (members follow the head as .repeat-member rows); never persisted,
+   cleared when the node, the rule or the toggle changes. */
+const REPEAT_COLLAPSE_KEY = "philogg-repeat-collapse";
+const REPEAT_RULE_KEY = "philogg-repeat-rule";
+let repeatCollapseOn = false;
+let repeatRule = "identical"; // "identical" | "pattern"
+try {
+  repeatCollapseOn = localStorage.getItem(REPEAT_COLLAPSE_KEY) === "1";
+  repeatRule = localStorage.getItem(REPEAT_RULE_KEY) === "pattern" ? "pattern" : "identical";
+} catch (_) { /* storage blocked: defaults */ }
+let repeatExpanded = new Set();
+let repeatRunByEntry = new Map();
+let repeatLastNodeId = null;
+let repeatUnfolded = []; // the chronological list (temp anchor spliced) behind currentViewEntries; the find bar walks this one
+const REPEAT_RESERVED_COLS = new Set(["time", "level", "thread", "location", "method", "message"]);
+
+function repeatFoldActive() { return repeatCollapseOn && !state.sortColumn; }
+
+// "Same pattern" keys, cached per entry: a refold (expand/collapse, bookmark, rule toggle) re-runs
+// the fold, and the token regex per entry is what costs (~1 s on 650k rows).
+let repeatNormCache = new WeakMap();
+function repeatNormOf(e) {
+  let n = repeatNormCache.get(e);
+  if (n === undefined) { n = normalizeRepeatMessage(e.message); repeatNormCache.set(e, n); }
+  return n;
+}
+// aNorm: the head's normalized message, computed on demand (aNorm()) — only
+// when every other field already matches, so the token regex runs for a
+// fraction of the entries (a file where nothing folds pays ~nothing).
+function repeatSameRow(a, b, customKeys, pattern, aNorm) {
+  if (a.formatId !== b.formatId || a.sourceId !== b.sourceId || a.level !== b.level ||
+      a.thread !== b.thread || a.location !== b.location || a.method !== b.method) return false;
+  for (let k = 0; k < customKeys.length; k++) {
+    const key = customKeys[k];
+    if (((a.fields && a.fields[key]) || "") !== ((b.fields && b.fields[key]) || "")) return false;
+  }
+  return pattern ? (a.message === b.message || aNorm() === repeatNormOf(b)) : a.message === b.message;
+}
+
+// Chronological list -> row list; (re)builds repeatRunByEntry. Temp-anchor
+// clones, bookmarked and noted entries never fold: each is its own row, ends
+// the run before it and the entries after it start a new one.
+function foldRepeats(list) {
+  repeatRunByEntry = new Map();
+  const n = list.length;
+  if (!repeatFoldActive() || n < 2 || list[0].isPair) return list;
+  const pattern = repeatRule === "pattern";
+  const customKeys = activeColumnDefs().map(c => c.key).filter(k => !REPEAT_RESERVED_COLS.has(k));
+  const rows = [];
+  let head = null, headIdx = 0, headNorm = null;
+  const headNormOf = () => headNorm === null ? (headNorm = repeatNormOf(head)) : headNorm;
+  const flush = end => { // the open run is list[headIdx, end)
+    if (!head) return;
+    rows.push(head);
+    if (end - headIdx > 1) {
+      const members = list.slice(headIdx, end);
+      const run = { head, members, vary: undefined };
+      for (let k = 0; k < members.length; k++) repeatRunByEntry.set(members[k].id, run);
+      if (repeatExpanded.has(head.id)) for (let k = 1; k < members.length; k++) rows.push(members[k]);
+    }
+    head = null;
+  };
+  for (let i = 0; i < n; i++) {
+    const e = list[i];
+    // Barriers are always their own row and end the run: the temp anchor, a bookmarked or a noted entry.
+    if (e._tempAnchor || state.bookmarks.has(e.id) || state.notes.has(e.id)) { flush(i); rows.push(e); continue; }
+    if (head && repeatSameRow(head, e, customKeys, pattern, headNormOf)) continue;
+    flush(i);
+    head = e; headIdx = i;
+    headNorm = null;
+  }
+  flush(n);
+  return rows;
+}
+
+// The id of the row that stands for entry `id` right now: the run's head while
+// the run is folded, else the entry itself.
+function repeatRowIdFor(id) {
+  const run = repeatRunByEntry.get(id);
+  return run && run.head.id !== id && !repeatExpanded.has(run.head.id) ? run.head.id : id;
+}
+
+// Number tokens (Patterns-tab rules) of a message with their positions.
+function repeatNumberTokens(msg) {
+  const out = [];
+  PATTERN_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = PATTERN_TOKEN_RE.exec(msg)) !== null) {
+    if (m[0] === "") { PATTERN_TOKEN_RE.lastIndex++; continue; }
+    if (m[6] !== undefined) out.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
+  }
+  return out;
+}
+// "Same pattern" head: the number tokens of its message that differ somewhere in
+// the run, as markFieldHtml token ranges (dotted underline + "lo – hi" title).
+// Computed lazily for heads that get drawn, cached on the run.
+function repeatVaryRanges(run) {
+  if (run.vary) return run.vary;
+  const H = repeatNumberTokens(run.head.message || "");
+  const lo = H.map(t => ({ v: parseFloat(t.text.replace(/,/g, "")), text: t.text }));
+  const hi = lo.map(x => ({ v: x.v, text: x.text }));
+  const differs = H.map(() => false);
+  for (let i = 1; i < run.members.length; i++) {
+    const T = repeatNumberTokens(run.members[i].message || "");
+    if (T.length !== H.length) continue;
+    for (let j = 0; j < T.length; j++) {
+      if (T[j].text !== H[j].text) differs[j] = true;
+      const v = parseFloat(T[j].text.replace(/,/g, ""));
+      if (v < lo[j].v) lo[j] = { v, text: T[j].text };
+      if (v > hi[j].v) hi[j] = { v, text: T[j].text };
+    }
+  }
+  run.vary = [];
+  H.forEach((t, j) => { if (differs[j]) run.vary.push({ start: t.start, end: t.end, cls: "repeat-vary", title: lo[j].text + " – " + hi[j].text }); });
+  return run.vary;
+}
+
+function repeatBadgeHtml(run, zero) {
+  const n = run.members.length;
+  const open = repeatExpanded.has(run.head.id);
+  let tip = n + " repeats";
+  const spanText = repeatSpanText(run, zero);
+  if (spanText) tip += " \u00b7 " + spanText;
+  tip += " · click to " + (open ? "collapse" : "expand");
+  return '<span class="repeat-badge' + (repeatRule === "pattern" ? " repeat-pattern" : "") + '" data-repeat-badge="1" title="' + escapeHtml(tip) + '">×' + n +
+    (open ? ' <span class="repeat-caret">▾</span>' : "") + '</span>';
+}
+
+// Everything between "which members does the view have" and "what's on screen":
+// viewMembers, the row list (temp anchor spliced in, folded or column-sorted),
+// row offsets, spacer height and the widest-message cache. Shared by
+// renderTable, the pin-bookmarks repaint and expand/collapse. A selected entry
+// that the fold hid moves to its head.
+function applyViewMembers(members) {
+  if (repeatLastNodeId !== state.activeId) { repeatExpanded.clear(); repeatLastNodeId = state.activeId; }
+  viewMembers = members;
+  const withAnchor = spliceTempAnchor(members);
+  viewDeltaMs = state.sortColumn ? buildViewDeltaMap(withAnchor) : null;
+  if (state.sortColumn) {
+    repeatRunByEntry = new Map();
+    currentViewEntries = withAnchor.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
+  } else {
+    currentViewEntries = foldRepeats(withAnchor);
+    // A pending jump target (scrollTargetId) hidden in a folded run opens that run first.
+    if (state.scrollTargetId && repeatExpandFor(state.scrollTargetId)) currentViewEntries = foldRepeats(withAnchor);
+  }
+  repeatUnfolded = state.sortColumn ? currentViewEntries : withAnchor;
+  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
+  {
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
+    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  }
+  cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  const sel = state.selectedId;
+  if (sel) {
+    const rid = repeatRowIdFor(sel);
+    if (rid !== sel) {
+      state.selectedId = rid;
+      updateMinimapSelectionMarkers();
+      updateRowActionButtons();
+      updateDetailPanel();
+    }
+  }
+}
+
+// Opens the run that hides entry `id` (no repaint). True when one was opened.
+function repeatExpandFor(id) {
+  const run = repeatRunByEntry.get(id);
+  if (!run || run.head.id === id || repeatExpanded.has(run.head.id)) return false;
+  repeatExpanded.add(run.head.id);
+  return true;
+}
+// Every path that scrolls to an entry by id calls this first, so a jump never
+// lands on nothing: the run hiding `id` unfolds in place.
+function revealRepeatMember(id) {
+  if (!repeatExpandFor(id)) return false;
+  refoldRepeatView();
+  return true;
+}
+
+// Re-fold the current view in place (expand/collapse, bookmark/note change):
+// keeps the reading position like the other in-place repaints, never a full render().
+function refoldRepeatView(members) {
+  const anchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
+  applyViewMembers(members || viewMembers);
+  if (anchor) anchor.id = repeatRowIdFor(anchor.id);
+  renderDetailOutsideNotice(selectedEntry());
+  syncTableRowsWidth();
+  restoreViewAnchor(anchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical);
+  renderVisibleRows();
+  updateMinimapRenderedRange();
+  updateRepeatMeta();
+}
+// " · <rows> rows (<k> folded)" for the minimap stats line while folding hides something.
+function repeatMetaHtml() {
+  if (!repeatFoldActive()) return "";
+  const k = repeatUnfolded.length - currentViewEntries.length;
+  if (k <= 0) return "";
+  return '<span class="minimap-meta-repeat"> \u00b7 ' + currentViewEntries.length.toLocaleString("de-DE") + " rows (" + k.toLocaleString("de-DE") + " folded)</span>";
+}
+function updateRepeatMeta() {
+  const rest = timelineMinimapMetaEl.querySelector(".minimap-meta-rest");
+  if (!rest) return;
+  const old = rest.querySelector(".minimap-meta-repeat");
+  if (old) old.remove();
+  rest.insertAdjacentHTML("beforeend", repeatMetaHtml());
+}
+// Entry detail: the line above the message of a run's head.
+function repeatSpanText(run, zero) {
+  const first = run.members[0], last = run.members[run.members.length - 1];
+  if (isPlainTextFormat(first.formatId)) return "";
+  return displayTimeText(first, zero) + " \u2013 " + displayTimeText(last, zero) + " (" + formatDelta(last.ts - first.ts) + ")";
+}
+function renderDetailRepeat(entry) {
+  const run = entry && repeatRunByEntry.size ? repeatRunByEntry.get(entry.id) : null;
+  if (!run || run.head !== entry) { detailRepeatEl.style.display = "none"; detailRepeatEl.textContent = ""; return; }
+  let text = "Repeated \u00d7" + run.members.length;
+  const span = repeatSpanText(run, timeZeroContext());
+  if (span) text += " \u00b7 " + span;
+  if (repeatRule === "pattern") {
+    const vary = repeatVaryRanges(run);
+    if (vary.length) text += " \u00b7 varying: " + vary.map(v => v.title.replace(" \u2013 ", "\u2013")).join(", ");
+  }
+  detailRepeatEl.textContent = text;
+  detailRepeatEl.style.display = "block";
+}
+function setRepeatRunOpen(headId, open) {
+  if (open === repeatExpanded.has(headId)) return;
+  if (open) repeatExpanded.add(headId); else repeatExpanded.delete(headId);
+  refoldRepeatView();
+}
+// → on a selected folded head expands it, ← on a head/member of an open run
+// folds it and selects the head. Returns whether the key was used.
+function repeatKeyStep(ev) {
+  const run = state.selectedId ? repeatRunByEntry.get(state.selectedId) : null;
+  if (!run) return false;
+  const open = repeatExpanded.has(run.head.id);
+  if (ev.key === "ArrowRight") {
+    if (open || run.head.id !== state.selectedId) return false;
+    setRepeatRunOpen(run.head.id, true);
+    return true;
+  }
+  if (!open) return false;
+  setRepeatRunOpen(run.head.id, false);
+  return true;
+}
+
+function updateRepeatButton() {
+  const locked = !!state.sortColumn;
+  btnRepeat.forEach(b => {
+    b.classList.toggle("active", repeatCollapseOn && !locked);
+    b.disabled = locked;
+    b.title = locked ? "Collapse repeats needs the chronological order (clear the column sort)" : "Collapse repeats";
+  });
+  btnRepeatMenu.forEach(b => { b.disabled = locked; });
+  repeatMenu.querySelector('[data-repeat-action="toggle"]').classList.toggle("on", repeatCollapseOn);
+  repeatMenu.querySelectorAll("[data-repeat-rule]").forEach(it => it.classList.toggle("on", it.dataset.repeatRule === repeatRule));
+}
+function setRepeatCollapse(on, rule) {
+  repeatCollapseOn = !!on;
+  if (rule) repeatRule = rule;
+  try {
+    localStorage.setItem(REPEAT_COLLAPSE_KEY, repeatCollapseOn ? "1" : "0");
+    localStorage.setItem(REPEAT_RULE_KEY, repeatRule);
+  } catch (_) { /* storage blocked: applies for this session only */ }
+  repeatExpanded.clear();
+  updateRepeatButton();
+  render();
+}
+function closeRepeatMenu() { repeatMenu.classList.add("hidden"); }
+
 /* ===================== Temporary anchor rendering (FEATURE_BACKLOG #18) ===
    Splices state.tempAnchor's entry into the Filtered table's own entry list
    at its would-be chronological position, so it renders (and is reachable
@@ -27411,6 +27851,12 @@ function appendLogRow(frag, i, rc) {
     (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") +
     (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") + pairPickRowClass(e) +
     (e._tempAnchor ? " temp-anchor-row" : "");
+  // Collapse repeats: a run's head carries the ×N badge, the members of an
+  // expanded run get the gutter bar (last one closes it).
+  const repeatRun = repeatRunByEntry.size ? repeatRunByEntry.get(e.id) : undefined;
+  const repeatHead = !!repeatRun && repeatRun.head === e;
+  if (repeatHead && repeatExpanded.has(e.id)) cls += " repeat-head-open";
+  if (repeatRun && !repeatHead) cls += " repeat-member" + (repeatRun.members[repeatRun.members.length - 1] === e ? " repeat-member-last" : "");
 
   let bracketHtml = "";
   // Highlight-rule matches (see computeHighlightMap) — shown here too now,
@@ -27441,7 +27887,12 @@ function appendLogRow(frag, i, rc) {
   // Under a column sort adjacent rows aren't temporally adjacent, so the
   // Δt comes from rc.deltaMap (captured in chronological order) instead of
   // the row above.
-  const prevE = i > 0 ? currentViewEntries[i - 1] : null;
+  let prevE = i > 0 ? currentViewEntries[i - 1] : null;
+  // After a folded run the Δt is measured from the run's LAST member, not its head.
+  if (prevE && repeatRunByEntry.size) {
+    const pr = repeatRunByEntry.get(prevE.id);
+    if (pr && pr.head === prevE && !repeatExpanded.has(prevE.id)) prevE = pr.members[pr.members.length - 1];
+  }
   const deltaMs = rc.deltaMap ? (rc.deltaMap.has(e.id) ? rc.deltaMap.get(e.id) : null)
     : (prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
 
@@ -27467,8 +27918,10 @@ function appendLogRow(frag, i, rc) {
     const html = markFieldHtml(rc.mm, val, col.key);
     middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
   }
-  const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message", plainTextSyntaxRanges(e, rc.syntax));
-  const msgHtml = (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
+  const syntaxRanges = plainTextSyntaxRanges(e, rc.syntax);
+  const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message",
+    repeatHead && repeatRule === "pattern" && !(syntaxRanges && syntaxRanges.length) ? repeatVaryRanges(repeatRun) : syntaxRanges);
+  const msgHtml = (repeatHead ? repeatBadgeHtml(repeatRun, rc.zero) : "") + (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
     (filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase);
 
   row.className = cls;
@@ -27512,6 +27965,18 @@ function appendLogRow(frag, i, rc) {
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
+  if (repeatHead) {
+    // The badge expands/collapses the run inline; it selects the head but must not reach the row's own click/dblclick.
+    const badge = row.querySelector(".repeat-badge");
+    if (badge) {
+      badge.addEventListener("click", ev => {
+        ev.stopPropagation();
+        if (state.selectedId !== e.id) selectEntry(e.id);
+        setRepeatRunOpen(e.id, !repeatExpanded.has(e.id));
+      });
+      badge.addEventListener("dblclick", ev => ev.stopPropagation());
+    }
+  }
   frag.appendChild(row);
   const noteRow = appendNoteRow(frag, e);
   return noteRow ? [row, noteRow] : [row];
@@ -30192,6 +30657,7 @@ function closeEscapeOverlays() {
   closeCsvExportDialog();
   closeExportDialog();
   closeLinkDialog();
+  closeAndOrDialog();
   closeGapDialog();
   closeContextDialog();
   closeTimeRangeDialog();
@@ -30200,6 +30666,7 @@ function closeEscapeOverlays() {
   closePruneDialog();
   closeNoteDialog();
   closeColumnsPanel();
+  closeRepeatMenu();
   closeColorPicker();
   closeSessionExportDialog();
   closeFilterLibrarySaveDialog();
@@ -30215,10 +30682,10 @@ function closeEscapeOverlays() {
 // itself closes.
 function anyEscapeOverlayOpen() {
   const overlayIds = [
-    "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
+    "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "andOrDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog", "pruneDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
-    "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "repeatMenu", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
@@ -30695,7 +31162,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
   timelineMinimapMetaEl.innerHTML = (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
-    '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + "</span>";
+    '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + repeatMetaHtml() + "</span>";
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
@@ -31953,9 +32420,20 @@ function selectRowForContextMenu(entryId, selectFn) {
 function formatEntriesForClipboard(entries) {
   return entries.map(e => e.raw).join("\n");
 }
+// Collapse repeats: a folded head stands for its whole run when copying.
+function expandRepeatHeads(entries) {
+  if (!repeatRunByEntry.size || state.entriesView !== "filter") return entries;
+  const out = [], seen = new Set();
+  for (const e of entries) {
+    const run = repeatRunByEntry.get(e.id);
+    const list = run && run.head === e && !repeatExpanded.has(e.id) ? run.members : [e];
+    for (const m of list) if (!seen.has(m.id)) { seen.add(m.id); out.push(m); }
+  }
+  return out;
+}
 function copyLogSelectionToClipboard() {
   const ids = state.logMultiSelect.size ? [...state.logMultiSelect] : (state.selectedId ? [state.selectedId] : []);
-  const entries = ids.map(id => entryIndex[id]).filter(Boolean).sort(chronoComparator(buildOrderIndexMap(getRootFileId(state.activeId))));
+  const entries = expandRepeatHeads(ids.map(id => entryIndex[id]).filter(Boolean)).sort(chronoComparator(buildOrderIndexMap(getRootFileId(state.activeId))));
   if (!entries.length) return;
   copyTextToClipboard(formatEntriesForClipboard(entries));
   showCopyToast(entries.length === 1 ? "Line copied" : entries.length + " lines copied");
@@ -32000,6 +32478,7 @@ function selectEntry(entryId, opts) {
   state.entriesView = "filter";
   const previousId = applySelection(entryId);
   if (opts.scroll) {
+    revealRepeatMember(entryId); // Collapse repeats: a hit/jump into a folded run opens it first
     // opts.index: callers that already know the entry's position (arrow-key
     // navigation, minimap click) pass it along so a large view isn't scanned
     // twice per keypress (moveSelection's own findIndex + this one).
@@ -32563,12 +33042,14 @@ function updateDetailPanel() {
     detailNoteEl.style.display = "none";
     detailNoteEl.textContent = "";
     detailOutsideEl.style.display = "none";
+    renderDetailRepeat(null);
     return;
   }
 
   detailPanel.classList.remove("empty");
   detailMeta.className = levelClass(entry.level, entry.formatId);
   renderDetailOutsideNotice(entry); // before the Raw branch below returns early
+  renderDetailRepeat(entry); // Collapse repeats: "Repeated ×N · ..." line of a run's head
 
   // Match marking (see the section above textFilterMatches) — same
   // computation as renderVisibleRows, with the filter-path half gated by the
@@ -32733,6 +33214,7 @@ function revealInFilteredView(entry, sourceRowEl, sourceScrollEl) {
   // #fhSplit when coming from either of those tabs (see its own comment) —
   // this call site doesn't need to duplicate that anymore.
   if (fhLayout === "stacked") applyFhView("stacked"); else applyFhView("filter");
+  revealRepeatMember(entry.id); // Collapse repeats: the entry may sit inside a folded run
   updateSelectedRowClass(previousId);
   updateDetailPanel();
   pushNavWaypoint(); // A2-equivalent: the Filtered-pane spot we landed on
@@ -33005,17 +33487,11 @@ function toggleBookmark(entryId) {
   // fine, but toggling a bookmark afterwards (button/context-menu/"B") left
   // the Filtered view showing the stale pre-change set until some UNRELATED
   // full render happened to run.
-  if (state.pinBookmarksInFilteredView) {
-    viewMembers = getVisibleEntries();
-    currentViewEntries = spliceTempAnchor(viewMembers);
-    viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
-    if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
-    tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-    {
-      const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
-      tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
-    }
-    cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  if (repeatFoldActive()) {
+    // Bookmarked/noted entries are fold barriers: refold in place, reading position kept.
+    refoldRepeatView(state.pinBookmarksInFilteredView ? getVisibleEntries() : undefined);
+  } else if (state.pinBookmarksInFilteredView) {
+    applyViewMembers(getVisibleEntries());
     renderDetailOutsideNotice(selectedEntry());
     syncTableRowsWidth();
   }
@@ -33814,6 +34290,26 @@ btnColumns.forEach(b => b.addEventListener("click", ev => {
   if (columnsPanel.classList.contains("hidden")) openColumnsPanel(ev.currentTarget);
   else closeColumnsPanel();
 }));
+// Collapse repeats (FEATURE_BACKLOG #7): the toggle flips collapsing, the chevron opens the rule menu.
+btnRepeat.forEach(b => b.addEventListener("click", () => setRepeatCollapse(!repeatCollapseOn)));
+btnRepeatMenu.forEach(b => b.addEventListener("click", ev => {
+  ev.stopPropagation(); // popup opener: the document-level outside-click handler must not see this click
+  if (!repeatMenu.classList.contains("hidden")) { closeRepeatMenu(); return; }
+  closeClickDismissedPopups(ev); // the other click-dismissed popups close, like a click elsewhere
+  updateRepeatButton();
+  const rect = b.getBoundingClientRect();
+  repeatMenu.style.top = (rect.bottom + 6) + "px";
+  repeatMenu.style.left = Math.max(4, Math.min(rect.left - 20, window.innerWidth - 270)) + "px";
+  repeatMenu.classList.remove("hidden");
+}));
+repeatMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".repeat-menu-item");
+  if (!item) return;
+  if (item.dataset.repeatRule) setRepeatCollapse(true, item.dataset.repeatRule); // picking a rule also switches collapsing on
+  else setRepeatCollapse(!repeatCollapseOn);
+  closeRepeatMenu();
+});
 btnResetColumns.addEventListener("click", () => {
   // Explicit defaults for the 6 fixed columns (matches the pre-Custom-
   // Columns DEFAULT_COLUMN_WIDTHS reset exactly); any custom column's width
@@ -33977,16 +34473,9 @@ function renderTable() {
   // (bugfix — person-reported: an anchor from far outside the filter's real
   // span made the minimap's highlighted range balloon to cover it).
   const minimapViewEntries = getVisibleEntries();
-  viewMembers = minimapViewEntries;
-  currentViewEntries = spliceTempAnchor(minimapViewEntries);
-  viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
-  if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
-  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  {
-    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
-    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
-  }
-  cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  applyViewMembers(minimapViewEntries); // viewMembers, the (folded / sorted) row list, offsets, spacer
+  if (scrollAnchor) scrollAnchor.id = repeatRowIdFor(scrollAnchor.id); // an anchor the fold hid -> its head
+  updateRepeatButton();
   renderDetailOutsideNotice(selectedEntry());
   syncTableRowsWidth();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
@@ -33998,7 +34487,7 @@ function renderTable() {
 
   if (state.scrollTargetId) {
     // Jumping to a specific entry: scroll straight to it instead of resetting to top.
-    const targetId = state.scrollTargetId;
+    const targetId = repeatRowIdFor(state.scrollTargetId);
     const offset = state.scrollTargetOffset;
     state.scrollTargetId = null;
     state.scrollTargetOffset = null;
@@ -37415,8 +37904,8 @@ async function loadFolderFile(folder, rec, auto, quiet) {
     const mapKey = folderFileKey(rec);
     // Same bookkeeping as finishFolderFileNode does for a node (set before
     // the open, whose render shows the auto badge) — except the start
-    // filters: those are filter-library records for a LOG node, a viewer has
-    // no filter tree, so they stay log-only.
+    // filters: those are filter-library records for a file node's filter
+    // tree, an image viewer has none, so they stay skipped.
     rec.openedByAuto = !!auto;
     if (auto) rec.autoOpenFired = true;
     await openInlineViewer(rec.name, bytes, viewKind, { ownerKind: "folder", ownerId: folder.id, map: folder.inlineViewers, mapKey,
@@ -37449,8 +37938,11 @@ async function finishFolderFileNode(folder, rec, node, auto) {
   rec.openedByAuto = !!auto;
   if (auto) {
     rec.autoOpenFired = true;
-    // Filter-library start filters are for LOG nodes: a text file skips them.
-    if (node.textSyntax === undefined) await applyFolderStartFilter(folder, rec, node);
+    // Start filters apply to every file node, text files (Plain text format
+    // + a normal filter tree) included. An image never gets here: it opens
+    // as an inline viewer without a filter tree (loadFolderFile's viewKind
+    // branch) and so skips them.
+    await applyFolderStartFilter(folder, rec, node);
   }
   // Under a wrapper that listed the folder natively the file's real path
   // and its philogg://local/… URL are both known, so a folder file gets
@@ -39745,7 +40237,8 @@ function findTargetView() {
     ? (fhActiveTab === "highlight" ? "highlight" : "filter")
     : (state.entriesView === "highlight" ? "highlight" : "filter");
   if (kind === "filter" && linkWrap.style.display !== "none") return null;
-  return { kind, entries: kind === "highlight" ? currentHighlightViewEntries : currentViewEntries };
+  // Filtered view: the unfolded list (Collapse repeats walks entries, not rows).
+  return { kind, entries: kind === "highlight" ? currentHighlightViewEntries : repeatUnfolded };
 }
 
 function pressedGet(btn) { return btn.classList.contains("active"); }
@@ -40054,7 +40547,8 @@ function findAnchor(entries) {
   const isHl = findState.kind === "highlight";
   const offsets = isHl ? highlightRowOffsets : (needsRowOffsets() ? tableRowOffsets : null);
   const scrollTop = isHl ? highlightBody.scrollTop : physicalToLogicalScrollPx(tableBody.scrollTop);
-  const topId = topVisibleEntryId(entries, offsets, scrollTop, isHl ? ROW_HEIGHT : tableRowH());
+  // offsets/scroll describe the ROWS (folded) of the Filtered view; the id found there is a head or a plain row, also in `entries`.
+  const topId = topVisibleEntryId(isHl ? entries : currentViewEntries, offsets, scrollTop, isHl ? ROW_HEIGHT : tableRowH());
   const idx = topId ? entries.findIndex(e => e.id === topId) : -1;
   return { idx: Math.max(0, idx), fromSelection: false };
 }
@@ -40265,7 +40759,14 @@ findInput.addEventListener("input", () => {
 findInput.addEventListener("keydown", ev => {
   if (ev.key !== "Enter") return;
   ev.preventDefault();
-  if (ev.ctrlKey || ev.metaKey) { addFindAsFilter(); return; }
+  if (ev.ctrlKey || ev.metaKey) {
+    // addFindAsFilter closes the bar, so focus has left the input by the time
+    // this event reaches the document handler, whose "Enter on the selected
+    // row" would then jump the new filter's Filtered view to Context.
+    ev.stopPropagation();
+    addFindAsFilter();
+    return;
+  }
   findRecentDropdown.hide();
   const typedNotSearched = !!findDebounceTimer;
   if (typedNotSearched) applyFindQuery(true); // this Enter IS the incremental jump
@@ -40462,7 +40963,7 @@ el("#ctxCopy").addEventListener("click", () => {
   closeContextMenu();
   if (!entry) return;
   if (state.logMultiSelect.has(entry.id)) { copyLogSelectionToClipboard(); return; }
-  copyTextToClipboard(formatEntriesForClipboard([entry]));
+  copyTextToClipboard(formatEntriesForClipboard(expandRepeatHeads([entry])));
   showCopyToast("Line copied");
 });
 
@@ -42085,8 +42586,8 @@ function describeSidebarToolbarActions() {
   const target = node ? node.id : null;
   const actions = [
     { action: "rename", label: "Rename…", short: "Rename", icon: ICON_RENAME, target, disabled: !filter },
-    { action: "edit", label: ft === "link" ? "Edit link…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target,
-      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || (ft === "link" && hasBakedSides(filter)))) },
+    { action: "edit", label: ft === "link" ? "Edit link…" : (ft === "and" || ft === "or") ? "Edit conditions…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target,
+      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || ((ft === "link" || ft === "and" || ft === "or") && hasBakedSides(filter)))) },
     { action: "linkWith", label: "Link with…", short: "Link", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
     { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", short: "NOT", icon: ICON_INVERT, target,
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
@@ -42243,6 +42744,8 @@ function openTreeContextMenu(ev, clickedId) {
         buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       } else if (node.filterType === "link" && hasBakedSides(node)) {
         buckets.edit.push({ action: "edit", label: "Edit link…", icon: ICON_EDIT });
+      } else if ((node.filterType === "and" || node.filterType === "or") && hasBakedSides(node)) {
+        buckets.edit.push({ action: "edit", label: "Edit conditions…", icon: ICON_EDIT });
       }
       if (isLinkBakeableNode(node)) buckets.edit.push({ action: "linkWith", label: "Link with…", icon: ICON_LINK });
       if (canPruneToNode(node)) buckets.edit.push({ action: "pruneToNode", label: "Prune file to this result…", icon: ICON_FILE_PRUNED });
@@ -43097,6 +43600,217 @@ function commitLinkDialog() {
 linkDialogCreateBtn.addEventListener("click", commitLinkDialog);
 linkDialog.addEventListener("keydown", ev => {
   if (ev.key === "Enter" && ev.target.matches("input") && !linkDialogCreateBtn.disabled) { ev.preventDefault(); commitLinkDialog(); }
+});
+
+
+/* ===================== Edit conditions dialog (FEATURE_BACKLOG.md #58) =====================
+   Edits the baked conditions of an AND/OR node in place (the tree's "Edit conditions…"): the
+   operator, then one row per condition — a text field for a plain text condition, otherwise a chip
+   (✕ turns it into an empty text field), "▾" picks an existing filter (baked as a COPY, never a
+   reference). Built on the Link dialog's row classes. Save = updateAndOrNodeWithUndo. */
+
+const andOrDialog = el("#andOrDialog");
+const andOrDialogCard = el("#andOrDialogCard");
+const andOrSidesEl = el("#andOrSides");
+const andOrSaveBtn = el("#andOrDialogSave");
+const andOrHint = el("#andOrHint");
+const andOrSideMenu = el("#andOrSideMenu");
+const andOrResultsTarget = { root: el("#andOrResults"), match: el("#andOrLiveMatch"), minimap: el("#andOrResultsMinimap"), samples: el("#andOrResultsSamples") };
+let andOrPreviewTimer = null;
+// null while closed, else { nodeId, rootId, mode, rows: [side] } with the Link dialog's side shapes
+// ({kind: "text", text} | {kind: "baked", baked, label}).
+let andOrDlg = null;
+
+// Unlike isPlainTextBaked (link dialog: only what bakedTextCondition builds), a popup-made text filter
+// has no `columns` at all; here that is an ordinary text condition too, and it keeps its column shape on save.
+function isEditableTextBaked(b) {
+  return !!b && b.filterType === "text" && !b.label && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
+    !(b.ignoredColumns && b.ignoredColumns.length) &&
+    (!(b.columns && b.columns.length) || (b.columns.length === 1 && b.columns[0] === "message"));
+}
+function openAndOrDialog(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter" || (node.filterType !== "and" && node.filterType !== "or") || !hasBakedSides(node)) return;
+  andOrDlg = {
+    nodeId, rootId: getRootFileId(nodeId), mode: node.filterType,
+    rows: node.baked.map(b => isEditableTextBaked(b) ? { kind: "text", text: b.value, orig: cloneBaked(b) } : linkSideFromSpec({ baked: b })),
+  };
+  clearLiveResults(andOrResultsTarget);
+  andOrHint.classList.add("hidden");
+  closeAndOrSideMenu();
+  renderAndOrRows();
+  updateAndOrModeButtons();
+  andOrDialog.classList.remove("hidden");
+  andOrDialogCard.scrollTop = 0;
+  updateAndOrPreview();
+  const first = andOrSidesEl.querySelector("input.link-side-input");
+  if (first) first.focus();
+}
+function closeAndOrDialog() {
+  andOrDialog.classList.add("hidden");
+  clearTimeout(andOrPreviewTimer);
+  closeAndOrSideMenu();
+  andOrDlg = null;
+}
+function andOrRowLabel(i) { return i === 0 ? "" : andOrDlg.mode === "and" ? "AND" : "OR"; }
+function updateAndOrModeButtons() {
+  andOrDialog.querySelectorAll("#andOrMode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === andOrDlg.mode)));
+  andOrSidesEl.querySelectorAll("[data-row]").forEach(r => { r.querySelector(".link-side-lab").textContent = andOrRowLabel(+r.dataset.row); });
+}
+function renderAndOrRows() {
+  if (!andOrDlg) return;
+  let html = "";
+  andOrDlg.rows.forEach((row, i) => {
+    html += '<div class="link-side" data-row="' + i + '"><span class="link-side-lab">' + andOrRowLabel(i) + "</span>";
+    if (row.kind === "text") {
+      html += '<input type="text" class="link-side-input" value="' + escapeHtml(row.text) + '" placeholder="type a pattern, or ▾ pick a filter" spellcheck="false" autocomplete="off" aria-label="Condition ' + (i + 1) + '">';
+    } else {
+      html += '<span class="link-side-chip" title="' + escapeHtml(row.label) + '"><span>' + escapeHtml(row.label) + '</span><button type="button" class="link-side-btn" data-row-clear title="Type a pattern instead" aria-label="Type a pattern instead">✕</button></span>';
+    }
+    html += '<button type="button" class="link-side-btn" data-row-pick title="Use an existing filter instead" aria-label="Pick an existing filter">▾</button>';
+    if (andOrDlg.rows.length >= 3) html += '<button type="button" class="link-side-btn" data-row-remove title="Remove this condition" aria-label="Remove this condition">✕</button>';
+    html += "</div>";
+  });
+  andOrSidesEl.innerHTML = html;
+}
+// The conditions as they would be saved: empty text rows dropped.
+function andOrBakedList() {
+  return andOrDlg.rows.map(row => {
+    if (row.kind !== "text") return linkSideBaked(row);
+    const t = row.text.trim();
+    if (!t) return null;
+    if (!row.orig) return bakedTextCondition(t);
+    if (row.text === row.orig.value) return cloneBaked(row.orig);
+    return Object.assign(cloneBaked(row.orig), { value: t });
+  }).filter(Boolean);
+}
+
+andOrSidesEl.addEventListener("input", ev => {
+  if (!andOrDlg) return;
+  const input = ev.target.closest("input.link-side-input");
+  if (input) andOrDlg.rows[+input.closest("[data-row]").dataset.row].text = input.value;
+  updateAndOrPreview();
+});
+andOrSidesEl.addEventListener("click", ev => {
+  if (!andOrDlg) return;
+  const rowEl = ev.target.closest("[data-row]");
+  if (!rowEl) return;
+  const i = +rowEl.dataset.row;
+  if (ev.target.closest("[data-row-pick]")) { ev.stopPropagation(); openAndOrSideMenu(i, ev.target.closest("[data-row-pick]")); return; }
+  if (ev.target.closest("[data-row-clear]")) {
+    ev.stopPropagation();
+    andOrDlg.rows[i] = { kind: "text", text: "" };
+    renderAndOrRows();
+    andOrSidesEl.querySelector('[data-row="' + i + '"] input').focus();
+    updateAndOrPreview();
+    return;
+  }
+  if (ev.target.closest("[data-row-remove]")) {
+    ev.stopPropagation();
+    andOrDlg.rows.splice(i, 1);
+    renderAndOrRows();
+    updateAndOrPreview();
+  }
+});
+andOrDialog.querySelector("#andOrMode").addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-mode]");
+  if (!b || !andOrDlg) return;
+  ev.stopPropagation();
+  andOrDlg.mode = b.dataset.mode;
+  updateAndOrModeButtons();
+  updateAndOrPreview();
+});
+el("#andOrAddStep").addEventListener("click", ev => {
+  if (!andOrDlg) return;
+  ev.stopPropagation();
+  andOrDlg.rows.push({ kind: "text", text: "" });
+  renderAndOrRows();
+  const inputs = andOrSidesEl.querySelectorAll("input.link-side-input");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+  updateAndOrPreview();
+});
+
+// The "▾" popup of one row: the root file's filters canBeCombined accepts (not the node being edited).
+function closeAndOrSideMenu() { andOrSideMenu.classList.add("hidden"); andOrSideMenu.innerHTML = ""; }
+function openAndOrSideMenu(rowIndex, anchor) {
+  const nodes = [];
+  const walk = id => { const n = state.nodes[id]; if (!n) return; if (n.type === "filter" && n.id !== andOrDlg.nodeId && canBeCombined(n)) nodes.push(n); n.children.forEach(walk); };
+  state.nodes[andOrDlg.rootId].children.forEach(walk);
+  let html = nodes.map(n => '<div class="ctx-item" role="menuitem" data-pick-node="' + n.id + '" title="' + escapeHtml(nodeDisplayName(n)) + '">' + escapeHtml(nodeDisplayName(n)) + "</div>").join("");
+  if (!nodes.length) html = '<div class="ctx-note">No other filters in this file yet</div>';
+  html += '<div class="ctx-sep"></div><div class="ctx-item" role="menuitem" data-pick-text="1">Type a pattern</div>';
+  andOrSideMenu.innerHTML = html;
+  andOrSideMenu.dataset.row = String(rowIndex);
+  andOrSideMenu.classList.remove("hidden");
+  const cr = andOrDialogCard.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(ar.right - cr.left - andOrSideMenu.offsetWidth, cr.width - andOrSideMenu.offsetWidth - 8));
+  andOrSideMenu.style.left = left + "px";
+  andOrSideMenu.style.top = (ar.bottom - cr.top + andOrDialogCard.scrollTop + 4) + "px";
+}
+andOrSideMenu.addEventListener("contextmenu", ev => ev.preventDefault());
+andOrSideMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".ctx-item");
+  if (!item || !andOrDlg) return;
+  const i = +andOrSideMenu.dataset.row;
+  if (item.dataset.pickNode) {
+    const n = state.nodes[item.dataset.pickNode];
+    if (n && canBeCombined(n)) {
+      const baked = bakeNodeCondition(n); // a baked COPY: later edits/deletes of the source don't touch the combiner
+      andOrDlg.rows[i] = { kind: "baked", baked, label: bakedConditionName(baked) };
+    }
+  } else {
+    andOrDlg.rows[i] = { kind: "text", text: "" };
+  }
+  closeAndOrSideMenu();
+  renderAndOrRows();
+  if (item.dataset.pickText) andOrSidesEl.querySelector('[data-row="' + i + '"] input').focus();
+  updateAndOrPreview();
+});
+
+// Save follows the rows at once; the live results are debounced like the Link dialog's.
+function updateAndOrPreview() {
+  clearTimeout(andOrPreviewTimer);
+  if (andOrDlg) andOrSaveBtn.disabled = andOrBakedList().length < 2;
+  andOrPreviewTimer = setTimeout(runAndOrPreview, 150);
+}
+function runAndOrPreview() {
+  if (!andOrDlg || andOrDialog.classList.contains("hidden")) return;
+  const list = andOrBakedList();
+  andOrSaveBtn.disabled = list.length < 2;
+  andOrHint.classList.add("hidden");
+  const node = state.nodes[andOrDlg.nodeId];
+  if (list.length < 2 || !node) {
+    clearLiveResults(andOrResultsTarget);
+    andOrHint.textContent = "Needs at least 2 conditions";
+    andOrHint.classList.remove("hidden", "warn");
+    return;
+  }
+  const pool = getEntries(node.parentId);
+  // inverted honored like getEntries would
+  const hits = evaluateFilterCondition({ filterType: andOrDlg.mode, baked: list, inverted: !!node.inverted }, pool, andOrDlg.rootId, null);
+  renderLiveResults(hits, pool, null, !!node.inverted, null, andOrResultsTarget);
+}
+andOrDialog.addEventListener("click", ev => {
+  if (ev.target === andOrDialog) { closeAndOrDialog(); return; }
+  if (!andOrSideMenu.classList.contains("hidden") && !andOrSideMenu.contains(ev.target)) closeAndOrSideMenu();
+});
+el("#andOrDialogCancel").addEventListener("click", closeAndOrDialog);
+function commitAndOrDialog() {
+  if (!andOrDlg) return;
+  const list = andOrBakedList();
+  if (list.length < 2) return;
+  const nodeId = andOrDlg.nodeId;
+  if (updateAndOrNodeWithUndo(nodeId, andOrDlg.mode, list)) {
+    state.activeId = nodeId;
+    revealFilteredView();
+  }
+  closeAndOrDialog();
+  render();
+}
+andOrSaveBtn.addEventListener("click", commitAndOrDialog);
+andOrDialog.addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && ev.target.matches("input") && !andOrSaveBtn.disabled) { ev.preventDefault(); commitAndOrDialog(); }
 });
 
 
@@ -44468,8 +45182,9 @@ function setNoteAndRepaint(entryId, text) {
   const rootId = findRootIdForEntry(entryId);
   if (rootId) syncNotesFilterNode(rootId);
   renderTree(); // repaint the sidebar in case the auto "Notes" node just appeared/disappeared
-  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  {
+  if (repeatFoldActive()) refoldRepeatView(); // a noted entry is a fold barrier (offsets, spacer and repaint included)
+  else {
+    tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
     const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
     tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
   }
@@ -44663,10 +45378,10 @@ function bakedConditionName(baked) {
 // visible sibling filter nodes (one per condition) (same filterType/fields), inserted right
 // after the original node's own position. Purely ADDITIVE: the original node
 // keeps its id, its bakedA/bakedB and its result — its condition already
-// works, so there is nothing to replace. Unpack exists only to make the two
-// building blocks visible and editable again as ordinary siblings, since
-// there's no dedicated "edit a combiner's two sides" UI (see
-// FEATURE_BACKLOG.md #58). Returns the original node's own id (still
+// works, so there is nothing to replace. Unpack makes the building blocks
+// visible and editable again as ordinary siblings; changing the combiner's
+// own conditions in place is the "Edit conditions…" dialog (openAndOrDialog)
+// and "Edit link…" (openLinkDialog). Returns the original node's own id (still
 // active), or null if nodeId isn't an and/or/link node with baked sides.
 function unpackAndOrLinkNode(nodeId) {
   const node = state.nodes[nodeId];
@@ -45163,54 +45878,130 @@ async function deleteFormatRuleEntry(id) {
 
 // Loaded once at boot, before any file parsing can happen (see the Init
 // section). Lazily seeds the builtin default format on a fresh DB, or on
-// an upgrade from a pre-feature session where it's simply missing.
-// FEATURE_BACKLOG.md #81's reference case: a log4net-style app format and
-// an RFC 5424 syslog format that interleave in one physical file, plus the
-// meta-format combining them (see DEFAULT_LOG_FORMAT's mode comment and
-// splitTextByMetaFormat). Seeded once, like DEFAULT_LOG_FORMAT below, so
-// they're available in the Format Manager right away — not builtin, so
-// they're freely editable/deletable like any other format. Deliberately
-// no FormatRule/glob is created for them here; they stay dormant until a
-// filename rule is added by hand (Settings → Format Manager → Filename
-// rules) — see changelog.d/ for the session that added this.
-const DEMO_APP_FORMAT = {
-  id: "fmt-demo-app", name: "App log (log4net-style)", mode: "regex",
-  regex: '^(?<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+) \\[\\] (?<level>[A-Z]+)\\s+(?<location>[^\\s].*?)\\s+- (?<message>.*)$',
-  pattern: "", tsFormat: "yyyy-MM-dd HH:mm:ss.SSS", levels: LEVELS.slice(),
-  builtin: false, edited: false, createdAt: 0,
-};
-const DEMO_SYSLOG_FORMAT = {
-  id: "fmt-demo-syslog", name: "Syslog (RFC 5424)", mode: "regex",
-  // 6-digit fractional seconds — exercises the SSS date-token's
-  // arbitrary-digit-count support (see DATE_TOKEN_FRAG/parseTimestampGeneric).
-  // No (?<level>...) group by design: format B has no textual level in the
-  // reference sample, so its entries fall through the existing generic
-  // missing-level default — see FEATURE_BACKLOG.md #80 (independent item).
-  regex: "^<\\d+>1 (?<ts>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+) \\S+ \\S+ (?<thread>\\d+) \\S+ \\[log@\\d+ filename='(?<location>[^']+)'[^\\]]*\\] (?<message>.*)$",
-  pattern: "", tsFormat: "yyyy-MM-ddTHH:mm:ss.SSS", levels: LEVELS.slice(),
-  builtin: false, edited: false, createdAt: 0,
-};
-const DEMO_META_FORMAT = {
-  id: "fmt-demo-app-syslog-meta", name: "App + Syslog (meta)", mode: "meta",
-  targetFormatIds: [DEMO_APP_FORMAT.id, DEMO_SYSLOG_FORMAT.id],
-  builtin: false, edited: false, createdAt: 0,
-};
-const DEMO_SEED_FORMATS = [DEMO_APP_FORMAT, DEMO_SYSLOG_FORMAT, DEMO_META_FORMAT];
-
+// an upgrade from a pre-feature session where it's simply missing. Then
+// appends the read-only "provided" layer (loadProvidedFormats).
 async function loadFormatConfig() {
   let formats = await listLogFormats();
   if (!formats.some(f => f.id === DEFAULT_FORMAT_ID)) {
     await saveLogFormat(DEFAULT_LOG_FORMAT);
     formats = formats.concat([DEFAULT_LOG_FORMAT]);
   }
-  for (const seed of DEMO_SEED_FORMATS) {
-    if (!formats.some(f => f.id === seed.id)) {
-      await saveLogFormat(seed);
-      formats = formats.concat([seed]);
-    }
+  const rules = await listFormatRules();
+  const provided = await loadProvidedFormats(formats);
+  state.logFormats = formats.concat(provided.formats);
+  state.formatRules = rules.concat(provided.rules);
+  state.providedSkipped = provided.skipped;
+  invalidateFormatCompileCache();
+  invalidateGlobCompileCache();
+}
+
+/* ---- Provided formats ----
+   Formats shipped as *.logformat.json files next to the app (hosted:
+   formats/index.json + the files it lists; desktop: the list the wrapper
+   injects as window.__PHILOGG_PROVIDED_FORMATS__). A read-only layer that
+   is re-read at every start and lives in memory only — NEVER passed to
+   saveLogFormat/saveFormatRule, so it never reaches IndexedDB. Format id
+   fmt-provided-<slug of the file name> (stable, so session-cache pins
+   survive); the file's fileNamePatterns become rules ranked after every
+   user rule (order >= PROVIDED_RULE_ORDER_BASE). Editing = Duplicate into
+   an own format. A meta format names its targets (logFormat.targetFormatNames),
+   resolved by name against provided + own formats. */
+const PROVIDED_RULE_ORDER_BASE = 1e9;
+const PROVIDED_INDEX_URL = "formats/index.json";
+
+function providedFormatSlug(fileName) {
+  return String(fileName).replace(/\.json$/i, "").replace(/\.logformat$/i, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "format";
+}
+
+// One provided file's text -> { meta, logFormat, fileNamePatterns,
+// targetFormatNames } or { error }. Ordinary formats go through
+// normalizeLogFormatExport; "meta" is accepted here only (a user import of
+// a meta file stays rejected there).
+function parseProvidedFormatText(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return { error: "not valid JSON" }; }
+  if (!data || typeof data !== "object" || data.format !== LOG_FORMAT_FILE_FORMAT) return { error: "not a PhiLogg log format file" };
+  if (!(data.version <= LOG_FORMAT_FILE_VERSION)) return { error: "saved by a newer version" };
+  const src = data.logFormat;
+  if (src && typeof src === "object" && src.mode === "meta") {
+    if (typeof src.name !== "string" || !src.name) return { error: "log format file is incomplete" };
+    const names = Array.isArray(src.targetFormatNames) ? src.targetFormatNames.filter(n => typeof n === "string" && n) : [];
+    if (names.length < 2) return { error: "a meta format needs at least 2 targetFormatNames" };
+    const globs = [...new Set((Array.isArray(data.fileNamePatterns) ? data.fileNamePatterns : [])
+      .filter(g => typeof g === "string" && g.trim()).map(g => g.trim()))];
+    return { meta: true, logFormat: { name: src.name.slice(0, 80), mode: "meta" }, targetFormatNames: names, fileNamePatterns: globs };
   }
-  state.logFormats = formats;
-  state.formatRules = await listFormatRules();
+  const n = normalizeLogFormatExport(src, data.fileNamePatterns);
+  if (n.error) return { error: n.error.replace(/^Log format file /, "").replace(/^./, c => c.toLowerCase()) };
+  return n;
+}
+
+// The raw files: the wrapper's injected list wins over the hosted fetch.
+// Returns [{ name, source, text }] ([] on any failure — silent).
+async function fetchProvidedFormatFiles() {
+  const injected = window.__PHILOGG_PROVIDED_FORMATS__;
+  if (Array.isArray(injected)) {
+    return injected.filter(f => f && typeof f.name === "string" && typeof f.text === "string")
+      .map(f => ({ name: f.name, source: typeof f.source === "string" ? f.source : f.name, text: f.text }));
+  }
+  if (location.protocol !== "http:" && location.protocol !== "https:") return [];
+  try {
+    const res = await fetch(PROVIDED_INDEX_URL, { cache: "no-store" });
+    if (!res || !res.ok) return [];
+    const list = await res.json();
+    if (!Array.isArray(list)) return [];
+    const out = [];
+    for (const name of list) {
+      if (typeof name !== "string" || !name || /[\\/]/.test(name)) continue;
+      const url = "formats/" + encodeURIComponent(name);
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        if (!r || !r.ok) { out.push({ name, source: url, error: "could not be loaded" }); continue; }
+        out.push({ name, source: new URL(url, location.href).href, text: await r.text() });
+      } catch { out.push({ name, source: url, error: "could not be loaded" }); }
+    }
+    return out;
+  } catch { return []; }
+}
+
+// -> { formats, rules, skipped:[{name, reason}] }; `ownFormats` are the
+// user's stored formats (meta targets may name them).
+async function loadProvidedFormats(ownFormats) {
+  const files = await fetchProvidedFormatFiles();
+  const formats = [], rules = [], skipped = [];
+  const parsedFiles = [];
+  const seen = new Set();
+  for (const f of files) {
+    if (f.error) { skipped.push({ name: f.name, reason: f.error }); continue; }
+    const parsed = parseProvidedFormatText(f.text);
+    if (parsed.error) { skipped.push({ name: f.name, reason: parsed.error }); continue; }
+    const id = "fmt-provided-" + providedFormatSlug(f.name);
+    if (seen.has(id)) { skipped.push({ name: f.name, reason: "another file has the same name" }); continue; }
+    seen.add(id);
+    parsedFiles.push({ f, id, parsed });
+  }
+  const ordinary = parsedFiles.filter(p => !p.parsed.meta).map(p => Object.assign(
+    { id: p.id, builtin: false, edited: false, createdAt: 0, provided: true, providedSource: p.f.source }, p.parsed.logFormat));
+  const nameToId = name => {
+    const hit = ordinary.find(x => x.name === name) || ownFormats.find(x => x.mode !== "meta" && x.name === name);
+    return hit ? hit.id : null;
+  };
+  let ruleIdx = 0;
+  const addRules = (p) => p.parsed.fileNamePatterns.forEach((glob, i) => {
+    rules.push({ id: "rule-provided-" + providedFormatSlug(p.f.name) + "-" + i, order: PROVIDED_RULE_ORDER_BASE + ruleIdx++,
+      createdAt: 0, glob, formatId: p.id, provided: true });
+  });
+  for (const p of parsedFiles) {
+    if (!p.parsed.meta) { formats.push(ordinary.find(x => x.id === p.id)); addRules(p); continue; }
+    const ids = p.parsed.targetFormatNames.map(nameToId);
+    const missing = p.parsed.targetFormatNames.filter((n, i) => !ids[i]);
+    if (missing.length) { skipped.push({ name: p.f.name, reason: "unknown target format " + missing.map(n => '"' + n + '"').join(", ") }); continue; }
+    formats.push(Object.assign({ id: p.id, builtin: false, edited: false, createdAt: 0, provided: true, providedSource: p.f.source },
+      p.parsed.logFormat, { targetFormatIds: ids }));
+    addRules(p);
+  }
+  return { formats, rules, skipped };
 }
 
 const filterLibrarySaveDialog = el("#filterLibrarySaveDialog");
@@ -46076,7 +46867,8 @@ function renderFormatList() {
     const modeLabel = fmt.mode === "meta" ? "Meta · " + (fmt.targetFormatIds || []).length + " targets"
       : fmt.mode === "json" ? "JSON Lines" : fmt.mode === "logfmt" ? "logfmt" : fmt.mode === "regex" ? "Regex" : "Pattern";
     main.innerHTML =
-      '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
+      '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") +
+      (fmt.provided ? ' <span class="link-target-label" title="' + escapeHtml("Provided by " + (fmt.providedSource || "a format file") + " — read-only") + '">Provided</span>' : "") + '</div>' +
       '<div class="filter-library-row-meta">' + modeLabel +
       (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") +
       (formatLevels(fmt.id).join(",") !== LEVELS.join(",") ? " · " + escapeHtml(formatLevels(fmt.id).join(" ")) : "") + '</div>';
@@ -46084,8 +46876,11 @@ function renderFormatList() {
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "btn-mini-outline";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
+    editBtn.textContent = fmt.provided ? "Duplicate" : "Edit";
+    if (fmt.provided) {
+      editBtn.title = "Create an editable copy among your own formats";
+      editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatDuplicateDialog(fmt.id); });
+    } else editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
     row.appendChild(editBtn);
     // A meta-format only names other formats by id — nothing standalone to export.
     if (fmt.mode !== "meta") {
@@ -46097,7 +46892,9 @@ function renderFormatList() {
       exportBtn.addEventListener("click", ev => { ev.stopPropagation(); exportLogFormatToFile(fmt.id); });
       row.appendChild(exportBtn);
     }
-    if (fmt.builtin) {
+    if (fmt.provided) {
+      // read-only: neither Reset nor Delete
+    } else if (fmt.builtin) {
       const resetBtn = document.createElement("button");
       resetBtn.type = "button";
       resetBtn.className = "btn-mini-outline";
@@ -46117,6 +46914,9 @@ function renderFormatList() {
     frag.appendChild(row);
   });
   formatList.appendChild(frag);
+  const skipped = state.providedSkipped || [];
+  el("#formatProvidedNotice").innerHTML = skipped.map(s =>
+    '<div>Provided format file "' + escapeHtml(s.name) + '" skipped: ' + escapeHtml(s.reason) + '</div>').join("");
 }
 
 // Reverts the builtin default back to its original pattern/tsFormat/name
@@ -46126,7 +46926,7 @@ function renderFormatList() {
 // just the displayed values.
 async function resetDefaultFormat() {
   const fmt = state.logFormats.find(f => f.id === DEFAULT_FORMAT_ID);
-  if (!fmt || !fmt.builtin) return;
+  if (!fmt || !fmt.builtin || fmt.provided) return;
   Object.assign(fmt, {
     name: DEFAULT_LOG_FORMAT.name,
     mode: DEFAULT_LOG_FORMAT.mode,
@@ -46145,7 +46945,7 @@ async function resetDefaultFormat() {
 
 async function removeLogFormat(id) {
   const fmt = state.logFormats.find(f => f.id === id);
-  if (!fmt || fmt.builtin) return;
+  if (!fmt || fmt.builtin || fmt.provided) return;
   const usedBy = state.formatRules.filter(r => r.formatId === id).length;
   if (usedBy) {
     showCopyToast(usedBy + " rule" + (usedBy === 1 ? "" : "s") + " still use" + (usedBy === 1 ? "s" : "") + " this format — remove them first");
@@ -46159,6 +46959,25 @@ async function removeLogFormat(id) {
   await deleteLogFormatEntry(id);
   state.logFormats = state.logFormats.filter(f => f.id !== id);
   renderFormatList();
+}
+
+// "Duplicate" on a provided format: the format dialog prefilled as a NEW own
+// format (the import path), its filename patterns offered like an import's.
+// A meta format keeps its targets by id (provided targets stay referenced
+// by their stable provided id).
+function openFormatDuplicateDialog(id) {
+  const fmt = state.logFormats.find(f => f.id === id);
+  if (!fmt) return;
+  const copyName = (fmt.name + " (copy)").slice(0, 80);
+  let logFormat;
+  if (fmt.mode === "meta") logFormat = { name: copyName, mode: "meta", targetFormatIds: (fmt.targetFormatIds || []).slice() };
+  else {
+    logFormat = {};
+    LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (fmt[k] !== undefined) logFormat[k] = fmt[k]; });
+    logFormat.name = copyName;
+  }
+  const fileNamePatterns = state.formatRules.filter(r => r.formatId === id).sort((a, b) => a.order - b.order).map(r => r.glob);
+  openFormatEditDialog(null, { logFormat, fileNamePatterns, duplicate: true });
 }
 
 /* ---- Log format export/import (JSON) ----
@@ -46246,13 +47065,14 @@ function importLogFormatText(text) {
 
 function renderFormatRuleList() {
   const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
+  const userRules = rules.filter(r => !r.provided);
   formatRuleList.innerHTML = "";
   if (!rules.length) {
     formatRuleList.innerHTML = '<div class="filter-library-empty">No filename rules yet — every file uses the default format.</div>';
     return;
   }
   const frag = document.createDocumentFragment();
-  rules.forEach((rule, i) => {
+  rules.forEach(rule => {
     const fmt = state.logFormats.find(f => f.id === rule.formatId);
     const row = document.createElement("div");
     row.className = "filter-library-row";
@@ -46262,13 +47082,20 @@ function renderFormatRuleList() {
       '<div class="filter-library-row-name">' + escapeHtml(rule.glob) + '</div>' +
       '<div class="filter-library-row-meta">→ ' + escapeHtml(fmt ? fmt.name : "(missing format)") + '</div>';
     row.appendChild(main);
+    if (rule.provided) {
+      // read-only, always ranked after the user's own rules
+      main.querySelector(".filter-library-row-name").insertAdjacentHTML("beforeend", ' <span class="link-target-label" title="' + escapeHtml("Provided by " + (fmt && fmt.providedSource || "a format file") + " — read-only") + '">Provided</span>');
+      frag.appendChild(row);
+      return;
+    }
+    const userIdx = userRules.indexOf(rule);
 
     const upBtn = document.createElement("button");
     upBtn.type = "button";
     upBtn.className = "filter-library-row-order";
     upBtn.title = "Move up";
     upBtn.textContent = "▲";
-    upBtn.disabled = i === 0;
+    upBtn.disabled = userIdx === 0;
     upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, -1); });
     row.appendChild(upBtn);
 
@@ -46277,7 +47104,7 @@ function renderFormatRuleList() {
     downBtn.className = "filter-library-row-order";
     downBtn.title = "Move down";
     downBtn.textContent = "▼";
-    downBtn.disabled = i === rules.length - 1;
+    downBtn.disabled = userIdx === userRules.length - 1;
     downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, 1); });
     row.appendChild(downBtn);
 
@@ -46302,7 +47129,8 @@ function renderFormatRuleList() {
 }
 
 async function moveFormatRuleOrder(id, delta) {
-  const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
+  // Provided rules are never part of a swap (they are not persisted and rank last).
+  const rules = state.formatRules.filter(r => !r.provided).sort((a, b) => a.order - b.order);
   const idx = rules.findIndex(r => r.id === id);
   const otherIdx = idx + delta;
   if (idx === -1 || otherIdx < 0 || otherIdx >= rules.length) return;
@@ -46314,6 +47142,8 @@ async function moveFormatRuleOrder(id, delta) {
 }
 
 async function removeFormatRule(id) {
+  const target = state.formatRules.find(r => r.id === id);
+  if (target && target.provided) return;
   await deleteFormatRuleEntry(id);
   state.formatRules = state.formatRules.filter(r => r.id !== id);
   renderFormatRuleList();
@@ -47704,10 +48534,12 @@ function fwzNextHue() {
 // file's filename patterns as checkboxes (renderFormatImportRules).
 function openFormatEditDialog(id, importData) {
   if (currentLayoutTier === "phone") { showCopyToast("The log format editor needs a wider window. Open PhiLogg on a desktop or tablet."); return; }
+  const target = id ? state.logFormats.find(f => f.id === id) : null;
+  if (target && target.provided) { showCopyToast("Provided formats are read-only — use Duplicate to make an editable copy"); return; }
   formatEditId = id;
-  const fmt = id ? state.logFormats.find(f => f.id === id) : (importData ? importData.logFormat : null);
+  const fmt = id ? target : (importData ? importData.logFormat : null);
   const isMeta = !!(fmt && fmt.mode === "meta");
-  el("#formatEditTitle").textContent = importData ? "Import log format" : fmt ? "Edit log format" : "Add log format";
+  el("#formatEditTitle").textContent = importData ? (importData.duplicate ? "Duplicate log format" : "Import log format") : fmt ? "Edit log format" : "Add log format";
   formatEditName.value = fmt ? fmt.name : "";
   const isJson = !!(fmt && (fmt.mode === "json" || fmt.mode === "logfmt"));
   formatEditMode = isMeta ? "meta" : isJson ? fmt.mode : "regex";
@@ -47740,6 +48572,7 @@ function openFormatEditDialog(id, importData) {
     undo: [],
     redo: [],
     importPatterns: importData ? importData.fileNamePatterns : null,
+    duplicate: !!(importData && importData.duplicate), // a copy of a provided format (toast wording)
     fileSource: null, // the bytes behind the example lines read from a file (fwzLoadBytes)
     // JSON Lines kind (fwzJsonSync): the three mapped keys, the column
     // paths ({path, key (a saved column's stable key, else null), on}),
@@ -47796,7 +48629,7 @@ function renderFormatImportRules() {
   const globs = fwz.importPatterns || [];
   el("#formatEditImportField").classList.toggle("hidden", !globs.length);
   el("#formatEditImportRules").innerHTML = globs.map((g, i) => {
-    const existing = state.formatRules.find(r => r.glob === g);
+    const existing = state.formatRules.find(r => r.glob === g && !r.provided); // a provided rule ranks after any user rule, so it never blocks one
     const owner = existing ? state.logFormats.find(f => f.id === existing.formatId) : null;
     return '<label><input type="checkbox" data-idx="' + i + '"' + (existing ? "" : " checked") + '><span>' + escapeHtml(g) +
       (existing ? ' <span class="link-target-label">(already mapped to ' + escapeHtml(owner ? owner.name : "another format") + ')</span>' : "") + '</span></label>';
@@ -48710,6 +49543,7 @@ async function saveFormatEdit() {
   const globs = [formatEditRuleGlob.value.trim()].concat(Array.from(el("#formatEditImportRules").querySelectorAll("input[data-idx]"))
     .filter(cb => cb.checked).map(cb => (fwz.importPatterns || [])[+cb.dataset.idx])).filter(Boolean);
   const imported = !!fwz.importPatterns;
+  const duplicated = !!fwz.duplicate;
 
   await saveLogFormat(fmt);
   const idx = state.logFormats.findIndex(f => f.id === fmt.id);
@@ -48721,7 +49555,7 @@ async function saveFormatEdit() {
     if (state.formatRules.some(r => r.formatId === fmt.id && r.glob === glob)) continue;
     const rule = {
       id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
-      order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
+      order: state.formatRules.some(r => !r.provided) ? Math.max(...state.formatRules.filter(r => !r.provided).map(r => r.order)) + 1 : 0,
       createdAt: Date.now(),
       glob,
       formatId: fmt.id,
@@ -48729,7 +49563,7 @@ async function saveFormatEdit() {
     await saveFormatRule(rule);
     state.formatRules.push(rule);
   }
-  if (imported) showCopyToast('Log format "' + fmt.name + '" imported' + (globs.length ? " with " + globs.length + " filename rule" + (globs.length === 1 ? "" : "s") : ""));
+  if (imported) showCopyToast('Log format "' + fmt.name + (duplicated ? '" duplicated' : '" imported') + (globs.length ? " with " + globs.length + " filename rule" + (globs.length === 1 ? "" : "s") : ""));
   closeFormatEditDialog();
   renderFormatList();
   renderFormatRuleList();
@@ -48918,6 +49752,7 @@ function renderFormatRuleFormatOptions() {
 function openFormatRuleEditDialog(id) {
   formatRuleEditId = id;
   const rule = id ? state.formatRules.find(r => r.id === id) : null;
+  if (rule && rule.provided) return;
   el("#formatRuleEditTitle").textContent = rule ? "Edit filename rule" : "Add filename rule";
   formatRuleGlob.value = rule ? rule.glob : "";
   renderFormatRuleFormatOptions();
@@ -48939,9 +49774,10 @@ async function saveFormatRuleEdit() {
   if (!glob) return;
   const formatId = formatRuleFormatSelect.value;
   const existing = formatRuleEditId ? state.formatRules.find(r => r.id === formatRuleEditId) : null;
+  if (existing && existing.provided) return;
   const rule = existing ? Object.assign({}, existing) : {
     id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
-    order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
+    order: state.formatRules.some(r => !r.provided) ? Math.max(...state.formatRules.filter(r => !r.provided).map(r => r.order)) + 1 : 0,
     createdAt: Date.now(),
   };
   rule.glob = glob;
@@ -48969,6 +49805,7 @@ function closeClickDismissedPopups(ev) {
   if (!libraryMenu.contains(ev.target) && !btnLibrary.contains(ev.target)) closeLibraryMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
+  if (!repeatMenu.contains(ev.target) && !btnRepeatMenu.some(b => b.contains(ev.target))) closeRepeatMenu();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
   if (!fpPathMenu.contains(ev.target) && !ev.target.closest(".fp-candidate")) closeFpPathMenu();
   // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
@@ -48999,6 +49836,7 @@ function clickDismissedPopupHit(target) {
     || (libraryMenuOpen() && !libraryMenu.contains(target) && !btnLibrary.contains(target))
     || (open(filterPopup) && !filterPopup.contains(target))
     || (open(columnsPanel) && !columnsPanel.contains(target) && !btnColumns.some(b => b.contains(target)))
+    || (open(repeatMenu) && !repeatMenu.contains(target) && !btnRepeatMenu.some(b => b.contains(target)))
     || (open(colorPickerPopup) && !colorPickerPopup.contains(target));
 }
 function anyPointerMenuOpen() {
@@ -49159,6 +49997,14 @@ document.addEventListener("keydown", ev => {
     ev.preventDefault();
     const delta = ev.key === "ArrowDown" ? 1 : -1;
     if (state.entriesView === "highlight") moveHighlightSelection(delta); else moveSelection(delta);
+    return;
+  }
+
+  // Collapse repeats: → expands a selected folded head, ← folds an open run (head or member).
+  if ((ev.key === "ArrowRight" || ev.key === "ArrowLeft") && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey &&
+      logKeysActive() && state.entriesView === "filter" && tableWrap.style.display !== "none" && linkWrap.style.display === "none" &&
+      repeatKeyStep(ev)) {
+    ev.preventDefault();
     return;
   }
 
@@ -52806,6 +53652,9 @@ btnNotes.forEach(b => b.innerHTML = ICON_NOTE);
 btnMultilineMsg.forEach(b => b.innerHTML = ICON_MULTILINE);
 btnWrapMsg.forEach(b => b.innerHTML = ICON_WRAP);
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
+btnRepeat.forEach(b => b.innerHTML = ICON_REPEAT);
+btnRepeatMenu.forEach(b => b.innerHTML = ICON_CARET_DOWN);
+updateRepeatButton();
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
 btnFilePathLinks.forEach(b => b.innerHTML = ICON_FILE_PATH_LINKS);

@@ -85,7 +85,7 @@ await withApp(async (w, d, T) => {
 
   const andNode = w.createAndOrNode([t1.id, t2.id], "and");
   actions = pick(andNode.id);
-  assert(sbState(actions) === "rename:on,edit:off,linkWith:on,invert:on,mute:on,clockOffset:off,addToLibrary:on", "AND node: no Edit, got " + sbState(actions));
+  assert(sbState(actions) === "rename:on,edit:on,linkWith:on,invert:on,mute:on,clockOffset:off,addToLibrary:on", "AND node: Edit conditions enabled, got " + sbState(actions));
 
   const f2 = await w.addFile("b.log", makeLog(0, 20), () => {});
   const l1 = w.createFilterNode(f2.id, "text", "message 1");

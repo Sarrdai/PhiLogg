@@ -18,7 +18,7 @@ await withApp(async (w, d, T) => {
   assert(!result.merged, "a single-grammar file never goes through mergeFiles");
   assert(result.formatId === "fmt-demo-app", "parsed directly under the one format that actually matched");
   assert(result.entries.length === 2, "both lines parsed as entries, got " + result.entries.length);
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("235b. loadMetaFormatText: nothing matches either target — falls back to the default format instead of hard-failing");
@@ -28,4 +28,4 @@ await withApp(async (w, d, T) => {
   const result = await w.loadMetaFormatText("nomatch.log", text, metaFmt);
   assert(result.formatId === "fmt-default", "falls back to the builtin default format rather than throwing");
   assert(T.state.rootIds.length === 1, "still produces exactly one (fallback) node, not zero, and not a crash");
-});
+}, { demoFormats: true });

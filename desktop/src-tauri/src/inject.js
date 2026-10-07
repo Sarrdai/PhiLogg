@@ -2,6 +2,7 @@
 // again after every navigation/reload. Built by inject.rs, which substitutes
 // the __PHILOGG_*__ placeholders below. See that file for why the
 // before-script and needs-the-DOM halves are one script here.
+__PHILOGG_PROVIDED_FORMATS__
 (function () {
   "use strict";
 

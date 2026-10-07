@@ -15,7 +15,7 @@ await withApp(async (w, d, T) => {
   const merged = await w.mergeFiles([fa.id, fb.id]);
   const sourcesNode = T.state.nodes[merged.children[0]];
   assert(sourcesNode.collapsed === true, "Sources is collapsed right after mergeFiles completes");
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("252b. fillMergedEntries collapses the Sources node once a create-first (meta-format) merge completes");
@@ -28,4 +28,4 @@ await withApp(async (w, d, T) => {
   const merged = await w.loadMetaFormatText("mix.log", text, metaFmt);
   const sourcesNode = T.state.nodes[merged.children[0]];
   assert(sourcesNode.collapsed === true, "Sources is collapsed right after a create-first merge completes");
-});
+}, { demoFormats: true });

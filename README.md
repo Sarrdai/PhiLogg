@@ -57,6 +57,12 @@ deployments possible:
 
 ## Key features
 
+- **Collapse repeats** — a toggle in the Filtered view's toolbar folds consecutive
+  repeated rows (log spam, retry loops) into one row with a **×N** badge: either
+  *Identical* (all columns equal except the time) or *Same pattern* (numbers, IDs and
+  quoted text may differ, the changing numbers are underlined). Click the badge or press
+  `→`/`←` to open or fold a run in place; find, jumps and bookmarks open the run they
+  land in.
 - **Nested filter tree** — chain text, time-range, value-extraction, AND/OR,
   and nearest-neighbor link filters (time-context and count-context filters
   also exist and fully work, but creating a new one is temporarily
@@ -72,7 +78,7 @@ deployments possible:
   children keep working, and it stays in the tree struck through. Selecting 2+
   nodes swaps that row for the bulk actions on a highlighted bar: AND / OR /
   Link… over any number of filters of one file, or Merge N files (or a short
-  hint when the selection can't be combined). Without a keyboard, long-press a node → **Select multiple** puts the tree in a select mode with a checkbox per row and a **Done** button. It sits alongside the
+  hint when the selection can't be combined). An AND/OR node's conditions can be changed later with right-click → **Edit conditions…** (swap, add, remove, AND↔OR). Without a keyboard, long-press a node → **Select multiple** puts the tree in a select mode with a checkbox per row and a **Done** button. It sits alongside the
   tree's existing right-click menu (Copy/Cut/Save filter… stay there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
   shown in the tree instead of the raw pattern — handy for turning
@@ -427,6 +433,12 @@ deployments possible:
   **Share formats as JSON**: each format has an **Export** button (the file
   includes its filename patterns); importing it opens the format dialog
   prefilled, where you pick which filename patterns to take over.
+  **Provided formats**: `*.logformat.json` files placed next to the app
+  (hosted: `formats/` listed in `formats/index.json`; desktop: a `formats/`
+  folder beside the executable or in your config folder) are loaded at every
+  start as read-only formats tagged **Provided**; **Duplicate** makes an
+  editable copy. Ready-made examples (a log4net-style app log, RFC 5424
+  syslog and a meta format combining them) are in `examples/formats/`.
 - **Configurable themes** (Settings → Appearance) — Catppuccin Latte (light)
   and Mocha (dark) by default, **following your OS light/dark setting** and
   switching live when it changes (or pin Light/Dark instead; the light and

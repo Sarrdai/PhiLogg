@@ -1,0 +1,3 @@
+- **fix: homepage terminal keeps its final height from the first tick (2026-10-07)**
+  - Person-reported: the hero terminal grew with every tail line, shifting the page. All rows are now laid out invisibly up front and revealed one by one.
+  - **Tests**: GROUP 354 (354d, animated tail). Docs: docs/homepage.md.

@@ -1,0 +1,19 @@
+{
+  "format": "philogg-log-format",
+  "version": 1,
+  "savedAt": "2026-10-07T00:00:00.000Z",
+  "logFormat": {
+    "name": "App log (log4net-style)",
+    "mode": "regex",
+    "pattern": "",
+    "regex": "^(?<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+) \\[\\] (?<level>[A-Z]+)\\s+(?<location>[^\\s].*?)\\s+- (?<message>.*)$",
+    "tsFormat": "yyyy-MM-dd HH:mm:ss.SSS",
+    "levels": [
+      "ERROR",
+      "WARN",
+      "INFO",
+      "DEBUG"
+    ]
+  },
+  "fileNamePatterns": []
+}

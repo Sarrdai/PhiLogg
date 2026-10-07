@@ -27,6 +27,10 @@ if (groupSelected()) {
   section("354a. The build output");
   for (const f of ["index.html", "app/index.html", "app/LICENSE.md", "app/tour/welcome.session.json", "app/tour/welcome.log", "app/tour/demo/app.log", ".nojekyll"])
     assert(fs.existsSync(path.join(out, f)), "built: " + f);
+  const fmtIndex = JSON.parse(rd("app/formats/index.json"));
+  assert(fmtIndex.includes("welcome.logformat.json") && fmtIndex.includes("app-syslog-meta.logformat.json") && fmtIndex.every(f => fs.existsSync(path.join(out, "app", "formats", f))),
+    "app/formats/index.json lists the welcome and example formats, all built: " + fmtIndex);
+  assert(rd("app/formats/welcome.logformat.json") === rd("app/tour/welcome.logformat.json"), "the provided welcome format is the tour's own export");
   const app = rd("app/index.html");
   assert(/const PHILOGG_VERSION = "[^"]+"/.test(app), "the hosted app still carries PHILOGG_VERSION");
   assert(!/\/\* Short commit-hash build tag under the product name/.test(app) && /Short commit-hash build tag under the product name/.test(fs.readFileSync(path.join(__dirname, "..", "philogg.html"), "utf8")),
@@ -121,6 +125,20 @@ if (groupSelected()) {
     assert(!/what something is/.test(text) && !/^\s/m.test(text), "indented continuation lines are not rendered");
     assert(/Welcome to PhiLogg/.test(text), "the first entry's header text is there");
     assert(!w.document.querySelector("#term-body .tl.l-DEEP"), "DEEP entries (hidden in the tour's reading view) are skipped");
+  }
+  {
+    // Animated tail (person-reported 2026-10-07: the terminal grew with every
+    // tick and shifted the page): all rows are laid out from the first tick,
+    // the not-yet-shown ones invisible, so the height never changes.
+    const dom = new JSDOM(siteHtml, { runScripts: "dangerously", beforeParse: w => { w.fetch = api([stableRel]); w.matchMedia = () => ({ matches: false }); } });
+    const w = dom.window;
+    await waitFor(() => w.document.querySelectorAll("#term-body .tl").length > 0);
+    const early = [...w.document.querySelectorAll("#term-body .tl")];
+    assert(early.length === 6 && early.filter(r => !r.classList.contains("pending")).length === 1, "first tick: all six rows laid out, only the first shown: " + early.length);
+    assert(w.getComputedStyle(early[5]).visibility === "hidden", "a pending row is invisible but keeps its space");
+    await w.PhiloggSite.ready;
+    const body = w.document.getElementById("term-body");
+    assert(!body.querySelector(".tl.pending") && body.lastElementChild.classList.contains("caret"), "after the tail: every row shown, caret after the last one");
   }
   {
     const w = await loadSite(async u => /api\.github/.test(u) ? resp(true, []) : resp(false, ""));

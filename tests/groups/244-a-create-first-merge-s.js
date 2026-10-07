@@ -33,4 +33,4 @@ await withApp(async (w, d, T) => {
   assert(merged.loadSources === undefined, "loadSources is cleared once the merge finishes (fillMergedEntries)");
   assert(typeof merged.loadFraction !== "number", "loadFraction is cleared too — no lingering progress state");
   assert(!row.querySelector(".tree-load-track"), "no lingering progress bar once loading is fully done");
-});
+}, { demoFormats: true });

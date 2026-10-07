@@ -419,6 +419,26 @@
       },
     },
 
+    spam: {
+      label: "Spam loops",
+      weight: 0.15,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): a loop logs 5-200 lines back to back within milliseconds — byte-identical ('Waiting for device COM3 to respond...'), or identical except for numbers ('Retry 7/200: connect to 10.0.0.12:502 failed (timeout 250 ms)'); other scenarios' lines may interleave. Collapsing consecutive duplicates (×N), Patterns tab.",
+      make(g, ts) {
+        const n = g.int(5, 200);
+        const thread = g.pick(BASE_THREADS);
+        const kind = g.int(0, 2);
+        const host = "10.0.0." + g.int(2, 250) + ":" + g.pick([502, 8080, 5432]);
+        const port = "COM" + g.int(1, 8);
+        const line = k => kind === 0 ? { level: "WARN", thread, cls: "device", method: "Poll", msg: "Waiting for device " + port + " to respond..." }
+          : kind === 1 ? { level: "ERROR", thread, cls: "http", method: "Connect", msg: "Retry " + k + "/" + n + ": connect to " + host + " failed (timeout " + g.int(240, 260) + " ms)" }
+          : { level: "DEBUG", thread, cls: "repo", method: "Acquire", msg: "Lock 'orders' busy, spinning (elapsed=" + (k * g.int(2, 4)) + "ms)" };
+        let t = ts;
+        for (let k = 2; k <= n; k++) { t += g.int(0, 3); g.schedule(t, line(k)); }
+        return line(1);
+      },
+    },
+
     grouped: {
       label: "Thousands separators",
       weight: 4,

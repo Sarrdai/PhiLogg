@@ -1,0 +1,4 @@
+- **feat: "Edit conditions…" for AND/OR combiner nodes (2026-10-07, person-requested)**
+  - Tree menu, sidebar toolbar Edit and F2/double-click open a dialog like "Edit link…": switch all (AND) / any (OR), swap, add or remove conditions; a non-text condition (level, regex, column-restricted, ...) is a chip that is kept as is, "▾" bakes a copy of another filter, live match count under the rows.
+  - Save is one undo step (conditions, mode and auto-name together); undo/redo of a combiner edit now restores `baked`. Replaces Unpack-or-recreate (backlog #58).
+  - **Tests**: GROUP andor-edit. Docs: docs/filters.md, README.

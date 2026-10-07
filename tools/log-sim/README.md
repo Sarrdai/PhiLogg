@@ -102,6 +102,11 @@ lines at the exact same millisecond; under `-f mixed` the steps alternate
 between default and syslog lines. For same-timestamp log order
 (`-s ties,basic`).
 
+`spam` is opt-in too: a loop logs 5-200 lines back to back within milliseconds —
+byte-identical (`Waiting for device COM3 to respond...`) or identical except for
+numbers (`Retry 7/200: connect to 10.0.0.12:502 failed (timeout 250 ms)`). For
+Collapse repeats (×N) and the Patterns tab (`-s basic,spam`).
+
 `pytrace` is opt-in as well: multi-line ERROR entries with a Python
 traceback (application and site-packages frames, final `SomeError: msg`).
 For the entry detail's Pretty view (`-s pytrace`).
