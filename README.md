@@ -259,6 +259,9 @@ deployments possible:
   once opened), and no extra library: uses the browser's native
   `DecompressionStream` Web API, identically in the plain-browser build and
   the desktop build.
+- **Watched folders list every log PhiLogg can open** — besides `.log`, a
+  `.jsonl` file or any file a log format's filename rule matches (e.g.
+  `app-*.txt`) shows up in the folder listing, so the auto rules reach it.
 - **Open gzip-compressed logs** — a rotated `app.log.1.gz` opens like any
   other log, however it arrives: drag-drop, the file picker, a watched
   folder (where `*.log` patterns also pick up the `.gz` rotations), a ZIP

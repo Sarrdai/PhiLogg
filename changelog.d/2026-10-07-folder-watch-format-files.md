@@ -1,0 +1,4 @@
+- **feat: a watched folder lists every log PhiLogg can open (2026-10-07, backlog #95)**
+  - `.jsonl` files and any file a stored log format's filename rule matches now appear in a watched folder (and `.gz` of them), so the auto rules reach them; a rule match beats the txt/xml/json viewers.
+  - `isCompatibleFolderFile` is widened for all callers (ZIP entries, "Open here" path check) — same "is it a log" answer everywhere. The desktop's native listing is asked for every file once a format rule exists.
+  - **Tests**: GROUP folder-watch-format-files. Docs: docs/persistence-and-sync.md, README.

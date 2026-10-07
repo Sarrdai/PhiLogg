@@ -34471,7 +34471,8 @@ function renderZipEntryRow(zip, entry, depth) {
 // answers (FOLDER_WATCH_EXTENSIONS/isCompatibleFolderFile, above) — reused
 // as-is rather than inventing a second notion of "log file", per the plan.
 // `entry.name` is the ZIP entry's full relative path (e.g. "sub/app.log"),
-// but only the extension matters here, same as isCompatibleFolderFile itself.
+// but only the name matters here, same as isCompatibleFolderFile itself
+// (so a ZIP entry matching a format's filename rule opens as a log too).
 function isLogZipEntry(entry) { return isCompatibleFolderFile(entry.name); }
 
 // Minimal extension -> MIME map for the "open externally" path (item 3):
@@ -34565,8 +34566,8 @@ async function openZipEntryExternally(entry, zip) {
 // browser-tab fallback. Deliberately zip-specific, matching
 // openZipEntryExternally's own scope — checked, per the plan, whether any
 // OTHER route in this app hands a non-log file to that function (folder
-// watch, plain drag/drop): it doesn't — FOLDER_WATCH_EXTENSIONS/
-// isCompatibleFolderFile only ever lists .log for folder watch, and a
+// watch, plain drag/drop): it doesn't — isCompatibleFolderFile only
+// lists logs for folder watch (.log/.jsonl/format-rule names), and a
 // dropped non-log file simply fails to parse as a log via the ordinary
 // loadFileDescriptors path (see docs/persistence-and-sync.md). So there is
 // no existing "open any file" mechanism elsewhere to generalize this into.
@@ -35959,8 +35960,7 @@ function nativeDirHandle(path, name) {
       // too, or it filters them out on the Rust side before scanFolderHandle
       // ever gets a chance to widen anything.
       const [listed, subdirs] = await Promise.all([
-        window.philogg.listFolder(path, FOLDER_WATCH_EXTENSIONS.concat([GZIP_LOG_EXTENSION],
-          TEXT_FILE_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e))),
+        window.philogg.listFolder(path, folderListingExtensions()),
         typeof window.philogg.listSubfolders === "function"
           ? window.philogg.listSubfolders(path) : Promise.resolve([]),
       ]);
@@ -36840,23 +36840,38 @@ setInterval(tailTick, TAIL_POLL_MS);
    satisfy. */
 const FOLDER_SCAN_MS = 3000;
 
-// Currently only *.log (CLAUDE.md/PROJECT.md's one supported log format) —
-// an array so a future "pluggable parser" session (FEATURE_BACKLOG.md) has
-// one obvious place to widen this.
+// "Is this a log PhiLogg can open?": a `.log` / `.jsonl` name, or any name
+// matched by a stored log format's filename rule (state.formatRules — "app-*.txt",
+// "*.out", ...). A rule match wins over the inline text viewers
+// (isTextFileName): a name a format claims is a log, not a viewer. The rules
+// are tested against the base name (a ZIP entry or a clicked path carries
+// directories). The same question is asked for ZIP entries (isLogZipEntry),
+// the clickable-path "Open here" item and the folder scan, so all agree.
 // A gzip-compressed log counts too (see "gzip-compressed logs"): its name
 // minus ".gz" must be a log name, where a rotation counter is allowed —
 // "app.log.gz" and logrotate's "app.log.1.gz" both qualify, a bare
 // "data.gz" or "app.tar.gz" does not. GZIP_LOG_EXTENSION is what the
 // desktop wrapper's native listing is additionally told to let through
 // (nativeDirHandle) — it filters by suffix only, the page refines here.
-const FOLDER_WATCH_EXTENSIONS = [".log"];
+// Once any format rule exists the native listing is asked for every file
+// instead (folderListingExtensions), since a rule's glob can name any suffix.
+const FOLDER_WATCH_EXTENSIONS = [".log", ".jsonl"];
 const GZIP_LOG_EXTENSION = ".gz";
 function isCompatibleFolderFile(name) {
   const lower = name.toLowerCase();
   if (FOLDER_WATCH_EXTENSIONS.some(ext => lower.endsWith(ext))) return true;
+  const base = name.slice(Math.max(name.lastIndexOf("/"), name.lastIndexOf("\\")) + 1);
+  if (state.formatRules.some(r => fileNameGlobTest(r.glob, base))) return true;
   if (!lower.endsWith(GZIP_LOG_EXTENSION)) return false;
   const inner = stripGzipExt(lower).replace(/\.\d+$/, "");
   return FOLDER_WATCH_EXTENSIONS.some(ext => inner.endsWith(ext));
+}
+// Suffix list for the desktop wrapper's native listing: [] (= every file)
+// when a format rule could match any name, else the known suffixes.
+function folderListingExtensions() {
+  if (state.formatRules.length) return [];
+  return FOLDER_WATCH_EXTENSIONS.concat([GZIP_LOG_EXTENSION],
+    TEXT_FILE_EXTENSIONS.map(e => "." + e), INLINE_IMAGE_EXTENSIONS.map(e => "." + e));
 }
 
 // A pattern's fields double as the per-pattern "auto rules" (see
