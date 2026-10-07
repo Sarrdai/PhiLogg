@@ -326,6 +326,13 @@ deployments possible:
   sheet opened by tapping a card (drag its handle to resize or close it; the header's Analyze button opens the same sheet on Facets or Patterns, to drill into a value or hide a noisy message pattern with one tap; read-only: no editing; Settings is a full-screen page), and touch devices get larger hit targets and
   long-press for the context menu.
 - **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with zoom and drag-to-select time windows.**
+- **Prune a file to a filter's result** — a filter's context menu offers
+  "Prune file to this result…": after a confirmation the file keeps only
+  that result in memory and drops the rest (not undoable; reopen the file to
+  get it back), which frees memory on huge logs. Cuts show as "N entries
+  pruned" strips in the Context view and as dashed boundary lines in the
+  Filtered view; it survives a reload and a session export with the log
+  embedded.
 - **Per-file clock offset** — a file's tree context menu ("Adjust clock…")
   applies a manual clock correction to one file's timestamps, for when one
   device's log is skewed relative to another's before you compare or merge.
