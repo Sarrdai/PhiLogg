@@ -26,9 +26,9 @@ Content
       --encoding <name>    write the files in windows-1252 | iso-8859-15 | windows-1250 |
                            windows-1251 | utf-8 (default); characters the encoding
                            lacks become "?" (the Encoding setting of a PhiLogg format)
-      --ts-offset <off>    syslog / jsonl / mixed: write timestamps with a UTC offset
+      --ts-offset <off>    syslog / jsonl / logfmt / mixed: write timestamps with a UTC offset
                            suffix, Z or +HH:MM / +HHMM / -HH:MM, the wall clock shifted so
-                           the instant is unchanged (default: syslog "Z", jsonl none)
+                           the instant is unchanged (default: syslog "Z", jsonl/logfmt none)
 
 Amount (per file)
   -n, --entries <n>        number of entries (default 1000 when --size is absent)

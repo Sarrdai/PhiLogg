@@ -200,7 +200,7 @@ performance baselines.
 The sections below used to live directly in this file. They've moved to `docs/*.md` (grouped by topic, current-state description only — no session dates, no "pass 1 then pass 2" narrative) and to `changelog.d/` (the chronological history, one file per change). This section is the index: enough orientation per topic to know where to look, not the material itself.
 
 ### `docs/log-formats.md`
-How a file is parsed: `LogFormat` definitions (pattern vs. regex mode, custom columns, filename rules), the format dialog, JSON Lines, the Plain text format, worker and native parsing, multi-pattern `meta` formats, and how merged files load.
+How a file is parsed: `LogFormat` definitions (pattern vs. regex mode, custom columns, filename rules), the format dialog, JSON Lines and logfmt, the Plain text format, worker and native parsing, multi-pattern `meta` formats, and how merged files load.
 
 ### `docs/ui-standard.md`
 The binding UI canon for dialogs and controls: design tokens, buttons, segmented selectors, toggles, settings rows, dialog shell. Every new or changed dialog follows it.

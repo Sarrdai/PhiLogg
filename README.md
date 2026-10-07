@@ -410,6 +410,8 @@ deployments possible:
   which ones hold time, level and message, and which paths become columns —
   nested keys as `ctx.req.id`, array elements as `tags[0]`, keys containing
   a dot as `["http.status"]`.
+  **logfmt** (`key=value` lines — Go `slog`/logrus, Heroku): every key becomes
+  a column automatically; time, level and message come from keys you pick.
   **Time zone and encoding per format**: a timestamp with an offset (`Z`,
   `+02:00` — token `XXX` in the timestamp format, detected automatically) is
   read as that instant; for times without one, the format declares their zone
@@ -519,7 +521,8 @@ Thread/Location/Method/Message are each individually optional per format,
 and any other named regex group (`(?<name>...)`) becomes a **custom
 column** of its own, in whatever order you arrange the format's columns.
 **JSON Lines** files (one JSON object per line) get a format kind of their
-own, with nested keys and array elements addressable by path. Filters, sorting,
+own, with nested keys and array elements addressable by path; **logfmt**
+(`key=value`) files turn every key into a column. Filters, sorting,
 and export all work the same regardless of which format parsed a given file
 or which columns it defines.
 
@@ -606,7 +609,7 @@ npm test
 
 See `tests/README.md` for the suite's conventions before extending it.
 The **log simulator** generates realistic sample logs in every format
-PhiLogg parses (default, custom columns, bracket, JSON Lines, syslog, mixed,
+PhiLogg parses (default, custom columns, bracket, JSON Lines, logfmt, syslog, mixed,
 plain text), with content for each feature (link pairs, plots, array
 columns, embedded XML/JSON, stack traces, bursts, gaps, …) — as files by
 entry count or approximate size, or growing live for tailing and folder

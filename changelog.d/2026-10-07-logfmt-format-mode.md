@@ -1,0 +1,4 @@
+- **feat: logfmt log format mode (2026-10-07, FEATURE_BACKLOG #82)**
+  - A new format kind "logfmt" reads `key=value` lines (Go `slog`/logrus text handlers, Heroku): quoted values with escapes, bare keys, every key an automatic column, time/level/message from configurable keys; non-pair lines (stack traces) continue the entry. Dialog, export/import and session records work like JSON Lines; JS parser only.
+  - The log simulator writes the format (`-f logfmt`) together with its format definition.
+  - **Tests**: GROUP format-logfmt. Docs: docs/log-formats.md, docs/ui-and-views.md, tools/log-sim/README.md, README.
