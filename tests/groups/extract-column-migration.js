@@ -110,7 +110,7 @@ if (groupSelected()) {
     fireClick(d.querySelectorAll("#filterPatternPreview .preview-value-span")[1], w); // ignore the new word column
     fireClick(d.querySelector("#filterSubmitBtn"), w);
     const n = T.state.nodes[node.id];
-    assert(JSON.stringify([...n.ignoredColumns].sort()) === "[1,3]", "ignore set kept as toggled against the new pattern, got " + JSON.stringify(n.ignoredColumns));
+    assert(JSON.stringify([...n.ignoredColumns].sort()) === "[1,4]", "preview showed voltage at 4 (re-keyed live), the toggled set is kept as shown, got " + JSON.stringify(n.ignoredColumns));
     assert(Object.keys(n.assertions).join() === "2,3", "the other settings are still re-keyed, got " + Object.keys(n.assertions));
   });
 

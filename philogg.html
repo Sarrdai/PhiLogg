@@ -38146,8 +38146,21 @@ let filterPopupBaseId = null;
 // empty in create mode, so toggling in the live preview (see
 // updateFilterPatternPreview) works identically in both modes.
 let filterPopupIgnored = new Set();
-// The set as the edit popup opened with it (old pattern's indices): commitFilter tells untouched from toggled.
-let filterPopupIgnoredAtOpen = new Set();
+// Edit popup only: the node's pattern as the popup opened (null: create mode, or a regex node, which
+// migrates nothing) and whether the ignore set was toggled since. While untouched, filterPopupIgnored
+// stays in the OLD pattern's indices and the preview shows it re-keyed to the typed pattern
+// (filterPopupIgnoredFor), exactly what saving stores (migrateExtractionColumns); the first toggle
+// takes the displayed set as typed (new indices, ignoredAreNew).
+let filterPopupOldPattern = null;
+let filterPopupIgnoredTouched = false;
+function filterPopupIgnoredFor(val) {
+  if (filterPopupIgnoredTouched || filterPopupOldPattern == null || !filterPopupIgnored.size) return filterPopupIgnored;
+  const map = extractColumnMigrationMap(filterPopupOldPattern, val);
+  if (!map) return filterPopupIgnored;
+  const out = new Set();
+  filterPopupIgnored.forEach(i => { if (map[i] >= 0) out.add(map[i]); });
+  return out;
+}
 
 // filterPopupColumns: working copy of the "text" filter's target-column
 // restriction (see activeTextFilterColumns/textFilterMatches) — same
@@ -38419,6 +38432,8 @@ function openFilterPopup() {
   editingFilterId = null;
   filterPopupBaseId = state.activeId;
   filterPopupIgnored = new Set();
+  filterPopupOldPattern = null;
+  filterPopupIgnoredTouched = false;
   filterPopupColumns = new Set();
   renderFilterScopeHint();
   filterSubmitBtn.textContent = "Add filter";
@@ -38453,7 +38468,8 @@ function openEditFilterPopup(nodeId) {
   editingFilterId = nodeId;
   filterPopupBaseId = node.parentId;
   filterPopupIgnored = new Set(node.ignoredColumns || []);
-  filterPopupIgnoredAtOpen = new Set(filterPopupIgnored);
+  filterPopupOldPattern = node.isRegex ? null : node.value;
+  filterPopupIgnoredTouched = false;
   filterPopupColumns = new Set(node.columns || []);
   state.activeId = nodeId;
   render();
@@ -38483,6 +38499,8 @@ function closeFilterPopup() {
   editingFilterId = null;
   filterPopupBaseId = null;
   filterPopupIgnored = new Set();
+  filterPopupOldPattern = null;
+  filterPopupIgnoredTouched = false;
   filterPopupColumns = new Set();
   filterPatternPreview.classList.add("hidden");
   filterPatternPreview.innerHTML = "";
@@ -38659,7 +38677,8 @@ function evaluateLiveMatch() {
         wildcardRegex = new WildcardRegExp(spec, (caseSensitive ? "" : "i") + "s");
         wildcardColumns = spec.columns;
         hitRe = wildcardRegex;
-        captures = spec.columns.filter((c, i) => !filterPopupIgnored.has(i));
+        const shownIgnored = filterPopupIgnoredFor(val);
+        captures = spec.columns.filter((c, i) => !shownIgnored.has(i));
       } else {
         hitRe = new RegExp(escapeRegExp(val), caseSensitive ? "" : "i");
       }
@@ -38839,6 +38858,7 @@ function updateFilterPatternPreview(val, baseEntries) {
   const spec = compileExtractPattern(val);
   if (!spec) { filterPatternPreview.classList.add("hidden"); filterPatternPreview.innerHTML = ""; return; }
 
+  const shownIgnored = filterPopupIgnoredFor(val);
   let sampleEntry = null, m = null;
   if (baseEntries && baseEntries.length) {
     const previewRe = new WildcardRegExp(spec, "ids");
@@ -38866,7 +38886,7 @@ function updateFilterPatternPreview(val, baseEntries) {
     const [start, end] = range;
     if (start > cursor) frag.appendChild(document.createTextNode(msg.slice(cursor, start)));
     const color = columnColor(i);
-    const ignored = filterPopupIgnored.has(i);
+    const ignored = shownIgnored.has(i);
     const span = document.createElement("span");
     span.className = "preview-value-span" + (ignored ? " chip-ignored" : "");
     span.textContent = msg.slice(start, end);
@@ -38879,6 +38899,7 @@ function updateFilterPatternPreview(val, baseEntries) {
       : "Click to ignore this value (won\u2019t become a column)") + (condLabel ? " · condition: " + condLabel : "");
     span.addEventListener("click", ev => {
       ev.stopPropagation();
+      if (!filterPopupIgnoredTouched) { filterPopupIgnored = new Set(filterPopupIgnoredFor(val)); filterPopupIgnoredTouched = true; }
       if (filterPopupIgnored.has(i)) filterPopupIgnored.delete(i); else filterPopupIgnored.add(i);
       updateFilterPatternPreview(filterInput.value.trim(), baseEntries);
       evaluateLiveMatch(); // refresh the summary's "captures:" line
@@ -38967,8 +38988,7 @@ function commitFilter() {
   recordRecentFilter({ value: val, isRegex, caseSensitive, wholeWord, inverted: pillGet(filterInvertCheckbox), source: "filter" });
   if (editingFilterId) {
     // An untouched ignore set is still in the OLD pattern's indices (re-keyed with the other column settings).
-    const ignoredToggled = ignoredArr.length !== filterPopupIgnoredAtOpen.size || ignoredArr.some(i => !filterPopupIgnoredAtOpen.has(i));
-    const shifted = updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord, ignoredToggled);
+    const shifted = updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord, filterPopupIgnoredTouched);
     if (shifted) {
       const noun = n => n + " column setting" + (n === 1 ? "" : "s");
       const parts = [];
@@ -49888,12 +49908,15 @@ async function runSessionImport(data, opts = {}) {
     }
     revealFilteredView(); // imported filters are new filters — same visibility rule
     setSessionBanner(typeof data.banner === "string" ? data.banner : null);
+    if (data.detailCollapsed === true) toggleDetailCollapsed(true); // optional session-file field (deep-link cards)
   }
   if (freshNodeIds.length) removeDuplicatesOfFreshFiles(freshNodeIds);
 
   updatePinBookmarksButton();
   render();
 
+  // A clean ?session= load (nothing skipped) is silent: the opened view is the feedback.
+  if (opts.fresh && !summary.skipped) return;
   const parts = [];
   if (opts.fresh) parts.push(summary.loaded + " file" + (summary.loaded === 1 ? "" : "s") + " loaded");
   if (!opts.fresh || summary.auto) parts.push(summary.auto + " file" + (summary.auto === 1 ? "" : "s") + " matched automatically");
