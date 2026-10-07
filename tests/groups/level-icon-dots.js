@@ -5,7 +5,7 @@
    GROUP level-icon-dots — the level icon is three filled dots in the
    ERROR / WARN / INFO theme colors (backlog #38, variant A), replacing the
    three bars. Shared by the tree's level node, the "Add level filter"
-   button (#btnApplyLevelToTree, which alone carries a "+" badge) and the
+   button (#btnApplyLevelToTree, a round button with the shared add badge, GROUP add-badge) and the
    library icon grid.
    Origin: 2026-10-06 (person-requested, concept-mockup decision).
    ============================================================ */
@@ -31,19 +31,22 @@ await withApp(async (w, d, T) => {
   w.render();
   const btn = d.querySelector("#btnApplyLevelToTree");
   assert(btn.querySelector('svg.icon use[href="#i-level"]'), "button draws the level icon");
-  assert(btn.querySelectorAll(".level-add-badge").length === 1, "exactly one badge");
-  const badge = btn.querySelector(".level-add-badge");
+  assert(btn.querySelectorAll(".add-badge").length === 1, "exactly one badge");
+  const badge = btn.querySelector(".add-badge");
   assert(badge.querySelector("svg path") && badge.querySelector("svg").getAttribute("viewBox") === "0 0 8 8", "badge holds the 8x8 plus glyph");
+  assert(btn.classList.contains("row-action-btn") && w.getComputedStyle(btn).borderRadius === "50%", "button is a round row-action circle");
+  const lbl = btn.querySelector(".row-action-label");
+  assert(lbl && lbl.textContent === "Add level filter" && w.getComputedStyle(lbl).position === "absolute", "floating label 'Add level filter' is absolutely positioned");
   assert(btn.title === "Add level filter", "tooltip stays 'Add level filter'");
   const bcs = w.getComputedStyle(badge);
   assert(bcs.position === "absolute" && bcs.width === "11px" && bcs.height === "11px" && bcs.right === "-3px" && bcs.bottom === "-3px",
-    "badge is an 11px disc on the button's bottom-right edge, got " + [bcs.position, bcs.width, bcs.height, bcs.right, bcs.bottom].join(" "));
+    "badge is an 11px disc on the icon's bottom-right edge, got " + [bcs.position, bcs.width, bcs.height, bcs.right, bcs.bottom].join(" "));
   assert(!isVisible(btn, w), "button still hidden while nothing is selected");
   fireClick(d.querySelector('#levelBar .level-btn[data-level="ERROR"]'), w);
   assert(isVisible(btn, w), "...and visible once a chip is selected");
   // Re-render of the level bar must not duplicate the badge.
   fireClick(d.querySelector('#levelBar .level-btn[data-level="INFO"]'), w);
-  assert(btn.querySelectorAll(".level-add-badge").length === 1 && btn.querySelectorAll("svg.icon").length === 1, "still one icon and one badge after more chip clicks");
+  assert(btn.querySelectorAll(".add-badge").length === 1 && btn.querySelectorAll("svg.icon").length === 1, "still one icon and one badge after more chip clicks");
 });
 
 await withApp(async (w, d, T) => {
@@ -59,7 +62,7 @@ await withApp(async (w, d, T) => {
   assert(row, "level node has a tree row");
   const icon = row.querySelector(".tree-icon");
   assert(icon.querySelector('svg.icon use[href="#i-level"]'), "tree row draws the level icon");
-  assert(!row.querySelector(".level-add-badge"), "no badge on the tree node");
+  assert(!row.querySelector(".add-badge"), "no badge on the tree node");
   // Colors come from tokens, not currentColor: an active row's accent tint must not reach the dots.
   assert(!/currentColor/i.test(d.querySelector("#i-level").innerHTML), "symbol never uses currentColor");
 });
