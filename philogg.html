@@ -515,6 +515,7 @@
     width:60%; height:2px; border-radius:1px; background:transparent; transition:background .12s;
   }
   .toolbar-icon-btn.icon-toggle.active::after{background:var(--accent-strong);}
+  .toolbar-icon-btn.toggle-repeat:disabled, .toolbar-icon-btn.repeat-chevron:disabled{pointer-events:auto; cursor:default;} /* keep the tooltip that says why */
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
     border-radius:8px; background:var(--accent); color:var(--accent-on);
@@ -4856,6 +4857,55 @@
   }
   .log-row.temp-anchor-row.temp-anchor-fading{transition:height .3s ease, opacity .3s ease; overflow:hidden;}
 
+  /* ---------- Collapse repeats (×N), Filtered view — FEATURE_BACKLOG #7 ----------
+     .repeat-badge sits in front of the head row's message; .repeat-member rows
+     (an expanded run) carry a 2px accent bar in the left gutter, .repeat-vary
+     underlines the numbers that differ inside a "Same pattern" run. */
+  .repeat-badge{
+    display:inline-flex; align-items:center; gap:3px; height:17px; padding:0 6px; margin-right:7px;
+    box-sizing:border-box; vertical-align:middle; border-radius:9px; cursor:pointer;
+    background:var(--accent-soft); border:1px solid var(--accent); color:var(--accent-strong);
+    font-family:var(--font-mono); font-size:10.5px; font-weight:700; line-height:1; white-space:nowrap;
+  }
+  .repeat-badge:hover{border-color:var(--accent-strong);}
+  .repeat-badge.repeat-pattern{border-style:dashed;}
+  .repeat-badge .repeat-caret{font-size:8px;}
+  .repeat-vary{text-decoration:underline dotted; text-decoration-color:var(--accent-strong); text-underline-offset:2px; cursor:help;}
+  .log-row.repeat-member::before, .log-row.repeat-head-open::before{
+    content:""; position:absolute; left:-9px; top:0; bottom:0; width:2px; background:var(--accent); pointer-events:none;
+  }
+  .log-row.repeat-head-open::before{top:50%;}
+  .log-row.repeat-member-last::before{bottom:4px; border-bottom-left-radius:2px; border-bottom-right-radius:2px;}
+  .log-row.repeat-member .col-msg, .log-row.repeat-member .col-text{opacity:.88;}
+  /* Collapse-repeats options menu (chevron next to the toggle), same shell as #columnsPanel. */
+  .repeat-split{display:flex; align-items:center;}
+  .toolbar-icon-btn.repeat-chevron{width:14px; margin-left:-6px; background:none; border:none; color:var(--text-secondary);}
+  .toolbar-icon-btn.repeat-chevron:hover{background:var(--bg-elevated-2);}
+  .toolbar-icon-btn.repeat-chevron .icon{--icon-md:10px;}
+  #repeatMenu{
+    position:fixed; z-index:60; width:260px; padding:5px;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:9px;
+    box-shadow:0 16px 36px rgba(0,0,0,.5); display:flex; flex-direction:column;
+  }
+  #repeatMenu.hidden{display:none;}
+  .repeat-menu-item{
+    display:flex; align-items:flex-start; gap:8px; padding:6px 8px; border:none; background:none; text-align:left;
+    border-radius:5px; cursor:pointer; color:var(--text-secondary); font:inherit; font-size:11.5px;
+  }
+  .repeat-menu-item:hover{background:var(--bg-elevated-2);}
+  .repeat-menu-item .rm-mark{
+    flex:0 0 auto; width:13px; height:13px; margin-top:1px; box-sizing:border-box;
+    border:1.5px solid var(--border-hover); background:transparent;
+  }
+  .repeat-menu-item .rm-check{border-radius:3px;}
+  .repeat-menu-item .rm-radio{border-radius:50%;}
+  .repeat-menu-item.on .rm-mark{border-color:var(--accent-strong); background:var(--accent-strong); box-shadow:inset 0 0 0 2.5px var(--bg-elevated);}
+  .repeat-menu-item .rm-check, .repeat-menu-item.on .rm-check{box-shadow:none;}
+  .repeat-menu-item.on .rm-check{background:var(--accent-strong);}
+  .repeat-menu-item .rm-title{display:block; color:var(--text-primary); font-weight:600;}
+  .repeat-menu-item .rm-sub{display:block; margin-top:1px; font-size:10.5px; color:var(--text-tertiary); line-height:1.35;}
+  .repeat-menu-sep{height:1px; margin:4px 2px; background:var(--border-soft);}
+
   /* ---------- Log view columns popup (#btnColumns) — own fixed-position/
      toggle pattern (used to share it with the License popup, which has
      since moved into Settings as its own section — see #licenseContent
@@ -5555,6 +5605,7 @@
     <symbol id="i-note" viewBox="0 0 16 16"><path d="M3.25 2.25h9.5v11l-2.75-1.75H3.25Z"/><path d="M5.5 5.5h5M5.5 8h5M5.5 10.5h2.75"/></symbol>
     <symbol id="i-multiline" viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></symbol>
     <symbol id="i-wrap" viewBox="0 0 16 16"><path d="M2.5 3.75h11"/><path d="M2.5 8h9a2.25 2.25 0 0 1 0 4.5H7.5"/><path d="M9.25 10.5 7.25 12.5l2 2"/><path d="M2.5 12.5h2.5"/></symbol>
+    <symbol id="i-repeat" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="4" rx="1"/><path d="M4.5 9h7M6.25 11.75h3.5M7.5 14h1"/></symbol>
     <symbol id="i-columns" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.25"/><path d="M6 2.75v10.5M10 2.75v10.5"/></symbol>
     <symbol id="i-highlight-pen" viewBox="0 0 16 16"><path d="M9.5 2.5 13.5 6.5 7.25 12.75 3 13.5l.75-4.25Z"/><path d="M2.25 14.5h5"/></symbol>
     <symbol id="i-highlight-text" viewBox="0 0 16 16"><path d="M4 3.25h8M8 3.25v6M2.5 11.75h11M2.5 14.25h11"/></symbol>
@@ -6027,6 +6078,11 @@
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" title="Columns"></button>
+                <!-- Collapse repeats (FEATURE_BACKLOG #7): toggle + chevron opening #repeatMenu (rule choice). -->
+                <span class="repeat-split">
+                  <button type="button" class="toolbar-icon-btn icon-toggle toggle-repeat" id="btnRepeatCollapse" title="Collapse repeats"></button>
+                  <button type="button" class="toolbar-icon-btn repeat-chevron" id="btnRepeatMenu" title="Collapse repeats: choose the rule" aria-haspopup="true"></button>
+                </span>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" title="Underline highlights"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" title="Clickable file paths"></button>
@@ -8044,6 +8100,13 @@ SOFTWARE.</pre>
        JS-rendered here by renderColumnsPanel, since the set of hideable
        columns is now dynamic. Widths are drag-resized from #tableHeader's
        own resize handles instead, not from here. -->
+  <!-- Collapse repeats rule menu (chevron next to #btnRepeatCollapse), built like #columnsPanel. -->
+  <div id="repeatMenu" class="hidden">
+    <button type="button" class="repeat-menu-item" data-repeat-action="toggle"><span class="rm-mark rm-check"></span><span><span class="rm-title">Collapse repeats</span><span class="rm-sub">Fold consecutive repeated rows into one row &times;N</span></span></button>
+    <div class="repeat-menu-sep"></div>
+    <button type="button" class="repeat-menu-item" data-repeat-rule="identical"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Identical</span><span class="rm-sub">All columns equal except the time</span></span></button>
+    <button type="button" class="repeat-menu-item" data-repeat-rule="pattern"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Same pattern</span><span class="rm-sub">Numbers, IDs, quoted text may differ; same level, thread and source</span></span></button>
+  </div>
   <div id="columnsPanel" class="hidden">
     <div class="bookmarks-panel-title">Columns</div>
     <div id="columnsList"></div>
@@ -8207,6 +8270,8 @@ const ICON_MULTILINE = icon("multiline");
 // wraps back". Distinct from ICON_MULTILINE's plain stacked lines.
 const ICON_WRAP = icon("wrap");
 const ICON_COLUMNS = icon("columns");
+// Collapse-repeats toggle (.toggle-repeat, FEATURE_BACKLOG #7): one row over a shortened stack; the caret opens its rule menu.
+const ICON_REPEAT = icon("repeat");
 // Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
 // underline stroke, standing in for "mark/highlight" the same way
 // ICON_MULTILINE's stacked lines stand in for "multi-line text".
@@ -16281,7 +16346,7 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
     if (hasTok) {
       while (ti < tokRanges.length && tokRanges[ti].end <= s) ti++;
       const t = tokRanges[ti];
-      if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '">' + slice + "</span>";
+      if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '"' + (t.title ? ' title="' + escapeHtml(t.title) + '"' : "") + '>' + slice + "</span>";
     }
     const marked = ranges.some(r => r[0] <= s && r[1] >= e);
     // Find-bar hit (FEATURE_BACKLOG.md #3): its own background class, which
@@ -18057,6 +18122,13 @@ function normalizeMessagePattern(message) {
   patternNumIdx = 0;
   return line.replace(PATTERN_TOKEN_RE, patternTokenReplacer);
 }
+// "Same pattern" key of the Filtered view's collapse-repeats rule: the WHOLE
+// message (every line, no PATTERN_MAX_CHARS cut) with the same token rules as
+// normalizeMessagePattern. A separate function so the Patterns tab keeps its
+// first-line/400-char behaviour.
+function normalizeRepeatMessage(message) {
+  return (message || "").replace(PATTERN_TOKEN_RE, patternTokenReplacer);
+}
 // Human-readable form of a group key ("Axis <#> position <#> ...").
 function patternDisplayText(key) {
   return key.replace(/[-]/g, ch => PATTERN_PH_LABELS[ch]);
@@ -18943,6 +19015,9 @@ const linkBody = el("#linkBody");
 const tableHeaderEl = el("#tableHeader");
 const highlightHeaderEl = el("#highlightHeader");
 const btnColumns = elAll(".toggle-columns");
+const btnRepeat = elAll(".toggle-repeat");
+const btnRepeatMenu = elAll(".repeat-chevron");
+const repeatMenu = el("#repeatMenu");
 const btnTextMatchHighlight = elAll(".toggle-textmatch");
 const btnHighlightMatchText = elAll(".toggle-highlightmatch");
 const btnFilePathLinks = elAll(".toggle-filepaths");
@@ -27047,6 +27122,222 @@ function restoreViewAnchor(anchor, entries, offsets, scrollEl, setScrollFn) {
 let viewMembers = []; // the Filtered view's real members (chronological, no temp anchor) — membership check of the detail notice
 let currentViewEntries = []; // entries backing the table right now (post node + level filter)
 
+/* ===================== Collapse repeats (×N) — FEATURE_BACKLOG #7 =========
+   Filtered view only. Consecutive rows of the CURRENT view (after node filter
+   + level bar) that are "the same" fold into one head row (the run's first
+   entry) with a ×N badge. Two rules (repeatRule): "identical" — every parsed
+   field except the time equal (level, thread, location, method, custom
+   columns, full message, same source file); "pattern" — the same, but the
+   message compared through the Patterns tab's token rules
+   (normalizeRepeatMessage). A global preference in localStorage, off by
+   default; disabled under a column sort (rows must stay chronological).
+   foldRepeats() turns the chronological list into currentViewEntries (the
+   ROW list); viewMembers stays the unfolded one. repeatRunByEntry maps the id
+   of every entry of a run of 2+ (head included) to its run object
+   { head, members, vary }. repeatExpanded holds the head ids of runs shown
+   inline (members follow the head as .repeat-member rows); never persisted,
+   cleared when the node, the rule or the toggle changes. */
+const REPEAT_COLLAPSE_KEY = "philogg-repeat-collapse";
+const REPEAT_RULE_KEY = "philogg-repeat-rule";
+let repeatCollapseOn = false;
+let repeatRule = "identical"; // "identical" | "pattern"
+try {
+  repeatCollapseOn = localStorage.getItem(REPEAT_COLLAPSE_KEY) === "1";
+  repeatRule = localStorage.getItem(REPEAT_RULE_KEY) === "pattern" ? "pattern" : "identical";
+} catch (_) { /* storage blocked: defaults */ }
+let repeatExpanded = new Set();
+let repeatRunByEntry = new Map();
+let repeatLastNodeId = null;
+const REPEAT_RESERVED_COLS = new Set(["time", "level", "thread", "location", "method", "message"]);
+
+function repeatFoldActive() { return repeatCollapseOn && !state.sortColumn; }
+
+function repeatSameRow(a, b, customKeys, pattern, aNorm) {
+  if (a.formatId !== b.formatId || a.sourceId !== b.sourceId || a.level !== b.level ||
+      a.thread !== b.thread || a.location !== b.location || a.method !== b.method) return false;
+  for (let k = 0; k < customKeys.length; k++) {
+    const key = customKeys[k];
+    if (((a.fields && a.fields[key]) || "") !== ((b.fields && b.fields[key]) || "")) return false;
+  }
+  return pattern ? aNorm === normalizeRepeatMessage(b.message) : a.message === b.message;
+}
+
+// Chronological list -> row list; (re)builds repeatRunByEntry. Temp-anchor
+// clones never fold and end the run before them.
+function foldRepeats(list) {
+  repeatRunByEntry = new Map();
+  const n = list.length;
+  if (!repeatFoldActive() || n < 2 || list[0].isPair) return list;
+  const pattern = repeatRule === "pattern";
+  const customKeys = activeColumnDefs().map(c => c.key).filter(k => !REPEAT_RESERVED_COLS.has(k));
+  const rows = [];
+  let head = null, headIdx = 0, headNorm = "";
+  const flush = end => { // the open run is list[headIdx, end)
+    if (!head) return;
+    rows.push(head);
+    if (end - headIdx > 1) {
+      const members = list.slice(headIdx, end);
+      const run = { head, members, vary: undefined };
+      for (let k = 0; k < members.length; k++) repeatRunByEntry.set(members[k].id, run);
+      if (repeatExpanded.has(head.id)) for (let k = 1; k < members.length; k++) rows.push(members[k]);
+    }
+    head = null;
+  };
+  for (let i = 0; i < n; i++) {
+    const e = list[i];
+    if (e._tempAnchor) { flush(i); rows.push(e); continue; }
+    if (head && repeatSameRow(head, e, customKeys, pattern, headNorm)) continue;
+    flush(i);
+    head = e; headIdx = i;
+    if (pattern) headNorm = normalizeRepeatMessage(e.message);
+  }
+  flush(n);
+  return rows;
+}
+
+// The id of the row that stands for entry `id` right now: the run's head while
+// the run is folded, else the entry itself.
+function repeatRowIdFor(id) {
+  const run = repeatRunByEntry.get(id);
+  return run && run.head.id !== id && !repeatExpanded.has(run.head.id) ? run.head.id : id;
+}
+
+// Number tokens (Patterns-tab rules) of a message with their positions.
+function repeatNumberTokens(msg) {
+  const out = [];
+  PATTERN_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = PATTERN_TOKEN_RE.exec(msg)) !== null) {
+    if (m[0] === "") { PATTERN_TOKEN_RE.lastIndex++; continue; }
+    if (m[6] !== undefined) out.push({ start: m.index, end: m.index + m[0].length, text: m[0] });
+  }
+  return out;
+}
+// "Same pattern" head: the number tokens of its message that differ somewhere in
+// the run, as markFieldHtml token ranges (dotted underline + "lo – hi" title).
+// Computed lazily for heads that get drawn, cached on the run.
+function repeatVaryRanges(run) {
+  if (run.vary) return run.vary;
+  const H = repeatNumberTokens(run.head.message || "");
+  const lo = H.map(t => ({ v: parseFloat(t.text.replace(/,/g, "")), text: t.text }));
+  const hi = lo.map(x => ({ v: x.v, text: x.text }));
+  const differs = H.map(() => false);
+  for (let i = 1; i < run.members.length; i++) {
+    const T = repeatNumberTokens(run.members[i].message || "");
+    if (T.length !== H.length) continue;
+    for (let j = 0; j < T.length; j++) {
+      if (T[j].text !== H[j].text) differs[j] = true;
+      const v = parseFloat(T[j].text.replace(/,/g, ""));
+      if (v < lo[j].v) lo[j] = { v, text: T[j].text };
+      if (v > hi[j].v) hi[j] = { v, text: T[j].text };
+    }
+  }
+  run.vary = [];
+  H.forEach((t, j) => { if (differs[j]) run.vary.push({ start: t.start, end: t.end, cls: "repeat-vary", title: lo[j].text + " – " + hi[j].text }); });
+  return run.vary;
+}
+
+function repeatBadgeHtml(run, zero) {
+  const n = run.members.length, first = run.members[0], last = run.members[n - 1];
+  const open = repeatExpanded.has(run.head.id);
+  let tip = n + " repeats";
+  if (!isPlainTextFormat(first.formatId)) tip += " · " + displayTimeText(first, zero) + " – " + displayTimeText(last, zero) + " (" + formatDelta(last.ts - first.ts) + ")";
+  tip += " · click to " + (open ? "collapse" : "expand");
+  return '<span class="repeat-badge' + (repeatRule === "pattern" ? " repeat-pattern" : "") + '" data-repeat-badge="1" title="' + escapeHtml(tip) + '">×' + n +
+    (open ? ' <span class="repeat-caret">▾</span>' : "") + '</span>';
+}
+
+// Everything between "which members does the view have" and "what's on screen":
+// viewMembers, the row list (temp anchor spliced in, folded or column-sorted),
+// row offsets, spacer height and the widest-message cache. Shared by
+// renderTable, the pin-bookmarks repaint and expand/collapse. A selected entry
+// that the fold hid moves to its head.
+function applyViewMembers(members) {
+  if (repeatLastNodeId !== state.activeId) { repeatExpanded.clear(); repeatLastNodeId = state.activeId; }
+  viewMembers = members;
+  const withAnchor = spliceTempAnchor(members);
+  viewDeltaMs = state.sortColumn ? buildViewDeltaMap(withAnchor) : null;
+  if (state.sortColumn) {
+    repeatRunByEntry = new Map();
+    currentViewEntries = withAnchor.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
+  } else {
+    currentViewEntries = foldRepeats(withAnchor);
+  }
+  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
+  {
+    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
+    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
+  }
+  cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  const sel = state.selectedId;
+  if (sel) {
+    const rid = repeatRowIdFor(sel);
+    if (rid !== sel) {
+      state.selectedId = rid;
+      updateMinimapSelectionMarkers();
+      updateRowActionButtons();
+      updateDetailPanel();
+    }
+  }
+}
+
+// Re-fold the current view in place (expand/collapse): keeps the reading position
+// like the other in-place repaints, never a full render().
+function refoldRepeatView() {
+  const anchor = captureViewAnchor(currentViewEntries, tableRowOffsets, tableBody);
+  applyViewMembers(viewMembers);
+  if (anchor) anchor.id = repeatRowIdFor(anchor.id);
+  renderDetailOutsideNotice(selectedEntry());
+  syncTableRowsWidth();
+  restoreViewAnchor(anchor, currentViewEntries, tableRowOffsets, tableBody, setTableScrollLogical);
+  renderVisibleRows();
+  updateMinimapRenderedRange();
+}
+function setRepeatRunOpen(headId, open) {
+  if (open === repeatExpanded.has(headId)) return;
+  if (open) repeatExpanded.add(headId); else repeatExpanded.delete(headId);
+  refoldRepeatView();
+}
+// → on a selected folded head expands it, ← on a head/member of an open run
+// folds it and selects the head. Returns whether the key was used.
+function repeatKeyStep(ev) {
+  const run = state.selectedId ? repeatRunByEntry.get(state.selectedId) : null;
+  if (!run) return false;
+  const open = repeatExpanded.has(run.head.id);
+  if (ev.key === "ArrowRight") {
+    if (open || run.head.id !== state.selectedId) return false;
+    setRepeatRunOpen(run.head.id, true);
+    return true;
+  }
+  if (!open) return false;
+  setRepeatRunOpen(run.head.id, false);
+  return true;
+}
+
+function updateRepeatButton() {
+  const locked = !!state.sortColumn;
+  btnRepeat.forEach(b => {
+    b.classList.toggle("active", repeatCollapseOn && !locked);
+    b.disabled = locked;
+    b.title = locked ? "Collapse repeats needs the chronological order (clear the column sort)" : "Collapse repeats";
+  });
+  btnRepeatMenu.forEach(b => { b.disabled = locked; });
+  repeatMenu.querySelector('[data-repeat-action="toggle"]').classList.toggle("on", repeatCollapseOn);
+  repeatMenu.querySelectorAll("[data-repeat-rule]").forEach(it => it.classList.toggle("on", it.dataset.repeatRule === repeatRule));
+}
+function setRepeatCollapse(on, rule) {
+  repeatCollapseOn = !!on;
+  if (rule) repeatRule = rule;
+  try {
+    localStorage.setItem(REPEAT_COLLAPSE_KEY, repeatCollapseOn ? "1" : "0");
+    localStorage.setItem(REPEAT_RULE_KEY, repeatRule);
+  } catch (_) { /* storage blocked: applies for this session only */ }
+  repeatExpanded.clear();
+  updateRepeatButton();
+  render();
+}
+function closeRepeatMenu() { repeatMenu.classList.add("hidden"); }
+
 /* ===================== Temporary anchor rendering (FEATURE_BACKLOG #18) ===
    Splices state.tempAnchor's entry into the Filtered table's own entry list
    at its would-be chronological position, so it renders (and is reachable
@@ -27411,6 +27702,12 @@ function appendLogRow(frag, i, rc) {
     (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") +
     (pinnedOnlyIds.has(e.id) ? " pinned-row" : "") + pairPickRowClass(e) +
     (e._tempAnchor ? " temp-anchor-row" : "");
+  // Collapse repeats: a run's head carries the ×N badge, the members of an
+  // expanded run get the gutter bar (last one closes it).
+  const repeatRun = repeatRunByEntry.size ? repeatRunByEntry.get(e.id) : undefined;
+  const repeatHead = !!repeatRun && repeatRun.head === e;
+  if (repeatHead && repeatExpanded.has(e.id)) cls += " repeat-head-open";
+  if (repeatRun && !repeatHead) cls += " repeat-member" + (repeatRun.members[repeatRun.members.length - 1] === e ? " repeat-member-last" : "");
 
   let bracketHtml = "";
   // Highlight-rule matches (see computeHighlightMap) — shown here too now,
@@ -27441,7 +27738,12 @@ function appendLogRow(frag, i, rc) {
   // Under a column sort adjacent rows aren't temporally adjacent, so the
   // Δt comes from rc.deltaMap (captured in chronological order) instead of
   // the row above.
-  const prevE = i > 0 ? currentViewEntries[i - 1] : null;
+  let prevE = i > 0 ? currentViewEntries[i - 1] : null;
+  // After a folded run the Δt is measured from the run's LAST member, not its head.
+  if (prevE && repeatRunByEntry.size) {
+    const pr = repeatRunByEntry.get(prevE.id);
+    if (pr && pr.head === prevE && !repeatExpanded.has(prevE.id)) prevE = pr.members[pr.members.length - 1];
+  }
   const deltaMs = rc.deltaMap ? (rc.deltaMap.has(e.id) ? rc.deltaMap.get(e.id) : null)
     : (prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
 
@@ -27467,8 +27769,10 @@ function appendLogRow(frag, i, rc) {
     const html = markFieldHtml(rc.mm, val, col.key);
     middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
   }
-  const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message", plainTextSyntaxRanges(e, rc.syntax));
-  const msgHtml = (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
+  const syntaxRanges = plainTextSyntaxRanges(e, rc.syntax);
+  const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message",
+    repeatHead && repeatRule === "pattern" && !(syntaxRanges && syntaxRanges.length) ? repeatVaryRanges(repeatRun) : syntaxRanges);
+  const msgHtml = (repeatHead ? repeatBadgeHtml(repeatRun, rc.zero) : "") + (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
     (filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase);
 
   row.className = cls;
@@ -27512,6 +27816,18 @@ function appendLogRow(frag, i, rc) {
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
+  if (repeatHead) {
+    // The badge expands/collapses the run inline; it selects the head but must not reach the row's own click/dblclick.
+    const badge = row.querySelector(".repeat-badge");
+    if (badge) {
+      badge.addEventListener("click", ev => {
+        ev.stopPropagation();
+        if (state.selectedId !== e.id) selectEntry(e.id);
+        setRepeatRunOpen(e.id, !repeatExpanded.has(e.id));
+      });
+      badge.addEventListener("dblclick", ev => ev.stopPropagation());
+    }
+  }
   frag.appendChild(row);
   const noteRow = appendNoteRow(frag, e);
   return noteRow ? [row, noteRow] : [row];
@@ -30200,6 +30516,7 @@ function closeEscapeOverlays() {
   closePruneDialog();
   closeNoteDialog();
   closeColumnsPanel();
+  closeRepeatMenu();
   closeColorPicker();
   closeSessionExportDialog();
   closeFilterLibrarySaveDialog();
@@ -30218,7 +30535,7 @@ function anyEscapeOverlayOpen() {
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog", "pruneDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
-    "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
+    "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "repeatMenu", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
@@ -33006,16 +33323,7 @@ function toggleBookmark(entryId) {
   // the Filtered view showing the stale pre-change set until some UNRELATED
   // full render happened to run.
   if (state.pinBookmarksInFilteredView) {
-    viewMembers = getVisibleEntries();
-    currentViewEntries = spliceTempAnchor(viewMembers);
-    viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
-    if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
-    tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-    {
-      const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
-      tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
-    }
-    cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+    applyViewMembers(getVisibleEntries());
     renderDetailOutsideNotice(selectedEntry());
     syncTableRowsWidth();
   }
@@ -33814,6 +34122,26 @@ btnColumns.forEach(b => b.addEventListener("click", ev => {
   if (columnsPanel.classList.contains("hidden")) openColumnsPanel(ev.currentTarget);
   else closeColumnsPanel();
 }));
+// Collapse repeats (FEATURE_BACKLOG #7): the toggle flips collapsing, the chevron opens the rule menu.
+btnRepeat.forEach(b => b.addEventListener("click", () => setRepeatCollapse(!repeatCollapseOn)));
+btnRepeatMenu.forEach(b => b.addEventListener("click", ev => {
+  ev.stopPropagation(); // popup opener: the document-level outside-click handler must not see this click
+  if (!repeatMenu.classList.contains("hidden")) { closeRepeatMenu(); return; }
+  closeClickDismissedPopups(ev); // the other click-dismissed popups close, like a click elsewhere
+  updateRepeatButton();
+  const rect = b.getBoundingClientRect();
+  repeatMenu.style.top = (rect.bottom + 6) + "px";
+  repeatMenu.style.left = Math.max(4, Math.min(rect.left - 20, window.innerWidth - 270)) + "px";
+  repeatMenu.classList.remove("hidden");
+}));
+repeatMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".repeat-menu-item");
+  if (!item) return;
+  if (item.dataset.repeatRule) setRepeatCollapse(true, item.dataset.repeatRule); // picking a rule also switches collapsing on
+  else setRepeatCollapse(!repeatCollapseOn);
+  closeRepeatMenu();
+});
 btnResetColumns.addEventListener("click", () => {
   // Explicit defaults for the 6 fixed columns (matches the pre-Custom-
   // Columns DEFAULT_COLUMN_WIDTHS reset exactly); any custom column's width
@@ -33977,16 +34305,9 @@ function renderTable() {
   // (bugfix — person-reported: an anchor from far outside the filter's real
   // span made the minimap's highlighted range balloon to cover it).
   const minimapViewEntries = getVisibleEntries();
-  viewMembers = minimapViewEntries;
-  currentViewEntries = spliceTempAnchor(minimapViewEntries);
-  viewDeltaMs = state.sortColumn ? buildViewDeltaMap(currentViewEntries) : null;
-  if (state.sortColumn) currentViewEntries = currentViewEntries.slice().sort(entryComparator(state.sortColumn, state.sortDir, viewDeltaMs));
-  tableRowOffsets = needsRowOffsets() ? buildRowOffsets(currentViewEntries) : null;
-  {
-    const contentPx = needsRowOffsets() ? tableRowOffsets[currentViewEntries.length] : currentViewEntries.length * tableRowH();
-    tableSpacer.style.height = (computeTableSpacerContentHeight(contentPx) + 22) + "px";
-  }
-  cachedMaxMsgPixelWidth = computeMaxMessageWidth(currentViewEntries);
+  applyViewMembers(minimapViewEntries); // viewMembers, the (folded / sorted) row list, offsets, spacer
+  if (scrollAnchor) scrollAnchor.id = repeatRowIdFor(scrollAnchor.id); // an anchor the fold hid -> its head
+  updateRepeatButton();
   renderDetailOutsideNotice(selectedEntry());
   syncTableRowsWidth();
   renderTimelineMinimap(getRootFileId(state.activeId), minimapViewEntries);
@@ -33998,7 +34319,7 @@ function renderTable() {
 
   if (state.scrollTargetId) {
     // Jumping to a specific entry: scroll straight to it instead of resetting to top.
-    const targetId = state.scrollTargetId;
+    const targetId = repeatRowIdFor(state.scrollTargetId);
     const offset = state.scrollTargetOffset;
     state.scrollTargetId = null;
     state.scrollTargetOffset = null;
@@ -48979,6 +49300,7 @@ function closeClickDismissedPopups(ev) {
   if (!libraryMenu.contains(ev.target) && !btnLibrary.contains(ev.target)) closeLibraryMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
+  if (!repeatMenu.contains(ev.target) && !btnRepeatMenu.some(b => b.contains(ev.target))) closeRepeatMenu();
   if (!colorPickerPopup.contains(ev.target) && !colorPickerPopup.classList.contains("hidden")) closeColorPicker();
   if (!fpPathMenu.contains(ev.target) && !ev.target.closest(".fp-candidate")) closeFpPathMenu();
   // FEATURE_BACKLOG.md #18: a Ctrl+0/Alt+Arrow-forced sidebar peek also ends
@@ -49009,6 +49331,7 @@ function clickDismissedPopupHit(target) {
     || (libraryMenuOpen() && !libraryMenu.contains(target) && !btnLibrary.contains(target))
     || (open(filterPopup) && !filterPopup.contains(target))
     || (open(columnsPanel) && !columnsPanel.contains(target) && !btnColumns.some(b => b.contains(target)))
+    || (open(repeatMenu) && !repeatMenu.contains(target) && !btnRepeatMenu.some(b => b.contains(target)))
     || (open(colorPickerPopup) && !colorPickerPopup.contains(target));
 }
 function anyPointerMenuOpen() {
@@ -49169,6 +49492,14 @@ document.addEventListener("keydown", ev => {
     ev.preventDefault();
     const delta = ev.key === "ArrowDown" ? 1 : -1;
     if (state.entriesView === "highlight") moveHighlightSelection(delta); else moveSelection(delta);
+    return;
+  }
+
+  // Collapse repeats: → expands a selected folded head, ← folds an open run (head or member).
+  if ((ev.key === "ArrowRight" || ev.key === "ArrowLeft") && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey &&
+      logKeysActive() && state.entriesView === "filter" && tableWrap.style.display !== "none" && linkWrap.style.display === "none" &&
+      repeatKeyStep(ev)) {
+    ev.preventDefault();
     return;
   }
 
@@ -52816,6 +53147,9 @@ btnNotes.forEach(b => b.innerHTML = ICON_NOTE);
 btnMultilineMsg.forEach(b => b.innerHTML = ICON_MULTILINE);
 btnWrapMsg.forEach(b => b.innerHTML = ICON_WRAP);
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
+btnRepeat.forEach(b => b.innerHTML = ICON_REPEAT);
+btnRepeatMenu.forEach(b => b.innerHTML = ICON_CARET_DOWN);
+updateRepeatButton();
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
 btnFilePathLinks.forEach(b => b.innerHTML = ICON_FILE_PATH_LINKS);

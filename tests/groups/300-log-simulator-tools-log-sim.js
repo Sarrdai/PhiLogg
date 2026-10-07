@@ -98,6 +98,18 @@ await withApp(async (w, d, T) => {
     "Probe offset (xo, yo, zo) [mm]: (", "Tool tip (tx, ty) = (", "Scan pos xs, ys, zs: ", "Gantry (gx gy gz) = (", "Head (hx hy) [px]: "];
   assert(phrases.every(ph => tup.some(e => e.msg.startsWith(ph))), "tuples: every message shape occurs in 400 entries");
   assert(tup.every(e => e.scenario === "tuples" && Array.isArray(e.json.values)), "tuples: every entry carries its json payload");
+  // spam: opt-in loops of byte-identical and counter lines (Collapse repeats, GROUP repeat-collapse)
+  assert(!LOGSIM.normalizeScenarios("all").includes("spam") && LOGSIM.normalizeScenarios("spam").join() === "spam", "spam: opt-in, never part of 'all'");
+  const [spamFile] = LOGSIM.generateToStrings({ format: "default", scenarios: ["basic", "spam"], entries: 1200, seed: 22 });
+  const spamF = await w.addFile(spamFile.name, spamFile.text, () => {});
+  assert(spamF.entries.length === 1200, "spam: 1200 entries parsed");
+  const sameRun = (a, b) => a.thread === b.thread && a.level === b.level && a.message === b.message;
+  let longest = 1, cur = 1;
+  for (let i = 1; i < spamF.entries.length; i++) { cur = sameRun(spamF.entries[i - 1], spamF.entries[i]) ? cur + 1 : 1; longest = Math.max(longest, cur); }
+  assert(longest >= 50, "spam: a loop repeats the identical line back to back (longest run " + longest + ")");
+  const counterLoop = spamF.entries.filter(e => /^Retry \d+\/\d+: connect to /.test(e.message));
+  assert(counterLoop.length >= 10 && new Set(counterLoop.map(e => w.normalizeMessagePattern(e.message))).size < counterLoop.length, "spam: counter lines differ in their numbers but share one pattern");
+  assert(spamF.entries.every(e => e.ts >= 0) && spamF.entries.every((e, i) => i === 0 || spamF.entries[i - 1].ts <= e.ts), "spam: chronological");
 });
 
 await withApp(async (w, d, T) => {
