@@ -1,0 +1,4 @@
+- **fix: homepage card links open like their screenshot; the extraction popup preview follows moved columns (2026-10-07, person-requested)**
+  - New optional session-file field `detailCollapsed: true` (set by the filters/link/plot card sessions) collapses the Entry detail panel after the load; a `?session=` load that skipped nothing no longer shows the "Session: N files loaded" toast.
+  - Editing an extraction pattern: while the ignore set is untouched, the popup preview marks ignored columns at their new position (same mapping Save uses), so it shows what gets saved; the first toggle takes the set as typed.
+  - **Tests**: GROUP session-detail-collapsed-quiet-load, extract-popup-ignored-live-rekey (352, extract-column-migration updated). Docs: docs/persistence-and-sync.md, docs/extraction-and-plotting.md, docs/homepage.md.
