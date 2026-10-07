@@ -1,0 +1,4 @@
+- **fix: wildcard patterns with many `[*]` no longer freeze the page (2026-10-07, FEATURE_BACKLOG #101)**
+  - A pattern like `[*] [*] [*] [*] [*] [*] [*] NOMATCH` took seconds per long (stack-trace) message, because the lazy `.*?` of each `[*]` retried every split of the repeated separators; typing it into the filter popup hung the live match count.
+  - Wildcard patterns now match through `WildcardRegExp`: same matches and captures as before, in near-linear time (that case: 12 s for 20 entries before, 19 ms for 120,000 now).
+  - **Tests**: GROUP wildcard-backtracking. Docs: docs/filters.md, docs/extraction-and-plotting.md, docs/performance-testing.md.

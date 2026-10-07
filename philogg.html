@@ -13219,6 +13219,113 @@ function valueSatisfiesConditions(rawStr, col) {
   });
 }
 
+// Drop-in for `new RegExp(spec.regexStr, flags)` on a compileExtractPattern
+// spec (FEATURE_BACKLOG.md #101). The plain regex chains one lazy `(.*?)`
+// per text wildcard; on a line that doesn't match, V8 retries every split of
+// every repeated separator — exponential in the number of wildcards (7
+// wildcards: seconds per 2,000 lines). This matcher returns the exact same
+// first match as that regex, in near-linear time: the pattern is cut at the
+// text wildcards into blocks (literals + typed placeholders), and since a
+// text wildcard matches anything, "the rest of the pattern can still match
+// from position p" only depends on whether p is at most the LAST start of
+// the next block that leaves room for everything after it (limit[k]). One
+// backward pass computes those limits; the forward pass then searches each
+// block leftmost from where the previous one ended — exactly the regex's
+// own first choice — on the text cut at the next limit, so no choice ever
+// has to be undone. Typed placeholders keep their native regex semantics
+// inside their block.
+class WildcardRegExp {
+  constructor(spec, flags) {
+    this.spec = spec;
+    this.source = spec.regexStr;
+    this.flags = flags;
+    this.global = flags.includes("g");
+    this.hasIndices = flags.includes("d");
+    this.lastIndex = 0;
+    const blockFlags = flags.replace(/[gy]/g, "") + "g";
+    // blocks[k] sits after the k-th text wildcard (blocks[0] before the
+    // first); null = empty. gapCols[k] = the column index of wildcard k+1.
+    this.blocks = [];
+    this.gapCols = [];
+    this.greedyEnd = false;
+    let src = "", groups = [];
+    const flush = () => { this.blocks.push(src ? { re: new RegExp(src, blockFlags), cols: groups } : null); src = ""; groups = []; };
+    let col = 0;
+    for (const seg of spec.segments) {
+      if (seg.col === undefined) { src += seg.src; continue; }
+      if (seg.text) { flush(); this.gapCols.push(col); if (seg.greedy) this.greedyEnd = true; }
+      else { src += seg.src; groups.push(col); }
+      col++;
+    }
+    flush();
+    this.columnCount = col;
+    if (!this.gapCols.length) this.whole = new RegExp(spec.regexStr, flags);
+  }
+  test(text) { return this.exec(text) !== null; }
+  exec(text) {
+    if (this.whole) {
+      this.whole.lastIndex = this.lastIndex;
+      const m = this.whole.exec(text);
+      this.lastIndex = this.whole.lastIndex;
+      return m;
+    }
+    const start = this.global ? this.lastIndex : 0;
+    const m = start <= text.length ? this.match(text, start) : null;
+    if (this.global) this.lastIndex = m ? m.index + m[0].length : 0;
+    return m;
+  }
+  match(text, start) {
+    const B = this.blocks, n = B.length - 1;
+    // Backward pass: limit[k] = last start of block k from which blocks
+    // k..n still fit (every block matched within text cut at the next limit).
+    const limit = new Array(n + 2);
+    limit[n + 1] = text.length;
+    for (let k = n; k >= 1; k--) {
+      const b = B[k];
+      if (!b) { limit[k] = limit[k + 1]; continue; }
+      const hay = limit[k + 1] === text.length ? text : text.slice(0, limit[k + 1]);
+      let last = -1, m;
+      b.re.lastIndex = start;
+      while ((m = b.re.exec(hay)) !== null) { last = m.index; b.re.lastIndex = last + 1; }
+      if (last < 0) return null;
+      limit[k] = last;
+    }
+    // Forward pass: leftmost match of each block, never past the next limit.
+    const caps = new Array(this.columnCount), idx = this.hasIndices ? new Array(this.columnCount) : null;
+    const take = (b, k) => {
+      const hay = limit[k + 1] === text.length ? text : text.slice(0, limit[k + 1]);
+      b.re.lastIndex = k === 0 ? start : p;
+      const m = b.re.exec(hay);
+      if (m) b.cols.forEach((c, i) => { caps[c] = m[i + 1]; if (idx) idx[c] = m.indices[i + 1]; });
+      return m;
+    };
+    let p, index;
+    if (!B[0]) index = p = start;
+    else {
+      const m = take(B[0], 0);
+      if (!m) return null;
+      index = m.index; p = index + m[0].length;
+    }
+    for (let k = 1; k <= n; k++) {
+      const c = this.gapCols[k - 1];
+      let e = p, next = p;
+      if (k === n && this.greedyEnd) e = next = text.length;
+      else if (B[k]) { const m = take(B[k], k); e = m.index; next = e + m[0].length; }
+      caps[c] = text.slice(p, e);
+      if (idx) idx[c] = [p, e];
+      p = next;
+    }
+    const res = [text.slice(index, p), ...caps];
+    res.index = index; res.input = text; res.groups = undefined;
+    if (idx) { res.indices = [[index, p], ...idx]; res.indices.groups = undefined; }
+    return res;
+  }
+}
+// A copy of `re` (a RegExp or a WildcardRegExp) with other flags.
+function regexWithFlags(re, flags) {
+  return re instanceof WildcardRegExp ? new WildcardRegExp(re.spec, flags) : new RegExp(re.source, flags);
+}
+
 // Tests `text` against an extraction regex AND, for every captured column
 // that carries conditions, the numeric constraint on its captured value —
 // the single shared "does this wildcard pattern really match" primitive
@@ -13384,10 +13491,13 @@ function compileExtractPattern(pattern) {
   const nameCounts = {};
   const tokenEnds = [];
   const tokenStarts = [];
+  // The regex split into literal and placeholder pieces, for WildcardRegExp.
+  const segments = [];
   let m;
   while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
     tokenStarts.push(m.index);
     regexStr += escapeRegExp(pattern.slice(lastIndex, m.index));
+    if (m.index > lastIndex) segments.push({ src: escapeRegExp(pattern.slice(lastIndex, m.index)) });
     const type = m[1] || "text"; // m[4] matched means it was the bare [*] wildcard
     if ((m[2] || m[3]) && !VALUE_CONDITION_TYPES.has(type)) return null; // formats/conditions only make sense on float/int
     const conditions = parseValueConditions(m[3]);
@@ -13404,8 +13514,10 @@ function compileExtractPattern(pattern) {
     const isLast = lastIndex === pattern.length;
     const frag = type === "text" ? (isLast ? ".*" : ".*?") : m[2] ? numberFormatFragment(type, m[2]) : EXTRACT_TYPES[type];
     regexStr += "(" + frag + ")";
+    segments.push({ src: "(" + frag + ")", col: columns.length - 1, text: type === "text", greedy: type === "text" && isLast });
   }
   regexStr += escapeRegExp(pattern.slice(lastIndex));
+  if (lastIndex < pattern.length) segments.push({ src: escapeRegExp(pattern.slice(lastIndex)) });
   if (columns.length === 0) return null;
   // Unit: a short unit word right after a float/int/hex placeholder
   // ("temperature=[*:float] C", "[*:int]ms") — shown in plot axis titles.
@@ -13419,11 +13531,15 @@ function compileExtractPattern(pattern) {
     // "s" (dotAll): a "text"/word wildcard's `.`/`.*` must also match a
     // literal newline inside e.message, or a pattern spanning a multi-line
     // message (a stack trace, a wrapped log line) silently finds nothing —
-    // person-reported. Every other place that recompiles a RegExp from this
-    // regexStr (textFilterMatchSpec, evaluateFilterCondition's "text"
-    // branch, evaluateLiveMatch, updateFilterPatternPreview) must append
-    // the same flag, since they don't reuse this compiled `regex` object.
-    return { regex: new RegExp(regexStr, "is"), columns, regexStr };
+    // person-reported. Every other place that builds its own matcher from
+    // this spec (textFilterMatchSpec, evaluateFilterCondition's "text"
+    // branch, evaluateLiveMatch, updateFilterPatternPreview) must pass the
+    // same flag. Matching always goes through WildcardRegExp, never a plain
+    // RegExp of regexStr (see there for why); this one only validates it.
+    new RegExp(regexStr, "is");
+    const spec = { columns, regexStr, segments };
+    spec.regex = new WildcardRegExp(spec, "is");
+    return spec;
   } catch (e) {
     return null;
   }
@@ -15500,7 +15616,7 @@ function textFilterMatchSpec(node) {
   if (isExtractPattern(value)) {
     const compiled = compileExtractPattern(value);
     if (!compiled) return null;
-    return { regex: null, wildcardRegex: new RegExp(compiled.regexStr, (caseSensitive ? "" : "i") + "s"), wildcardColumns: compiled.columns, value, caseSensitive, wholeWord: false };
+    return { regex: null, wildcardRegex: new WildcardRegExp(compiled, (caseSensitive ? "" : "i") + "s"), wildcardColumns: compiled.columns, value, caseSensitive, wholeWord: false };
   }
   // Only the literal branch carries wholeWord — same rule getEntries applies
   // (see includesWholeWord), so a marked span is always a span the filter
@@ -15540,7 +15656,7 @@ function findMatchRanges(text, spec) {
   }
   if (spec.wildcardRegex) {
     const flags = spec.wildcardRegex.flags.includes("g") ? spec.wildcardRegex.flags : spec.wildcardRegex.flags + "g";
-    const re = new RegExp(spec.wildcardRegex.source, flags);
+    const re = regexWithFlags(spec.wildcardRegex, flags);
     let m;
     while ((m = re.exec(text)) !== null) {
       let ok = true;
@@ -15925,7 +16041,7 @@ function evaluateFilterCondition(cond, parentEntries, fileId, meta) {
       // here to the same regex compileExtractPattern would use for
       // extraction, just tested rather than captured.
       const spec = compileExtractPattern(value);
-      const wildcardRegex = spec && new RegExp(spec.regexStr, (caseSensitive ? "" : "i") + "s");
+      const wildcardRegex = spec && new WildcardRegExp(spec, (caseSensitive ? "" : "i") + "s");
       result = wildcardRegex ? parentEntries.filter(e => textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, spec.columns)) : [];
     } else {
       const wholeWord = !!cond.wholeWord;
@@ -38168,7 +38284,7 @@ function evaluateLiveMatch() {
       if (isExtractPattern(val)) {
         const spec = compileExtractPattern(val);
         if (!spec) { showLiveMatchError("Invalid pattern"); return; }
-        wildcardRegex = new RegExp(spec.regexStr, (caseSensitive ? "" : "i") + "s");
+        wildcardRegex = new WildcardRegExp(spec, (caseSensitive ? "" : "i") + "s");
         wildcardColumns = spec.columns;
         hitRe = wildcardRegex;
         captures = spec.columns.filter((c, i) => !filterPopupIgnored.has(i));
@@ -38272,7 +38388,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
 // one ellipsized line).
 const FILTER_SAMPLE_LEAD = 30;
 function appendSampleMessage(target, message, hitRe) {
-  const m = hitRe ? new RegExp(hitRe.source, hitRe.flags.replace("g", "")).exec(message) : null;
+  const m = hitRe ? regexWithFlags(hitRe, hitRe.flags.replace("g", "")).exec(message) : null;
   if (!m || !m[0]) { target.textContent = message; return; }
   let start = 0;
   if (m.index > FILTER_SAMPLE_LEAD * 2) start = m.index - FILTER_SAMPLE_LEAD;
@@ -38353,7 +38469,7 @@ function updateFilterPatternPreview(val, baseEntries) {
 
   let sampleEntry = null, m = null;
   if (baseEntries && baseEntries.length) {
-    const previewRe = new RegExp(spec.regexStr, "ids");
+    const previewRe = new WildcardRegExp(spec, "ids");
     for (const e of baseEntries) {
       previewRe.lastIndex = 0;
       const mm = previewRe.exec(e.message);

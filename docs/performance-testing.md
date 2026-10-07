@@ -34,6 +34,7 @@ bottleneck was the transport to the page, which only the real app contains).
 | Page in jsdom | `tools/perf/render-profile.js` | JS parse, `render()` breakdown, CPU profile | `tests/node_modules` |
 | Page in headless Chromium | `tools/perf/chromium-scroll-bench.js` | log-view row render cost, what the viewport shows while scrolling | global Playwright (preinstalled) |
 | Page in headless Chromium | `tools/perf/chromium-load-bench.js` | load wall time, main-thread stall, heap, filter create+render | global Playwright (preinstalled) |
+| Page in headless Chromium | `tools/perf/chromium-wildcard-bench.js` | wildcard-pattern text filters (`textFilterMatches`) over a loaded file | global Playwright (preinstalled) |
 | Real desktop app | `tools/perf/desktop-load-bench.sh` | wall time from open to rendered, per route | WebKitGTK, Xvfb, release build |
 
 ## Test data
@@ -153,6 +154,19 @@ The generated test file's timestamps wrap every 86,400 entries, so it is
 (`minimapBucketBounds`) never applies to it. For that path, generate a
 sorted variant (the same script with `s = Math.floor(i / 8)`) — real logs
 are sorted.
+
+Wildcard patterns (`[*]` placeholders) have their own script:
+
+```
+NODE_PATH=$(npm root -g) node tools/perf/chromium-wildcard-bench.js <log-file> [philogg.html] [entries]
+PATTERN=1 NODE_PATH=... node tools/perf/chromium-wildcard-bench.js ...   # one pattern only
+```
+
+It loads the file the same way and times `textFilterMatches` for a few
+patterns (the backlog #101 shape, seven `[*]` separated by spaces, a typical
+extraction) over the first `entries` entries. An old page can hang on the
+second pattern for minutes — run it alone with `PATTERN` and a small
+`entries` there.
 
 ## Level 2d — the page in headless Chromium (live tracking)
 
@@ -359,3 +373,16 @@ Before the fix one wheel notch moved 68 rows; after, 4.
 Prune (2026-10-07, "Prune file to this result…", headless Chromium, the
 650k-entry `perf-650k.log`, a time-range filter keeping 171,202 of 650,000
 entries): JS heap after GC 303 MB to 91 MB; `pruneFileToNode` itself 381 ms.
+
+Wildcard text filters (Level 2c, `chromium-wildcard-bench.js`, headless
+Chromium, log-simulator file with 120,000 entries / 18.5 MB, default format,
+2026-10-07):
+
+| Pattern | before (plain `RegExp`) | after (`WildcardRegExp`) |
+|---|---|---|
+| `Request [*] from [*] to [*] at [*] by [*] in [*] x [*] NOMATCH` | 20 ms (120k entries) | 24 ms (120k entries) |
+| `[*] [*] [*] [*] [*] [*] [*] NOMATCH` | 12.4 s for the first **20** entries; 100 entries > 200 s | 19 ms (120k entries) |
+| `Request [*] [*] completed in [*:int]ms status=[*:int]` | 15 ms (120k entries) | 29 ms (120k entries) |
+
+The blow-up needs many repeated separators, i.e. long messages (the stack
+traces); a short line costs about the same either way.
