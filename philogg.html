@@ -4503,6 +4503,12 @@
     padding:0 9px; cursor:pointer; transition:background .12s, border-color .12s, color .12s;
   }
   .token-chip:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
+  /* Numeric-condition hint row (#filterNumberHint): same chips as above, accent-soft
+     fill so they read as suggestions; the active condition is accent-filled. */
+  .filter-hint-label{font-size:11px; color:var(--text-secondary); margin-right:2px;}
+  #filterNumberHint .token-chip{background:var(--accent-soft); border-color:transparent; color:var(--accent-strong);}
+  #filterNumberHint .token-chip:hover{border-color:var(--accent);}
+  #filterNumberHint .token-chip[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:var(--accent-on);}
   /* Footer row: the submit button, right-aligned (the match count moved
      up into #filterResults). */
   .filter-footer-row{
@@ -5627,6 +5633,14 @@
               <button type="button" class="token-chip" data-token="word">[word]</button>
               <button type="button" class="token-chip" data-token="hex">[hex]</button>
               <button type="button" class="token-chip" data-token="*">[*]</button>
+            </div>
+            <div id="filterNumberHint" class="filter-token-chips filter-section-row hidden">
+              <span class="filter-hint-label" id="filterNumberHintLabel"></span>
+              <button type="button" class="token-chip" data-cond="ge10" title="value ≥ 10">&gt;=10</button>
+              <button type="button" class="token-chip" data-cond="range" title="between 10 and 20">&lt;20,&gt;10</button>
+              <button type="button" class="token-chip" data-cond="abs" title="|value| ≥ 10: matches 12 and −15">|&gt;=10</button>
+              <button type="button" class="token-chip" data-cond="en" title="1,234.5 — comma groups thousands">@en 1,234</button>
+              <button type="button" class="token-chip" data-cond="de" title="1.234,5 — dot groups thousands">@de 1.234</button>
             </div>
           </div>
           <div class="filter-settings-row filter-section-row">
@@ -37190,6 +37204,8 @@ const filterInput = el("#filterInput");
 const filterForm = el("#filterForm");
 const filterSubmitBtn = el("#filterSubmitBtn");
 const filterTokenChips = el("#filterTokenChips");
+const filterNumberHint = el("#filterNumberHint");
+const filterNumberHintLabel = el("#filterNumberHintLabel");
 const filterLiveMatch = el("#filterLiveMatch");
 const filterPatternPreview = el("#filterPatternPreview");
 const filterInvertCheckbox = el("#filterInvertCheckbox");
@@ -37603,6 +37619,56 @@ filterTokenChips.addEventListener("click", ev => {
   insertTokenAtCursor(type === "*" ? "[*]" : "[*:" + type + "]");
 });
 
+// Numeric-condition hint row (#filterNumberHint, backlog #111): shown while
+// the Text-syntax pattern holds a [*:int…]/[*:float…] token; its chips write a
+// condition (">=10", "<20,>10", "|>=10") or a thousands format ("@en"/"@de")
+// into one such token. Target = the token containing the caret, else the last
+// one before the caret, else the last one in the pattern. Tapping the active
+// chip removes it; the format stays before the condition ([*:float@de>=10]).
+const NUMBER_TOKEN_RE = /\[\*:(int|float)(@en|@de)?([^\]]*)\]/g;
+const NUMBER_HINT_VALUES = { ge10: ">=10", range: "<20,>10", abs: "|>=10", en: "@en", de: "@de" };
+function findNumberHintToken() {
+  const v = filterInput.value;
+  const caret = filterInput.selectionStart ?? v.length;
+  const toks = [];
+  NUMBER_TOKEN_RE.lastIndex = 0;
+  let m;
+  while ((m = NUMBER_TOKEN_RE.exec(v))) toks.push({ i: m.index, len: m[0].length, type: m[1], fmt: m[2] || "", cond: m[3] });
+  if (!toks.length) return null;
+  return toks.find(t => caret > t.i && caret < t.i + t.len)
+    || toks.filter(t => t.i + t.len <= caret).pop()
+    || toks[toks.length - 1];
+}
+function updateNumberHint() {
+  const t = isFilterRegexMode() ? null : findNumberHintToken();
+  filterNumberHint.classList.toggle("hidden", !t);
+  if (!t) return;
+  filterNumberHintLabel.textContent = "Narrow [*:" + t.type + "]:";
+  filterNumberHint.querySelectorAll("[data-cond]").forEach(b => {
+    const c = NUMBER_HINT_VALUES[b.dataset.cond];
+    b.setAttribute("aria-pressed", String(c.startsWith("@") ? t.fmt === c : t.cond === c));
+  });
+}
+filterNumberHint.addEventListener("click", ev => {
+  const chip = ev.target.closest("[data-cond]");
+  if (!chip) return;
+  ev.stopPropagation();
+  const t = findNumberHintToken();
+  if (!t) return;
+  const c = NUMBER_HINT_VALUES[chip.dataset.cond];
+  let { fmt, cond } = t;
+  if (c.startsWith("@")) fmt = fmt === c ? "" : c;
+  else cond = cond === c ? "" : c;
+  const head = "[*:" + t.type + fmt + cond;
+  const v = filterInput.value;
+  filterInput.value = v.slice(0, t.i) + head + "]" + v.slice(t.i + t.len);
+  filterInput.focus();
+  filterInput.setSelectionRange(t.i + head.length, t.i + head.length);
+  updateFilterAvailability();
+  evaluateLiveMatch();
+});
+["keyup", "click", "focus", "select"].forEach(evt => filterInput.addEventListener(evt, updateNumberHint));
+
 // Regex mode (FEATURE_BACKLOG.md #16): hides/disables ONLY the UI that's
 // specific to the wildcard-token language and meaningless for a raw
 // JS regex — the token-insert chips (#filterTokenChips) and the pattern
@@ -37612,6 +37678,7 @@ filterTokenChips.addEventListener("click", ev => {
 function updateRegexModeUI() {
   const isRegex = isFilterRegexMode();
   filterTokenChips.classList.toggle("hidden", isRegex);
+  updateNumberHint();
   if (isRegex) {
     filterPatternPreview.classList.add("hidden");
     filterPatternPreview.innerHTML = "";
@@ -37942,6 +38009,7 @@ function updateWholeWordAvailability() {
 // state.
 function updateFilterAvailability() {
   updateWholeWordAvailability();
+  updateNumberHint();
 }
 filterInput.addEventListener("input", () => { updateFilterAvailability(); evaluateLiveMatch(); });
 filterInvertCheckbox.addEventListener("change", evaluateLiveMatch);
