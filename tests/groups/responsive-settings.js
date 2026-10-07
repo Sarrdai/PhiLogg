@@ -32,7 +32,7 @@ await withApp(async (w, d, T) => {
     "#settingsCustomSyntaxTitle", "#customSyntaxSchemeListCard", "#btnAddFormat", "#btnAddFormatRule", "#settingsNav .settings-nav-footnote"]
     .forEach(sel => assert(!shown(d, w, sel), "phone: " + sel + " hidden"));
   ["#settingsSectionAppearance", "#settingsSectionBehavior", "#settingsSectionFormats", "#settingsSectionLicense", "#settingsThemeLightSelect",
-    "#settingsUiFontSelect", "#fontScaleUp", "#settingsOpenScrollPosition", '[data-nav-target="settingsSectionLicense"]']
+    "#settingsUiFontSelect", "#fontScaleUp", "#settingsSectionBehavior .settings-seg .assert-mode-btn", '[data-nav-target="settingsSectionLicense"]']
     .forEach(sel => assert(shown(d, w, sel), "phone: " + sel + " stays usable"));
   const editBtns = [...d.querySelectorAll("#formatListCard .filter-library-row > button")];
   assert(editBtns.length > 0 && editBtns.every(b => w.getComputedStyle(b).display === "none"), "phone: format list row buttons (Edit/Export/Reset/Delete) hidden");
@@ -75,11 +75,13 @@ await withApp(async (w, d, T) => {
   setWidth(w, 390);
   assert(w.getComputedStyle(sub).paddingLeft === w.getComputedStyle(top).paddingLeft, "phone: sub-row has the same left padding as a normal row, got "
     + w.getComputedStyle(sub).paddingLeft + " vs " + w.getComputedStyle(top).paddingLeft);
-  ["#settingsThemeLightSelect", "#settingsUiFontSelect", "#settingsLogFontSelect", "#settingsFhLayout"].forEach(sel =>
+  ["#settingsThemeLightSelect", "#settingsUiFontSelect", "#settingsLogFontSelect"].forEach(sel =>
     assert(cs(sel).width === "100%", "phone: " + sel + " spans the row, got " + cs(sel).width));
+  // Compact and desktop: every select fills the one fixed control column of its row (GROUP settings-grid).
   setWidth(w, 820);
   ["#settingsThemeLightSelect", "#settingsUiFontSelect", "#settingsLogFontSelect"].forEach(sel =>
-    assert(cs(sel).width === "240px", "compact: " + sel + " has the shared 240px width, got " + cs(sel).width));
+    assert(cs(sel).width === "100%", "compact: " + sel + " fills the shared control column, got " + cs(sel).width));
   setWidth(w, 1440);
-  assert(cs("#settingsUiFontSelect").width !== "240px" && cs("#settingsUiFontSelect").width !== "100%", "desktop: selects stay content-sized");
+  ["#settingsThemeLightSelect", "#settingsUiFontSelect", "#settingsLogFontSelect"].forEach(sel =>
+    assert(cs(sel).width === "100%", "desktop: " + sel + " fills the shared control column, got " + cs(sel).width));
 });

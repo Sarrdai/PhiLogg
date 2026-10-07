@@ -140,7 +140,7 @@ if (groupSelected()) {
       const row = d.querySelector("#settingsThemeModeRow");
       assert(row.classList.contains("assert-mode-row") && row.classList.contains("settings-row-control"), "the control reuses the segmented .assert-mode-row look");
       assert([...row.querySelectorAll(".assert-mode-btn")].map(b => b.textContent).join("|") === "System|Light|Dark", "buttons read System / Light / Dark");
-      assert(d.querySelector("#settingsSectionAppearance .settings-row-hint").textContent === "System follows your OS light/dark setting.",
+      assert(d.querySelector("#settingsSectionAppearance .settings-row-hint").textContent === "System follows the OS light/dark setting.",
         "the Theme row hint explains System");
       const subRows = [...d.querySelectorAll("#settingsSectionAppearance .settings-row-sub")];
       assert(subRows.length === 2 && subRows.map(r => r.querySelector(".settings-row-label").textContent).join("|") === "Light theme|Dark theme"

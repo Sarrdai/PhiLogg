@@ -174,7 +174,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#formatEditCancel"), w);
 
   // Reset restores the builtin default's original level list too.
-  const findResetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
+  const findResetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.title === "Reset to default");
   const staleResetBtn = findResetBtn();
   fireClick(staleResetBtn, w);
   // resetDefaultFormat's re-render is what happens AFTER its IndexedDB write

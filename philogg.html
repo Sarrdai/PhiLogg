@@ -3698,7 +3698,9 @@
   .settings-section{padding:20px 0; border-bottom:1px solid var(--border-soft);}
   .settings-section:last-child{border-bottom:none;}
   .settings-section-title{font-size:16px; font-weight:650; color:var(--text-primary); margin:0 0 4px; letter-spacing:-.1px;}
-  .settings-section-desc{font-size:12.5px; color:var(--text-secondary); margin:0 0 14px; line-height:1.55;}
+  .settings-section-desc{font-size:12.5px; color:var(--text-secondary); margin:0; line-height:1.55;}
+  /* A card straight under the desc (IDE / Assistant have no group title above their first card). */
+  .settings-section-desc + .settings-card{margin-top:14px;}
 
   /* ---------- Shortcut Manager (Settings > Shortcuts) — rebindable-action
      rows share .settings-row/.settings-card with the rest of Settings; only
@@ -3706,17 +3708,28 @@
      Fixed (non-rebindable) shortcuts are appended as extra rows in the same
      list, greyed out via .shortcut-row-fixed and with no rebind/reset
      controls — see FIXED_SHORTCUTS/renderShortcutBindingsList. */
-  .shortcut-binding-control{display:flex; align-items:center; gap:8px;}
-  .shortcut-combo{display:flex; align-items:center; gap:3px; min-width:70px;}
+  /* One row per action: label | key chips (the chip IS the "change" button) | reset slot
+     (a reset icon only while the binding is overridden, otherwise an empty slot). The
+     chips of an overridden binding use the accent color; while recording the chip reads
+     "Press keys…". Groups are .settings-subsection-title + .settings-card pairs. */
+  #settingsDialog .settings-row.shortcut-row{grid-template-columns:minmax(0,1fr) 150px 30px; gap:8px; padding:10px 18px;}
+  .shortcut-row .settings-row-label{font-size:13px;}
+  .shortcut-combo{display:flex; align-items:center; gap:3px; min-width:0;}
   .shortcut-combo kbd{
-    background:var(--bg-elevated); border:1px solid var(--border);
+    background:var(--bg-app); border:1px solid var(--border); border-bottom-width:2px;
     border-radius:4px; padding:1px 6px; font-family:var(--font-mono);
     color:var(--text-secondary); font-size:11px;
   }
+  .shortcut-chip{
+    justify-self:start; max-width:100%; display:flex; align-items:center; padding:3px 5px; margin:0; font:inherit; font-size:11px;
+    background:transparent; border:1px solid transparent; border-radius:6px; color:var(--text-secondary); cursor:pointer;
+  }
+  .shortcut-chip:hover{border-color:var(--accent);}
+  .shortcut-chip.overridden-binding .shortcut-combo kbd{color:var(--accent-strong); border-color:var(--accent);}
   .shortcut-rebind-btn.recording{color:var(--accent-strong); border-color:var(--accent-strong);}
   .shortcut-conflict-note{font-size:11px; color:var(--danger, #e5484d); margin-top:6px;}
   .shortcut-conflict-note.hint{color:var(--text-secondary);}
-  .shortcut-overridden-by{font-size:11px; color:var(--text-secondary); margin-right:6px;}
+  .shortcut-overridden-by{font-size:11px; color:var(--text-secondary);}
   .shortcut-combo kbd.overridden{text-decoration:line-through; opacity:.6;}
   .shortcut-row-fixed{opacity:.55;}
   .shortcut-row-fixed .settings-row-label{color:var(--text-tertiary); font-weight:450;}
@@ -3726,7 +3739,21 @@
   }
   /* One card style, one row grid, one control height/radius/border for every
      settings row — see PROJECT.md "Settings dialog redesign". */
-  .settings-card{
+  .settings-subsection-title + .settings-card, .settings-group-note + .settings-card{margin-top:0;}
+  /* Group header (Settings): title (+ count) left, optional add button right; every
+     group, the first one under the section desc included, sits 24px below what precedes it. */
+  #settingsDialog .settings-subsection-title{
+    display:flex; align-items:center; justify-content:space-between; gap:12px; margin:24px 0 8px;
+  }
+  .settings-group-count{font-weight:500; color:var(--text-tertiary); margin-left:6px;}
+  #settingsDialog .settings-subsection-title .btn-mini-dashed{
+    height:28px; padding:0 10px; font-size:12px; font-weight:500; text-transform:none; letter-spacing:normal; white-space:nowrap; flex:0 0 auto;
+  }
+  .settings-group-note{font-size:12px; color:var(--text-tertiary); margin:-4px 0 8px; line-height:1.5;}
+  /* Section header with an action on the right (Shortcuts: "Reset all"). */
+  .settings-section-head{display:flex; align-items:flex-start; justify-content:space-between; gap:12px;}
+  /* Empty states of the lists get the card's normal padding. */
+  #settingsDialog .filter-library-empty{padding:14px 18px; font-size:12.5px;}  .settings-card{
     margin-top:12px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:10px;
   }
   .settings-card-footer{padding:12px 18px;}
@@ -3734,7 +3761,9 @@
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
   }
-  #settingsThemeLightSelect, #settingsThemeDarkSelect{min-width:190px;}
+  /* One fixed control column for every row of the Settings dialog
+     (--settings-ctl-w, see "Settings control column" below). */
+  #settingsThemeLightSelect, #settingsThemeDarkSelect{min-width:0;}
   /* IDE Integration (Settings) — a plain text input inside a settings-row,
      styled to match the adjacent .settings-row-control select above; and the
      two rows (Visual Studio connection, instance picker) that need more than
@@ -3744,6 +3773,7 @@
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px;
     width:220px; box-sizing:border-box;
   }
+  #settingsDialog .settings-row-control input[type="text"]{width:100%; min-width:0;}
   .settings-row-control.ide-inline{display:flex; align-items:center; gap:8px;}
   .ide-status-dot{width:8px; height:8px; border-radius:50%; background:var(--text-tertiary); flex:0 0 auto;}
   .ide-status-dot.connected{background:var(--accent);}
@@ -3765,7 +3795,7 @@
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; width:90px;
   }
-  #settingsLlmModel{min-width:220px;}
+  #settingsLlmModel{min-width:0; flex:1 1 auto;}
   #settingsLlmStatus{font-size:12px; color:var(--text-secondary);}
   #settingsLlmStatus.error{color:var(--level-error);}
   /* Accent-color re-pick row (Settings -> Appearance) — only shown for a
@@ -3783,7 +3813,26 @@
      comment); missing this would leave BOTH rows visible regardless of the
      unit picked, same bug class as the #assertRangeFields one above. */
   #settingsContextExpandStepRow.hidden, #settingsContextExpandStepMsRow.hidden{display:none;}
-  .accent-picker{display:flex; flex-wrap:wrap; gap:6px; max-width:280px; justify-content:flex-end;}
+  /* Accent color (Settings): one trigger button in the control column
+     (swatch + name/hex + chevron) opening a popover with the swatches. */
+  .accent-picker{position:relative;}
+  .accent-trigger{
+    display:flex; align-items:center; gap:8px; width:100%; height:30px; box-sizing:border-box; padding:0 10px;
+    background:var(--bg-app); border:1px solid var(--border); border-radius:6px; color:var(--text-primary);
+    font-family:var(--font-ui); font-size:12.5px; cursor:pointer; text-align:left;
+  }
+  .accent-trigger:hover, .accent-trigger[aria-expanded="true"]{border-color:var(--accent);}
+  .accent-trigger-dot{width:14px; height:14px; border-radius:50%; flex:0 0 auto; border:1px solid var(--border-soft); background:var(--accent);}
+  .accent-trigger-text{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .accent-trigger-text.mono{font-family:var(--font-mono); font-size:12px;}
+  .accent-trigger-chev{flex:0 0 auto; color:var(--text-tertiary);}
+  .accent-popover{
+    position:absolute; top:calc(100% + 6px); right:0; z-index:5;
+    display:grid; grid-template-columns:repeat(7, 22px); gap:8px; padding:10px;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:10px;
+    box-shadow:0 8px 24px rgba(0,0,0,.35);
+  }
+  .accent-popover.hidden{display:none;}
   .accent-swatch{
     width:22px; height:22px; border-radius:50%; border:1px solid var(--border-soft);
     cursor:pointer; padding:0; flex:0 0 auto;
@@ -3804,6 +3853,30 @@
     display:grid; grid-template-columns:1fr auto; align-items:center; gap:28px;
     padding:16px 18px; border-bottom:1px solid var(--border-soft);
   }
+  /* ---------- Settings control column ----------
+     Every row of the Settings dialog has the same fixed right column
+     (--settings-ctl-w): selects, segmented controls, the accent button and
+     text inputs fill it, steppers (120px + a 30px "Reset to default" icon
+     button) and pill toggles sit right-aligned in it. The short choices are
+     segmented controls built from a hidden <select> (segmentFromSelect). */
+  #settingsDialog{--settings-ctl-w:248px;}
+  #settingsDialog .settings-row{grid-template-columns:minmax(0,1fr) var(--settings-ctl-w);}
+  #settingsDialog .settings-row-control{display:flex; align-items:center; justify-content:flex-end; gap:8px; min-width:0;}
+  #settingsDialog .settings-row-control select{width:100%; min-width:0; box-sizing:border-box; height:30px;}
+  #settingsDialog .settings-row-control.assert-mode-row, #settingsDialog .settings-seg{margin-bottom:0; width:100%; gap:6px;}
+  #settingsDialog .settings-seg{display:flex;}
+  #settingsDialog .settings-row-control .assert-mode-btn{flex:1 1 0%; min-width:0; padding:0 4px; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  select.settings-seg-src{display:none !important;}
+  #settingsDialog .settings-row-control .stepper{flex:0 0 120px; width:120px; box-sizing:border-box;}
+  #settingsDialog .settings-row-control .stepper .stepper-value{min-width:0;}
+  /* The editable stepper value is a text input: undo the generic Settings text-input look. */
+  #settingsDialog .settings-row-control input.stepper-value{width:0; min-width:0; height:auto; padding:0 2px; border:none; border-radius:0; background:transparent; box-sizing:border-box;}
+  .settings-reset-btn{
+    flex:0 0 30px; width:30px; height:30px; padding:0; display:inline-flex; align-items:center; justify-content:center;
+    background:transparent; border:1px solid var(--border); border-radius:8px; color:var(--text-secondary); cursor:pointer;
+  }
+  .settings-reset-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #settingsDialog .settings-row-control.ide-inline select{flex:1 1 auto;}
   .settings-card > .settings-row:last-of-type{border-bottom:none;}
   /* Indented sub-row under its parent row (Settings -> Appearance: the
      Light/Dark theme slot pickers under the Theme mode row). */
@@ -3930,6 +4003,8 @@
   .pill-toggle[aria-checked="true"]::after{transform:translate(17px,-50%); background:var(--accent-on);}
   .pill-toggle:disabled{opacity:.4; cursor:default;}
   .pill-toggle:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
+  /* Settings: right-aligned in the control column (after the base rule above). */
+  #settingsDialog .settings-row-control .pill-toggle{margin-left:auto;}
   .settings-inline-panel{
     margin-top:10px; padding:16px 16px 14px; border-radius:10px;
     background:var(--accent-soft); border:1px solid var(--accent);
@@ -4210,8 +4285,30 @@
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:7px 9px; font-family:var(--font-mono); font-size:11.5px;
   }
-  #formatList, #formatRuleList{max-height:min(220px, 30vh); overflow-y:auto;}
-  #formatList .filter-library-row, #formatRuleList .filter-library-row{padding:14px 18px;}
+  /* Settings lists grow with their content (the settings body scrolls, no inner scrollbar) and
+     use fixed action slots so the buttons of every row line up: formats = Edit (or
+     Duplicate) | Export | icon slot (x delete, or reset for the default); rules = up | down |
+     glob + format | Edit | x. A row without an action keeps its slot empty. */
+  #formatList .filter-library-row, #formatRuleList .filter-library-row,
+  #customThemeList .filter-library-row, #customSyntaxSchemeList .filter-library-row{padding:10px 18px; gap:8px;}
+  #formatList .filter-library-row{display:grid; grid-template-columns:minmax(0,1fr) 62px 70px 30px; align-items:center;}
+  #formatRuleList .filter-library-row{display:grid; grid-template-columns:30px 30px minmax(0,1fr) 62px 30px; align-items:center;}
+  #formatList .btn-mini-outline, #formatRuleList .btn-mini-outline{height:30px; padding:0; width:100%; font-size:12px; font-weight:500;}
+  #formatList .filter-library-row-name{font-size:13px; font-weight:550; display:flex; align-items:center; gap:6px;}
+  #formatList .filter-library-row-meta, #formatRuleList .filter-library-row-meta{font-size:11.5px; margin-top:1px;}
+  #formatRuleList .filter-library-row-name{font-family:var(--font-mono); font-size:12.5px;}
+  #formatList .link-target-label, #formatRuleList .link-target-label{
+    font-family:var(--font-ui); font-size:10.5px; font-weight:500; margin:0; padding:1px 6px; border:1px solid var(--border); border-radius:4px; color:var(--text-secondary);
+  }
+  .list-icon-btn, #formatList .filter-library-row-del, #formatRuleList .filter-library-row-del,
+  #formatRuleList .filter-library-row-order{
+    width:30px; height:30px; padding:0; display:flex; align-items:center; justify-content:center; box-sizing:border-box;
+    background:none; border:none; border-radius:6px; color:var(--text-tertiary); cursor:pointer;
+  }
+  .list-icon-btn:hover:not(:disabled), #formatRuleList .filter-library-row-order:hover:not(:disabled){color:var(--accent-strong); background:var(--accent-soft);}
+  #formatList .filter-library-row-del:hover, #formatRuleList .filter-library-row-del:hover{color:var(--level-error); background:var(--level-error-soft);}
+  .list-slot{display:block; width:30px; height:30px;}
+  #formatList .filter-library-row-title{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* "Add format…" / "Add rule…" — a dashed-border affordance so the list's
      one filled accent button stays reserved for Save (the actual primary
      action), matching the rest of Settings' button hierarchy. */
@@ -5268,14 +5365,18 @@
      row, so all dropdowns share one left and right edge. */
   body.layout-phone #settingsDialog .settings-row.settings-row-sub{padding-left:14px;}
   body.layout-phone #settingsDialog .settings-row-control{justify-self:stretch; max-width:100%; min-width:0; flex-wrap:wrap;}
-  body.layout-phone #settingsDialog .settings-row-control.assert-mode-row{width:auto;}
+  body.layout-phone #settingsDialog .settings-row-control.assert-mode-row{width:100%;}
+  body.layout-phone #settingsDialog .settings-row-control{justify-content:flex-start;}
   body.layout-phone #settingsDialog .settings-row-control select,
   body.layout-phone #settingsDialog .settings-row-control input[type="text"]{width:100%; max-width:100%; min-width:0;}
   /* Compact: one fixed width for the right-aligned selects, so their left
      edges line up too (desktop keeps content-sized selects). */
-  body.layout-compact #settingsDialog .settings-row-control select{width:240px;}
-  body.layout-phone #settingsThemeLightSelect, body.layout-phone #settingsThemeDarkSelect, body.layout-phone #settingsLlmModel{min-width:0;}
-  body.layout-phone #settingsDialog .accent-picker{max-width:100%; justify-content:flex-start;}
+  body.layout-phone #settingsLlmModel{min-width:0;}
+  body.layout-phone #settingsDialog .accent-picker{max-width:100%;}
+  body.layout-phone #settingsDialog .accent-popover{right:auto; left:0;}
+  /* Phone: the column is the full row width, so the stepper keeps its natural
+     (44px-button) width and the pill toggle stays at the left like before. */
+  body.layout-phone #settingsDialog .settings-row-control .pill-toggle{margin-left:0;}
   body.layout-phone #settingsDialog .license-holder, body.layout-phone #licenseContent{overflow-wrap:anywhere;}
   body.layout-phone #detailPanel{
     position:fixed; left:0; right:0; bottom:0; z-index:50; height:var(--sheet-h) !important; min-height:0;
@@ -5478,7 +5579,11 @@
     body.layout-compact .tree-mute .icon{width:18px; height:18px;}
     body.layout-phone #settingsDialog .settings-nav-item, body.layout-compact #settingsDialog .settings-nav-item{min-height:44px;}
     body.layout-phone #settingsDialog .assert-mode-btn, body.layout-compact #settingsDialog .assert-mode-btn, body.layout-phone #settingsDialog .btn-mini, body.layout-compact #settingsDialog .btn-mini, body.layout-phone #settingsDialog .btn-mini-outline, body.layout-compact #settingsDialog .btn-mini-outline, body.layout-phone #settingsDialog .btn-mini-secondary, body.layout-compact #settingsDialog .btn-mini-secondary, body.layout-phone #settingsDialog .settings-row-control select, body.layout-compact #settingsDialog .settings-row-control select, body.layout-phone #settingsDialog .settings-row-control input[type="text"], body.layout-compact #settingsDialog .settings-row-control input[type="text"], body.layout-phone #settingsDialog .settings-row-control input[type="number"], body.layout-compact #settingsDialog .settings-row-control input[type="number"]{box-sizing:border-box; height:44px;}
-    body.layout-phone #settingsDialog .stepper, body.layout-compact #settingsDialog .stepper{height:44px;}
+    body.layout-phone #settingsDialog .stepper, body.layout-compact #settingsDialog .stepper{height:44px; flex:0 0 auto; width:auto;}
+    body.layout-phone #settingsDialog .stepper .stepper-value, body.layout-compact #settingsDialog .stepper .stepper-value{min-width:56px;}
+    body.layout-phone #settingsDialog .settings-row-control input.stepper-value, body.layout-compact #settingsDialog .settings-row-control input.stepper-value{width:56px; height:100%; padding:0 2px; border:none; background:transparent;}
+    body.layout-phone #settingsDialog .settings-reset-btn, body.layout-compact #settingsDialog .settings-reset-btn{width:44px; height:44px; flex-basis:44px;}
+    body.layout-phone #settingsDialog .accent-trigger, body.layout-compact #settingsDialog .accent-trigger{height:44px;}
     body.layout-phone #settingsDialog .stepper .stepper-btn, body.layout-compact #settingsDialog .stepper .stepper-btn{width:44px; height:44px;}
     body.layout-phone #settingsDialog .filter-library-row-del, body.layout-compact #settingsDialog .filter-library-row-del, body.layout-phone #settingsDialog .filter-library-row-icon, body.layout-compact #settingsDialog .filter-library-row-icon, body.layout-phone #settingsDialog .filter-library-row-order, body.layout-compact #settingsDialog .filter-library-row-order{width:44px; height:44px;}
     body.layout-phone #settingsDialog .pill-toggle, body.layout-compact #settingsDialog .pill-toggle{width:52px; height:32px; border-radius:16px;}
@@ -7107,12 +7212,13 @@
 
         <section class="settings-section" id="settingsSectionAppearance">
           <div class="settings-section-title">Appearance</div>
-          <div class="settings-section-desc">Display of the whole interface.</div>
+          <div class="settings-section-desc">Theme, fonts and size of the interface.</div>
+          <div class="settings-subsection-title">Theme</div>
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Theme</div>
-                <div class="settings-row-hint">System follows your OS light/dark setting.</div>
+                <div class="settings-row-hint">System follows the OS light/dark setting.</div>
               </div>
               <div class="settings-row-control assert-mode-row" id="settingsThemeModeRow" role="group" aria-label="Theme mode">
                 <button type="button" class="assert-mode-btn" id="settingsThemeModeSystem" data-theme-mode="system">System</button>
@@ -7122,7 +7228,7 @@
             </div>
             <div class="settings-row settings-row-sub">
               <div class="settings-row-text">
-                <div class="settings-row-label">Light theme</div>
+                <label class="settings-row-label" for="settingsThemeLightSelect">Light theme</label>
                 <div class="settings-row-hint">Used in light mode.</div>
               </div>
               <div class="settings-row-control">
@@ -7131,17 +7237,28 @@
             </div>
             <div class="settings-row settings-row-sub">
               <div class="settings-row-text">
-                <div class="settings-row-label">Dark theme</div>
+                <label class="settings-row-label" for="settingsThemeDarkSelect">Dark theme</label>
                 <div class="settings-row-hint">Used in dark mode.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsThemeDarkSelect"></select>
               </div>
             </div>
+            <div class="settings-row hidden" id="settingsAccentRow">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Accent color</div>
+                <div class="settings-row-hint">Picked from the current theme's palette.</div>
+              </div>
+              <div class="settings-row-control accent-picker" id="settingsAccentPicker"></div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Text &amp; scale</div>
+          <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <div class="settings-row-label">UI font</div>
-                <div class="settings-row-hint">System-installed fonts only — no downloads.</div>
+                <label class="settings-row-label" for="settingsUiFontSelect">UI font</label>
+                <div class="settings-row-hint">Any font installed on this system.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsUiFontSelect"></select>
@@ -7149,8 +7266,22 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <div class="settings-row-label">Log font</div>
-                <div class="settings-row-hint">Scales log/text content (rows, tables, entry detail), independent of the UI font.</div>
+                <div class="settings-row-label">UI scale</div>
+                <div class="settings-row-hint">Toolbars, panels and menus. Also Ctrl + / Ctrl −.</div>
+              </div>
+              <div class="settings-row-control font-scale-row">
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease (Ctrl −)" data-sc-title="Decrease ({zoomOut})">−</button>
+                  <span id="fontScaleValue" class="stepper-value">100%</span>
+                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase (Ctrl +)" data-sc-title="Increase ({zoomIn})">+</button>
+                </div>
+                <button type="button" class="settings-reset-btn" id="fontScaleReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsLogFontSelect">Log font</label>
+                <div class="settings-row-hint">Font for log rows, tables and entry detail.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsLogFontSelect"></select>
@@ -7158,77 +7289,56 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <div class="settings-row-label">Syntax highlighting</div>
-                <div class="settings-row-hint">Colors for highlighted XML/JSON in the entry detail — pick a scheme or follow the app theme.</div>
+                <div class="settings-row-label">Log text size</div>
+                <div class="settings-row-hint">Log rows, tables and entry detail only.</div>
+              </div>
+              <div class="settings-row-control font-scale-row">
+                <div class="stepper">
+                  <button type="button" class="stepper-btn" id="logTextScaleDown" title="Decrease">−</button>
+                  <span id="logTextScaleValue" class="stepper-value">100%</span>
+                  <button type="button" class="stepper-btn" id="logTextScaleUp" title="Increase">+</button>
+                </div>
+                <button type="button" class="settings-reset-btn" id="logTextScaleReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Syntax highlighting</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsSyntaxSchemeSelect">Color scheme</label>
+                <div class="settings-row-hint">XML/JSON colors in the entry detail.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsSyntaxSchemeSelect"></select>
               </div>
             </div>
-            <div class="settings-row hidden" id="settingsAccentRow">
-              <div class="settings-row-text">
-                <div class="settings-row-label">Accent color</div>
-                <div class="settings-row-hint">Re-pick the theme's accent colour from its own palette.</div>
-              </div>
-              <div class="settings-row-control accent-picker" id="settingsAccentPicker"></div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <div class="settings-row-label">UI scale</div>
-                <div class="settings-row-hint">Scales toolbars, panels and other interface chrome, 70–160%. Also via Ctrl+ / Ctrl−.</div>
-              </div>
-              <div class="settings-row-control font-scale-row">
-                <div class="stepper">
-                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease UI scale (Ctrl+-)" data-sc-title="Decrease UI scale ({zoomOut})">−</button>
-                  <span id="fontScaleValue" class="stepper-value">100%</span>
-                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase UI scale (Ctrl++)" data-sc-title="Increase UI scale ({zoomIn})">+</button>
-                </div>
-                <button type="button" class="btn-mini-outline" id="fontScaleReset" title="Reset">Reset</button>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <div class="settings-row-label">Log text size</div>
-                <div class="settings-row-hint">Scales only log/text content (70–160%), independently of the UI scale.</div>
-              </div>
-              <div class="settings-row-control font-scale-row">
-                <div class="stepper">
-                  <button type="button" class="stepper-btn" id="logTextScaleDown" title="Decrease log text size">−</button>
-                  <span id="logTextScaleValue" class="stepper-value">100%</span>
-                  <button type="button" class="stepper-btn" id="logTextScaleUp" title="Increase log text size">+</button>
-                </div>
-                <button type="button" class="btn-mini-outline" id="logTextScaleReset" title="Reset">Reset</button>
-              </div>
-            </div>
           </div>
 
-          <div class="settings-subsection-title" id="settingsCustomThemesTitle">Custom themes — your own color palettes</div>
+          <div class="settings-subsection-title" id="settingsCustomThemesTitle"><span>Custom themes</span><button type="button" class="btn-mini-dashed" id="btnThemeNew">+ New theme</button></div>
           <div class="settings-card" id="customThemeListCard">
             <div id="customThemeList"></div>
-            <div class="settings-card-footer">
-              <button type="button" class="btn-mini-dashed" id="btnThemeNew">+ New theme…</button>
-            </div>
           </div>
 
-          <div class="settings-subsection-title" id="settingsCustomSyntaxTitle">Custom syntax schemes — your own highlight colors</div>
+          <div class="settings-subsection-title" id="settingsCustomSyntaxTitle"><span>Custom syntax schemes</span><button type="button" class="btn-mini-dashed" id="btnSyntaxNew">+ New scheme</button></div>
           <div class="settings-card" id="customSyntaxSchemeListCard">
             <div id="customSyntaxSchemeList"></div>
-            <div class="settings-card-footer">
-              <button type="button" class="btn-mini-dashed" id="btnSyntaxNew">+ New scheme…</button>
-            </div>
           </div>
         </section>
 
         <section class="settings-section" id="settingsSectionBehavior">
           <div class="settings-section-title">Behavior</div>
+          <div class="settings-section-desc">How views, panels and the filter tree react.</div>
+          <div class="settings-subsection-title">Views</div>
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsFhLayout">Context/Filtered display</label>
-                <div class="settings-row-hint">Show Context and Filtered as two separate tabs, or stacked together in one split pane.</div>
+                <div class="settings-row-label">Context and Filtered</div>
+                <div class="settings-row-hint">Two tabs, or stacked in one split pane.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsFhLayout">
+                <select id="settingsFhLayout" data-seg>
                   <option value="tabs">Separate</option>
                   <option value="stacked">Stacked</option>
                 </select>
@@ -7236,93 +7346,66 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsFilterToolbarLabels">Filter-Toolbar button labels</label>
-                <div class="settings-row-hint">When the filter-bar action buttons show their label: on hover, never, or always.</div>
+                <div class="settings-row-label">Open a filter on</div>
+                <div class="settings-row-hint">New filters always open on Filtered.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsFilterToolbarLabels">
-                  <option value="never">Never</option>
-                  <option value="hover">On hover</option>
-                  <option value="always">Always</option>
+                <select id="settingsFilterActivationView" data-seg>
+                  <option value="rememberLast">Last view</option>
+                  <option value="alwaysFiltered">Filtered</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsViewToolbarLabels">View Toolbar button labels</label>
-                <div class="settings-row-hint">When each view toolbar's action buttons show their label: on hover, never, or always.</div>
+                <div class="settings-row-label">Start position</div>
+                <div class="settings-row-hint">Where a newly opened file is scrolled to.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsViewToolbarLabels">
-                  <option value="never">Never</option>
-                  <option value="hover">On hover</option>
-                  <option value="always">Always</option>
-                </select>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsFilterActivationView">When switching to a filter</label>
-                <div class="settings-row-hint">Reopen a filter on its last-used tab, or always on Filtered (new filters open Filtered).</div>
-              </div>
-              <div class="settings-row-control">
-                <select id="settingsFilterActivationView">
-                  <option value="rememberLast">Remember last view</option>
-                  <option value="alwaysFiltered">Always Filtered</option>
-                </select>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsOpenScrollPosition">On open, scroll log to</label>
-                <div class="settings-row-hint">Whether opening a file lands at the top (Start) or the bottom (End).</div>
-              </div>
-              <div class="settings-row-control">
-                <select id="settingsOpenScrollPosition">
+                <select id="settingsOpenScrollPosition" data-seg>
                   <option value="start">Start</option>
                   <option value="end">End</option>
                 </select>
               </div>
             </div>
+          </div>
+
+          <div class="settings-subsection-title">Toolbars</div>
+          <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsQuitOnLastClose">Closing the last log file quits the app</label>
-                <div class="settings-row-hint">Only effective in the desktop build.</div>
+                <div class="settings-row-label">Filter toolbar labels</div>
+                <div class="settings-row-hint">When filter-bar buttons show their text.</div>
               </div>
               <div class="settings-row-control">
-                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsQuitOnLastClose"></button>
+                <select id="settingsFilterToolbarLabels" data-seg>
+                  <option value="never">Never</option>
+                  <option value="hover">On hover</option>
+                  <option value="always">Always</option>
+                </select>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsCloseToTray">Close to system tray</label>
-                <div class="settings-row-hint">Desktop build only: the close button hides the window to the tray instead of quitting.</div>
+                <div class="settings-row-label">View toolbar labels</div>
+                <div class="settings-row-hint">When view-toolbar buttons show their text.</div>
               </div>
               <div class="settings-row-control">
-                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsCloseToTray"></button>
-              </div>
-            </div>
-            <div class="settings-row">
-              <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsClipboardDecimalSelect">Decimal separator for copy/export</label>
-                <div class="settings-row-hint">Decimal separator used when copying extraction cells or exporting CSV.</div>
-              </div>
-              <div class="settings-row-control">
-                <select id="settingsClipboardDecimalSelect">
-                  <option value="auto">Auto (detect from browser)</option>
-                  <option value=".">Point (.)</option>
-                  <option value=",">Comma (,)</option>
+                <select id="settingsViewToolbarLabels" data-seg>
+                  <option value="never">Never</option>
+                  <option value="hover">On hover</option>
+                  <option value="always">Always</option>
                 </select>
               </div>
             </div>
           </div>
 
-          <div class="settings-subsection-title">Hover-to-expand panels</div>
+          <div class="settings-subsection-title">Panels</div>
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHoverExpandSidebar">Open Files &amp; Filters on hover</label>
-                <div class="settings-row-hint">Hovering the collapsed sidebar temporarily expands it; off = expand only by clicking.</div>
+                <label class="settings-row-label" for="settingsHoverExpandSidebar">Expand Files &amp; Filters on hover</label>
+                <div class="settings-row-hint">Off: the collapsed sidebar opens on click only.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHoverExpandSidebar"></button>
@@ -7330,8 +7413,8 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHoverExpandDetail">Open Entry Detail on hover</label>
-                <div class="settings-row-hint">Hovering the collapsed entry-detail panel temporarily expands it; off = click to expand.</div>
+                <label class="settings-row-label" for="settingsHoverExpandDetail">Expand Entry Detail on hover</label>
+                <div class="settings-row-hint">Off: the collapsed panel opens on click only.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHoverExpandDetail"></button>
@@ -7343,12 +7426,12 @@
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsContextInitialExpansion">Context view starts out</label>
-                <div class="settings-row-hint">How the Context view starts out: auto-expanded around the selection, collapsed, or expanded.</div>
+                <div class="settings-row-label">Initial state</div>
+                <div class="settings-row-hint">How the Context view opens after a jump.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsContextInitialExpansion">
-                  <option value="aroundJump">Auto expand around the selected row</option>
+                <select id="settingsContextInitialExpansion" data-seg>
+                  <option value="aroundJump">Around row</option>
                   <option value="collapsed">Collapsed</option>
                   <option value="expanded">Expanded</option>
                 </select>
@@ -7356,11 +7439,11 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsContextExpandStepUnit">Expand step counts in</label>
-                <div class="settings-row-hint">Whether one expansion step — a "Show more" click, and the auto-expand window around a jump — is measured in entries or in a fixed timespan.</div>
+                <div class="settings-row-label">Step unit</div>
+                <div class="settings-row-hint">Unit of one “Show more” step and the auto-expand.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsContextExpandStepUnit">
+                <select id="settingsContextExpandStepUnit" data-seg>
                   <option value="entries">Entries</option>
                   <option value="time">Time</option>
                 </select>
@@ -7368,8 +7451,8 @@
             </div>
             <div class="settings-row" id="settingsContextExpandStepRow">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsContextExpandStep">Lines revealed per step</label>
-                <div class="settings-row-hint">How many hidden lines one expansion step reveals in each direction (above and below).</div>
+                <label class="settings-row-label" for="settingsContextExpandStep">Lines per step</label>
+                <div class="settings-row-hint">Revealed above and below per step.</div>
               </div>
               <div class="settings-row-control">
                 <div class="stepper">
@@ -7377,12 +7460,13 @@
                   <input type="text" inputmode="numeric" class="stepper-value" id="settingsContextExpandStep" value="10">
                   <button type="button" class="stepper-btn" id="settingsContextExpandStepInc" title="Increase">+</button>
                 </div>
+                <button type="button" class="settings-reset-btn" id="settingsContextExpandStepReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
             </div>
             <div class="settings-row" id="settingsContextExpandStepMsRow">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsContextExpandStepMs">Timespan revealed per step (ms)</label>
-                <div class="settings-row-hint">How much time one expansion step reveals in each direction (above and below) — the number of lines that falls within it varies with how dense the log is there.</div>
+                <label class="settings-row-label" for="settingsContextExpandStepMs">Time per step</label>
+                <div class="settings-row-hint">Revealed above and below per step.</div>
               </div>
               <div class="settings-row-control">
                 <div class="stepper">
@@ -7390,6 +7474,7 @@
                   <input type="text" inputmode="numeric" class="stepper-value" id="settingsContextExpandStepMs" value="500">
                   <button type="button" class="stepper-btn" id="settingsContextExpandStepMsInc" title="Increase">+</button>
                 </div>
+                <button type="button" class="settings-reset-btn" id="settingsContextExpandStepMsReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
             </div>
           </div>
@@ -7398,8 +7483,8 @@
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsHideMinimapFullRangeInFullView">Hide minimap's covered-timespan box in Context view</label>
-                <div class="settings-row-hint">Hide the minimap's outer covered-timespan box while the Context view is showing.</div>
+                <label class="settings-row-label" for="settingsHideMinimapFullRangeInFullView">Hide range box in Context view</label>
+                <div class="settings-row-hint">Hides the minimap's outer box while Context is shown.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHideMinimapFullRangeInFullView"></button>
@@ -7407,13 +7492,13 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsMinimapBinningMode">Minimap binning</label>
-                <div class="settings-row-hint">Time-based (default) positions bars by timestamp — a burst of fast activity compresses into a few pixels and idle stretches eat most of the width. Entry-based positions bars by line position in the file instead, spreading bursts out evenly; the grey background bars stop reflecting real density in this mode (every bucket covers the same fixed slice of the file's line count).</div>
+                <div class="settings-row-label">Binning</div>
+                <div class="settings-row-hint">Time keeps real gaps; Entries spreads bursts out evenly.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsMinimapBinningMode">
-                  <option value="time">Time-based</option>
-                  <option value="entries">Entry-based</option>
+                <select id="settingsMinimapBinningMode" data-seg>
+                  <option value="time">Time</option>
+                  <option value="entries">Entries</option>
                 </select>
               </div>
             </div>
@@ -7423,11 +7508,11 @@
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTempAnchorMode">Show temporary anchor after a no-match filter switch</label>
-                <div class="settings-row-hint">Show the current row at its would-be spot when you switch to a filter it doesn't match.</div>
+                <div class="settings-row-label">Temporary anchor</div>
+                <div class="settings-row-hint">Marks where the current row would sit in a non-matching filter.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsTempAnchorMode">
+                <select id="settingsTempAnchorMode" data-seg>
                   <option value="off">Off</option>
                   <option value="persistent">Persistent</option>
                   <option value="fade">Fade</option>
@@ -7436,8 +7521,8 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTempAnchorAcrossFiles">Show temporary anchor across files</label>
-                <div class="settings-row-hint">Also show the temporary anchor when the new filter belongs to a different file than the row.</div>
+                <label class="settings-row-label" for="settingsTempAnchorAcrossFiles">Anchor across files</label>
+                <div class="settings-row-hint">Also when the filter belongs to another file.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsTempAnchorAcrossFiles"></button>
@@ -7445,46 +7530,59 @@
             </div>
             <div class="settings-row" id="settingsTempAnchorFadeRow">
               <div class="settings-row-text">
-                <div class="settings-row-label">Anchor fade duration</div>
-                <div class="settings-row-hint">How long the temporary anchor stays visible before it's removed.</div>
+                <div class="settings-row-label">Anchor fade time</div>
+                <div class="settings-row-hint">How long a fading anchor stays visible.</div>
               </div>
               <div class="settings-row-control temp-anchor-fade-row">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="tempAnchorFadeDown" title="Decrease duration">−</button>
+                  <button type="button" class="stepper-btn" id="tempAnchorFadeDown" title="Decrease">−</button>
                   <span id="tempAnchorFadeValue" class="stepper-value">3s</span>
-                  <button type="button" class="stepper-btn" id="tempAnchorFadeUp" title="Increase duration">+</button>
+                  <button type="button" class="stepper-btn" id="tempAnchorFadeUp" title="Increase">+</button>
                 </div>
+                <button type="button" class="settings-reset-btn" id="tempAnchorFadeReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsShowSources">Show Sources</label>
-                <div class="settings-row-hint">Show the "Sources" breakdown under a merged file, listing which file each entry came from.</div>
+                <div class="settings-row-hint">Lists the source files under a merged file.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="true" class="pill-toggle" id="settingsShowSources"></button>
               </div>
             </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Type indicator</div>
+                <div class="settings-row-hint">A filter's type as icon or TXT/LNK abbreviation.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsTreeIndicatorMode" data-seg>
+                  <option value="icon">Icon</option>
+                  <option value="type">Abbreviation</option>
+                </select>
+              </div>
+            </div>
           </div>
 
-          <div class="settings-subsection-title">Text-match highlighting</div>
+          <div class="settings-subsection-title">Match highlighting</div>
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTextMatchHighlightScope">Which filters to mark</label>
-                <div class="settings-row-hint">Your standing preference for which text filters get their matches highlighted.</div>
+                <div class="settings-row-label">Highlight matches of</div>
+                <div class="settings-row-hint">Which text filters get their matches marked.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsTextMatchHighlightScope">
-                  <option value="last">Only the active filter</option>
-                  <option value="any">Any filter in the chain</option>
+                <select id="settingsTextMatchHighlightScope" data-seg>
+                  <option value="last">Active filter</option>
+                  <option value="any">Whole chain</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTextMatchHighlightRows">Show matches in log rows</label>
-                <div class="settings-row-hint">Mark matches inline in the log rows, in both the Filtered and Context views.</div>
+                <label class="settings-row-label" for="settingsTextMatchHighlightRows">In log rows</label>
+                <div class="settings-row-hint">In the Filtered and Context views.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsTextMatchHighlightRows"></button>
@@ -7492,23 +7590,50 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTextMatchHighlightDetail">Show matches in entry detail</label>
-                <div class="settings-row-hint">Mark matches in the entry-detail panel (independent of the row toggle above).</div>
+                <label class="settings-row-label" for="settingsTextMatchHighlightDetail">In entry detail</label>
+                <div class="settings-row-hint">In the entry-detail panel.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsTextMatchHighlightDetail"></button>
               </div>
             </div>
+          </div>
+
+          <div class="settings-subsection-title">Copy &amp; export</div>
+          <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsTreeIndicatorMode">Tree row type indicator</label>
-                <div class="settings-row-hint">Show a filter's type as an icon or a TXT/LNK abbreviation, not both.</div>
+                <div class="settings-row-label">Decimal separator</div>
+                <div class="settings-row-hint">For copied table cells and CSV. Auto follows the browser.</div>
               </div>
               <div class="settings-row-control">
-                <select id="settingsTreeIndicatorMode">
-                  <option value="icon">Icon</option>
-                  <option value="type">Type abbreviation</option>
+                <select id="settingsClipboardDecimalSelect" data-seg>
+                  <option value="auto">Auto</option>
+                  <option value=".">Point (.)</option>
+                  <option value=",">Comma (,)</option>
                 </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title">Desktop app</div>
+          <div class="settings-card">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsQuitOnLastClose">Quit with the last file</label>
+                <div class="settings-row-hint">Closing the last log file quits PhiLogg.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsQuitOnLastClose"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsCloseToTray">Close to tray</label>
+                <div class="settings-row-hint">The close button hides the window to the tray.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsCloseToTray"></button>
               </div>
             </div>
           </div>
@@ -7516,13 +7641,13 @@
 
         <section class="settings-section" id="settingsSectionIde">
           <div class="settings-section-title">IDE Integration</div>
-          <div class="settings-section-desc">Jump from a log entry's Location straight into a running IDE, at the right line. Desktop build on Windows only — hidden everywhere else.</div>
+          <div class="settings-section-desc">Open a log entry's source line in a running IDE.</div>
 
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsIdeAnchorFolder">Path anchor pattern</label>
-                <div class="settings-row-hint">The log's file path is remapped onto your local checkout starting right after this match — e.g. "Code\Projects" if that's the folder your solution lives directly in. "*" matches any run of characters, "?" any single one; use a longer pattern (more of the surrounding path) if the plain folder name occurs more than once.</div>
+                <label class="settings-row-label" for="settingsIdeAnchorFolder">Path anchor</label>
+                <div class="settings-row-hint">Log paths continue in your checkout after this folder.</div>
               </div>
               <div class="settings-row-control">
                 <input type="text" id="settingsIdeAnchorFolder" placeholder="e.g. Code\Projects" autocomplete="off" spellcheck="false">
@@ -7535,7 +7660,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" id="settingsIdeVsStatusLabel">Connection</label>
-                <div class="settings-row-hint">Connect to one of your currently running Visual Studio instances.</div>
+                <div class="settings-row-hint">Connect to a running Visual Studio instance.</div>
               </div>
               <div class="settings-row-control ide-inline">
                 <span class="ide-status-dot" id="settingsIdeVsStatusDot" title="Not connected"></span>
@@ -7558,8 +7683,8 @@
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsIdeRiderEnabled">Enable "Open in Rider"</label>
-                <div class="settings-row-hint">Opens via JetBrains' jetbrains:// link — Rider itself picks the matching running instance, no connection step needed here.</div>
+                <label class="settings-row-label" for="settingsIdeRiderEnabled">Open in Rider</label>
+                <div class="settings-row-hint">Rider picks the running instance itself.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsIdeRiderEnabled"></button>
@@ -7567,8 +7692,8 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
-                <label class="settings-row-label" for="settingsIdeRiderProject">Rider project name</label>
-                <div class="settings-row-hint">The name Rider shows for the currently open project/solution — required by the jetbrains:// link.</div>
+                <label class="settings-row-label" for="settingsIdeRiderProject">Project name</label>
+                <div class="settings-row-hint">As shown in Rider's title bar.</div>
               </div>
               <div class="settings-row-control">
                 <input type="text" id="settingsIdeRiderProject" placeholder="e.g. myProject" autocomplete="off" spellcheck="false">
@@ -7579,12 +7704,12 @@
 
         <section class="settings-section hidden" id="settingsSectionLlm">
           <div class="settings-section-title">Assistant</div>
-          <div class="settings-section-desc">A chat in which a locally running LLM (LM Studio or any OpenAI-compatible server) builds filters, links and plots for you. It never reads the raw log, only summaries. Local only: just http://localhost, 127.0.0.1 or [::1] are accepted. Desktop build only.</div>
+          <div class="settings-section-desc">A local LLM builds filters, links and plots. Localhost only.</div>
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLlmEnabled">Enable assistant</label>
-                <div class="settings-row-hint">Shows the chat button in the toolbar. Off by default; switching it off closes the chat (stored chats are kept).</div>
+                <div class="settings-row-hint">Shows the chat button in the toolbar.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsLlmEnabled"></button>
@@ -7593,7 +7718,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLlmEndpoint">Server URL</label>
-                <div class="settings-row-hint">LM Studio: Developer → Start server; the default is http://localhost:1234/v1.</div>
+                <div class="settings-row-hint">An OpenAI-compatible server on localhost.</div>
               </div>
               <div class="settings-row-control">
                 <input type="text" id="settingsLlmEndpoint" placeholder="http://localhost:1234/v1" autocomplete="off" spellcheck="false">
@@ -7602,7 +7727,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLlmModel">Model</label>
-                <div class="settings-row-hint">Needs tool (function calling) support. "Server default" uses whatever model is loaded.</div>
+                <div class="settings-row-hint">Must support tool calls.</div>
               </div>
               <div class="settings-row-control ide-inline">
                 <select id="settingsLlmModel"><option value="">Server default</option></select>
@@ -7641,18 +7766,18 @@
 
         <section class="settings-section" id="settingsSectionFormats">
           <div class="settings-section-title">Log Formats</div>
-          <div class="settings-section-desc">Define additional log formats and map filenames to them by pattern — the default format works with zero configuration.</div>
+          <div class="settings-section-desc">How lines are parsed, and which file uses which format.</div>
 
+          <div class="settings-subsection-title" id="settingsFormatsTitle"><span>Formats<span class="settings-group-count" id="formatCount"></span></span><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format</button></div>
           <div class="settings-card" id="formatListCard">
           <div id="formatList"></div>
           <div id="formatProvidedNotice" class="filter-library-empty"></div>
-          <div class="settings-card-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button></div>
           </div>
 
-          <div class="settings-subsection-title">Filename rules — first matching pattern wins; files matching none use the default format</div>
+          <div class="settings-subsection-title" id="settingsFormatRulesTitle"><span>Filename rules<span class="settings-group-count" id="formatRuleCount"></span></span><button type="button" id="btnAddFormatRule" class="btn-mini-dashed">+ Add rule</button></div>
+          <div class="settings-group-note">First match wins. Files without a match use the default format.</div>
           <div class="settings-card" id="formatRuleListCard">
           <div id="formatRuleList"></div>
-          <div class="settings-card-footer"><button type="button" id="btnAddFormatRule" class="btn-mini-dashed">+ Add rule…</button></div>
           </div>
           <div id="formatRuleEditPanel" class="hidden settings-inline-panel">
             <div class="settings-inline-panel-title" id="formatRuleEditTitle">Add filename rule</div>
@@ -7672,12 +7797,15 @@
         </section>
 
         <section class="settings-section" id="settingsSectionShortcuts">
-          <div class="settings-section-title">Keyboard Shortcuts</div>
-
-          <div class="settings-card" id="shortcutBindingsCard">
-            <div id="shortcutBindingsList"></div>
-            <div class="settings-card-footer"><button type="button" id="btnResetShortcuts" class="btn-mini-outline">Reset all to defaults</button></div>
+          <div class="settings-section-head">
+            <div>
+              <div class="settings-section-title">Keyboard Shortcuts</div>
+              <div class="settings-section-desc">Click a key combination to change it.</div>
+            </div>
+            <button type="button" id="btnResetShortcuts" class="btn-mini-outline">Reset all</button>
           </div>
+
+          <div id="shortcutBindingsList"></div>
           <div class="shortcut-conflict-note hidden" id="shortcutConflictNote"></div>
         </section>
 
@@ -8680,6 +8808,25 @@ function setAccentChoice(themeId, hex) {
   if (currentThemeId() === themeId) applyTheme(themeId); // re-applies the theme's defaults, then the new (or cleared) override
 }
 
+// The accent row's control: one trigger button (dot + "Theme default" or the
+// picked hex + chevron) and a popover with the theme's palette swatches plus
+// the "Theme default" swatch. Popover rules (PROJECT.md "Known gotchas"):
+// every handler that opens/changes it stops propagation; it closes on an
+// outside click and on Escape (capture phase, so the same Escape does not
+// also close Settings), and any re-render starts closed.
+let accentPopoverOpen = false;
+function setAccentPopoverOpen(open) {
+  accentPopoverOpen = open;
+  const pop = document.querySelector("#settingsAccentPicker .accent-popover");
+  const trigger = document.querySelector("#settingsAccentPicker .accent-trigger");
+  if (pop) pop.classList.toggle("hidden", !open);
+  if (trigger) trigger.setAttribute("aria-expanded", open ? "true" : "false");
+}
+document.addEventListener("click", () => { if (accentPopoverOpen) setAccentPopoverOpen(false); });
+document.addEventListener("keydown", ev => {
+  if (ev.key === "Escape" && accentPopoverOpen) { ev.preventDefault(); ev.stopPropagation(); setAccentPopoverOpen(false); }
+}, true);
+
 function renderAccentPicker() {
   const row = document.getElementById("settingsAccentRow");
   const list = document.getElementById("settingsAccentPicker");
@@ -8687,9 +8834,28 @@ function renderAccentPicker() {
   const themeId = currentThemeId();
   const palette = themeOwnPalette(themeId);
   row.classList.toggle("hidden", !palette);
+  accentPopoverOpen = false;
   if (!palette) return;
   list.innerHTML = "";
   const chosen = accentChoices[themeId];
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "accent-trigger";
+  trigger.setAttribute("aria-haspopup", "true");
+  trigger.setAttribute("aria-expanded", "false");
+  const dot = document.createElement("span");
+  dot.className = "accent-trigger-dot";
+  const text = document.createElement("span");
+  text.className = "accent-trigger-text" + (chosen ? " mono" : "");
+  text.textContent = chosen || "Theme default";
+  const chev = document.createElement("span");
+  chev.className = "accent-trigger-chev";
+  chev.innerHTML = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6l4 4 4-4"/></svg>';
+  trigger.append(dot, text, chev);
+  trigger.addEventListener("click", ev => { ev.stopPropagation(); setAccentPopoverOpen(!accentPopoverOpen); });
+  const pop = document.createElement("div");
+  pop.className = "accent-popover hidden";
+  pop.addEventListener("click", ev => ev.stopPropagation());
   const frag = document.createDocumentFragment();
   palette.forEach(c => {
     const b = document.createElement("button");
@@ -8697,17 +8863,18 @@ function renderAccentPicker() {
     b.className = "accent-swatch" + (c === chosen ? " active" : "");
     b.style.background = c;
     b.title = c;
-    b.addEventListener("click", () => setAccentChoice(themeId, c));
+    b.addEventListener("click", ev => { ev.stopPropagation(); setAccentChoice(themeId, c); });
     frag.appendChild(b);
   });
-  list.appendChild(frag);
+  pop.appendChild(frag);
   const resetBtn = document.createElement("button");
   resetBtn.type = "button";
   resetBtn.className = "accent-swatch accent-swatch-reset" + (chosen ? "" : " active");
   resetBtn.title = "Theme default";
   resetBtn.textContent = "↺";
-  resetBtn.addEventListener("click", () => setAccentChoice(themeId, null));
-  list.appendChild(resetBtn);
+  resetBtn.addEventListener("click", ev => { ev.stopPropagation(); setAccentChoice(themeId, null); });
+  pop.appendChild(resetBtn);
+  list.append(trigger, pop);
 }
 
 // A stored/imported theme id can go stale (its custom theme got deleted
@@ -8931,7 +9098,7 @@ function renderCustomThemeList() {
   if (!container) return;
   container.innerHTML = "";
   if (!customThemes.length) {
-    container.innerHTML = '<div class="filter-library-empty">No custom themes yet — create one with “+ New theme…”, or import a theme file via Open → Import… (or by dropping it onto the app).</div>';
+    container.innerHTML = '<div class="filter-library-empty">No custom themes yet. Create one, or drop a theme file onto the app.</div>';
     return;
   }
   const frag = document.createDocumentFragment();
@@ -9142,7 +9309,7 @@ function renderCustomSyntaxSchemeList() {
   if (!container) return;
   container.innerHTML = "";
   if (!customSyntaxSchemes.length) {
-    container.innerHTML = '<div class="filter-library-empty">No custom syntax schemes yet — create one with “+ New scheme…”, or import a scheme file via Open → Import… (or by dropping it onto the app).</div>';
+    container.innerHTML = '<div class="filter-library-empty">No custom schemes yet.</div>';
     return;
   }
   const frag = document.createDocumentFragment();
@@ -9631,6 +9798,67 @@ document.getElementById("fontScaleReset").addEventListener("click", () => applyF
 document.getElementById("logTextScaleDown").addEventListener("click", () => applyLogTextScale(logTextScale - FONT_SCALE_STEP));
 document.getElementById("logTextScaleUp").addEventListener("click", () => applyLogTextScale(logTextScale + FONT_SCALE_STEP));
 document.getElementById("logTextScaleReset").addEventListener("click", () => applyLogTextScale(FONT_SCALE_DEFAULT));
+
+/* Segmented control from a <select> (Settings): the select stays in the DOM,
+   hidden, as the state carrier — its option values, change listeners, init
+   functions and storage keys are untouched — and one .assert-mode-btn per
+   option is built next to it. A click sets select.value and dispatches
+   "change"; the instance `value` setter is overridden so every programmatic
+   `select.value = x` (init functions, tests) re-syncs the active button. */
+function segmentFromSelect(select) {
+  if (!select || select._segGroup) return;
+  const valueDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  const group = document.createElement("div");
+  group.className = "settings-seg";
+  group.setAttribute("role", "group");
+  const labelEl = select.closest(".settings-row") && select.closest(".settings-row").querySelector(".settings-row-label");
+  if (labelEl) group.setAttribute("aria-label", labelEl.textContent);
+  select._segGroup = group;
+  const sync = () => {
+    const cur = valueDesc.get.call(select);
+    group.querySelectorAll(".assert-mode-btn").forEach(b => {
+      const on = b.dataset.value === cur;
+      b.classList.toggle("active", on);
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    });
+  };
+  Array.from(select.options).forEach(opt => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "assert-mode-btn";
+    b.dataset.value = opt.value;
+    b.textContent = opt.textContent;
+    b.addEventListener("click", () => {
+      if (valueDesc.get.call(select) === opt.value) return;
+      valueDesc.set.call(select, opt.value);
+      sync();
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    group.appendChild(b);
+  });
+  Object.defineProperty(select, "value", {
+    configurable: true,
+    get() { return valueDesc.get.call(select); },
+    set(v) { valueDesc.set.call(select, v); sync(); },
+  });
+  select.classList.add("settings-seg-src");
+  select.parentNode.insertBefore(group, select);
+  sync();
+}
+document.querySelectorAll("#settingsDialog select[data-seg]").forEach(segmentFromSelect);
+
+/* Context view step steppers: ↺ restores the default (same constants the
+   clamp functions fall back to). */
+document.getElementById("settingsContextExpandStepReset").addEventListener("click", () => {
+  const input = document.getElementById("settingsContextExpandStep");
+  input.value = "10";
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+});
+document.getElementById("settingsContextExpandStepMsReset").addEventListener("click", () => {
+  const input = document.getElementById("settingsContextExpandStepMs");
+  input.value = "500";
+  input.dispatchEvent(new Event("change", { bubbles: true }));
+});
 
 /* ===================== "Closing the last log file quits the app" ===================== */
 // Off by default, as requested. Purely a local app-behavior preference, same
@@ -10176,7 +10404,7 @@ document.getElementById("settingsViewToolbarLabels").addEventListener("change", 
 const TEMP_ANCHOR_MODE_KEY = "philogg-temp-anchor-mode";
 const TEMP_ANCHOR_FADE_SECONDS_KEY = "philogg-temp-anchor-fade-seconds";
 const TEMP_ANCHOR_ACROSS_FILES_KEY = "philogg-temp-anchor-across-files";
-const TEMP_ANCHOR_FADE_MIN = 0.5, TEMP_ANCHOR_FADE_MAX = 30, TEMP_ANCHOR_FADE_STEP = 0.5;
+const TEMP_ANCHOR_FADE_MIN = 0.5, TEMP_ANCHOR_FADE_MAX = 30, TEMP_ANCHOR_FADE_STEP = 0.5, TEMP_ANCHOR_FADE_DEFAULT = 3;
 let tempAnchorMode = "fade"; // "off" | "persistent" | "fade"
 let tempAnchorFadeSeconds = 3;
 let temporaryAnchorAcrossFiles = true; // default keeps the pre-existing behavior: anchor shown even when the target filter belongs to a different file
@@ -10226,6 +10454,7 @@ function applyTempAnchorFadeSeconds(v) {
 }
 document.getElementById("tempAnchorFadeDown").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds - TEMP_ANCHOR_FADE_STEP));
 document.getElementById("tempAnchorFadeUp").addEventListener("click", () => applyTempAnchorFadeSeconds(tempAnchorFadeSeconds + TEMP_ANCHOR_FADE_STEP));
+document.getElementById("tempAnchorFadeReset").addEventListener("click", () => applyTempAnchorFadeSeconds(TEMP_ANCHOR_FADE_DEFAULT));
 
 /* ===================== Shared editable-stepper wiring =====================
    The click-to-nudge half of the .stepper control (see its own CSS comment)
@@ -46496,7 +46725,7 @@ const settingsDialog = el("#settingsDialog");
 const formatList = el("#formatList");
 const formatRuleList = el("#formatRuleList");
 
-function closeSettingsDialog() { settingsDialog.classList.add("hidden"); stopShortcutRecording(); }
+function closeSettingsDialog() { settingsDialog.classList.add("hidden"); stopShortcutRecording(); setAccentPopoverOpen(false); }
 function openSettingsDialog() {
   settingsDialog.classList.remove("hidden");
   settingsEnsureNavItemVisible();
@@ -46590,40 +46819,43 @@ function settingsEnsureNavItemVisible() {
    shortcut collisions". */
 const SHORTCUT_BINDINGS_STORAGE_KEY = "philogg.shortcutBindings";
 
+// `group` is the Settings > Shortcuts group the action is listed under; the array
+// order is the display order within a group, groups appear in SHORTCUT_GROUP_ORDER.
+const SHORTCUT_GROUP_ORDER = ["Filters", "Find", "Views & panels", "Rows", "Edit"];
 const SHORTCUT_ACTIONS = [
-  { id: "newFilter",     label: "New filter on selected node",         default: { ctrl: true, shift: true, key: "f" } },
+  { id: "newFilter",     group: "Filters", label: "New filter on selected node",         default: { ctrl: true, shift: true, key: "f" } },
+  { id: "editFilter",    group: "Filters", label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
+  { id: "renameFilter",  group: "Filters", label: "Rename a filter",                     default: { key: "f2" } },
+  { id: "muteFilter",    group: "Filters", label: "Mute/unmute a filter",                default: { key: "m" } },
+  { id: "focusTree",     group: "Filters", label: "Focus the filter tree",               default: { ctrl: true, key: "0" } },
   // FEATURE_BACKLOG.md #3: the find bar. Ctrl+F opens it (usability test
   // 2026-10-03/04: users expect Ctrl+F = find); "new filter" moved to
   // Ctrl+Shift+F. Ctrl+G / Ctrl+Shift+G are fixed find next/previous aliases
   // (handleFindShortcut), F3/Shift+F3 the rebindable ones. See
   // docs/ui-and-views.md -> "Find bar".
-  { id: "findInView",    label: "Find in the current view (find bar)", default: { ctrl: true, key: "f" } },
-  { id: "findNext",      label: "Find bar: next match",                default: { key: "f3" } },
-  { id: "findPrev",      label: "Find bar: previous match",            default: { shift: true, key: "f3" } },
-  { id: "renameFilter",  label: "Rename a filter",                     default: { key: "f2" } },
-  { id: "muteFilter",    label: "Mute/unmute a filter",                default: { key: "m" } },
-  { id: "editFilter",    label: "Edit a filter",                       default: { ctrl: true, key: "e" } },
-  { id: "closeFile",     label: "Close the currently open file",       default: { ctrl: true, key: "w" }, browserDefault: { alt: true, key: "w" } },
-  { id: "toggleSidebar", label: "Collapse/expand Files & Filters",     default: { ctrl: true, key: "b" } },
-  { id: "toggleDetail",  label: "Collapse/expand Entry Detail",        default: { ctrl: true, key: "j" } },
-  { id: "undo",          label: "Undo",                                default: { ctrl: true, key: "z" } },
-  { id: "redo",          label: "Redo",                                default: { ctrl: true, shift: true, key: "z" } },
-  { id: "bookmark",      label: "Bookmark the selected row",           default: { key: "b" } },
-  { id: "addNote",       label: "Add/edit a note on the selected row", default: { alt: true, key: "n" } },
-  { id: "focusTree",     label: "Focus the filter tree",               default: { ctrl: true, key: "0" } },
-  { id: "viewTab1",      label: "Switch to View Selector tab 1",       default: { ctrl: true, key: "1" } },
-  { id: "nextMatch",     label: "Context view: next filter match",     default: { ctrl: true, key: "arrowdown" } },
-  { id: "prevMatch",     label: "Context view: previous filter match", default: { ctrl: true, key: "arrowup" } },
-  { id: "viewTab2",      label: "Switch to View Selector tab 2",       default: { ctrl: true, key: "2" } },
-  { id: "viewTab3",      label: "Switch to View Selector tab 3",       default: { ctrl: true, key: "3" } },
-  { id: "viewTab4",      label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
-  { id: "viewTab5",      label: "Switch to View Selector tab 5",       default: { ctrl: true, key: "5" } },
-  { id: "toggleFacets",  label: "Show/hide Facets (bottom panel tab)",   default: { ctrl: true, key: "i" } },
-  { id: "zoomIn",        label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
-  { id: "zoomOut",       label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
-  { id: "toggleFocus",   label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
-  { id: "exportView",    label: "Export / Share the current view",     default: { ctrl: true, shift: true, key: "e" } },
-  { id: "copyForTicket", label: "Copy selected rows for ticket",       default: { ctrl: true, shift: true, key: "c" } },
+  { id: "findInView",    group: "Find", label: "Find in the current view (find bar)", default: { ctrl: true, key: "f" } },
+  { id: "findNext",      group: "Find", label: "Find bar: next match",                default: { key: "f3" } },
+  { id: "findPrev",      group: "Find", label: "Find bar: previous match",            default: { shift: true, key: "f3" } },
+  { id: "nextMatch",     group: "Find", label: "Context view: next filter match",     default: { ctrl: true, key: "arrowdown" } },
+  { id: "prevMatch",     group: "Find", label: "Context view: previous filter match", default: { ctrl: true, key: "arrowup" } },
+  { id: "viewTab1",      group: "Views & panels", label: "Switch to View Selector tab 1",       default: { ctrl: true, key: "1" } },
+  { id: "viewTab2",      group: "Views & panels", label: "Switch to View Selector tab 2",       default: { ctrl: true, key: "2" } },
+  { id: "viewTab3",      group: "Views & panels", label: "Switch to View Selector tab 3",       default: { ctrl: true, key: "3" } },
+  { id: "viewTab4",      group: "Views & panels", label: "Switch to View Selector tab 4",       default: { ctrl: true, key: "4" } },
+  { id: "viewTab5",      group: "Views & panels", label: "Switch to View Selector tab 5",       default: { ctrl: true, key: "5" } },
+  { id: "toggleSidebar", group: "Views & panels", label: "Collapse/expand Files & Filters",     default: { ctrl: true, key: "b" } },
+  { id: "toggleDetail",  group: "Views & panels", label: "Collapse/expand Entry Detail",        default: { ctrl: true, key: "j" } },
+  { id: "toggleFacets",  group: "Views & panels", label: "Show/hide Facets (bottom panel tab)", default: { ctrl: true, key: "i" } },
+  { id: "toggleFocus",   group: "Views & panels", label: "Toggle Focus Mode (fullscreen, desktop app only)", default: { key: "f11" } },
+  { id: "zoomIn",        group: "Views & panels", label: "Increase UI font size",               default: { ctrl: true, key: "+" } },
+  { id: "zoomOut",       group: "Views & panels", label: "Decrease UI font size",               default: { ctrl: true, key: "-" } },
+  { id: "bookmark",      group: "Rows", label: "Bookmark the selected row",           default: { key: "b" } },
+  { id: "addNote",       group: "Rows", label: "Add/edit a note on the selected row", default: { alt: true, key: "n" } },
+  { id: "copyForTicket", group: "Rows", label: "Copy selected rows for ticket",       default: { ctrl: true, shift: true, key: "c" } },
+  { id: "exportView",    group: "Rows", label: "Export / Share the current view",     default: { ctrl: true, shift: true, key: "e" } },
+  { id: "undo",          group: "Edit", label: "Undo",                                default: { ctrl: true, key: "z" } },
+  { id: "redo",          group: "Edit", label: "Redo",                                default: { ctrl: true, shift: true, key: "z" } },
+  { id: "closeFile",     group: "Edit", label: "Close the currently open file",       default: { ctrl: true, key: "w" }, browserDefault: { alt: true, key: "w" } },
 ];
 
 // Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)
@@ -46752,47 +46984,80 @@ function setShortcutConflictNote(text, hint) {
   shortcutConflictNote.classList.toggle("hidden", !text);
   shortcutConflictNote.classList.toggle("hint", !!hint);
 }
+const SETTINGS_ICON_RESET = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg>';
+const SETTINGS_ICON_UP = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 9.8 8 6.3l3.5 3.5"/></svg>';
+const SETTINGS_ICON_DOWN = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4.5 6.2 8 9.7l3.5-3.5"/></svg>';
+function settingsListSlot() {
+  const sp = document.createElement("span");
+  sp.className = "list-slot";
+  return sp;
+}
+function settingsIconButton(cls, title, html, onClick) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = cls;
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  b.innerHTML = html;
+  b.addEventListener("click", ev => { ev.stopPropagation(); onClick(); });
+  return b;
+}
+// Shortcut groups: a group title + its own card (rows are .shortcut-row grids:
+// label | key chips = the "change" button | reset slot, filled only for an overridden binding).
 function renderShortcutBindingsList() {
   const list = el("#shortcutBindingsList");
   list.innerHTML = "";
-  SHORTCUT_ACTIONS.forEach(action => {
-    const row = document.createElement("div");
-    row.className = "settings-row";
-    row.dataset.actionId = action.id;
-    const combo = getShortcutBinding(action.id);
-    const recording = shortcutRecordingId === action.id;
-    const comboHtml = recording
-      ? '<span class="shortcut-combo">Press keys…</span>'
-      : `<span class="shortcut-combo">${comboLabelParts(combo).map(p => `<kbd>${p}</kbd>`).join("")}</span>`;
-    row.innerHTML = `
-      <div class="settings-row-text"><div class="settings-row-label">${action.label}</div></div>
-      <div class="settings-row-control shortcut-binding-control">
-        ${comboHtml}
-        <button type="button" class="btn-mini-outline shortcut-rebind-btn${recording ? " recording" : ""}">${recording ? "Press keys…" : "Change"}</button>
-        <button type="button" class="btn-mini-outline shortcut-reset-btn" title="Reset">↺</button>
-      </div>`;
-    row.querySelector(".shortcut-rebind-btn").addEventListener("click", () => startShortcutRecording(action.id));
-    row.querySelector(".shortcut-reset-btn").addEventListener("click", () => {
-      delete shortcutBindingOverrides[action.id];
-      shortcutBindingsChanged();
-      setShortcutConflictNote("");
-      renderShortcutBindingsList();
+  const addGroup = (title, buildRows) => {
+    const head = document.createElement("div");
+    head.className = "settings-subsection-title";
+    head.textContent = title;
+    list.appendChild(head);
+    const card = document.createElement("div");
+    card.className = "settings-card";
+    buildRows(card);
+    list.appendChild(card);
+  };
+  SHORTCUT_GROUP_ORDER.forEach(groupTitle => addGroup(groupTitle, card => {
+    SHORTCUT_ACTIONS.filter(a => a.group === groupTitle).forEach(action => {
+      const row = document.createElement("div");
+      row.className = "settings-row shortcut-row";
+      row.dataset.actionId = action.id;
+      const combo = getShortcutBinding(action.id);
+      const overridden = !!shortcutBindingOverrides[action.id];
+      const recording = shortcutRecordingId === action.id;
+      const comboHtml = recording
+        ? '<span class="shortcut-combo">Press keys…</span>'
+        : `<span class="shortcut-combo">${comboLabelParts(combo).map(p => `<kbd>${p}</kbd>`).join("")}</span>`;
+      row.innerHTML = `
+        <div class="settings-row-text"><div class="settings-row-label">${action.label}</div></div>
+        <button type="button" class="shortcut-chip shortcut-rebind-btn${overridden ? " overridden-binding" : ""}${recording ? " recording" : ""}" title="Click to change">${comboHtml}</button>`;
+      row.querySelector(".shortcut-rebind-btn").addEventListener("click", () => startShortcutRecording(action.id));
+      if (overridden) {
+        row.appendChild(settingsIconButton("list-icon-btn shortcut-reset-btn", "Reset to default", SETTINGS_ICON_RESET, () => {
+          delete shortcutBindingOverrides[action.id];
+          shortcutBindingsChanged();
+          setShortcutConflictNote("");
+          renderShortcutBindingsList();
+        }));
+      } else row.appendChild(settingsListSlot());
+      card.appendChild(row);
     });
-    list.appendChild(row);
-  });
-  FIXED_SHORTCUTS.forEach(fixed => {
-    const row = document.createElement("div");
-    row.className = "settings-row shortcut-row-fixed";
-    const holders = fixed.aliasCombos ? fixed.aliasCombos.map(findAliasOverride) : [];
-    const overriddenBy = [...new Set(holders.filter(Boolean).map(a => a.label))];
-    const comboHtml = (overriddenBy.length ? `<span class="shortcut-overridden-by">overridden by ${overriddenBy.map(escapeHtml).join(", ")}</span>` : "") +
-      (fixed.display
+  }));
+  addGroup("Fixed (not changeable)", card => {
+    FIXED_SHORTCUTS.forEach(fixed => {
+      const row = document.createElement("div");
+      row.className = "settings-row shortcut-row shortcut-row-fixed";
+      const holders = fixed.aliasCombos ? fixed.aliasCombos.map(findAliasOverride) : [];
+      const overriddenBy = [...new Set(holders.filter(Boolean).map(a => a.label))];
+      const comboHtml = fixed.display
         ? `<span class="shortcut-combo">${fixed.display.map((p, i) => `<kbd${holders[i] ? ' class="overridden"' : ""}>${p}</kbd>`).join("")}</span>`
-        : "");
-    row.innerHTML = `
-      <div class="settings-row-text"><div class="settings-row-label">${fixed.label}</div></div>
-      <div class="settings-row-control shortcut-binding-control">${comboHtml}</div>`;
-    list.appendChild(row);
+        : "";
+      row.innerHTML = `
+        <div class="settings-row-text"><div class="settings-row-label">${fixed.label}</div>${overriddenBy.length ? `<span class="shortcut-overridden-by">overridden by ${overriddenBy.map(escapeHtml).join(", ")}</span>` : ""}</div>
+        <div class="shortcut-chip">${comboHtml}</div>
+        <span class="list-slot"></span>`;
+      card.appendChild(row);
+    });
   });
 }
 function stopShortcutRecording() {
@@ -46857,6 +47122,7 @@ function sortedLogFormats() {
 function renderFormatList() {
   const formats = sortedLogFormats();
   formatList.innerHTML = "";
+  el("#formatCount").textContent = formats.length;
   const frag = document.createDocumentFragment();
   formats.forEach(fmt => {
     const rulesUsing = state.formatRules.filter(r => r.formatId === fmt.id).length;
@@ -46866,42 +47132,39 @@ function renderFormatList() {
     main.className = "filter-library-row-main";
     const modeLabel = fmt.mode === "meta" ? "Meta · " + (fmt.targetFormatIds || []).length + " targets"
       : fmt.mode === "json" ? "JSON Lines" : fmt.mode === "logfmt" ? "logfmt" : fmt.mode === "regex" ? "Regex" : "Pattern";
+    const levelCount = formatLevels(fmt.id).length;
+    const metaParts = [modeLabel];
+    if (rulesUsing) metaParts.push(rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s"));
+    else if (fmt.builtin) metaParts.push("fallback for all files");
+    if (formatLevels(fmt.id).join(",") !== LEVELS.join(",")) metaParts.push(levelCount + " levels");
     main.innerHTML =
-      '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") +
-      (fmt.provided ? ' <span class="link-target-label" title="' + escapeHtml("Provided by " + (fmt.providedSource || "a format file") + " — read-only") + '">Provided</span>' : "") + '</div>' +
-      '<div class="filter-library-row-meta">' + modeLabel +
-      (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") +
-      (formatLevels(fmt.id).join(",") !== LEVELS.join(",") ? " · " + escapeHtml(formatLevels(fmt.id).join(" ")) : "") + '</div>';
+      '<div class="filter-library-row-name"><span class="filter-library-row-title">' + escapeHtml(fmt.name) + '</span>' + (fmt.builtin ? '<span class="link-target-label">default</span>' : "") +
+      (fmt.provided ? '<span class="link-target-label" title="' + escapeHtml("Read-only, from " + (fmt.providedSource || "a format file")) + '">Provided</span>' : "") + '</div>' +
+      '<div class="filter-library-row-meta">' + metaParts.join(" · ") + '</div>';
     row.appendChild(main);
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "btn-mini-outline";
     editBtn.textContent = fmt.provided ? "Duplicate" : "Edit";
     if (fmt.provided) {
-      editBtn.title = "Create an editable copy among your own formats";
+      editBtn.title = "Duplicate as own format";
       editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatDuplicateDialog(fmt.id); });
     } else editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
     row.appendChild(editBtn);
-    // A meta-format only names other formats by id — nothing standalone to export.
+    // A meta-format only names other formats by id — nothing standalone to export (its slot stays empty).
     if (fmt.mode !== "meta") {
       const exportBtn = document.createElement("button");
       exportBtn.type = "button";
       exportBtn.className = "btn-mini-outline";
-      exportBtn.title = "Export this format and its filename patterns as JSON";
+      exportBtn.title = "Export as JSON";
       exportBtn.textContent = "Export";
       exportBtn.addEventListener("click", ev => { ev.stopPropagation(); exportLogFormatToFile(fmt.id); });
       row.appendChild(exportBtn);
-    }
+    } else row.appendChild(settingsListSlot());
     if (fmt.provided) {
-      // read-only: neither Reset nor Delete
+      row.appendChild(settingsListSlot()); // read-only: neither Reset nor Delete
     } else if (fmt.builtin) {
-      const resetBtn = document.createElement("button");
-      resetBtn.type = "button";
-      resetBtn.className = "btn-mini-outline";
-      resetBtn.title = "Revert to the original default pattern";
-      resetBtn.textContent = "Reset";
-      resetBtn.addEventListener("click", ev => { ev.stopPropagation(); resetDefaultFormat(); });
-      row.appendChild(resetBtn);
+      row.appendChild(settingsIconButton("list-icon-btn", "Reset to default", SETTINGS_ICON_RESET, () => resetDefaultFormat()));
     } else {
       const delBtn = document.createElement("button");
       delBtn.type = "button";
@@ -47067,6 +47330,7 @@ function renderFormatRuleList() {
   const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
   const userRules = rules.filter(r => !r.provided);
   formatRuleList.innerHTML = "";
+  el("#formatRuleCount").textContent = rules.length || "";
   if (!rules.length) {
     formatRuleList.innerHTML = '<div class="filter-library-empty">No filename rules yet — every file uses the default format.</div>';
     return;
@@ -47081,32 +47345,20 @@ function renderFormatRuleList() {
     main.innerHTML =
       '<div class="filter-library-row-name">' + escapeHtml(rule.glob) + '</div>' +
       '<div class="filter-library-row-meta">→ ' + escapeHtml(fmt ? fmt.name : "(missing format)") + '</div>';
-    row.appendChild(main);
     if (rule.provided) {
-      // read-only, always ranked after the user's own rules
-      main.querySelector(".filter-library-row-name").insertAdjacentHTML("beforeend", ' <span class="link-target-label" title="' + escapeHtml("Provided by " + (fmt && fmt.providedSource || "a format file") + " — read-only") + '">Provided</span>');
+      // read-only, always ranked after the user's own rules: only the text, every action slot stays empty
+      main.querySelector(".filter-library-row-name").insertAdjacentHTML("beforeend", ' <span class="link-target-label" title="' + escapeHtml("Read-only, from " + (fmt && fmt.providedSource || "a format file")) + '">Provided</span>');
+      row.append(settingsListSlot(), settingsListSlot(), main, settingsListSlot(), settingsListSlot());
       frag.appendChild(row);
       return;
     }
     const userIdx = userRules.indexOf(rule);
 
-    const upBtn = document.createElement("button");
-    upBtn.type = "button";
-    upBtn.className = "filter-library-row-order";
-    upBtn.title = "Move up";
-    upBtn.textContent = "▲";
+    const upBtn = settingsIconButton("filter-library-row-order", "Move up", SETTINGS_ICON_UP, () => moveFormatRuleOrder(rule.id, -1));
     upBtn.disabled = userIdx === 0;
-    upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, -1); });
-    row.appendChild(upBtn);
-
-    const downBtn = document.createElement("button");
-    downBtn.type = "button";
-    downBtn.className = "filter-library-row-order";
-    downBtn.title = "Move down";
-    downBtn.textContent = "▼";
+    const downBtn = settingsIconButton("filter-library-row-order", "Move down", SETTINGS_ICON_DOWN, () => moveFormatRuleOrder(rule.id, 1));
     downBtn.disabled = userIdx === userRules.length - 1;
-    downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, 1); });
-    row.appendChild(downBtn);
+    row.append(upBtn, downBtn, main);
 
     const editBtn = document.createElement("button");
     editBtn.type = "button";

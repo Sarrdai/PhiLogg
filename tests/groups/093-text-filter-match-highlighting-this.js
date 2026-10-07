@@ -32,7 +32,10 @@ await withApp(async (w, d, T) => {
   assert(scopeSelect.value === "last" && T.textMatchHighlightScope === "last", "settings scope defaults to 'last'");
   assert(pillChecked(rowsCb) === true && T.textMatchHighlightInRows === true, "'show in rows' defaults ON");
   assert(pillChecked(detailCb) === true && T.textMatchHighlightInDetail === true, "'show in entry detail' defaults ON");
-  assert(isVisible(scopeSelect, w) && isVisible(rowsCb, w) && isVisible(detailCb, w), "all three settings controls are visible");
+  // The scope select is the hidden state carrier of a segmented control (settings-grid cleanup); its buttons are the visible control.
+  const scopeSeg = scopeSelect.parentNode.querySelector(".settings-seg");
+  const scopeSegBtns = [...scopeSeg.querySelectorAll(".assert-mode-btn")];
+  assert(scopeSegBtns.length === 2 && isVisible(scopeSeg, w) && isVisible(rowsCb, w) && isVisible(detailCb, w), "all three settings controls are visible");
 
   // --- Clicking the master button off does NOT hide/disable the Settings
   //     controls — they stay a fully editable standing preference, only the
@@ -40,7 +43,7 @@ await withApp(async (w, d, T) => {
   fireClick(btn, w);
   assert(!T.textMatchHighlightEnabled && !btn.classList.contains("active"), "clicking the button turns the master off");
   assert(w.localStorage.getItem("philogg-text-match-highlight-enabled") === "0", "master state persisted as off");
-  assert(isVisible(scopeSelect, w) && !scopeSelect.disabled, "scope select stays visible and enabled while the master button is off");
+  assert(isVisible(scopeSeg, w) && !scopeSelect.disabled && scopeSegBtns.every(b => !b.disabled), "scope control stays visible and enabled while the master button is off");
   assert(isVisible(rowsCb, w) && !rowsCb.disabled && isVisible(detailCb, w) && !detailCb.disabled,
     "both 'where' toggles stay visible and enabled too — no dependency of Settings on the button's state");
   scopeSelect.value = "any";

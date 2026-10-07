@@ -1,0 +1,5 @@
+- **feat: Settings dialog cleaned up (2026-10-07, person-requested)**
+  - One 248px control column for every row; short choices (Behavior, Context view, toolbar labels, decimal separator, ...) are segmented controls instead of dropdowns; every stepper has a ↺ "Reset to default"; the accent color is one button with a popover.
+  - Behavior regrouped (Views, Toolbars, Panels, Context view, Timeline minimap, Filter tree, Match highlighting, Copy & export, Desktop app); every section has one short desc line and all labels/hints were rewritten (one line, ≤ ~60 chars).
+  - Log Formats and Shortcuts: add buttons moved into the group headers, lists grow instead of scrolling inside and use fixed action slots, shortcuts are grouped and the key chip itself is the "change" button (↺ only for changed bindings, "Reset all" in the header).
+  - **Tests**: GROUP settings-grid, settings-lists. Docs: docs/ui-standard.md, docs/ui-and-views.md.

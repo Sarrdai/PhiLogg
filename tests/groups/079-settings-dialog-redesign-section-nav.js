@@ -47,13 +47,15 @@ await withApp(async (w, d, T) => {
   // Row grid: each row group sits inside one .settings-card, using CSS grid.
   const appearanceCard = d.querySelector("#settingsSectionAppearance .settings-card");
   assert(appearanceCard, "the Appearance section's rows sit inside a .settings-card");
-  const appearanceRows = [...appearanceCard.querySelectorAll(".settings-row")];
+  // Grouped since the settings-grid cleanup (Theme / Text & scale / Syntax
+  // highlighting cards); the 9 rows are counted across those three.
+  const appearanceRows = [...d.querySelectorAll("#settingsSectionAppearance .settings-card")].slice(0, 3).flatMap(c => [...c.querySelectorAll(".settings-row")]);
   // Theme (mode) + Light theme + Dark theme (GROUP 341) + UI font (GROUP
   // 111f) + Log font (this session) + Syntax highlighting (GROUP 210,
   // FEATURE_BACKLOG.md #67) + Accent color (hidden on a theme without a
   // highlightPalette — see GROUP 87) + UI scale + Log text size (split from
   // the old single Font size row — see GROUP 111e).
-  assert(appearanceRows.length === 9, "Theme + Light theme + Dark theme + UI font + Log font + Syntax highlighting + Accent color + UI scale + Log text size are all rows inside that one card, got " + appearanceRows.length);
+  assert(appearanceRows.length === 9, "Theme + Light theme + Dark theme + UI font + Log font + Syntax highlighting + Accent color + UI scale + Log text size are all rows inside the three group cards, got " + appearanceRows.length);
   assert(w.getComputedStyle(appearanceRows[0]).display === "grid", "a settings-row lays out via CSS grid (1fr auto), got " + w.getComputedStyle(appearanceRows[0]).display);
 
   // Boolean row: rendered as a .pill-toggle (docs/ui-standard.md #69) — a

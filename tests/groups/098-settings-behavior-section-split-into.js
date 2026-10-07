@@ -19,6 +19,9 @@
    subsection (1 row, #settingsHideMinimapFullRangeInFullView) was inserted
    between "Hover-to-expand panels" and "Filter tree" — same markup pattern,
    pushing every subsequent subsection/card index down by one.
+
+   Superseded 2026-10-07 (settings-grid cleanup): Behavior is now nine groups
+   (Views ... Desktop app); the assertions below pin that grouping instead.
    ============================================================ */
 group(98);
 await withApp(async (w, d, T) => {
@@ -29,28 +32,30 @@ await withApp(async (w, d, T) => {
   const behaviorSection = d.getElementById("settingsSectionBehavior");
   assert(behaviorSection, "the Behavior section exists");
 
+  // Regrouped by the settings-grid cleanup (variant C): nine groups, in this order.
   const subsectionTitles = [...behaviorSection.querySelectorAll(".settings-subsection-title")].map(el => el.textContent);
-  assert(subsectionTitles.length === 5,
-    "Behavior now has 5 subsection titles (general row stays un-headed, like Appearance's own first card), got " + JSON.stringify(subsectionTitles));
-  assert(subsectionTitles[0].startsWith("Hover-to-expand panels"), "first subsection is the hover-to-expand group, got " + subsectionTitles[0]);
-  assert(subsectionTitles[1].startsWith("Context view"), "second subsection is the context-view group, got " + subsectionTitles[1]);
-  assert(subsectionTitles[2].startsWith("Timeline minimap"), "third subsection is the timeline-minimap group, got " + subsectionTitles[2]);
-  assert(subsectionTitles[3].startsWith("Filter tree"), "fourth subsection is the filter-tree group, got " + subsectionTitles[3]);
-  assert(subsectionTitles[4].startsWith("Text-match highlighting"), "fifth subsection is the text-match-highlighting group, got " + subsectionTitles[4]);
+  const expectedTitles = ["Views", "Toolbars", "Panels", "Context view", "Timeline minimap", "Filter tree", "Match highlighting", "Copy & export", "Desktop app"];
+  assert(JSON.stringify(subsectionTitles) === JSON.stringify(expectedTitles),
+    "Behavior has the nine groups in order, got " + JSON.stringify(subsectionTitles));
 
   const cards = [...behaviorSection.querySelectorAll(".settings-card")];
-  assert(cards.length === 6, "Behavior is split into 6 cards (general + 5 subsections), got " + cards.length);
+  assert(cards.length === 9, "Behavior is split into 9 cards, one per group, got " + cards.length);
 
   const cardOf = id => d.getElementById(id).closest(".settings-card");
-  assert(cardOf("settingsQuitOnLastClose") === cards[0], "the quit-on-close row sits alone in the first, un-headed card");
-  [ "settingsHoverExpandSidebar", "settingsHoverExpandDetail" ]
-    .forEach(id => assert(cardOf(id) === cards[1], "#" + id + " sits in the hover-to-expand card"));
-  assert(cardOf("settingsContextInitialExpansion") === cards[2], "the context-view initial-expansion row sits in its own context-view card");
-  assert(cardOf("settingsHideMinimapFullRangeInFullView") === cards[3], "the minimap-full-range-toggle row sits in its own timeline-minimap card");
+  const groupOf = {
+    0: ["settingsFhLayout", "settingsFilterActivationView", "settingsOpenScrollPosition"],
+    1: ["settingsFilterToolbarLabels", "settingsViewToolbarLabels"],
+    2: ["settingsHoverExpandSidebar", "settingsHoverExpandDetail"],
+    3: ["settingsContextInitialExpansion", "settingsContextExpandStepUnit", "settingsContextExpandStep", "settingsContextExpandStepMs"],
+    4: ["settingsHideMinimapFullRangeInFullView", "settingsMinimapBinningMode"],
+    5: ["settingsTempAnchorMode", "settingsTempAnchorAcrossFiles", "tempAnchorFadeValue", "settingsShowSources", "settingsTreeIndicatorMode"],
+    6: ["settingsTextMatchHighlightScope", "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail"],
+    7: ["settingsClipboardDecimalSelect"],
+    8: ["settingsQuitOnLastClose", "settingsCloseToTray"],
+  };
+  Object.keys(groupOf).forEach(i => groupOf[i].forEach(id =>
+    assert(cardOf(id) === cards[i], "#" + id + " sits in the \"" + expectedTitles[i] + "\" card")));
   assert(!d.getElementById("settingsLevelFilterTreeMode"), "the level-bar tree-mode setting is gone (chips are a pure view filter)");
-  assert(cardOf("settingsTempAnchorMode") === cards[4], "the temporary-anchor row sits in the filter-tree card");
-  [ "settingsTextMatchHighlightScope", "settingsTextMatchHighlightRows", "settingsTextMatchHighlightDetail" ]
-    .forEach(id => assert(cardOf(id) === cards[5], "#" + id + " sits in the text-match-highlighting card"));
 
   // Every row's control is still reachable/functional after the regrouping
   // (behavior itself is covered by GROUPs 91/92/93/94 — this just confirms
