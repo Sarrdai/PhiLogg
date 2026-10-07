@@ -46358,11 +46358,12 @@ function suggestPatternFromSample(sampleText) {
   const spans = []; // {start, end, token}
   const isFree = (start, end) => !spans.some(s => start < s.end && end > s.start);
 
-  // A syslog priority at the very start ("<135>") varies from line to line,
-  // so its digits are a field of their own (custom column "pri"), not a
-  // literal that only the sample's own priority would match.
+  // A syslog priority at the very start ("<135>") is the protocol's severity:
+  // its digits are the level (an integer level, like the simulator's syslog
+  // format), not a literal that only the sample's own priority would match.
+  // It wins over a level word elsewhere in the line.
   const priM = /^<(\d{1,3})>/.exec(line);
-  if (priM) spans.push({ start: 1, end: 1 + priM[1].length, token: "%X{pri}" });
+  if (priM) spans.push({ start: 1, end: 1 + priM[1].length, token: "%p" });
 
   let tsFormat = "";
   for (const cand of SAMPLE_TS_CANDIDATES) {
@@ -46374,7 +46375,7 @@ function suggestPatternFromSample(sampleText) {
     }
   }
 
-  const levelM = SAMPLE_LEVEL_RE.exec(line);
+  const levelM = priM ? null : SAMPLE_LEVEL_RE.exec(line);
   if (levelM && isFree(levelM.index, levelM.index + levelM[0].length)) {
     spans.push({ start: levelM.index, end: levelM.index + levelM[0].length, token: "%p" });
   }
@@ -46458,7 +46459,7 @@ function suggestPatternFromSample(sampleText) {
   // Every claimed span as {field, start, end} on `line` (the trimmed line
   // the suggestion was built from) — the format dialog turns these into
   // virtual marks (fwzSuggestFromLines).
-  const TOKEN_FIELD = { "%d": "ts", "%p": "level", "%t": "thread", "%c": "location", "%M": "method", "%X{pri}": "pri" };
+  const TOKEN_FIELD = { "%d": "ts", "%p": "level", "%t": "thread", "%c": "location", "%M": "method" };
   const fields = spans.map(s => ({ field: TOKEN_FIELD[s.token], start: s.start, end: s.end }));
   const msgStart = cursor + sep.length, msgEnd = line.length - (closesQuote ? 1 : 0);
   if (msgEnd > msgStart) fields.push({ field: "message", start: msgStart, end: msgEnd });

@@ -311,7 +311,7 @@ group("format-time-zone");
     assert(status().textContent.endsWith("source: offset +05:30 from the line"), "an offset in the line wins over the zone setting");
     // Typing a format without XXX: the line is no longer recognized, and says why.
     tsEl.value = "yyyy-MM-ddTHH:mm:ss.SSS"; fireInput(tsEl, w);
-    const warn = d.querySelector("#fwzStatus .fwz-warn");
+    const warn = [...d.querySelectorAll("#fwzStatus .fwz-warn")].find(x => x.textContent.includes("not recognized")); // the suggestion now has a level, so other hints can precede it
     assert(warn && warn.textContent.includes("not recognized") && warn.textContent.endsWith("· line has an offset, add XXX to use it"), "hint to add XXX, got " + (warn && warn.textContent));
     // Re-suggest brings XXX back.
     assert(w.fwzResuggest() && tsEl.value === "yyyy-MM-ddTHH:mm:ss.SSSXXX", "Re-suggest detects the offset again, got " + tsEl.value);
