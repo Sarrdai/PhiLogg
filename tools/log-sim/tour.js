@@ -257,6 +257,8 @@ function cardSession(card) {
     format: "philogg-session-export",
     version: 1,
     exportedAt: "2026-01-01T00:00:00.000Z",
+    // The scenes of the filters/link/plot cards (01, 04, 03) collapse the Entry detail panel; patterns (09) does not.
+    detailCollapsed: card === "patterns" ? undefined : true,
     files: [{ exportId: "app", name: DEMO_NAME, url: DEMO_NAME, merged: false, filters: tree.roots, bookmarks: [], notes: [], clockOffset: 0 }],
     settings: { levelFilter: [], sortColumn: null, sortDir: "asc", pinBookmarksInFilteredView: false, active: { exportId: "app", ref: name == null ? null : tree.ref[name] } },
   };

@@ -21,7 +21,7 @@ fn main() {
     )
     .expect("spec JSON");
     let t0 = Instant::now();
-    let text = decode(&std::fs::read(&path).expect("read"));
+    let text = decode(&std::fs::read(&path).expect("read"), "");
     let t1 = Instant::now();
     let entries = parse_text(&text, &Parser::new(&spec).expect("spec"), DEFAULT_CHUNK_BYTES, &|_, _| {});
     let t2 = Instant::now();

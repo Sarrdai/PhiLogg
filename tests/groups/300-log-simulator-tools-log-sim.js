@@ -29,7 +29,8 @@ await withApp(async (w, d, T) => {
     const fmtId = format === "default" ? "fmt-default" : id;
     assert(f.formatId === fmtId, format + ": resolved to its format, got " + f.formatId);
     assert(f.entries.length === 400, format + ": 400 entries parsed, got " + f.entries.length);
-    assert(f.entries.every((e, i) => e.ts === logsimLocal(gen[i].ts)), format + ": every timestamp parses to the generated wall-clock time");
+    // syslog writes UTC ("...Z"), read through the format's XXX token: an absolute instant.
+    assert(f.entries.every((e, i) => e.ts === (format === "syslog" ? gen[i].ts : logsimLocal(gen[i].ts))), format + ": every timestamp parses to the generated time");
     assert(f.entries.every((e, i) => i === 0 || f.entries[i - 1].ts <= e.ts), format + ": chronological");
     const other = f.entries.filter(e => w.levelBucket(e.level, e.formatId) === "OTHER").length;
     const expectOther = format === "default" ? gen.filter(e => e.level === "NOTICE" || e.level === "VERBOSE").length : 0;

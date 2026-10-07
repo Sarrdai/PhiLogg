@@ -89,7 +89,7 @@ await withApp(async (w, d, T) => {
   async function tailedFile(baseBytes) {
     const handle = byteHandle(baseBytes);
     const f = await w.addFile("live" + (++seq) + ".log", dec.decode(baseBytes), () => {});
-    f.tail = { handle, offset: baseBytes.length, pending: "", failed: false, busy: false };
+    f.tail = { handle, offset: baseBytes.length, pending: "", failed: false, busy: false, encoding: "utf-8" }; // as a load would have resolved it (the group is about UTF-8 cuts)
     return { f, handle };
   }
 

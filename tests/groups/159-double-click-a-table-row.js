@@ -82,13 +82,12 @@ await withApp(async (w, d, T) => {
   d.querySelector("#plotYSelectSingle").value = "1";
   d.querySelector("#plotYSelectSingle").dispatchEvent(new w.Event("change", { bubbles: true }));
 
-  const marks = [...d.querySelectorAll("#plotSvg circle.plot-mark")];
-  assert(marks.length === 3, "sanity: one mark per plotted row");
-  const targetMark = marks.find(m => +m.dataset.row === 1);
+  assert(T.plotMarkOps.filter(o => o.kind === "circle").length === 3, "sanity: one mark per plotted row");
+  const targetMark = plotHitXY(plotHoverOfRow(T, 1));
   const targetEntry = T.extractRowsData[1].entry;
-  fireClick(targetMark, w);
+  fireClickAt(d.querySelector("#plotSvg"), w, targetMark.x, targetMark.y);
   assert(T.fhActiveTab === "plot" && T.state.selectedId === targetEntry.id, "a plain click only selects the entry: still on Plot");
-  fireDblClick(targetMark, w);
+  fireDblClickAt(d.querySelector("#plotSvg"), w, targetMark.x, targetMark.y);
 
   assert(T.state.activeId === node.id, "the active node stays the SAME extraction-capable node");
   assert(T.fhActiveTab === "table", "fhActiveTab switches to Table, not Filtered");

@@ -74,7 +74,7 @@ if (groupSelected()) {
     assert(T.state.levelFilter.size === 0, "the level-chip view filter is not part of a session file");
     assert(isVisible(d.querySelector("#tourBanner"), w), "the banner is shown");
     assert(bannerText(d) === "Read <b>this</b> first &lt;b&gt;x&lt;/b&gt;", "**x** renders bold, everything else is escaped, got " + bannerText(d));
-    assert(/Session: 2 files loaded/.test(toast(d)), "summary toast, got " + toast(d));
+    assert(!/Session:/.test(toast(d)), "a clean ?session= load shows no summary toast, got " + toast(d));
     const closeBtn = d.querySelector("#tourBannerClose");
     assert(closeBtn.tagName === "BUTTON" && closeBtn.getAttribute("aria-label") && closeBtn.textContent.includes("close tour"), "the close control is a labelled button");
     fireClick(closeBtn, w);

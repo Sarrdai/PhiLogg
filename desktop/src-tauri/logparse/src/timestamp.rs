@@ -1,6 +1,7 @@
 //! `philogg.html`'s two timestamp parsers (`parseTimestamp` for the builtin
 //! default format, `parseTimestampGeneric` for every other one), minus the
-//! time zone.
+//! time zone — except an `XXX` offset on the timestamp itself, which makes the
+//! result absolute (`parse_generic`).
 //!
 //! Both end in `new Date(y, mo, d, h, mi, s, ms).getTime()` — *local* time.
 //! This side stops one step short and returns the "naive" value
@@ -80,8 +81,36 @@ pub struct DateFormat {
     pub order: Vec<String>,
 }
 
+/// `parseUtcOffsetMinutes(s)`: `Z`, `±HH:MM` or `±HHMM` -> minutes east of UTC.
+fn parse_utc_offset_minutes(s: &str) -> Option<i64> {
+    if s == "Z" {
+        return Some(0);
+    }
+    let b = s.as_bytes();
+    let rest = match b.first()? {
+        b'+' | b'-' => &s[1..],
+        _ => return None,
+    };
+    let (hh, mm) = match rest.len() {
+        4 => (&rest[..2], &rest[2..]),
+        5 if rest.as_bytes()[2] == b':' => (&rest[..2], &rest[3..]),
+        _ => return None,
+    };
+    if !(hh.bytes().all(|c| c.is_ascii_digit()) && mm.bytes().all(|c| c.is_ascii_digit())) {
+        return None;
+    }
+    let (h, mi) = (digits(hh), digits(mm));
+    if h > 23 || mi > 59 {
+        return None;
+    }
+    Some(if b[0] == b'-' { -1 } else { 1 } * (h * 60 + mi))
+}
+
 /// `parseTimestampGeneric(raw, compiledDate)` with a compiled date format.
-pub fn parse_generic(raw: &str, fmt: &DateFormat) -> Option<i64> {
+/// Returns the naive ts, or — when the format has an `XXX` token — the
+/// absolute one (`naive - offset`) flagged `true`, which the page must not
+/// localize again. `None` = NaN (no match, or an out-of-range offset).
+pub fn parse_generic(raw: &str, fmt: &DateFormat) -> Option<(i64, bool)> {
     let caps = fmt.regex.captures(js_trim(raw))?;
     let part = |tok: &str| -> Option<&str> {
         // Last group wins on a repeated token — same as the JS loop's
@@ -123,7 +152,12 @@ pub fn parse_generic(raw: &str, fmt: &DateFormat) -> Option<i64> {
         };
         (digits(frac) as f64 * scale).round() as i64
     };
-    Some(naive_ms(y, mo, d, h, mi, s, ms))
+    let naive = naive_ms(y, mo, d, h, mi, s, ms);
+    // An offset on the timestamp itself always wins over the format's zone.
+    match part("XXX") {
+        Some(off) => parse_utc_offset_minutes(off).map(|m| (naive - m * 60_000, true)),
+        None => Some((naive, false)),
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +173,17 @@ mod tests {
         assert_eq!(naive_ms(99, 0, 1, 0, 0, 0, 0), 915_148_800_000); // 99 -> 1999
         assert_eq!(naive_ms(2023, 1, 30, 25, 61, 61, 1500), 1_677_808_922_500);
         assert_eq!(naive_ms(1600, 0, 1, 0, 0, 0, 0), -11_676_096_000_000);
+    }
+
+    #[test]
+    fn utc_offsets() {
+        assert_eq!(parse_utc_offset_minutes("Z"), Some(0));
+        assert_eq!(parse_utc_offset_minutes("+05:30"), Some(330));
+        assert_eq!(parse_utc_offset_minutes("-0500"), Some(-300));
+        assert_eq!(parse_utc_offset_minutes("+2400"), None);
+        assert_eq!(parse_utc_offset_minutes("+05:60"), None);
+        assert_eq!(parse_utc_offset_minutes("0530"), None);
+        assert_eq!(parse_utc_offset_minutes("+5:30"), None);
     }
 
     #[test]

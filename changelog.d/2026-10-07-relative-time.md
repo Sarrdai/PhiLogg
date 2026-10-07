@@ -1,0 +1,5 @@
+- **feat: relative time display from a pinned "time zero" row (2026-10-07, person-requested, FEATURE_BACKLOG.md #6)**
+  - A log row's context menu gets "Set as time zero" ("Clear time zero" on the zero row): the Time column of the Filtered, Context and Highlight views then shows offsets (`+0:01.234`, `−0:00.420`) from that entry; the zero row is badged "0".
+  - A `T0 ×` chip in the Time header switches back to absolute time (and on again); the entry detail appends `(+… from T0)`, the minimap draws a zero line. Filters, sort, exports and Δt stay absolute.
+  - The zero and the mode persist in the session cache and in session export/import.
+  - **Tests**: GROUP relative-time. Docs: docs/ui-and-views.md, docs/persistence-and-sync.md, README.

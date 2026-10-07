@@ -7,6 +7,7 @@
 - [Level 2b — the page in headless Chromium (scrolling)](#level-2b--the-page-in-headless-chromium-scrolling)
 - [Level 2c — the page in headless Chromium (load and filters)](#level-2c--the-page-in-headless-chromium-load-and-filters)
 - [Level 2d — the page in headless Chromium (live tracking)](#level-2d--the-page-in-headless-chromium-live-tracking)
+- [Level 2e — the page in headless Chromium (2D plot draw)](#level-2e--the-page-in-headless-chromium-2d-plot-draw)
 - [Level 3 — the real desktop app, headless](#level-3--the-real-desktop-app-headless)
   - [One-time setup per container (~5 min)](#one-time-setup-per-container-5-min)
   - [Run](#run)
@@ -34,6 +35,7 @@ bottleneck was the transport to the page, which only the real app contains).
 | Page in jsdom | `tools/perf/render-profile.js` | JS parse, `render()` breakdown, CPU profile | `tests/node_modules` |
 | Page in headless Chromium | `tools/perf/chromium-scroll-bench.js` | log-view row render cost, what the viewport shows while scrolling | global Playwright (preinstalled) |
 | Page in headless Chromium | `tools/perf/chromium-load-bench.js` | load wall time, main-thread stall, heap, filter create+render | global Playwright (preinstalled) |
+| Page in headless Chromium | `tools/perf/chromium-wildcard-bench.js` | wildcard-pattern text filters (`textFilterMatches`) over a loaded file | global Playwright (preinstalled) |
 | Real desktop app | `tools/perf/desktop-load-bench.sh` | wall time from open to rendered, per route | WebKitGTK, Xvfb, release build |
 
 ## Test data
@@ -154,6 +156,19 @@ The generated test file's timestamps wrap every 86,400 entries, so it is
 sorted variant (the same script with `s = Math.floor(i / 8)`) — real logs
 are sorted.
 
+Wildcard patterns (`[*]` placeholders) have their own script:
+
+```
+NODE_PATH=$(npm root -g) node tools/perf/chromium-wildcard-bench.js <log-file> [philogg.html] [entries]
+PATTERN=1 NODE_PATH=... node tools/perf/chromium-wildcard-bench.js ...   # one pattern only
+```
+
+It loads the file the same way and times `textFilterMatches` for a few
+patterns (the backlog #101 shape, seven `[*]` separated by spaces, a typical
+extraction) over the first `entries` entries. An old page can hang on the
+second pattern for minutes — run it alone with `PATTERN` and a small
+`entries` there.
+
 ## Level 2d — the page in headless Chromium (live tracking)
 
 ```
@@ -173,6 +188,20 @@ the old page for comparison with `git show <rev>:philogg.html > /tmp/old.html`.
 The first filter-history write after creating the filters (one fingerprint
 of the whole text, ~280 ms) lands inside the tick window — once, not per
 tick.
+
+## Level 2e — the page in headless Chromium (2D plot draw)
+
+```
+node tools/log-sim/cli.js -n 300000 -s position --seed 7 -o /tmp/philogg-perf/pos-300k.log
+NODE_PATH=$(npm root -g) node tools/perf/chromium-plot-bench.js /tmp/philogg-perf/pos-300k.log [philogg.html] [runs]
+```
+
+Loads the file, adds the position extraction
+(`Position update x=[*:float] y=[*:float] z=[*:float]`), then times the
+first switch to the Plot tab (until the next painted frame, with the number
+of `renderPlotChart()` calls it took) and one redraw per chart type
+(scatter, line, bar: `renderPlotChart()` plus style, layout and paint,
+median of `runs`), and prints how many marks were drawn.
 
 ## Level 3 — the real desktop app, headless
 
@@ -359,3 +388,28 @@ Before the fix one wheel notch moved 68 rows; after, 4.
 Prune (2026-10-07, "Prune file to this result…", headless Chromium, the
 650k-entry `perf-650k.log`, a time-range filter keeping 171,202 of 650,000
 entries): JS heap after GC 303 MB to 91 MB; `pruneFileToNode` itself 381 ms.
+
+2D plot (Level 2e, 2026-10-07, headless Chromium in the 4-core cloud
+container, the 300k-entry position extraction, X = x, Y = y):
+
+| State | first draw | redraw scatter | redraw line | redraw bar |
+|---|---|---|---|---|
+| one SVG element per mark | 14.4 s | 11.2 s | 11.0 s | 5.5 s |
+| canvas marks, one per pixel (FEATURE_BACKLOG #97) | 1.1 s | 0.29 s | 0.35 s | 0.22 s |
+
+Drawn marks went from 300,000 to about 24,000 (scatter/line) and 1,000
+(bar). Before, a `render()` while Plot was showing drew the chart twice,
+and re-selecting a node that lands on Plot four times; now once each.
+
+Wildcard text filters (Level 2c, `chromium-wildcard-bench.js`, headless
+Chromium, log-simulator file with 120,000 entries / 18.5 MB, default format,
+2026-10-07):
+
+| Pattern | before (plain `RegExp`) | after (`WildcardRegExp`) |
+|---|---|---|
+| `Request [*] from [*] to [*] at [*] by [*] in [*] x [*] NOMATCH` | 20 ms (120k entries) | 24 ms (120k entries) |
+| `[*] [*] [*] [*] [*] [*] [*] NOMATCH` | 12.4 s for the first **20** entries; 100 entries > 200 s | 19 ms (120k entries) |
+| `Request [*] [*] completed in [*:int]ms status=[*:int]` | 15 ms (120k entries) | 29 ms (120k entries) |
+
+The blow-up needs many repeated separators, i.e. long messages (the stack
+traces); a short line costs about the same either way.

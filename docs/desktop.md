@@ -358,7 +358,7 @@ and parsing runs on every core at once, not one worker per file.
 **One definition of the parsing rules.** The page still compiles the format
 itself: `nativeFormatSpec(fmt)` (`philogg.html`, next to `compileOneFormat`,
 sharing its `compileFormatRegex`) hands over `{builtin, regex, dateRegex,
-dateOrder, wrapQuote}` — the *source* of the regex JS itself would run, the
+dateOrder, wrapQuote, encoding}` — the *source* of the regex JS itself would run, the
 compiled `tsFormat` regex, and the quoted-message rule. Rust only executes
 that description:
 
@@ -376,8 +376,16 @@ that description:
   `parseTimestamp`/`parseTimestampGeneric` and `String.prototype.trim`'s
   whitespace set are mirrored one function each; the Rust functions name
   their JS counterpart.
-- Bytes are decoded like `FileReader.readAsText`: BOM sniffing for
-  UTF-8/UTF-16LE/UTF-16BE, U+FFFD per malformed sequence.
+- **Bytes are decoded in Rust, with the format's encoding.** `FormatSpec.encoding`
+  is the format's label (`""` = Auto, `utf-8`, `windows-1252`,
+  `iso-8859-15`, `windows-1250`, `windows-1251`) and `logparse::decode(bytes,
+  encoding)` mirrors the page's `resolveFileEncoding` + `TextDecoder` with
+  `encoding_rs` (the WHATWG decoders the page's `TextDecoder` implements): a
+  BOM (UTF-8/UTF-16LE/BE) always wins, else the explicit label, else Auto —
+  the first 64 KiB valid UTF-8 (an incomplete sequence cut at the 64 KiB end
+  counts as valid) means UTF-8, otherwise windows-1252. Rust resolves Auto
+  itself, so the page needs no head read; U+FFFD per malformed sequence. An
+  unknown label degrades to UTF-8 (the page's `TextDecoder` would throw).
 
 **Timestamps come back naive.** Both JS timestamp parsers end in
 `new Date(y, mo, d, h, mi, s, ms)` — local time. Rust returns
@@ -385,7 +393,13 @@ that description:
 fallbacks, the 0..99 → 19xx year mapping and month/day rollover), and the
 page's `makeNaiveTsLocalizer` converts it with its own engine, caching one
 `Date` per distinct wall-clock minute. DST gaps/overlaps and the tz database
-are therefore the page's own, on every platform. A format with no
+are therefore the page's own, on every platform. **Exception: the `XXX`
+token.** A timestamp that carries its own offset (`Z`, `±HH:MM`, `±HHMM`) is
+made absolute in Rust (`parse_generic`: naive − offset, an out-of-range offset
+is NaN like `parseUtcOffsetMinutes`) and the entry is flagged `ts_absolute`;
+the flag travels in the batch (below) and `decodeNativeBatch` returns it as
+`abs`, so `parseLocalFileNatively` skips the localizer for exactly those
+entries — the format's `timeZone` never touches them. A format with no
 `tsFormat` (free-form, `Date.parse`) gets `ts: null` from Rust and the page
 parses `tsRaw` itself.
 
@@ -406,7 +420,10 @@ now carries all its strings in **one UTF-8 buffer**, decoded by a single
 `TextDecoder` call in `decodeNativeBatch`; every field is a `substring` of
 it, located by varint offsets relative to the entry's `raw`, and a field
 that already occurs inside `raw` (most of them) isn't written a second
-time. Timestamps travel as a `Float64Array` (NaN for none). Same run
+time. Timestamps travel as a `Float64Array` (NaN for none); the per-entry
+`flags` varint is `hasMsgOpenQuote | tsAbsolute << 1 | customFieldCount << 2`
+(`tsAbsolute` = the XXX rule above; the page's own worker batches
+(`encodeEntryBatch`) never set it). Same run
 afterwards: the native part is done at ~2.8 s (IPC ~1.1 s, decode ~0.45 s,
 creating the entries/ids/`entryIndex` ~0.65 s), the whole load 4.3 s vs.
 8.4 s on the JS path. What is left is page-side and shared by both paths:
@@ -471,7 +488,16 @@ scripts (`tools/perf/`) and recorded baselines.
 **Keeping the two sides in step.** `tests/fixtures/native-parse-golden.json`
 holds inputs (text or raw bytes), the spec `nativeFormatSpec` builds, and
 the entries the **JS** parser produces (ts naive, generated under
-`TZ=UTC`). The jsdom suite's Group 264 checks the JS parser against it; the
+`TZ=UTC`; absolute for `XXX` formats, whose cases all use the simulator's
+syslog format with `--ts-offset` Z / `+05:30` / `+0530` / mixed). The bytes
+cases cover the encoding rules (simulator `--encoding` output of the `text`
+scenario: Auto → UTF-8, Auto → windows-1252 fallback, explicit
+windows-1252 / iso-8859-15 / windows-1250 / windows-1251, an explicit label
+overriding Auto, an invalid-UTF-8 file under explicit utf-8, a UTF-8 BOM
+beating an explicit label, plus the older UTF-8/UTF-16 BOM cases); the
+`encoding` label is part of each case's spec and the case's bytes are decoded
+by the page (jsdom `FileReader`, correct WHATWG windows-1252) for the JS side
+and by `logparse::decode` for the Rust side. The jsdom suite's Group 264 checks the JS parser against it; the
 crate's `tests/golden.rs` checks the Rust parser against it at slice sizes
 from 1 byte to 1 MB. After a deliberate change to JS parsing, regenerate
 with `UPDATE_NATIVE_GOLDEN=1 TZ=UTC GROUP=264 npm test` (in `tests/`), then

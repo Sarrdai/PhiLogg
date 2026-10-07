@@ -15,7 +15,7 @@ fn golden() -> Value {
 
 fn case_text(case: &Value) -> String {
     match case.get("base64").and_then(Value::as_str) {
-        Some(b64) => decode(&base64_decode(b64)),
+        Some(b64) => decode(&base64_decode(b64), case["spec"]["encoding"].as_str().unwrap_or("")),
         None => case["text"].as_str().expect("text").to_string(),
     }
 }
@@ -102,7 +102,7 @@ fn batches_round_trip_and_match_the_committed_encoding() {
 
 #[test]
 fn batches_carry_every_entry_in_order() {
-    let spec = FormatSpec { builtin: true, regex: None, date_regex: None, date_order: vec![], wrap_quote: String::new() };
+    let spec = FormatSpec { builtin: true, regex: None, date_regex: None, date_order: vec![], wrap_quote: String::new(), encoding: String::new() };
     let parser = Parser::new(&spec).unwrap();
     let text: String = (0..25).map(|i| format!("2024-01-15 10:00:{:02},000\tINFO\t\"m\"\tl\t[M]\t\"n{i} \u{e9}\"\n", i % 60)).collect();
     let entries = parse_text(&text, &parser, 100, &|_, _| {});

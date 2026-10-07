@@ -322,7 +322,7 @@ fn parse_and_stream(
         return Err("gzip-compressed file: parsed by the page".into());
     }
     let size = bytes.len() as u64;
-    let text = lp::decode(&bytes);
+    let text = lp::decode(&bytes, &format.encoding);
     drop(bytes);
 
     let send = |json: String| channel.send(InvokeResponseBody::Json(json)).map_err(|e| e.to_string());
