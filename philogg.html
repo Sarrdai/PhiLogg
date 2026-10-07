@@ -16561,8 +16561,14 @@ function deleteFilterNodeWithUndo(nodeId) {
 // fields before and after an arbitrary mutation and stores both — unlike
 // delete/move, an edit has no cheap structural inverse to derive, so undo/
 // redo just re-applies whichever snapshot (before/after) is wanted wholesale.
-function captureNodeFields(node) {
+function captureNodeFields(node, withViews) {
   return {
+    // Per-view column settings (plotConfig/arrayViews) are only captured by the column-migration
+    // edit (migrateExtractionColumns): every other edit's undo must not roll back later plot tweaks.
+    views: withViews ? {
+      plotConfig: node.plotConfig ? JSON.parse(JSON.stringify(node.plotConfig)) : undefined,
+      arrayViews: node.arrayViews ? Object.assign({}, node.arrayViews) : undefined,
+    } : undefined,
     filterType: node.filterType, value: node.value, inverted: !!node.inverted, name: node.name,
     muted: !!node.muted,
     alert: !!node.alert,
@@ -16596,6 +16602,10 @@ function applyNodeFields(node, fields) {
     copyLinkOptions(fields.link, node);
     invalidateNodeSubtreeCaches(node.id);
   }
+  if (fields.views) {
+    if (fields.views.plotConfig) node.plotConfig = JSON.parse(JSON.stringify(fields.views.plotConfig)); else delete node.plotConfig;
+    if (fields.views.arrayViews) node.arrayViews = Object.assign({}, fields.views.arrayViews); else delete node.arrayViews;
+  }
   node.filterType = fields.filterType; node.value = fields.value;
   node.inverted = fields.inverted; node.name = fields.name;
   if (fields.muted) node.muted = true; else delete node.muted;
@@ -16622,8 +16632,124 @@ function withFieldEditUndo(nodeId, mutateFn) {
 // assertion dialog's Save/Clear handlers instead call withFieldEditUndo
 // directly, since their mutation is a one-liner) — see the module comment
 // above for the full list of "edit" call sites.
-function updateFilterNodeWithUndo(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord) {
-  withFieldEditUndo(nodeId, () => updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord));
+function updateFilterNodeWithUndo(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord, ignoredAreNew) {
+  const node = state.nodes[nodeId];
+  const map = node && filterType === "text" && !isRegex && !node.isRegex && node.filterType === "text"
+    ? extractColumnMigrationMap(node.value, value) : null;
+  const mutate = () => updateFilterNode(nodeId, filterType, value, inverted, ignoredColumns, caseSensitive, columns, isRegex, wholeWord);
+  if (!map) { withFieldEditUndo(nodeId, mutate); return null; }
+  return migrateExtractionColumns(node, map, ignoredAreNew, mutate);
+}
+
+/* ===== Extraction column migration (FEATURE_BACKLOG #21, 2026-10-07) =====
+   Every per-column setting is keyed by the placeholder's index in the pattern (ignoredColumns,
+   assertions, columnRenames, plotConfig's axis/color/group refs, arrayViews; a derived array
+   column carries its base index inside a negative colIndex). Editing the pattern so placeholders
+   are inserted, removed or reordered would silently point them at the wrong column, so saving the
+   edit re-keys them: each old placeholder is paired with its best new counterpart (extractColumnMigrationMap)
+   and the settings of a column without a counterpart are dropped. Runs inside the edit's undo step
+   (one batch: the pattern node plus every node whose Table/Plot view inherits its pattern), so one
+   Undo restores pattern and settings together. */
+// The placeholders of a pattern as { type, label, before, after }: the trimmed literal text on each
+// side, and the label (the last word of the text right before it: "pressure=" in "... C pressure=").
+function extractPlaceholderSignatures(pattern) {
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  const toks = [];
+  let m;
+  while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) toks.push({ type: m[1] || "text", start: m.index, end: EXTRACT_TOKEN_RE.lastIndex });
+  return toks.map((t, i) => {
+    const before = pattern.slice(i ? toks[i - 1].end : 0, t.start).trim();
+    const lm = /(\S+)$/.exec(before);
+    return { type: t.type, label: lm ? lm[1] : "", before, after: pattern.slice(t.end, i + 1 < toks.length ? toks[i + 1].start : pattern.length).trim() };
+  });
+}
+// How well an old placeholder stands for a new one; 0 = not the same column. The same type always
+// qualifies (a reworded label keeps its column); another type only when its label, or both
+// neighbors, are unchanged ([*:int] -> [*:float] in place). The label weighs most, so a column
+// follows its name when placeholders are inserted, removed or reordered around it.
+function extractPlaceholderScore(o, n) {
+  const labelEq = !!o.label && o.label === n.label, be = o.before === n.before, ae = o.after === n.after;
+  if (o.type !== n.type && !labelEq && !(be && ae)) return 0;
+  return 1 + (labelEq ? 4 : 0) + (be ? 2 : 0) + (ae ? 1 : 0);
+}
+// Old placeholder index -> new index (-1: dropped) for an edit of one extraction pattern into
+// another; null when no migration applies (either side is not a valid extraction pattern, or the
+// layout is unchanged: same count, every column at its index). Greedy best-first pairing, ties
+// resolved towards the same position, so an unlabeled run of [*:int] keeps its order.
+function extractColumnMigrationMap(oldPattern, newPattern) {
+  if (!isExtractPattern(oldPattern) || !isExtractPattern(newPattern)) return null;
+  if (!compileExtractPattern(oldPattern) || !compileExtractPattern(newPattern)) return null;
+  const a = extractPlaceholderSignatures(oldPattern), b = extractPlaceholderSignatures(newPattern);
+  const pairs = [];
+  a.forEach((o, i) => b.forEach((n, j) => { const s = extractPlaceholderScore(o, n); if (s) pairs.push({ i, j, s }); }));
+  pairs.sort((x, y) => y.s - x.s || Math.abs(x.i - x.j) - Math.abs(y.i - y.j) || x.i - y.i);
+  const map = new Array(a.length).fill(-1), taken = new Set();
+  pairs.forEach(p => { if (map[p.i] < 0 && !taken.has(p.j)) { map[p.i] = p.j; taken.add(p.j); } });
+  if (a.length === b.length && map.every((v, i) => v === i)) return null;
+  return map;
+}
+// Re-keys one node's per-column settings through `map`; tally.moved/removed count the settings.
+function remapColumnSettings(node, map, tally) {
+  const oldCount = map.length;
+  // New colIndex for an old one: unchanged for the synthetic columns, re-based for a derived array
+  // column, null when its column is gone (a stale index beyond the old pattern drops uncounted).
+  const one = idx => {
+    if (!Number.isInteger(idx) || (idx < 0 && idx > -ARRAY_COL_BASE)) return idx;
+    const derived = idx < 0;
+    const base = derived ? Math.floor(-idx / ARRAY_COL_BASE) - 1 : idx;
+    if (base >= oldCount) return null;
+    const t = map[base];
+    const to = t < 0 ? null : derived ? arrayDerivedColIndex(t, -idx % ARRAY_COL_BASE) : t;
+    if (to == null) tally.removed++; else if (to !== idx) tally.moved++;
+    return to;
+  };
+  const list = arr => arr.map(one).filter(v => v != null);
+  const keyed = obj => {
+    const out = {};
+    Object.keys(obj).forEach(k => { const to = one(Number(k)); if (to != null) out[to] = obj[k]; });
+    return Object.keys(out).length ? out : null;
+  };
+  if (node.ignoredColumns) { const v = list(node.ignoredColumns); if (v.length) node.ignoredColumns = v; else delete node.ignoredColumns; }
+  ["assertions", "columnRenames", "arrayViews"].forEach(key => {
+    if (!node[key]) return;
+    const v = keyed(node[key]);
+    if (v) node[key] = v; else delete node[key];
+  });
+  // plotConfig is edited in place: the global `plotConfig` reference may point at this very object.
+  const c = node.plotConfig;
+  if (c) {
+    ["xCol", "zCol", "colorCol", "arrayCol"].forEach(k => { if (c[k] != null) c[k] = one(c[k]); });
+    ["yCols", "yColsMulti", "multiCols"].forEach(k => { if (Array.isArray(c[k])) c[k] = list(c[k]); });
+  }
+}
+// The pattern edit `mutate` plus the column re-keying, as ONE undo step. Returns { moved, removed }
+// (the caller's toast) or null when no setting moved or was dropped. `ignoredAreNew`: the popup's
+// ignore set was toggled against the new pattern's preview, so it already is in new indices.
+function migrateExtractionColumns(node, map, ignoredAreNew, mutate) {
+  // The nodes whose view inherits this pattern: their assertions/plot are keyed by its columns too.
+  const targets = [node];
+  const walk = n => (n.children || []).forEach(id => {
+    const d = state.nodes[id];
+    if (!d || d.type !== "filter") return;
+    if (findExtractionAncestor(d) === node) targets.push(d);
+    walk(d);
+  });
+  walk(node);
+  const befores = targets.map(t => captureNodeFields(t, true));
+  const tally = { moved: 0, removed: 0 };
+  mutate();
+  targets.forEach(t => {
+    const keep = t === node && ignoredAreNew ? t.ignoredColumns : undefined;
+    remapColumnSettings(t, map, tally);
+    if (t === node && ignoredAreNew) { if (keep) t.ignoredColumns = keep; else delete t.ignoredColumns; }
+  });
+  const changed = tally.moved + tally.removed > 0;
+  if (changed && targets.some(t => t.id === extractNodeId)) {
+    extractSortCol = null; state.tableSelection = null; plotParallelBrushes = new Map(); // all positional
+  }
+  const entries = targets.map((t, i) => ({ kind: "edit", nodeId: t.id, before: befores[i], after: captureNodeFields(t, true) }));
+  pushUndo(entries.length === 1 ? entries[0] : { kind: "batch", actions: entries, label: "edit" });
+  return changed ? tally : null;
 }
 function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
   withFieldEditUndo(nodeId, () => updateTimeRangeFilterNode(nodeId, from, to));
@@ -37365,6 +37491,8 @@ let filterPopupBaseId = null;
 // empty in create mode, so toggling in the live preview (see
 // updateFilterPatternPreview) works identically in both modes.
 let filterPopupIgnored = new Set();
+// The set as the edit popup opened with it (old pattern's indices): commitFilter tells untouched from toggled.
+let filterPopupIgnoredAtOpen = new Set();
 
 // filterPopupColumns: working copy of the "text" filter's target-column
 // restriction (see activeTextFilterColumns/textFilterMatches) — same
@@ -37670,6 +37798,7 @@ function openEditFilterPopup(nodeId) {
   editingFilterId = nodeId;
   filterPopupBaseId = node.parentId;
   filterPopupIgnored = new Set(node.ignoredColumns || []);
+  filterPopupIgnoredAtOpen = new Set(filterPopupIgnored);
   filterPopupColumns = new Set(node.columns || []);
   state.activeId = nodeId;
   render();
@@ -38181,8 +38310,18 @@ function commitFilter() {
   // carrier it travels through.
   const wholeWord = pillGet(filterWholeWordCheckbox) && !isRegex && !isExtractPattern(val);
   recordRecentFilter({ value: val, isRegex, caseSensitive, wholeWord, inverted: pillGet(filterInvertCheckbox), source: "filter" });
-  if (editingFilterId) updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
-  else createFilterNode(filterPopupBaseId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
+  if (editingFilterId) {
+    // An untouched ignore set is still in the OLD pattern's indices (re-keyed with the other column settings).
+    const ignoredToggled = ignoredArr.length !== filterPopupIgnoredAtOpen.size || ignoredArr.some(i => !filterPopupIgnoredAtOpen.has(i));
+    const shifted = updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord, ignoredToggled);
+    if (shifted) {
+      const noun = n => n + " column setting" + (n === 1 ? "" : "s");
+      const parts = [];
+      if (shifted.moved) parts.push(noun(shifted.moved) + " moved");
+      if (shifted.removed) parts.push(shifted.moved ? shifted.removed + " removed" : noun(shifted.removed) + " removed");
+      showCopyToast("Pattern changed: " + parts.join(", "));
+    }
+  } else createFilterNode(filterPopupBaseId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
   closeFilterPopup();
   revealFilteredView(); // a new/edited filter's result lives in the Filtered view
   render();
