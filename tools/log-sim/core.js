@@ -61,6 +61,38 @@
       tok === "ss" ? pad(d.getUTCSeconds(), 2) : pad(d.getUTCMilliseconds(), 3));
   }
 
+  // --encoding: the output's text encoding. Single-byte encodings are built from
+  // the engine's own decoder (byte -> char for 0..255, reversed); a character the
+  // encoding can't represent becomes "?", like .NET's Encoding.GetEncoding(1252).
+  // Node's TextDecoder treats windows-1252 as plain Latin-1 (0x80-0x9F come out
+  // as control characters), so that range is spelled out here.
+  const CP1252_80_9F = "\u20AC\u0081\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u008D\u017D\u008F\u0090\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u009D\u017E\u0178";
+  const ENCODINGS = ["utf-8", "windows-1252", "iso-8859-15", "windows-1250", "windows-1251"];
+  const encodeMaps = {};
+  function normalizeEncoding(label) {
+    if (label == null || label === "") return "utf-8";
+    const l = String(label).toLowerCase();
+    if (!ENCODINGS.includes(l)) throw new Error("Invalid --encoding '" + label + "' (expected " + ENCODINGS.join(", ") + ")");
+    return l;
+  }
+  function encodeText(text, label) {
+    const enc = normalizeEncoding(label);
+    if (enc === "utf-8") return new TextEncoder().encode(text);
+    let map = encodeMaps[enc];
+    if (!map) {
+      map = encodeMaps[enc] = new Map();
+      const dec = new TextDecoder(enc);
+      for (let b = 0; b < 256; b++) {
+        const ch = enc === "windows-1252" && b >= 0x80 && b < 0xA0 ? CP1252_80_9F[b - 0x80] : dec.decode(new Uint8Array([b]));
+        if (ch !== "\uFFFD" && !map.has(ch)) map.set(ch, b);
+      }
+    }
+    const out = new Uint8Array(text.length * 2);
+    let n = 0;
+    for (const ch of text) { const b = map.get(ch); out[n++] = b === undefined ? 63 : b; }
+    return out.subarray(0, n);
+  }
+
   // "2026-01-15T08:00:00" (no zone) -> naive ms; anything Date can't parse -> NaN.
   function parseNaive(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?)?$/.exec(String(s || "").trim());
@@ -480,16 +512,32 @@
     return [formatTs(e.ts, "yyyy-MM-dd HH:mm:ss,SSS") + "\t" + e.level + '\t"' + e.thread + '"\t' + e.file + "\tline " + e.line + "\t[" + e.method + ']\t"' + oneLine(e.msg) + '"'].concat(e.cont || []);
   }
 
-  function renderSyslog(e) {
+  // --ts-offset <Z|±HH:MM|±HHMM>: the ISO timestamps (syslog, JSON Lines) are written
+  // as that zone's wall clock plus its offset suffix — the same instant as
+  // the unshifted time, which syslog has always written as UTC ("…Z").
+  // "Z" and "+00:00" are the same instant, only the suffix differs.
+  function parseTsOffset(s) {
+    if (s == null || s === "") return null;
+    const m = /^(?:(Z)|([+-])(\d{2})(:?)(\d{2}))$/.exec(String(s).trim());
+    if (!m || (m[3] !== undefined && (+m[3] > 23 || +m[5] > 59))) throw new Error("Invalid --ts-offset '" + s + "' (expected Z or +HH:MM / +HHMM / -HH:MM)");
+    // The suffix keeps the shape it was given in: +05:30 or +0530.
+    return m[1] ? { minutes: 0, label: "Z" } : { minutes: (m[2] === "-" ? -1 : 1) * (+m[3] * 60 + +m[5]), label: m[2] + m[3] + m[4] + m[5] };
+  }
+  function formatTsOffset(ms, fmt, g) {
+    const off = g && g.tsOffset;
+    return off ? formatTs(ms + off.minutes * 60000, fmt) + off.label : null;
+  }
+
+  function renderSyslog(e, g) {
     const sd = e.ctx.req || e.ctx.user ? '[ctx@32473' + (e.ctx.req ? ' req="' + e.ctx.req + '"' : "") + (e.ctx.user ? ' user="' + e.ctx.user + '"' : "") + "]" : "-";
-    return ["<" + SYSLOG_PRI[e.level] + ">1 " + formatTs(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS") + "Z " + e.host + " " + e.app + " " + e.thread + " " + e.cls.toUpperCase() + " " + sd + " " + oneLine(e.msg)].concat(e.cont || []);
+    return ["<" + SYSLOG_PRI[e.level] + ">1 " + (formatTsOffset(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS", g) || formatTs(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS") + "Z") + " " + e.host + " " + e.app + " " + e.thread + " " + e.cls.toUpperCase() + " " + sd + " " + oneLine(e.msg)].concat(e.cont || []);
   }
 
   const SYSLOG_EXPORT = {
     name: "Simulator: RFC 5424 syslog",
     mode: "regex",
-    regex: "^<(?<level>\\d{1,3})>1 (?<ts>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3})Z? (?<host>\\S+) (?<app>\\S+) (?<thread>\\S+) (?<msgid>\\S+) (?<sd>-|\\[[^\\]]*\\]) (?<message>.*)$",
-    tsFormat: "yyyy-MM-ddTHH:mm:ss.SSS",
+    regex: "^<(?<level>\\d{1,3})>1 (?<ts>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}(?:Z|[+-]\\d{2}:?\\d{2})) (?<host>\\S+) (?<app>\\S+) (?<thread>\\S+) (?<msgid>\\S+) (?<sd>-|\\[[^\\]]*\\]) (?<message>.*)$",
+    tsFormat: "yyyy-MM-ddTHH:mm:ss.SSSXXX",
     levels: SYSLOG_LEVEL_DEFS,
     levelValueType: "int",
     columnDefs: [
@@ -560,8 +608,8 @@
       label: "JSON Lines",
       ext: ".jsonl",
       hint: "One JSON object per line: nested ctx, a literal dotted key \"http.status\", arrays (tags, spectrum), pos/sensor objects, exception text. Needs the format definition PhiLogg imports (written next to the output). JSON Lines kind, JSON path columns, array columns.",
-      render(e) {
-        const o = { ts: formatTs(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS"), level: e.level.toLowerCase(), msg: e.cont && !e.json.exception ? e.msg + "\n" + e.cont.join("\n") : e.msg, thread: e.thread, logger: e.logger };
+      render(e, g) {
+        const o = { ts: formatTsOffset(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS", g) || formatTs(e.ts, "yyyy-MM-ddTHH:mm:ss.SSS"), level: e.level.toLowerCase(), msg: e.cont && !e.json.exception ? e.msg + "\n" + e.cont.join("\n") : e.msg, thread: e.thread, logger: e.logger };
         const ctx = {};
         if (e.ctx.req) ctx.req = { id: e.ctx.req };
         if (e.ctx.user) ctx.user = e.ctx.user;
@@ -667,6 +715,7 @@
     const start = typeof o.start === "number" ? o.start : parseNaive(o.start);
     if (isNaN(start)) throw new Error("Invalid start time '" + o.start + "' (expected e.g. 2026-01-15T08:00:00)");
     const meanGap = 1000 / Math.max(0.001, +o.rate || DEFAULTS.rate);
+    const tsOffset = parseTsOffset(o.tsOffset);
 
     const pending = []; // follow-up entries, kept sorted by ts
     let lastTs = start;
@@ -679,6 +728,7 @@
       float: (a, b) => a + rnd() * (b - a),
       chance: p => rnd() < p,
       pick: arr => arr[Math.floor(rnd() * arr.length)],
+      tsOffset,
       hex: n => { let s = ""; for (let i = 0; i < n; i++) s += "0123456789abcdef"[Math.floor(rnd() * 16)]; return s; },
       guid: () => g.hex(8) + "-" + g.hex(4) + "-4" + g.hex(3) + "-a" + g.hex(3) + "-" + g.hex(12),
       reqId: () => "r-" + g.hex(6),
@@ -880,6 +930,6 @@
   return {
     SCENARIOS, FORMATS, DEFAULTS,
     createGenerator, generateFiles, generateToStrings, formatExport, normalizeScenarios,
-    formatTs, parseNaive, naiveNow, parseSize, utf8Length, zipStore, crc32,
+    formatTs, parseTsOffset, encodeText, normalizeEncoding, parseNaive, naiveNow, parseSize, utf8Length, zipStore, crc32,
   };
 });

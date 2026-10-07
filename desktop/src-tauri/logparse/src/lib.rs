@@ -46,14 +46,23 @@ pub struct FormatSpec {
     /// `messageWrapQuote(regex.source)`, or `""`.
     #[serde(default)]
     pub wrap_quote: String,
+    /// The format's `encoding`: `""` = Auto, else a WHATWG label (`utf-8`,
+    /// `windows-1252`, `iso-8859-15`, `windows-1250`, `windows-1251`). Rust
+    /// resolves Auto itself (`decode`), so the page needs no head read.
+    #[serde(default)]
+    pub encoding: String,
 }
 
 /// One parsed entry, in the page's own entry shape (`parseHeaderLine` /
-/// `applyFormatMatch`). `ts` is naive (see `timestamp`), `None` for NaN.
+/// `applyFormatMatch`). `ts` is naive (see `timestamp`), `None` for NaN —
+/// unless `ts_absolute`: the timestamp carried its own offset (`XXX` token),
+/// so `ts` is already the absolute UTC instant and the page must not
+/// localize it.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct Entry {
     pub ts_raw: String,
     pub ts: Option<i64>,
+    pub ts_absolute: bool,
     pub level: String,
     pub thread: String,
     pub location: String,
@@ -186,6 +195,7 @@ impl Parser {
         Entry {
             ts_raw: ts_raw.to_string(),
             ts: timestamp::parse_default(ts_raw),
+            ts_absolute: false,
             level: if level.is_empty() { "INFO".into() } else { level },
             thread,
             location: location_raw,
@@ -209,10 +219,12 @@ impl Parser {
             .filter_map(|(n, v)| v.map(|v| (n.to_string(), strip_quotes(v))))
             .collect();
         let ts_raw = non_empty("ts");
+        // No compiled date: Date.parse territory, filled in by the page.
+        let parsed = ts_raw.and_then(|t| date.and_then(|d| timestamp::parse_generic(t, d)));
         Entry {
             ts_raw: ts_raw.unwrap_or("").to_string(),
-            // No compiled date: Date.parse territory, filled in by the page.
-            ts: ts_raw.and_then(|t| date.and_then(|d| timestamp::parse_generic(t, d))),
+            ts: parsed.map(|(t, _)| t),
+            ts_absolute: parsed.is_some_and(|(_, abs)| abs),
             level: non_empty("level").map_or_else(|| "INFO".to_string(), |l| js_trim(l).to_uppercase()),
             thread: strip_quotes(non_empty("thread").unwrap_or("")),
             location: get("location").unwrap_or("").to_string(),
@@ -278,23 +290,44 @@ pub fn is_gzip(bytes: &[u8]) -> bool {
     bytes.len() >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b
 }
 
-/// Bytes → text the way `FileReader.readAsText` (the page's own file read)
-/// does it: BOM sniffing for UTF-8/UTF-16LE/UTF-16BE, UTF-8 otherwise, and
-/// U+FFFD for every malformed sequence.
-pub fn decode(bytes: &[u8]) -> String {
-    fn utf16(bytes: &[u8], le: bool) -> String {
-        let units = bytes.chunks_exact(2).map(|p| if le { u16::from_le_bytes([p[0], p[1]]) } else { u16::from_be_bytes([p[0], p[1]]) });
-        let mut s: String = char::decode_utf16(units).map(|r| r.unwrap_or('\u{FFFD}')).collect();
-        if bytes.len() % 2 == 1 {
-            s.push('\u{FFFD}');
+/// How many leading bytes Auto looks at (`FILE_ENCODING_HEAD_BYTES`).
+const ENCODING_HEAD_BYTES: usize = 64 * 1024;
+
+/// `resolveFileEncoding(head, encoding)` + the `TextDecoder` read the page
+/// does with it: a BOM (UTF-8 / UTF-16LE / UTF-16BE) always wins; otherwise
+/// the explicit WHATWG label; Auto (`""`) is UTF-8 when the first 64 KiB are
+/// valid UTF-8 — an incomplete multi-byte sequence cut at the 64 KiB end
+/// counts as valid — and windows-1252 otherwise. Malformed input becomes
+/// U+FFFD, like the WHATWG decoders do (`encoding_rs` implements them).
+pub fn decode(bytes: &[u8], encoding: &str) -> String {
+    use encoding_rs::{Encoding, UTF_8, WINDOWS_1252};
+    let (enc, skip) = match Encoding::for_bom(bytes) {
+        Some((e, n)) => (e, n),
+        None => {
+            let label = encoding.trim();
+            let e = if !label.is_empty() {
+                // An unknown label is a format typo; the page's TextDecoder
+                // would throw, here it degrades to UTF-8.
+                Encoding::for_label(label.as_bytes()).unwrap_or(UTF_8)
+            } else if auto_is_utf8(bytes) {
+                UTF_8
+            } else {
+                WINDOWS_1252
+            };
+            (e, 0)
         }
-        s
-    }
-    match bytes {
-        [0xEF, 0xBB, 0xBF, rest @ ..] => String::from_utf8_lossy(rest).into_owned(),
-        [0xFF, 0xFE, rest @ ..] => utf16(rest, true),
-        [0xFE, 0xFF, rest @ ..] => utf16(rest, false),
-        _ => String::from_utf8_lossy(bytes).into_owned(),
+    };
+    enc.decode_without_bom_handling(&bytes[skip..]).0.into_owned()
+}
+
+/// Auto's verdict on the head of a file.
+fn auto_is_utf8(bytes: &[u8]) -> bool {
+    let head = &bytes[..bytes.len().min(ENCODING_HEAD_BYTES)];
+    match std::str::from_utf8(head) {
+        Ok(_) => true,
+        // `error_len() == None`: the head ends inside a sequence — only a
+        // verdict-neutral cut when the head really was cut at 64 KiB.
+        Err(e) => e.error_len().is_none() && head.len() >= ENCODING_HEAD_BYTES,
     }
 }
 
@@ -384,5 +417,25 @@ mod tests {
         assert!(!is_gzip(&[0x1f]));
         assert!(!is_gzip(b"2024-01-15 10:00:00,000\tINFO"));
         assert!(!is_gzip(&[]));
+    }
+
+    #[test]
+    fn decode_follows_the_pages_encoding_rules() {
+        let cp1252 = b"J\xFCrgen \x80 \x93x\x94";
+        assert_eq!(decode(cp1252, ""), "J\u{fc}rgen \u{20ac} \u{201c}x\u{201d}"); // Auto: invalid UTF-8 -> windows-1252
+        assert_eq!(decode("J\u{fc}".as_bytes(), ""), "J\u{fc}");
+        assert_eq!(decode(b"\xA4", "iso-8859-15"), "\u{20ac}");
+        assert_eq!(decode(b"\xC6\xE4", "windows-1251"), "\u{416}\u{434}");
+        assert_eq!(decode(b"\xE8", "windows-1250"), "\u{10d}");
+        // BOM wins over an explicit label.
+        assert_eq!(decode(b"\xEF\xBB\xBFJ\xC3\xBC", "windows-1252"), "J\u{fc}");
+        assert_eq!(decode(b"\xFF\xFEJ\x00", "windows-1250"), "J");
+        // An incomplete sequence at the 64 KiB cut is valid; at a shorter end it is not.
+        let mut big = vec![b'A'; ENCODING_HEAD_BYTES + 10];
+        big[ENCODING_HEAD_BYTES - 1] = 0xC3;
+        big[ENCODING_HEAD_BYTES] = 0xBC;
+        assert!(decode(&big, "").ends_with("AAAAAAAAA") && decode(&big, "").contains('\u{fc}'));
+        assert!(auto_is_utf8(&big));
+        assert!(!auto_is_utf8(b"AAAA\xC3"));
     }
 }

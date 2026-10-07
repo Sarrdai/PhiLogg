@@ -31,6 +31,83 @@ dialog"). A third `LogFormat` mode,
 parses a line itself, it fans a file out into several ordinary,
 single-format files first.
 
+**Time zone and the `XXX` token (`timeZone`).**
+`tsFormat` can read an offset from the timestamp itself with the token
+**`XXX`** (`DATE_TOKEN_FRAG`: `Z`, `±HH:MM` or `±HHMM`, e.g.
+`yyyy-MM-ddTHH:mm:ss.SSSXXX`). A format's **`timeZone`** says how a
+timestamp *without* an offset is read: `""`/missing = this computer's local
+time (the default, today's behavior, plain `new Date(y, mo, d, ...)`),
+`"UTC"`, a fixed offset (`"+05:30"`, stored normalized to `±HH:MM`), or an
+IANA name (`"America/New_York"`, DST-aware through `Intl`). **Precedence:**
+an offset in the line (`XXX`) always wins over `timeZone`; the zone only
+applies to stamps without one. Entries are normalized on load — `ts` is the
+absolute instant, display stays in this computer's zone (`formatTime`
+unchanged, no "show in UTC" setting), and the per-file clock offset is
+applied afterwards, on the final `ts`. `compileDateFormat(fmt, timeZone)`
+returns the compiled date with `offsetIdx` (the `XXX` group, -1 if none) and
+`zone` (null for the local default — that path is untouched and as fast as
+before — else a naive-ms → absolute-ms function from `makeZoneLocalizer`);
+`parseTimestampGeneric` computes the naive wall clock with `Date.UTC` (same
+0..99 year mapping as the Date constructor), then `naive - offset` for an
+`XXX` match or `zone(naive)` otherwise. `makeZoneLocalizer("")` is the old
+`makeNaiveTsLocalizer` (per-minute-cached local offset); `"UTC"` is the
+identity, a fixed offset subtracts it, an IANA name resolves the offset
+before/after the wall clock with `Intl.DateTimeFormat#formatToParts` (cached
+per wall-clock minute; a DST gap moves forward and an overlap takes the
+first pass, exactly like `Date`; an unknown name degrades to local time).
+`compileDateFormat` also builds `plainRegexStr` (all groups non-capturing),
+which `compileFormatPattern`'s `plainDateGroups` uses instead of rewriting
+the capturing string — an `XXX` group does not start with `\d`. JSON Lines:
+epoch numbers are UTC already and never touched by `timeZone`; with a
+`tsFormat` the same rules as above apply; a free-form string (no
+`tsFormat`, `Date.parse`) with its own `Z`/offset is absolute, one without
+is re-read in the zone (`parseFreeTimestamp`; a pattern/regex format with an
+empty `tsFormat` and a zone does the same). Both fields travel with the
+format: saved in its IndexedDB record, in the export JSON
+(`LOG_FORMAT_EXPORT_FIELDS`), accepted by the import (missing = default);
+the compiled-format cache is cleared on save, so an edit takes effect at
+once. A meta format has no zone of its own — its target formats do. Native
+parsing (desktop): a timestamp without `XXX` comes back from Rust naive and the
+page's localizer applies the format's zone; an `XXX` offset is applied by Rust
+itself (`naive - offset`, flagged `tsAbsolute` in the batch so the page leaves
+it alone) — `docs/desktop.md` → "Native parsing". The dialog side (field, status line, detection) is in
+`docs/ui-and-views.md` → "Format dialog". GROUP format-time-zone.
+
+**Text encoding (`encoding`).** A format says how its
+file's bytes become text: `""`/missing = **Auto** (default), or a WHATWG label
+— `utf-8`, `windows-1252` ("Windows-1252 / Latin-1"), `iso-8859-15`,
+`windows-1250`, `windows-1251`. A **BOM** (UTF-8, UTF-16LE/BE) always wins.
+Auto reads the first 64 KiB (`FILE_ENCODING_HEAD_BYTES`): valid UTF-8 — an
+incomplete multi-byte sequence cut at the 64 KiB end counts as valid — means
+UTF-8, anything else Windows-1252. It is decided **once per file**
+(`resolveFileEncoding(headBytes, encoding)`; `resolveFileEncodingOf(file,
+formatId)` for a Blob), and the one label then serves every chunk: a file whose
+first 64 KiB are plain ASCII is UTF-8 by that rule even if later bytes aren't.
+`fileEncodingForFormatId(id)` reads the format's field; a **meta format**'s
+own `encoding` decodes the file once before the split (its targets' fields are
+not used), every other format's applies to its file. Read paths that honor it
+(everything that reads a LOG file; session and JSON imports stay UTF-8):
+`readParseFileNode` (text route `readFileWithProgress(file, cb, label)`, and
+the byte-range worker route — the label travels in the worker message, and
+`findHeaderLineStartInBlob`/`parseBlobRangeEntries` build their
+`TextDecoder` from it; `canParseBlobInWorker` keeps UTF-16 on the text route),
+the meta route of `loadOneFileIntoTree`, `.gz` and ZIP entries (they end in
+the same File), folder watch (`loadFolderFile` → `readParseFileNode`),
+`parseFileWindow` and the time-range probes, tail appends (`readUtf8Range(…,
+label)`, label on `node.tail.encoding`), `loadUrlIntoTree` and the session
+file's `url` records (`decodeLogBytes`), the session-cache restore and
+`reopenLocalPathForRestore` (`readBlobText`), and the format dialog's "Open
+file…"/drop (below). Native parsing (desktop): `nativeFormatSpec` carries the
+format's `encoding` label and Rust decodes the file itself with the same rules
+(BOM, explicit label, Auto = UTF-8 else Windows-1252 from the first 64 KiB,
+via `encoding_rs`), so the page reads no head for it. The dialog's Encoding
+select (`#fwzEncoding`, example-lines toolbar; the Meta kind has its own
+`#formatEditMetaEncoding`; one shared value) re-decodes example lines that came
+from a file (`fwz.fileSource` holds the head bytes), pasted text stays. The
+field is saved on the format, exported/imported (`LOG_FORMAT_EXPORT_FIELDS`,
+unknown labels dropped on import). Simulator: `--encoding` writes the
+output in that encoding. GROUP format-encoding.
+
 **Custom columns**, concretely: Pattern mode gets a new `%X{name}` token
 (log4j MDC-style — captures free text into a user-chosen field name);
 Regex mode already supports this natively via any `(?<name>...)` group
@@ -130,8 +207,8 @@ piece per core (`parallelParseWorkerCount`: `navigator.hardwareConcurrency`,
 pieces of at least 1 MB), each cut moved forward to the next header line so
 a stack trace never leaves its entry and each piece parses to exactly the
 whole text's entries in that range. **Byte-range mode**: when the source
-is a Blob/File (`readParseFileNode`, gated by `canParseBlobInWorker`: UTF-8,
-not the plain-text format), the main thread neither reads nor copies the
+is a Blob/File (`readParseFileNode`, gated by `canParseBlobInWorker`: UTF-8 or
+a single-byte encoding, not the plain-text format), the main thread neither reads nor copies the
 text — `parseLogTextInWorker` posts the Blob plus a byte range [a, b) per
 worker and each worker reads its own bytes (`parseBlobRangeEntries`,
 `findHeaderLineStartInBlob`): a piece starts at the first header-line start
@@ -145,7 +222,7 @@ Each worker sends its entries back as
 posted next to the ArrayBuffer instead of UTF-8 bytes on its end (a string
 posts as a copy; TextEncoder + TextDecoder cost ~6 ms per MB, and a string
 keeps a lone surrogate intact). Worker `ts` are already local (parsed in
-this engine); only native batches go through `makeNaiveTsLocalizer`. The
+this engine); only native batches are localized afterwards (`makeZoneLocalizer`). The
 main thread adopts the pieces in file order — a later piece's batches wait
 for every earlier piece — at most `PARALLEL_PARSE_DRAIN_BATCHES` per task,
 yielding through `queueTask` (a `MessageChannel` message, since a hidden
@@ -168,7 +245,7 @@ its helpers are in `buildLogParseWorkerSrc`'s list — tailing and the format
 dialog's preview share it). Time, level and message come from configurable
 keys (`tsKey`/`levelKey`/`messageKey`; a missing level is `INFO`, a
 missing message key leaves the whole line as the message); time is a number
-(epoch s/ms/µs/ns by magnitude), else `tsFormat` or `Date.parse` (ISO 8601).
+(epoch s/ms/µs/ns by magnitude), else `tsFormat` or `Date.parse` (ISO 8601; time zone rules above).
 Custom columns are `columnDefs` entries with a **`path`**: `ctx.req.id`,
 `tags[0]` (negative index from the end), `["http.status"]` for a key
 containing a dot — and an unquoted dotted run prefers a *literal* key first,
@@ -212,7 +289,7 @@ backend reads it and parses it on every core (`desktop/src-tauri/logparse`),
 streaming entries back in batches. The page still owns the parsing rules —
 `nativeFormatSpec` hands Rust the regex source/date regex this page itself
 compiled (shared `compileFormatRegex`), timestamps come back "naive" and are
-localized by this engine (`makeNaiveTsLocalizer`), and anything the native
+localized by this engine (`makeZoneLocalizer(fmt.timeZone)`; the local default is `makeNaiveTsLocalizer`), and anything the native
 engine can't run with identical semantics (lookaround, backreferences, a
 meta-format) falls back to the JS path above. A golden fixture shared by the
 jsdom suite (GROUP 264) and the crate's `cargo test` pins both parsers to the

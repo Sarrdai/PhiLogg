@@ -32,14 +32,22 @@ group(264);
   const sansTs = o => JSON.stringify(Object.assign({}, o, { ts: 0 }));
 
   async function registerFormat(w, T, fmt) {
-    if (fmt.builtin) return;
+    if (fmt.builtin) {
+      // The builtin default is stored already; only its encoding setting varies per case.
+      const stored = T.state.logFormats.find(f => f.id === fmt.id);
+      if (stored) { if (fmt.encoding) stored.encoding = fmt.encoding; else delete stored.encoding; w.invalidateFormatCompileCache(); }
+      return;
+    }
     T.state.logFormats = T.state.logFormats.filter(f => f.id !== fmt.id).concat([JSON.parse(JSON.stringify(fmt))]);
     w.invalidateFormatCompileCache();
   }
   async function caseText(w, c) {
     if (!c.base64) return c.text;
-    const bytes = Buffer.from(c.base64, "base64");
-    return w.readFileWithProgress(new w.File([w.Uint8Array.from(bytes)], "x.log"), () => {});
+    // Bytes cases are decoded the page's way (the format's encoding, BOM first);
+    // Rust does the same from spec.encoding — that is what the golden pins.
+    const bytes = w.Uint8Array.from(Buffer.from(c.base64, "base64"));
+    const label = w.resolveFileEncoding(bytes.subarray(0, 64 * 1024), c.format.encoding || "");
+    return w.readFileWithProgress(new w.File([bytes], "x.log"), () => {}, label);
   }
   async function jsParse(w, T, c) {
     await registerFormat(w, T, c.format);
@@ -72,8 +80,9 @@ group(264);
   }
   function installFetch(w, text) {
     w.fetchCalls = [];
-    w.fetch = async url => {
-      w.fetchCalls.push(String(url));
+    w.fetch = async (url, opts) => {
+      // The encoding check's ranged head read (resolveFileEncodingOf) is not a content fetch.
+      if (!(opts && opts.headers && opts.headers.Range)) w.fetchCalls.push(String(url));
       const buf = new w.TextEncoder().encode(text).buffer;
       return { ok: true, status: 200, arrayBuffer: async () => buf, blob: async () => new w.Blob([text]) };
     };
@@ -116,7 +125,8 @@ group(264);
       got.forEach((e, i) => {
         const g = c.entries[i] || {};
         assert(sansTs(toWire(e, freeDate)) === sansTs(g), c.name + " #" + i + ": JS entry matches golden, got " + sansTs(toWire(e, freeDate)));
-        const want = g.ts == null ? (freeDate && g.tsRaw ? w.parseTimestampGeneric(g.tsRaw, null) : NaN) : localize(g.ts);
+        // An XXX offset makes Rust's ts absolute already (the batch's tsAbsolute flag).
+        const want = g.ts == null ? (freeDate && g.tsRaw ? w.parseTimestampGeneric(g.tsRaw, null) : NaN) : spec.dateOrder.includes("XXX") ? g.ts : localize(g.ts);
         assert(Object.is(e.ts, want), c.name + " #" + i + ": ts " + e.ts + " === localized golden " + want);
       });
     }
@@ -216,7 +226,7 @@ group(264);
     folderBridge.window = w;
     let fetched = 0;
     const realFetch = w.fetch;
-    w.fetch = async url => { fetched++; return realFetch(url); };
+    w.fetch = async (url, opts) => { if (!(opts && opts.headers && opts.headers.Range)) fetched++; return realFetch(url, opts); };
     nativeStub(folderBridge, crlfCase.name, 555);
     await w.openFolderPickerFlow();
     const folder = T.state.folders[0];

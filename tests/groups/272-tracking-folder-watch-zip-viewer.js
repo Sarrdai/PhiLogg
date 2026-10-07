@@ -166,10 +166,11 @@ group(272);
     assert(f.entries.length === 51, "the append was picked up");
     // A hand-attached tail (like a restore/rescan reattach) gets tailTick's
     // one-time gzip check on its first poll: a 2-byte ranged read, never a
-    // full fetch (GROUP 285, "gzip-compressed logs"). Load paths mark their
-    // own fresh tails as already checked.
-    assert(!requests.includes("FULL") && requests.length === 3 && requests[1] === "bytes=0-1",
-      "first tail poll = one size probe + the one-time 2-byte gzip check + one ranged read, no full fetch (" + requests.join(" | ") + ")");
+    // full fetch (GROUP 285, "gzip-compressed logs"), and resolves the file's
+    // text encoding once from a ranged head read (GROUP format-encoding).
+    // Load paths mark their own fresh tails as already checked.
+    assert(!requests.includes("FULL") && requests.length === 4 && requests[1] === "bytes=0-1" && requests[2].startsWith("bytes=0-"),
+      "first tail poll = one size probe + the one-time 2-byte gzip check + the one-time encoding head read + one ranged read, no full fetch (" + requests.join(" | ") + ")");
     requests.length = 0;
     const rec = { name: "a.log", handle: h };
     const range = await w.probeFolderFileRange({ id: "x" }, rec);

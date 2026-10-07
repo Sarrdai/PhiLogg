@@ -406,6 +406,14 @@ deployments possible:
   which ones hold time, level and message, and which paths become columns —
   nested keys as `ctx.req.id`, array elements as `tags[0]`, keys containing
   a dot as `["http.status"]`.
+  **Time zone and encoding per format**: a timestamp with an offset (`Z`,
+  `+02:00` — token `XXX` in the timestamp format, detected automatically) is
+  read as that instant; for times without one, the format declares their zone
+  (local, UTC, a fixed offset or a named zone like `America/New_York`), so
+  logs from servers in different zones line up when merged. Times are shown
+  in your local time. Legacy files without a byte order mark (Windows-1252,
+  ISO-8859-15, Windows-1250/-1251) read correctly: **Auto** falls back to
+  Windows-1252 when a file isn't UTF-8, or pick the encoding explicitly.
   A **Meta** format mode combines several of your own formats into one:
   point it at an ordered list of target formats and a file matching it gets
   split by grammar and auto-merged (see "A merged file shows its 'Sources'"
