@@ -20,7 +20,7 @@ await withApp(async (w, d, T) => {
   assert(merged.sources.every(s => s.color === null), "no color assigned yet");
   assert(merged.entries.filter(e => e.sourceId === fa.id).length === 3 && merged.entries.filter(e => e.sourceId === fb.id).length === 3,
     "every copied entry is stamped with its own source's id");
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("236b. mergeFiles: node.sources/entry.sourceId, manual merge, overlapping (chunked copy+sort) path");
@@ -29,7 +29,7 @@ await withApp(async (w, d, T) => {
   const merged = await w.mergeFiles([fa.id, fb.id]);
   assert(merged.entries.filter(e => e.sourceId === fa.id).length === 5 && merged.entries.filter(e => e.sourceId === fb.id).length === 5,
     "sourceId stamping also happens on the chunked copy+sort path");
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("236c. loadMetaFormatText: node.sources named after target formats, per-grammar vnodes stay real and tagged, entries live in entryIndex");
@@ -50,4 +50,4 @@ await withApp(async (w, d, T) => {
   assert(merged.sources.every(s => vnodeIds.includes(s.id)), "merged.sources[i].id points at the still-live vnode, not a dangling id");
   const sharedId = merged.entries[0].id;
   assert(T.entryIndex[sharedId] === merged.entries[0], "the merged entries stay resolvable via entryIndex");
-});
+}, { demoFormats: true });

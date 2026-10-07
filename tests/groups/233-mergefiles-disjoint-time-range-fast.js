@@ -37,4 +37,4 @@ await withApp(async (w, d, T) => {
     "chronological despite the syslog block's own out-of-order on-disk lines");
   assert(merged.entries.map(e => e.message).join(",") === "a0,a1,a2,b0,b1,b2",
     "messages come out in true timestamp order (b0,b1,b2), not on-disk order (b2,b0,b1), got " + merged.entries.map(e => e.message).join(","));
-});
+}, { demoFormats: true });

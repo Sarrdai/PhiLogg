@@ -26,7 +26,7 @@ await withApp(async (w, d, T) => {
   assert(restored.sources && restored.sources.length === 2, "its Sources breakdown survived the round trip");
   assert(restored.sources[0].color === "#ff0000", "...including the assigned color");
   assert(restored.merged === true, "still flagged as a merged file");
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("238b. Undo/redo: a meta-format auto-merge's metaFormatId survives a delete+undo round trip too");
@@ -41,4 +41,4 @@ await withApp(async (w, d, T) => {
   w.deleteFilterNodeWithUndo(mergedId);
   w.undo();
   assert(T.state.nodes[mergedId].metaFormatId === "fmt-demo-app-syslog-meta", "metaFormatId survives the round trip");
-});
+}, { demoFormats: true });

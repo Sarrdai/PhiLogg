@@ -124,12 +124,11 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "Settings button opens the settings page directly (no intermediate menu)");
   assert(d.querySelector("#settingsMenu") === null, "the old separate Format-Manager dropdown menu no longer exists");
 
-  // 4 initially: the builtin default plus the 3 formats loadFormatConfig
-  // seeds for FEATURE_BACKLOG.md #81's reference case (DEMO_SEED_FORMATS —
-  // App log, Syslog, and the meta-format combining them).
+  // 1 initially: just the builtin default (the demo formats are provided
+  // files now, not seeded — GROUP provided-formats).
   const formatRows = () => [...d.querySelectorAll("#formatList .filter-library-row")];
-  assert(formatRows().length === 4 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
-    "the builtin default format is listed first, alongside the 3 seeded demo formats");
+  assert(formatRows().length === 1 && formatRows()[0].querySelector(".filter-library-row-name").textContent.includes("Default"),
+    "the builtin default format is the only one listed on a fresh boot");
   assert(formatRows()[0].querySelector(".filter-library-row-del") === null, "the builtin default has no delete button");
 
   const btnAddFormat = d.querySelector("#btnAddFormat");
@@ -155,7 +154,7 @@ await withApp(async (w, d, T) => {
   // Cancel closes the dialog, no format saved.
   fireClick(d.querySelector("#formatEditCancel"), w);
   assert(!isVisible(dlg, w), "Cancel closes the dialog");
-  assert(formatRows().length === 4, "cancelling adds nothing to the format list");
+  assert(formatRows().length === 1, "cancelling adds nothing to the format list");
 
   // Re-open and add one from a pasted example: the automatic suggestion
   // fills the regex + timestamp format and the preview right away.
@@ -179,7 +178,7 @@ await withApp(async (w, d, T) => {
   // resolves — wait for that, not for a fixed 20ms (tests/README.md's rule).
   await waitFor(() => !isVisible(dlg, w));
   assert(!isVisible(dlg, w), "saving closes the dialog");
-  assert(formatRows().length === 5, "the new format is now listed alongside the default and the 3 seeded demo formats");
+  assert(formatRows().length === 2, "the new format is now listed alongside the default");
 
   const newFormat = T.state.logFormats.find(f => f.name === "Bracket format");
   assert(newFormat && newFormat.mode === "regex" && !newFormat.builtin, "new format saved in Regex mode, not builtin");

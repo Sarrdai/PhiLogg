@@ -58,6 +58,7 @@ The page's script exposes its functions as `window.PhiloggSite`
 | `app/index.html` | `philogg.html` through `scripts/strip-comments.js` |
 | `app/LICENSE.md` | `LICENSE.md` |
 | `app/tour/` | `node tools/log-sim/cli.js -f tour` (welcome.log, welcome.logformat.json, welcome.session.json, demo/app.log, cards/app.log, cards/*.session.json) |
+| `app/formats/` | provided formats the hosted app fetches at boot: `index.json`, `welcome.logformat.json` (copied from the tour output) and `examples/formats/*.logformat.json` |
 | `.nojekyll` | empty |
 
 Version stamping is not part of it: the workflow stamps its throwaway checkout

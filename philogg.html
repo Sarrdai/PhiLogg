@@ -3486,6 +3486,7 @@
   #filterLibrarySaveDialog.hidden, #filterLibraryDialog.hidden{display:none;}
   #filterLibraryDialog .link-dialog-card{width:min(500px, 92%);}
   #filterLibraryList{max-height:min(360px, 50vh); overflow-y:auto; margin:-2px 0 14px;}
+  #formatProvidedNotice:empty{display:none;}
   .filter-library-empty{padding:14px 2px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
   .filter-library-row{display:flex; align-items:center; gap:8px; padding:8px 2px; border-bottom:1px solid var(--border-soft);}
   .filter-library-row:last-child{border-bottom:none;}
@@ -7586,6 +7587,7 @@
 
           <div class="settings-card" id="formatListCard">
           <div id="formatList"></div>
+          <div id="formatProvidedNotice" class="filter-library-empty"></div>
           <div class="settings-card-footer"><button type="button" id="btnAddFormat" class="btn-mini-dashed">+ Add format…</button></div>
           </div>
 
@@ -10362,6 +10364,9 @@ const state = {
   // serializeFilterBranch/serializeFilterTreeForCache carriers apply here.
   logFormats: [],
   formatRules: [],
+  // Provided-format files that were skipped at boot: [{name, reason}] (see
+  // loadProvidedFormats). Shown as a notice in Settings -> Log Formats.
+  providedSkipped: [],
 };
 
 // The six level buckets that have a dedicated --level-* theme var of their
@@ -45460,54 +45465,130 @@ async function deleteFormatRuleEntry(id) {
 
 // Loaded once at boot, before any file parsing can happen (see the Init
 // section). Lazily seeds the builtin default format on a fresh DB, or on
-// an upgrade from a pre-feature session where it's simply missing.
-// FEATURE_BACKLOG.md #81's reference case: a log4net-style app format and
-// an RFC 5424 syslog format that interleave in one physical file, plus the
-// meta-format combining them (see DEFAULT_LOG_FORMAT's mode comment and
-// splitTextByMetaFormat). Seeded once, like DEFAULT_LOG_FORMAT below, so
-// they're available in the Format Manager right away — not builtin, so
-// they're freely editable/deletable like any other format. Deliberately
-// no FormatRule/glob is created for them here; they stay dormant until a
-// filename rule is added by hand (Settings → Format Manager → Filename
-// rules) — see changelog.d/ for the session that added this.
-const DEMO_APP_FORMAT = {
-  id: "fmt-demo-app", name: "App log (log4net-style)", mode: "regex",
-  regex: '^(?<ts>\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d+) \\[\\] (?<level>[A-Z]+)\\s+(?<location>[^\\s].*?)\\s+- (?<message>.*)$',
-  pattern: "", tsFormat: "yyyy-MM-dd HH:mm:ss.SSS", levels: LEVELS.slice(),
-  builtin: false, edited: false, createdAt: 0,
-};
-const DEMO_SYSLOG_FORMAT = {
-  id: "fmt-demo-syslog", name: "Syslog (RFC 5424)", mode: "regex",
-  // 6-digit fractional seconds — exercises the SSS date-token's
-  // arbitrary-digit-count support (see DATE_TOKEN_FRAG/parseTimestampGeneric).
-  // No (?<level>...) group by design: format B has no textual level in the
-  // reference sample, so its entries fall through the existing generic
-  // missing-level default — see FEATURE_BACKLOG.md #80 (independent item).
-  regex: "^<\\d+>1 (?<ts>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+) \\S+ \\S+ (?<thread>\\d+) \\S+ \\[log@\\d+ filename='(?<location>[^']+)'[^\\]]*\\] (?<message>.*)$",
-  pattern: "", tsFormat: "yyyy-MM-ddTHH:mm:ss.SSS", levels: LEVELS.slice(),
-  builtin: false, edited: false, createdAt: 0,
-};
-const DEMO_META_FORMAT = {
-  id: "fmt-demo-app-syslog-meta", name: "App + Syslog (meta)", mode: "meta",
-  targetFormatIds: [DEMO_APP_FORMAT.id, DEMO_SYSLOG_FORMAT.id],
-  builtin: false, edited: false, createdAt: 0,
-};
-const DEMO_SEED_FORMATS = [DEMO_APP_FORMAT, DEMO_SYSLOG_FORMAT, DEMO_META_FORMAT];
-
+// an upgrade from a pre-feature session where it's simply missing. Then
+// appends the read-only "provided" layer (loadProvidedFormats).
 async function loadFormatConfig() {
   let formats = await listLogFormats();
   if (!formats.some(f => f.id === DEFAULT_FORMAT_ID)) {
     await saveLogFormat(DEFAULT_LOG_FORMAT);
     formats = formats.concat([DEFAULT_LOG_FORMAT]);
   }
-  for (const seed of DEMO_SEED_FORMATS) {
-    if (!formats.some(f => f.id === seed.id)) {
-      await saveLogFormat(seed);
-      formats = formats.concat([seed]);
-    }
+  const rules = await listFormatRules();
+  const provided = await loadProvidedFormats(formats);
+  state.logFormats = formats.concat(provided.formats);
+  state.formatRules = rules.concat(provided.rules);
+  state.providedSkipped = provided.skipped;
+  invalidateFormatCompileCache();
+  invalidateGlobCompileCache();
+}
+
+/* ---- Provided formats ----
+   Formats shipped as *.logformat.json files next to the app (hosted:
+   formats/index.json + the files it lists; desktop: the list the wrapper
+   injects as window.__PHILOGG_PROVIDED_FORMATS__). A read-only layer that
+   is re-read at every start and lives in memory only — NEVER passed to
+   saveLogFormat/saveFormatRule, so it never reaches IndexedDB. Format id
+   fmt-provided-<slug of the file name> (stable, so session-cache pins
+   survive); the file's fileNamePatterns become rules ranked after every
+   user rule (order >= PROVIDED_RULE_ORDER_BASE). Editing = Duplicate into
+   an own format. A meta format names its targets (logFormat.targetFormatNames),
+   resolved by name against provided + own formats. */
+const PROVIDED_RULE_ORDER_BASE = 1e9;
+const PROVIDED_INDEX_URL = "formats/index.json";
+
+function providedFormatSlug(fileName) {
+  return String(fileName).replace(/\.json$/i, "").replace(/\.logformat$/i, "").toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "format";
+}
+
+// One provided file's text -> { meta, logFormat, fileNamePatterns,
+// targetFormatNames } or { error }. Ordinary formats go through
+// normalizeLogFormatExport; "meta" is accepted here only (a user import of
+// a meta file stays rejected there).
+function parseProvidedFormatText(text) {
+  let data;
+  try { data = JSON.parse(text); } catch { return { error: "not valid JSON" }; }
+  if (!data || typeof data !== "object" || data.format !== LOG_FORMAT_FILE_FORMAT) return { error: "not a PhiLogg log format file" };
+  if (!(data.version <= LOG_FORMAT_FILE_VERSION)) return { error: "saved by a newer version" };
+  const src = data.logFormat;
+  if (src && typeof src === "object" && src.mode === "meta") {
+    if (typeof src.name !== "string" || !src.name) return { error: "log format file is incomplete" };
+    const names = Array.isArray(src.targetFormatNames) ? src.targetFormatNames.filter(n => typeof n === "string" && n) : [];
+    if (names.length < 2) return { error: "a meta format needs at least 2 targetFormatNames" };
+    const globs = [...new Set((Array.isArray(data.fileNamePatterns) ? data.fileNamePatterns : [])
+      .filter(g => typeof g === "string" && g.trim()).map(g => g.trim()))];
+    return { meta: true, logFormat: { name: src.name.slice(0, 80), mode: "meta" }, targetFormatNames: names, fileNamePatterns: globs };
   }
-  state.logFormats = formats;
-  state.formatRules = await listFormatRules();
+  const n = normalizeLogFormatExport(src, data.fileNamePatterns);
+  if (n.error) return { error: n.error.replace(/^Log format file /, "").replace(/^./, c => c.toLowerCase()) };
+  return n;
+}
+
+// The raw files: the wrapper's injected list wins over the hosted fetch.
+// Returns [{ name, source, text }] ([] on any failure — silent).
+async function fetchProvidedFormatFiles() {
+  const injected = window.__PHILOGG_PROVIDED_FORMATS__;
+  if (Array.isArray(injected)) {
+    return injected.filter(f => f && typeof f.name === "string" && typeof f.text === "string")
+      .map(f => ({ name: f.name, source: typeof f.source === "string" ? f.source : f.name, text: f.text }));
+  }
+  if (location.protocol !== "http:" && location.protocol !== "https:") return [];
+  try {
+    const res = await fetch(PROVIDED_INDEX_URL, { cache: "no-store" });
+    if (!res || !res.ok) return [];
+    const list = await res.json();
+    if (!Array.isArray(list)) return [];
+    const out = [];
+    for (const name of list) {
+      if (typeof name !== "string" || !name || /[\\/]/.test(name)) continue;
+      const url = "formats/" + encodeURIComponent(name);
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        if (!r || !r.ok) { out.push({ name, source: url, error: "could not be loaded" }); continue; }
+        out.push({ name, source: new URL(url, location.href).href, text: await r.text() });
+      } catch { out.push({ name, source: url, error: "could not be loaded" }); }
+    }
+    return out;
+  } catch { return []; }
+}
+
+// -> { formats, rules, skipped:[{name, reason}] }; `ownFormats` are the
+// user's stored formats (meta targets may name them).
+async function loadProvidedFormats(ownFormats) {
+  const files = await fetchProvidedFormatFiles();
+  const formats = [], rules = [], skipped = [];
+  const parsedFiles = [];
+  const seen = new Set();
+  for (const f of files) {
+    if (f.error) { skipped.push({ name: f.name, reason: f.error }); continue; }
+    const parsed = parseProvidedFormatText(f.text);
+    if (parsed.error) { skipped.push({ name: f.name, reason: parsed.error }); continue; }
+    const id = "fmt-provided-" + providedFormatSlug(f.name);
+    if (seen.has(id)) { skipped.push({ name: f.name, reason: "another file has the same name" }); continue; }
+    seen.add(id);
+    parsedFiles.push({ f, id, parsed });
+  }
+  const ordinary = parsedFiles.filter(p => !p.parsed.meta).map(p => Object.assign(
+    { id: p.id, builtin: false, edited: false, createdAt: 0, provided: true, providedSource: p.f.source }, p.parsed.logFormat));
+  const nameToId = name => {
+    const hit = ordinary.find(x => x.name === name) || ownFormats.find(x => x.mode !== "meta" && x.name === name);
+    return hit ? hit.id : null;
+  };
+  let ruleIdx = 0;
+  const addRules = (p) => p.parsed.fileNamePatterns.forEach((glob, i) => {
+    rules.push({ id: "rule-provided-" + providedFormatSlug(p.f.name) + "-" + i, order: PROVIDED_RULE_ORDER_BASE + ruleIdx++,
+      createdAt: 0, glob, formatId: p.id, provided: true });
+  });
+  for (const p of parsedFiles) {
+    if (!p.parsed.meta) { formats.push(ordinary.find(x => x.id === p.id)); addRules(p); continue; }
+    const ids = p.parsed.targetFormatNames.map(nameToId);
+    const missing = p.parsed.targetFormatNames.filter((n, i) => !ids[i]);
+    if (missing.length) { skipped.push({ name: p.f.name, reason: "unknown target format " + missing.map(n => '"' + n + '"').join(", ") }); continue; }
+    formats.push(Object.assign({ id: p.id, builtin: false, edited: false, createdAt: 0, provided: true, providedSource: p.f.source },
+      p.parsed.logFormat, { targetFormatIds: ids }));
+    addRules(p);
+  }
+  return { formats, rules, skipped };
 }
 
 const filterLibrarySaveDialog = el("#filterLibrarySaveDialog");
@@ -46373,7 +46454,8 @@ function renderFormatList() {
     const modeLabel = fmt.mode === "meta" ? "Meta · " + (fmt.targetFormatIds || []).length + " targets"
       : fmt.mode === "json" ? "JSON Lines" : fmt.mode === "logfmt" ? "logfmt" : fmt.mode === "regex" ? "Regex" : "Pattern";
     main.innerHTML =
-      '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") + '</div>' +
+      '<div class="filter-library-row-name">' + escapeHtml(fmt.name) + (fmt.builtin ? ' <span class="link-target-label">(default)</span>' : "") +
+      (fmt.provided ? ' <span class="link-target-label" title="' + escapeHtml("Provided by " + (fmt.providedSource || "a format file") + " — read-only") + '">Provided</span>' : "") + '</div>' +
       '<div class="filter-library-row-meta">' + modeLabel +
       (rulesUsing ? " · used by " + rulesUsing + " rule" + (rulesUsing === 1 ? "" : "s") : "") +
       (formatLevels(fmt.id).join(",") !== LEVELS.join(",") ? " · " + escapeHtml(formatLevels(fmt.id).join(" ")) : "") + '</div>';
@@ -46381,8 +46463,11 @@ function renderFormatList() {
     const editBtn = document.createElement("button");
     editBtn.type = "button";
     editBtn.className = "btn-mini-outline";
-    editBtn.textContent = "Edit";
-    editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
+    editBtn.textContent = fmt.provided ? "Duplicate" : "Edit";
+    if (fmt.provided) {
+      editBtn.title = "Create an editable copy among your own formats";
+      editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatDuplicateDialog(fmt.id); });
+    } else editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
     row.appendChild(editBtn);
     // A meta-format only names other formats by id — nothing standalone to export.
     if (fmt.mode !== "meta") {
@@ -46394,7 +46479,9 @@ function renderFormatList() {
       exportBtn.addEventListener("click", ev => { ev.stopPropagation(); exportLogFormatToFile(fmt.id); });
       row.appendChild(exportBtn);
     }
-    if (fmt.builtin) {
+    if (fmt.provided) {
+      // read-only: neither Reset nor Delete
+    } else if (fmt.builtin) {
       const resetBtn = document.createElement("button");
       resetBtn.type = "button";
       resetBtn.className = "btn-mini-outline";
@@ -46414,6 +46501,9 @@ function renderFormatList() {
     frag.appendChild(row);
   });
   formatList.appendChild(frag);
+  const skipped = state.providedSkipped || [];
+  el("#formatProvidedNotice").innerHTML = skipped.map(s =>
+    '<div>Provided format file "' + escapeHtml(s.name) + '" skipped: ' + escapeHtml(s.reason) + '</div>').join("");
 }
 
 // Reverts the builtin default back to its original pattern/tsFormat/name
@@ -46423,7 +46513,7 @@ function renderFormatList() {
 // just the displayed values.
 async function resetDefaultFormat() {
   const fmt = state.logFormats.find(f => f.id === DEFAULT_FORMAT_ID);
-  if (!fmt || !fmt.builtin) return;
+  if (!fmt || !fmt.builtin || fmt.provided) return;
   Object.assign(fmt, {
     name: DEFAULT_LOG_FORMAT.name,
     mode: DEFAULT_LOG_FORMAT.mode,
@@ -46442,7 +46532,7 @@ async function resetDefaultFormat() {
 
 async function removeLogFormat(id) {
   const fmt = state.logFormats.find(f => f.id === id);
-  if (!fmt || fmt.builtin) return;
+  if (!fmt || fmt.builtin || fmt.provided) return;
   const usedBy = state.formatRules.filter(r => r.formatId === id).length;
   if (usedBy) {
     showCopyToast(usedBy + " rule" + (usedBy === 1 ? "" : "s") + " still use" + (usedBy === 1 ? "s" : "") + " this format — remove them first");
@@ -46456,6 +46546,25 @@ async function removeLogFormat(id) {
   await deleteLogFormatEntry(id);
   state.logFormats = state.logFormats.filter(f => f.id !== id);
   renderFormatList();
+}
+
+// "Duplicate" on a provided format: the format dialog prefilled as a NEW own
+// format (the import path), its filename patterns offered like an import's.
+// A meta format keeps its targets by id (provided targets stay referenced
+// by their stable provided id).
+function openFormatDuplicateDialog(id) {
+  const fmt = state.logFormats.find(f => f.id === id);
+  if (!fmt) return;
+  const copyName = (fmt.name + " (copy)").slice(0, 80);
+  let logFormat;
+  if (fmt.mode === "meta") logFormat = { name: copyName, mode: "meta", targetFormatIds: (fmt.targetFormatIds || []).slice() };
+  else {
+    logFormat = {};
+    LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (fmt[k] !== undefined) logFormat[k] = fmt[k]; });
+    logFormat.name = copyName;
+  }
+  const fileNamePatterns = state.formatRules.filter(r => r.formatId === id).sort((a, b) => a.order - b.order).map(r => r.glob);
+  openFormatEditDialog(null, { logFormat, fileNamePatterns, duplicate: true });
 }
 
 /* ---- Log format export/import (JSON) ----
@@ -46543,13 +46652,14 @@ function importLogFormatText(text) {
 
 function renderFormatRuleList() {
   const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
+  const userRules = rules.filter(r => !r.provided);
   formatRuleList.innerHTML = "";
   if (!rules.length) {
     formatRuleList.innerHTML = '<div class="filter-library-empty">No filename rules yet — every file uses the default format.</div>';
     return;
   }
   const frag = document.createDocumentFragment();
-  rules.forEach((rule, i) => {
+  rules.forEach(rule => {
     const fmt = state.logFormats.find(f => f.id === rule.formatId);
     const row = document.createElement("div");
     row.className = "filter-library-row";
@@ -46559,13 +46669,20 @@ function renderFormatRuleList() {
       '<div class="filter-library-row-name">' + escapeHtml(rule.glob) + '</div>' +
       '<div class="filter-library-row-meta">→ ' + escapeHtml(fmt ? fmt.name : "(missing format)") + '</div>';
     row.appendChild(main);
+    if (rule.provided) {
+      // read-only, always ranked after the user's own rules
+      main.querySelector(".filter-library-row-name").insertAdjacentHTML("beforeend", ' <span class="link-target-label" title="' + escapeHtml("Provided by " + (fmt && fmt.providedSource || "a format file") + " — read-only") + '">Provided</span>');
+      frag.appendChild(row);
+      return;
+    }
+    const userIdx = userRules.indexOf(rule);
 
     const upBtn = document.createElement("button");
     upBtn.type = "button";
     upBtn.className = "filter-library-row-order";
     upBtn.title = "Move up";
     upBtn.textContent = "▲";
-    upBtn.disabled = i === 0;
+    upBtn.disabled = userIdx === 0;
     upBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, -1); });
     row.appendChild(upBtn);
 
@@ -46574,7 +46691,7 @@ function renderFormatRuleList() {
     downBtn.className = "filter-library-row-order";
     downBtn.title = "Move down";
     downBtn.textContent = "▼";
-    downBtn.disabled = i === rules.length - 1;
+    downBtn.disabled = userIdx === userRules.length - 1;
     downBtn.addEventListener("click", ev => { ev.stopPropagation(); moveFormatRuleOrder(rule.id, 1); });
     row.appendChild(downBtn);
 
@@ -46599,7 +46716,8 @@ function renderFormatRuleList() {
 }
 
 async function moveFormatRuleOrder(id, delta) {
-  const rules = [...state.formatRules].sort((a, b) => a.order - b.order);
+  // Provided rules are never part of a swap (they are not persisted and rank last).
+  const rules = state.formatRules.filter(r => !r.provided).sort((a, b) => a.order - b.order);
   const idx = rules.findIndex(r => r.id === id);
   const otherIdx = idx + delta;
   if (idx === -1 || otherIdx < 0 || otherIdx >= rules.length) return;
@@ -46611,6 +46729,8 @@ async function moveFormatRuleOrder(id, delta) {
 }
 
 async function removeFormatRule(id) {
+  const target = state.formatRules.find(r => r.id === id);
+  if (target && target.provided) return;
   await deleteFormatRuleEntry(id);
   state.formatRules = state.formatRules.filter(r => r.id !== id);
   renderFormatRuleList();
@@ -48001,10 +48121,12 @@ function fwzNextHue() {
 // file's filename patterns as checkboxes (renderFormatImportRules).
 function openFormatEditDialog(id, importData) {
   if (currentLayoutTier === "phone") { showCopyToast("The log format editor needs a wider window. Open PhiLogg on a desktop or tablet."); return; }
+  const target = id ? state.logFormats.find(f => f.id === id) : null;
+  if (target && target.provided) { showCopyToast("Provided formats are read-only — use Duplicate to make an editable copy"); return; }
   formatEditId = id;
-  const fmt = id ? state.logFormats.find(f => f.id === id) : (importData ? importData.logFormat : null);
+  const fmt = id ? target : (importData ? importData.logFormat : null);
   const isMeta = !!(fmt && fmt.mode === "meta");
-  el("#formatEditTitle").textContent = importData ? "Import log format" : fmt ? "Edit log format" : "Add log format";
+  el("#formatEditTitle").textContent = importData ? (importData.duplicate ? "Duplicate log format" : "Import log format") : fmt ? "Edit log format" : "Add log format";
   formatEditName.value = fmt ? fmt.name : "";
   const isJson = !!(fmt && (fmt.mode === "json" || fmt.mode === "logfmt"));
   formatEditMode = isMeta ? "meta" : isJson ? fmt.mode : "regex";
@@ -48037,6 +48159,7 @@ function openFormatEditDialog(id, importData) {
     undo: [],
     redo: [],
     importPatterns: importData ? importData.fileNamePatterns : null,
+    duplicate: !!(importData && importData.duplicate), // a copy of a provided format (toast wording)
     fileSource: null, // the bytes behind the example lines read from a file (fwzLoadBytes)
     // JSON Lines kind (fwzJsonSync): the three mapped keys, the column
     // paths ({path, key (a saved column's stable key, else null), on}),
@@ -48093,7 +48216,7 @@ function renderFormatImportRules() {
   const globs = fwz.importPatterns || [];
   el("#formatEditImportField").classList.toggle("hidden", !globs.length);
   el("#formatEditImportRules").innerHTML = globs.map((g, i) => {
-    const existing = state.formatRules.find(r => r.glob === g);
+    const existing = state.formatRules.find(r => r.glob === g && !r.provided); // a provided rule ranks after any user rule, so it never blocks one
     const owner = existing ? state.logFormats.find(f => f.id === existing.formatId) : null;
     return '<label><input type="checkbox" data-idx="' + i + '"' + (existing ? "" : " checked") + '><span>' + escapeHtml(g) +
       (existing ? ' <span class="link-target-label">(already mapped to ' + escapeHtml(owner ? owner.name : "another format") + ')</span>' : "") + '</span></label>';
@@ -49007,6 +49130,7 @@ async function saveFormatEdit() {
   const globs = [formatEditRuleGlob.value.trim()].concat(Array.from(el("#formatEditImportRules").querySelectorAll("input[data-idx]"))
     .filter(cb => cb.checked).map(cb => (fwz.importPatterns || [])[+cb.dataset.idx])).filter(Boolean);
   const imported = !!fwz.importPatterns;
+  const duplicated = !!fwz.duplicate;
 
   await saveLogFormat(fmt);
   const idx = state.logFormats.findIndex(f => f.id === fmt.id);
@@ -49018,7 +49142,7 @@ async function saveFormatEdit() {
     if (state.formatRules.some(r => r.formatId === fmt.id && r.glob === glob)) continue;
     const rule = {
       id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
-      order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
+      order: state.formatRules.some(r => !r.provided) ? Math.max(...state.formatRules.filter(r => !r.provided).map(r => r.order)) + 1 : 0,
       createdAt: Date.now(),
       glob,
       formatId: fmt.id,
@@ -49026,7 +49150,7 @@ async function saveFormatEdit() {
     await saveFormatRule(rule);
     state.formatRules.push(rule);
   }
-  if (imported) showCopyToast('Log format "' + fmt.name + '" imported' + (globs.length ? " with " + globs.length + " filename rule" + (globs.length === 1 ? "" : "s") : ""));
+  if (imported) showCopyToast('Log format "' + fmt.name + (duplicated ? '" duplicated' : '" imported') + (globs.length ? " with " + globs.length + " filename rule" + (globs.length === 1 ? "" : "s") : ""));
   closeFormatEditDialog();
   renderFormatList();
   renderFormatRuleList();
@@ -49215,6 +49339,7 @@ function renderFormatRuleFormatOptions() {
 function openFormatRuleEditDialog(id) {
   formatRuleEditId = id;
   const rule = id ? state.formatRules.find(r => r.id === id) : null;
+  if (rule && rule.provided) return;
   el("#formatRuleEditTitle").textContent = rule ? "Edit filename rule" : "Add filename rule";
   formatRuleGlob.value = rule ? rule.glob : "";
   renderFormatRuleFormatOptions();
@@ -49236,9 +49361,10 @@ async function saveFormatRuleEdit() {
   if (!glob) return;
   const formatId = formatRuleFormatSelect.value;
   const existing = formatRuleEditId ? state.formatRules.find(r => r.id === formatRuleEditId) : null;
+  if (existing && existing.provided) return;
   const rule = existing ? Object.assign({}, existing) : {
     id: "rule-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
-    order: state.formatRules.length ? Math.max(...state.formatRules.map(r => r.order)) + 1 : 0,
+    order: state.formatRules.some(r => !r.provided) ? Math.max(...state.formatRules.filter(r => !r.provided).map(r => r.order)) + 1 : 0,
     createdAt: Date.now(),
   };
   rule.glob = glob;

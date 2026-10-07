@@ -39,4 +39,4 @@ await withApp(async (w, d, T) => {
   let threw = false;
   try { w.render(); } catch (e) { threw = true; }
   assert(!threw, "the restored hidden source renders fine as the active node");
-});
+}, { demoFormats: true });
