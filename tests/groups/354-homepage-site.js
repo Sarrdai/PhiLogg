@@ -27,6 +27,10 @@ if (groupSelected()) {
   section("354a. The build output");
   for (const f of ["index.html", "app/index.html", "app/LICENSE.md", "app/tour/welcome.session.json", "app/tour/welcome.log", "app/tour/demo/app.log", ".nojekyll"])
     assert(fs.existsSync(path.join(out, f)), "built: " + f);
+  const fmtIndex = JSON.parse(rd("app/formats/index.json"));
+  assert(fmtIndex.includes("welcome.logformat.json") && fmtIndex.includes("app-syslog-meta.logformat.json") && fmtIndex.every(f => fs.existsSync(path.join(out, "app", "formats", f))),
+    "app/formats/index.json lists the welcome and example formats, all built: " + fmtIndex);
+  assert(rd("app/formats/welcome.logformat.json") === rd("app/tour/welcome.logformat.json"), "the provided welcome format is the tour's own export");
   const app = rd("app/index.html");
   assert(/const PHILOGG_VERSION = "[^"]+"/.test(app), "the hosted app still carries PHILOGG_VERSION");
   assert(!/\/\* Short commit-hash build tag under the product name/.test(app) && /Short commit-hash build tag under the product name/.test(fs.readFileSync(path.join(__dirname, "..", "philogg.html"), "utf8")),

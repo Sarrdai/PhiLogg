@@ -1,0 +1,14 @@
+{
+  "format": "philogg-log-format",
+  "version": 1,
+  "savedAt": "2026-10-07T00:00:00.000Z",
+  "logFormat": {
+    "name": "App + Syslog (meta)",
+    "mode": "meta",
+    "targetFormatNames": [
+      "App log (log4net-style)",
+      "Syslog (RFC 5424)"
+    ]
+  },
+  "fileNamePatterns": []
+}

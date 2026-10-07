@@ -37,7 +37,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~52,700 lines, the one place this number is kept: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~53,100 lines, the one place this number is kept: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -77,7 +77,9 @@ same entry shape `{ts, level, thread, location, method, message, fields}`:
 Time and Level are mandatory, the other columns optional per format, plus
 per-format custom columns in `fields`. Formats are defined in the format
 dialog (Settings → Log Formats) and stored in Regex mode; filename glob
-rules pick a format per file, and a file stays pinned to it. Plain text and
+rules pick a format per file, and a file stays pinned to it. Formats shipped
+as `*.logformat.json` files next to the app are a read-only in-memory
+"provided" layer on top. Plain text and
 JSON/XML documents load as files of the built-in Plain text format.
 
 **Full reference: `docs/log-formats.md`** (format definitions, the dialog, JSON
@@ -281,3 +283,4 @@ Finished concepts and implementation plans (German), kept for the reasoning behi
 - **A new filter-node field is one row in `FILTER_NODE_FIELDS`** — the copy table behind `cloneSubtree`, `snapshotSubtree`/`restoreSubtree` (undo/redo) and `serializeFilterNodeFields` (filter JSON file, filter library and session cache, whose loaders share `materializeFilterNode` and `serializedFilterNodeValid`) — plus its reader in `materializeFilterNode`, which sanitizes foreign data. The table header documents the per-carrier rules (text/extraction gates, snapshot not gated, by-reference vs. copied). GROUP filter-node-carriers fails until the row, a fixture and its `COVERED_FIELDS` entry exist, and fails for any node property no carrier knows. Still hand-written, deliberately subsets: `captureNodeFields`/`applyNodeFields` (undo of an edit), `bakeNodeCondition`/`materializeBakedAsNode` (baked conditions). Not carried by any: `locked`, `collapsed`. This applies to **file**-node fields too, not just filter fields — `node.formatId` was dropped by the undo snapshot for exactly this reason; a file-node field also needs `persistFileNode`/`restoreSessionFromCache` (session cache, separate from the filter-tree carriers above) alongside `snapshotSubtree`/`restoreSubtree`. `node.merged`, `node.folderId`/`node.folderRelPath`, `node.partial` (the folder-watch minimap's windowed/partial load) and `node.pruned` ("Prune file to this result…", `docs/persistence-and-sync.md` → "Prune") are the current examples of file-node fields threaded through both.
 - **`node.value` is immutable by convention.** `cloneSubtree`, `snapshotSubtree` and `captureNodeFields` all copy `value` **by reference** — harmless for the primitive shapes (`text`, `after`, `before`), aliasing for the object/array ones (`timerange`, `idset`, `level`). Every write must replace `node.value` wholesale (`node.value = node.value.concat(added)`), never mutate the existing object/array in place; otherwise a copy/pasted duplicate of the node grows with it and the undo stack's "before" capture is rewritten after the fact.
 - **`restoreSubtree` rebuilds nodes as new objects** under the original ids. Anything holding a node *object* across an undo (tests especially) is left with a detached husk — re-read from `state.nodes[id]`. See "Core data model" above for the node-tree shape these all serialize, and `docs/filters.md`/`docs/persistence-and-sync.md` for examples of features that had to thread a new field through all four.
+- **Provided formats are in memory only — never persist them.** `state.logFormats`/`state.formatRules` hold two kinds of records: own ones (IndexedDB) and `provided: true` ones read from `*.logformat.json` files at every start (`loadProvidedFormats`). Any code that saves, edits, deletes or reorders formats/rules must skip `provided` records (`saveLogFormat`/`saveFormatRule` on one would leak it into IndexedDB and keep it alive after its file is gone); provided rules have `order >= 1e9`, so a new user rule's order is computed from user rules only. `docs/log-formats.md` → "Provided formats".

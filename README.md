@@ -427,6 +427,12 @@ deployments possible:
   **Share formats as JSON**: each format has an **Export** button (the file
   includes its filename patterns); importing it opens the format dialog
   prefilled, where you pick which filename patterns to take over.
+  **Provided formats**: `*.logformat.json` files placed next to the app
+  (hosted: `formats/` listed in `formats/index.json`; desktop: a `formats/`
+  folder beside the executable or in your config folder) are loaded at every
+  start as read-only formats tagged **Provided**; **Duplicate** makes an
+  editable copy. Ready-made examples (a log4net-style app log, RFC 5424
+  syslog and a meta format combining them) are in `examples/formats/`.
 - **Configurable themes** (Settings → Appearance) — Catppuccin Latte (light)
   and Mocha (dark) by default, **following your OS light/dark setting** and
   switching live when it changes (or pin Light/Dark instead; the light and

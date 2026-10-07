@@ -29,7 +29,7 @@ await withApp(async (w, d, T) => {
     assert(!T.state.nodes[id], "hidden source " + id + " is cascade-deleted, not orphaned");
     assert(!T.state.rootIds.includes(id), "...and removed from rootIds too");
   });
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("250b. Deleting a bulk-merge leaves its (mergeOwnerId-only) sources alive at top level, un-orphaned");
@@ -42,4 +42,4 @@ await withApp(async (w, d, T) => {
   assert(T.state.nodes[fa.id] && T.state.nodes[fb.id], "both originals are still alive");
   assert(T.state.rootIds.includes(fa.id) && T.state.rootIds.includes(fb.id), "...and still at top level");
   assert(!fa.mergeOwnerId && !fb.mergeOwnerId, "mergeOwnerId is cleared on both — no longer pointing at a dead merge");
-});
+}, { demoFormats: true });

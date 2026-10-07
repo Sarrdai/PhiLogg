@@ -64,4 +64,4 @@ await withApp(async (w, d, T) => {
   assert(merged.id === mergedId, "sanity: the returned node is the same merge shell observed throughout");
   assert(T.state.activeId === mergedId, "the merge remains the active node once everything has finished");
   assert(merged.entries.length === N * 2, "the merge's own entries are complete once loading is done — got " + merged.entries.length);
-});
+}, { demoFormats: true });

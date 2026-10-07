@@ -1,0 +1,5 @@
+[
+  "app-log.logformat.json",
+  "syslog-rfc5424.logformat.json",
+  "app-syslog-meta.logformat.json"
+]

@@ -104,4 +104,4 @@ await withApp(async (w, d, T) => {
   await w.loadFileDescriptors([{ file: new w.File(['{"hello":1}'], "data.json"), handle: null }]);
   assert(!isVisible(dlg, w), "a plain JSON file does not open the wizard");
   assert(T.state.looseInlineViewers.size === 0 && T.state.rootIds.some(id => T.state.nodes[id].name === "data.json" && T.state.nodes[id].formatId === "fmt-plaintext"), "...it loads as a plain-text file node");
-});
+}, { demoFormats: true });

@@ -46,7 +46,7 @@ await withApp(async (w, d, T) => {
   alt("ArrowLeft");
   assert(T.state.nodes[srcId].collapsed === true, "Left on the expanded Sources collapses it");
   assert(w.flattenTreeIds().filter(id => id === fa.id).length === 1, "collapsed: fa is listed only at its top-level position");
-});
+}, { demoFormats: true });
 await withApp(async (w, d, T) => {
   section("335b. hidden merge sources are nav-reachable only under Sources; Show Sources off removes the Sources stop");
   await waitForFormatConfig(T);
@@ -67,4 +67,4 @@ await withApp(async (w, d, T) => {
   assert(!nav.includes(srcId) && !merged.sources.some(s => nav.includes(s.id)),
     "Show Sources off: no invisible Sources / source stops");
   w.eval("showSourcesSetting = true");
-});
+}, { demoFormats: true });

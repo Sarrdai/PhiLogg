@@ -314,6 +314,40 @@ meta-format) falls back to the JS path above. A golden fixture shared by the
 jsdom suite (GROUP 264) and the crate's `cargo test` pins both parsers to the
 same output. See `docs/desktop.md` → "Native parsing".
 
+**Provided formats (FEATURE_BACKLOG.md #105, 2026-10-07).** Formats can be
+shipped as `*.logformat.json` files (the ordinary `philogg-log-format` v1 file)
+beside the app instead of being imported or baked into the HTML. They form a
+**read-only layer** that is re-read at every start and kept in memory only:
+`loadFormatConfig` appends them to `state.logFormats` / `state.formatRules` with
+`provided: true`, and nothing ever passes them to `saveLogFormat`/`saveFormatRule`
+(GROUP provided-formats checks the IndexedDB stores stay free of them). Sources
+(`fetchProvidedFormatFiles`): the desktop wrapper's injected
+`window.__PHILOGG_PROVIDED_FORMATS__` (`[{name, source, text}]`, see
+`docs/desktop.md`) wins; otherwise, on http/https, `formats/index.json` (JSON
+array of file names, relative to the page) and each listed file are fetched. Any
+failure or a 404 index means no provided formats, silently; `file://` is not
+supported. Each file goes through `parseProvidedFormatText` →
+`normalizeLogFormatExport` (an invalid file is skipped; one line per skipped
+file shows under Settings → Log Formats, `state.providedSkipped`). The format id
+is `fmt-provided-<slug of the file name>` (stable, so session-cache pins
+survive; a pin to a vanished file behaves like a pin to a deleted format). The
+file's `fileNamePatterns` become rules `rule-provided-<slug>-<i>` with `order`
+>= 1e9, i.e. ranked after every user rule; user rules may point at provided
+formats. A **meta** format in a provided file is
+`logFormat: {name, mode: "meta", targetFormatNames: [...]}`, targets resolved by
+name against provided and own formats (unresolved → file skipped); that mode is
+accepted only on this route, a user import of a meta file is still rejected.
+The Format Manager tags them "Provided" (tooltip = source) and offers
+**Duplicate** (the format dialog prefilled as a new own format, name
+`"<name> (copy)"`, patterns offered like an import's) and Export instead of
+Edit/Delete/Reset; `openFormatEditDialog`, `removeLogFormat`, `moveFormatRuleOrder`
+(swaps only user rules), `removeFormatRule` and the rule dialog refuse provided
+records. `ensureSessionLogFormat` also matches them, so a session whose format
+equals a provided one reuses it. The three former demo seeds are
+`examples/formats/` files (`app-log`, `syslog-rfc5424`, `app-syslog-meta`);
+nothing is seeded into IndexedDB any more except `fmt-default`. The hosted app
+gets `formats/` from `scripts/build-site.js` (`docs/homepage.md`).
+
 **Multi-pattern parsing: the `"meta"` format mode** (FEATURE_BACKLOG.md #81,
 implemented this session). Some files interleave two or more independent
 grammars line-by-line (the motivating case: a log4net-style app log mixed
