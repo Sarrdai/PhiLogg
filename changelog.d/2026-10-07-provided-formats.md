@@ -2,4 +2,5 @@
   - `*.logformat.json` files listed in `formats/index.json` (hosted) or injected by the desktop wrapper are loaded at every start as a read-only layer: tagged "Provided", **Duplicate** instead of Edit/Delete, their filename patterns ranked after the user's own rules, never written to IndexedDB. Invalid files are skipped with a notice in Settings → Log Formats.
   - Meta formats in such files name their targets (`targetFormatNames`); that mode is accepted only on this route, a user import of a meta file is still rejected.
   - The three baked-in demo formats are gone from `philogg.html` (and no longer re-seed after deletion): they are `examples/formats/*.logformat.json`; the homepage build serves them plus the welcome format under `app/formats/`.
-  - **Tests**: GROUP provided-formats (old demo-seed assertions updated). Docs: docs/log-formats.md, docs/homepage.md, README.
+  - Desktop: `src-tauri/src/formats.rs` reads `formats/` next to the exe and in the config folder (a restart picks up changes) and bakes the list into the init script.
+  - **Tests**: GROUP provided-formats, `cargo test` (old demo-seed assertions updated). Docs: docs/log-formats.md, docs/homepage.md, docs/desktop.md, README.

@@ -14,6 +14,7 @@
 - [System font list for the UI font and Log font pickers](#system-font-list-for-the-ui-font-and-log-font-pickers)
 - [IDE Integration: jump from a log entry into a running Visual Studio (Windows only), Rider fast-follow](#ide-integration-jump-from-a-log-entry-into-a-running-visual-studio-windows-only-rider-fast-follow)
 - [Settings: mirrored into a human-editable settings.json](#settings-mirrored-into-a-human-editable-settingsjson)
+- [Provided log formats: folders baked into the init script](#provided-log-formats-folders-baked-into-the-init-script)
 - [Main window, tray, close-to-tray, single instance](#main-window-tray-close-to-tray-single-instance)
 - [Picture-in-picture (PiP)](#picture-in-picture-pip)
 - [Release](#release)
@@ -1156,6 +1157,25 @@ Caveat: Microsoft does not support a WebView2 user-data folder on a network driv
 I/O, possible data loss) — a portable copy run from a share puts the IndexedDB session
 cache there. Nothing in the wrapper blocks on it, but the webview's own storage stays
 network-bound.
+
+## Provided log formats: folders baked into the init script
+
+`FEATURE_BACKLOG.md` #105 (phase 2). `src/formats.rs` reads `*.logformat.json`
+(case-insensitive, files only, sorted by name; a missing folder, other files and
+unreadable files are ignored) from `<exe-dir>/formats/` (machine-wide: the install
+folder) and then `<config-dir>/formats/` (per user, `settings::config_dir`); a
+per-user file with the same name replaces the machine-wide one. A portable build
+(`settings::portable_dir`) reads only `<exe-dir>/formats/`. `windows::create_main`
+passes the list `[{name, source, text}]` to `inject::script`, which replaces the
+`__PHILOGG_PROVIDED_FORMATS__` placeholder at the top of `inject.js` with
+`window.__PHILOGG_PROVIDED_FORMATS__ = [...]` (the placeholder is replaced last, and
+`</`, U+2028/2029 are escaped). Like the `settings.json` hydration this is available
+before the page script runs, so no IPC race; the page then uses the list instead of
+its hosted `formats/index.json` fetch. The file text is passed through unvalidated: the
+page validates it and shows a notice for an invalid file (`docs/log-formats.md` →
+"Provided formats"). Folders are not watched, a restart picks up changes. The installer
+does not ship a default `formats/` folder. Tests: `cargo test` (`formats::tests`,
+`inject::tests`).
 
 ## Main window, tray, close-to-tray, single instance
 
