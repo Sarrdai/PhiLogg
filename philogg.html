@@ -1666,6 +1666,19 @@
   .th-sortable{cursor:pointer; user-select:none; display:flex; align-items:center; gap:3px;}
   .th-sortable:hover{color:var(--text-secondary);}
   .th-sort-arrow{font-size:9px; color:var(--accent);}
+  /* Relative time (#6): header chip, zero row, entry-detail suffix, minimap zero line. */
+  .zero-chip{font-size:9.5px; letter-spacing:.03em; text-transform:none; padding:1px 6px; border-radius:9px; margin-left:4px;
+    background:var(--accent-soft); color:var(--accent); border:1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+    font-weight:600; cursor:pointer; white-space:nowrap;}
+  .zero-chip.off{background:transparent; color:var(--text-tertiary); border-color:var(--border);}
+  .log-row.row-zero{background-image:linear-gradient(var(--accent-soft), var(--accent-soft));}
+  .col-time.t-rel{color:var(--text-primary);}
+  .col-time.t-zero{color:var(--accent); font-weight:700;}
+  .col-time.t-zero::before{content:"0"; display:inline-grid; place-items:center; width:14px; height:14px; border-radius:50%;
+    background:var(--accent); color:var(--bg-app); font-size:9px; font-weight:800; margin-right:5px; vertical-align:-2px;}
+  #detailMeta .detail-t0{color:var(--accent);}
+  .minimap-zero-line{fill:var(--accent); pointer-events:none;}
+  .minimap-zero-label{fill:var(--accent); font-size:9px; font-weight:700; pointer-events:none;}
 
   /* Column resize handles (FEATURE_BACKLOG.md "Column visibility / width
      persistence"): NOT nested inside .th (which has overflow:hidden for its
@@ -6346,6 +6359,10 @@
       <span id="ctxAddToSelectionLabel">Add to selection</span>
       <svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
     </div>
+    <div class="ctx-item" id="ctxTimeZero">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
+      <span id="ctxTimeZeroLabel">Set as time zero</span>
+    </div>
     <div class="ctx-sep"></div>
     <div class="ctx-item" id="ctxCopy">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>
@@ -10145,6 +10162,8 @@ const state = {
                            // virtualization path (needsRowOffsets() false) stays the unaffected default until
                            // a person actually has notes they want to see inline.
   pinBookmarksInFilteredView: false, // see PROJECT.md "Pin bookmarks into the Filtered View"
+  timeZeroId: null,        // Relative time (FEATURE_BACKLOG.md #6): id of the pinned "time zero" entry, or null.
+  relativeTime: false,     // true: the Time column shows offsets from that entry (see timeZeroContext).
   multilineMessages: false, // see PROJECT.md "Multiline message display toggle"; global, session-cache-persisted
   wrapMessages: false,      // Word-wrap the log message column (#68). Global, session-cache-persisted. Independent
                             // of multilineMessages (both can be on). Also governs the Entry Detail message wrap,
@@ -11214,6 +11233,37 @@ function numberPlainTextEntry(e, lineNo) {
 // An entry's Time cell text: a line number for a plain-text entry.
 function entryTimeText(e) {
   return isPlainTextFormat(e.formatId) ? String(e.ts) : formatTime(e.ts);
+}
+// Relative time: the pinned zero entry (null when none is pinned or it no
+// longer exists — closed file, rotation, prune), regardless of whether
+// relative display is currently on.
+function timeZeroEntryAny() {
+  return state.timeZeroId ? (entryIndex[state.timeZeroId] || null) : null;
+}
+// { id, ts } while relative display is active, else null. Row renderers call
+// this once per render pass, never per row.
+function timeZeroContext() {
+  if (!state.relativeTime) return null;
+  const z = timeZeroEntryAny();
+  return z ? { id: z.id, ts: z.ts } : null;
+}
+// The Time cell's text for entry `e` under zero context `zc` (from
+// timeZeroContext(); a plain-text entry's "time" is a line number and is never relative).
+// Entry detail: " (+0:01.234 from T0)" / " (T0)" appended to the absolute time.
+function detailZeroSuffixHtml(entry) {
+  const zc = timeZeroContext();
+  if (!zc || isPlainTextFormat(entry.formatId)) return "";
+  return ' <span class="detail-t0">(' + (entry.id === zc.id ? "T0" : escapeHtml(formatRelTime(entry.ts - zc.ts)) + " from T0") + ')</span>';
+}
+function displayTimeText(e, zc) {
+  return zc && !isPlainTextFormat(e.formatId) ? formatRelTime(e.ts - zc.ts) : entryTimeText(e);
+}
+// Row-level extras of a Time cell under relative display: class on the
+// .col-time span (zero row: accent text + "0" badge via CSS), the absolute
+// time as tooltip. Empty strings when not relative.
+function relTimeCellAttrs(e, zc) {
+  if (!zc || isPlainTextFormat(e.formatId)) return "";
+  return ' title="' + escapeHtml(entryTimeText(e)) + '"';
 }
 // A plain-text row's message keeps its leading spaces/tabs (.col-msg.plaintext
 // renders white-space:pre — indentation is the structure of pretty-printed
@@ -12833,6 +12883,23 @@ function formatDelta(ms) {
   // Out-of-order timestamps do happen in real logs; show the magnitude
   // rather than hide it.
   return (ms < 0 ? "−" : "+") + formatMs(Math.abs(ms));
+}
+
+// Relative-time display (offset from the pinned zero entry): always ms
+// precision, "+m:ss.mmm" under 1 h, "+h:mm:ss.mmm" under 1 day, else
+// "+Nd hh:mm:ss.mmm"; negative uses the real minus sign; exactly 0 has no sign.
+function formatRelTime(ms) {
+  ms = Math.round(ms);
+  if (ms === 0) return "0:00.000";
+  const sign = ms < 0 ? "−" : "+";
+  const a = Math.abs(ms);
+  const p2 = n => (n < 10 ? "0" : "") + n;
+  const mmm = String(a % 1000).padStart(3, "0");
+  const totalS = Math.floor(a / 1000);
+  const sec = totalS % 60, min = Math.floor(totalS / 60) % 60, hrs = Math.floor(totalS / 3600) % 24, days = Math.floor(totalS / 86400);
+  if (a < 3600000) return sign + Math.floor(totalS / 60) + ":" + p2(sec) + "." + mmm;
+  if (a < 86400000) return sign + hrs + ":" + p2(min) + ":" + p2(sec) + "." + mmm;
+  return sign + days + "d " + p2(hrs) + ":" + p2(min) + ":" + p2(sec) + "." + mmm;
 }
 
 function deltaClass(ms) {
@@ -19095,6 +19162,7 @@ fhTabs.addEventListener("click", ev => {
 
 
 tableHeaderEl.addEventListener("click", ev => {
+  if (ev.target.closest("[data-zero-chip]")) { ev.stopPropagation(); toggleRelativeTime(); return; }
   const th = ev.target.closest(".th-sortable");
   if (!th) return;
   const col = th.dataset.sort;
@@ -19179,6 +19247,10 @@ function applyTextFileActivationView(node) {
   else if (fhActiveTab !== "filter") applyFhView("filter");
 }
 
+highlightHeaderEl.addEventListener("click", ev => {
+  if (ev.target.closest("[data-zero-chip]")) { ev.stopPropagation(); toggleRelativeTime(); }
+});
+
 function updateSortIndicators() {
   tableHeaderEl.querySelectorAll(".th-sortable").forEach(th => {
     const arrow = th.querySelector(".th-sort-arrow");
@@ -19233,6 +19305,7 @@ function renderInner() {
   renderStatus();
   updateDetailPanel();
   updateTailJumpBtn();
+  updateTimeZeroChips(); // the zero entry can come/go with the view or a file (not-in-view / no-zero states)
   // Every state mutation ends in a render(), so this one debounced hook keeps
   // the session cache's meta record (filters/bookmarks/settings) current
   // without per-mutation persistence calls — see "Session cache (IndexedDB)".
@@ -26651,7 +26724,7 @@ function renderVisibleRows(reuseRows) {
   // computeGapEntries), or, under a column sort, the chronological Δt
   // renderTable captured before sorting (buildViewDeltaMap).
   const gapMs = activeNode && activeNode.filterType === "gap" && !activeNode.inverted ? activeNode._gapMs : null;
-  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, textMode: filteredTextMode, deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null), prunedMarks: prunedRowMarks(activeNode) };
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, textMode: filteredTextMode, zero: filteredTextMode ? null : timeZeroContext(), deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null), prunedMarks: prunedRowMarks(activeNode) };
   let groups;
   if (reuse) {
     for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
@@ -26751,8 +26824,12 @@ function appendLogRow(frag, i, rc) {
   // search when nothing can contribute a mark (feature/row-toggle off and
   // no coloured filters), so this costs what it did before any of this
   // existed in the common case.
-  const timeText = entryTimeText(e);
+  const timeText = displayTimeText(e, rc.zero);
   const timeHtml = markFieldHtml(rc.mm, timeText, "time");
+  const timeAttrs = relTimeCellAttrs(e, rc.zero);
+  const isZeroRow = !!rc.zero && e.id === rc.zero.id;
+  if (isZeroRow) cls += " row-zero";
+  const timeCls = rc.zero && !isPlainTextFormat(e.formatId) ? (isZeroRow ? " t-rel t-zero" : " t-rel") : "";
   const levelHtml = markFieldHtml(rc.mm, e.level, "level");
   // Custom Columns: the middle (Thread/Location/Method/custom) spans are
   // built from columnDefs instead of three hardcoded fields — see
@@ -26777,13 +26854,13 @@ function appendLogRow(frag, i, rc) {
   row.innerHTML = rc.textMode ?
     bracketHtml +
     (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
-    '<span class="col-time" data-col="time">' + timeHtml + '</span>' +
+    '<span class="col-time' + timeCls + '" data-col="time"' + timeAttrs + '>' + timeHtml + '</span>' +
     '<span class="col-fold"></span>' +
     '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' :
     bracketHtml +
     (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
     '<span class="col-bar"></span>' +
-    '<span class="col-time" data-col="time">' + timeHtml + '</span>' +
+    '<span class="col-time' + timeCls + '" data-col="time"' + timeAttrs + '>' + timeHtml + '</span>' +
     '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
     levelCellHtml(e, levelHtml) +
     middleHtml +
@@ -28697,6 +28774,7 @@ function renderHighlightVisibleRows() {
   const columnDefs = activeColumnDefs();
   const messageVisible = activeMessageVisible();
   const syntax = activePlainTextSyntax();
+  const hlZero = timeZeroContext();
 
   const frag = document.createDocumentFragment();
   // A leading gap's filler rows have no row to hang off — they belong above
@@ -28743,7 +28821,11 @@ function renderHighlightVisibleRows() {
     // search when nothing can contribute a mark (no coloured rules, or the
     // rule-marking toggle off), so this stays a plain escapeHtml call in the
     // common case — same shape as renderVisibleRows.
-    const timeText = entryTimeText(e);
+    const timeText = displayTimeText(e, hlZero);
+    const timeAttrs = relTimeCellAttrs(e, hlZero);
+    const isZeroRow = !!hlZero && e.id === hlZero.id;
+    if (isZeroRow) cls += " row-zero";
+    const timeCls = hlZero && !isPlainTextFormat(e.formatId) ? (isZeroRow ? " t-rel t-zero" : " t-rel") : "";
     const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message", plainTextSyntaxRanges(e, syntax));
     const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
     // Custom Columns: same generalized middle-column loop as
@@ -28758,7 +28840,7 @@ function renderHighlightVisibleRows() {
       markerHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
-      '<span class="col-time" data-col="time">' + markFieldHtml(mm, timeText, "time") + '</span>' +
+      '<span class="col-time' + timeCls + '" data-col="time"' + timeAttrs + '>' + markFieldHtml(mm, timeText, "time") + '</span>' +
       '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
       levelCellHtml(e, markFieldHtml(mm, e.level, "level")) +
       middleHtml +
@@ -30419,9 +30501,16 @@ function updateMinimapSelectionMarkers() {
   const g = el("#minimapSelectionMarkers");
   if (!g) return;
   const marked = minimapMarkedEntries();
-  if (marked.length === 0) { g.innerHTML = ""; return; }
   const H = Math.max(20, timelineMinimapSvg.clientHeight || 52);
-  g.innerHTML = marked.filter(e => !minimapRangeOutOfView(e.ts, e.ts)).map(e => {
+  // Relative time: accent line + "0" label at the zero entry's moment, when it is in the drawn range and in this file.
+  const zc = timeZeroContext();
+  const zeroHtml = zc && findRootIdForEntry(zc.id) === minimapLastRootId && !minimapRangeOutOfView(zc.ts, zc.ts)
+    ? (() => { const x = minimapTsToX(zc.ts);
+        return '<rect class="minimap-zero-line" x="' + (x - 0.75).toFixed(1) + '" y="0" width="1.5" height="' + H + '"/>' +
+          '<text class="minimap-zero-label" x="' + (x + 3).toFixed(1) + '" y="9">0</text>'; })()
+    : "";
+  if (marked.length === 0) { g.innerHTML = zeroHtml; return; }
+  g.innerHTML = zeroHtml + marked.filter(e => !minimapRangeOutOfView(e.ts, e.ts)).map(e => {
     const x = minimapTsToX(e.ts);
     return '<rect class="minimap-marker-line" x="' + (x - 1).toFixed(1) + '" y="0" width="2" height="' + H + '"/>' +
       '<path class="minimap-marker-flag" d="M ' + (x - 4).toFixed(1) + ' 0 L ' + (x + 4).toFixed(1) + ' 0 L ' + x.toFixed(1) + ' 6 Z"/>';
@@ -31874,13 +31963,13 @@ function updateDetailPanel() {
     const firstLine = entry.message.split("\n", 1)[0];
     detailMeta.innerHTML =
       levelBadgeHtml(entry) +
-      '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
+      '<span class="detail-time">' + markField(entryTimeText(entry), "time") + detailZeroSuffixHtml(entry) + '</span>' +
       '<span class="detail-sep">·</span>' +
       '<span class="detail-collapsed-msg">' + markField(firstLine, "message") + '</span>';
   } else {
     detailMeta.innerHTML =
       levelBadgeHtml(entry) +
-      '<span class="detail-time">' + markField(entryTimeText(entry), "time") + '</span>' +
+      '<span class="detail-time">' + markField(entryTimeText(entry), "time") + detailZeroSuffixHtml(entry) + '</span>' +
       // Empty fields (thread/location/method) print neither a span nor a separator.
       (entry.thread ? '<span class="detail-sep">·</span><span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' : "") +
       (entry.location ? '<span class="detail-sep">·</span><span class="detail-loc" title="' + escapeHtml(entry.location) + '"><bdi dir="ltr">' + markField(entry.location, "location") + '</bdi></span>' : "") +
@@ -32828,12 +32917,54 @@ function refreshColumnState() {
 // middle columns entryComparator (see "Custom columns" section) knows how
 // to sort by — a custom column gets a plain, non-sortable .th, same as
 // Method always has.
+// Time-column header chip while a time zero is remembered: "T0 ×" (relative
+// on), "T0" muted (off), "T0 · not in view ×" when the zero entry is not in
+// this header's list. Empty without a zero.
+function timeZeroChipHtml(filterHeader) {
+  const z = timeZeroEntryAny();
+  if (!z) return "";
+  const on = state.relativeTime;
+  const list = filterHeader ? currentViewEntries : currentHighlightViewEntries;
+  const inView = list.some(e => e.id === z.id);
+  const abs = escapeHtml(formatTime(z.ts));
+  const text = on ? (inView ? "T0 ×" : "T0 · not in view ×") : "T0";
+  const title = on ? "Times relative to " + abs + " — click for absolute time" : "Show times relative to " + abs;
+  return '<span class="zero-chip' + (on ? "" : " off") + '" data-zero-chip title="' + title + '">' + text + '</span>';
+}
+// Rewrites just the chips in place (view/entries changed, nothing about the columns).
+function updateTimeZeroChips() {
+  const plainRoots = allRootsPlainText();
+  [[tableHeaderEl, true], [highlightHeaderEl, false]].forEach(([hdr, filterHeader]) => {
+    const th = hdr.querySelector("[data-time-th]");
+    if (!th) return;
+    const old = th.querySelector(".zero-chip");
+    const html = plainRoots ? "" : timeZeroChipHtml(filterHeader);
+    if (old) old.remove();
+    if (html) {
+      const arrow = th.querySelector(".th-sort-arrow");
+      if (arrow) arrow.insertAdjacentHTML("beforebegin", html); else th.insertAdjacentHTML("beforeend", html);
+    }
+  });
+}
+// Every change of the zero / relative mode ends here: chips, rows (render),
+// entry detail and the minimap's zero line all follow.
+function applyTimeZeroChange() {
+  render();
+  updateMinimapSelectionMarkers();
+}
+function toggleRelativeTime() {
+  if (!timeZeroEntryAny()) return;
+  state.relativeTime = !state.relativeTime;
+  applyTimeZeroChange();
+}
 function buildRowGridHeaderHtml(sortable) {
   let out = "<span></span>";
-  const timeLabel = allRootsPlainText() ? "Line" : "Time";
+  const plainRoots = allRootsPlainText();
+  const timeLabel = plainRoots ? "Line" : "Time";
+  const chip = plainRoots ? "" : timeZeroChipHtml(sortable);
   out += sortable
-    ? '<span class="th th-sortable" data-sort="time">' + timeLabel + '<span class="th-sort-arrow"></span></span>'
-    : '<span class="th">' + timeLabel + '</span>';
+    ? '<span class="th th-sortable" data-sort="time" data-time-th>' + timeLabel + chip + '<span class="th-sort-arrow"></span></span>'
+    : '<span class="th" data-time-th>' + timeLabel + chip + '</span>';
   out += sortable
     ? '<span class="th th-sortable" data-sort="delta" data-col="delta" title="Δt since the previous entry · click to sort (largest first) · middle-click to hide">Δt<span class="th-sort-arrow"></span></span>'
     : '<span class="th" data-col="delta" title="Δt since previous row · middle-click to hide">Δt</span>';
@@ -39494,6 +39625,8 @@ const ctxBookmark = el("#ctxBookmark");
 const ctxBookmarkLabel = el("#ctxBookmarkLabel");
 const ctxNote = el("#ctxNote");
 const ctxNoteLabel = el("#ctxNoteLabel");
+const ctxTimeZero = el("#ctxTimeZero");
+const ctxTimeZeroLabel = el("#ctxTimeZeroLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 const ctxExtractMessage = el("#ctxExtractMessage");
 const ctxPairWith = el("#ctxPairWith");
@@ -39552,6 +39685,10 @@ function openContextMenu(ev, entry) {
   // Notes: same "real log entry only" eligibility as bookmarks above.
   ctxNote.style.display = bookmarkable ? "" : "none";
   if (bookmarkable) ctxNoteLabel.textContent = state.notes.has(entry.id) ? "Edit note" : "Add note";
+  // Time zero (relative time): same eligibility as bookmarks, minus plain text (no timestamps).
+  const zeroable = bookmarkable && !isPlainTextFormat(entry.formatId);
+  ctxTimeZero.style.display = zeroable ? "" : "none";
+  if (zeroable) ctxTimeZeroLabel.textContent = isTimeZeroRow(entry) ? "Clear time zero" : "Set as time zero";
   // "Filter from selection" only makes sense with an actual multi-selection
   // (2+ rows) — a single row is already covered by "Filter for this ___".
   ctxTimeRangeFromSelection.style.display = state.logMultiSelect.size >= 2 ? "" : "none";
@@ -39620,6 +39757,17 @@ el("#ctxBookmark").addEventListener("click", () => {
   // toggleBookmark repaints both views' visible rows itself.
   if (ctxEntry && entryIndex[ctxEntry.id]) toggleBookmark(ctxEntry.id);
   closeContextMenu();
+});
+function isTimeZeroRow(entry) {
+  return state.relativeTime && state.timeZeroId === entry.id && !!timeZeroEntryAny();
+}
+el("#ctxTimeZero").addEventListener("click", () => {
+  const entry = ctxEntry;
+  closeContextMenu();
+  if (!entry || !entryIndex[entry.id] || isPlainTextFormat(entry.formatId)) return;
+  if (isTimeZeroRow(entry)) { state.timeZeroId = null; state.relativeTime = false; }
+  else { state.timeZeroId = entry.id; state.relativeTime = true; }
+  applyTimeZeroChange();
 });
 el("#ctxNote").addEventListener("click", () => {
   if (ctxEntry && entryIndex[ctxEntry.id]) openNoteEditor(ctxEntry.id);
@@ -48808,6 +48956,17 @@ function buildCacheMeta() {
     }
   }
 
+  // Relative time: the zero entry as root file + ordinal, same first-root-wins scan as bookmarks.
+  let timeZero = null;
+  if (state.timeZeroId) {
+    for (const rootId of state.rootIds) {
+      const root = state.nodes[rootId];
+      if (!root) continue;
+      const i = root.entries.findIndex(e => e.id === state.timeZeroId);
+      if (i >= 0) { timeZero = { file: root.cacheKey, ordinal: i }; break; }
+    }
+  }
+
   return {
     key: CACHE_META_KEY,
     version: CACHE_FORMAT_VERSION,
@@ -48816,12 +48975,14 @@ function buildCacheMeta() {
     filters,
     bookmarks,
     notes,
+    timeZero,
     viewers: persistedViewerList(),
     activeViewer: (state.inlineViewer && state.inlineViewer.cacheKey) || null,
     settings: {
       sortColumn: state.sortColumn,
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
+      relativeTime: state.relativeTime,
       multilineMessages: state.multilineMessages,
       wrapMessages: state.wrapMessages,
       wrapTextView: state.wrapTextView,
@@ -49090,6 +49251,11 @@ async function restoreSessionFromCache(metaIn) {
       const entry = fileNode && fileNode.entries[n.ordinal];
       if (entry && n.text) state.notes.set(entry.id, String(n.text));
     });
+    if (meta.timeZero) {
+      const zNode = byKey[meta.timeZero.file];
+      const zEntry = zNode && zNode.entries[meta.timeZero.ordinal];
+      if (zEntry) state.timeZeroId = zEntry.id;
+    }
     // Re-derive the auto "Bookmarks" filter node for every restored root now
     // that state.bookmarks is back (see syncBookmarksFilterNode — the node
     // itself is never persisted, only re-created from the Set on any path
@@ -49100,6 +49266,7 @@ async function restoreSessionFromCache(metaIn) {
     state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
+    state.relativeTime = !!s.relativeTime && !!state.timeZeroId;
     state.multilineMessages = !!s.multilineMessages;
     state.wrapMessages = !!s.wrapMessages;
     state.wrapTextView = !!s.wrapTextView;
@@ -49315,6 +49482,18 @@ function buildSessionExport(fileIds, embedTextIds) {
     }
   }
 
+  if (state.timeZeroId) {
+    for (const id of fileIds) {
+      const info = perFile.get(id);
+      if (!info) continue;
+      const i = state.nodes[id].entries.findIndex(e => e.id === state.timeZeroId);
+      if (i < 0) continue;
+      const e = state.nodes[id].entries[i];
+      info.rec.timeZero = { ordinal: i, ts: e.ts, raw: fingerprintText(e.raw) };
+      break;
+    }
+  }
+
   if (state.notes.size) {
     const remaining = new Set(state.notes.keys());
     for (const id of fileIds) {
@@ -49349,6 +49528,7 @@ function buildSessionExport(fileIds, embedTextIds) {
       sortColumn: state.sortColumn,
       sortDir: state.sortDir,
       pinBookmarksInFilteredView: state.pinBookmarksInFilteredView,
+      relativeTime: state.relativeTime,
       active,
     },
   };
@@ -49489,6 +49669,7 @@ function applySessionEntryByOrdinal(rec, fileNode) {
     state.notes.set(entry.id, String(n.text));
     notesPlaced++;
   });
+  if (rec.timeZero && fileNode.entries[rec.timeZero.ordinal]) state.timeZeroId = fileNode.entries[rec.timeZero.ordinal].id;
   syncBookmarksFilterNode(fileNode.id);
   syncNotesFilterNode(fileNode.id);
   return { refMap, placed, total, notesPlaced, notesTotal };
@@ -49536,6 +49717,16 @@ function applySessionEntryByContent(rec, fileNode) {
       }
     }
   });
+  const z = rec.timeZero;
+  if (z && typeof z.ts === "number" && typeof z.raw === "string") {
+    const at = lowerBoundByTs(fileNode.entries, z.ts);
+    zeroSearch: for (let off = 0; off <= 2; off++) {
+      for (const idx of (off === 0 ? [at] : [at - off, at + off])) {
+        const entry = fileNode.entries[idx];
+        if (entry && fingerprintText(entry.raw) === z.raw) { state.timeZeroId = entry.id; break zeroSearch; }
+      }
+    }
+  }
   syncBookmarksFilterNode(fileNode.id);
   syncNotesFilterNode(fileNode.id);
   return { refMap, placed, total, notesPlaced, notesTotal };
@@ -49689,6 +49880,7 @@ async function runSessionImport(data, opts = {}) {
     state.sortColumn = ["time", "delta", "level", "thread", "location"].includes(s.sortColumn) ? s.sortColumn : null;
     state.sortDir = s.sortDir === "desc" ? "desc" : "asc";
     state.pinBookmarksInFilteredView = !!s.pinBookmarksInFilteredView;
+    state.relativeTime = !!s.relativeTime && !!timeZeroEntryAny();
     if (s.active && resolved.has(s.active.exportId)) {
       const { fileNode, refMap } = resolved.get(s.active.exportId);
       const viaRef = s.active.ref != null ? refMap[s.active.ref] : null;

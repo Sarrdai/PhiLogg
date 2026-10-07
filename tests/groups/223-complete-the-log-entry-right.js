@@ -57,8 +57,8 @@ await withApp(async (w, d, T) => {
   // Regroup: After/Before/Time-range-from-selection, then a separator, then
   // Bookmark/Note/Add-to-selection, then a separator, then Copy at the end.
   const idsFrom = i => menuChildren.slice(i).map(c => c.id || (c.classList.contains("ctx-sep") ? "sep" : "?"));
-  assert(JSON.stringify(idsFrom(8)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "sep", "ctxCopy", "ctxCopyTicket"]),
-    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection -> sep -> Copy, Copy for ticket, got " + JSON.stringify(idsFrom(8)));
+  assert(JSON.stringify(idsFrom(8)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "ctxTimeZero", "sep", "ctxCopy", "ctxCopyTicket"]),
+    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection/TimeZero -> sep -> Copy, Copy for ticket, got " + JSON.stringify(idsFrom(8)));
 
   // --- (2) Extract item: visible + correct outcome for an extractable
   // message, hidden for a message with nothing extractable ---
