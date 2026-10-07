@@ -21,8 +21,11 @@ short handover, not a resumed big context**.
 - Check at: before starting or waking a package, before handing an
   implementer a step, and at each step boundary while a package runs.
   Not more often: each read lands in your context.
-- Orchestrator: write the reading to the session board's `meta/usage`
-  (`session-board.md`).
+- Every session that reads the budget (orchestrator, package, lead)
+  writes the reading to the session board's `meta/usage` right away, in
+  the same step (`session-board.md`). Packages consume most of the
+  window, so a board fed only by the orchestrator goes stale while they
+  run.
 
 ## Before starting or waking work (orchestrator, lead)
 
