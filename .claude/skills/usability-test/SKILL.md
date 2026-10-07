@@ -109,6 +109,13 @@ curl -s 127.0.0.1:9333 --data-binary 'async ({ page, touch, mode, files }) => {
   `?open=`/deep-link tricks after the start URL, reading `philogg.html`,
   tests or docs to find out *how* to do a task. Reloading the tab is a
   normal user action and allowed.
+- **The app does the analysis, not you.** Never compute an answer in code
+  that a person couldn't work out at a glance: no loops that scroll and
+  collect rows, no state kept across steps (`globalThis`, files), no
+  sorting, pairing, counting or arithmetic over scraped text in a step or
+  afterwards, no reading the log file itself. If the app offers no way to
+  get the answer, or you can't find one within the attempt budget, that
+  *is* the finding: report the task as ❌, don't work around it.
 - One step may batch several actions when you are confident; split it
   whenever you need to see the result before deciding.
 
