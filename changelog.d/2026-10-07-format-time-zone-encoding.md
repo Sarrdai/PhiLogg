@@ -1,0 +1,4 @@
+- **feat: Time zone and text encoding per log format (2026-10-07, person-requested)**
+  - New `XXX` timestamp token reads `Z`/`±HH:MM`/`±HHMM` offsets (detected in the format dialog); a format's Time zone (local, UTC, fixed offset, IANA name) applies to timestamps without one. Times stay shown in local time; the per-file clock offset is applied on top.
+  - New Encoding per format (Auto = BOM, else UTF-8 if the first 64 KiB are valid UTF-8, else Windows-1252; or UTF-8, Windows-1252, ISO-8859-15, Windows-1250, Windows-1251), honored by every read path and the desktop's native parser. Simulator: `--ts-offset`, `--encoding`.
+  - **Tests**: GROUP format-time-zone, format-encoding, 264 (golden fixtures extended). Docs: docs/log-formats.md, docs/desktop.md, docs/ui-and-views.md, docs/persistence-and-sync.md, tools/log-sim/README.md, README.

@@ -31,7 +31,7 @@ dialog"). A third `LogFormat` mode,
 parses a line itself, it fans a file out into several ordinary,
 single-format files first.
 
-**Time zone and the `XXX` token (`timeZone`, FEATURE_BACKLOG.md #86).**
+**Time zone and the `XXX` token (`timeZone`).**
 `tsFormat` can read an offset from the timestamp itself with the token
 **`XXX`** (`DATE_TOKEN_FRAG`: `Z`, `±HH:MM` or `±HHMM`, e.g.
 `yyyy-MM-ddTHH:mm:ss.SSSXXX`). A format's **`timeZone`** says how a
@@ -73,7 +73,7 @@ itself (`naive - offset`, flagged `tsAbsolute` in the batch so the page leaves
 it alone) — `docs/desktop.md` → "Native parsing". The dialog side (field, status line, detection) is in
 `docs/ui-and-views.md` → "Format dialog". GROUP format-time-zone.
 
-**Text encoding (`encoding`, FEATURE_BACKLOG.md #85).** A format says how its
+**Text encoding (`encoding`).** A format says how its
 file's bytes become text: `""`/missing = **Auto** (default), or a WHATWG label
 — `utf-8`, `windows-1252` ("Windows-1252 / Latin-1"), `iso-8859-15`,
 `windows-1250`, `windows-1251`. A **BOM** (UTF-8, UTF-16LE/BE) always wins.
