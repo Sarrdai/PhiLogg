@@ -2744,7 +2744,7 @@
   .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
   /* Patterns with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
   #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
-  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody){display:none !important;}
+  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody, #whyPanelBody){display:none !important;}
   #detailMeta{
     flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
   }
@@ -2885,6 +2885,35 @@
   .pattern-act:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   .pattern-act.pattern-act-hide:hover{color:var(--level-error);}
   #patternsEmpty{padding:24px 16px; color:var(--text-tertiary); font-size:12px;}
+
+  /* ---------- Why tab (bottom panel): which filter node keeps / rejects the selected entry ---------- */
+  #whyPanelBody{display:none; flex:1 1 auto; min-height:0; overflow-y:auto; padding:8px 16px 12px; user-select:text;}
+  #detailPanel.lower-why #whyPanelBody{display:block;}
+  #detailPanel.lower-why.collapsed:not(.peeking) #whyPanelBody{display:none;}
+  #detailPanel.lower-why :is(#detailBody, #detailMeta, #detailViewTabs){display:none;}
+  .why-head{font-size:12.5px; font-weight:650; margin-bottom:8px; color:var(--text-primary);}
+  .why-head.why-match{color:var(--status-ok);}
+  .why-head.why-reject{color:var(--level-error);}
+  .why-note{font-size:12px; color:var(--text-tertiary);}
+  .why-steps{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:2px;}
+  .why-step{display:grid; grid-template-columns:18px minmax(0,1fr) auto; column-gap:8px; align-items:baseline; padding:4px 8px; border-left:3px solid var(--status-ok); border-radius:3px; font-size:12px;}
+  .why-step.why-kept{border-left-color:var(--status-ok);}
+  .why-step.why-rejected{border-left-color:var(--level-error); background:var(--level-error-soft);}
+  .why-step.why-skipped{border-left-color:var(--border); opacity:.5;}
+  .why-step.why-muted{border-left-color:var(--text-tertiary); color:var(--text-secondary);}
+  .why-num{color:var(--text-tertiary); font-family:var(--font-mono); font-size:10.5px; text-align:right;}
+  .why-node{justify-self:start; max-width:100%; background:none; border:0; padding:0; font:inherit; font-weight:650; color:var(--accent-strong); cursor:pointer; text-align:left; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .why-node:hover{text-decoration:underline;}
+  .why-badge{font-size:10.5px; font-weight:650; text-transform:uppercase; letter-spacing:.6px; color:var(--status-ok);}
+  .why-rejected .why-badge{color:var(--level-error);}
+  .why-skipped .why-badge, .why-muted .why-badge{color:var(--text-tertiary);}
+  .why-reason{grid-column:2 / 4; color:var(--text-secondary); font-family:var(--font-mono); font-size:11.5px; overflow-wrap:anywhere;}
+  .why-subs{grid-column:2 / 4; list-style:none; margin:2px 0 0; padding:0 0 0 12px; font-family:var(--font-mono); font-size:11.5px; color:var(--text-secondary);}
+  .why-subs li{overflow-wrap:anywhere;}
+  .why-subs .why-sub-ok{color:var(--status-ok);}
+  .why-subs .why-sub-no{color:var(--level-error);}
+  .why-view{margin-top:8px; padding:4px 8px; border-left:3px solid var(--warn); font-size:12px; color:var(--text-secondary);}
+  body.layout-phone .why-node{min-height:32px;}
 
   /* ---------- Facet panel (value distribution per column) ----------
      The second tab of the bottom panel (#detailPanel, "Entry detail | Facets"):
@@ -5238,7 +5267,7 @@
   body.layout-phone #detailPanel.lower-facets :is(#detailPrev, #detailNext){display:none;}
   body.layout-phone .facet-value{min-height:36px; font-size:12.5px;} /* finger-sized value rows in the sheet */
   body.layout-phone #lowerTabPatterns{display:block;}
-  body.layout-phone #detailPanel.lower-patterns :is(#detailBody, #detailMeta, #detailViewTabs, #facetPanelBody, #facetPanelCount, #detailPrev, #detailNext){display:none !important;}
+  body.layout-phone #detailPanel.lower-patterns :is(#detailBody, #detailMeta, #detailViewTabs, #facetPanelBody, #whyPanelBody, #facetPanelCount, #detailPrev, #detailNext){display:none !important;}
   body.layout-phone #detailPanel.lower-patterns #phonePatternsHead{display:flex; order:3; flex:1 0 100%; align-items:center; gap:8px; padding:0 2px 4px;}
   #phonePatternsInfo{flex:1 1 auto; min-width:0; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .pp-sort{flex:0 0 auto; border:1px solid var(--border); border-radius:12px; padding:3px 10px; font:inherit; font-size:11.5px; color:var(--text-primary); background:var(--bg-elevated-2); cursor:pointer;}
@@ -5257,6 +5286,7 @@
   #patternMenu .ctx-meta{user-select:text; -webkit-user-select:text; font-size:11.5px; color:var(--text-primary); overflow-wrap:anywhere;}
   body.layout-phone #facetValueMenu{z-index:60;} /* above the bottom sheet (z-index 50) */
   body.layout-phone #detailPanel.lower-facets #facetPanelBody, body.layout-phone #detailPanel.lower-facets.collapsed:not(.peeking) #facetPanelBody{display:grid; align-content:start; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; padding:2px 0 24px;}
+  body.layout-phone #detailPanel.lower-why #whyPanelBody, body.layout-phone #detailPanel.lower-why.collapsed:not(.peeking) #whyPanelBody{display:block; order:5; overflow-y:auto; -webkit-overflow-scrolling:touch; padding:2px 8px 24px;}
   body.layout-phone #detailMessage{white-space:pre-wrap; overflow-wrap:anywhere;}
   body.layout-phone #detailViewTabs{order:4; flex:1 0 100%; height:34px;}
   body.layout-phone #detailViewTabs .view-tab{flex:1; font-size:12.5px;}
@@ -6255,6 +6285,7 @@
           <div id="detailPanelHeader">
             <div id="lowerTabs" role="tablist" aria-label="Bottom panel">
               <button type="button" class="lower-tab" id="lowerTabDetail" role="tab" aria-selected="true" title="Entry detail — full message of the selected row (Ctrl+J collapses the panel)"><span class="lt-full">Entry detail</span><span class="lt-short">Entry</span></button>
+              <button type="button" class="lower-tab" id="lowerTabWhy" role="tab" aria-selected="false" title="Why is this row here? — which filter node keeps or rejects the selected entry">Why</button>
               <button type="button" class="lower-tab" id="lowerTabStats" role="tab" aria-selected="false" title="Statistics — min / max / mean / σ of the numeric columns (Table and Plot)" hidden>Statistics</button>
               <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
               <button type="button" class="lower-tab" id="lowerTabPatterns" role="tab" aria-selected="false" title="Patterns — message shapes of this view">Patterns</button>
@@ -6285,6 +6316,8 @@
                result; clicking a value adds a filter node (see "Facet panel" in
                the script). Self-contained so the phone sheet can reuse it. -->
           <div id="facetPanelBody"></div>
+          <!-- Why tab body: which nodes of the active filter chain keep or reject the selected entry (renderWhyPanel). -->
+          <div id="whyPanelBody"></div>
           <!-- Statistics tab body (offered while Table or Plot is on screen): the
                column stats chips of the extraction (renderStatsBar). -->
           <div id="statsPanelBody">
@@ -6341,6 +6374,7 @@
       Extract
     </div>
     <div class="ctx-item" id="ctxPairWith"><span>Pair with…</span></div>
+    <div class="ctx-item" id="ctxWhyRow"><span>Why is this row here?</span></div>
     <div class="ctx-item" id="ctxOpenInVs">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
       Open in Visual Studio
@@ -16550,6 +16584,148 @@ function getEntriesUncached(node, parentOverride) {
   return result;
 }
 
+/* ===================== "Why is this row here?" (FEATURE_BACKLOG #15) =====================
+   Read-only explanation of one entry against the active filter chain: which
+   nodes keep it and which one rejects it. Evaluates nothing new — membership
+   is "the entry's id is in getEntries(node.id)" (the engine's own, cached
+   results; link nodes return synthetic pairs, so a result's ids are expanded
+   through getTupleEntries), the reason line re-tests the node's own condition
+   on [entry] through evaluateFilterCondition. No filter semantics live here. */
+const explainKeptIdsMemo = new WeakMap(); // result array -> Set of original entry ids; the array identity changes with every recompute
+function explainKeptIds(entries) {
+  let ids = explainKeptIdsMemo.get(entries);
+  if (!ids) {
+    ids = new Set();
+    for (const e of entries) {
+      if (e.isPair) getTupleEntries(e).forEach(x => ids.add(x.id)); else ids.add(e.id);
+    }
+    explainKeptIdsMemo.set(entries, ids);
+  }
+  return ids;
+}
+
+// One condition (a filter node or a baked side) against one entry:
+// { ok, reason, subs? }. `ctx` = { fileId, nodeId, pool() } — the owning
+// node's id and its lazily fetched input pool, for baked sides that need more
+// than the entry itself. `getResult()` returns what the condition keeps of
+// its pool (the node's cached result, or a baked side evaluated over the pool).
+// A sub-line's name is left out when its reason already quotes it
+// ('"timeout" not found', 'Level ERROR is in WARN, ERROR').
+function whySubNameRedundant(sb) {
+  const bare = (sb.name || "").replace(/[“”"]/g, "").trim();
+  return !bare || sb.reason.includes(bare);
+}
+function explainCondition(cond, entry, ctx, getResult, name) {
+  const t = cond.filterType;
+  const inv = !!cond.inverted;
+  if (PER_ENTRY_FILTER_TYPES.has(t)) {
+    const hit = getEntriesFromBaked(Object.assign({}, cond, { inverted: false }), [entry], ctx.fileId).length > 0;
+    const ok = inv ? !hit : hit;
+    const arrow = inv ? (hit ? " → excluded" : " → kept") : "";
+    if (t === "text") {
+      const q = cond.isRegex ? "/" + cond.value + "/" : '"' + cond.value + '"';
+      let cols = "";
+      if (cond.columns && cond.columns.length) {
+        const labels = new Map(activeTextFilterColumns().map(c => [c.key, c.label]));
+        cols = " in " + cond.columns.map(k => labels.get(k) || k).join(", ");
+      }
+      return { ok, reason: q + (hit ? " found" : " not found") + cols + arrow };
+    }
+    if (t === "level") {
+      const lvl = makeLevelBucketer()(entry.level, entry.formatId);
+      const list = (cond.value || []).join(", ");
+      return { ok, reason: "Level " + lvl + (hit ? " is in " : " is not in ") + list + arrow };
+    }
+    return { ok, reason: (hit ? "Matches " : "Does not match ") + name + arrow };
+  }
+  if (t === "and" || t === "or") {
+    const subs = (cond.baked || []).map(b => {
+      const sub = explainCondition(b, entry, ctx, () => getEntriesFromBaked(b, ctx.pool(), ctx.fileId), bakedConditionName(b));
+      sub.name = bakedConditionName(b);
+      return sub;
+    });
+    const n = subs.filter(s => s.ok).length;
+    const raw = t === "and" ? n === subs.length : n > 0;
+    return { ok: inv ? !raw : raw, reason: n + " of " + subs.length + " matched (" + t.toUpperCase() + ")" + (inv ? (raw ? " → excluded" : " → kept") : ""), subs };
+  }
+  // Everything else looks at other entries: membership of the condition's own result.
+  const result = getResult();
+  const ok = explainKeptIds(result).has(entry.id);
+  if (t === "link") {
+    if (!ok) return { ok, reason: "No partner found" };
+    const pair = result.find(p => p.isPair && getTupleEntries(p).some(x => x.id === entry.id));
+    const partners = pair ? getTupleEntries(pair).filter(x => x.id !== entry.id) : [];
+    const more = partners.length === 1 ? " with " + formatTsFor(ctx.nodeId, partners[0].ts) + " (Δt " + formatDuration(pair.dtMs) + ")" : "";
+    return { ok, reason: "Part of a pair" + more };
+  }
+  if (t === "context" || t === "countContext") {
+    return { ok, reason: ok ? "Within the window around a reference entry" : "Outside every window" };
+  }
+  return { ok, reason: (ok ? "Matches " : "Does not match ") + name };
+}
+
+// Explains `entryId` against the chain ending at `activeId`:
+//   { entryId, activeId, match, head, total, rejectIndex, steps, view, note }
+// match: the entry is in the active node's result (a link node: part of a pair).
+// head: the ready-made header line. steps: one per chain node from the top
+// (first node under the file) down to the active node, "sources" nodes left out:
+//   { nodeId, name, filterType, status: "kept"|"rejected"|"skipped"|"muted",
+//     reason, subs: [{ ok, name, reason, subs? }] }
+// "skipped" = after the first rejecting node (shown as "not reached"); rejectIndex
+// is that node's index, -1 when nothing rejects. A node missing the entry while
+// the entry still reaches the active result (a later context node brought it
+// back) stays "kept" with a note in its reason.
+// view: null, or { kind: "level"|"pinned", text } — the view filters on top of
+// the node result. note: set instead of steps when there is nothing to walk
+// (no entry, the file itself active, entry from another file).
+function explainEntry(entryId, activeId) {
+  const out = { entryId, activeId, match: false, head: "", total: 0, rejectIndex: -1, steps: [], view: null, note: "" };
+  const entry = entryId && entryIndex[entryId];
+  const active = activeId && state.nodes[activeId];
+  if (!entry || !active) { out.note = "Select a row to see which filters keep or reject it."; return out; }
+  const fileId = getRootFileId(activeId);
+  if (!fileId || !buildOrderIndexMap(fileId).has(entry.id)) { out.note = "This entry is not in the active file."; return out; }
+  if (active.type === "file") {
+    out.match = true;
+    out.note = "No filter is active — every entry of the file is shown.";
+    return out;
+  }
+  const chain = [];
+  for (let n = active; n && n.type !== "file"; n = state.nodes[n.parentId]) if (n.filterType !== "sources") chain.unshift(n);
+  out.total = chain.length;
+  out.match = explainKeptIds(getEntries(activeId)).has(entry.id);
+  for (let i = 0; i < chain.length; i++) {
+    const node = chain[i];
+    const step = { nodeId: node.id, name: (node.inverted ? "¬ " : "") + nodeDisplayName(node), filterType: node.filterType, status: "skipped", reason: "", subs: [] };
+    out.steps.push(step);
+    if (out.rejectIndex >= 0) continue;
+    if (node.muted) { step.status = "muted"; step.reason = "Muted — passes everything"; continue; }
+    const member = explainKeptIds(getEntries(node.id)).has(entry.id);
+    const ctx = { fileId, nodeId: node.id, pool: () => getEntries(node.parentId) };
+    const r = explainCondition(node, entry, ctx, () => getEntries(node.id), step.name);
+    step.reason = r.reason;
+    step.subs = r.subs || [];
+    if (member || out.match) {
+      step.status = "kept";
+      if (!member) step.reason += " — brought back by a later context node";
+    } else {
+      step.status = "rejected";
+      out.rejectIndex = i;
+    }
+  }
+  if (out.match) out.head = "✓ In the result of " + (active.inverted ? "¬ " : "") + nodeDisplayName(active) + " · kept by all " + out.total + (out.total === 1 ? " node" : " nodes");
+  else out.head = "✗ Not in the result" + (out.rejectIndex >= 0 ? " · rejected by " + out.steps[out.rejectIndex].name + " (step " + (out.rejectIndex + 1) + " of " + out.total + ")" : "");
+  // View filters on top of the node result (see getVisibleEntries).
+  const pinned = state.pinBookmarksInFilteredView && state.bookmarks.has(entry.id);
+  const levelHidden = out.match && applyLevelFilter([entry]).length === 0;
+  if (pinned && (!out.match || levelHidden)) {
+    out.view = { kind: "pinned", text: "Shown because it is bookmarked and Pin bookmarks is on" };
+  } else if (levelHidden) {
+    out.view = { kind: "level", text: "Hidden by the level bar (" + makeLevelBucketer()(entry.level, entry.formatId) + " off)" };
+  }
+  return out;
+}
+
 // Clears every node's cached entries — the trivially-correct sweep. Only the
 // rare whole-file / whole-tree changes still use it (undo/redo, unpack, a
 // clock offset; each says so at its call site). Everything that changes ONE
@@ -17581,6 +17757,8 @@ const lowerTabDetail = el("#lowerTabDetail");
 const lowerTabStats = el("#lowerTabStats");
 const lowerTabFacets = el("#lowerTabFacets");
 const lowerTabPatterns = el("#lowerTabPatterns");
+const lowerTabWhy = el("#lowerTabWhy");
+const whyPanelBody = el("#whyPanelBody");
 
 // Tabs that replace #fhSplit with a content component of their own —
 // "not a log view" for every check that used to read `table || plot`.
@@ -18058,13 +18236,13 @@ const LOWER_TAB_KEY = "philogg-lower-tab";
 const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
 const FACET_MORE_STEP = 25;
-// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" (persisted). "stats"
+// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" | "why" (persisted). "stats"
 // only shows while Table/Plot is on screen (statsActive), elsewhere the panel shows Entry detail
 // again without forgetting the choice.
 let lowerTab = "detail";
 // Phone: the bottom sheet's own state (plain UI state, never persisted — lowerTab stays the
 // desktop/tablet selection). phoneSheetOpen: whether the sheet is shown (set by a card tap or the
-// Analyze button, see updateDetailPanel); phoneSheetTab: which tab it shows ("entry" | "facets";
+// Analyze button, see updateDetailPanel); phoneSheetTab: which tab it shows ("entry" | "why" | "facets";
 // "patterns" is the third, see PHONE_ANALYZE_TABS); phoneAnalyzeTab: the Analyze tab the header
 // button (re)opens, i.e. the last one used.
 let phoneSheetOpen = false;
@@ -18077,7 +18255,7 @@ let phonePatternsTotal = 0;
 let phonePatternsNode = null; // active node the list was last drawn for (scroll resets on a change)
 const PHONE_PATTERN_ROW_H = 64;
 let phonePanelSig = ""; // syncPhoneSheetPanel's last applied signature
-try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" ? t : "detail"; } catch { lowerTab = "detail"; }
+try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" || t === "why" ? t : "detail"; } catch { lowerTab = "detail"; }
 let facetsCollapsed = new Set();
 try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
 const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
@@ -18148,6 +18326,10 @@ function facetsActive() {
 // The Statistics tab is offered while Table or Plot is on screen (never on the phone, which has neither).
 function statsOffered() { return currentLayoutTier !== "phone" && (fhActiveTab === "table" || fhActiveTab === "plot"); }
 function statsActive() { return lowerTab === "stats" && statsOffered(); }
+// The Why tab is selected. Desktop/tablet: the persisted lowerTab. Phone: while the sheet is open on its Why tab.
+function whyActive() {
+  return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "why") : lowerTab === "why";
+}
 
 function lowerTabDetailTitle(patterns) {
   return patterns
@@ -18163,13 +18345,16 @@ function lowerTabDetailTitle(patterns) {
 // collapsed state or the remembered height. Statistics is offered on
 // Table/Plot only (statsOffered).
 function applyLowerPanel() {
-  const facets = facetsActive(), patterns = phonePatternsActive(), stats = !facets && statsActive();
+  const facets = facetsActive(), patterns = phonePatternsActive(), why = !facets && !patterns && whyActive(), stats = !facets && !why && statsActive();
   const onPatternsTab = fhActiveTab === "patterns";
   detailPanel.classList.toggle("lower-facets", facets);
   detailPanel.classList.toggle("lower-stats", stats);
+  detailPanel.classList.toggle("lower-why", why);
   detailPanel.classList.toggle("lower-patterns", patterns);
-  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns);
-  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats ? "false" : "true");
+  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns && !why);
+  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats || why ? "false" : "true");
+  lowerTabWhy.setAttribute("aria-selected", why ? "true" : "false");
+  lowerTabWhy.disabled = currentLayoutTier === "phone" && !selectedEntry(); // phone: like Entry, needs a selection
   lowerTabStats.hidden = !statsOffered();
   lowerTabStats.setAttribute("aria-selected", stats ? "true" : "false");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
@@ -18178,8 +18363,54 @@ function applyLowerPanel() {
   lowerTabDetail.title = lowerTabDetailTitle(onPatternsTab);
   updateDetailResizerVisibility();
   renderFacetPanel();
+  renderWhyPanel();
   renderPhonePatterns();
 }
+
+// (Re)fills the Why tab body from explainEntry for the selected entry; nothing to do while another
+// tab shows. Writes only into #whyPanelBody (called on every selection change from updateDetailPanel).
+function renderWhyPanel() {
+  if (!whyActive()) return;
+  const entry = selectedEntry();
+  const r = explainEntry(entry && entry.id, state.activeId);
+  let html = "";
+  if (r.note) html = '<div class="why-note">' + escapeHtml(r.note) + "</div>";
+  else {
+    html = '<div class="why-head ' + (r.match ? "why-match" : "why-reject") + '">' + escapeHtml(r.head) + "</div>";
+    html += '<ol class="why-steps">' + r.steps.map((st, i) => {
+      const badge = st.status === "skipped" ? "not reached" : st.status;
+      let h = '<li class="why-step why-' + st.status + '" data-node-id="' + escapeHtml(st.nodeId) + '">' +
+        '<span class="why-num">' + (i + 1) + '</span>' +
+        '<button type="button" class="why-node" title="Activate this filter">' + escapeHtml(st.name) + "</button>" +
+        '<span class="why-badge">' + badge + "</span>";
+      if (st.reason) h += '<div class="why-reason">' + escapeHtml(st.reason) + "</div>";
+      const subHtml = subs => '<ul class="why-subs">' + subs.map(sb =>
+        '<li><span class="' + (sb.ok ? "why-sub-ok" : "why-sub-no") + '">' + (sb.ok ? "✓" : "✗") + "</span> " +
+        (whySubNameRedundant(sb) ? "" : escapeHtml(sb.name || "") + " — ") + escapeHtml(sb.reason) + (sb.subs ? subHtml(sb.subs) : "") + "</li>").join("") + "</ul>";
+      if (st.subs.length) h += subHtml(st.subs);
+      return h + "</li>";
+    }).join("") + "</ol>";
+    if (r.view) html += '<div class="why-view why-view-' + r.view.kind + '">' + escapeHtml(r.view.text) + "</div>";
+  }
+  whyPanelBody.innerHTML = html;
+}
+whyPanelBody.addEventListener("mousedown", ev => { if (ev.target.closest(".why-node")) ev.preventDefault(); }); // never takes keyboard focus from the log view
+whyPanelBody.addEventListener("click", ev => {
+  const btn = ev.target.closest(".why-node");
+  if (!btn) return;
+  ev.stopPropagation();
+  const id = btn.closest("[data-node-id]").dataset.nodeId;
+  if (!state.nodes[id]) return;
+  // Same as a plain tree-row click; the entry selection is left alone.
+  state.multiSelect = new Set([id]);
+  applyTempAnchorOnActiveNodeSwitch(id);
+  state.activeId = id;
+  state.inlineViewer = null;
+  state.folderView = null;
+  state.treeCursor = null;
+  revealFilteredView();
+  render();
+});
 
 // (Re)fills the Facets tab body; nothing to do while another tab shows.
 function renderFacetPanel() {
@@ -18337,12 +18568,12 @@ function createFacetFilter(column, value, inverted) {
   finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
 }
 
-// Selects a bottom-panel tab ("detail" | "stats" | "facets"; desktop/tablet — the phone
+// Selects a bottom-panel tab ("detail" | "stats" | "facets" | "why"; desktop/tablet — the phone
 // sheet has its own, see setFacetsOpen). Selecting Statistics or Facets expands a collapsed
 // panel. The panel height/visibility can change, hence the full renderMainView (it
 // re-measures the log like any layout change).
 function setLowerTab(tab) {
-  lowerTab = tab === "stats" || tab === "facets" ? tab : "detail";
+  lowerTab = tab === "stats" || tab === "facets" || tab === "why" ? tab : "detail";
   try { localStorage.setItem(LOWER_TAB_KEY, lowerTab); } catch {}
   if (lowerTab !== "detail" && isDetailCollapsed()) toggleDetailCollapsed(false);
   if (state.rootIds.length) renderMainView();
@@ -18361,6 +18592,16 @@ function toggleFacets() {
   setFacetsOpen(!shown);
 }
 facetPanelBody.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
+lowerTabWhy.addEventListener("mousedown", ev => ev.preventDefault());
+lowerTabWhy.addEventListener("click", ev => {
+  ev.stopPropagation();
+  if (lowerTabWhy.disabled) return;
+  openWhyTab();
+});
+// Opens the Why tab: desktop/tablet selects it (expanding a collapsed panel), the phone opens the sheet on it.
+function openWhyTab() {
+  if (currentLayoutTier === "phone") setPhoneSheetTab("why"); else setLowerTab("why");
+}
 [lowerTabDetail, lowerTabStats, lowerTabFacets].forEach(btn => {
   btn.addEventListener("mousedown", ev => ev.preventDefault()); // never takes keyboard focus from the log view
   btn.addEventListener("click", ev => {
@@ -31556,7 +31797,7 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
   logMultiSelectAnchorId = entryId;
   // Phone: tapping a card is the one explicit way to open the entry-detail
   // sheet (see phoneSheetOpen); find steps / minimap clicks only select.
-  if (currentLayoutTier === "phone") { phoneSheetOpen = true; phoneSheetTab = "entry"; }
+  if (currentLayoutTier === "phone") { phoneSheetOpen = true; if (phoneSheetTab !== "why") phoneSheetTab = "entry"; }
   selectFn(entryId);
 }
 
@@ -32184,7 +32425,7 @@ function formatMessageWithHighlight(text) {
 function updateDetailPanel() {
   const entry = selectedEntry();
   // Entry tab: the sheet needs a selection. An Analyze tab (Facets) stays open without one.
-  if (!entry && phoneSheetTab === "entry") phoneSheetOpen = false;
+  if (!entry && (phoneSheetTab === "entry" || phoneSheetTab === "why")) phoneSheetOpen = false;
   // phone: the bottom sheet (CSS only acts in layout-phone). It takes its
   // height out of the list's (body.sheet-open pads #content), so the visible
   // rows are re-rendered when it opens/closes.
@@ -32194,6 +32435,7 @@ function updateDetailPanel() {
   if (!sheetNow && sheetWas) clearPhoneSheetHeight(); // a reopened sheet starts at the 62vh default again
   if (sheetWas !== sheetNow && currentLayoutTier === "phone") renderVisibleRows();
   if (currentLayoutTier === "phone") syncPhoneSheetPanel(!!entry);
+  renderWhyPanel(); // follows the selection; no-op unless the Why tab shows
 
   if (!entry) {
     detailPanel.classList.add("empty");
@@ -32997,7 +33239,7 @@ function closePhoneSheet() {
 // updateDetailPanel -> syncPhoneSheetPanel. A switch to an Analyze tab is remembered for the header button.
 function setPhoneSheetTab(tab) {
   if (currentLayoutTier !== "phone") return;
-  if (tab === "entry" && !selectedEntry()) return;
+  if ((tab === "entry" || tab === "why") && !selectedEntry()) return;
   phoneSheetTab = tab;
   if (PHONE_ANALYZE_TABS.includes(tab)) phoneAnalyzeTab = tab;
   phoneSheetOpen = true;
@@ -39925,6 +40167,7 @@ const ctxTimeZeroLabel = el("#ctxTimeZeroLabel");
 const ctxFilterForColumnLabel = el("#ctxFilterForColumnLabel");
 const ctxExtractMessage = el("#ctxExtractMessage");
 const ctxPairWith = el("#ctxPairWith");
+const ctxWhyRow = el("#ctxWhyRow");
 const ctxOpenInVs = el("#ctxOpenInVs");
 const ctxOpenInRider = el("#ctxOpenInRider");
 const ctxAddToSelection = el("#ctxAddToSelection");
@@ -39998,6 +40241,8 @@ function openContextMenu(ev, entry) {
     currentLayoutTier !== "phone" && buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
   // "Pair with…": a real row only (never a link-view pair brace), and only where timestamps exist.
   ctxPairWith.style.display = !entry.isPair && bookmarkable && !isPlainTextFormat(entry.formatId) ? "" : "none";
+  // "Why is this row here?": a real row only (the explanation is per log entry, never a link-view pair).
+  ctxWhyRow.style.display = !entry.isPair && entryIndex[entry.id] ? "" : "none";
   // IDE Integration: row-level (not column-gated like "Filter for this
   // ___" above) — the Method column carries no file/line data of its own,
   // so gating strictly on which column was clicked would make these items
@@ -40386,6 +40631,14 @@ pairPickBanner.addEventListener("click", ev => {
   if (!btn) return;
   ev.stopPropagation();
   if (btn.dataset.pp === "pairall") pairAllFromPick(); else cancelPairPick();
+});
+ctxWhyRow.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const entry = ctxEntry;
+  closeContextMenu();
+  if (!entry || entry.isPair) return;
+  if (state.selectedId !== entry.id) selectEntry(entry.id);
+  openWhyTab();
 });
 ctxPairWith.addEventListener("click", ev => {
   ev.stopPropagation();

@@ -1,0 +1,4 @@
+- **feat: "Why is this row here?" — a Why tab explains which filter node keeps or rejects the selected row (2026-10-07, FEATURE_BACKLOG #15)**
+  - New bottom-panel tab **Why** (also the row menu entry "Why is this row here?"; a sheet tab on the phone): the whole chain from the file to the active node, per node kept / rejected / not reached / muted with a reason line (text found, level in list, "2 of 3 matched" with a line per AND/OR condition, part of a pair, within a context window), the rejecting node in red, and a last line when the level bar hides the row or Pin bookmarks shows it.
+  - Node names are buttons that activate the node; the tab follows the selection without re-rendering the tree.
+  - **Tests**: GROUP explain-row. Docs: docs/filters.md, docs/ui-and-views.md, README.

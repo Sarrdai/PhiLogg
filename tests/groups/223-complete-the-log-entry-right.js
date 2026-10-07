@@ -51,14 +51,15 @@ await withApp(async (w, d, T) => {
   // GROUP 230 (IDE Integration) added two more items to this same
   // "act on this entry's data" group, right after Extract.
   assert(menuChildren[4].id === "ctxPairWith", "'Pair with…' sits directly after Extract, got #" + menuChildren[4].id);
-  assert(menuChildren[5].id === "ctxOpenInVs", "'Open in Visual Studio' sits directly after 'Pair with…', got #" + menuChildren[5].id);
-  assert(menuChildren[6].id === "ctxOpenInRider", "'Open in Rider' sits directly after 'Open in Visual Studio', got #" + menuChildren[6].id);
-  assert(menuChildren[7].classList.contains("ctx-sep"), "a separator follows the Filter-for-this-___/Extract/IDE-Integration group");
+  assert(menuChildren[5].id === "ctxWhyRow", "'Why is this row here?' sits directly after 'Pair with…', got #" + menuChildren[5].id);
+  assert(menuChildren[6].id === "ctxOpenInVs", "'Open in Visual Studio' sits directly after 'Why is this row here?', got #" + menuChildren[6].id);
+  assert(menuChildren[7].id === "ctxOpenInRider", "'Open in Rider' sits directly after 'Open in Visual Studio', got #" + menuChildren[7].id);
+  assert(menuChildren[8].classList.contains("ctx-sep"), "a separator follows the Filter-for-this-___/Extract/IDE-Integration group");
   // Regroup: After/Before/Time-range-from-selection, then a separator, then
   // Bookmark/Note/Add-to-selection, then a separator, then Copy at the end.
   const idsFrom = i => menuChildren.slice(i).map(c => c.id || (c.classList.contains("ctx-sep") ? "sep" : "?"));
-  assert(JSON.stringify(idsFrom(8)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "ctxTimeZero", "sep", "ctxCopy", "ctxCopyTicket"]),
-    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection/TimeZero -> sep -> Copy, Copy for ticket, got " + JSON.stringify(idsFrom(8)));
+  assert(JSON.stringify(idsFrom(9)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "ctxTimeZero", "sep", "ctxCopy", "ctxCopyTicket"]),
+    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection/TimeZero -> sep -> Copy, Copy for ticket, got " + JSON.stringify(idsFrom(9)));
 
   // --- (2) Extract item: visible + correct outcome for an extractable
   // message, hidden for a message with nothing extractable ---
