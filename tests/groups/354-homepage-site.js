@@ -123,6 +123,20 @@ if (groupSelected()) {
     assert(!w.document.querySelector("#term-body .tl.l-DEEP"), "DEEP entries (hidden in the tour's reading view) are skipped");
   }
   {
+    // Animated tail (person-reported 2026-10-07: the terminal grew with every
+    // tick and shifted the page): all rows are laid out from the first tick,
+    // the not-yet-shown ones invisible, so the height never changes.
+    const dom = new JSDOM(siteHtml, { runScripts: "dangerously", beforeParse: w => { w.fetch = api([stableRel]); w.matchMedia = () => ({ matches: false }); } });
+    const w = dom.window;
+    await waitFor(() => w.document.querySelectorAll("#term-body .tl").length > 0);
+    const early = [...w.document.querySelectorAll("#term-body .tl")];
+    assert(early.length === 6 && early.filter(r => !r.classList.contains("pending")).length === 1, "first tick: all six rows laid out, only the first shown: " + early.length);
+    assert(w.getComputedStyle(early[5]).visibility === "hidden", "a pending row is invisible but keeps its space");
+    await w.PhiloggSite.ready;
+    const body = w.document.getElementById("term-body");
+    assert(!body.querySelector(".tl.pending") && body.lastElementChild.classList.contains("caret"), "after the tail: every row shown, caret after the last one");
+  }
+  {
     const w = await loadSite(async u => /api\.github/.test(u) ? resp(true, []) : resp(false, ""));
     assert(w.document.getElementById("term").hidden === true, "welcome.log not fetchable -> terminal panel hidden");
     const w2 = await loadSite(async u => /api\.github/.test(u) ? resp(true, []) : { ok: true, text: async () => "no tour lines here\n" });

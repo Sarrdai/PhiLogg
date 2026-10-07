@@ -71,6 +71,7 @@ img{max-width:100%}
 .term-head{display:flex;justify-content:space-between;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border-soft);font:12px var(--font-log);color:var(--text-tertiary)}
 .term-body{padding:12px 0;font:12.5px/1.75 var(--font-log);overflow-x:auto;min-height:220px}
 .tl{display:grid;grid-template-columns:3px 92px 56px minmax(0,1fr);gap:10px;padding:0 12px 0 0}
+.tl.pending{visibility:hidden}
 .tl .bar{align-self:stretch}
 .tl .ts{color:var(--text-tertiary);white-space:nowrap}
 .tl .msg{overflow-wrap:anywhere}
@@ -275,17 +276,27 @@ img{max-width:100%}
 
   // Renders the rows into #term-body: one by one as a tail, or at once when
   // `animate` is false. Returns a promise resolved when all rows are shown.
+  // Every row is laid out from the start (invisible until its tick) and the
+  // caret moves along after the last shown row, so the terminal has its final
+  // height at once and nothing below it shifts while the tail plays.
   function renderTerminal(rows, animate) {
     var body = document.getElementById("term-body");
     body.textContent = "";
     var caret = el("span", "caret");
     caret.setAttribute("aria-hidden", "true");
+    var els = rows.map(function (r) {
+      var row = terminalRow(r);
+      row.classList.add("pending");
+      body.appendChild(row);
+      return row;
+    });
+    body.insertBefore(caret, els[0]);
     return new Promise(function (resolve) {
       var i = 0;
       (function step() {
-        if (i < rows.length) {
-          body.appendChild(terminalRow(rows[i++]));
-          body.appendChild(caret);
+        if (i < els.length) {
+          els[i].classList.remove("pending");
+          body.insertBefore(caret, els[i++].nextSibling);
           if (animate) return setTimeout(step, 420);
           return step();
         }

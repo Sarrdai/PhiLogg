@@ -22,7 +22,7 @@ domain root alike.
 - **Hero terminal** (`welcome.log · tail -f`): at runtime the page fetches
   `app/tour/welcome.log`, takes the header lines of the first six non-DEEP
   entries (indented continuation lines are skipped) and replays them once as a
-  tail with level colors; long messages wrap inside their column (time and level stay on one line, tighter columns at phone width) instead of being cut (all at once under `prefers-reduced-motion`). When the
+  tail with level colors; long messages wrap inside their column (time and level stay on one line, tighter columns at phone width) instead of being cut (all at once under `prefers-reduced-motion`). All rows are laid out from the first tick (`.tl.pending`, `visibility:hidden`) and only revealed one by one, the caret moving after the last shown row, so the panel has its final height at once and the page never shifts during the tail. When the
   fetch fails (e.g. opened from `file://`) the panel stays hidden. No log line
   is written by hand in the page.
 - **Facts row**, **Features** (four cards, screenshots from
