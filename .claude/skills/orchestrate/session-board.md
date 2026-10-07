@@ -46,9 +46,13 @@ without `session_id` → `ccr.id`). Timestamps UTC ISO (`date -u +%FT%TZ`).
   unknown or refused: `get` the entry, then update.
 - Not more often: each call lands in your context.
 - **Orchestrator** also writes a `subagent` entry for each subagent
-  package (`doc_id` `agent-<round>-<slug>`, `parent` = its own ID), and
-  `meta/usage` after every budget check: `five_hour` and `seven_day`, each
-  `{utilization, resets_at}`, plus `read_at` and `by` (its title).
+  package (`doc_id` `agent-<round>-<slug>`, `parent` = its own ID).
+- **Every session** (orchestrator, package, lead) writes `meta/usage`
+  after each of its budget checks (`usage-budget.md`): `update` with
+  `five_hour` and `seven_day`, each `{utilization, resets_at}` (UTC ISO),
+  plus `read_at` (the reading's event time) and `by` (its title), pinned
+  with `if_version`. Version unknown or refused: `get` it, then write only
+  if your `read_at` is newer than the stored one.
 - **A session that takes over** (handover, continuation after a pause)
   sets `continues` to the predecessor's ID. The predecessor's entry stays
   as it is: the board shows it inside its successor's card, and packages
