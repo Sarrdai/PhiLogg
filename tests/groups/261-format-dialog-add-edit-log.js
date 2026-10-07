@@ -55,7 +55,8 @@ await withApp(async (w, d, T) => {
   assert(w.detectTsFormatFromValues(["09/23/2026 10:00:01"]) === "MM/dd/yyyy HH:mm:ss", "a slashed date is month-first unless a first part is > 12");
   assert(w.detectTsFormatFromValues(["23/09/2026 10:00:01"]) === "dd/MM/yyyy HH:mm:ss", "...and day-first when one is > 12");
   assert(w.detectTsFormatFromValues(["10:00:01.123"]) === "HH:mm:ss.SSS", "a time-only value works too");
-  assert(w.detectTsFormatFromValues(["2026-09-23T10:00:01.123+02:00"]) === "", "a timezone suffix isn't expressible -> '' (free-form Date.parse fallback)");
+  assert(w.detectTsFormatFromValues(["2026-09-23T10:00:01.123+02:00"]) === "yyyy-MM-ddTHH:mm:ss.SSSXXX", "a UTC offset suffix becomes the XXX token");
+  assert(w.detectTsFormatFromValues(["2026-09-23 10:00:01 CEST"]) === "", "a named zone suffix isn't expressible -> '' (free-form Date.parse fallback)");
   assert(w.detectTsFormatFromValues(["Sep 23 10:00:01"]) === "", "month names aren't expressible -> ''");
 
   assert(w.fwzLabelToKey("Request Id", new Set()) === "requestId", "a title becomes a camelCase capture name");

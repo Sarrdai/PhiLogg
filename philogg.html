@@ -4124,6 +4124,15 @@
   .fwz-result{display:flex; gap:12px;}
   .fwz-result .link-field{margin-bottom:0; flex:1 1 auto; min-width:0;}
   .fwz-result .fwz-ts-field{flex:0 0 240px;}
+  .fwz-result .fwz-tz-field{flex:0 0 auto;}
+  .fwz-tz-box{display:flex; gap:6px;}
+  .fwz-tz-box select{
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:6px 8px; font-size:12px; min-width:0;
+  }
+  .fwz-result .fwz-tz-box input{width:78px;}
+  .fwz-result .fwz-tz-box input#fwzTzNamed{width:170px;}
+  .fwz-result .fwz-tz-box input.hidden{display:none;}
   .fwz-result input{
     width:100%; box-sizing:border-box; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:12px;
@@ -7798,6 +7807,20 @@ SOFTWARE.</pre>
               <label for="formatEditTsFormat">Timestamp format <span class="link-target-label">(detected, editable)</span></label>
               <input type="text" id="formatEditTsFormat" placeholder="yyyy-MM-dd HH:mm:ss,SSS" autocomplete="off" spellcheck="false">
             </div>
+            <div class="link-field fwz-tz-field">
+              <label for="fwzTzMode">Time zone <span class="link-target-label">(for times without offset)</span></label>
+              <div class="fwz-tz-box">
+                <select id="fwzTzMode" title="Zone of timestamps that carry no offset of their own. An offset in the line (token XXX) always wins.">
+                  <option value="local">Local time (this computer)</option>
+                  <option value="utc">UTC</option>
+                  <option value="fixed">Fixed offset</option>
+                  <option value="named">Time zone</option>
+                </select>
+                <input type="text" id="fwzTzFixed" class="hidden" placeholder="+02:00" autocomplete="off" spellcheck="false" aria-label="Fixed UTC offset">
+                <input type="text" id="fwzTzNamed" class="hidden" list="fwzTzList" placeholder="America/New_York" autocomplete="off" spellcheck="false" aria-label="Time zone name">
+                <datalist id="fwzTzList"></datalist>
+              </div>
+            </div>
           </div>
           <div id="fwzStatus" class="fwz-status"></div>
           <div class="fwz-section-title">Preview</div>
@@ -10933,42 +10956,155 @@ function unescapePatternText(s) {
   return (s || "").replace(/\\\\|\\t|\\n/g, m => (m === "\\t" ? "\t" : m === "\\n" ? "\n" : "\\"));
 }
 
-const DATE_TOKEN_RE = /yyyy|MM|dd|HH|mm|ss|SSS/g;
+const DATE_TOKEN_RE = /yyyy|MM|dd|HH|mm|ss|SSS|XXX/g;
 // SSS accepts 1-6 digits (not just 3) so a microsecond-precision fraction
 // (e.g. RFC 5424 syslog's ".711324") still matches; parseTimestampGeneric
 // below normalizes whatever digit count it captures down to milliseconds.
-const DATE_TOKEN_FRAG = { yyyy: "\\d{4}", MM: "\\d{2}", dd: "\\d{2}", HH: "\\d{2}", mm: "\\d{2}", ss: "\\d{2}", SSS: "\\d{1,6}" };
+const DATE_TOKEN_FRAG = { yyyy: "\\d{4}", MM: "\\d{2}", dd: "\\d{2}", HH: "\\d{2}", mm: "\\d{2}", ss: "\\d{2}", SSS: "\\d{1,6}",
+  // XXX: the timestamp's own UTC offset — Z, +HH:MM or +HHMM (also with "-").
+  // It always wins over the format's timeZone (see parseTimestampGeneric).
+  XXX: "Z|[+-]\\d{2}:?\\d{2}" };
 
 // Compiles a "yyyy-MM-dd HH:mm:ss,SSS"-style token string into a regex
 // (with one capturing group per token, in order) that both matches a
 // timestamp substring AND lets parseTimestampGeneric pull its parts back
 // out afterward. Empty/missing fmt means "free-form" — callers fall back
 // to Date.parse.
-function compileDateFormat(fmt) {
+// `timeZone` (the format's field: "" = this computer's local time, "UTC", a
+// fixed "+05:30", or an IANA name) says how a timestamp WITHOUT an offset of
+// its own (no XXX token) is read: `zone` is null for the local default (the
+// untouched `new Date(...)` path, no per-entry cost beyond today's), else a
+// naive-ms -> absolute-ms function (makeZoneLocalizer). `plainRegexStr` is
+// regexStr with every group non-capturing — for a regex the format dialog
+// shows/saves as TEXT, whose only capture groups should be the named columns.
+function compileDateFormat(fmt, timeZone) {
   if (!fmt) return null;
   DATE_TOKEN_RE.lastIndex = 0;
-  let lastIndex = 0, regexStr = "";
+  let lastIndex = 0, regexStr = "", plainRegexStr = "";
   const order = [];
   let m;
   while ((m = DATE_TOKEN_RE.exec(fmt)) !== null) {
-    regexStr += escapeRegExp(fmt.slice(lastIndex, m.index));
+    const lit = escapeRegExp(fmt.slice(lastIndex, m.index));
+    regexStr += lit;
+    plainRegexStr += lit;
     order.push(m[0]);
     regexStr += "(" + DATE_TOKEN_FRAG[m[0]] + ")";
+    plainRegexStr += "(?:" + DATE_TOKEN_FRAG[m[0]] + ")";
     lastIndex = DATE_TOKEN_RE.lastIndex;
   }
-  regexStr += escapeRegExp(fmt.slice(lastIndex));
+  const tail = escapeRegExp(fmt.slice(lastIndex));
+  regexStr += tail;
+  plainRegexStr += tail;
   if (!order.length) return null;
   let matchRegex;
   try { matchRegex = new RegExp("^" + regexStr + "$"); } catch (e) { return null; }
-  return { regexStr, matchRegex, order };
+  const offsetIdx = order.indexOf("XXX");
+  return { regexStr, plainRegexStr, matchRegex, order, offsetIdx, zone: timeZone ? makeZoneLocalizer(timeZone) : null };
+}
+
+// compileDateFormat, plus — for no tsFormat but a time zone — a marker object
+// that makes parseTimestampGeneric re-read the free-form (Date.parse)
+// timestamp in that zone.
+function compileTsDate(tsFormat, timeZone) {
+  return compileDateFormat(tsFormat, timeZone) || (timeZone ? { free: true, zone: makeZoneLocalizer(timeZone) } : null);
+}
+
+// "Z", "+02:00", "-0530" -> offset minutes east of UTC (NaN if not one).
+function parseUtcOffsetMinutes(s) {
+  if (s === "Z") return 0;
+  const m = /^([+-])(\d{2}):?(\d{2})$/.exec(s);
+  if (!m) return NaN;
+  const h = +m[2], mi = +m[3];
+  if (h > 23 || mi > 59) return NaN;
+  return (m[1] === "-" ? -1 : 1) * (h * 60 + mi);
+}
+
+// The local-time localizer: finishes a "naive" timestamp — Date.UTC(y, mo, d,
+// h, mi, s, ms), as the native parser returns them — into
+// new Date(y, mo, d, h, mi, s, ms) in THIS engine, so DST gaps/overlaps and
+// the tz database are exactly the page's. The local offset is constant
+// within a minute of wall time, so one Date per distinct minute is enough.
+function makeNaiveTsLocalizer() {
+  const offsets = new Map();
+  return naive => {
+    const minute = Math.floor(naive / 60000);
+    let off = offsets.get(minute);
+    if (off === undefined) {
+      const n = new Date(minute * 60000);
+      const local = new Date(0);
+      // setFullYear, not the constructor — that would remap years 0..99.
+      local.setFullYear(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
+      local.setHours(n.getUTCHours(), n.getUTCMinutes(), 0, 0);
+      off = local.getTime() - minute * 60000;
+      offsets.set(minute, off);
+    }
+    return naive + off;
+  };
+}
+
+// A format's timeZone field as a naive -> absolute ms function: the same
+// wall-clock fields read as UTC ("naive" = Date.UTC(y, mo, d, h, mi, s, ms))
+// in, the real instant out. "" = this computer's local zone, exactly what
+// new Date(y, mo, d, ...) gives (the page's engine and tz database, DST gaps
+// and overlaps included); "UTC" = identity; "+HH:MM" = minus the offset; any
+// other string is an IANA name resolved with Intl (DST-aware, a gap moves
+// forward and an overlap takes the first pass, like Date). The offset is
+// constant within a minute of wall time, so one lookup per distinct minute
+// is enough. A name the engine doesn't know degrades to local time.
+function makeZoneLocalizer(timeZone) {
+  const cache = new Map();
+  const cached = (naive, compute) => {
+    const minute = Math.floor(naive / 60000);
+    let delta = cache.get(minute);
+    if (delta === undefined) {
+      if (cache.size > 100000) cache.clear();
+      delta = compute(minute * 60000) - minute * 60000;
+      cache.set(minute, delta);
+    }
+    return naive + delta;
+  };
+  if (!timeZone) return makeNaiveTsLocalizer();
+  if (timeZone === "UTC") return naive => naive;
+  const fixed = parseUtcOffsetMinutes(timeZone);
+  if (!isNaN(fixed) && timeZone !== "Z") return naive => naive - fixed * 60000;
+  let dtf;
+  try {
+    dtf = new Intl.DateTimeFormat("en-US", { timeZone, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", second: "numeric" });
+  } catch (e) { return makeZoneLocalizer(""); }
+  const offsetAt = t => {
+    const p = {};
+    for (const x of dtf.formatToParts(t)) p[x.type] = +x.value;
+    return Date.UTC(p.year, p.month - 1, p.day, p.hour % 24, p.minute, p.second) - Math.floor(t / 1000) * 1000;
+  };
+  // The zone's offset a day and a half before and after the wall clock (read as
+  // UTC) bracket any single transition; the wall clock is valid under an offset
+  // when the instant it gives has that very offset. Both valid (overlap): the
+  // first pass; neither (gap): the offset from before the switch — as Date.
+  return naive => cached(naive, nm => {
+    const ob = offsetAt(nm - 129600000), oa = offsetAt(nm + 129600000);
+    if (ob === oa) return nm - ob;
+    const tb = nm - ob, ta = nm - oa;
+    const vb = offsetAt(tb) === ob, va = offsetAt(ta) === oa;
+    return vb && va ? Math.min(tb, ta) : va && !vb ? ta : tb;
+  });
+}
+
+// Free-form timestamp (no tsFormat): Date.parse, which reads a string without
+// an offset as local time. With a `zone` (makeZoneLocalizer) such a string is
+// turned back into its wall clock and re-read in that zone; a string with its
+// own offset/Z is absolute either way.
+function parseFreeTimestamp(s, zone) {
+  const t = Date.parse(s);
+  if (isNaN(t) || !zone) return isNaN(t) ? NaN : t;
+  // Date-only ISO is UTC to Date.parse, a time with Z/an offset is absolute.
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return zone(t);
+  if (/(?:Z|[+-]\d{2}:?\d{2}|UTC|GMT)$/i.test(s)) return t;
+  return zone(t - new Date(t).getTimezoneOffset() * 60000);
 }
 
 function parseTimestampGeneric(raw, compiledDate) {
   const trimmed = (raw || "").trim();
-  if (!compiledDate) {
-    const t = Date.parse(trimmed);
-    return isNaN(t) ? NaN : t;
-  }
+  if (!compiledDate || compiledDate.free) return parseFreeTimestamp(trimmed, compiledDate ? compiledDate.zone : null);
   const m = compiledDate.matchRegex.exec(trimmed);
   if (!m) return NaN;
   const parts = {};
@@ -10985,7 +11121,13 @@ function parseTimestampGeneric(raw, compiledDate) {
   // .711324s). Reduces to the previous exact behavior for 3-digit input.
   const frac = parts.SSS || "";
   const ms = frac ? Math.round(+frac * Math.pow(10, 3 - frac.length)) : 0;
-  return new Date(y, mo, d, h, mi, s, ms).getTime();
+  // The default (local time, no XXX) is the plain Date constructor, as ever.
+  if (!compiledDate.zone && compiledDate.offsetIdx < 0) return new Date(y, mo, d, h, mi, s, ms).getTime();
+  // Naive wall clock as UTC ms (Date.UTC maps years 0..99 like the constructor).
+  const naive = Date.UTC(y, mo, d, h, mi, s, ms);
+  // An offset on the timestamp itself always wins over the format's time zone.
+  if (parts.XXX !== undefined) return naive - parseUtcOffsetMinutes(parts.XXX) * 60000;
+  return compiledDate.zone(naive);
 }
 
 // Longer word-forms listed before their single-letter alias in each
@@ -11052,7 +11194,7 @@ function compileFormatPattern(pattern, tsFormat, opts) {
     }
     const isLast = lastIndex === raw.length;
     let frag;
-    if (field === "ts") frag = dateFrag ? (opts && opts.plainDateGroups ? dateFrag.regexStr.replace(/(?<!\\)\((?=\\d)/g, "(?:") : dateFrag.regexStr) : (isLast ? ".*" : ".*?");
+    if (field === "ts") frag = dateFrag ? (opts && opts.plainDateGroups ? dateFrag.plainRegexStr : dateFrag.regexStr) : (isLast ? ".*" : ".*?");
     else if (field === "level" || field === "thread") frag = isLast ? ".*" : "\\S+";
     else frag = isLast ? ".*" : ".*?";
     if (fieldsSeen.has(field)) {
@@ -11408,7 +11550,11 @@ function jsonValueText(v) {
 // A number (or an all-digit string, without a tsFormat) is epoch time, its
 // unit guessed from the magnitude: s, ms, µs or ns. Anything else goes
 // through the ordinary timestamp parser (tsFormat, or Date.parse — ISO 8601).
-function parseJsonTimestamp(v, compiledDate) {
+// `zone` (makeZoneLocalizer, null = local time) only matters for a free-form
+// string WITHOUT an offset of its own: Date.parse read it as local time, so
+// that reading is turned back into the wall clock and re-read in the zone.
+// Epoch numbers are UTC already and never touched by it.
+function parseJsonTimestamp(v, compiledDate, zone) {
   if (typeof v === "number") {
     if (!isFinite(v)) return NaN;
     return v >= 1e17 ? Math.round(v / 1e6) : v >= 1e14 ? Math.round(v / 1e3) : v >= 1e11 ? v : Math.round(v * 1000);
@@ -11416,10 +11562,12 @@ function parseJsonTimestamp(v, compiledDate) {
   if (v == null || typeof v === "object") return NaN;
   const s = String(v).trim();
   if (!compiledDate && /^\d+(\.\d+)?$/.test(s)) return parseJsonTimestamp(+s, null);
+  if (!compiledDate && zone) return parseFreeTimestamp(s, zone);
   return parseTimestampGeneric(s, compiledDate);
 }
 function compileJsonFormat(fmt) {
-  const dateFrag = compileDateFormat(fmt.tsFormat);
+  const dateFrag = compileDateFormat(fmt.tsFormat, fmt.timeZone);
+  const freeZone = !dateFrag && fmt.timeZone ? makeZoneLocalizer(fmt.timeZone) : null;
   const segsOf = k => (k ? parseJsonPath(k) : null);
   const tsSegs = segsOf(fmt.tsKey), levelSegs = segsOf(fmt.levelKey), msgSegs = segsOf(fmt.messageKey);
   const cols = (Array.isArray(fmt.columnDefs) ? fmt.columnDefs : [])
@@ -11447,7 +11595,7 @@ function compileJsonFormat(fmt) {
       return {
         id: uid("e"),
         tsRaw: jsonValueText(tsV),
-        ts: tsV === undefined ? NaN : parseJsonTimestamp(tsV, dateFrag),
+        ts: tsV === undefined ? NaN : parseJsonTimestamp(tsV, dateFrag, freeZone),
         level: levelV == null ? "INFO" : jsonValueText(levelV).trim().toUpperCase(),
         thread: "",
         location: "",
@@ -11530,7 +11678,7 @@ function compileOneFormat(fmt) {
 // nativeFormatSpec, so the desktop's native parser is handed exactly the
 // regex this page itself would run.
 function compileFormatRegex(fmt) {
-  const dateFrag = compileDateFormat(fmt.tsFormat);
+  const dateFrag = compileTsDate(fmt.tsFormat, fmt.timeZone);
   let regex = null;
   if (fmt.mode === "regex") {
     const v = validateFormatRegex(fmt.regex || "");
@@ -11551,11 +11699,14 @@ function nativeFormatSpec(fmt) {
   if (fmt.mode === "meta" || fmt.mode === "plaintext" || fmt.mode === "json") return null;
   if (fmt.builtin && !fmt.edited) return { builtin: true, regex: null, dateRegex: null, dateOrder: [], wrapQuote: "" };
   const { dateFrag, regex } = compileFormatRegex(fmt);
+  // Rust can't read an XXX offset yet (step 3 of #86): the JS parser takes it.
+  if (dateFrag && dateFrag.offsetIdx >= 0) return null;
+  const real = dateFrag && !dateFrag.free ? dateFrag : null;
   return {
     builtin: false,
     regex: regex ? regex.source : null,
-    dateRegex: dateFrag ? dateFrag.matchRegex.source : null,
-    dateOrder: dateFrag ? dateFrag.order.slice() : [],
+    dateRegex: real ? real.matchRegex.source : null,
+    dateOrder: real ? real.order.slice() : [],
     wrapQuote: regex ? messageWrapQuote(regex.source) : "",
   };
 }
@@ -12084,6 +12235,7 @@ function buildLogParseWorkerSrc() {
     messageWrapQuote, markOpenMessageQuote, appendContinuationLine, compileOneFormat,
     compileFormatRegex, encodeEntryBatch, findHeaderLineStartInBlob, parseBlobRangeEntries,
     parseJsonPath, resolveJsonPath, jsonValueText, parseJsonTimestamp, compileJsonFormat,
+    compileTsDate, parseUtcOffsetMinutes, makeNaiveTsLocalizer, makeZoneLocalizer, parseFreeTimestamp,
   ].map(fn => fn.toString()).join("\n\n");
   // A local, worker-scoped id counter — never the page's own uidCounter,
   // which is main-thread-only state a worker can't share. The main thread
@@ -12397,29 +12549,6 @@ function canParseNatively(handle) {
     isUrlTailHandle(handle) && isDesktopLocalUrl(handle[URL_TAIL_HANDLE]));
 }
 
-// Rust returns timestamps "naive" — Date.UTC(y, mo, d, h, mi, s, ms) — and
-// this finishes parseTimestamp/parseTimestampGeneric's own
-// new Date(y, mo, d, h, mi, s, ms) in THIS engine, so DST gaps/overlaps and
-// the tz database are exactly the page's. The local offset is constant
-// within a minute of wall time, so one Date per distinct minute is enough.
-function makeNaiveTsLocalizer() {
-  const offsets = new Map();
-  return naive => {
-    const minute = Math.floor(naive / 60000);
-    let off = offsets.get(minute);
-    if (off === undefined) {
-      const n = new Date(minute * 60000);
-      const local = new Date(0);
-      // setFullYear, not the constructor — that would remap years 0..99.
-      local.setFullYear(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate());
-      local.setHours(n.getUTCHours(), n.getUTCMinutes(), 0, 0);
-      off = local.getTime() - minute * 60000;
-      offsets.set(minute, off);
-    }
-    return naive + off;
-  };
-}
-
 // Reads one binary entry batch (layout: desktop/src-tauri/logparse/src/
 // batch.rs) into entry objects of this page's own shape and key order
 // (applyFormatMatch/parseHeaderLine), minus id/formatId. The whole batch's
@@ -12476,7 +12605,9 @@ async function parseLocalFileNatively(url, node, onFraction) {
   if (!spec) throw new Error("meta-format or plain text");
   // No compiled date format: Date.parse, which only this engine can answer.
   const freeDate = !spec.builtin && !spec.dateRegex;
-  const localize = makeNaiveTsLocalizer();
+  // The format's own time zone (naive from Rust -> the real instant).
+  const localize = makeZoneLocalizer(fmt.timeZone);
+  const freeZone = freeDate && fmt.timeZone ? localize : null;
   const start = node.entries.length;
   let orphaned = false;
   let res;
@@ -12491,7 +12622,7 @@ async function parseLocalFileNatively(url, node, onFraction) {
       if (batch.entries) {
         for (const e of batch.entries) {
           e.id = uid("e");
-          e.ts = freeDate ? (e.tsRaw ? parseTimestampGeneric(e.tsRaw, null) : NaN)
+          e.ts = freeDate ? (e.tsRaw ? parseFreeTimestamp(e.tsRaw.trim(), freeZone) : NaN)
             : isNaN(e.ts) ? NaN : localize(e.ts);
           e.formatId = formatId;
           entryIndex[e.id] = e;
@@ -44988,7 +45119,7 @@ async function removeLogFormat(id) {
    dropped file — see importPhiloggJsonText). */
 const LOG_FORMAT_FILE_FORMAT = "philogg-log-format";
 const LOG_FORMAT_FILE_VERSION = 1;
-const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "tsKey", "levelKey", "messageKey", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup"];
+const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "timeZone", "tsKey", "levelKey", "messageKey", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup"];
 
 function serializeLogFormatExport(formatId) {
   const fmt = state.logFormats.find(f => f.id === formatId);
@@ -45032,6 +45163,7 @@ function normalizeLogFormatExport(src, rawFileNamePatterns) {
   logFormat.regex = String(src.regex || "");
   logFormat.tsFormat = String(src.tsFormat || "");
   ["tsKey", "levelKey", "messageKey"].forEach(k => { if (typeof logFormat[k] !== "string") delete logFormat[k]; });
+  if (typeof logFormat.timeZone !== "string" || !logFormat.timeZone) delete logFormat.timeZone; // missing = local time
   if (!Array.isArray(logFormat.levels)) delete logFormat.levels;
   else logFormat.levels = logFormat.levels.filter(l => typeof l === "string" || (l && typeof l === "object" && typeof l.name === "string"));
   if (logFormat.levelValueType !== "int") delete logFormat.levelValueType;
@@ -45547,8 +45679,10 @@ const SAMPLE_LEVEL_RE = /\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b/;
 // separator baked in as literal text would only match the one sample line
 // that happens to share its millisecond value.
 const SAMPLE_TS_CANDIDATES = [
-  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}([.,;])\d{1,3}/, fmt: m => `yyyy-MM-dd HH:mm:ss${m[1]}SSS` },
-  { re: /\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}/, fmt: () => "yyyy-MM-dd HH:mm:ss" },
+  // An offset right behind the seconds (Z, +02:00, -0500) is part of the
+  // timestamp and becomes the XXX token.
+  { re: /\d{4}-\d{2}-\d{2}([ T])\d{2}:\d{2}:\d{2}([.,;])\d{1,3}(Z|[+-]\d{2}:?\d{2})?/, fmt: m => `yyyy-MM-dd${m[1]}HH:mm:ss${m[2]}SSS${m[3] ? "XXX" : ""}` },
+  { re: /\d{4}-\d{2}-\d{2}([ T])\d{2}:\d{2}:\d{2}(Z|[+-]\d{2}:?\d{2})?/, fmt: m => `yyyy-MM-dd${m[1]}HH:mm:ss${m[2] ? "XXX" : ""}` },
   { re: /\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}/, fmt: () => "MM/dd/yyyy HH:mm:ss" },
   { re: /\d{2}:\d{2}:\d{2}([.,;])\d{1,3}/, fmt: m => `HH:mm:ss${m[1]}SSS` },
   { re: /\d{2}:\d{2}:\d{2}/, fmt: () => "HH:mm:ss" },
@@ -45755,10 +45889,24 @@ function fwzLabelToKey(label, taken) {
 // digit runs (yyyy-MM-dd / dd.MM.yyyy / MM/dd/yyyy date part, then
 // HH:mm[:ss[<sep>SSS]]), keeps its non-digit separators literal, and only
 // returns the result if it round-trips every marked value through
-// compileDateFormat — anything it can't express (month names, a timezone
-// suffix, ...) returns "" (free-form Date.parse fallback).
+// compileDateFormat — anything it can't express (month names, a named time
+// zone, ...) returns "" (free-form Date.parse fallback). A UTC offset at the
+// end (Z, +02:00, -0500) becomes the XXX token.
+// A trailing UTC offset (Z, +02:00, -0500) right after a time of day: the
+// timestamp then ends in the XXX token. Anchored on the time so a date like
+// "10-10-2026" is never read as "10-10" plus the offset "-2026".
+const TS_OFFSET_TAIL_RE = /^(.*\d{2}:\d{2}(?::\d{2}(?:[.,;]\d{1,6})?)?)(Z|[+-]\d{2}:?\d{2})$/;
 function detectTsFormatFromValues(values) {
   const vals = (values || []).map(v => String(v).trim()).filter(Boolean);
+  if (vals.length && vals.every(v => TS_OFFSET_TAIL_RE.test(v))) {
+    const inner = detectTsFormatCore(vals.map(v => TS_OFFSET_TAIL_RE.exec(v)[1]));
+    const fmt = inner ? inner + "XXX" : "";
+    const compiled = fmt && compileDateFormat(fmt);
+    return compiled && vals.every(v => compiled.matchRegex.test(v)) ? fmt : "";
+  }
+  return detectTsFormatCore(vals);
+}
+function detectTsFormatCore(vals) {
   if (!vals.length) return "";
   const parts = vals[0].match(/\d+|\D+/g) || [];
   const digitRuns = parts.filter(p => /^\d/.test(p));
@@ -45816,7 +45964,7 @@ function fwzDateFragNonCapturing(fmt) {
   DATE_TOKEN_RE.lastIndex = 0;
   let last = 0, out = "", m;
   while ((m = DATE_TOKEN_RE.exec(fmt)) !== null) {
-    out += fwzRegexLiteral(fmt.slice(last, m.index)) + DATE_TOKEN_FRAG[m[0]];
+    out += fwzRegexLiteral(fmt.slice(last, m.index)) + (m[0] === "XXX" ? "(?:" + DATE_TOKEN_FRAG.XXX + ")" : DATE_TOKEN_FRAG[m[0]]);
     last = DATE_TOKEN_RE.lastIndex;
   }
   return { frag: out + fwzRegexLiteral(fmt.slice(last)), matchRegex: c.matchRegex };
@@ -45996,11 +46144,11 @@ function deriveFormatRegexFromMarks(lines, marks, opts) {
 // message) — the wizard's table preview. Lines before the first header come
 // back as {unmatched: line}. Every result carries `srcLine`, the index of the
 // example line it starts at (double-click a preview row to reveal it).
-function fwzParsePreview(lines, source, tsFormat) {
+function fwzParsePreview(lines, source, tsFormat, timeZone) {
   if (!source) return [];
   let re;
   try { re = new RegExp(source); } catch (e) { return []; }
-  const dateFrag = compileDateFormat(tsFormat || "");
+  const dateFrag = compileTsDate(tsFormat || "", timeZone);
   const wrapQuote = messageWrapQuote(source);
   const out = [];
   let cur = null;
@@ -46017,6 +46165,14 @@ function fwzParsePreview(lines, source, tsFormat) {
     }
   });
   return out;
+}
+
+// The example lines parsed under the dialog's current state (the preview
+// table's rows) — either kind.
+function fwzPreviewEntries() {
+  if (formatEditMode === "json") return fwzJsonPreviewEntries();
+  const re = fwzCurrentRegex();
+  return re ? fwzParsePreview(fwz.lines, re.source, fwzTsFormatEl.value.trim(), fwzTimeZoneValue()) : [];
 }
 
 // ---- JSON Lines kind (mode "json" — see compileJsonFormat) ----
@@ -46107,7 +46263,7 @@ function fwzJsonColumnDefs() {
 function fwzJsonDraftFormat() {
   return {
     mode: "json", tsKey: fwz.json.tsKey, levelKey: fwz.json.levelKey, messageKey: fwz.json.messageKey,
-    tsFormat: fwzTsFormatEl.value.trim(), columnDefs: fwzJsonColumnDefs(),
+    tsFormat: fwzTsFormatEl.value.trim(), timeZone: fwzTimeZoneValue(), columnDefs: fwzJsonColumnDefs(),
   };
 }
 // The examples parsed under the draft — same shape fwzParsePreview returns.
@@ -46237,6 +46393,67 @@ const fwzSampleEl = el("#fwzSample");
 const fwzColumnsEl = el("#fwzColumns");
 const fwzColumnLabelNew = el("#fwzColumnLabelNew");
 const fwzTsFormatEl = formatEditTsFormat;
+const fwzTzModeEl = el("#fwzTzMode");
+const fwzTzFixedEl = el("#fwzTzFixed");
+const fwzTzNamedEl = el("#fwzTzNamed");
+
+// ---- Time zone field (the format's `timeZone`, see compileDateFormat) ----
+// The field's value as stored on the format: "" (local), "UTC", "+05:30" or
+// an IANA name — unvalidated, fwzTimeZoneError says whether it is usable.
+function fwzTimeZoneValue() {
+  const mode = fwzTzModeEl.value;
+  if (mode === "utc") return "UTC";
+  if (mode === "fixed") return fwzTzFixedEl.value.trim();
+  if (mode === "named") return fwzTzNamedEl.value.trim();
+  return "";
+}
+function fwzSetTimeZoneValue(tz) {
+  tz = tz || "";
+  const fixed = /^[+-]\d{2}:?\d{2}$/.test(tz);
+  fwzTzModeEl.value = !tz ? "local" : tz === "UTC" ? "utc" : fixed ? "fixed" : "named";
+  fwzTzFixedEl.value = fixed ? tz : "";
+  fwzTzNamedEl.value = !tz || tz === "UTC" || fixed ? "" : tz;
+  fwzSyncTimeZoneInputs();
+}
+function fwzSyncTimeZoneInputs() {
+  fwzTzFixedEl.classList.toggle("hidden", fwzTzModeEl.value !== "fixed");
+  fwzTzNamedEl.classList.toggle("hidden", fwzTzModeEl.value !== "named");
+}
+// "" when the time zone field is usable, else what is wrong with it.
+function fwzTimeZoneError() {
+  const mode = fwzTzModeEl.value, v = fwzTimeZoneValue();
+  if (mode === "fixed") {
+    return v === "Z" || isNaN(parseUtcOffsetMinutes(v)) ? "Fixed offset must look like +02:00 or -0500." : "";
+  }
+  if (mode === "named") {
+    if (!v) return "Enter a time zone name, e.g. America/New_York.";
+    try { new Intl.DateTimeFormat("en-US", { timeZone: v }); } catch (e) { return 'Unknown time zone "' + v + '".'; }
+  }
+  return "";
+}
+// The value Save stores: a fixed offset normalized to +HH:MM, an IANA name
+// in the engine's canonical spelling.
+function fwzTimeZoneToSave() {
+  const v = fwzTimeZoneValue();
+  if (fwzTzModeEl.value === "fixed") {
+    const min = parseUtcOffsetMinutes(v), a = Math.abs(min);
+    return (min < 0 ? "-" : "+") + String(Math.floor(a / 60)).padStart(2, "0") + ":" + String(a % 60).padStart(2, "0");
+  }
+  if (fwzTzModeEl.value === "named") return new Intl.DateTimeFormat("en-US", { timeZone: v }).resolvedOptions().timeZone;
+  return v;
+}
+// The suggestion list of the name field, filled on first use (a few hundred
+// options); without Intl.supportedValuesOf the field still takes any name.
+let fwzTzListFilled = false;
+function fwzFillTimeZoneList() {
+  if (fwzTzListFilled) return;
+  fwzTzListFilled = true;
+  try {
+    if (typeof Intl !== "undefined" && typeof Intl.supportedValuesOf === "function") {
+      el("#fwzTzList").innerHTML = Intl.supportedValuesOf("timeZone").map(z => '<option value="' + z + '">').join("");
+    }
+  } catch (e) { /* no list */ }
+}
 // Working state while the dialog is open (null otherwise):
 //   lines, marks, columns [{key, kind: "fixed"|"default"|"custom", label, hue}],
 //   activeKey, tsTouched (person edited the timestamp format by hand),
@@ -46340,6 +46557,8 @@ function openFormatEditDialog(id, importData) {
   formatEditMode = isMeta ? "meta" : isJson ? "json" : "regex";
   formatEditMetaTargets = isMeta ? (fmt.targetFormatIds || []).slice() : [];
   formatEditTsFormat.value = fmt && !isMeta ? (fmt.tsFormat || "") : "";
+  fwzSetTimeZoneValue(fmt && !isMeta ? fmt.timeZone : "");
+  fwzFillTimeZoneList();
   formatEditRuleGlob.value = "";
   formatEditMessageVisibleEl.checked = !fmt || fmt.messageVisible !== false;
   setFormatEditLevels(fmt && !isMeta ? fmt.levels : null, fmt ? fmt.levelValueType : "text");
@@ -46786,7 +47005,7 @@ function fwzUpdate() {
   fwzRefreshFallback();
   fwzDerive();
   const re = fwzCurrentRegex();
-  fwzSyncLevels(re ? fwzParsePreview(fwz.lines, re.source, fwzTsFormatEl.value.trim()) : []);
+  fwzSyncLevels(re ? fwzParsePreview(fwz.lines, re.source, fwzTsFormatEl.value.trim(), fwzTimeZoneValue()) : []);
   renderFwzColumns();
   renderFwzSample();
   renderFwzResult();
@@ -46973,6 +47192,7 @@ function renderFwzResult() {
         status.push({ text: "Some timestamps aren't recognized — enter a timestamp format.", cls: "fwz-warn" });
       }
     }
+    fwzAddTimeStatus(status);
     fwzSetStatus(status);
     renderFwzPreview();
     return;
@@ -46999,8 +47219,46 @@ function renderFwzResult() {
     const dropped = fwz.columns.filter(c => c.kind !== "fixed" && !captured.has(c.key));
     if (dropped.length) status.push({ text: "Not captured by the regex — left out on save: " + dropped.map(c => c.label).join(", ") + ".", cls: "fwz-warn" });
   }
+  fwzAddTimeStatus(status);
   fwzSetStatus(status);
   renderFwzPreview();
+}
+
+// The line under the result row: how the first example timestamp was read —
+// its normalized instant in this computer's zone, and where the zone came
+// from (an offset in the line itself, else the format's time zone). An
+// invalid time zone field is reported here too (and blocks Save).
+function fwzAddTimeStatus(status) {
+  const zoneErr = fwzTimeZoneError();
+  if (zoneErr) { status.push({ text: zoneErr, cls: "fwz-error" }); return; }
+  const first = fwzPreviewEntries().find(e => e.unmatched == null && e.tsRaw);
+  if (!first) return;
+  const raw = first.tsRaw.trim();
+  const tsFormat = fwzTsFormatEl.value.trim();
+  const mode = fwzTzModeEl.value;
+  const dateFrag = compileDateFormat(tsFormat);
+  const ownOffset = TS_OFFSET_TAIL_RE.exec(raw);
+  // An offset the timestamp format doesn't take: in the timestamp, or right behind it.
+  let hint = "";
+  if (tsFormat && !(dateFrag && dateFrag.offsetIdx >= 0)) {
+    const line = first.raw || "";
+    const after = line.slice(Math.max(0, line.indexOf(raw)) + raw.length);
+    if (ownOffset || /^(Z|[+-]\d{2}:?\d{2})(?![\w])/.test(after)) hint = " · line has an offset, add XXX to use it";
+  }
+  if (isNaN(first.ts)) {
+    if (tsFormat) status.push({ text: raw + " → not recognized by this timestamp format" + hint, cls: "fwz-warn" });
+    return;
+  }
+  let source;
+  const m = dateFrag && dateFrag.offsetIdx >= 0 ? dateFrag.matchRegex.exec(raw) : null;
+  if (m) source = "offset " + m[dateFrag.offsetIdx + 1] + " from the line";
+  else if (!tsFormat && ownOffset) source = "offset " + ownOffset[2] + " from the line";
+  else if (!tsFormat && /^\d+(\.\d+)?$/.test(raw)) source = "UTC (epoch time)";
+  else source = mode === "utc" ? "UTC (format)"
+    : mode === "fixed" ? "UTC" + fwzTimeZoneToSave() + " (format)"
+    : mode === "named" ? fwzTimeZoneToSave() + " (format)"
+    : "local time (format)";
+  status.push({ text: raw + " → " + formatTime(first.ts) + " shown in your local time · source: " + source + hint, cls: "fwz-time-status" });
 }
 
 // ---- Levels in the dialog: auto-fill from the examples + preview colors ----
@@ -47120,8 +47378,7 @@ function renderFwzPreview() {
   box.innerHTML = "";
   const isJson = formatEditMode === "json";
   const re = isJson ? null : fwzCurrentRegex();
-  const tsFormat = fwzTsFormatEl.value.trim();
-  const entries = isJson ? fwzJsonPreviewEntries() : re ? fwzParsePreview(fwz.lines, re.source, tsFormat) : [];
+  const entries = fwzPreviewEntries();
   if (!entries.length) {
     box.innerHTML = '<div class="format-preview-empty">' + (!fwz.lines.length ? "Add example lines to see a preview."
       : isJson ? "No preview yet — none of the example lines is a JSON object."
@@ -47190,6 +47447,11 @@ el("#fwzPreview").addEventListener("click", ev => {
 });
 
 // ---- Save ----
+// Missing = the default (local time), so "local" removes the field.
+function fwzStoreTimeZone(fmt) {
+  const tz = fwzTimeZoneToSave();
+  if (tz) fmt.timeZone = tz; else delete fmt.timeZone;
+}
 async function saveFormatEdit() {
   if (!fwz) return;
   const fail = msg => { formatEditError.textContent = msg; formatEditError.classList.remove("hidden"); };
@@ -47197,6 +47459,10 @@ async function saveFormatEdit() {
   if (!name) return fail("Name is required.");
   const levelNames = formatEditLevelOrder.filter(l => formatEditLevelOn.has(l));
   let src = "";
+  if (formatEditMode !== "meta") {
+    const zoneErr = fwzTimeZoneError();
+    if (zoneErr) return fail(zoneErr);
+  }
   if (formatEditMode === "meta") {
     if (formatEditMetaTargets.length < 2) return fail("Pick at least 2 target formats.");
   } else if (formatEditMode === "json") {
@@ -47224,13 +47490,14 @@ async function saveFormatEdit() {
   fmt.mode = formatEditMode;
   if (formatEditMode === "meta") {
     fmt.targetFormatIds = formatEditMetaTargets.slice();
-    delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.levels;
+    delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.timeZone; delete fmt.levels;
     delete fmt.levelValueType; delete fmt.columnDefs; delete fmt.messageVisible; delete fmt.sampleSetup;
     delete fmt.tsKey; delete fmt.levelKey; delete fmt.messageKey;
   } else if (formatEditMode === "json") {
     fmt.pattern = "";
     fmt.regex = "";
     fmt.tsFormat = formatEditTsFormat.value.trim();
+    fwzStoreTimeZone(fmt);
     fmt.tsKey = fwz.json.tsKey;
     fmt.levelKey = fwz.json.levelKey;
     fmt.messageKey = fwz.json.messageKey;
@@ -47249,6 +47516,7 @@ async function saveFormatEdit() {
     fmt.pattern = "";
     fmt.regex = src;
     fmt.tsFormat = formatEditTsFormat.value.trim();
+    fwzStoreTimeZone(fmt);
     fmt.levelValueType = formatEditLevelValueType;
     fmt.levels = levelNames.map(n => {
       const meta = formatEditLevelMetaFor(n);
@@ -47429,6 +47697,13 @@ fwzTsFormatEl.addEventListener("input", () => {
   fwzDerive();
   renderFwzResult();
 });
+fwzTzModeEl.addEventListener("change", () => {
+  fwzSyncTimeZoneInputs();
+  const input = fwzTzModeEl.value === "fixed" ? fwzTzFixedEl : fwzTzNamedEl;
+  if (fwzTzModeEl.value === "fixed" || fwzTzModeEl.value === "named") input.focus();
+  if (fwz) renderFwzResult();
+});
+[fwzTzFixedEl, fwzTzNamedEl].forEach(inp => inp.addEventListener("input", () => { if (fwz) renderFwzResult(); }));
 el("#fwzClose").addEventListener("click", closeFormatEditDialog);
 el("#fwzResuggest").addEventListener("click", ev => { ev.stopPropagation(); if (fwz && fwz.lines.length) fwzAskResuggest(true); });
 el("#fwzResuggestYes").addEventListener("click", ev => { ev.stopPropagation(); fwzAskResuggest(false); fwzResuggest(); });

@@ -23,6 +23,9 @@ Content
       --start <time>       first timestamp, e.g. 2026-01-15T08:00:00 (default)
       --rate <n>           average entries per second of log time (default 10)
       --crlf               CRLF line endings
+      --ts-offset <off>    syslog / jsonl / mixed: write timestamps with a UTC offset
+                           suffix, Z or +HH:MM / -HH:MM, the wall clock shifted so
+                           the instant is unchanged (default: syslog "Z", jsonl none)
 
 Amount (per file)
   -n, --entries <n>        number of entries (default 1000 when --size is absent)
@@ -59,7 +62,7 @@ function parseArgs(argv) {
   const alias = { f: "format", s: "scenarios", n: "entries", o: "out", q: "quiet", h: "help" };
   const flags = new Set(["gzip", "zip", "crlf", "list", "quiet", "help", "follow", "format-json", "no-format-file"]);
   const valued = new Set(["format", "scenarios", "entries", "out", "seed", "start", "rate", "size", "prefix", "files", "layout", "skew",
-    "interval", "jitter", "rotate-lines", "duration"]);
+    "interval", "jitter", "rotate-lines", "duration", "ts-offset"]);
   const a = {};
   for (let i = 0; i < argv.length; i++) {
     let k = argv[i];
@@ -104,9 +107,11 @@ function genOptions(a) {
     layout: a.layout || "rotate",
     skew: a.skew != null ? +a.skew : 0,
     prefix: a.prefix || null,
+    tsOffset: a["ts-offset"] || null,
   };
   if (o.format !== "tour" && !sim.FORMATS[o.format]) throw new Error("Unknown format '" + o.format + "' (see --list)");
   if (o.format === "tour") return o;
+  sim.parseTsOffset(o.tsOffset); // throws on an invalid value
   o.scenarios = sim.normalizeScenarios(o.scenarios);
   if (o.layout !== "rotate" && o.layout !== "parallel") throw new Error("--layout must be rotate or parallel");
   if (a.entries != null) o.entries = +a.entries;
