@@ -43204,12 +43204,19 @@ let andOrPreviewTimer = null;
 // ({kind: "text", text} | {kind: "baked", baked, label}).
 let andOrDlg = null;
 
+// Unlike isPlainTextBaked (link dialog: only what bakedTextCondition builds), a popup-made text filter
+// has no `columns` at all; here that is an ordinary text condition too, and it keeps its column shape on save.
+function isEditableTextBaked(b) {
+  return !!b && b.filterType === "text" && !b.label && !b.inverted && !b.caseSensitive && !b.isRegex && !b.wholeWord &&
+    !(b.ignoredColumns && b.ignoredColumns.length) &&
+    (!(b.columns && b.columns.length) || (b.columns.length === 1 && b.columns[0] === "message"));
+}
 function openAndOrDialog(nodeId) {
   const node = state.nodes[nodeId];
   if (!node || node.type !== "filter" || (node.filterType !== "and" && node.filterType !== "or") || !hasBakedSides(node)) return;
   andOrDlg = {
     nodeId, rootId: getRootFileId(nodeId), mode: node.filterType,
-    rows: node.baked.map(b => linkSideFromSpec({ baked: b })),
+    rows: node.baked.map(b => isEditableTextBaked(b) ? { kind: "text", text: b.value, orig: cloneBaked(b) } : linkSideFromSpec({ baked: b })),
   };
   clearLiveResults(andOrResultsTarget);
   andOrHint.classList.add("hidden");
@@ -43251,7 +43258,14 @@ function renderAndOrRows() {
 }
 // The conditions as they would be saved: empty text rows dropped.
 function andOrBakedList() {
-  return andOrDlg.rows.map(linkSideBaked).filter(Boolean);
+  return andOrDlg.rows.map(row => {
+    if (row.kind !== "text") return linkSideBaked(row);
+    const t = row.text.trim();
+    if (!t) return null;
+    if (!row.orig) return bakedTextCondition(t);
+    if (row.text === row.orig.value) return cloneBaked(row.orig);
+    return Object.assign(cloneBaked(row.orig), { value: t });
+  }).filter(Boolean);
 }
 
 andOrSidesEl.addEventListener("input", ev => {

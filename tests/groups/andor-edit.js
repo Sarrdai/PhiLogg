@@ -201,4 +201,29 @@ if (groupSelected()) {
     fireClick(save(d), w);
     assert(node.inverted === true, "inverted kept");
   }, { indexedDB: new IDBFactory() });
+  await withApp(async (w, d, T) => {
+    section("andor-edit g. popup-style text filters (no columns) are text fields and keep their column shape");
+    const f = await w.addFile("app.log", tourLog, () => {});
+    const a = w.createFilterNode(f.id, "text", "Move requested");
+    const b = w.createFilterNode(f.id, "text", "axis=1");
+    assert(!a.columns, "popup-style filter has no columns");
+    const node = w.createAndOrNode([a.id, b.id], "and");
+    const origA = JSON.parse(JSON.stringify(node.baked[0]));
+    w.openAndOrDialog(node.id);
+    assert(rowInput(d, 0) && rowInput(d, 1) && rowInput(d, 0).value === "Move requested", "two text fields");
+    typeInto(w, rowInput(d, 1), "axis=2");
+    fireClick(save(d), w);
+    assert(JSON.stringify(node.baked[0]) === JSON.stringify(origA), "unchanged row stays deep-equal to the original");
+    assert(node.baked[1].value === "axis=2" && !("columns" in node.baked[1]), "edited row keeps columns absent");
+    assert(w.getEntries(node.id).length === countBoth(f, "Move requested", "axis=2"), "entries follow the edit");
+    // a ["message"] condition stays ["message"]; a cleared chip becomes a message-column condition
+    const m = txtNode(w, f, "Heartbeat"), lv = w.createFilterNode(f.id, "level", ["INFO"]);
+    const n2 = w.createAndOrNode([m.id, lv.id], "or");
+    w.openAndOrDialog(n2.id);
+    typeInto(w, rowInput(d, 0), "Tick");
+    fireClick(rowEl(d, 1).querySelector("[data-row-clear]"), w);
+    typeInto(w, rowInput(d, 1), "Scan");
+    fireClick(save(d), w);
+    assert(n2.baked[0].columns.join() === "message" && n2.baked[0].value === "Tick" && n2.baked[1].columns.join() === "message" && n2.baked[1].value === "Scan", "column shapes kept / cleared chip is a message condition");
+  }, { indexedDB: new IDBFactory() });
 }
