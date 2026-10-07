@@ -1145,6 +1145,37 @@
      in this row (person-requested, this session: one consistent divider
      rhythm instead of #levelBar's own special-cased blank gap). */
   #btnApplyLevelToTree{float:left; margin:0;}
+  /* Shared "add badge": a small accent disc with a plus on the bottom-right
+     edge of an object icon. It marks buttons whose main job is creating
+     something new and whose icon (a funnel, a file, a book, the level dots)
+     doesn't say so by itself: New, Open…, Add to library…, Add level filter.
+     Never used in menus. withAddBadge() wraps the icon in .add-badge-wrap, so
+     the badge anchors to the ICON's box (not the whole button — on phone the
+     button also holds a text label under the icon) and overhangs it by 3px.
+     No ancestor may clip that overhang (#viewBar's tablet overflow axis keeps
+     the row's own padding as headroom; the buttons themselves are 28px+ wide
+     around a 13-14px icon). Colors are tokens, so every theme follows. */
+  .add-badge-wrap{position:relative; display:inline-grid; place-items:center; flex:0 0 auto;}
+  .add-badge{
+    position:absolute; right:-3px; bottom:-3px; width:11px; height:11px; border-radius:50%;
+    background:var(--accent); color:var(--accent-on);
+    display:grid; place-items:center; pointer-events:none;
+  }
+  .add-badge svg{width:8px; height:8px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;}
+  /* The 24px sidebar-header button is tighter: a 9px badge with a 6px glyph. */
+  .panel-toggle-btn .add-badge{width:9px; height:9px; right:-3px; bottom:-3px;}
+  .panel-toggle-btn .add-badge svg{width:6px; height:6px;}
+  /* On #viewBar's bordered 28px circles the badge anchors to the circle
+     (.row-action-hit) instead of the 13px icon, so it sits on the button's
+     edge and covers none of the glyph (the level icon's INFO dot sits exactly
+     in the icon's bottom-right corner). The borderless #sidebarToolbar and
+     header buttons keep it on the icon, where it would otherwise float. */
+  #viewBar .row-action-hit{position:relative;}
+  #viewBar .row-action-hit > .add-badge-wrap{position:static;}
+  /* #btnApplyLevelToTree is a static round .row-action-btn: its floating label
+     reveals on plain :hover (same as #libraryPresetBar — the label floats and
+     shifts nothing, so the JS hit-expand mechanism isn't needed). */
+  #btnApplyLevelToTree:hover .row-action-label{opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);}
   /* The row-actions group (Bookmark/Note/Filter after/before/for this
      message/Time filter from selection/Add to selection — person-requested
      "Filter-Toolbar" placement, right of the level filter) is #viewBar's
@@ -5411,7 +5442,7 @@
     <symbol id="i-highlight-pen" viewBox="0 0 16 16"><path d="M9.5 2.5 13.5 6.5 7.25 12.75 3 13.5l.75-4.25Z"/><path d="M2.25 14.5h5"/></symbol>
     <symbol id="i-highlight-text" viewBox="0 0 16 16"><path d="M4 3.25h8M8 3.25v6M2.5 11.75h11M2.5 14.25h11"/></symbol>
     <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.25v3.5"/><circle cx="8" cy="5" r=".9" fill="currentColor" stroke="none"/></symbol>
-    <symbol id="i-level" viewBox="0 0 16 16"><path d="M3 12.5v-3M8 12.5v-6M13 12.5v-9"/></symbol>
+    <symbol id="i-level" viewBox="0 0 16 16"><circle cx="8" cy="4" r="2.4" fill="var(--level-error)" stroke="none"/><circle cx="4" cy="11.5" r="2.4" fill="var(--level-warn)" stroke="none"/><circle cx="12" cy="11.5" r="2.4" fill="var(--level-info)" stroke="none"/></symbol>
     <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="M9.5 4 5.5 8l4 4M12.5 3.5v9"/></symbol>
     <symbol id="i-chevron-right" viewBox="0 0 16 16"><path d="M6.5 4l4 4-4 4M3.5 3.5v9"/></symbol>
     <symbol id="i-chevron-down" viewBox="0 0 16 16"><path d="M4 6.5 8 10.5l4-4M3.5 3.5h9"/></symbol>
@@ -5515,7 +5546,7 @@
         <div id="sidebarHeader">
           <div id="sidebarHeaderLabel">Files &amp; filters</div>
           <button type="button" id="btnOpen" class="panel-toggle-btn" title="Open…">
-            <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M8 2.5v11M2.5 8h11"/></svg>
+            <span class="add-badge-wrap"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/></svg><span class="add-badge" aria-hidden="true"><svg viewBox="0 0 8 8"><path d="M4 1.5v5M1.5 4h5"/></svg></span></span>
             <span class="btn-short-label">Open</span>
           </button>
           <div id="openMenu" class="hidden">
@@ -5704,7 +5735,7 @@
              only appear in the hover-revealed label, so there's no variable
              pill width left to guard against. -->
         <div id="levelBar"></div>
-        <button id="btnApplyLevelToTree" class="toolbar-icon-btn" title="Add level filter"></button>
+        <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn" title="Add level filter"></button>
         <!-- Dividing "|" (person-requested, this session): the level filter
              is its own conceptual group same as the three below it, so it
              gets the exact same #viewBar > .row-action-separator treatment
@@ -7895,6 +7926,12 @@ function arrayMax(arr) {
 function icon(name, cls = "") {
   return '<svg class="icon' + (cls ? " " + cls : "") + '" aria-hidden="true"><use href="#i-' + name + '"/></svg>';
 }
+// "Add badge": wraps an object icon and appends the small accent plus disc
+// (see .add-badge CSS) — for buttons that create something new.
+function withAddBadge(iconHtml) {
+  return '<span class="add-badge-wrap">' + iconHtml +
+    '<span class="add-badge" aria-hidden="true"><svg viewBox="0 0 8 8"><path d="M4 1.5v5M1.5 4h5"/></svg></span></span>';
+}
 const ICON_FILE = icon("file");
 // Same file glyph, plus a small circled "A" badge (Auto-Open, person-
 // requested — see renderNode's autoOpened opt) — marks a folder-watch file
@@ -7915,6 +7952,7 @@ const ICON_ZIP = icon("zip");
 const ICON_COG = icon("cog");
 const ICON_LOCK = icon("lock");
 const ICON_FILTER = icon("filter");
+const ICON_BOOK = icon("book");
 // "Filter for this message" row-action's own icon (distinct from the plain
 // funnel ICON_FILTER used by every other filter-creation button) — a
 // speech-bubble outline (this action's input is always the message column)
@@ -7943,10 +7981,6 @@ const ICON_CHECKLIST = icon("checklist");
 // Single checkmark — used for the selection-filter (idset) tree node icon
 // (person-requested: a plain "selected" tick instead of the multi-line list).
 const ICON_CHECK = icon("check");
-// Floppy-disk "save" — the Files & Filters sidebar toolbar's "Add to
-// library…" action (a disk, distinct from ICON_SAVE's download-to-tray
-// arrow used by "Save filter…").
-const ICON_DISK = icon("bookplus");
 const ICON_MERGE = icon("merge");
 // Folder minimap toolbar (folderMinimapLoadIndividually/MergeFull/
 // MergeWindow's three explicit actions): two overlapping file glyphs for
@@ -14194,8 +14228,8 @@ function copyLinkOptions(src, dst) {
      byRef    the carriers that pass a json/array/object container through instead of copying it
               (default: restore, serialize; baked is copied by every carrier but restore)
    Never copied by any carrier: locked (only the auto-managed Bookmarks/Notes/Sources nodes
-   have it; a copy of one is a plain node), collapsed (display-only), selectionOrdinal and
-   the _-prefixed runtime caches. Row order = the key order of a serialized node in the files. */
+   have it; a copy of one is a plain node), collapsed (display-only) and the _-prefixed
+   runtime caches. Row order = the key order of a serialized node in the files. */
 const FILTER_NODE_FIELD_MODES = {
   clone: { gated: true },
   snapshot: { gated: false },
@@ -14230,6 +14264,7 @@ const FILTER_NODE_FIELDS = [
   { key: "label", kind: "scalar" },
   { key: "muted", kind: "flag" },
   { key: "selectionFilter", kind: "flag" },
+  { key: "selectionOrdinal", kind: "scalar" },
 ];
 
 // Copies src's table fields onto dst the way carrier `mode` does (see the table
@@ -14953,6 +14988,7 @@ function deleteNode(nodeId) {
 
   if (node.type === "file") {
     state.rootIds = state.rootIds.filter(id => id !== nodeId);
+    entryRootCache = null; // it holds this file's entries array and ids until the next lookup
     releaseEntriesFromIndex(node.entries, nodeId);
     cacheDeleteFile(node.cacheKey); // fire-and-forget; meta follows via render()'s debounced persist
     // This file was one of a merge's sources (see createMergeShell) —
@@ -17037,7 +17073,12 @@ function finishAnalysisFilter(node, tab) {
    exponent shape 1e10 / 2E5, which stays a number), then any number — a sign only
    when it isn't glued to a word ("Worker-3" keeps its dash), and grouped
    with thousands separators only when both separators are present
-   ("1,234.5", same unambiguous shape a plain [*:float] accepts). */
+   ("1,234.5", same unambiguous shape a plain [*:float] accepts).
+   Because an all-digit id can't be told from a number per message, the
+   accumulator's finish() merges a group whose "<#>" sits right after such a
+   letter prefix and dash into the sibling group that has "<hex>" there
+   (identical key otherwise), so "r-123456" joins "r-4f2d1a"; with no hex
+   sibling it stays a number ("job=J-<#>"). */
 const PATTERN_MAX_CHARS = 400;
 const PATTERN_PH_NUM = "";
 const PATTERN_PH_LABELS = { "": "<#>", "": "<guid>", "": "<ip>", "": "<str>", "": "<path>", "": "<hex>" };
@@ -17099,6 +17140,57 @@ function patternFilterValue(key, floatMask, typed) {
   return out;
 }
 
+const PATTERN_PH_HEX = "\uE005";
+// True when the placeholder at key[i] directly follows 1-3 letters and a dash
+// that are not themselves glued to a word char or placeholder — the same
+// prefix rule PATTERN_TOKEN_RE's hex alternative uses.
+function patternPrefixedAt(key, i) {
+  if (i < 2 || key[i - 1] !== "-") return false;
+  let n = 0, j = i - 2;
+  while (j >= 0 && n <= 3 && /[A-Za-z]/.test(key[j])) { n++; j--; }
+  if (n < 1 || n > 3) return false;
+  return j < 0 || !(/\w/.test(key[j]) || PATTERN_PH_LABELS[key[j]]);
+}
+// Merges digit-only id groups ("r-<#>") into the sibling hex group ("r-<hex>")
+// whose key differs only by prefixed number->hex swaps (see the block comment
+// above PATTERN_MAX_CHARS). Mutates `groups` (key -> group).
+function mergeDigitIdPatternGroups(groups) {
+  for (const x of [...groups.values()]) {
+    const key = x.key;
+    if (key.indexOf(PATTERN_PH_NUM) === -1) continue;
+    const pos = []; // [index in key, number-placeholder index] of every prefixed number
+    let numIdx = 0;
+    for (let i = 0; i < key.length; i++) {
+      if (key[i] !== PATTERN_PH_NUM) continue;
+      if (patternPrefixedAt(key, i)) pos.push([i, numIdx]);
+      numIdx++;
+    }
+    if (!pos.length || pos.length > 4) continue;
+    for (let s = 1; s < (1 << pos.length); s++) {
+      const chars = key.split("");
+      const removed = new Set();
+      pos.forEach((p, k) => { if (s & (1 << k)) { chars[p[0]] = PATTERN_PH_HEX; removed.add(p[1]); } });
+      const y = groups.get(chars.join(""));
+      if (!y) continue;
+      // Removing number placeholders shifts the float-mask bit of every later one down.
+      let mask = 0, out = 0;
+      for (let b = 0; b < 31; b++) {
+        if (removed.has(b)) continue;
+        if (x.floatMask & (1 << b)) mask |= 1 << out;
+        out++;
+      }
+      y.floatMask |= mask;
+      y.count += x.count;
+      for (const [b, n] of x.levels) y.levels.set(b, (y.levels.get(b) || 0) + n);
+      if (x.rank < y.rank) { y.rank = x.rank; y.level = x.level; y.levelFormatId = x.levelFormatId; }
+      if (x.firstTs < y.firstTs) { y.firstTs = x.firstTs; y.first = x.first; }
+      if (x.lastTs > y.lastTs) y.lastTs = x.lastTs;
+      groups.delete(key);
+      break;
+    }
+  }
+}
+
 function createPatternAcc() {
   const groups = new Map();
   const bucketOf = makeLevelBucketer();
@@ -17119,7 +17211,7 @@ function createPatternAcc() {
       if (e.ts < g.firstTs) g.firstTs = e.ts;
       if (e.ts > g.lastTs) g.lastTs = e.ts;
     },
-    finish() { return { groups: [...groups.values()] }; },
+    finish() { mergeDigitIdPatternGroups(groups); return { groups: [...groups.values()] }; },
   };
 }
 const patternsAnalysis = makeEntryAnalysis(createPatternAcc, () => "", c => {
@@ -21443,11 +21535,16 @@ function applyExtractSelectionClasses() {
   extractBody.querySelectorAll(".cell-selected").forEach(el => el.classList.remove("cell-selected"));
   const s = state.tableSelection;
   if (!s) return;
-  s.forEach(k => {
-    const [r, c] = k.split(",");
-    const td = extractBody.querySelector('td[data-row="' + r + '"][data-col="' + c + '"]');
-    if (td) td.classList.add("cell-selected");
-  });
+  // One pass over the rendered cells (the table is virtualized: a few dozen
+  // rows), testing each against the selection set. The other way round — one
+  // querySelector per selected key — took seconds for a select-all on a
+  // 200k-row extraction. The gutter and spacer cells carry no data-col.
+  for (const tr of extractBody.rows) {
+    for (const td of tr.cells) {
+      const c = td.getAttribute("data-col");
+      if (c !== null && s.has(td.getAttribute("data-row") + "," + c)) td.classList.add("cell-selected");
+    }
+  }
   extractColumns.forEach(c => {
     if (isColumnFullySelected(c.colIndex)) {
       const th = extractHead.querySelector('th[data-col="' + c.colIndex + '"]');
@@ -31280,15 +31377,41 @@ function revealInTableView(entry) {
    currently active — a bookmark can be, and often is, clicked while a
    completely different file/filter is on screen. */
 
-// Finds which root (file) node currently contains a given entry id. O(root
-// file size) — only ever called from a bookmark jump, a rare user click, not
-// a render-path hot loop (unlike e.g. the timeline minimap's per-render pass).
-function findRootIdForEntry(entryId) {
+// Finds which root (file) node currently contains a given entry id (the first
+// one in state.rootIds order when a merge shares the entry object with its
+// sources). Constant time per call off a lazily built entry id -> root id map.
+// The map is self-validating, like a file's _agg: it remembers each root's
+// entries array and its length, and is rebuilt (one O(entries) pass, the cost
+// the old per-call scan had every time) whenever a root was added, removed or
+// reordered, replaced its array (rotation, restore) or grew/shrank it (tail
+// append, truncate). No entries-mutating path has to know about it. An id that
+// is in no root forces one rebuild per call, like the old scan.
+let entryRootCache = null; // { sig: [rootId, entries, length, ...], map: Map(entryId -> rootId) }
+function entryRootCacheCurrent() {
+  const c = entryRootCache;
+  if (!c || c.sig.length !== state.rootIds.length * 3) return false;
+  for (let i = 0; i < state.rootIds.length; i++) {
+    const root = state.nodes[state.rootIds[i]];
+    if (c.sig[i * 3] !== state.rootIds[i] || !root || c.sig[i * 3 + 1] !== root.entries || c.sig[i * 3 + 2] !== root.entries.length) return false;
+  }
+  return true;
+}
+function rebuildEntryRootCache() {
+  const sig = [], map = new Map();
   for (const rootId of state.rootIds) {
     const root = state.nodes[rootId];
-    if (root && root.entries.some(e => e.id === entryId)) return rootId;
+    if (!root) { sig.push(rootId, null, -1); continue; }
+    sig.push(rootId, root.entries, root.entries.length);
+    for (const e of root.entries) if (!map.has(e.id)) map.set(e.id, rootId);
   }
-  return null;
+  entryRootCache = { sig, map };
+}
+function findRootIdForEntry(entryId) {
+  const fresh = !entryRootCacheCurrent();
+  if (fresh) rebuildEntryRootCache();
+  let rootId = entryRootCache.map.get(entryId);
+  if (rootId === undefined && !fresh) { rebuildEntryRootCache(); rootId = entryRootCache.map.get(entryId); }
+  return rootId === undefined ? null : rootId;
 }
 
 // Jumps to an arbitrary entry regardless of which
@@ -39400,10 +39523,10 @@ const VIEWBAR_ROW_ACTIONS = [
   { action: "extractMessage", label: "Extract", svg: '<rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/>', strokeWidth: 1.4 },
 ];
 // "New" is its own group in #viewBar (person-requested: Standard filters |
-// Library presets | New) — a plain "+", opens the filter popup (Ctrl+Shift+F). It
+// Library presets | New) — the filter funnel + add badge, opens the filter popup (Ctrl+Shift+F). It
 // needs no selected row, only state.activeId (see updateRowActionButtons).
 const VIEWBAR_NEW_ROW_ACTION = [
-  { action: "newFilter", label: "New", svg: '<path d="M8 3.5v9M3.5 8h9"/>', strokeWidth: 1.8 },
+  { action: "newFilter", label: "New", icon: ICON_FILTER, addBadge: true },
 ];
 // shape: "circle" (default, Filter-Toolbar's own row-actions — expands into
 // a pill, person-requested) or "rect" (the duplicated copies inside the log
@@ -39444,7 +39567,7 @@ function buildRowActionsHtml(list, shape, hitClass) {
       (a.disabled ? ' disabled' : '') +
       ' title="' + escapeHtml(a.label) + '">' +
       '<span class="row-action-hit' + hitClassAttr + '">' +
-        (a.icon ? a.icon : '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg>') +
+        (a.addBadge ? withAddBadge(a.icon) : a.icon ? a.icon : '<svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="' + a.strokeWidth + '" stroke-linecap="round" stroke-linejoin="round">' + a.svg + '</svg>') +
       '</span>' +
       '<span class="row-action-label">' + escapeHtml(a.label) + '</span>' +
       (a.short ? '<span class="row-action-short">' + escapeHtml(a.short) + '</span>' : '') +
@@ -40284,7 +40407,7 @@ function describeSidebarToolbarActions() {
       disabled: !filter },
     { action: "clockOffset", label: "Adjust clock…", short: "Clock", icon: ICON_CLOCK, target, separator: true,
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
-    { action: "addToLibrary", label: "Add to library…", short: "Library", icon: ICON_DISK, target, separator: true, disabled: !filter },
+    { action: "addToLibrary", label: "Add to library…", short: "Library", icon: ICON_BOOK, target, separator: true, addBadge: true, disabled: !filter },
   ];
   // Phone has no #btnLibrary to apply a library preset, so saving one is pointless there.
   if (currentLayoutTier === "phone") actions.pop();
@@ -42859,6 +42982,7 @@ function materializeFilterNode(sn, parentId, refMap) {
   if (sn.label && typeof sn.label === "string") node.label = sn.label;
   if (sn.muted === true) node.muted = true;
   if (sn.selectionFilter) node.selectionFilter = true;
+  if (Number.isInteger(sn.selectionOrdinal) && sn.selectionOrdinal > 0) node.selectionOrdinal = sn.selectionOrdinal;
   if (sn.baked) node.baked = sn.baked;
   if (sn.bakedA) node.bakedA = sn.bakedA;
   if (sn.bakedB) node.bakedB = sn.bakedB;
@@ -47257,10 +47381,12 @@ document.addEventListener("mousedown", ev => {
 
 // True while log-view shortcuts (bookmark, note, row copy, ...) may act: the
 // log areas have focus and a log view — not the extraction table, an inline
-// viewer or a folder view — is what is actually shown.
+// viewer or a folder view — is what is actually shown. A live active node is
+// part of that: with the tree cursor on an unloaded entry (placeCursorOnUnloaded)
+// nothing is shown, and state.selectedId still names the hidden file's row.
 function logKeysActive() {
   return state.focusRegion === "entries" && extractWrap.style.display === "none" &&
-    !state.inlineViewer && !state.folderView;
+    !state.inlineViewer && !state.folderView && !!state.nodes[state.activeId];
 }
 
 
@@ -50513,7 +50639,10 @@ btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
 btnTextMatchHighlight.forEach(b => b.innerHTML = ICON_TEXT_MATCH_HIGHLIGHT);
 btnHighlightMatchText.forEach(b => b.innerHTML = ICON_HIGHLIGHT_MATCH_TEXT);
 btnFilePathLinks.forEach(b => b.innerHTML = ICON_FILE_PATH_LINKS);
-btnApplyLevelToTree.innerHTML = ICON_LEVEL;
+// The level icon plus the shared add badge (only on this button, not on the tree's level node);
+// a round row-action button whose floating label is revealed by CSS :hover (see #btnApplyLevelToTree:hover).
+btnApplyLevelToTree.innerHTML = '<span class="row-action-hit">' + withAddBadge(ICON_LEVEL) + '</span>' +
+  '<span class="row-action-label">Add level filter</span>';
 btnApplyLevelToTree.addEventListener("click", () => {
   const levels = canonicalLevelOrder([...state.levelFilter]);
   if (!levels.length) return;

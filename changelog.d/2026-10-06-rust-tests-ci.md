@@ -1,0 +1,5 @@
+- **chore: run the Rust crate tests in CI (2026-10-06, backlog #96)**
+  - New workflow `.github/workflows/rust-tests.yml` runs `cargo test -p philogg-logparse -p philogg-llm -p philogg-desktop` on session-branch pushes and PRs into `main` that touch `desktop/**`, `philogg.html` or `tests/fixtures/**`.
+  - Until now the JS/Rust parser golden test, the `philogg-llm` loopback checks and the `pathguard` unit tests only ran by hand.
+  - Linux packages, toolchain and cache setup are copied from the Linux leg of `build-release-assets.yml`.
+  - Docs: docs/desktop.md ("Native parsing"), README.

@@ -483,6 +483,13 @@ and Group 264 feeds exactly those bytes to the page's `decodeNativeBatch`
 and compares the result with the JS parser's entries. After a deliberate
 layout change: `UPDATE_NATIVE_BATCH=1 cargo test -p philogg-logparse`.
 
+CI runs these crate tests (`cargo test -p philogg-logparse -p philogg-llm
+-p philogg-desktop`, which also covers `pathguard`) in
+`.github/workflows/rust-tests.yml` on every session-branch push and PR into
+`main` that touches `desktop/**`, `philogg.html` or `tests/fixtures/**`, so a
+parser change that drifts from the golden file fails there even if nobody ran
+`cargo test` by hand.
+
 ## Windows Explorer context-menu integration
 
 Windows-only. Three right-click verbs, added by the installer as an

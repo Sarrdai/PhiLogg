@@ -20,7 +20,7 @@
    ============================================================ */
 group(194);
 await withApp(async (w, d, T) => {
-  section("194a. New is its own #viewbarNew group with a plain '+' icon; Message shows '[*]'");
+  section("194a. New is its own #viewbarNew group with the funnel icon (add badge, GROUP add-badge); Message shows '[*]'");
 
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   const node = w.createFilterNode(f.id, "text", "message 1");
@@ -31,9 +31,8 @@ await withApp(async (w, d, T) => {
   assert(newBtn, "New renders in its own #viewbarNew group");
   assert(!d.querySelector('[data-row-actions="viewbar"] [data-row-action="newFilter"]'),
     "New is no longer inside the standard filter-actions group");
-  const newSvg = newBtn.querySelector("svg").innerHTML;
-  assert(newSvg.includes("M8 3.5v9") && !newSvg.includes("5.5v4"),
-    "the New button shows a plain '+' path, not the old funnel-plus");
+  assert(newBtn.querySelector('svg.icon use[href="#i-filter"]') && !newBtn.querySelector('path[d="M8 3.5v9M3.5 8h9"]'),
+    "the New button shows the filter funnel, no plain '+' path");
 
   const msgSvg = d.querySelector('[data-row-action="filterForMessage"] svg').innerHTML;
   assert(msgSvg.includes("M8 6.3v3.4"), "the Message button shows the '[ * ]' asterisk glyph");

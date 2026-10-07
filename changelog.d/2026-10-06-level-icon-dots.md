@@ -1,0 +1,4 @@
+- **feat: the level filter icon is three colored dots (2026-10-06, person-requested, backlog #38)**
+  - The three-bars icon is replaced by three filled dots in the ERROR, WARN and INFO theme colors, in the tree's level nodes, the library icon grid and the "Add level filter" button, which also gets a small "+" badge on its bottom-right edge (button only).
+  - The dots follow every theme and keep their colors on hover and on a selected tree row; the README screenshots were regenerated.
+  - **Tests**: GROUP level-icon-dots. Docs: docs/ui-and-views.md.

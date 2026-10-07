@@ -1,0 +1,58 @@
+# Rust crate tests (`cargo test` in desktop/src-tauri): the golden test that
+# pins the Rust log parser to the JS one (tests/fixtures/*-golden.json), the
+# loopback checks of philogg-llm and the pathguard unit tests of the desktop
+# wrapper. A separate workflow from tests.yml on purpose: different toolchain
+# and system packages, and it only runs when Rust or the parser inputs change.
+# Trigger shape matches tests.yml (session-branch pushes, PRs into main).
+# See docs/desktop.md -> "Native parsing".
+name: Rust Tests
+
+on:
+  push:
+    branches: ["claude/**"]
+    paths:
+      - "desktop/**"
+      - "philogg.html"
+      - "tests/fixtures/**"
+      - ".github/workflows/rust-tests.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "desktop/**"
+      - "philogg.html"
+      - "tests/fixtures/**"
+      - ".github/workflows/rust-tests.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: rust-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  cargo-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+
+      # Same list as the Linux leg of build-release-assets.yml: philogg-desktop
+      # links the webview toolchain even for its unit tests.
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop/src-tauri
+
+      - name: cargo test
+        working-directory: desktop/src-tauri
+        run: cargo test -p philogg-logparse -p philogg-llm -p philogg-desktop

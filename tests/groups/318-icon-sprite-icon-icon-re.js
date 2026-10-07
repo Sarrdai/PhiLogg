@@ -25,7 +25,7 @@ await withApp(async (w, d, T) => {
   assert(w.icon("x", "icon-xs").includes('class="icon icon-xs"'), "icon(name, cls) appends the class");
   const use = n => (w.eval(n).match(/href="#i-([a-z-]+)"/) || [])[1];
   const expect = { ICON_FILE: "file", ICON_FILTER: "filter", ICON_RENAME: "rename", ICON_EDIT: "edit", ICON_INVERT: "not", ICON_LINK: "link",
-    ICON_MERGE: "merge", ICON_CLOCK: "clock", ICON_DISK: "bookplus", ICON_CLOSE: "x",
+    ICON_MERGE: "merge", ICON_CLOCK: "clock", ICON_BOOK: "book", ICON_CLOSE: "x",
     ICON_ELLIPSIS: "more", ICON_AND: "and", ICON_OR: "or" };
   Object.keys(expect).forEach(k => assert(use(k) === expect[k], k + " -> #i-" + expect[k] + ", got " + use(k)));
   assert(w.eval("typeof ICON_COMBINE") === "undefined", "ICON_COMBINE is gone (split into ICON_AND / ICON_OR)");

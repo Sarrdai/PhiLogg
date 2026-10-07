@@ -1,0 +1,3 @@
+- **fix: bookmark, note and Copy-for-ticket shortcuts do nothing while no file is shown (2026-10-06, backlog #94)**
+  - With the tree cursor on a closed (unloaded) entry the shown file is deselected, but `B`, `Alt+N` and `Ctrl+Shift+C` still acted on the hidden file's stale selected row. `logKeysActive()` now also requires a live active node, so all three (and the other log-view keys that share it: row copy, Ctrl+A in the Context editor) stay no-ops and are not swallowed.
+  - **Tests**: GROUP selection-shortcuts-need-live-node.

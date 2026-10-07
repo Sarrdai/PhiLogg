@@ -1,0 +1,3 @@
+- **fix: a pasted, undone, imported or reloaded "Selection N" node keeps its place in the tree (2026-10-06, backlog #99)**
+  - `selectionOrdinal` (the creation rank `specialChildRank` sorts Selection N nodes by) is now a `FILTER_NODE_FIELDS` row, so copy/paste, undo/redo, the filter JSON/library and the session cache carry it; `materializeFilterNode` reads back only a positive integer.
+  - **Tests**: GROUP filter-node-carriers (`selectionOrdinal` moved from not-carried to covered, section h pins the rank through every carrier). Docs: PROJECT.md (gotchas), docs/persistence-and-sync.md.
