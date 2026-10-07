@@ -197,7 +197,8 @@ deployments possible:
   to compare against the absolute value — so a pattern matches/extracts only
   the entries whose value actually satisfies it. Numbers with thousands separators
   (`1,234.5`, `1.234,5`) are read as one value; `[*:float@en]` /
-  `[*:float@de]` pin the number format where it is ambiguous (`12,345`).
+  `[*:float@de]` pin the number format where it is ambiguous (`12,345`). When a pattern holds an int/float placeholder, the filter popup shows a
+  "Narrow" row whose chips write these conditions into it with one tap.
 - **Link filter** — pair up nearest-preceding/following entries (e.g. each
   "Move requested" with its "Position reached") to measure how long things take.
   Right-click a row → **Pair with…**, click the end row: the Δt between the two
@@ -221,7 +222,9 @@ deployments possible:
   any platform in the desktop build, which lists folders natively) —
   an actively-written log file updates in place, with both the Context and
   Filtered views auto-following the newest entry; a watched folder picks up
-  new files automatically. Each folder's own cog-icon settings dialog
+  new files automatically. Right-click a filter → **Alert on new matches**: while
+  the file is tailed, new matches show a bell toast and a `+N` badge on the
+  filter until you look at it. Each folder's own cog-icon settings dialog
   configures filename patterns (e.g. `App*.log`, `Input*.log`, each with its
   own auto-open-newest-file / auto-close-keep-N-open / show-M-newest-files
   rules — for every file type the folder lists, so a folder of `.json` or
