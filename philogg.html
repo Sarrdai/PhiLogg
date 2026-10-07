@@ -18478,7 +18478,10 @@ function revealSelectedInContextTab() {
 // keypress just set. Only the PERSON explicitly choosing a view (the
 // Ctrl+1/2/3 shortcuts, the #fhTabs click listener) clears it — see those
 // call sites instead.
-function applyFhView(view) {
+// renderFollows (applyActivationView only): the caller's own renderMainView()
+// follows right away, so the off-log branch skips its own to avoid drawing
+// the Table/Plot twice.
+function applyFhView(view, renderFollows) {
   if (currentLayoutTier === "phone") view = "filter"; // phone shows Filtered only; no caller may land elsewhere
   if (view === "stacked") {
     // Only reached while fhLayout is ALREADY "stacked" (the "Stacked" button
@@ -18519,7 +18522,7 @@ function applyFhView(view) {
     // of whichever fhLayout is current, least-behavior-change resolution —
     // see "Entscheidungen bei der Umsetzung").
     fhActiveTab = view;
-    renderMainView();
+    if (!renderFollows) renderMainView();
   } else {
     // Same "coming back from Table/Plot" case the "stacked" branch above
     // already has to handle, just reached from a plain Context/Filtered tab
@@ -19021,7 +19024,7 @@ function applyActivationView(activeNode) {
     targetTab = remembered; // "highlight" | "filter" | "table" | "plot" | "stacked"
   }
   if (isOffLogTab(targetTab)) {
-    if (fhActiveTab !== targetTab) applyFhView(targetTab);
+    if (fhActiveTab !== targetTab) applyFhView(targetTab, true); // renderInner's renderMainView() follows
   } else if (fhLayout === "stacked") {
     // "highlight"/"filter"/"stacked" all mean the same thing here: the
     // combined pane both Context and Filtered already share. Only need to
@@ -22750,7 +22753,10 @@ function switchExtractView(view) {
   // whenever Plot was the active view (person-reported: left a toolbar-like
   // bar between the tab row and Plot's own toolbar).
   (view === "plot" ? plotBody : extractScroll).before(extractToolbar);
-  if (view === "plot") { renderPlotControls(); renderPlotChart(); }
+  // Already on Plot: renderExtractTable (which always runs first) drew the
+  // chart, a second draw here is just wasted time. The invalid-pattern early
+  // return there draws nothing (no columns), hence the extra condition.
+  if (view === "plot" && (changed || extractColumns.length === 0)) { renderPlotControls(); renderPlotChart(); }
 }
 window.addEventListener("resize", () => { if (extractView === "plot") renderPlotChart(); });
 
@@ -23055,7 +23061,24 @@ function inlinePlotSvgComputedStyle(srcRoot, dstRoot) {
     dstEl.setAttribute("style", style);
   });
 }
-function svgToPngDataUrl(svgEl, width, height, bgColor) {
+// Line/bar/scatter marks are not part of #plotSvg (they live on
+// #plotMarksCanvas): after the SVG is drawn into the export canvas they are
+// painted again from plotMarkOps + the selection ring, at the export's own
+// scale (the SVG clone keeps its viewBox, "meet"-scaled into width x height).
+// ctx is already scaled to CSS pixels. Returns false when there is nothing to add
+// (value charts, 3D, empty chart).
+function composePlotExport(ctx, width, height) {
+  const r = plotLastRender;
+  if (!r || plotMarkOps.length === 0 && plotSelRingOps.length === 0) return false;
+  const scale = Math.min(width / r.W, height / r.H);
+  ctx.save();
+  ctx.translate((width - r.W * scale) / 2, (height - r.H * scale) / 2);
+  ctx.scale(scale, scale);
+  paintPlotMarkOps(ctx, plotMarkOps, r, plotSelRingOps);
+  ctx.restore();
+  return true;
+}
+function svgToPngDataUrl(svgEl, width, height, bgColor, compose) {
   return new Promise((resolve, reject) => {
     const clone = svgEl.cloneNode(true);
     clone.setAttribute("width", width);
@@ -23074,6 +23097,7 @@ function svgToPngDataUrl(svgEl, width, height, bgColor) {
       ctx.fillStyle = bgColor;
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(img, 0, 0, width, height);
+      if (compose) compose(ctx, width, height);
       URL.revokeObjectURL(url);
       resolve(canvas.toDataURL("image/png"));
     };
@@ -23103,7 +23127,7 @@ async function exportPlotImage() {
       dataUrl = canvas.toDataURL("image/png");
     } else {
       const rect = plotChartArea.getBoundingClientRect();
-      dataUrl = await svgToPngDataUrl(plotSvg, Math.round(rect.width), Math.round(rect.height), bg);
+      dataUrl = await svgToPngDataUrl(plotSvg, Math.round(rect.width), Math.round(rect.height), bg, composePlotExport);
     }
   } catch (e) {
     showCopyToast("Could not save the plot image.");
