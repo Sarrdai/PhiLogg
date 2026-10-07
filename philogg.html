@@ -4327,6 +4327,8 @@
   .plot-mark:hover{opacity:.7;} /* value charts; line/bar/scatter marks are canvas (see #plotSvg.plot-over-mark) */
   /* Selection ring of the selected entry's mark(s) (updatePlotSelectionRing). */
   .plot-sel-ring{pointer-events:none;}
+  /* Hover highlight of a canvas mark (line/bar/scatter): one ring/outline in the SVG overlay (plotSetHoverHighlight). */
+  #plotHoverHi{pointer-events:none; fill:none; stroke:var(--accent); stroke-width:2;}
   .plot-sel-ring circle, .plot-sel-ring rect{fill:none; stroke:var(--text-primary); stroke-width:2;}
   .plot-sel-ring .plot-sel-ring-line{fill:none; stroke:var(--text-primary); stroke-width:3.5; stroke-opacity:.9;}
 
@@ -23732,10 +23734,33 @@ function plotHitTest(svgPt) {
   }
   return hit;
 }
+// Hover feedback of the canvas marks (they have no :hover): one lightweight
+// element in the SVG overlay, a ring around the hit point (line/scatter) or an
+// outline around the hit bar, moved in place; null removes it. No canvas redraw.
+function plotSetHoverHighlight(hit) {
+  let el = plotSvg.querySelector("#plotHoverHi");
+  if (!hit) { if (el) el.remove(); return; }
+  const isBar = hit.kind === "bar";
+  const tag = isBar ? "rect" : "circle";
+  if (el && el.localName !== tag) { el.remove(); el = null; }
+  if (!el) {
+    el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+    el.setAttribute("id", "plotHoverHi");
+  }
+  if (isBar) {
+    el.setAttribute("x", String(hit.bx - 2)); el.setAttribute("y", String(hit.by - 2));
+    el.setAttribute("width", String(hit.bw + 4)); el.setAttribute("height", String(hit.bh + 4));
+  } else {
+    el.setAttribute("cx", String(hit.px)); el.setAttribute("cy", String(hit.py));
+    el.setAttribute("r", String((plotConfig.type === "line" ? 2.6 : 4) + 3.5));
+  }
+  plotSvg.appendChild(el); // keeps it last (above the selection ring); a no-op move when already last
+}
 function plotHandleHoverMove(ev) {
   const svgPt = plotLastRender && plotHoverPoints.length ? plotSvgPointFromEvent(ev) : null;
   const hit = svgPt ? plotHitTest(svgPt) : null;
   plotSvg.classList.toggle("plot-over-mark", !!hit); // the canvas marks have no :hover of their own
+  plotSetHoverHighlight(hit);
   if (!hit) { plotTooltip.classList.add("hidden"); return; }
   const row = extractRowsData[hit.rowIndex];
   if (!row) { plotTooltip.classList.add("hidden"); return; }
@@ -23745,7 +23770,7 @@ function plotHandleHoverMove(ev) {
   plotTooltip.classList.remove("hidden"); // needs to be visible (not display:none) before offsetWidth/Height below can measure it
   positionPlotTooltip(plotChartAreaPointFromEvent(ev));
 }
-plotChartArea.addEventListener("mouseleave", () => { plotTooltip.classList.add("hidden"); plotSvg.classList.remove("plot-over-mark"); });
+plotChartArea.addEventListener("mouseleave", () => { plotTooltip.classList.add("hidden"); plotSvg.classList.remove("plot-over-mark"); plotSetHoverHighlight(null); });
 
 const PLOT_TOOLTIP_GAP = 12; // clearance kept between the cursor point and the tooltip's nearest edge
 const PLOT_TOOLTIP_MARGIN = 4; // min distance from the chart area's own edges
@@ -24814,6 +24839,7 @@ function clearPlotMarks() {
   plotSelRingOps = [];
   plotMarksCanvas.classList.add("hidden");
   plotSvg.classList.remove("plot-over-mark");
+  plotSetHoverHighlight(null); // every re-render starts without a (possibly stale) hover highlight
 }
 
 function renderPlotChart() {
@@ -50366,8 +50392,9 @@ async function runSessionImport(data, opts = {}) {
   updatePinBookmarksButton();
   render();
 
-  // A clean ?session= load (nothing skipped) is silent: the opened view is the feedback.
-  if (opts.fresh && !summary.skipped) return;
+  // A fresh ?session= load with nothing beyond the files to report (nothing skipped or resolved
+  // manually, no bookmarks, no notes) is silent: the opened view is the feedback.
+  if (opts.fresh && !summary.skipped && !summary.manual && !summary.totalBookmarks && !summary.totalNotes) return;
   const parts = [];
   if (opts.fresh) parts.push(summary.loaded + " file" + (summary.loaded === 1 ? "" : "s") + " loaded");
   if (!opts.fresh || summary.auto) parts.push(summary.auto + " file" + (summary.auto === 1 ? "" : "s") + " matched automatically");
