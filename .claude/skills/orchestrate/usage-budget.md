@@ -12,7 +12,7 @@ short handover, not a resumed big context**.
 
 - `list_events` on your own session (ID from `get_session` without
   `session_id`), `kinds: ["rate_limit_event"]`, `limit: 100`. The newest
-  event's `rate_limit_info.unifiedWindows` holds `five_hour` and
+  event (last entry on the page) has `rate_limit_info.unifiedWindows` with `five_hour` and
   `seven_day`, each with `utilization` (0–1) and `resetsAt` (Unix time).
   The windows are per account, so any session's reading is the round's.
 - No event on that page: fall back to `get_session` →
@@ -21,6 +21,8 @@ short handover, not a resumed big context**.
 - Check at: before starting or waking a package, before handing an
   implementer a step, and at each step boundary while a package runs.
   Not more often: each read lands in your context.
+- Orchestrator: write the reading to the session board's `meta/usage`
+  (`session-board.md`).
 
 ## Before starting or waking work (orchestrator, lead)
 
@@ -55,7 +57,9 @@ At a step boundary with `five_hour.utilization ≥ 0.85`, start no new step:
 2. Write a handover: goal, decisions (mockup link + variant), what is done
    (commits), the remaining plan steps verbatim (the scratchpad does not
    survive the container), test status, open questions.
-3. Package session: send it to the orchestrator as `[<package>] PAUSED`
+3. Session board: `status: "paused"`, `resumes_at` = `five_hour.resetsAt`
+   (`session-board.md`).
+4. Package session: send it to the orchestrator as `[<package>] PAUSED`
    (`package-sessions` → "Reporting back"), then end the turn and do
    nothing more in this session. Lead of a single session: give the user
    the handover as a ready-to-paste start prompt for a fresh session
@@ -63,7 +67,8 @@ At a step boundary with `five_hour.utilization ≥ 0.85`, start no new step:
 
 Continuing after the reset means a **fresh session** started from the
 handover (`create_session` on the same branch, start prompt = handover),
-not resuming the paused one: the handover is a few thousand tokens, the
+not resuming the paused one; its board entry sets `continues` to the
+paused session's ID. The handover is a few thousand tokens, the
 paused context often 100k+. Tell the user the paused session can be
 archived.
 

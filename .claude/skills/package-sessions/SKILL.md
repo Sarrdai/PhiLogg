@@ -90,7 +90,9 @@ The session tools may be deferred: load them with ToolSearch
 
 ## Report back
 Orchestrator session: <your session ID>.
-Follow the package-sessions skill, "Reporting back".
+Continues: <session ID this package takes over from, if any>.
+Follow the package-sessions skill, "Reporting back"; keep your
+session-board entry current (orchestrate/session-board.md).
 ```
 
 ## Reporting back (package session)
@@ -147,7 +149,8 @@ price. At the end of each round check `get_session` →
 - Above ~250k: start no new round. Hand over once no package is running
   (a running package would report to the old session ID).
 - Start the new orchestrator with `create_session` (Sonnet, see
-  `orchestrate` → "Model choice"). Start prompt: open
+  `orchestrate` → "Model choice"). Start prompt: your session ID as the
+  one it continues (session board), open
   items (numbered, with source), decisions made (with mockup links),
   branches and open PRs, finished packages with commits, rules the user
   set during the round.

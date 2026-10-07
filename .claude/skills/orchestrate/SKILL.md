@@ -22,6 +22,10 @@ does not write feature code itself, except for a small fix bundle (phase
 back to an implementer. A session started by an orchestrator session also
 follows the `package-sessions` skill (start prompt, reporting back).
 
+Every such session keeps its entry on the session board current (start,
+each status change, `waiting_user` before stopping for the user):
+`session-board.md` in this folder.
+
 Talk to the user in their language (German); everything written to the
 repo stays English (CLAUDE.md).
 
