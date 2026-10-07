@@ -355,3 +355,7 @@ viewport; "blank"/"jumps" per scroll render, see Level 2b):
 | 2026-09-24 | cap fix, per-frame renders, row reuse | 1 | 5.5 ms | 0.8 ms | 0 | 0/40 blank | 0/40 blank |
 
 Before the fix one wheel notch moved 68 rows; after, 4.
+
+Prune (2026-10-07, "Prune file to this result…", headless Chromium, the
+650k-entry `perf-650k.log`, a time-range filter keeping 171,202 of 650,000
+entries): JS heap after GC 303 MB to 91 MB; `pruneFileToNode` itself 381 ms.

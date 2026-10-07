@@ -2084,6 +2084,29 @@
   }
   .ctx-gap-placeholder:hover{ opacity:1; background:var(--bg-elevated); }
   .ctx-gap-placeholder.ctx-show-more{ color:var(--accent); opacity:.8; }
+  /* Prune placeholder (root.pruned cut): same height, not clickable. */
+  .ctx-gap-placeholder.ctx-pruned{
+    cursor:default; opacity:1; color:var(--warn);
+    border-top:1px dashed var(--warn); border-bottom:1px dashed var(--warn);
+    background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--warn) 9%, transparent) 0 6px, transparent 6px 12px);
+  }
+  .ctx-gap-placeholder.ctx-pruned:hover{ background:repeating-linear-gradient(135deg, color-mix(in srgb, var(--warn) 9%, transparent) 0 6px, transparent 6px 12px); }
+  /* Filtered view of a pruned file node: the cut is drawn on a row edge, no extra rows. */
+  .log-row.pruned-before::before, .log-row.pruned-after::after{
+    content:""; position:absolute; left:0; right:0; height:0; z-index:2; pointer-events:none;
+    border-top:1px dashed var(--warn);
+  }
+  .log-row.pruned-before::before{ top:0; }
+  .log-row.pruned-after::after{ bottom:-1px; }
+  /* Prune icon in the gutter lane the bookmark icon uses, centred on the boundary line. */
+  .pruned-mark{
+    position:absolute; left:calc(-9px - (var(--color-mark-w) - 3px) - 14px); z-index:3; width:10px; height:10px;
+    display:flex; align-items:center; justify-content:center; color:var(--warn); pointer-events:none;
+  }
+  .pruned-mark svg{ width:10px; height:10px; }
+  .pruned-mark.pruned-mark-top{ top:-5px; }
+  .pruned-mark.pruned-mark-top.pruned-mark-first{ top:1px; }
+  .pruned-mark.pruned-mark-bottom{ bottom:-6px; }
   .ctx-gap-icon{ display:flex; align-items:center; flex:0 0 auto; }
   /* The label is centred in the VISIBLE area, not in the row
      (person-requested) — and the row can now be much wider than the viewport,
@@ -3364,6 +3387,20 @@
   #clockOffsetDialog .link-dialog-card{width:min(480px, 92%);}
   #clockOffsetDialog .settings-row{padding:12px 2px; gap:16px; border-bottom:1px solid var(--border-soft);}
   #clockOffsetDialog .settings-row:last-of-type{border-bottom:none;}
+  /* ---------- Prune file to a filter's result (pruneFileToNode): a plain
+     confirmation dialog on the shared dialog shell, plus a small kept/total bar. ---------- */
+  #pruneDialog{
+    position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
+    display:flex; align-items:flex-start; justify-content:center;
+    padding-top:106px;
+  }
+  #pruneDialog.hidden{display:none;}
+  #pruneDialog .link-dialog-card{width:min(480px, 92%);}
+  .prune-body{font-size:12px; line-height:1.6; color:var(--text-secondary); margin:0;}
+  .prune-meter{margin-top:14px;}
+  .prune-meter-caption{font-size:11px; color:var(--text-tertiary); margin-bottom:6px;}
+  .prune-meter-bar{height:6px; border-radius:3px; background:var(--bg-app); border:1px solid var(--border); overflow:hidden;}
+  .prune-meter-fill{height:100%; background:var(--accent);}
   #clockDiffRow.hidden, #clockStartRow.hidden{display:none;}
   #clockDiffInput{width:170px; box-sizing:border-box; text-align:right;}
   #clockStartInput{width:100%; box-sizing:border-box;}
@@ -5007,7 +5044,7 @@
   body.layout-phone #libraryMenu .lib-search input{font-size:16px; min-height:40px;}
   body.layout-phone #libraryMenu{left:8px; top:60px; width:calc(100vw - 16px);}
   body.layout-phone .link-dialog-card{width:calc(100% - 16px); box-sizing:border-box; max-height:calc(100vh - 32px); overflow-y:auto; padding:16px;}
-  body.layout-phone #timeRangeDialog, body.layout-phone #noteDialog, body.layout-phone #clockOffsetDialog, body.layout-phone #assertDialog,
+  body.layout-phone #timeRangeDialog, body.layout-phone #noteDialog, body.layout-phone #clockOffsetDialog, body.layout-phone #pruneDialog, body.layout-phone #assertDialog,
   body.layout-phone #contextDialog, body.layout-phone #countContextDialog, body.layout-phone #exportScopeDialog{padding-top:16px;}
   body.layout-phone .link-dialog-card select, body.layout-phone .link-dialog-card input[type="number"],
   body.layout-phone .link-dialog-card input[type="datetime-local"], body.layout-phone .link-dialog-card input[type="date"], body.layout-phone .link-dialog-card input[type="text"]:not(.stepper-value){
@@ -5411,6 +5448,7 @@
     <symbol id="i-trash" viewBox="0 0 16 16"><path d="M2.75 4.25h10.5M6.25 4.25V2.75h3.5v1.5M4.25 4.25l.75 9h6l.75-9"/></symbol>
     <symbol id="i-file-auto" viewBox="0 0 16 16"><use href="#i-file"/><circle cx="12" cy="12" r="3.5" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.4" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">A</text></symbol>
     <symbol id="i-file-partial" viewBox="0 0 16 16"><use href="#i-file"/><circle cx="12" cy="12" r="3.5" fill="var(--bg-panel)" stroke-width="1"/><text x="12" y="13.4" font-size="4.6" font-family="var(--font-ui)" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">P</text></symbol>
+    <symbol id="i-file-pruned" viewBox="0 0 16 16"><use href="#i-file"/><path d="M1.5 9.25h13" stroke-dasharray="1.8 1.4" style="stroke:var(--warn)"/></symbol>
     <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2 4a1 1 0 0 1 1-1h3l1.25 1.5H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1Z"/></symbol>
     <symbol id="i-zip" viewBox="0 0 16 16"><rect x="2" y="2.25" width="12" height="11.5" rx="1.25"/><path d="M8 2.25v1.5M8 5.25v1.5M8 8.25v1"/><rect x="6.75" y="9.5" width="2.5" height="2.5" rx=".5"/></symbol>
     <symbol id="i-lock" viewBox="0 0 16 16"><rect x="3.25" y="7.25" width="9.5" height="6.25" rx="1.25"/><path d="M5.25 7.25V5a2.75 2.75 0 0 1 5.5 0v2.25"/></symbol>
@@ -6689,6 +6727,21 @@
     </div>
   </div>
 
+  <div id="pruneDialog" class="hidden">
+    <div class="link-dialog-card">
+      <div class="link-dialog-title">Prune file to this result?</div>
+      <p class="prune-body" id="pruneBody"></p>
+      <div class="prune-meter">
+        <div class="prune-meter-caption" id="pruneMeterCaption"></div>
+        <div class="prune-meter-bar"><div class="prune-meter-fill" id="pruneMeterFill"></div></div>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="pruneCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="pruneConfirm" class="btn-mini">Prune</button>
+      </div>
+    </div>
+  </div>
+
   <div id="assertDialog" class="hidden">
     <div class="link-dialog-card">
       <div class="link-dialog-title">Value assertion — <span id="assertColLabel" class="link-target-label"></span></div>
@@ -7941,6 +7994,9 @@ const ICON_FILE_AUTO = icon("file-auto");
 // load, see loadFolderFileWindowed/node.partial) — same visual idiom as
 // ICON_FILE_AUTO's circled "A" right above.
 const ICON_FILE_PARTIAL = icon("file-partial");
+// Same file glyph with a dashed cut line across it (Prune file to a filter's
+// result, see pruneFileToNode/node.pruned).
+const ICON_FILE_PRUNED = icon("file-pruned");
 const ICON_FOLDER = icon("folder");
 // ZIP source header icon (renderZipSection) — same viewBox/stroke
 // conventions as ICON_FOLDER above (its container's own icon, which this
@@ -16387,6 +16443,9 @@ function snapshotSubtree(nodeId) {
     // full file again, same class of bug node.formatId's own comment above
     // describes.
     if (node.partial) copy.partial = node.partial;
+    // Pruned file (see pruneFileToNode): same reason as node.partial above.
+    // Immutable by convention, so sharing the reference is safe.
+    if (node.pruned) copy.pruned = node.pruned;
     // Per-file clock offset (FEATURE_BACKLOG.md #29): entries are kept by
     // reference above, so their ALREADY-shifted ts come back on undo intact —
     // this just preserves the cumulative amount so the file can still be
@@ -16448,6 +16507,7 @@ function restoreSubtree(snap) {
     if (snap.textLayout) node.textLayout = snap.textLayout;
     if (typeof snap.textRaw === "string") node.textRaw = snap.textRaw;
     if (snap.partial) node.partial = snap.partial;
+    if (snap.pruned) node.pruned = snap.pruned;
     if (snap.clockOffset) node.clockOffset = snap.clockOffset; // see snapshotSubtree — entries already carry the shifted ts
     if (snap._cacheBlob) node._cacheBlob = snap._cacheBlob;
     if (snap.mergeOwnerId) node.mergeOwnerId = snap.mergeOwnerId;
@@ -19282,7 +19342,7 @@ function timeFilterIcon(node) {
 
 // Icon lookup for a tree row (renderNode).
 function nodeIconHTML(node) {
-  return node.type === "file" ? (node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE)
+  return node.type === "file" ? (node.pruned ? ICON_FILE_PRUNED : node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE)
     // A "text" node with extractable wildcards gets the table icon, same as
     // the retired dedicated "extract" filterType used to.
     : (node.filterType === "text" && nodeHasExtractableWildcards(node)) ? ICON_TABLE
@@ -20356,6 +20416,10 @@ function renderNode(id, depth, opts) {
   // spelled out here instead of changing the tree label itself (which
   // ripples into rail markers/etc. — see nodeDisplayName).
   if (node.partial) titleParts.push(`Partial load: only ${formatTime(node.partial.from)} – ${formatTime(node.partial.to)} was read from disk`);
+  if (node.pruned) {
+    const n = node.pruned.cuts.length;
+    titleParts.push(`Pruned: kept ${getEntries(node.id).length.toLocaleString("de-DE")} of ${node.pruned.total.toLocaleString("de-DE")} entries (${n} ${n === 1 ? "cut" : "cuts"})`);
+  }
   if (titleParts.length) icon.title = titleParts.join(" — ");
   row.appendChild(icon);
 
@@ -26053,7 +26117,7 @@ function renderVisibleRows(reuseRows) {
   // computeGapEntries), or, under a column sort, the chronological Δt
   // renderTable captured before sorting (buildViewDeltaMap).
   const gapMs = activeNode && activeNode.filterType === "gap" && !activeNode.inverted ? activeNode._gapMs : null;
-  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, textMode: filteredTextMode, deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null) };
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, textMode: filteredTextMode, deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null), prunedMarks: prunedRowMarks(activeNode) };
   let groups;
   if (reuse) {
     for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
@@ -26086,6 +26150,28 @@ function renderVisibleRows(reuseRows) {
 // Builds currentViewEntries[i]'s row (plus its note row, if any) into `frag`
 // and returns those elements. `rc` carries what renderVisibleRows computes
 // once per call rather than per row.
+// Filtered view of a pruned FILE node only (a filter node's rows are not
+// contiguous in the file, so a cut would mean nothing there; the Context view
+// has the real placeholders): entry id -> { before, after } cuts to draw on
+// that row's top / bottom edge. No extra rows, so row heights stay uniform.
+// Not under a column sort (rows are no longer in file order).
+function prunedRowMarks(node) {
+  if (!node || node.type !== "file" || !node.pruned || !node.pruned.cuts.length || state.sortColumn) return null;
+  const marks = new Map();
+  const all = node.entries;
+  for (const cut of node.pruned.cuts) {
+    if (cut.at < all.length) {
+      const m = marks.get(all[cut.at].id) || {};
+      m.before = cut;
+      marks.set(all[cut.at].id, m);
+    } else if (all.length) {
+      const m = marks.get(all[all.length - 1].id) || {};
+      m.after = cut;
+      marks.set(all[all.length - 1].id, m);
+    }
+  }
+  return marks;
+}
 function appendLogRow(frag, i, rc) {
   const e = currentViewEntries[i];
   const row = document.createElement("div");
@@ -26171,6 +26257,21 @@ function appendLogRow(frag, i, rc) {
   if (!rc.textMode && cardMode()) {
     const msgEl = row.querySelector(":scope > .col-msg");
     if (msgEl) msgEl.style.webkitLineClamp = String(cardLinesForEntry(e, tableWrapCols));
+  }
+  const pm = rc.prunedMarks && rc.prunedMarks.get(e.id);
+  if (pm) {
+    const tips = [];
+    if (pm.before) {
+      row.classList.add("pruned-before");
+      tips.push(prunedPlaceholderText(pm.before));
+      row.insertAdjacentHTML("beforeend", '<span class="pruned-mark pruned-mark-top' + (i === 0 ? " pruned-mark-first" : "") + '">' + ICON_FILE_PRUNED + "</span>");
+    }
+    if (pm.after) {
+      row.classList.add("pruned-after");
+      tips.push(prunedPlaceholderText(pm.after));
+      row.insertAdjacentHTML("beforeend", '<span class="pruned-mark pruned-mark-bottom">' + ICON_FILE_PRUNED + "</span>");
+    }
+    row.title = tips.join("\n");
   }
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
@@ -26552,7 +26653,7 @@ function contextMatchesAndGaps(node, root) {
   const result = getEntries(node.id);
   const m = contextMatchMemo;
   if (m && m.nodeId === node.id && m.result === result && m.all === all && m.length === all.length &&
-      m.orderVersion === (root._orderVersion || 0)) return m;
+      m.orderVersion === (root._orderVersion || 0) && m.pruned === root.pruned) return m;
   const matchIds = new Set();
   // Root-file indices of the matches, ascending.
   let idxs = null;
@@ -26598,7 +26699,26 @@ function contextMatchesAndGaps(node, root) {
     prev = idxs[k];
   }
   if (prev + 1 < all.length) gaps.push({ start: prev + 1, end: all.length });
-  contextMatchMemo = { nodeId: node.id, result, all, length: all.length, orderVersion: root._orderVersion || 0, matchIds, gaps, matchPos };
+  // A pruned file (see pruneFileToNode): a gap crossing a cut position is
+  // split there, so the "N pruned" placeholder sits between two ordinary
+  // hidden stretches (each keeps its own expansion key = its start). The
+  // pieces' inner edges border the cut, not a match: beforeCut/afterCut let
+  // expandAroundAllMatches skip them.
+  let outGaps = gaps;
+  if (root.pruned && root.pruned.cuts.length) {
+    outGaps = [];
+    for (const g of gaps) {
+      let st = g.start;
+      for (const c of root.pruned.cuts) {
+        if (c.at > st && c.at < g.end) {
+          outGaps.push({ start: st, end: c.at, afterCut: st !== g.start, beforeCut: true });
+          st = c.at;
+        }
+      }
+      outGaps.push(st === g.start ? g : { start: st, end: g.end, afterCut: true, beforeCut: false });
+    }
+  }
+  contextMatchMemo = { nodeId: node.id, result, all, length: all.length, orderVersion: root._orderVersion || 0, pruned: root.pruned, matchIds, gaps: outGaps, matchPos };
   return contextMatchMemo;
 }
 
@@ -26627,7 +26747,16 @@ function buildContextView(rootId) {
   // A file node's getEntries() IS the whole entries array — no filter to be
   // outside of, so skip the whole gap machinery instead of building a match
   // set the size of the file on every render.
-  if (!node || node.type !== "filter") return all;
+  if (!node || node.type !== "filter") {
+    // No gaps, but a pruned file still shows its cuts: strips only, keyed by
+    // the row they follow (contextActive stays false).
+    if (root.pruned) root.pruned.cuts.forEach(cut => {
+      const key = cut.at - 1;
+      const arr = contextStrips.get(key);
+      if (arr) arr.push({ kind: "pruned", cut }); else contextStrips.set(key, [{ kind: "pruned", cut }]);
+    });
+    return all;
+  }
   contextActive = true;
 
   // Which entries match and where the gaps between them fall depends only on
@@ -26714,9 +26843,14 @@ function buildContextView(rootId) {
     if (bottomStepShown) addFiller({ kind: "more", side: "bottom", gapStart: g.start, from: bottomFrom, to: he });
   };
 
+  const cuts = root.pruned ? root.pruned.cuts : [];
+  let ci = 0;
   let gi = 0;
   let i = 0;
   while (i < all.length) {
+    // A pruned placeholder goes right before the row/gap at its cut position
+    // (after whatever hidden stretch ended there).
+    while (ci < cuts.length && cuts[ci].at <= i) addFiller({ kind: "pruned", cut: cuts[ci++] });
     const g = contextGaps[gi];
     if (g && i === g.start) {
       let cur = g.start;
@@ -26738,6 +26872,7 @@ function buildContextView(rootId) {
     contextMatchRows.push(out.length - 1);
     i++;
   }
+  while (ci < cuts.length) addFiller({ kind: "pruned", cut: cuts[ci++] }); // trailing cut(s)
   return out;
 }
 
@@ -26947,8 +27082,9 @@ function expandAroundAllMatches() {
   commitContextExpansionChange(() => {
     contextExpansions = new Map();
     contextGaps.forEach(g => {
-      if (g.start > 0) revealContextRange(g.start, g.start, Math.min(g.end, contextStepEdge(all, g.start - 1, 1) + 1));
-      if (g.end < all.length) revealContextRange(g.start, Math.max(g.start, contextStepEdge(all, g.end, -1)), g.end);
+      // A piece of a gap split at a prune cut borders the cut, not a match, on that side.
+      if (g.start > 0 && !g.afterCut) revealContextRange(g.start, g.start, Math.min(g.end, contextStepEdge(all, g.start - 1, 1) + 1));
+      if (g.end < all.length && !g.beforeCut) revealContextRange(g.start, Math.max(g.start, contextStepEdge(all, g.end, -1)), g.end);
     });
     contextAutoRanges = [];
   });
@@ -28164,6 +28300,11 @@ function makeContextRunHandle(run, isTop, isBottom) {
 // fresh on every render, same as every other per-row listener here — DOM
 // identity across renders is never assumed (see CLAUDE.md's
 // "renderVisibleRows() rebuilds nodes" gotcha).
+// "<n> entries pruned · <from> – <to>" for one cut of root.pruned.cuts.
+function prunedPlaceholderText(cut) {
+  return cut.count.toLocaleString("de-DE") + (cut.count === 1 ? " entry" : " entries") + " pruned · " +
+    formatTime(cut.fromTs) + " – " + formatTime(cut.toTs);
+}
 function appendContextFillers(frag, fillers, rowKey, viewportW) {
   // Only a "more" filler's label/tooltip read contextExpandStepUnit — the
   // "gap" ("… N lines") kind always reports the exact remaining entry count
@@ -28178,6 +28319,18 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
   // precision the setting doesn't actually offer.
   const timeMode = contextExpandStepUnit === "time";
   fillers.forEach(f => {
+    if (f.kind === "pruned") {
+      // Not a gap and not clickable: just marks where entries were cut out.
+      const row = document.createElement("div");
+      row.className = "ctx-gap-placeholder ctx-pruned";
+      row.style.height = CONTEXT_STRIP_HEIGHT + "px";
+      const label = prunedPlaceholderText(f.cut);
+      row.title = label;
+      row.innerHTML = '<span class="ctx-filler-inner"' + (viewportW ? ' style="width:' + viewportW + 'px"' : '') + '>' +
+        '<span class="ctx-gap-icon">' + ICON_FILE_PRUNED + '</span><span>' + escapeHtml(label) + '</span></span>';
+      frag.appendChild(row);
+      return;
+    }
     const n = f.to - f.from;
     const row = document.createElement("div");
     row.className = "ctx-gap-placeholder" + (f.kind === "more" ? " ctx-show-more" : "");
@@ -28502,7 +28655,7 @@ function renderSidebarRail() {
       btn.className = "sidebar-rail-marker" + (node.id === state.activeId ? " active" : "");
       btn.title = nodeDisplayName(node) + " — " + getEntries(node.id).length.toLocaleString("de-DE");
       if (node.type === "file") {
-        btn.innerHTML = node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE;
+        btn.innerHTML = node.pruned ? ICON_FILE_PRUNED : node.partial ? ICON_FILE_PARTIAL : node.merged ? ICON_MERGE : ICON_FILE;
       } else {
         const dot = document.createElement("span");
         dot.className = "sidebar-rail-marker-dot";
@@ -28803,6 +28956,7 @@ function closeEscapeOverlays() {
   closeTimeRangeDialog();
   closeAssertDialog();
   closeClockOffsetDialog();
+  closePruneDialog();
   closeNoteDialog();
   closeColumnsPanel();
   closeColorPicker();
@@ -28821,7 +28975,7 @@ function closeEscapeOverlays() {
 function anyEscapeOverlayOpen() {
   const overlayIds = [
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
-    "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog",
+    "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog", "pruneDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
@@ -35148,6 +35302,7 @@ async function tailTick() {
         const full = await f.text();
         releaseEntriesFromIndex(node.entries, id);
         node.entries = [];
+        delete node.pruned; // entries replaced wholesale: the cut positions are void
         t.offset = f.size;
         t.pending = "";
         t.lastGrowth = Date.now();
@@ -35166,6 +35321,7 @@ async function tailTick() {
         // stale ids into entryIndex for the lifetime of the session.
         releaseEntriesFromIndex(node.entries, id);
         node.entries = [];
+        delete node.pruned; // see the pretty-JSON reload above
         t.offset = 0;
         t.pending = "";
         t.lastGrowth = Date.now();
@@ -40031,7 +40187,7 @@ function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); close
 // the trigger, .ctx-meta styling), except the content here is plain text
 // (the node's full display name) rather than a list of actions.
 function treeNodeTypeLabel(node) {
-  if (node.type === "file") return node.merged ? "Merged file" : node.partial ? "Partial file" : "File";
+  if (node.type === "file") return node.merged ? "Merged file" : node.pruned ? "Pruned file" : node.partial ? "Partial file" : "File";
   switch (node.filterType) {
     case "text": return nodeHasExtractableWildcards(node) ? "Extraction" : "Filter";
     case "and": return "AND";
@@ -40558,6 +40714,7 @@ function openTreeContextMenu(ev, clickedId) {
         buckets.edit.push({ action: "edit", label: "Edit link…", icon: ICON_EDIT });
       }
       if (isLinkBakeableNode(node)) buckets.edit.push({ action: "linkWith", label: "Link with…", icon: ICON_LINK });
+      if (canPruneToNode(node)) buckets.edit.push({ action: "pruneToNode", label: "Prune file to this result…", icon: ICON_FILE_PRUNED });
       // "link" results are pair entries with no parent-relative complement
       // (see getEntries), and "context"/"countContext" always contain their
       // own reference entries so a parent-relative difference is always
@@ -40739,6 +40896,10 @@ treeContextMenu.addEventListener("click", ev => {
   }
   if (action === "clockOffset") {
     if (treeCtxId && state.nodes[treeCtxId]) openClockOffsetDialog(treeCtxId);
+    return;
+  }
+  if (action === "pruneToNode") {
+    if (treeCtxId && state.nodes[treeCtxId]) openPruneDialog(treeCtxId);
     return;
   }
   if (action === "copy" || action === "cut") {
@@ -42570,6 +42731,146 @@ el("#clockOffsetApply").addEventListener("click", () => {
   } else {
     el("#clockOffsetError").classList.remove("hidden");
   }
+});
+
+/* ===================== Prune file to a filter's result =====================
+   A filter node's context menu -> confirmation dialog -> its root file keeps
+   ONLY that filter's result in memory (root.entries becomes the kept subset,
+   in root order); everything else is dropped, not hidden.
+   root.pruned = { total, cuts: [{ at, count, fromTs, toTs }] } records where
+   entries were cut: `at` is the index in the CURRENT root.entries of the
+   first kept entry after the cut (0 = leading cut, entries.length = trailing
+   cut); `total` is the entry count before the FIRST prune. Replaced
+   wholesale, never mutated in place (same convention as node.value).
+   Deliberately NOT undoable (person-decided): the memory is freed at once and
+   the way back is reopening the file — an exception to the app's undo-first
+   convention. Persistence: see the node.pruned carriers (snapshotSubtree,
+   persistFileNode, fileCacheSource, session export, tail rotation). */
+const pruneDialog = el("#pruneDialog");
+let pruneNodeId = null;
+
+// The kept real entries of a filter node's result, in root order.
+// null when the node isn't prunable at all (no root file / no result).
+function computePruneKeep(node, root) {
+  const result = getEntries(node.id);
+  if (!result || !result.length) return null;
+  let keptIds;
+  if (isLinkNode(node)) {
+    // Synthetic pair entries: keep the real entries underneath (same idea as
+    // contextMatchesAndGaps' matchIds for a link node).
+    keptIds = new Set();
+    result.forEach(pair => getTupleEntries(pair).forEach(e => keptIds.add(e.id)));
+  } else {
+    keptIds = new Set(result.map(e => e.id));
+  }
+  const kept = root.entries.filter(e => keptIds.has(e.id));
+  return kept.length ? kept : null;
+}
+
+// Whether the menu offers "Prune file to this result…" on `node`.
+function canPruneToNode(node) {
+  if (!node || node.type !== "filter") return false;
+  const root = state.nodes[getRootFileId(node.id)];
+  if (!root || root.type !== "file" || !root.entries || isPlainTextFormat(root.formatId)) return false;
+  if (typeof root.loadFraction === "number" || root.queued) return false; // still loading
+  const result = getEntries(node.id);
+  if (!result || !result.length) return false;
+  if (!isLinkNode(node)) return result.length < root.entries.length;
+  const kept = computePruneKeep(node, root);
+  return !!kept && kept.length < root.entries.length;
+}
+
+function openPruneDialog(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || !canPruneToNode(node)) return;
+  const root = state.nodes[getRootFileId(nodeId)];
+  const kept = computePruneKeep(node, root);
+  if (!kept) return;
+  const fmt = n => n.toLocaleString("de-DE");
+  const total = root.entries.length;
+  const pct = Math.round(kept.length / total * 100);
+  pruneNodeId = nodeId;
+  el("#pruneBody").textContent = "“" + root.name + "” keeps the " + fmt(kept.length) + " entries of “" + nodeDisplayName(node) +
+    "” and drops the other " + fmt(total - kept.length) + " from memory. Other filters on this file are recomputed. " +
+    "This cannot be undone; reopen the file to get the dropped entries back.";
+  el("#pruneMeterCaption").textContent = "Keeps " + fmt(kept.length) + " of " + fmt(total) + " entries (" + pct + "%)";
+  el("#pruneMeterFill").style.width = Math.max(1, pct) + "%";
+  pruneDialog.classList.remove("hidden");
+  el("#pruneConfirm").focus();
+}
+function closePruneDialog() { pruneDialog.classList.add("hidden"); pruneNodeId = null; }
+
+// Keeps only the entries of node's result in its root file. Returns true when
+// the file was pruned.
+function pruneFileToNode(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter") return false;
+  const rootId = getRootFileId(nodeId);
+  const root = state.nodes[rootId];
+  if (!root || root.type !== "file") return false;
+  const kept = computePruneKeep(node, root);
+  if (!kept || kept.length >= root.entries.length) return false;
+  const old = root.entries;
+  const keptSet = new Set(kept);
+  const dropped = [];
+  // keptBefore[i] = how many of old[0..i) are kept: maps an old cut position
+  // to its index in the new array.
+  const keptBefore = new Int32Array(old.length + 1);
+  const cutsByAt = new Map();
+  const addCut = (at, count, fromTs, toTs) => {
+    const c = cutsByAt.get(at);
+    if (!c) { cutsByAt.set(at, { at, count, fromTs, toTs }); return; }
+    c.count += count;
+    c.fromTs = Math.min(c.fromTs, fromTs);
+    c.toTs = Math.max(c.toTs, toTs);
+  };
+  let run = null; // the current run of dropped entries
+  for (let i = 0; i < old.length; i++) {
+    const e = old[i];
+    keptBefore[i + 1] = keptBefore[i] + (keptSet.has(e) ? 1 : 0);
+    if (keptSet.has(e)) {
+      if (run) { addCut(keptBefore[i], run.count, run.fromTs, run.toTs); run = null; }
+    } else {
+      dropped.push(e);
+      if (!run) run = { count: 0, fromTs: e.ts, toTs: e.ts };
+      run.count++;
+      run.toTs = e.ts;
+    }
+  }
+  if (run) addCut(kept.length, run.count, run.fromTs, run.toTs);
+  const prev = root.pruned;
+  if (prev) prev.cuts.forEach(c => addCut(keptBefore[Math.min(c.at, old.length)], c.count, c.fromTs, c.toTs));
+  const cuts = [...cutsByAt.values()].sort((a, b) => a.at - b.at);
+
+  releaseEntriesFromIndex(dropped, rootId);
+  // Bookmarks/notes of entries no other root (a merge) still holds.
+  for (const e of dropped) {
+    if (entryIndex[e.id]) continue;
+    state.bookmarks.delete(e.id);
+    state.notes.delete(e.id);
+    state.logMultiSelect.delete(e.id);
+  }
+  root.entries = kept;
+  root.pruned = { total: prev ? prev.total : old.length, cuts };
+  delete root._cacheBlob; // the cached File no longer matches the entries (-> "text" cache source)
+  invalidateFileAggregate(root);
+  invalidateOrderIndexMap(rootId);
+  invalidateCachesForRoots([rootId]);
+  syncBookmarksFilterNode(rootId);
+  syncNotesFilterNode(rootId);
+  contextExpansionsKey = null; // expansions hold root indices of the old array
+  persistFileNode(root);
+  render();
+  showCopyToast("Pruned to " + kept.length.toLocaleString("de-DE") + " of " + root.pruned.total.toLocaleString("de-DE") + " entries");
+  return true;
+}
+
+pruneDialog.addEventListener("click", ev => { if (ev.target === pruneDialog) closePruneDialog(); });
+el("#pruneCancel").addEventListener("click", closePruneDialog);
+el("#pruneConfirm").addEventListener("click", () => {
+  const id = pruneNodeId;
+  closePruneDialog();
+  if (id) pruneFileToNode(id);
 });
 
 /* ===================== Notes =====================
@@ -47517,7 +47818,9 @@ function rebuildFileText(node) {
 //   tailed files, ... Building and structured-cloning ~100 MB of text blocks
 //   the main thread for ~0.5-1.5 s, so that write waits for idle time.
 function fileCacheSource(node) {
-  if (node.localPath && !node.partial && !node.merged && canReopenLocalPath()) return "path";
+  // A pruned file's content is no longer what is on disk: never "path"
+  // (it would re-read the full file), and pruneFileToNode drops _cacheBlob.
+  if (node.localPath && !node.partial && !node.merged && !node.pruned && canReopenLocalPath()) return "path";
   if (node._cacheBlob) return "blob";
   return "text";
 }
@@ -47532,7 +47835,7 @@ function fileCacheSource(node) {
 // the last poll) or can't be read, and the caller falls back to text.
 async function tailSnapshotBlob(node) {
   const t = node.tail;
-  if (!t || t.failed || node.merged || node.partial || !t.handle || isUrlTailHandle(t.handle)) return null;
+  if (!t || t.failed || node.merged || node.partial || node.pruned || !t.handle || isUrlTailHandle(t.handle)) return null;
   try {
     const committed = t.offset - new TextEncoder().encode(t.pending || "").length;
     const f = await t.handle.getFile();
@@ -47612,6 +47915,9 @@ async function persistFileNode(node, immediate, noSnapshot) {
     // restored session would show a deliberately-incomplete node as if it
     // were the file's normal full content.
     partial: node.partial || null,
+    // Pruned file (see pruneFileToNode): `text` above is already just the
+    // kept entries; this restores the cut positions. Source is never "path".
+    pruned: node.pruned || null,
     // Per-file clock offset (FEATURE_BACKLOG.md #29): the content above is
     // the ORIGINAL file (text: rebuilt from entry.raw, unshifted), so this
     // signed-ms amount is what restoreSessionFromCache re-applies to the
@@ -48006,6 +48312,7 @@ async function restoreSessionFromCache(metaIn) {
       // is correct as-is — only the visible "this is incomplete" marker
       // needs restoring.
       if (rec.partial) node.partial = rec.partial;
+      if (rec.pruned) node.pruned = rec.pruned;
       // Per-file clock offset (FEATURE_BACKLOG.md #29): rec.text was rebuilt
       // from the ORIGINAL raw lines, so the just-parsed entries carry the
       // unshifted ts — re-apply the stored correction to bake it back in.
@@ -48265,6 +48572,10 @@ function buildSessionExport(fileIds, embedTextIds) {
     // embedded text is the file's own text — runSessionImport re-lays it out).
     if (node.textSyntax !== undefined) rec.textSyntax = node.textSyntax;
     if (node.textLayout) rec.textLayout = node.textLayout;
+    // Pruned file (see pruneFileToNode): the cut positions travel with the
+    // export; they are applied only when the embedded log is materialized
+    // (addSessionRecordText), never to a match against the importer's own file.
+    if (node.pruned) rec.pruned = node.pruned;
     files.push(rec);
     perFile.set(id, { rec, refs });
   }
@@ -48695,6 +49006,13 @@ async function runSessionImport(data, opts = {}) {
 // format (ensureSessionLogFormat); anything else resolves live by filename,
 // like any fresh load. Shared by the tier-3 "embedded" choice and ?session=.
 async function addSessionRecordText(rec, name, text) {
+  const node = await addSessionRecordTextInner(rec, name, text);
+  const pr = rec.pruned;
+  if (node && pr && Array.isArray(pr.cuts) && Number.isFinite(pr.total) &&
+      pr.cuts.every(c => c && Number.isFinite(c.at) && Number.isFinite(c.count))) node.pruned = pr;
+  return node;
+}
+async function addSessionRecordTextInner(rec, name, text) {
   if (rec.textSyntax !== undefined) {
     const placeholder = createQueuedFileNode(name);
     placeholder.textSyntax = rec.textSyntax === "json" || rec.textSyntax === "xml" ? rec.textSyntax : null;
@@ -49069,7 +49387,9 @@ function buildFileHistoryRecords() {
   const deletes = [];
   for (const rootId of state.rootIds) {
     const root = state.nodes[rootId];
-    if (!root || root.type !== "file" || root.merged) continue;
+    // A pruned file's fingerprint is not the original file's, and its cut
+    // content is not worth a history record.
+    if (!root || root.type !== "file" || root.merged || root.pruned) continue;
     if (!root.entries.length) continue;
     if (root.children.length) {
       // A real tree is the definitive current state — supersedes whatever
