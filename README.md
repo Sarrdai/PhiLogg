@@ -72,7 +72,7 @@ deployments possible:
   children keep working, and it stays in the tree struck through. Selecting 2+
   nodes swaps that row for the bulk actions on a highlighted bar: AND / OR /
   Link… over any number of filters of one file, or Merge N files (or a short
-  hint when the selection can't be combined). Without a keyboard, long-press a node → **Select multiple** puts the tree in a select mode with a checkbox per row and a **Done** button. It sits alongside the
+  hint when the selection can't be combined). An AND/OR node's conditions can be changed later with right-click → **Edit conditions…** (swap, add, remove, AND↔OR). Without a keyboard, long-press a node → **Select multiple** puts the tree in a select mode with a checkbox per row and a **Done** button. It sits alongside the
   tree's existing right-click menu (Copy/Cut/Save filter… stay there). Any node can be **renamed** (`F2` or right-click → "Rename…") with
   a human-readable label
   shown in the tree instead of the raw pattern — handy for turning

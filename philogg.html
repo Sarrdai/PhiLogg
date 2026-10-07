@@ -3157,11 +3157,11 @@
   }
 
   /* ---------- Link dialog ---------- */
-  #linkDialog, #gapDialog{
+  #linkDialog, #gapDialog, #andOrDialog{
     position:fixed; inset:0; z-index:75; background:rgba(16,19,26,.72); backdrop-filter:blur(2px);
     display:flex; align-items:center; justify-content:center;
   }
-  #linkDialog.hidden, #gapDialog.hidden{display:none;}
+  #linkDialog.hidden, #gapDialog.hidden, #andOrDialog.hidden{display:none;}
   .link-dialog-card{
     width:min(400px, 88%); background:var(--bg-elevated); border:1px solid var(--border);
     border-radius:12px; padding:20px 22px; box-shadow:0 20px 45px rgba(0,0,0,.5);
@@ -3213,7 +3213,7 @@
 
   /* Link dialog v2: Start / End side rows, the sentence between them, the
      "Same" key chips, the "▾" filter picker menu. */
-  #linkDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
+  #linkDialog .link-dialog-card, #andOrDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
   .link-side{display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;}
   .link-side-lab{flex:0 0 40px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
   .link-side input.link-side-input{flex:1 1 auto; min-width:0; width:auto;}
@@ -3234,6 +3234,8 @@
   .link-sentence input[type="number"]{width:48px !important; margin:0;}
   .link-sentence .link-hop-ord{margin-left:-4px;}
   .link-dialog-card .link-side input.link-side-input[type="text"]:not(.stepper-value){width:auto; flex:1 1 0;}
+  #andOrDialog .link-sentence{margin-left:0; margin-bottom:10px;}
+  #andOrDialog .link-addstep{margin-bottom:10px;}
   .link-seg{display:inline-flex; border:1px solid var(--border); border-radius:6px; overflow:hidden;}
   .link-seg button{font:inherit; font-size:11.5px; font-weight:600; border:0; background:transparent; color:var(--text-secondary); padding:0 10px; height:26px; cursor:pointer;}
   .link-seg button + button{border-left:1px solid var(--border);}
@@ -5151,8 +5153,9 @@
   body.layout-phone .link-dialog-card .link-dialog-actions{position:sticky; bottom:0; z-index:2; background:var(--bg-elevated); margin-top:8px; padding:10px 0 16px;}
   /* Link dialog v2 on the phone: a full-screen sheet (the sticky action row above stays
      pinned to its bottom), 40px controls, rows stacked under their labels. */
-  body.layout-phone #linkDialog{align-items:stretch; justify-content:stretch;}
+  body.layout-phone #linkDialog, body.layout-phone #andOrDialog{align-items:stretch; justify-content:stretch;}
   body.layout-phone #linkDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
+  body.layout-phone #andOrDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
   body.layout-phone .link-side{flex-wrap:wrap;}
   body.layout-phone .link-side-lab{flex:1 0 100%;}
   body.layout-phone .link-sentence, body.layout-phone .link-addstep{margin-left:0;}
@@ -6534,6 +6537,33 @@
         <button type="button" id="linkDialogCreate" class="btn-mini">Create</button>
       </div>
       <div id="linkSideMenu" class="link-side-menu hidden" role="menu"></div>
+    </div>
+  </div>
+
+  <!-- Edit conditions (FEATURE_BACKLOG.md #58): the baked conditions of an AND/OR combiner node,
+       rows JS-built into #andOrSides by renderAndOrRows. -->
+  <div id="andOrDialog" class="hidden">
+    <div class="link-dialog-card link-dialog-card-wide" id="andOrDialogCard">
+      <div class="link-dialog-title">Edit conditions</div>
+      <div class="link-sentence">Match
+        <span class="link-seg" id="andOrMode" role="group" aria-label="Combine with">
+          <button type="button" data-mode="and" aria-pressed="true">all (AND)</button><button type="button" data-mode="or" aria-pressed="false">any (OR)</button>
+        </span> of these conditions</div>
+      <div id="andOrSides"></div>
+      <button type="button" class="link-addstep" id="andOrAddStep">+ Add condition</button>
+      <div id="andOrHint" class="link-hint hidden"></div>
+      <div id="andOrResults" class="live-results hidden">
+        <div class="filter-results-head">
+          <div id="andOrLiveMatch" class="live-match"></div>
+          <svg id="andOrResultsMinimap" class="live-minimap hidden" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        </div>
+        <div id="andOrResultsSamples" class="live-samples"></div>
+      </div>
+      <div class="link-dialog-actions">
+        <button type="button" id="andOrDialogCancel" class="btn-mini-secondary">Cancel</button>
+        <button type="button" id="andOrDialogSave" class="btn-mini">Save</button>
+      </div>
+      <div id="andOrSideMenu" class="link-side-menu hidden" role="menu"></div>
     </div>
   </div>
 
@@ -14778,6 +14808,39 @@ function updateLinkNodeWithUndo(nodeId, chain) {
   return true;
 }
 
+// Auto name of an AND/OR node: its conditions joined with " ∧ " / " ∨ ". createAndOrNode names
+// each part by the source node's display name, which is the same text as bakedConditionName for a
+// text/level/idset filter but not for a time filter (parent-relative timestamps), so the check for
+// "still auto" accepts either wording.
+function andOrAutoNames(mode, bakedList, parentId) {
+  const sym = mode === "and" ? " ∧ " : " ∨ ";
+  const viaNode = b => {
+    if (b.label) return b.label;
+    if (b.filterType === "after") return "≥ " + formatTsFor(parentId, b.value);
+    if (b.filterType === "before") return "≤ " + formatTsFor(parentId, b.value);
+    if (b.filterType === "timerange") return timeRangeFilterName(b.value, parentId);
+    return bakedConditionName(b);
+  };
+  return [bakedList.map(bakedConditionName).join(sym), bakedList.map(viaNode).join(sym)];
+}
+
+// Replaces an AND/OR node's operator and baked conditions (the "Edit conditions" dialog's Save) as
+// ONE undo step. The name is regenerated only while it is still the auto-generated one; a renamed
+// node keeps its name. node.baked is assigned a NEW array (never mutated in place).
+function updateAndOrNodeWithUndo(nodeId, mode, bakedList) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter" || (node.filterType !== "and" && node.filterType !== "or")) return false;
+  if ((mode !== "and" && mode !== "or") || !isBakedList(bakedList)) return false;
+  withFieldEditUndo(nodeId, n => {
+    const auto = !n.label && Array.isArray(n.baked) && andOrAutoNames(n.filterType, n.baked, n.parentId).includes(n.name);
+    n.baked = bakedList.map(cloneBaked);
+    n.filterType = mode;
+    if (auto) n.name = andOrAutoNames(mode, n.baked, n.parentId)[1];
+    invalidateNodeSubtreeCaches(nodeId);
+  });
+  return true;
+}
+
 // Correlation-key suggestions for a start/end pair of entry lists: every
 // `name=` field (\w+) present in the first message of both sides becomes a
 // candidate, key pattern "name=[*:word]" (the value token up to the next
@@ -17351,6 +17414,7 @@ function captureNodeFields(node, withViews) {
     assertions: node.assertions ? JSON.parse(JSON.stringify(node.assertions)) : undefined,
     columnRenames: node.columnRenames ? JSON.parse(JSON.stringify(node.columnRenames)) : undefined,
     link: node.filterType === "link" ? captureLinkFields(node) : undefined,
+    combine: (node.filterType === "and" || node.filterType === "or") && Array.isArray(node.baked) ? { baked: cloneBaked(node.baked) } : undefined,
   };
 }
 // A link node's own definition (updateLinkNodeWithUndo's edit), as fresh copies.
@@ -17370,6 +17434,10 @@ function applyNodeFields(node, fields) {
     node.linkDirection = fields.link.linkDirection; node.linkN = fields.link.linkN;
     node.linkOrderEnforced = fields.link.linkOrderEnforced; node.linkExclusive = fields.link.linkExclusive;
     copyLinkOptions(fields.link, node);
+    invalidateNodeSubtreeCaches(node.id);
+  }
+  if (fields.combine) {
+    node.baked = cloneBaked(fields.combine.baked);
     invalidateNodeSubtreeCaches(node.id);
   }
   if (fields.views) {
@@ -21088,6 +21156,11 @@ function editFilterNode(nodeId) {
   }
   if (node.filterType === "gap") {
     openGapDialog(node.id, true);
+    return true;
+  }
+  if (node.filterType === "and" || node.filterType === "or") {
+    if (!hasBakedSides(node)) return false;
+    openAndOrDialog(node.id);
     return true;
   }
   if (node.filterType === "link") {
@@ -30192,6 +30265,7 @@ function closeEscapeOverlays() {
   closeCsvExportDialog();
   closeExportDialog();
   closeLinkDialog();
+  closeAndOrDialog();
   closeGapDialog();
   closeContextDialog();
   closeTimeRangeDialog();
@@ -30215,7 +30289,7 @@ function closeEscapeOverlays() {
 // itself closes.
 function anyEscapeOverlayOpen() {
   const overlayIds = [
-    "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "gapDialog",
+    "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "andOrDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog", "pruneDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "colorPickerPopup", "contextMenu",
@@ -42095,8 +42169,8 @@ function describeSidebarToolbarActions() {
   const target = node ? node.id : null;
   const actions = [
     { action: "rename", label: "Rename…", short: "Rename", icon: ICON_RENAME, target, disabled: !filter },
-    { action: "edit", label: ft === "link" ? "Edit link…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target,
-      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || (ft === "link" && hasBakedSides(filter)))) },
+    { action: "edit", label: ft === "link" ? "Edit link…" : (ft === "and" || ft === "or") ? "Edit conditions…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target,
+      disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || ((ft === "link" || ft === "and" || ft === "or") && hasBakedSides(filter)))) },
     { action: "linkWith", label: "Link with…", short: "Link", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
     { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", short: "NOT", icon: ICON_INVERT, target,
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
@@ -42253,6 +42327,8 @@ function openTreeContextMenu(ev, clickedId) {
         buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       } else if (node.filterType === "link" && hasBakedSides(node)) {
         buckets.edit.push({ action: "edit", label: "Edit link…", icon: ICON_EDIT });
+      } else if ((node.filterType === "and" || node.filterType === "or") && hasBakedSides(node)) {
+        buckets.edit.push({ action: "edit", label: "Edit conditions…", icon: ICON_EDIT });
       }
       if (isLinkBakeableNode(node)) buckets.edit.push({ action: "linkWith", label: "Link with…", icon: ICON_LINK });
       if (canPruneToNode(node)) buckets.edit.push({ action: "pruneToNode", label: "Prune file to this result…", icon: ICON_FILE_PRUNED });
@@ -43107,6 +43183,203 @@ function commitLinkDialog() {
 linkDialogCreateBtn.addEventListener("click", commitLinkDialog);
 linkDialog.addEventListener("keydown", ev => {
   if (ev.key === "Enter" && ev.target.matches("input") && !linkDialogCreateBtn.disabled) { ev.preventDefault(); commitLinkDialog(); }
+});
+
+
+/* ===================== Edit conditions dialog (FEATURE_BACKLOG.md #58) =====================
+   Edits the baked conditions of an AND/OR node in place (the tree's "Edit conditions…"): the
+   operator, then one row per condition — a text field for a plain text condition, otherwise a chip
+   (✕ turns it into an empty text field), "▾" picks an existing filter (baked as a COPY, never a
+   reference). Built on the Link dialog's row classes. Save = updateAndOrNodeWithUndo. */
+
+const andOrDialog = el("#andOrDialog");
+const andOrDialogCard = el("#andOrDialogCard");
+const andOrSidesEl = el("#andOrSides");
+const andOrSaveBtn = el("#andOrDialogSave");
+const andOrHint = el("#andOrHint");
+const andOrSideMenu = el("#andOrSideMenu");
+const andOrResultsTarget = { root: el("#andOrResults"), match: el("#andOrLiveMatch"), minimap: el("#andOrResultsMinimap"), samples: el("#andOrResultsSamples") };
+let andOrPreviewTimer = null;
+// null while closed, else { nodeId, rootId, mode, rows: [side] } with the Link dialog's side shapes
+// ({kind: "text", text} | {kind: "baked", baked, label}).
+let andOrDlg = null;
+
+function openAndOrDialog(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!node || node.type !== "filter" || (node.filterType !== "and" && node.filterType !== "or") || !hasBakedSides(node)) return;
+  andOrDlg = {
+    nodeId, rootId: getRootFileId(nodeId), mode: node.filterType,
+    rows: node.baked.map(b => linkSideFromSpec({ baked: b })),
+  };
+  clearLiveResults(andOrResultsTarget);
+  andOrHint.classList.add("hidden");
+  closeAndOrSideMenu();
+  renderAndOrRows();
+  updateAndOrModeButtons();
+  andOrDialog.classList.remove("hidden");
+  andOrDialogCard.scrollTop = 0;
+  updateAndOrPreview();
+  const first = andOrSidesEl.querySelector("input.link-side-input");
+  if (first) first.focus();
+}
+function closeAndOrDialog() {
+  andOrDialog.classList.add("hidden");
+  clearTimeout(andOrPreviewTimer);
+  closeAndOrSideMenu();
+  andOrDlg = null;
+}
+function andOrRowLabel(i) { return i === 0 ? "" : andOrDlg.mode === "and" ? "AND" : "OR"; }
+function updateAndOrModeButtons() {
+  andOrDialog.querySelectorAll("#andOrMode button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.mode === andOrDlg.mode)));
+  andOrSidesEl.querySelectorAll("[data-row]").forEach(r => { r.querySelector(".link-side-lab").textContent = andOrRowLabel(+r.dataset.row); });
+}
+function renderAndOrRows() {
+  if (!andOrDlg) return;
+  let html = "";
+  andOrDlg.rows.forEach((row, i) => {
+    html += '<div class="link-side" data-row="' + i + '"><span class="link-side-lab">' + andOrRowLabel(i) + "</span>";
+    if (row.kind === "text") {
+      html += '<input type="text" class="link-side-input" value="' + escapeHtml(row.text) + '" placeholder="type a pattern, or ▾ pick a filter" spellcheck="false" autocomplete="off" aria-label="Condition ' + (i + 1) + '">';
+    } else {
+      html += '<span class="link-side-chip" title="' + escapeHtml(row.label) + '"><span>' + escapeHtml(row.label) + '</span><button type="button" class="link-side-btn" data-row-clear title="Type a pattern instead" aria-label="Type a pattern instead">✕</button></span>';
+    }
+    html += '<button type="button" class="link-side-btn" data-row-pick title="Use an existing filter instead" aria-label="Pick an existing filter">▾</button>';
+    if (andOrDlg.rows.length >= 3) html += '<button type="button" class="link-side-btn" data-row-remove title="Remove this condition" aria-label="Remove this condition">✕</button>';
+    html += "</div>";
+  });
+  andOrSidesEl.innerHTML = html;
+}
+// The conditions as they would be saved: empty text rows dropped.
+function andOrBakedList() {
+  return andOrDlg.rows.map(linkSideBaked).filter(Boolean);
+}
+
+andOrSidesEl.addEventListener("input", ev => {
+  if (!andOrDlg) return;
+  const input = ev.target.closest("input.link-side-input");
+  if (input) andOrDlg.rows[+input.closest("[data-row]").dataset.row].text = input.value;
+  updateAndOrPreview();
+});
+andOrSidesEl.addEventListener("click", ev => {
+  if (!andOrDlg) return;
+  const rowEl = ev.target.closest("[data-row]");
+  if (!rowEl) return;
+  const i = +rowEl.dataset.row;
+  if (ev.target.closest("[data-row-pick]")) { ev.stopPropagation(); openAndOrSideMenu(i, ev.target.closest("[data-row-pick]")); return; }
+  if (ev.target.closest("[data-row-clear]")) {
+    ev.stopPropagation();
+    andOrDlg.rows[i] = { kind: "text", text: "" };
+    renderAndOrRows();
+    andOrSidesEl.querySelector('[data-row="' + i + '"] input').focus();
+    updateAndOrPreview();
+    return;
+  }
+  if (ev.target.closest("[data-row-remove]")) {
+    ev.stopPropagation();
+    andOrDlg.rows.splice(i, 1);
+    renderAndOrRows();
+    updateAndOrPreview();
+  }
+});
+andOrDialog.querySelector("#andOrMode").addEventListener("click", ev => {
+  const b = ev.target.closest("button[data-mode]");
+  if (!b || !andOrDlg) return;
+  ev.stopPropagation();
+  andOrDlg.mode = b.dataset.mode;
+  updateAndOrModeButtons();
+  updateAndOrPreview();
+});
+el("#andOrAddStep").addEventListener("click", ev => {
+  if (!andOrDlg) return;
+  ev.stopPropagation();
+  andOrDlg.rows.push({ kind: "text", text: "" });
+  renderAndOrRows();
+  const inputs = andOrSidesEl.querySelectorAll("input.link-side-input");
+  if (inputs.length) inputs[inputs.length - 1].focus();
+  updateAndOrPreview();
+});
+
+// The "▾" popup of one row: the root file's filters canBeCombined accepts (not the node being edited).
+function closeAndOrSideMenu() { andOrSideMenu.classList.add("hidden"); andOrSideMenu.innerHTML = ""; }
+function openAndOrSideMenu(rowIndex, anchor) {
+  const nodes = [];
+  const walk = id => { const n = state.nodes[id]; if (!n) return; if (n.type === "filter" && n.id !== andOrDlg.nodeId && canBeCombined(n)) nodes.push(n); n.children.forEach(walk); };
+  state.nodes[andOrDlg.rootId].children.forEach(walk);
+  let html = nodes.map(n => '<div class="ctx-item" role="menuitem" data-pick-node="' + n.id + '" title="' + escapeHtml(nodeDisplayName(n)) + '">' + escapeHtml(nodeDisplayName(n)) + "</div>").join("");
+  if (!nodes.length) html = '<div class="ctx-note">No other filters in this file yet</div>';
+  html += '<div class="ctx-sep"></div><div class="ctx-item" role="menuitem" data-pick-text="1">Type a pattern</div>';
+  andOrSideMenu.innerHTML = html;
+  andOrSideMenu.dataset.row = String(rowIndex);
+  andOrSideMenu.classList.remove("hidden");
+  const cr = andOrDialogCard.getBoundingClientRect(), ar = anchor.getBoundingClientRect();
+  const left = Math.max(8, Math.min(ar.right - cr.left - andOrSideMenu.offsetWidth, cr.width - andOrSideMenu.offsetWidth - 8));
+  andOrSideMenu.style.left = left + "px";
+  andOrSideMenu.style.top = (ar.bottom - cr.top + andOrDialogCard.scrollTop + 4) + "px";
+}
+andOrSideMenu.addEventListener("contextmenu", ev => ev.preventDefault());
+andOrSideMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest(".ctx-item");
+  if (!item || !andOrDlg) return;
+  const i = +andOrSideMenu.dataset.row;
+  if (item.dataset.pickNode) {
+    const n = state.nodes[item.dataset.pickNode];
+    if (n && canBeCombined(n)) {
+      const baked = bakeNodeCondition(n); // a baked COPY: later edits/deletes of the source don't touch the combiner
+      andOrDlg.rows[i] = { kind: "baked", baked, label: bakedConditionName(baked) };
+    }
+  } else {
+    andOrDlg.rows[i] = { kind: "text", text: "" };
+  }
+  closeAndOrSideMenu();
+  renderAndOrRows();
+  if (item.dataset.pickText) andOrSidesEl.querySelector('[data-row="' + i + '"] input').focus();
+  updateAndOrPreview();
+});
+
+// Save follows the rows at once; the live results are debounced like the Link dialog's.
+function updateAndOrPreview() {
+  clearTimeout(andOrPreviewTimer);
+  if (andOrDlg) andOrSaveBtn.disabled = andOrBakedList().length < 2;
+  andOrPreviewTimer = setTimeout(runAndOrPreview, 150);
+}
+function runAndOrPreview() {
+  if (!andOrDlg || andOrDialog.classList.contains("hidden")) return;
+  const list = andOrBakedList();
+  andOrSaveBtn.disabled = list.length < 2;
+  andOrHint.classList.add("hidden");
+  const node = state.nodes[andOrDlg.nodeId];
+  if (list.length < 2 || !node) {
+    clearLiveResults(andOrResultsTarget);
+    andOrHint.textContent = "Needs at least 2 conditions";
+    andOrHint.classList.remove("hidden", "warn");
+    return;
+  }
+  const pool = getEntries(node.parentId);
+  // inverted honored like getEntries would
+  const hits = evaluateFilterCondition({ filterType: andOrDlg.mode, baked: list, inverted: !!node.inverted }, pool, andOrDlg.rootId, null);
+  renderLiveResults(hits, pool, null, !!node.inverted, null, andOrResultsTarget);
+}
+andOrDialog.addEventListener("click", ev => {
+  if (ev.target === andOrDialog) { closeAndOrDialog(); return; }
+  if (!andOrSideMenu.classList.contains("hidden") && !andOrSideMenu.contains(ev.target)) closeAndOrSideMenu();
+});
+el("#andOrDialogCancel").addEventListener("click", closeAndOrDialog);
+function commitAndOrDialog() {
+  if (!andOrDlg) return;
+  const list = andOrBakedList();
+  if (list.length < 2) return;
+  const nodeId = andOrDlg.nodeId;
+  if (updateAndOrNodeWithUndo(nodeId, andOrDlg.mode, list)) {
+    state.activeId = nodeId;
+    revealFilteredView();
+  }
+  closeAndOrDialog();
+  render();
+}
+andOrSaveBtn.addEventListener("click", commitAndOrDialog);
+andOrDialog.addEventListener("keydown", ev => {
+  if (ev.key === "Enter" && ev.target.matches("input") && !andOrSaveBtn.disabled) { ev.preventDefault(); commitAndOrDialog(); }
 });
 
 
@@ -44673,10 +44946,10 @@ function bakedConditionName(baked) {
 // visible sibling filter nodes (one per condition) (same filterType/fields), inserted right
 // after the original node's own position. Purely ADDITIVE: the original node
 // keeps its id, its bakedA/bakedB and its result — its condition already
-// works, so there is nothing to replace. Unpack exists only to make the two
-// building blocks visible and editable again as ordinary siblings, since
-// there's no dedicated "edit a combiner's two sides" UI (see
-// FEATURE_BACKLOG.md #58). Returns the original node's own id (still
+// works, so there is nothing to replace. Unpack makes the building blocks
+// visible and editable again as ordinary siblings; changing the combiner's
+// own conditions in place is the "Edit conditions…" dialog (openAndOrDialog)
+// and "Edit link…" (openLinkDialog). Returns the original node's own id (still
 // active), or null if nodeId isn't an and/or/link node with baked sides.
 function unpackAndOrLinkNode(nodeId) {
   const node = state.nodes[nodeId];
