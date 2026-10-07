@@ -85,7 +85,7 @@ await withApp(async (w, d, T) => {
   // A .ctx-sep must actually separate the edit and clipboard groups (not
   // just "somewhere in the menu") — the item right after "invert" (edit
   // group's now-last item) up to "copy" (clipboard's first) is exactly one sep.
-  const invertIdx = indexOf("mute"); // Mute follows Invert (NOT) as the edit group's last item
+  const invertIdx = indexOf("alert"); // "Alert on new matches" (#87) follows Mute, which follows Invert (NOT), as the edit group's last item
   assert(children[invertIdx + 1].classList.contains("ctx-sep") && children[invertIdx + 2].dataset.action === "copy",
     "a .ctx-sep sits directly between the edit group's last item and the clipboard group's first");
 

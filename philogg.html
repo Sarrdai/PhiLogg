@@ -1001,6 +1001,11 @@
   .tree-row.muted .tree-label{text-decoration:line-through; text-decoration-color:var(--text-tertiary); color:var(--text-tertiary);}
   .tree-row.muted .tree-icon,.tree-row.muted .tree-swatch{opacity:.45;}
   .tree-row.muted .tree-count{font-style:italic;}
+  /* Alert nodes (#87): bell before the count, "+N" badge while matches arrived unseen. */
+  .tree-alert-bell{display:inline-flex; flex:0 0 auto; align-items:center; color:var(--level-warn); margin-left:4px;}
+  .tree-alert-bell .icon{width:13px; height:13px; stroke:currentColor; fill:none; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
+  .tree-row.muted .tree-alert-bell{opacity:.5;}
+  .tree-alert-badge{flex:0 0 auto; margin-left:4px; padding:0 5px; border-radius:8px; font:700 10.5px/16px var(--font-mono); background:var(--level-warn); color:var(--level-warn-on);}
   /* Bugfix (this session, person-reported: couldn't close an opened non-log
      ZIP/folder-watch entry at all): renderZipEntryRow's placeholder row
      reuses .tree-del as-is (see its own comment) but is NOT a .tree-row —
@@ -4369,6 +4374,10 @@
   #copyToast[data-kind="download"]::before{content:"\2193"; color:var(--accent-strong);}
   #copyToast[data-kind="neutral"]{border-color:var(--border);}
   #copyToast[data-kind="neutral"]::before{content:"\00d7"; color:var(--text-tertiary);}
+  #copyToast[data-kind="alert"]{border-color:var(--level-warn);}
+  #copyToast[data-kind="alert"]::before{content:""; width:14px; height:14px; background:var(--level-warn);
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11.5V7a4 4 0 0 1 8 0v4.5l1.25 1.25H2.75z'/%3E%3Cpath d='M6.5 14a1.6 1.6 0 0 0 3 0'/%3E%3C/svg%3E") center/contain no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 11.5V7a4 4 0 0 1 8 0v4.5l1.25 1.25H2.75z'/%3E%3Cpath d='M6.5 14a1.6 1.6 0 0 0 3 0'/%3E%3C/svg%3E") center/contain no-repeat;}
   #copyToast[data-kind="error"]{border-color:var(--level-error);}
   #copyToast[data-kind="error"]::before{content:"!"; color:var(--level-error);}
   #copyToast .toast-text{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -5394,6 +5403,7 @@
     <symbol id="i-filter" viewBox="0 0 16 16"><path d="M2.5 3h11L9.25 8.25v4.25l-2.5 1.25V8.25Z"/></symbol>
     <symbol id="i-rename" viewBox="0 0 16 16"><path d="M2.75 13.25h2.75l7-7-2.75-2.75-7 7ZM8.75 4.75l2.5 2.5"/></symbol>
     <symbol id="i-edit" viewBox="0 0 16 16"><path d="M2.5 4.5h6M12 4.5h1.5M2.5 11.5h1.5M7.5 11.5h6"/><circle cx="10.25" cy="4.5" r="1.75"/><circle cx="5.75" cy="11.5" r="1.75"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 16 16"><path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1.25 1.25H2.75z"/><path d="M6.5 14a1.6 1.6 0 0 0 3 0"/></symbol>
     <symbol id="i-eye" viewBox="0 0 16 16"><path d="M1.75 8s2.25-4.25 6.25-4.25S14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8Z"/><circle cx="8" cy="8" r="1.9"/></symbol>
     <symbol id="i-eye-off" viewBox="0 0 16 16"><path d="M1.75 8s2.25-4.25 6.25-4.25S14.25 8 14.25 8 12 12.25 8 12.25 1.75 8 1.75 8Z"/><path d="M2.5 13.5l11-11"/></symbol>
     <symbol id="i-not" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"/><path d="M4.25 11.75l7.5-7.5"/></symbol>
@@ -8015,6 +8025,7 @@ const ICON_SAVE = icon("save");
 const ICON_FULLSCREEN = icon("fullscreen");
 const ICON_LOAD = icon("load");
 const ICON_INVERT = icon("not");
+const ICON_BELL = icon("bell");
 const ICON_EYE = icon("eye");
 const ICON_EYE_OFF = icon("eye-off");
 const ICON_TARGET = icon("target");
@@ -14277,6 +14288,7 @@ const FILTER_NODE_FIELDS = [
   { key: "highlightColor", kind: "scalar" },
   { key: "label", kind: "scalar" },
   { key: "muted", kind: "flag" },
+  { key: "alert", kind: "flag" },
   { key: "selectionFilter", kind: "flag" },
   { key: "selectionOrdinal", kind: "scalar" },
 ];
@@ -16553,6 +16565,7 @@ function captureNodeFields(node) {
   return {
     filterType: node.filterType, value: node.value, inverted: !!node.inverted, name: node.name,
     muted: !!node.muted,
+    alert: !!node.alert,
     label: node.label,
     ignoredColumns: node.ignoredColumns ? node.ignoredColumns.slice() : undefined,
     caseSensitive: !!node.caseSensitive,
@@ -16586,6 +16599,7 @@ function applyNodeFields(node, fields) {
   node.filterType = fields.filterType; node.value = fields.value;
   node.inverted = fields.inverted; node.name = fields.name;
   if (fields.muted) node.muted = true; else delete node.muted;
+  if (fields.alert) node.alert = true; else delete node.alert;
   if (fields.label) node.label = fields.label; else delete node.label;
   if (fields.ignoredColumns) node.ignoredColumns = fields.ignoredColumns.slice(); else delete node.ignoredColumns;
   if (fields.caseSensitive) node.caseSensitive = true; else delete node.caseSensitive;
@@ -16645,6 +16659,18 @@ function toggleMuteWithUndo(ids, forceMuted) {
   if (!entries.length) return;
   const label = target ? "mute" : "unmute";
   pushUndo(entries.length === 1 ? { ...entries[0], label } : { kind: "batch", actions: entries, label });
+}
+
+// "Alert on new matches" (FEATURE_BACKLOG #87): a flag on a filter node. While
+// its root file is tailed, new matches raise a tree badge + a rate-limited
+// toast (onTailChange -> detectAlertGrowth). Switching it on/off resets the
+// node's runtime counters (_alertUnseen); undo goes through captureNodeFields.
+function toggleAlertWithUndo(nodeId) {
+  const node = state.nodes[nodeId];
+  if (!isMutableNode(node)) return;
+  withFieldEditUndo(nodeId, n => { if (n.alert) delete n.alert; else n.alert = true; });
+  node._alertUnseen = 0;
+  delete alertPending[nodeId];
 }
 
 // Sets/clears a node's custom display label (FEATURE_BACKLOG.md #12 — "Rename
@@ -19343,6 +19369,9 @@ function buildLevelNodeLabelContent(node) {
 }
 
 function renderTree() {
+  // Seen: the active node never carries an unseen-alert badge (#87), whichever path activated it.
+  const activeNode = state.activeId && state.nodes[state.activeId];
+  if (activeNode && activeNode._alertUnseen) activeNode._alertUnseen = 0;
   renderFolderWatchList();
   renderZipList();
   treeEl.innerHTML = "";
@@ -20452,6 +20481,14 @@ function renderNode(id, depth, opts) {
     if (hitBadge) row.appendChild(hitBadge);
   }
   if (node.muted) count.title = "Muted — passes all " + ownCount.toLocaleString("de-DE") + " entries through";
+  if (node.type === "filter" && node.alert) {
+    const bell = document.createElement("span");
+    bell.className = "tree-alert-bell";
+    bell.innerHTML = ICON_BELL;
+    bell.title = node.muted ? "Alert on new matches (silent while muted)" : "Alert on new matches while tailing";
+    row.appendChild(bell);
+    if (node._alertUnseen > 0) row.appendChild(buildAlertBadge(node._alertUnseen));
+  }
   row.appendChild(count);
 
   // The row-count percentage BAR (a little track+fill line) was removed
@@ -35246,7 +35283,94 @@ async function tailTick() {
   }
 }
 
+// ---- Alert on new matches while tailing (FEATURE_BACKLOG #87) ----
+// Baseline = the alert node's own cached result length BEFORE this tick's
+// invalidation (that cache is exactly the pre-append result). No cache, a
+// rotated root (not in appendedFrom) or a muted node -> no baseline -> silent,
+// so definition edits/undo (which drop the cache) can never raise an alert;
+// only tail growth can. detectAlertGrowth re-fills the cache for the next tick.
+const ALERT_TOAST_MIN_MS = 5000;
+const alertPending = {}; // node id -> new matches not yet announced in a toast
+let alertLastToast = 0;
+let alertToastTimer = null;
+function alertBaselines(changedRootIds, appendedFrom) {
+  const out = new Map();
+  for (const id of Object.keys(state.nodes)) {
+    const n = state.nodes[id];
+    if (!n.alert || n.type !== "filter" || n.muted || n.locked || !Array.isArray(n._cache)) continue;
+    const root = getRootFileId(id);
+    if (changedRootIds.includes(root) && appendedFrom && appendedFrom.has(root)) out.set(id, n._cache.length);
+  }
+  return out;
+}
+function buildAlertBadge(n) {
+  const b = document.createElement("span");
+  b.className = "tree-alert-badge";
+  b.textContent = "+" + n;
+  b.title = n + " new match" + (n === 1 ? "" : "es") + " since you last looked";
+  return b;
+}
+// Targeted row update (no render(): render-scope rule) for one alert node.
+function updateAlertRow(id) {
+  const node = state.nodes[id];
+  const row = node && document.querySelector('.tree-row[data-node-id="' + id + '"]');
+  if (!row) return;
+  const old = row.querySelector(".tree-alert-badge");
+  if (old) old.remove();
+  const count = row.querySelector(".tree-count");
+  if (node._alertUnseen > 0) row.insertBefore(buildAlertBadge(node._alertUnseen), count);
+  if (count) count.textContent = getEntries(id).length.toLocaleString("de-DE");
+}
+function detectAlertGrowth(baselines) {
+  baselines.forEach((before, id) => {
+    const node = state.nodes[id];
+    if (!node) return;
+    const delta = getEntries(id).length - before; // also re-fills the cache for the next tick
+    if (delta <= 0) return;
+    if (id === state.activeId && state.tailFollow) return; // the user is watching it
+    node._alertUnseen = (node._alertUnseen || 0) + delta;
+    alertPending[id] = (alertPending[id] || 0) + delta;
+  });
+  if (Object.keys(alertPending).length) maybeShowAlertToast();
+}
+function maybeShowAlertToast() {
+  const ids = Object.keys(alertPending).filter(id => state.nodes[id]);
+  if (!ids.length) { for (const k in alertPending) delete alertPending[k]; return; }
+  const wait = ALERT_TOAST_MIN_MS - (Date.now() - alertLastToast);
+  if (wait > 0) {
+    clearTimeout(alertToastTimer);
+    alertToastTimer = setTimeout(maybeShowAlertToast, wait);
+    return;
+  }
+  ids.sort((a, b) => alertPending[b] - alertPending[a]);
+  const nameOf = id => nodeDisplayName(state.nodes[id]);
+  const n0 = alertPending[ids[0]];
+  const text = ids.length === 1
+    ? nameOf(ids[0]) + ": " + n0 + " new match" + (n0 === 1 ? "" : "es")
+    : ids.length + " alerts: " + ids.map(id => nameOf(id) + " +" + alertPending[id]).join(", ");
+  const target = ids[0];
+  for (const k in alertPending) delete alertPending[k];
+  alertLastToast = Date.now();
+  showCopyToast(text, { kind: "alert", label: "Show", duration: 6000, onClick: () => showAlertNode(target) });
+}
+// Toast "Show": activates the node and jumps to its newest entry, follow on.
+function showAlertNode(id) {
+  const node = state.nodes[id];
+  if (!node) return;
+  commitCurrentNavPosition();
+  state.activeId = id;
+  state.tailFollow = true;
+  pendingTableScroll = "bottom";
+  pendingHighlightScroll = "bottom";
+  render();
+  pendingTableScroll = null;
+  pendingHighlightScroll = null;
+  updateTailJumpBtn();
+  pushNavWaypoint();
+}
+
 function onTailChange(changedRootIds, appendedFrom) {
+  const alertBase = alertBaselines(changedRootIds, appendedFrom);
   invalidateCachesForRoots(changedRootIds, appendedFrom);
   // Grown or rotated: the File the node was loaded from no longer matches
   // its entries, so its cache record goes back to rebuilt text.
@@ -35266,6 +35390,8 @@ function onTailChange(changedRootIds, appendedFrom) {
   // row's own count, no render()" case (see its own comment, load ticks).
   if (!affectsActiveView) {
     changedRootIds.forEach(id => updateLoadRowProgress(id));
+    detectAlertGrowth(alertBase);
+    alertBase.forEach((_, id) => updateAlertRow(id));
     return;
   }
   // Follow only moves the view when the file behind the *current* view grew.
@@ -35276,6 +35402,7 @@ function onTailChange(changedRootIds, appendedFrom) {
   const followThisChange = state.tailFollow;
   pendingTableScroll = followThisChange ? "bottom" : "keep";
   pendingHighlightScroll = followThisChange ? "bottom" : "keep";
+  detectAlertGrowth(alertBase); // before render(): the badge is drawn with the row, and the active node's own is cleared by renderTree
   render();
   pendingTableScroll = null; // in case renderTable wasn't reached (extract/link view active)
   pendingHighlightScroll = null; // in case renderHighlightView wasn't reached (extract view active)
@@ -40648,6 +40775,12 @@ function openTreeContextMenu(ev, clickedId) {
         label: node.muted ? "Unmute" : "Mute",
         icon: node.muted ? ICON_EYE_OFF : ICON_EYE,
       });
+      // Alert on new matches while tailing (FEATURE_BACKLOG #87).
+      buckets.edit.push({
+        action: "alert",
+        label: node.alert ? "Stop alerting" : "Alert on new matches",
+        icon: ICON_BELL,
+      });
       // "Time context…"/"Count context…" — CREATION menu items removed
       // (FEATURE_BACKLOG.md #79, person-confirmed, this session): there is
       // now no user-facing way to create a fresh context/countContext node,
@@ -40844,6 +40977,13 @@ treeContextMenu.addEventListener("click", ev => {
   if (action === "mute" && !(treeSelectionIds().size >= 2 && treeSelectionIds().has(treeCtxId))) {
     if (treeCtxId && state.nodes[treeCtxId]) {
       toggleMuteWithUndo([treeCtxId]);
+      render();
+    }
+    return;
+  }
+  if (action === "alert") {
+    if (treeCtxId && state.nodes[treeCtxId]) {
+      toggleAlertWithUndo(treeCtxId);
       render();
     }
     return;
@@ -43049,6 +43189,7 @@ function materializeFilterNode(sn, parentId, refMap) {
   if (sn.highlightColor && typeof sn.highlightColor === "string") node.highlightColor = sn.highlightColor;
   if (sn.label && typeof sn.label === "string") node.label = sn.label;
   if (sn.muted === true) node.muted = true;
+  if (sn.alert === true) node.alert = true;
   if (sn.selectionFilter) node.selectionFilter = true;
   if (Number.isInteger(sn.selectionOrdinal) && sn.selectionOrdinal > 0) node.selectionOrdinal = sn.selectionOrdinal;
   if (sn.baked) node.baked = sn.baked;
