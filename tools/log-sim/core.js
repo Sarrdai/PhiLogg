@@ -512,15 +512,16 @@
     return [formatTs(e.ts, "yyyy-MM-dd HH:mm:ss,SSS") + "\t" + e.level + '\t"' + e.thread + '"\t' + e.file + "\tline " + e.line + "\t[" + e.method + ']\t"' + oneLine(e.msg) + '"'].concat(e.cont || []);
   }
 
-  // --ts-offset <Z|±HH:MM>: the ISO timestamps (syslog, JSON Lines) are written
+  // --ts-offset <Z|±HH:MM|±HHMM>: the ISO timestamps (syslog, JSON Lines) are written
   // as that zone's wall clock plus its offset suffix — the same instant as
   // the unshifted time, which syslog has always written as UTC ("…Z").
   // "Z" and "+00:00" are the same instant, only the suffix differs.
   function parseTsOffset(s) {
     if (s == null || s === "") return null;
-    const m = /^(?:(Z)|([+-])(\d{2}):(\d{2}))$/.exec(String(s).trim());
-    if (!m || (m[3] !== undefined && (+m[3] > 23 || +m[4] > 59))) throw new Error("Invalid --ts-offset '" + s + "' (expected Z or +HH:MM / -HH:MM)");
-    return m[1] ? { minutes: 0, label: "Z" } : { minutes: (m[2] === "-" ? -1 : 1) * (+m[3] * 60 + +m[4]), label: m[2] + m[3] + ":" + m[4] };
+    const m = /^(?:(Z)|([+-])(\d{2})(:?)(\d{2}))$/.exec(String(s).trim());
+    if (!m || (m[3] !== undefined && (+m[3] > 23 || +m[5] > 59))) throw new Error("Invalid --ts-offset '" + s + "' (expected Z or +HH:MM / +HHMM / -HH:MM)");
+    // The suffix keeps the shape it was given in: +05:30 or +0530.
+    return m[1] ? { minutes: 0, label: "Z" } : { minutes: (m[2] === "-" ? -1 : 1) * (+m[3] * 60 + +m[5]), label: m[2] + m[3] + m[4] + m[5] };
   }
   function formatTsOffset(ms, fmt, g) {
     const off = g && g.tsOffset;

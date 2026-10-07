@@ -23,7 +23,9 @@
 //! "more"). Per entry: `raw`'s start as a delta from the previous entry's
 //! `raw` start, `raw`'s length; then `(start - rawStart, len)` for `tsRaw,
 //! level, thread, location, method, message`; then
-//! `flags = hasMsgOpenQuote | customFieldCount << 1`; the open quote's
+//! `flags = hasMsgOpenQuote | tsAbsolute << 1 | customFieldCount << 2`
+//! (`tsAbsolute`: the entry's `ts` is already an absolute UTC instant — its
+//! timestamp carried an `XXX` offset — so the page must not localize it); the open quote's
 //! `(start - rawStart, len)` if present; then per custom field
 //! `(name, value)` the same way. Every string is written after its entry's
 //! `raw` or inside it, so every relative start is non-negative — and small,
@@ -86,7 +88,7 @@ pub fn encode_batch(entries: &[Entry], fraction: f64) -> Vec<u8> {
         for f in [&e.ts_raw, &e.level, &e.thread, &e.location, &e.method, &e.message] {
             w.field(f, &e.raw, ascii, raw_at);
         }
-        varint(&mut w.table, u32::from(e.msg_open_quote.is_some()) | (e.fields.len() as u32) << 1);
+        varint(&mut w.table, u32::from(e.msg_open_quote.is_some()) | u32::from(e.ts_absolute) << 1 | (e.fields.len() as u32) << 2);
         if let Some(q) = &e.msg_open_quote {
             w.field(q, &e.raw, ascii, raw_at);
         }
@@ -164,11 +166,12 @@ pub fn decode_batch(bytes: &[u8]) -> (f64, Vec<Entry>) {
             *f = at(raw_at + s, l);
         }
         let flags = next();
+        e.ts_absolute = flags & 2 == 2;
         if flags & 1 == 1 {
             let (s, l) = (next(), next());
             e.msg_open_quote = Some(at(raw_at + s, l));
         }
-        for _ in 0..flags >> 1 {
+        for _ in 0..flags >> 2 {
             let (ks, kl) = (next(), next());
             let (vs, vl) = (next(), next());
             e.fields.push((at(raw_at + ks, kl), at(raw_at + vs, vl)));

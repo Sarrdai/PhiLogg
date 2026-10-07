@@ -27,7 +27,7 @@ Content
                            windows-1251 | utf-8 (default); characters the encoding
                            lacks become "?" (the Encoding setting of a PhiLogg format)
       --ts-offset <off>    syslog / jsonl / mixed: write timestamps with a UTC offset
-                           suffix, Z or +HH:MM / -HH:MM, the wall clock shifted so
+                           suffix, Z or +HH:MM / +HHMM / -HH:MM, the wall clock shifted so
                            the instant is unchanged (default: syslog "Z", jsonl none)
 
 Amount (per file)

@@ -126,8 +126,8 @@ column names from a name list (`-s tuples,basic`).
   (folder watch); `--layout parallel` gives each file its own service over
   the same time range (merge, Sources), `--skew 1500` shifts each file's
   clock by 1.5 s per index (per-file clock offset).
-- `--ts-offset Z|+05:30|-05:00` (syslog, jsonl, mixed): writes the ISO
-  timestamps as that zone's wall clock plus the offset suffix — the same
+- `--ts-offset Z|+05:30|+0530|-05:00` (syslog, jsonl, mixed): writes the ISO
+  timestamps (the compact `+0530` shape is kept as given) as that zone's wall clock plus the offset suffix — the same
   instant as without the option (the simulator's clock is read as UTC).
   Default: syslog `…Z`, jsonl no suffix. The syslog format definition reads
   the offset (`tsFormat` ends in `XXX`), so a file with any offset parses to

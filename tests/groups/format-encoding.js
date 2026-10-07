@@ -225,38 +225,24 @@ group("format-encoding");
   }, { beforeParse: withRealCp1252 });
 
   await withApp(async (w, d, T) => {
-    section("format-encoding g. Native route is skipped unless the file decodes as UTF-8");
+    section("format-encoding g. The native route takes every encoding: the label goes to Rust, no head read here");
     await waitForFormatConfig(T);
-    const calls = [];
+    const specs = [];
     const bridge = { getPathForFile: () => null, revealPath: () => {}, revealLocalUrl: () => {}, listSystemFonts: () => Promise.resolve([]),
-      parseLogFile: async () => { calls.push(1); return { size: 1 }; } };
+      parseLogFile: async (url, spec) => { specs.push(spec); return { size: 1 }; } };
     w.philogg = bridge;
-    const cp = enc(TXT, "windows-1252"), u8 = Buffer.from(TXT, "utf8");
-    let bytes = u8;
-    w.fetch = async (url, opts) => {
-      const range = opts && opts.headers && opts.headers.Range;
-      const m = range && /bytes=(\d+)-(\d+)/.exec(range);
-      const buf = m ? bytes.subarray(+m[1], +m[2] + 1) : bytes;
-      const ab = buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength);
-      if (m && m[1] === "0" && m[2] === "0") return { ok: true, status: 206, headers: { get: () => "bytes 0-0/" + bytes.length }, arrayBuffer: async () => ab };
-      return { ok: true, status: m ? 206 : 200, headers: { get: () => null }, arrayBuffer: async () => ab };
-    };
-    const tryNative = async (label) => {
-      calls.length = 0;
+    const FILE_ENCODING_HEAD_BYTES_T = 64 * 1024;
+    const ranges = [];
+    w.fetch = async (url, opts) => { ranges.push(opts && opts.headers && opts.headers.Range); throw new Error("not served"); };
+    for (const label of ["", "utf-8", "windows-1252", "iso-8859-15", "windows-1250", "windows-1251"]) {
+      specs.length = 0;
       const node = w.createFileNode("n.log"); node.formatId = "fmt-default";
       setEnc(T, w, label);
-      let err = null;
-      try { await w.parseLocalFileNatively("philogg://local/1/n.log", node, () => {}); } catch (e) { err = e; }
+      await w.parseLocalFileNatively("philogg://local/1/n.log", node, () => {});
+      assert(specs.length === 1 && specs[0].encoding === label, "encoding " + JSON.stringify(label) + " is part of the native spec, got " + JSON.stringify(specs[0] && specs[0].encoding));
       w.deleteNode(node.id);
-      return { native: calls.length === 1, err };
-    };
-    assert((await tryNative("")).native, "Auto + a UTF-8 file: native");
-    bytes = cp;
-    const auto1252 = await tryNative("");
-    assert(!auto1252.native && /encoding/.test(auto1252.err && auto1252.err.message), "Auto + a Windows-1252 file: falls back to the JS parser");
-    assert(!(await tryNative("windows-1250")).native, "an explicit Windows-1250: JS parser");
-    bytes = u8;
-    assert((await tryNative("utf-8")).native, "explicit UTF-8: native");
+    }
+    assert(!ranges.some(r => r === "bytes=0-" + (FILE_ENCODING_HEAD_BYTES_T - 1)), "Rust resolves Auto itself: no 64 KiB head read from the page, got " + ranges.join(","));
     setEnc(T, w, "");
   }, { beforeParse: withRealCp1252 });
 

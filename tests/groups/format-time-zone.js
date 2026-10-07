@@ -111,7 +111,8 @@ group("format-time-zone");
     assert(w.makeZoneLocalizer("America/New_York")(naive) === naive + 5 * HOUR && w.makeZoneLocalizer("")(naive) === localOf(naive), "IANA and local");
     assert(w.makeZoneLocalizer("Not/AZone")(naive) === localOf(naive), "an unknown zone degrades to local time");
     const specOf = tsFormat => w.nativeFormatSpec({ id: "n", mode: "regex", regex: "^(?<ts>\\S+) (?<level>\\w+) (?<message>.*)$", tsFormat });
-    assert(specOf("yyyy-MM-ddTHH:mm:ss.SSSXXX") === null, "an XXX format is not handed to the native parser (yet)");
+    const xs = specOf("yyyy-MM-ddTHH:mm:ss.SSSXXX");
+    assert(xs && xs.dateOrder.includes("XXX") && xs.dateRegex.includes("Z|[+-]"), "an XXX format is handed to the native parser (Rust reads the offset)");
     assert(specOf("yyyy-MM-ddTHH:mm:ss.SSS") && specOf("yyyy-MM-ddTHH:mm:ss.SSS").dateOrder.length === 7, "a format without XXX still is");
     // Worker source: same ts as the main-thread compile, for all three parser shapes.
     await logsimRegister(w, T, "jsonl", "fmt-sim-jsonl");
@@ -185,6 +186,25 @@ group("format-time-zone");
     await w.parseLocalFileNatively("philogg://local/1/sim-bracket.log", node, () => {});
     assert(bridge.spec && bridge.spec.builtin === false && node.entries.length === 120, "parsed through the native route, got " + node.entries.length);
     assert(node.entries.every((e, i) => e.ts === br.gen[i].ts + 5 * HOUR), "naive timestamps become instants in America/New_York");
+
+    // An XXX offset made Rust's ts absolute already (batch flag tsAbsolute): the format's zone must not touch it.
+    const golden = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-parse-golden.json"), "utf8"));
+    const batches = JSON.parse(fs.readFileSync(path.join(__dirname, "fixtures", "native-batch-golden.json"), "utf8"));
+    await logsimRegister(w, T, "syslog", "fmt-sim-syslog");
+    T.state.logFormats.find(f => f.id === "fmt-sim-syslog").timeZone = "America/New_York";
+    w.invalidateFormatCompileCache();
+    for (const name of ["xxx-offset-z", "xxx-offset-plus-0530-colon", "xxx-offset-mixed"]) {
+      const want = golden.cases.find(x => x.name === name).entries.map(e => e.ts);
+      const batch = w.decodeNativeBatch(w.Uint8Array.from(Buffer.from(batches[name], "base64")).buffer);
+      assert(batch.abs && batch.abs.length === want.length && [...batch.abs].every(v => v === 1), name + ": decodeNativeBatch reports every entry as absolute");
+      w.philogg = { parseLogFile: async (url, spec, onMessage) => { onMessage(w.Uint8Array.from(Buffer.from(batches[name], "base64")).buffer); return { size: 1 }; } };
+      const sn = w.createFileNode(name + ".log");
+      sn.formatId = "fmt-sim-syslog";
+      await w.parseLocalFileNatively("philogg://local/2/" + name + ".log", sn, () => {});
+      assert(sn.entries.length === want.length && sn.entries.every((e, i) => e.ts === want[i]), name + ": absolute ts kept despite the format's America/New_York zone");
+    }
+    const plain = w.decodeNativeBatch(bytes.buffer);
+    assert(plain.abs === null, "a batch without offsets has no absolute flags");
   });
 
   await withApp(async (w, d, T) => {

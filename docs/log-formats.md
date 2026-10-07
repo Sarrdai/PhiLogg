@@ -67,10 +67,10 @@ format: saved in its IndexedDB record, in the export JSON
 (`LOG_FORMAT_EXPORT_FIELDS`), accepted by the import (missing = default);
 the compiled-format cache is cleared on save, so an edit takes effect at
 once. A meta format has no zone of its own — its target formats do. Native
-parsing (desktop): a non-local zone without `XXX` is handled by the page's
-localizer (Rust still sends naive stamps); until the Rust side reads `XXX`,
-`nativeFormatSpec` returns `null` for such a format and the JS parser takes
-the file. The dialog side (field, status line, detection) is in
+parsing (desktop): a timestamp without `XXX` comes back from Rust naive and the
+page's localizer applies the format's zone; an `XXX` offset is applied by Rust
+itself (`naive - offset`, flagged `tsAbsolute` in the batch so the page leaves
+it alone) — `docs/desktop.md` → "Native parsing". The dialog side (field, status line, detection) is in
 `docs/ui-and-views.md` → "Format dialog". GROUP format-time-zone.
 
 **Text encoding (`encoding`, FEATURE_BACKLOG.md #85).** A format says how its
@@ -97,10 +97,10 @@ the same File), folder watch (`loadFolderFile` → `readParseFileNode`),
 label)`, label on `node.tail.encoding`), `loadUrlIntoTree` and the session
 file's `url` records (`decodeLogBytes`), the session-cache restore and
 `reopenLocalPathForRestore` (`readBlobText`), and the format dialog's "Open
-file…"/drop (below). Native parsing (desktop): Rust decodes UTF-8 only for
-now, so `parseLocalFileNatively` throws — the JS route takes the file — when
-the format has an explicit non-UTF-8 encoding, or under Auto when the file's
-head (a 64 KiB ranged read) doesn't decode as UTF-8. The dialog's Encoding
+file…"/drop (below). Native parsing (desktop): `nativeFormatSpec` carries the
+format's `encoding` label and Rust decodes the file itself with the same rules
+(BOM, explicit label, Auto = UTF-8 else Windows-1252 from the first 64 KiB,
+via `encoding_rs`), so the page reads no head for it. The dialog's Encoding
 select (`#fwzEncoding`, example-lines toolbar; the Meta kind has its own
 `#formatEditMetaEncoding`; one shared value) re-decodes example lines that came
 from a file (`fwz.fileSource` holds the head bytes), pasted text stays. The

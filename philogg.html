@@ -11723,10 +11723,11 @@ function compileFormatRegex(fmt) {
 // meta-format, which is split in JS before any per-line parsing.
 function nativeFormatSpec(fmt) {
   if (fmt.mode === "meta" || fmt.mode === "plaintext" || fmt.mode === "json") return null;
-  if (fmt.builtin && !fmt.edited) return { builtin: true, regex: null, dateRegex: null, dateOrder: [], wrapQuote: "" };
+  // `encoding`: Rust decodes the file itself and resolves Auto (BOM, else
+  // UTF-8 if the head is valid, else windows-1252) like resolveFileEncoding.
+  const encoding = typeof fmt.encoding === "string" ? fmt.encoding : "";
+  if (fmt.builtin && !fmt.edited) return { builtin: true, regex: null, dateRegex: null, dateOrder: [], wrapQuote: "", encoding };
   const { dateFrag, regex } = compileFormatRegex(fmt);
-  // Rust can't read an XXX offset yet (step 3 of #86): the JS parser takes it.
-  if (dateFrag && dateFrag.offsetIdx >= 0) return null;
   const real = dateFrag && !dateFrag.free ? dateFrag : null;
   return {
     builtin: false,
@@ -11734,6 +11735,7 @@ function nativeFormatSpec(fmt) {
     dateRegex: real ? real.matchRegex.source : null,
     dateOrder: real ? real.order.slice() : [],
     wrapQuote: regex ? messageWrapQuote(regex.source) : "",
+    encoding,
   };
 }
 
@@ -12606,7 +12608,7 @@ function encodeEntryBatch(entries, fraction) {
     field(e.location, raw, rawAt); field(e.method, raw, rawAt); field(e.message, raw, rawAt);
     const keys = Object.keys(e.fields);
     const open = e.msgOpenQuote !== undefined;
-    varint((open ? 1 : 0) | keys.length << 1);
+    varint((open ? 1 : 0) | keys.length << 2); // bit 1 (ts is absolute) is native-only
     if (open) field(e.msgOpenQuote, raw, rawAt);
     for (const k of keys) { field(k, raw, rawAt); field(e.fields[k], raw, rawAt); }
   }
@@ -12643,7 +12645,9 @@ function canParseNatively(handle) {
 // (applyFormatMatch/parseHeaderLine), minus id/formatId. The whole batch's
 // strings arrive as ONE UTF-8 buffer — decoded once, every field a
 // substring of it, located by varint offsets relative to the entry's raw;
-// ts stays as sent (naive from Rust, see makeNaiveTsLocalizer). `strings`:
+// ts stays as sent (naive from Rust, see makeNaiveTsLocalizer) — except where
+// `abs[i]` is set (flags bit 1: the timestamp carried an XXX offset, ts is
+// already absolute; `abs` is null when no entry has it). `strings`:
 // the string section already as a JS string, in place of the buffer's
 // UTF-8 tail — how the log-parse worker sends it (encodeEntryBatch).
 const nativeBatchDecoder = typeof TextDecoder === "function" ? new TextDecoder("utf-8", { ignoreBOM: true }) : null;
@@ -12656,6 +12660,7 @@ function decodeNativeBatch(buf, strings) {
   const tab = new Uint8Array(buf, 16 + count * 8, tableLen);
   const S = strings !== undefined ? strings : nativeBatchDecoder.decode(new Uint8Array(buf, 16 + count * 8 + tableLen));
   const entries = new Array(count);
+  let abs = null;
   let p = 0;
   let rawAt = 0;
   const next = () => {
@@ -12673,7 +12678,8 @@ function decodeNativeBatch(buf, strings) {
       method: str(), message: str(), raw, fields: EMPTY_ENTRY_FIELDS };
     const flags = next();
     if (flags & 1) e.msgOpenQuote = str();
-    const k = flags >>> 1;
+    if (flags & 2) (abs || (abs = new Uint8Array(count)))[i] = 1;
+    const k = flags >>> 2;
     if (k) {
       const fields = {};
       for (let j = 0; j < k; j++) { const name = str(); fields[name] = str(); }
@@ -12681,7 +12687,7 @@ function decodeNativeBatch(buf, strings) {
     }
     entries[i] = e;
   }
-  return { fraction, entries };
+  return { fraction, entries, abs };
 }
 
 // Resolves with { size } (bytes read — the tail offset) once every entry is
@@ -12692,19 +12698,6 @@ async function parseLocalFileNatively(url, node, onFraction) {
   const fmt = findLogFormat(formatId) || DEFAULT_LOG_FORMAT;
   const spec = nativeFormatSpec(fmt);
   if (!spec) throw new Error("meta-format or plain text");
-  // Rust decodes UTF-8 only (until it learns the encodings, step 3 of #85): a
-  // file that would not decode as UTF-8 here goes to the JS route. An explicit
-  // non-UTF-8 setting needs no look; Auto reads the head (64 KiB, ranged).
-  const encSetting = fileEncodingForFormatId(formatId);
-  if (encSetting && encSetting !== "utf-8") throw new Error("encoding handled by the JS parser");
-  if (!encSetting) {
-    let label = "utf-8";
-    try {
-      const head = new Uint8Array(await (await getPartialReadFile(urlTailHandle(url))).slice(0, FILE_ENCODING_HEAD_BYTES).arrayBuffer());
-      if (!isGzipBytes(head)) label = resolveFileEncoding(head, ""); // a gzip file is Rust's to reject
-    } catch (e) { /* head unreadable: Rust reports the real error */ }
-    if (label !== "utf-8") throw new Error("encoding handled by the JS parser");
-  }
   // No compiled date format: Date.parse, which only this engine can answer.
   const freeDate = !spec.builtin && !spec.dateRegex;
   // The format's own time zone (naive from Rust -> the real instant).
@@ -12722,10 +12715,13 @@ async function parseLocalFileNatively(url, node, onFraction) {
       // An ArrayBuffer is an entry batch; anything else a {fraction} progress note.
       const batch = msg instanceof ArrayBuffer ? decodeNativeBatch(msg) : msg;
       if (batch.entries) {
-        for (const e of batch.entries) {
+        const abs = batch.abs;
+        for (let i = 0; i < batch.entries.length; i++) {
+          const e = batch.entries[i];
           e.id = uid("e");
+          // An XXX offset made ts absolute on the Rust side already.
           e.ts = freeDate ? (e.tsRaw ? parseFreeTimestamp(e.tsRaw.trim(), freeZone) : NaN)
-            : isNaN(e.ts) ? NaN : localize(e.ts);
+            : isNaN(e.ts) ? NaN : abs && abs[i] ? e.ts : localize(e.ts);
           e.formatId = formatId;
           entryIndex[e.id] = e;
           node.entries.push(e);
