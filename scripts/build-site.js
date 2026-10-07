@@ -11,6 +11,9 @@
 //   app/LICENSE.md        the license, shipped beside every build
 //   app/tour/...          the guided tour from the log simulator
 //                         (welcome.log, welcome.session.json, demo/app.log, ...)
+//   app/formats/...       the hosted app's provided formats: index.json plus
+//                         welcome.logformat.json (the tour's format, copied from
+//                         the tour output) and examples/formats/*.logformat.json
 //   .nojekyll             tell GitHub Pages not to run Jekyll
 //
 // Version stamping is NOT done here: the workflow runs
@@ -42,6 +45,14 @@ function buildSite(outDir) {
   fs.copyFileSync(path.join(ROOT, "LICENSE.md"), path.join(out, "app", "LICENSE.md"));
 
   execFileSync(process.execPath, [path.join(ROOT, "tools", "log-sim", "cli.js"), "-f", "tour", "-o", path.join(out, "app", "tour") + path.sep, "-q"], { stdio: "inherit" });
+
+  // Provided formats (philogg.html fetches formats/index.json at boot).
+  const formatsDir = path.join(out, "app", "formats");
+  fs.mkdirSync(formatsDir, { recursive: true });
+  fs.copyFileSync(path.join(out, "app", "tour", "welcome.logformat.json"), path.join(formatsDir, "welcome.logformat.json"));
+  const examples = fs.readdirSync(path.join(ROOT, "examples", "formats")).filter(f => f.endsWith(".logformat.json")).sort();
+  for (const f of examples) fs.copyFileSync(path.join(ROOT, "examples", "formats", f), path.join(formatsDir, f));
+  fs.writeFileSync(path.join(formatsDir, "index.json"), JSON.stringify(["welcome.logformat.json", ...examples], null, 2) + "\n");
 
   fs.writeFileSync(path.join(out, ".nojekyll"), "");
   return out;

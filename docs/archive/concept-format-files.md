@@ -10,9 +10,11 @@
 - [Open decisions](#open-decisions)
 <!-- /toc -->
 
-Status: proposal, not implemented (FEATURE_BACKLOG.md #105). Decisions still open are listed at the
-end. Once implemented, the current state moves into `docs/log-formats.md`
-and this file into `docs/archive/`.
+Status: **implemented 2026-10-07** for the hosted and desktop runtimes
+(FEATURE_BACKLOG.md #105, phases 1 and 2; meta formats by target name are in
+too). The current state is described in `docs/log-formats.md` → "Provided
+formats" and `docs/desktop.md`; this file keeps the reasoning. Still open as
+a later phase: the `file://` script bundle (phase 3 below).
 
 ## Goal
 
@@ -105,13 +107,12 @@ notice in Settings → Log Formats (name and reason), never a boot error.
    rules, `ensureSessionLogFormat`) plus the hosted route; homepage ships
    the welcome format; demo seeds move to `examples/formats/`.
 2. Desktop folders (Rust reader + init-script injection).
-3. `file://` script bundle and meta formats by target name.
+3. `file://` script bundle (later). Meta formats by target name shipped with phase 1.
 
 ## Open decisions
 
-1. Which runtimes matter first: desktop + hosted (proposed), or also
-   `file://` from the start?
-2. Read-only layer (proposed) or a one-time import into the user's own
-   formats on first sight (simpler, but later file updates would not
-   arrive)?
-3. Remove the three demo formats from the HTML (proposed)?
+All three were settled by the person on 2026-10-07:
+
+1. Runtimes: desktop + hosted first; `file://` stays a later phase.
+2. A read-only layer (not a one-time import).
+3. The three demo formats left the HTML (`examples/formats/`).

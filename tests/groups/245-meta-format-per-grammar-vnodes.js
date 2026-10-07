@@ -29,4 +29,4 @@ await withApp(async (w, d, T) => {
   const filt = w.createFilterNode(appVnodeId, "text", "a0");
   assert(w.getEntries(filt.id).length === 1, "a filter can be added directly onto the vnode and works normally");
   assert(appVnode.children.includes(filt.id), "the vnode has its own independent filter tree, untouched by the merge");
-});
+}, { demoFormats: true });

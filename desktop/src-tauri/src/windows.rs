@@ -5,7 +5,7 @@ use std::sync::atomic::Ordering;
 use tauri::{AppHandle, DragDropEvent, Manager, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 
 use crate::state::AppState;
-use crate::{commands, inject, protocol, settings};
+use crate::{commands, formats, inject, protocol, settings};
 
 pub const MAIN: &str = "main";
 /// The LLM assistant's chat window (`desktop/chat.html`).
@@ -90,7 +90,8 @@ pub fn create_main(app: &AppHandle, file: Option<PathBuf>) {
     };
 
     let stored = settings::read(&state.settings_path);
-    let script = inject::script(&stored, &state.nonce, protocol::base_url());
+    let provided = formats::read_all(&settings::config_dir(app), settings::portable_dir().is_some());
+    let script = inject::script(&stored, &state.nonce, protocol::base_url(), &provided);
 
     let mut builder = WebviewWindowBuilder::new(app, MAIN, WebviewUrl::CustomProtocol(url))
         .title("PhiLogg")

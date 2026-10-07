@@ -275,6 +275,11 @@ async function withApp(run, opts = {}) {
       };
       // opts.beforeParse(window): anything else a group needs in place before
       // the page's script runs (a global jsdom lacks, say).
+      // No provided formats by default (the page would otherwise fetch
+      // formats/index.json at boot, which groups that count or assert on
+      // their own fetch calls would see). GROUP provided-formats deletes
+      // this in its beforeParse to test the hosted fetch route.
+      window.__PHILOGG_PROVIDED_FORMATS__ = [];
       if (opts.beforeParse) opts.beforeParse(window);
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });
@@ -416,6 +421,7 @@ async function withApp(run, opts = {}) {
       // The boot restore promise (restoreSessionFromCache + restoreWatchedFolders),
       // awaited by every "reload" group instead of polling state.rootIds.
       get bootRestore() { return bootRestore; },
+      get formatConfigReady() { return formatConfigReady; },
       // The filter-node copy table (GROUP filter-node-carriers checks it against its fixtures).
       get filterNodeFields() { return FILTER_NODE_FIELDS; },
       get navHistory() { return navHistory; },
@@ -454,6 +460,7 @@ async function withApp(run, opts = {}) {
   document.body.appendChild(bridge);
 
   try {
+    if (opts.demoFormats) await seedDemoFormats(window, window.__t);
     await run(window, document, window.__t);
   } finally {
     // Bugfix (this session): restoreSessionFromCache's own `finally` (and
@@ -473,6 +480,30 @@ async function withApp(run, opts = {}) {
     closedWindowErrors.add(window.Error.prototype); // see unhandledRejection above
     window.close();
   }
+}
+
+// The three example formats (examples/formats/*.logformat.json: the old demo
+// seeds, now provided files) as ordinary OWN formats under their historic ids
+// fmt-demo-app / fmt-demo-syslog / fmt-demo-app-syslog-meta, for the groups
+// that test meta formats and the format dialogs on editable, deletable
+// formats. Opt in with withApp(fn, { demoFormats: true }).
+async function seedDemoFormats(w, T) {
+  await T.formatConfigReady;
+  const dir = path.join(__dirname, "..", "examples", "formats");
+  const read = f => JSON.parse(fs.readFileSync(path.join(dir, f), "utf8")).logFormat;
+  const app = read("app-log.logformat.json"), sys = read("syslog-rfc5424.logformat.json"), meta = read("app-syslog-meta.logformat.json");
+  const defs = [
+    Object.assign({ id: "fmt-demo-app", builtin: false, edited: false, createdAt: 0 }, app),
+    Object.assign({ id: "fmt-demo-syslog", builtin: false, edited: false, createdAt: 0 }, sys),
+    { id: "fmt-demo-app-syslog-meta", name: meta.name, mode: "meta", targetFormatIds: ["fmt-demo-app", "fmt-demo-syslog"], builtin: false, edited: false, createdAt: 0 },
+  ];
+  for (const d of defs) {
+    const fmt = w.JSON.parse(JSON.stringify(d));
+    await w.saveLogFormat(fmt);
+    T.state.logFormats.push(fmt);
+  }
+  w.renderFormatList();
+  w.renderFormatRuleFormatOptions();
 }
 
 function fireClick(el, w) { el.dispatchEvent(new w.MouseEvent("click", { bubbles: true, cancelable: true })); }

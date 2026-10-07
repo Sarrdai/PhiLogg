@@ -6,6 +6,7 @@
 - [Version stamp and release-only comment stripping](#version-stamp-and-release-only-comment-stripping)
 - [What it does](#what-it-does)
 - [Persistent data](#persistent-data)
+- [Provided log formats](#provided-log-formats)
 - [Portable build (Windows)](#portable-build-windows)
 - [License and third-party notices](#license-and-third-party-notices)
 - [Saving files](#saving-files)
@@ -109,6 +110,23 @@ Explorer context-menu integration").
 The session cache (IndexedDB) lives in the webview's own storage for this
 app, wherever the platform puts it; the tray's "Clear Cache" wipes it and
 reloads.
+
+## Provided log formats
+
+`*.logformat.json` files in a `formats/` folder are loaded at every start as
+read-only "Provided" formats (Settings → Log Formats; **Duplicate** makes an
+editable copy). Two folders are read, a per-user file replacing a
+machine-wide one of the same name:
+
+- machine-wide: `formats\` next to the executable (the install folder; an
+  installer, a software-distribution package or a copy script drops company
+  formats there),
+- per user: `formats/` inside the config folder above (`%APPDATA%\PhiLogg\formats`, ...).
+
+The portable build uses `formats\` next to the exe only. Changes are picked
+up on the next start. No default `formats/` folder ships with the installer;
+`examples/formats/` in the repository has ready-made files. A file that is
+not a valid format is skipped with a notice in Settings → Log Formats.
 
 ## Portable build (Windows)
 

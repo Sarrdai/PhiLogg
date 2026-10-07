@@ -38,7 +38,7 @@ await withApp(async (w, d, T) => {
   assert(appLines.some(l => l.includes("ImportError: cannot import name")), "traceback-style continuation (lines 15-17) lands in the app stream");
   assert(syslogLines.includes("1 step executed in 1234us. Parallel factor 0.5."),
     "the bare continuation line right after a syslog header (line 25) lands in the syslog stream, not the app stream (it joins the most recently matched stream)");
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("232b. loadMetaFormatText end to end: the reference sample parses into the right entry counts per grammar and auto-merges chronologically");
@@ -73,4 +73,4 @@ await withApp(async (w, d, T) => {
   const syslogEntries = merged.entries.filter(e => e.formatId === "fmt-demo-syslog");
   assert(appEntries.length === 7 && syslogEntries.length === 5, "each entry is stamped with the format it was actually parsed under");
   assert(syslogEntries.every(e => !isNaN(e.ts)), "the 6-digit-fraction syslog timestamps all parse to valid numbers (see the SSS date-token fix)");
-});
+}, { demoFormats: true });

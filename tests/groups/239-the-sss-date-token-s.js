@@ -5,8 +5,8 @@
 /* ============================================================
    GROUP 239 — the SSS date-token's arbitrary-digit-count fix
    (DATE_TOKEN_FRAG/parseTimestampGeneric, a prerequisite for format B's
-   6-digit fractional seconds) and the 3 demo formats loadFormatConfig
-   seeds for FEATURE_BACKLOG.md #81's reference case.
+   6-digit fractional seconds) and that the 3 former demo seeds no longer
+   exist in the page (they are examples/formats files now).
    ============================================================ */
 group(239);
 await withApp(async (w, d, T) => {
@@ -24,24 +24,13 @@ await withApp(async (w, d, T) => {
   assert(!isNaN(t6), "a 6-digit (microsecond) fraction now matches at all — used to fail outright (SSS was hardcoded to 1-3 digits)");
   assert(new Date(t6).getMilliseconds() === 711, "...and truncates to millisecond resolution correctly (711324us -> 711ms), not literal 711324ms (which would overflow ~11 minutes into the wrong second), got " + new Date(t6).getMilliseconds());
   assert(new Date(t6).getSeconds() === 6, "sanity: the overflow bug this fixes would have pushed this into a different second entirely, got seconds=" + new Date(t6).getSeconds());
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
-  section("239b. loadFormatConfig seeds the 3 concrete formats from FEATURE_BACKLOG.md #81's reference case, idempotently, non-builtin, no FormatRule");
+  section("239b. The old demo seeds are gone from the HTML: a fresh boot has only the builtin default, a reboot re-seeds nothing (they are provided files now, GROUP provided-formats)");
   await waitForFormatConfig(T);
-  const app = T.state.logFormats.find(f => f.id === "fmt-demo-app");
-  const syslog = T.state.logFormats.find(f => f.id === "fmt-demo-syslog");
-  const meta = T.state.logFormats.find(f => f.id === "fmt-demo-app-syslog-meta");
-  assert(app && app.mode === "regex" && !app.builtin, "the app-log format is seeded, regex mode, not builtin (freely editable/deletable)");
-  assert(syslog && syslog.mode === "regex" && !syslog.builtin, "the syslog format is seeded, regex mode, not builtin");
-  assert(meta && meta.mode === "meta" && !meta.builtin, "the meta-format is seeded, meta mode, not builtin");
-  assert(meta.targetFormatIds.join(",") === "fmt-demo-app,fmt-demo-syslog", "the meta-format targets the other two, in order, got " + meta.targetFormatIds.join(","));
-  assert(!T.state.formatRules.some(r => r.formatId === "fmt-demo-app" || r.formatId === "fmt-demo-syslog" || r.formatId === "fmt-demo-app-syslog-meta"),
-    "none of the 3 seeded formats has a FormatRule (filename glob) — they stay dormant until the person adds one by hand");
-
-  // Idempotency: a second loadFormatConfig() call (simulating a second boot
-  // against the same store) must not duplicate the seeded records.
+  assert(T.state.logFormats.map(f => f.id).join(",") === "fmt-default", "only fmt-default exists on a fresh boot, got " + T.state.logFormats.map(f => f.id).join(","));
+  assert(!("DEMO_SEED_FORMATS" in w), "no DEMO_SEED_FORMATS left in the page");
   await w.loadFormatConfig();
-  assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app").length === 1, "re-seeding is idempotent — no duplicate app-log format");
-  assert(T.state.logFormats.filter(f => f.id === "fmt-demo-app-syslog-meta").length === 1, "...nor duplicate meta-format");
+  assert(T.state.logFormats.length === 1 && T.state.formatRules.length === 0, "a second loadFormatConfig seeds nothing either");
 });

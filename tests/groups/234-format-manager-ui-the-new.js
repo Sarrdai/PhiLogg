@@ -55,7 +55,7 @@ await withApp(async (w, d, T) => {
 
   const row = [...d.querySelectorAll("#formatList .filter-library-row")].find(r => r.textContent.includes("Test meta"));
   assert(row && row.querySelector(".filter-library-row-meta").textContent.includes("Meta · 2 targets"), "the format list shows the meta target count");
-});
+}, { demoFormats: true });
 
 await withApp(async (w, d, T) => {
   section("234b. removeLogFormat: a format still referenced as a meta-format's target can't be deleted until the meta-format is");
@@ -69,4 +69,4 @@ await withApp(async (w, d, T) => {
   assert(!T.state.logFormats.some(f => f.id === "fmt-demo-app-syslog-meta"), "the meta-format itself is removable like any other non-builtin format");
   await w.removeLogFormat("fmt-demo-app");
   assert(!T.state.logFormats.some(f => f.id === "fmt-demo-app"), "now that no meta-format targets it, fmt-demo-app can be removed");
-});
+}, { demoFormats: true });

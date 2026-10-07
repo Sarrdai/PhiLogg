@@ -1,0 +1,19 @@
+{
+  "format": "philogg-log-format",
+  "version": 1,
+  "savedAt": "2026-10-07T00:00:00.000Z",
+  "logFormat": {
+    "name": "Syslog (RFC 5424)",
+    "mode": "regex",
+    "pattern": "",
+    "regex": "^<\\d+>1 (?<ts>\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d+) \\S+ \\S+ (?<thread>\\d+) \\S+ \\[log@\\d+ filename='(?<location>[^']+)'[^\\]]*\\] (?<message>.*)$",
+    "tsFormat": "yyyy-MM-ddTHH:mm:ss.SSS",
+    "levels": [
+      "ERROR",
+      "WARN",
+      "INFO",
+      "DEBUG"
+    ]
+  },
+  "fileNamePatterns": []
+}
