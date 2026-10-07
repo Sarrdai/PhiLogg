@@ -36,16 +36,23 @@ decision) or delegate the next step only if
 
 | Work | Estimate (five-hour window) |
 |---|---|
-| Bug fix with known diagnosis (Sonnet package or subagent) | 10 % |
-| Mockup up to the user's decision (Opus) | 15 % |
-| Feature implementation after the decision, incl. verification + `finish` | 25 % |
+| Bug fix with known diagnosis, or a small feature with a clear brief (Sonnet package or subagent) | 5–10 % |
+| Mockup up to the user's decision (Opus) | 5–10 % |
+| Feature implementation after the decision, incl. verification + `finish` | 10–15 % |
 | Waking a session idle > 1 h | + 2 % per 100k tokens of its context (`get_session` → `context_usage.used_tokens`) |
 
+- Measured in round 3/4 (2026-10-07): package sessions with a clear brief
+  3–7 %, a subagent package in the orchestrator 6–19 %. Plan with the
+  upper end of a range.
 - Parallel packages add up. Doesn't fit: start only what fits (smallest
   or most urgent first) and hold the rest.
 - Held work: one `send_later` at `five_hour.resetsAt` + 5 min, and one
   line to the user: what is held and when it continues. A held mockup
   decision is passed on at that check-in, not before.
+- Announce the plan on the session board: each session sets
+  `planned_5h` in its own entry to its remaining estimate for the current
+  five-hour window (`session-board.md`), so the board shows the forecast
+  next to the measured fill.
 - Record `utilization` at a package's start and at its report; tell the
   user the difference in the round summary. Estimates that are off by
   more than half in two rounds get corrected in this table (process

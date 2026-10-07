@@ -26,6 +26,7 @@ without `session_id` → `ccr.id`). Timestamps UTC ISO (`date -u +%FT%TZ`).
 | `continues` | Session ID this one takes over from (handover, pause) |
 | `branch`, `model` | Working branch; `opus` / `sonnet` |
 | `resumes_at` | `paused` only: when work continues (`five_hour.resetsAt`) |
+| `planned_5h` | Remaining share of the current five-hour window this session still plans to use (0–1, from the `usage-budget.md` estimates); `0` when done, paused or waiting for the user |
 | `started_at`, `updated_at` | Start; time of this write |
 
 | `status` | When |
@@ -53,6 +54,12 @@ without `session_id` → `ccr.id`). Timestamps UTC ISO (`date -u +%FT%TZ`).
   plus `read_at` (the reading's event time) and `by` (its title), pinned
   with `if_version`. Version unknown or refused: `get` it, then write only
   if your `read_at` is newer than the stored one.
+- **Forecast:** set `planned_5h` at start (the estimate of the work you
+  are about to do) and lower it at each budget check by what you have used
+  since (never below `0`); set it to `0` with `done`, `paused` or
+  `waiting_user`. The board stacks these after the measured 5h fill, one
+  hatched segment per session. The orchestrator includes its own share
+  (verification, merges, `finish`) and sets it for each subagent entry.
 - **A session that takes over** (handover, continuation after a pause)
   sets `continues` to the predecessor's ID. The predecessor's entry stays
   as it is: the board shows it inside its successor's card, and packages
