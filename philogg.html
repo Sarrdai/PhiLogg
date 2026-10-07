@@ -4070,7 +4070,13 @@
     border-radius:6px; padding:5px 8px; font-size:12px;
   }
   .fwz-toolbar{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;}
-  .fwz-toolbar-actions{display:flex; gap:6px; flex-wrap:wrap;}
+  .fwz-toolbar-actions{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
+  .fwz-enc-label{font-size:12px; color:var(--text-secondary);}
+  .fwz-enc-select{
+    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
+    border-radius:6px; padding:4px 6px; font-size:12px; min-width:0; max-width:230px;
+  }
+  .fwz-meta-enc{margin-bottom:12px;}
   #fwzSample{
     flex:1 1 45%; min-height:120px; overflow:auto; border:1px solid var(--border); border-radius:8px;
     background:var(--bg-app); font-family:var(--font-mono); font-size:12px; line-height:1.75; outline:none;
@@ -7782,6 +7788,15 @@ SOFTWARE.</pre>
           <div class="fwz-toolbar">
             <div class="fwz-section-title">Example lines <span class="link-target-label" id="fwzLineCount"></span></div>
             <div class="fwz-toolbar-actions">
+              <label for="fwzEncoding" class="fwz-enc-label">Encoding</label>
+              <select id="fwzEncoding" class="fwz-enc-select" title="How the file's bytes are turned into text. A byte order mark (BOM) always wins.">
+                <option value="">Auto (UTF-8, else Windows-1252)</option>
+                <option value="utf-8">UTF-8</option>
+                <option value="windows-1252">Windows-1252 / Latin-1</option>
+                <option value="iso-8859-15">ISO-8859-15</option>
+                <option value="windows-1250">Windows-1250 (Central European)</option>
+                <option value="windows-1251">Windows-1251 (Cyrillic)</option>
+              </select>
               <button type="button" id="fwzOpenFile" class="btn-mini-outline">Open file…</button>
               <button type="button" id="fwzPasteBtn" class="btn-mini-outline">Paste</button>
               <button type="button" id="fwzResuggest" class="btn-mini-outline" title="Replace the current marks, regex and timestamp format with a fresh automatic suggestion">✦ Re-suggest</button>
@@ -7829,6 +7844,17 @@ SOFTWARE.</pre>
       </div>
       <div class="fwz-meta-body hidden" id="formatEditMetaField">
         <div class="fwz-section-title">Target formats <span class="link-target-label">(ordered — first whose own header matches a line wins)</span></div>
+        <div class="link-field fwz-meta-enc">
+          <label for="formatEditMetaEncoding">Encoding <span class="link-target-label">(the file is decoded once, then split)</span></label>
+          <select id="formatEditMetaEncoding" class="fwz-enc-select" title="How the file's bytes are turned into text. A byte order mark (BOM) always wins.">
+                <option value="">Auto (UTF-8, else Windows-1252)</option>
+                <option value="utf-8">UTF-8</option>
+                <option value="windows-1252">Windows-1252 / Latin-1</option>
+                <option value="iso-8859-15">ISO-8859-15</option>
+                <option value="windows-1250">Windows-1250 (Central European)</option>
+                <option value="windows-1251">Windows-1251 (Cyrillic)</option>
+          </select>
+        </div>
         <div id="formatEditMetaTargets"></div>
         <div id="formatEditMetaAdd">
           <select id="formatEditMetaTargetSelect"></select>
@@ -11793,7 +11819,8 @@ async function probeFileTimeRange(file, formatId) {
   if (!file || file.size === 0) return null;
   const compiled = getCompiledFormat(formatId || DEFAULT_FORMAT_ID);
 
-  const headText = await file.slice(0, Math.min(PROBE_HEAD_BYTES, file.size)).text();
+  const label = await resolveFileEncodingOf(file, formatId || DEFAULT_FORMAT_ID);
+  const headText = await blobTextWithLabel(file.slice(0, Math.min(PROBE_HEAD_BYTES, file.size)), label);
   let first = null;
   for (const line of headText.split(/\r?\n/)) {
     if (compiled.isHeaderLine(line)) {
@@ -11806,7 +11833,7 @@ async function probeFileTimeRange(file, formatId) {
   let last = null;
   for (let bytes = Math.min(PROBE_TAIL_START_BYTES, file.size); ; bytes *= 4) {
     const start = Math.max(0, file.size - bytes);
-    const tailLines = (await file.slice(start, file.size).text()).split(/\r?\n/);
+    const tailLines = (await blobTextWithLabel(file.slice(start, file.size), label)).split(/\r?\n/);
     // A chunk that doesn't start at byte 0 may have its first line cut off
     // mid-entry (the slice boundary landed inside a line) — skip it unless
     // it's all we have, in which case the next, bigger iteration covers it.
@@ -11842,18 +11869,77 @@ function utf8CompleteLength(bytes) {
   return n;
 }
 
+/* ---- Text encoding of log files (a format's `encoding`, FEATURE_BACKLOG.md #85) ----
+   "" = Auto, else a WHATWG label (utf-8, windows-1252, iso-8859-15,
+   windows-1250, windows-1251). A BOM (UTF-8 / UTF-16LE / UTF-16BE) always
+   wins; Auto otherwise reads the first 64 KiB: valid UTF-8 (an incomplete
+   multi-byte sequence cut at the 64 KiB end counts as valid) -> utf-8, else
+   windows-1252. Decided ONCE per file from its head, then used for every
+   chunk/range of that file (a tail append keeps it on node.tail.encoding).
+   Every read of a LOG file goes through resolveFileEncoding(Of) and
+   decodeLogBytes/readBlobText/the label arguments below; session and JSON
+   imports stay UTF-8. */
+const FILE_ENCODING_HEAD_BYTES = 64 * 1024;
+// `growing`: the file may still be written to (a tail resolving late), so an
+// incomplete multi-byte sequence at the end of the head is never a verdict.
+function resolveFileEncoding(head, encoding, growing) {
+  if (head && head.length >= 3 && head[0] === 0xEF && head[1] === 0xBB && head[2] === 0xBF) return "utf-8";
+  if (head && head.length >= 2 && head[0] === 0xFF && head[1] === 0xFE) return "utf-16le";
+  if (head && head.length >= 2 && head[0] === 0xFE && head[1] === 0xFF) return "utf-16be";
+  if (encoding) return encoding;
+  if (!head || !head.length) return "utf-8";
+  try {
+    new TextDecoder("utf-8", { fatal: true }).decode(growing || head.length >= FILE_ENCODING_HEAD_BYTES ? head.subarray(0, utf8CompleteLength(head)) : head);
+    return "utf-8";
+  } catch (e) { return "windows-1252"; }
+}
+// The encoding a format asks for: a meta format has its own, every other
+// format likewise (target formats of a meta format are decoded as the meta says).
+function fileEncodingForFormatId(formatId) {
+  const fmt = findLogFormat(formatId || DEFAULT_FORMAT_ID);
+  return fmt && typeof fmt.encoding === "string" ? fmt.encoding : "";
+}
+// The concrete label for a Blob/File read under `formatId` (reads its head
+// unless an explicit non-Auto setting makes that unnecessary... a BOM still
+// wins, so the head is read in every case a Blob can be sliced).
+async function resolveFileEncodingOf(file, formatId, encodingOverride, growing) {
+  const enc = encodingOverride !== undefined ? encodingOverride : fileEncodingForFormatId(formatId);
+  try {
+    if (file && typeof file.slice === "function") {
+      const part = file.slice(0, FILE_ENCODING_HEAD_BYTES);
+      if (typeof part.arrayBuffer === "function") return resolveFileEncoding(new Uint8Array(await part.arrayBuffer()), enc, growing);
+    }
+  } catch (e) { /* unreadable head: the real read reports it */ }
+  return enc || "utf-8";
+}
+// Whole bytes -> text for a log file (ZIP/URL/fetch routes that hold bytes).
+function decodeLogBytes(bytes, formatId, encodingOverride) {
+  const enc = encodingOverride !== undefined ? encodingOverride : fileEncodingForFormatId(formatId);
+  return new TextDecoder(resolveFileEncoding(bytes.subarray(0, FILE_ENCODING_HEAD_BYTES), enc)).decode(bytes);
+}
+// A Blob's text under an already resolved label (blob.text() for UTF-8).
+async function blobTextWithLabel(blob, label) {
+  if (!label || label === "utf-8" || typeof blob.arrayBuffer !== "function") return blob.text();
+  return new TextDecoder(label).decode(await blob.arrayBuffer());
+}
+async function readBlobText(blob, formatId) {
+  return blobTextWithLabel(blob, await resolveFileEncodingOf(blob, formatId));
+}
+
 // Decodes a mid-file byte range (a Blob-shaped `part`, `byteLength` bytes
-// long) as UTF-8, up to the last COMPLETE character: Blob.text() on a range
-// that ends inside a multi-byte character turns the cut half into U+FFFD, and
-// the read that continues from the same offset turns the other half into
-// U+FFFD too. Resolves { text, length }, `length` being the bytes consumed
-// (0-3 less than `byteLength` when the range ends inside a character) — the
+// long) as `label` (default UTF-8), up to the last COMPLETE character:
+// Blob.text() on a range that ends inside a multi-byte character turns the
+// cut half into U+FFFD, and the read that continues from the same offset
+// turns the other half into U+FFFD too. Resolves { text, length }, `length`
+// being the bytes consumed (0-3 less than `byteLength` when a UTF-8 range
+// ends inside a character; a single-byte encoding always consumes all) — the
 // caller advances by `length`, so the held-back bytes are read again together
 // with the rest of their character. An object with no arrayBuffer() (a
 // minimal file stand-in) is decoded whole through text().
-async function readUtf8Range(part, byteLength) {
+async function readUtf8Range(part, byteLength, label) {
   if (typeof part.arrayBuffer !== "function") return { text: await part.text(), length: byteLength };
   const bytes = new Uint8Array(await part.arrayBuffer());
+  if (label && label !== "utf-8") return { text: new TextDecoder(label).decode(bytes), length: bytes.length };
   const length = utf8CompleteLength(bytes);
   return { text: new TextDecoder().decode(length === bytes.length ? bytes : bytes.subarray(0, length)), length };
 }
@@ -11892,11 +11978,11 @@ const WINDOW_BISECT_MAX_ITER = 32;                    // hard cap — converges 
 // here ever converts a decoded string's length back into a byte offset
 // (which would be wrong for non-ASCII text — a JS string's .length counts
 // UTF-16 code units, not the file's real bytes).
-async function probeTsAtOffset(file, compiled, offset) {
+async function probeTsAtOffset(file, compiled, offset, label) {
   if (offset >= file.size) return null;
   for (let bytes = WINDOW_PROBE_CHUNK_BYTES; ; bytes *= 4) {
     const end = Math.min(file.size, offset + bytes);
-    const text = await file.slice(offset, end).text();
+    const text = await blobTextWithLabel(file.slice(offset, end), label);
     const lines = text.split(/\r?\n/);
     const usable = offset > 0 && lines.length > 1 ? lines.slice(1) : lines;
     for (const line of usable) {
@@ -11916,7 +12002,8 @@ async function probeTsAtOffset(file, compiled, offset) {
 // parseFileWindow starting there is guaranteed not to start AFTER the real
 // window start; consistent is false the moment two probes disagree with
 // the sorted-order assumption, telling the caller not to trust this result.
-async function findWindowStartOffset(file, formatId, targetTs) {
+async function findWindowStartOffset(file, formatId, targetTs, label) {
+  label = label || await resolveFileEncodingOf(file, formatId);
   // Cheap global bookend check before bisecting at all, reusing
   // probeFileTimeRange's own (already correct) head+tail read: if the
   // file's very first entry's timestamp is already greater than its very
@@ -11940,7 +12027,7 @@ async function findWindowStartOffset(file, formatId, targetTs) {
   let lastLoTs = -Infinity;
   for (let i = 0; i < WINDOW_BISECT_MAX_ITER && hi - lo > WINDOW_PROBE_CHUNK_BYTES; i++) {
     const mid = lo + Math.floor((hi - lo) / 2);
-    const ts = await probeTsAtOffset(file, compiled, mid);
+    const ts = await probeTsAtOffset(file, compiled, mid, label);
     if (ts == null) { hi = mid; continue; } // nothing at/after mid — the target must be at or before it
     if (ts < lastLoTs) consistent = false;  // moved backward vs. an earlier lower-bound probe — not sorted as expected
     if (ts >= targetTs) hi = mid; else { lo = mid; lastLoTs = ts; }
@@ -11960,7 +12047,8 @@ async function findWindowStartOffset(file, formatId, targetTs) {
 async function parseFileWindow(file, node, from, to, onProgress) {
   const formatId = node.formatId || DEFAULT_FORMAT_ID;
   const compiled = getCompiledFormat(formatId);
-  const { offset: startOffset, consistent } = await findWindowStartOffset(file, formatId, from);
+  const label = await resolveFileEncodingOf(file, formatId);
+  const { offset: startOffset, consistent } = await findWindowStartOffset(file, formatId, from, label);
   if (!consistent) return false;
 
   let pos = startOffset;
@@ -11977,7 +12065,7 @@ async function parseFileWindow(file, node, from, to, onProgress) {
     // the held-back bytes lead the next chunk (see readUtf8Range). At EOF
     // nothing follows, so the chunk is read as is.
     const part = file.slice(pos, end);
-    const { text: chunkText, length } = atRealEOF ? { text: await part.text(), length: end - pos } : await readUtf8Range(part, end - pos);
+    const { text: chunkText, length } = atRealEOF ? { text: await blobTextWithLabel(part, label), length: end - pos } : await readUtf8Range(part, end - pos, label);
     const text = carry + chunkText;
     carry = "";
     const lines = text.split(/\r?\n/);
@@ -12133,11 +12221,11 @@ async function loadFolderFileWindowedImpl(folder, rec, from, to) {
    >= b (a line start is offset 0 or the byte after a 0x0A — safe in UTF-8),
    so with a_i = b_(i-1) no entry is split or duplicated. Piece 0 starts at 0
    (lines before the first header are dropped by the parse loop as ever). */
-async function findHeaderLineStartInBlob(blob, size, pos, isHeaderLine) {
+async function findHeaderLineStartInBlob(blob, size, pos, isHeaderLine, encoding) {
   if (pos <= 0) return 0;
   if (pos >= size) return size;
   const CH = 1 << 20, MAX_LINES = 100000;
-  const dec = new TextDecoder("utf-8", { ignoreBOM: true });
+  const dec = new TextDecoder(encoding || "utf-8", { ignoreBOM: true });
   const cat = (x, y) => { if (!x.length) return y; const r = new Uint8Array(x.length + y.length); r.set(x); r.set(y, x.length); return r; };
   let p = pos - 1;      // include the byte before pos: it tells whether pos itself is a line start
   let s = -1;           // start of the line being collected, -1 until the first newline is seen
@@ -12169,14 +12257,15 @@ async function findHeaderLineStartInBlob(blob, size, pos, isHeaderLine) {
 // Parses the bytes [a, b) of blob (size bytes in total) into entries, handing
 // them to emit(entries[]) every PARSE_CHUNK_LINES lines and reporting
 // onProgress(bytesDone, bytesTotal). Same per-line header/continuation loop as
-// the worker's text mode. Resolves with the number of lines walked. Not for the
+// the worker's text mode. Resolves with the number of lines walked. `encoding`
+// is the file's resolved label (UTF-8 or a single-byte one). Not for the
 // plain-text format (every line an entry, numbered) nor UTF-16 files.
-async function parseBlobRangeEntries(blob, size, a, b, compiled, formatId, emit, onProgress) {
+async function parseBlobRangeEntries(blob, size, a, b, compiled, formatId, emit, onProgress, encoding) {
   const CH = 4 << 20;
   const isHeader = compiled.isHeaderLine;
-  const start = a <= 0 ? 0 : await findHeaderLineStartInBlob(blob, size, a, isHeader);
-  const end = b >= size ? size : await findHeaderLineStartInBlob(blob, size, b, isHeader);
-  const dec = new TextDecoder("utf-8", { ignoreBOM: true });
+  const start = a <= 0 ? 0 : await findHeaderLineStartInBlob(blob, size, a, isHeader, encoding);
+  const end = b >= size ? size : await findHeaderLineStartInBlob(blob, size, b, isHeader, encoding);
+  const dec = new TextDecoder(encoding || "utf-8", { ignoreBOM: true });
   let pos = start, carry = null, atStart = start === 0;
   let current = null, pending = [], lineNo = 0;
   while (pos < end) {
@@ -12254,9 +12343,9 @@ function buildLogParseWorkerSrc() {
     '}',
     'self.onmessage = (ev) => {',
     '  if (ev.data.blob) {', // byte-range mode: read + parse [a, b) of the Blob here
-    '    const { blob, size, a, b, fmt } = ev.data;',
+    '    const { blob, size, a, b, fmt, encoding } = ev.data;',
     '    parseBlobRangeEntries(blob, size, a, b, compileOneFormat(fmt), fmt.id, postEntries,',
-    '      (done, total) => postMessage({ type: "progress", done, total }))',
+    '      (done, total) => postMessage({ type: "progress", done, total }), encoding)',
     '      .then(total => postMessage({ type: "done", total }),',
     '        err => postMessage({ type: "error", message: String(err && err.message || err) }));',
     '    return;',
@@ -12472,7 +12561,7 @@ function parseLogTextInWorker(text, formatId, node, onProgress, parseOpts) {
         }
       };
       worker.postMessage(blobMode
-        ? { blob: text, size: totalLen, a, b, fmt }
+        ? { blob: text, size: totalLen, a, b, fmt, encoding: (parseOpts && parseOpts.encoding) || "utf-8" }
         : { text: pieces.length === 1 ? text : text.slice(a, b), fmt });
     });
   });
@@ -12603,6 +12692,19 @@ async function parseLocalFileNatively(url, node, onFraction) {
   const fmt = findLogFormat(formatId) || DEFAULT_LOG_FORMAT;
   const spec = nativeFormatSpec(fmt);
   if (!spec) throw new Error("meta-format or plain text");
+  // Rust decodes UTF-8 only (until it learns the encodings, step 3 of #85): a
+  // file that would not decode as UTF-8 here goes to the JS route. An explicit
+  // non-UTF-8 setting needs no look; Auto reads the head (64 KiB, ranged).
+  const encSetting = fileEncodingForFormatId(formatId);
+  if (encSetting && encSetting !== "utf-8") throw new Error("encoding handled by the JS parser");
+  if (!encSetting) {
+    let label = "utf-8";
+    try {
+      const head = new Uint8Array(await (await getPartialReadFile(urlTailHandle(url))).slice(0, FILE_ENCODING_HEAD_BYTES).arrayBuffer());
+      if (!isGzipBytes(head)) label = resolveFileEncoding(head, ""); // a gzip file is Rust's to reject
+    } catch (e) { /* head unreadable: Rust reports the real error */ }
+    if (label !== "utf-8") throw new Error("encoding handled by the JS parser");
+  }
   // No compiled date format: Date.parse, which only this engine can answer.
   const freeDate = !spec.builtin && !spec.dateRegex;
   // The format's own time zone (naive from Rust -> the real instant).
@@ -34396,13 +34498,14 @@ btnSettings.addEventListener("click", openSettingsDialog);
 
 // Reads a file as text via FileReader, reporting byte-level progress
 // (FileReader.onprogress) instead of resolving only once the whole file is in.
-function readFileWithProgress(file, onProgress) {
+// `label`: the file's resolved encoding (resolveFileEncodingOf); default UTF-8.
+function readFileWithProgress(file, onProgress, label) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onprogress = ev => { if (ev.lengthComputable && onProgress) onProgress(ev.loaded, ev.total); };
     reader.onload = () => { if (onProgress) onProgress(file.size, file.size); resolve(reader.result); };
     reader.onerror = () => reject(reader.error);
-    reader.readAsText(file);
+    if (label) reader.readAsText(file, label); else reader.readAsText(file);
   });
 }
 
@@ -34545,7 +34648,7 @@ async function loadOneFileIntoTreeImpl(name, file, handle, folderId, existingNod
     deleteNode(node.id);
     if (!file) file = await handle.getFile();
     ({ file } = await gunzipFileIfCompressed(file, () => {}));
-    const text = await readFileWithProgress(file, () => {});
+    const text = await readFileWithProgress(file, () => {}, await resolveFileEncodingOf(file, fmt0.id));
     return await loadMetaFormatText(name, text, fmt0);
   }
   let res;
@@ -34610,42 +34713,47 @@ async function readParseFileNode(node, name, file, handle, parseOpts) {
       size = file.size;
     }
   }
+  let encoding; // the file's resolved text encoding (undefined on the native route)
   if (file) {
     await inflate();
+    // The file's text encoding, decided once from its head (resolveFileEncoding).
+    encoding = await resolveFileEncodingOf(file, node.formatId);
     // Byte-range route: the workers read the Blob themselves, so the main
     // thread neither reads nor copies the text. Any failure (rolled back by
     // parseLogTextInWorker) falls through to the text route below.
-    if (await canParseBlobInWorker(file, node.formatId)) {
+    if (await canParseBlobInWorker(file, node.formatId, encoding)) {
       try {
         await parseLogTextInWorker(file, node.formatId || DEFAULT_FORMAT_ID, node, (done, total) => {
           const f = total ? done / total : 1;
           node.loadFraction = gzip ? READ_WEIGHT + PARSE_WEIGHT * f : f; // gzip: the inflate drove the first share
           scheduleLoadRender(node.id);
-        }, parseOpts);
+        }, Object.assign({}, parseOpts, { encoding }));
         await noteFormatMismatchFromBlob(node, () => file);
-        return { file, size, gzip };
+        return { file, size, gzip, encoding };
       } catch (err) { /* fall back to the text route */ }
     }
     const text = await readFileWithProgress(file, (loaded, total) => {
       if (gzip) return; // the inflate above already drove the read share of the bar
       node.loadFraction = READ_WEIGHT * (total ? loaded / total : 1);
       scheduleLoadRender(node.id);
-    });
+    }, encoding);
     await parseLogTextAsync(applyTextLayout(node, text), node, (done, total) => {
       node.loadFraction = READ_WEIGHT + PARSE_WEIGHT * (total ? done / total : 1);
       scheduleLoadRender(node.id);
     }, parseOpts);
   }
-  return { file, size, gzip };
+  return { file, size, gzip, encoding };
 }
 
 // Whether readParseFileNode may hand `file` to the workers as a Blob: needs a
 // real Worker, a Blob with slice().arrayBuffer(), a non-empty file, a format
 // whose lines are independent of position (not plain text: numbered lines,
-// blank lines are entries) and UTF-8 bytes (readAsText also sniffs a UTF-16
-// BOM, which the byte-range route doesn't decode).
-async function canParseBlobInWorker(file, formatId) {
+// blank lines are entries) and UTF-8 or single-byte bytes (readAsText also
+// sniffs a UTF-16 BOM, which the byte-range route doesn't decode — `encoding`
+// is the resolved label, a UTF-16 one stays on the text route).
+async function canParseBlobInWorker(file, formatId, encoding) {
   if (typeof Worker === "undefined" || isPlainTextFormat(formatId || DEFAULT_FORMAT_ID)) return false;
+  if (encoding && /^utf-16/.test(encoding)) return false;
   if (!file || !(file.size > 0) || typeof file.slice !== "function") return false;
   try {
     const head = file.slice(0, 2);
@@ -34669,7 +34777,7 @@ function finishLoadProgress(node) {
 // the tree: persistence, filter-history ghost, live tail. `res` is
 // readParseFileNode's result, `handle` the file handle (enables tailing).
 async function finishLoadedFileNode(node, res, handle) {
-  const { file, size, gzip } = res;
+  const { file, size, gzip, encoding } = res;
   if (state.nodes[node.id] !== node) return node; // removed mid-load (by the person, or the catch above)
   // The session cache stores the File itself rather than rebuilding its text
   // (see fileCacheSource) — except for a ZIP entry, whose File is only an
@@ -34695,6 +34803,7 @@ async function finishLoadedFileNode(node, res, handle) {
       lastGrowth: Date.now(), // drives the live dot's staleness window (isTailLive)
       wasLive: true,       // tailTick's own bookkeeping to know when to re-render on a stale flip
       gzipChecked: true,   // just read: known not gzip (see tailTick)
+      encoding,            // the file's resolved text encoding, decided once at load (undefined: resolved at the first poll)
     };
     state.tailFollow = true; // a freshly opened live file starts in follow mode
   }
@@ -35190,7 +35299,7 @@ async function loadUrlIntoTreeImpl(url) {
       showCopyToast(`Could not decompress log from URL (${err.message})`);
       return null;
     }
-    const text = new TextDecoder().decode(bytes);
+    const text = decodeLogBytes(bytes, formatId);
     node = await addFile(name, text, undefined, undefined, node || undefined);
     size = buf.byteLength;
   }
@@ -35303,7 +35412,7 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
     try { bytes = await gunzipBytesIfCompressed(await res.arrayBuffer()); }
     catch (err) { showCopyToast(`Couldn't open "${files[0].name}" (${err.message})`); return; }
     fwzSuggestRuleFromFilename(stripGzipExt(files[0].name));
-    fwzAppendText(new TextDecoder().decode(bytes.slice(0, 512 * 1024)));
+    fwzLoadBytes(bytes.slice(0, 512 * 1024));
     return;
   }
   if (Array.isArray(folders) && folders.length) {
@@ -35618,7 +35727,8 @@ async function tailTick() {
       // print of the grown document is not the old pretty print plus the
       // new text): any size change reloads the whole file, like a rotation.
       if (node.textLayout === "pretty" && f.size !== t.offset) {
-        const full = await f.text();
+        if (!t.encoding) t.encoding = await resolveFileEncodingOf(f, node.formatId, undefined, true);
+        const full = await blobTextWithLabel(f, t.encoding);
         releaseEntriesFromIndex(node.entries, id);
         node.entries = [];
         delete node.pruned; // entries replaced wholesale: the cut positions are void
@@ -35654,7 +35764,8 @@ async function tailTick() {
         // character leaves its 1-3 bytes unread (t.offset stops before them),
         // so the next poll decodes them together with the rest of the
         // character instead of turning both halves into U+FFFD.
-        const { text: chunk, length } = await readUtf8Range(f.slice(start, f.size), f.size - start);
+        if (!t.encoding) t.encoding = await resolveFileEncodingOf(f, node.formatId, undefined, true); // decided once per file
+        const { text: chunk, length } = await readUtf8Range(f.slice(start, f.size), f.size - start, t.encoding);
         // Nothing but a character's first bytes arrived: not growth yet.
         if (length > 0) {
           t.offset = start + length;
@@ -45119,7 +45230,8 @@ async function removeLogFormat(id) {
    dropped file — see importPhiloggJsonText). */
 const LOG_FORMAT_FILE_FORMAT = "philogg-log-format";
 const LOG_FORMAT_FILE_VERSION = 1;
-const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "timeZone", "tsKey", "levelKey", "messageKey", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup"];
+const FORMAT_ENCODINGS = ["utf-8", "windows-1252", "iso-8859-15", "windows-1250", "windows-1251"];
+const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "timeZone", "encoding", "tsKey", "levelKey", "messageKey", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup"];
 
 function serializeLogFormatExport(formatId) {
   const fmt = state.logFormats.find(f => f.id === formatId);
@@ -45164,6 +45276,7 @@ function normalizeLogFormatExport(src, rawFileNamePatterns) {
   logFormat.tsFormat = String(src.tsFormat || "");
   ["tsKey", "levelKey", "messageKey"].forEach(k => { if (typeof logFormat[k] !== "string") delete logFormat[k]; });
   if (typeof logFormat.timeZone !== "string" || !logFormat.timeZone) delete logFormat.timeZone; // missing = local time
+  if (!FORMAT_ENCODINGS.includes(logFormat.encoding) || !logFormat.encoding) delete logFormat.encoding; // missing = Auto
   if (!Array.isArray(logFormat.levels)) delete logFormat.levels;
   else logFormat.levels = logFormat.levels.filter(l => typeof l === "string" || (l && typeof l === "object" && typeof l.name === "string"));
   if (logFormat.levelValueType !== "int") delete logFormat.levelValueType;
@@ -46442,6 +46555,43 @@ function fwzTimeZoneToSave() {
   if (fwzTzModeEl.value === "named") return new Intl.DateTimeFormat("en-US", { timeZone: v }).resolvedOptions().timeZone;
   return v;
 }
+// ---- Encoding field (the format's `encoding`, see resolveFileEncoding) ----
+// Two selects, one value: the toolbar one (Log format / JSON Lines kinds) and
+// the Meta kind's own. Whichever kind is showing is the one the person used.
+const fwzEncodingEl = el("#fwzEncoding");
+const fwzMetaEncodingEl = el("#formatEditMetaEncoding");
+function fwzEncodingValue() { return (formatEditMode === "meta" ? fwzMetaEncodingEl : fwzEncodingEl).value; }
+function fwzSetEncodingValue(v) {
+  const known = [...fwzEncodingEl.options].some(o => o.value === (v || ""));
+  fwzEncodingEl.value = fwzMetaEncodingEl.value = known ? (v || "") : "";
+}
+// Example lines that came from "Open file…" or a drop keep their bytes
+// (fwz.fileSource = { bytes, start, count }): changing the encoding decodes
+// them again. Pasted text is already text and stays.
+function fwzDecodeFileSource() {
+  const src = fwz.fileSource;
+  return new TextDecoder(resolveFileEncoding(src.bytes.subarray(0, FILE_ENCODING_HEAD_BYTES), fwzEncodingValue())).decode(src.bytes);
+}
+function fwzRedecodeFile() {
+  const src = fwz && fwz.fileSource;
+  if (!src || fwz.lines.length < src.start + src.count) return;
+  const incoming = fwzSplitLines(fwzDecodeFileSource());
+  fwzCheckpoint();
+  const room = Math.max(0, FWZ_MAX_LINES - src.start);
+  const next = incoming.slice(0, room);
+  fwz.lines = fwz.lines.slice(0, src.start).concat(next, fwz.lines.slice(src.start + src.count));
+  fwz.marks = fwz.marks.filter(m => m.line < fwz.lines.length);
+  src.count = next.length;
+  fwzUpdate();
+}
+// Bytes of an example file (the head of it) become example lines.
+function fwzLoadBytes(bytes) {
+  const start = fwz.lines.length;
+  fwz.fileSource = { bytes, start, count: 0 };
+  fwzAppendText(fwzDecodeFileSource());
+  fwz.fileSource.count = fwz.lines.length - start;
+}
+
 // The suggestion list of the name field, filled on first use (a few hundred
 // options); without Intl.supportedValuesOf the field still takes any name.
 let fwzTzListFilled = false;
@@ -46558,6 +46708,7 @@ function openFormatEditDialog(id, importData) {
   formatEditMetaTargets = isMeta ? (fmt.targetFormatIds || []).slice() : [];
   formatEditTsFormat.value = fmt && !isMeta ? (fmt.tsFormat || "") : "";
   fwzSetTimeZoneValue(fmt && !isMeta ? fmt.timeZone : "");
+  fwzSetEncodingValue(fmt ? fmt.encoding : "");
   fwzFillTimeZoneList();
   formatEditRuleGlob.value = "";
   formatEditMessageVisibleEl.checked = !fmt || fmt.messageVisible !== false;
@@ -46583,6 +46734,7 @@ function openFormatEditDialog(id, importData) {
     undo: [],
     redo: [],
     importPatterns: importData ? importData.fileNamePatterns : null,
+    fileSource: null, // the bytes behind the example lines read from a file (fwzLoadBytes)
     // JSON Lines kind (fwzJsonSync): the three mapped keys, the column
     // paths ({path, key (a saved column's stable key, else null), on}),
     // and whether the person changed them (then detection only adds).
@@ -46877,18 +47029,20 @@ function fwzLoadFile(file) {
   fwzSuggestRuleFromFilename(stripGzipExt(file.name));
   // Only the head of a (possibly huge) log file is needed as examples. A
   // gzip file is inflated first (see "gzip-compressed logs") — its raw
-  // head is compressed data.
+  // head is compressed data. The bytes are kept (fwz.fileSource) so the
+  // Encoding select can decode them again.
   const readHead = async () => {
     const plain = file.slice ? (await gunzipFileIfCompressed(file)).file : file;
     const head = plain.slice ? plain.slice(0, 512 * 1024) : plain;
-    return typeof head.text === "function" ? head.text() : new Promise((resolve, reject) => {
+    if (typeof head.arrayBuffer === "function") return new Uint8Array(await head.arrayBuffer());
+    return new Promise((resolve, reject) => {
       const r = new FileReader();
-      r.onload = () => resolve(r.result);
+      r.onload = () => resolve(new Uint8Array(r.result));
       r.onerror = () => reject(r.error);
-      r.readAsText(head);
+      r.readAsArrayBuffer(head);
     });
   };
-  return readHead().then(t => fwzAppendText(t), () => { if (fwz) { fwz.notice = "Couldn't read that file."; renderFwzResult(); } });
+  return readHead().then(bytes => { if (fwz) fwzLoadBytes(bytes); }, () => { if (fwz) { fwz.notice = "Couldn't read that file."; renderFwzResult(); } });
 }
 
 // Switches the active column by toggling classes in place — NOT via
@@ -47488,6 +47642,7 @@ async function saveFormatEdit() {
   };
   fmt.name = name.slice(0, 80);
   fmt.mode = formatEditMode;
+  if (fwzEncodingValue()) fmt.encoding = fwzEncodingValue(); else delete fmt.encoding; // missing = Auto
   if (formatEditMode === "meta") {
     fmt.targetFormatIds = formatEditMetaTargets.slice();
     delete fmt.pattern; delete fmt.regex; delete fmt.tsFormat; delete fmt.timeZone; delete fmt.levels;
@@ -47680,7 +47835,7 @@ el("#fwzClearAll").addEventListener("click", ev => {
   ev.stopPropagation();
   if (!fwz.marks.length && !fwz.lines.length) return;
   fwzCheckpoint();
-  fwz.marks = []; fwz.lines = []; fwz.notice = ""; fwzUpdate();
+  fwz.marks = []; fwz.lines = []; fwz.notice = ""; fwz.fileSource = null; fwzUpdate();
 });
 el("#fwzUndo").addEventListener("click", ev => { ev.stopPropagation(); fwzUndo(); });
 el("#fwzRedo").addEventListener("click", ev => { ev.stopPropagation(); fwzRedo(); });
@@ -47697,6 +47852,10 @@ fwzTsFormatEl.addEventListener("input", () => {
   fwzDerive();
   renderFwzResult();
 });
+[fwzEncodingEl, fwzMetaEncodingEl].forEach(sel => sel.addEventListener("change", () => {
+  fwzEncodingEl.value = fwzMetaEncodingEl.value = sel.value;
+  fwzRedecodeFile();
+}));
 fwzTzModeEl.addEventListener("change", () => {
   fwzSyncTimeZoneInputs();
   const input = fwzTzModeEl.value === "fixed" ? fwzTzFixedEl : fwzTzNamedEl;
@@ -48857,7 +49016,7 @@ async function reopenLocalPathForRestore(rec, placeholder) {
       size = raw.size;
       let file;
       ({ file, gzip } = await gunzipFileIfCompressed(raw));
-      await parseLogTextAsync(await file.text(), node, (done, total) => {
+      await parseLogTextAsync(await readBlobText(file, node.formatId), node, (done, total) => {
         node.loadFraction = total ? done / total : 1;
         scheduleLoadRender(node.id);
       });
@@ -48926,7 +49085,7 @@ async function restoreSessionFromCache(metaIn) {
       if (rec.textLayout) placeholder.textLayout = rec.textLayout;
       try {
         if (typeof rec.text === "string" || rec.blob) {
-          const text = typeof rec.text === "string" ? rec.text : await rec.blob.text();
+          const text = typeof rec.text === "string" ? rec.text : await readBlobText(rec.blob, rec.formatId || DEFAULT_FORMAT_ID);
           node = await addFile(rec.name, text, undefined, rec.formatId || DEFAULT_FORMAT_ID, placeholder);
           if (rec.blob) node._cacheBlob = rec.blob; // still the file's content — keeps its next write cheap
         } else {
@@ -49707,7 +49866,7 @@ async function loadSessionRecordFresh(rec, baseUrl) {
       const res = await fetch(sourceUrl);
       if (!res.ok) return null;
       const buf = await res.arrayBuffer();
-      text = new TextDecoder().decode(await gunzipBytesIfCompressed(buf));
+      text = decodeLogBytes(await gunzipBytesIfCompressed(buf), typeof rec.formatId === "string" && rec.formatId ? rec.formatId : resolveFormatIdForFilename(name));
     } catch { return null; }
   }
   if (typeof text !== "string") return null;

@@ -72,8 +72,9 @@ group(264);
   }
   function installFetch(w, text) {
     w.fetchCalls = [];
-    w.fetch = async url => {
-      w.fetchCalls.push(String(url));
+    w.fetch = async (url, opts) => {
+      // The encoding check's ranged head read (resolveFileEncodingOf) is not a content fetch.
+      if (!(opts && opts.headers && opts.headers.Range)) w.fetchCalls.push(String(url));
       const buf = new w.TextEncoder().encode(text).buffer;
       return { ok: true, status: 200, arrayBuffer: async () => buf, blob: async () => new w.Blob([text]) };
     };
@@ -216,7 +217,7 @@ group(264);
     folderBridge.window = w;
     let fetched = 0;
     const realFetch = w.fetch;
-    w.fetch = async url => { fetched++; return realFetch(url); };
+    w.fetch = async (url, opts) => { if (!(opts && opts.headers && opts.headers.Range)) fetched++; return realFetch(url, opts); };
     nativeStub(folderBridge, crlfCase.name, 555);
     await w.openFolderPickerFlow();
     const folder = T.state.folders[0];

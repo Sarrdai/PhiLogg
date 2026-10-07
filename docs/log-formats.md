@@ -73,6 +73,41 @@ localizer (Rust still sends naive stamps); until the Rust side reads `XXX`,
 the file. The dialog side (field, status line, detection) is in
 `docs/ui-and-views.md` → "Format dialog". GROUP format-time-zone.
 
+**Text encoding (`encoding`, FEATURE_BACKLOG.md #85).** A format says how its
+file's bytes become text: `""`/missing = **Auto** (default), or a WHATWG label
+— `utf-8`, `windows-1252` ("Windows-1252 / Latin-1"), `iso-8859-15`,
+`windows-1250`, `windows-1251`. A **BOM** (UTF-8, UTF-16LE/BE) always wins.
+Auto reads the first 64 KiB (`FILE_ENCODING_HEAD_BYTES`): valid UTF-8 — an
+incomplete multi-byte sequence cut at the 64 KiB end counts as valid — means
+UTF-8, anything else Windows-1252. It is decided **once per file**
+(`resolveFileEncoding(headBytes, encoding)`; `resolveFileEncodingOf(file,
+formatId)` for a Blob), and the one label then serves every chunk: a file whose
+first 64 KiB are plain ASCII is UTF-8 by that rule even if later bytes aren't.
+`fileEncodingForFormatId(id)` reads the format's field; a **meta format**'s
+own `encoding` decodes the file once before the split (its targets' fields are
+not used), every other format's applies to its file. Read paths that honor it
+(everything that reads a LOG file; session and JSON imports stay UTF-8):
+`readParseFileNode` (text route `readFileWithProgress(file, cb, label)`, and
+the byte-range worker route — the label travels in the worker message, and
+`findHeaderLineStartInBlob`/`parseBlobRangeEntries` build their
+`TextDecoder` from it; `canParseBlobInWorker` keeps UTF-16 on the text route),
+the meta route of `loadOneFileIntoTree`, `.gz` and ZIP entries (they end in
+the same File), folder watch (`loadFolderFile` → `readParseFileNode`),
+`parseFileWindow` and the time-range probes, tail appends (`readUtf8Range(…,
+label)`, label on `node.tail.encoding`), `loadUrlIntoTree` and the session
+file's `url` records (`decodeLogBytes`), the session-cache restore and
+`reopenLocalPathForRestore` (`readBlobText`), and the format dialog's "Open
+file…"/drop (below). Native parsing (desktop): Rust decodes UTF-8 only for
+now, so `parseLocalFileNatively` throws — the JS route takes the file — when
+the format has an explicit non-UTF-8 encoding, or under Auto when the file's
+head (a 64 KiB ranged read) doesn't decode as UTF-8. The dialog's Encoding
+select (`#fwzEncoding`, example-lines toolbar; the Meta kind has its own
+`#formatEditMetaEncoding`; one shared value) re-decodes example lines that came
+from a file (`fwz.fileSource` holds the head bytes), pasted text stays. The
+field is saved on the format, exported/imported (`LOG_FORMAT_EXPORT_FIELDS`,
+unknown labels dropped on import). Simulator: `--encoding` writes the
+output in that encoding. GROUP format-encoding.
+
 **Custom columns**, concretely: Pattern mode gets a new `%X{name}` token
 (log4j MDC-style — captures free text into a user-chosen field name);
 Regex mode already supports this natively via any `(?<name>...)` group
@@ -172,8 +207,8 @@ piece per core (`parallelParseWorkerCount`: `navigator.hardwareConcurrency`,
 pieces of at least 1 MB), each cut moved forward to the next header line so
 a stack trace never leaves its entry and each piece parses to exactly the
 whole text's entries in that range. **Byte-range mode**: when the source
-is a Blob/File (`readParseFileNode`, gated by `canParseBlobInWorker`: UTF-8,
-not the plain-text format), the main thread neither reads nor copies the
+is a Blob/File (`readParseFileNode`, gated by `canParseBlobInWorker`: UTF-8 or
+a single-byte encoding, not the plain-text format), the main thread neither reads nor copies the
 text — `parseLogTextInWorker` posts the Blob plus a byte range [a, b) per
 worker and each worker reads its own bytes (`parseBlobRangeEntries`,
 `findHeaderLineStartInBlob`): a piece starts at the first header-line start

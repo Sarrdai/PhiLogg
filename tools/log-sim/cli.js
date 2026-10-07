@@ -23,6 +23,9 @@ Content
       --start <time>       first timestamp, e.g. 2026-01-15T08:00:00 (default)
       --rate <n>           average entries per second of log time (default 10)
       --crlf               CRLF line endings
+      --encoding <name>    write the files in windows-1252 | iso-8859-15 | windows-1250 |
+                           windows-1251 | utf-8 (default); characters the encoding
+                           lacks become "?" (the Encoding setting of a PhiLogg format)
       --ts-offset <off>    syslog / jsonl / mixed: write timestamps with a UTC offset
                            suffix, Z or +HH:MM / -HH:MM, the wall clock shifted so
                            the instant is unchanged (default: syslog "Z", jsonl none)
@@ -62,7 +65,7 @@ function parseArgs(argv) {
   const alias = { f: "format", s: "scenarios", n: "entries", o: "out", q: "quiet", h: "help" };
   const flags = new Set(["gzip", "zip", "crlf", "list", "quiet", "help", "follow", "format-json", "no-format-file"]);
   const valued = new Set(["format", "scenarios", "entries", "out", "seed", "start", "rate", "size", "prefix", "files", "layout", "skew",
-    "interval", "jitter", "rotate-lines", "duration", "ts-offset"]);
+    "interval", "jitter", "rotate-lines", "duration", "ts-offset", "encoding"]);
   const a = {};
   for (let i = 0; i < argv.length; i++) {
     let k = argv[i];
@@ -112,6 +115,7 @@ function genOptions(a) {
   if (o.format !== "tour" && !sim.FORMATS[o.format]) throw new Error("Unknown format '" + o.format + "' (see --list)");
   if (o.format === "tour") return o;
   sim.parseTsOffset(o.tsOffset); // throws on an invalid value
+  o.encoding = sim.normalizeEncoding(a.encoding); // throws on an unknown name
   o.scenarios = sim.normalizeScenarios(o.scenarios);
   if (o.layout !== "rotate" && o.layout !== "parallel") throw new Error("--layout must be rotate or parallel");
   if (a.entries != null) o.entries = +a.entries;
@@ -176,12 +180,13 @@ async function writeBatch(a, o, log) {
         else { sink = file; cur.done = new Promise(r => file.on("close", r)); }
       }
     } else if (ev.type === "chunk") {
-      if (parts) parts.push(ev.text);
-      else if (sink) { if (!sink.write(ev.text)) await new Promise(r => sink.once("drain", r)); }
-      else if (!process.stdout.write(ev.text)) await new Promise(r => process.stdout.once("drain", r));
+      const chunk = o.encoding === "utf-8" ? ev.text : Buffer.from(sim.encodeText(ev.text, o.encoding));
+      if (parts) parts.push(chunk);
+      else if (sink) { if (!sink.write(chunk)) await new Promise(r => sink.once("drain", r)); }
+      else if (!process.stdout.write(chunk)) await new Promise(r => process.stdout.once("drain", r));
     } else {
       if (parts) {
-        let data = Buffer.from(parts.join(""), "utf8");
+        let data = Buffer.concat(parts.map(p => (typeof p === "string" ? Buffer.from(p, "utf8") : p)));
         if (a.gzip) data = zlib.gzipSync(data);
         zipFiles.push({ name: cur.name, data: new Uint8Array(data) });
         parts = null;
@@ -225,7 +230,8 @@ async function follow(a, o, log) {
     if (rotateLines && lines >= rotateLines) openNext();
     // appendFileSync opens/writes/closes per entry, so a tailing reader sees
     // every line immediately and a rotation never races an open handle.
-    fs.appendFileSync(file, gen.render(gen.next(sim.naiveNow())));
+    const line = gen.render(gen.next(sim.naiveNow()));
+    fs.appendFileSync(file, o.encoding === "utf-8" ? line : Buffer.from(sim.encodeText(line, o.encoding)));
     lines++; total++;
     const delay = Math.max(5, interval * (1 + (Math.random() * 2 - 1) * jitter));
     await new Promise(r => setTimeout(r, delay));

@@ -61,6 +61,38 @@
       tok === "ss" ? pad(d.getUTCSeconds(), 2) : pad(d.getUTCMilliseconds(), 3));
   }
 
+  // --encoding: the output's text encoding. Single-byte encodings are built from
+  // the engine's own decoder (byte -> char for 0..255, reversed); a character the
+  // encoding can't represent becomes "?", like .NET's Encoding.GetEncoding(1252).
+  // Node's TextDecoder treats windows-1252 as plain Latin-1 (0x80-0x9F come out
+  // as control characters), so that range is spelled out here.
+  const CP1252_80_9F = "\u20AC\u0081\u201A\u0192\u201E\u2026\u2020\u2021\u02C6\u2030\u0160\u2039\u0152\u008D\u017D\u008F\u0090\u2018\u2019\u201C\u201D\u2022\u2013\u2014\u02DC\u2122\u0161\u203A\u0153\u009D\u017E\u0178";
+  const ENCODINGS = ["utf-8", "windows-1252", "iso-8859-15", "windows-1250", "windows-1251"];
+  const encodeMaps = {};
+  function normalizeEncoding(label) {
+    if (label == null || label === "") return "utf-8";
+    const l = String(label).toLowerCase();
+    if (!ENCODINGS.includes(l)) throw new Error("Invalid --encoding '" + label + "' (expected " + ENCODINGS.join(", ") + ")");
+    return l;
+  }
+  function encodeText(text, label) {
+    const enc = normalizeEncoding(label);
+    if (enc === "utf-8") return new TextEncoder().encode(text);
+    let map = encodeMaps[enc];
+    if (!map) {
+      map = encodeMaps[enc] = new Map();
+      const dec = new TextDecoder(enc);
+      for (let b = 0; b < 256; b++) {
+        const ch = enc === "windows-1252" && b >= 0x80 && b < 0xA0 ? CP1252_80_9F[b - 0x80] : dec.decode(new Uint8Array([b]));
+        if (ch !== "\uFFFD" && !map.has(ch)) map.set(ch, b);
+      }
+    }
+    const out = new Uint8Array(text.length * 2);
+    let n = 0;
+    for (const ch of text) { const b = map.get(ch); out[n++] = b === undefined ? 63 : b; }
+    return out.subarray(0, n);
+  }
+
   // "2026-01-15T08:00:00" (no zone) -> naive ms; anything Date can't parse -> NaN.
   function parseNaive(s) {
     const m = /^(\d{4})-(\d{2})-(\d{2})(?:[T ](\d{2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?)?$/.exec(String(s || "").trim());
@@ -897,6 +929,6 @@
   return {
     SCENARIOS, FORMATS, DEFAULTS,
     createGenerator, generateFiles, generateToStrings, formatExport, normalizeScenarios,
-    formatTs, parseTsOffset, parseNaive, naiveNow, parseSize, utf8Length, zipStore, crc32,
+    formatTs, parseTsOffset, encodeText, normalizeEncoding, parseNaive, naiveNow, parseSize, utf8Length, zipStore, crc32,
   };
 });

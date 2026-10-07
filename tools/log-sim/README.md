@@ -133,6 +133,13 @@ column names from a name list (`-s tuples,basic`).
   the offset (`tsFormat` ends in `XXX`), so a file with any offset parses to
   the same instants; a jsonl file under the JSON format (free-form time)
   reads the offset too, without it the format's time zone applies.
+- `--encoding windows-1252|iso-8859-15|windows-1250|windows-1251|utf-8`:
+  writes the files in that encoding (also inside `--gzip`/`--zip`, and with
+  `--follow`); characters the encoding lacks become `?`, like .NET's
+  `Encoding.GetEncoding(1252)`. The `text` scenario's umlaut lines
+  ("Benutzer „Jürgen Müller“ …") make a Windows-1252 file recognizable.
+  Needs no format change in PhiLogg: Auto detects it, or set the format's
+  Encoding. In code: `encodeText(text, label)`.
 - `--gzip` (each file `.gz`), `--zip -o out.zip` (one archive, stored),
   `--crlf`, `--seed`, `--start 2026-01-15T08:00:00`, `--rate 10` (entries per
   second of log time).
