@@ -75,7 +75,12 @@ format on the welcome record, the filter tree — a "Reading view" level node
 hiding DEEP with Quick read, Hands-on, six chapter filters on the Thread
 column and Pitfalls below it — and the tour `banner`) and `demo/app.log`
 (default format, all scenarios plus `grouped`, seed 7, 2500 entries — what
-the TRY steps work on). Fixed output: `-n`, `--size`, `-s`, `--seed` and the
+the TRY steps work on). `cards/app.log` (6000 entries, seed 7, all scenarios except text and gaps: the
+data of `docs/screenshots/generate.sh`) plus `cards/{filters,link,patterns,plot}.session.json`
+are the sessions behind the homepage's feature cards: the screenshot scenes'
+filter tree with the card's node active (plot config included), no banner;
+the tab comes from `&view=` (`docs/persistence-and-sync.md` → "Session deep link").
+Fixed output: `-n`, `--size`, `-s`, `--seed` and the
 other content options are ignored; `--format-json` prints the format. The
 tour texts are data in `tour.js` (`ROWS`); every claim in them was checked
 against `philogg.html`, so change them together with the app. Not in the

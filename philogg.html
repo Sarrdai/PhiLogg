@@ -35116,12 +35116,23 @@ async function loadFromUrlParam(search = location.search) {
 }
 
 // ?session=<url> loads a session file (files + filters + notes + settings, see
-// loadSessionFromUrl); ?open=format opens the "Add log format" dialog, after
-// the session load when both are given.
+// loadSessionFromUrl); ?view=<tab> then shows that tab of the active node
+// (the session file does not carry the tab); ?open=format opens the "Add log
+// format" dialog, after the session load when both are given.
+const VIEW_PARAM_TABS = { patterns: "patterns", context: "highlight", filtered: "filter", table: "table", plot: "plot" };
+function applyViewParam(value) {
+  const tab = VIEW_PARAM_TABS[value];
+  if (!tab || !state.activeId || !state.nodes[state.activeId]) return; // unknown value: ignored
+  if ((tab === "table" || tab === "plot") && !nodeIsExtractionView(state.nodes[state.activeId])) return;
+  clearSidebarForcedPeek();
+  applyFhView(tab); // phone layout: applyFhView falls back to Filtered itself
+  state.entriesView = tab === "highlight" ? "highlight" : "filter";
+}
 async function loadSessionAndOpenFromParams(search = location.search) {
   const params = new URLSearchParams(search);
   const sessionUrl = params.get("session");
   if (sessionUrl) await loadSessionFromUrl(sessionUrl);
+  if (params.get("view")) applyViewParam(params.get("view"));
   if (params.get("open") === "format") openFormatEditDialog(null);
 }
 

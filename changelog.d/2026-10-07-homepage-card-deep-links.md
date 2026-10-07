@@ -1,0 +1,4 @@
+- **feat: homepage feature cards open the app in the state their screenshot shows (2026-10-07, person-requested)**
+  - Each card's screenshot and "Try this" link load `cards/<card>.session.json` (filters, link, patterns, plot) with the new `?view=<tab>` deep-link parameter instead of the generic tour start.
+  - The simulator's `-f tour` output writes the card sessions plus `cards/app.log` from the same data and filter tree as the screenshot scenes; `?view=` (patterns | context | filtered | table | plot) is applied after the session load, unknown values are ignored.
+  - **Tests**: GROUP card-sessions-view-param, 353, 354. Docs: docs/homepage.md, docs/persistence-and-sync.md, tools/log-sim/README.md.

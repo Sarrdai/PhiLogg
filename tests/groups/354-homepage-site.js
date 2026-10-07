@@ -53,6 +53,16 @@ if (groupSelected()) {
   }
   assert(rel.includes("app/?session=tour/welcome.session.json&open=format") && rel.includes("app/?url=tour/demo/app.log"), "the format and demo deep links are on the page");
 
+  {
+    const cardLinks = [["01-log-view", "filters", "filtered"], ["04-link-view", "link", "filtered"], ["09-patterns", "patterns", "patterns"], ["03-plot", "plot", "plot"]];
+    for (const [img, card, view] of cardLinks) {
+      const article = siteHtml.slice(siteHtml.lastIndexOf("<article", siteHtml.indexOf("img/" + img + ".png")), siteHtml.indexOf("</article>", siteHtml.indexOf("img/" + img + ".png")));
+      const want = "app/?session=tour/cards/" + card + ".session.json&amp;view=" + view;
+      assert(article.includes('class="shot" href="' + want + '"') && article.includes('class="try" href="' + want + '"'), card + " card: image and Try link open its own session on the " + view + " view");
+    }
+    assert(!siteHtml.slice(siteHtml.indexOf('class="features"'), siteHtml.indexOf('id="run"')).includes("Take the tour"), "the cards no longer say 'Take the tour'");
+  }
+
   section("354c. Download section");
   const tourLog = rd("app/tour/welcome.log");
   const asset = (name, size) => ({ name, size, browser_download_url: "https://github.com/Sarrdai/PhiLogg/releases/download/x/" + name });
