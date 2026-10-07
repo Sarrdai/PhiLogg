@@ -12,7 +12,8 @@
 group("folder-start-filters-text-files");
 if (groupSelected()) {
   const sim = (format, seed) => LOGSIM.generateToStrings({ format, entries: 12, seed })[0];
-  const jsonl = sim("jsonl", 3);
+  const jsonDoc = sim("jsondoc", 3);
+  const txtDoc = sim("plain", 5);
   const syslog = sim("syslog", 4);
   const mkFile = (w, name, text, mtime) => ({ kind: "file", name, getFile: async () => new w.File([text], name, { lastModified: mtime }) });
   const mkDir = (w, name, entries) => ({ kind: "directory", name, async *values() { for (const e of entries) yield e; }, queryPermission: async () => "granted", requestPermission: async () => "granted" });
@@ -49,19 +50,19 @@ if (groupSelected()) {
       assert(T.state.activeId === primaryId, fname + ": the Primary ends up as state.activeId");
     };
 
-    const jf = await setup("jsonfolder", [mkFile(w, "data.json", JSON.stringify({ a: 1, msg: "info error" }), 1000)], true);
+    const jf = await setup("jsonfolder", [mkFile(w, "data.json", jsonDoc.text, 1000)], true);
     await w.rescanFolder(jf);
     await waitFor(() => !!jf.files.find(f => f.name === "data.json").nodeId);
     await waitFor(() => T.state.nodes[jf.files[0].nodeId].children.length === 2);
     check(jf, "data.json");
 
-    const tf = await setup("txtfolder", [mkFile(w, "notes.txt", "alpha info\nbeta error\ngamma\n", 1000)], true);
+    const tf = await setup("txtfolder", [mkFile(w, "notes.txt", txtDoc.text, 1000)], true);
     await w.rescanFolder(tf);
     await waitFor(() => !!tf.files.find(f => f.name === "notes.txt").nodeId);
     await waitFor(() => T.state.nodes[tf.files[0].nodeId].children.length === 2);
     check(tf, "notes.txt");
 
-    const mf = await setup("manualfolder", [mkFile(w, "hand.txt", "alpha info\n", 1000)], false);
+    const mf = await setup("manualfolder", [mkFile(w, "hand.txt", txtDoc.text, 1000)], false);
     await w.rescanFolder(mf);
     await w.loadFolderFile(mf, mf.files[0]);
     await waitFor(() => !!mf.files[0].nodeId);
