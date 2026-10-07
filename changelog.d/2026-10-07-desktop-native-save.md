@@ -1,0 +1,4 @@
+- **fix: saving works in the macOS/Linux desktop builds (2026-10-07, FEATURE_BACKLOG.md #102)**
+  - WKWebView/WebKitGTK have no save picker; the `<a download>` fallback was cancelled on macOS (nothing written) and landed unasked in ~/Downloads on Linux, while the toast said "Downloaded" either way.
+  - The wrapper now saves itself: `philogg.saveFile` (OS save dialog + write in Rust, `commands.rs::save_file`); every save path uses it under the desktop wrapper and toasts "Saved <name>" / "Not saved" / "Couldn't save".
+  - **Tests**: GROUP desktop-native-save. Docs: docs/desktop.md ("Saving files").

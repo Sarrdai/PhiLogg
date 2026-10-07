@@ -174,6 +174,25 @@
     openExtractedEntry: function (name, bytes) {
       return invoke("open_extracted_entry", { name: name, bytes: Array.from(bytes) });
     },
+    // Every save the page makes (its saveFileWithFeedback): the OS save
+    // dialog plus the write, in Rust — WKWebView/WebKitGTK have no
+    // showSaveFilePicker, and their <a download> fallback is cancelled
+    // (macOS) or lands unasked in ~/Downloads (Linux). `bytes` is a
+    // Uint8Array sent as the raw IPC body. Resolves with the saved file's
+    // name, or null when cancelled. See commands.rs::save_file.
+    saveFile: function (name, bytes, opts) {
+      try {
+        return window.__TAURI_INTERNALS__.invoke("save_file", bytes, {
+          headers: {
+            "x-philogg-name": encodeURIComponent(name),
+            "x-philogg-description": encodeURIComponent((opts && opts.description) || ""),
+            "x-philogg-ext": encodeURIComponent((opts && opts.ext) || ""),
+          },
+        });
+      } catch (err) {
+        return Promise.reject(err);
+      }
+    },
     // Clickable-local-path feature: pathExists gates the hover popup,
     // openPath is its "Open file" action (revealPath above already covers
     // "Open containing folder"). See commands.rs. A network (UNC) path

@@ -394,6 +394,47 @@ pub fn open_extracted_entry(app: AppHandle, name: String, bytes: Vec<u8>) -> Res
         .map_err(|e| e.to_string())
 }
 
+/// "Save…" for every file the page writes (session, filter, Export / Share,
+/// CSV, plot image, themes, …). WKWebView and WebKitGTK have no
+/// `showSaveFilePicker`, so the page's own route ends in an `<a download>`,
+/// and that goes nowhere useful here: wry cancels the download on macOS when
+/// the app registers no download handler, and WebKitGTK writes it silently
+/// into the XDG Downloads folder (or the process's working directory when
+/// none is configured) without ever asking. So the OS save dialog runs out
+/// here, like `pick_files`, and Rust writes the bytes to the path it chose —
+/// the page never names a path, so this is no general write access.
+///
+/// The bytes arrive as the raw IPC body (no JSON number array — exports can
+/// be tens of MB); the suggested name, the filter's description and the
+/// extension as URI-encoded headers. Returns the saved file's name, `None`
+/// when the dialog was cancelled, `Err` when writing failed.
+#[tauri::command]
+pub async fn save_file(app: AppHandle, request: tauri::ipc::Request<'_>) -> Result<Option<String>, String> {
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("save_file expects raw bytes".into());
+    };
+    let header = |key: &str| {
+        request
+            .headers()
+            .get(key)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| urlencoding::decode(v).ok())
+            .map(|v| v.into_owned())
+            .unwrap_or_default()
+    };
+    let (name, description, ext) = (header("x-philogg-name"), header("x-philogg-description"), header("x-philogg-ext"));
+    let mut dialog = app.dialog().file().set_title("Save").set_file_name(&name);
+    let ext = ext.trim_start_matches('.');
+    if !ext.is_empty() {
+        dialog = dialog.add_filter(description, &[ext]);
+    }
+    let Some(path) = dialog.blocking_save_file().and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    std::fs::write(&path, bytes).map_err(|e| e.to_string())?;
+    Ok(Some(path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()))
+}
+
 /// Clickable-local-path feature: checks whether an absolute path the page
 /// found in a log line actually exists on this machine before offering it
 /// as a link. `std::fs::metadata` is a single syscall, but on a network path

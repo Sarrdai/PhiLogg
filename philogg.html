@@ -22059,13 +22059,32 @@ function showCopyToast(message, opts) {
 }
 
 // The one save flow behind every file the app writes. `data` is a Blob or a
-// string. Uses the File System Access save picker where the engine has it,
-// else (or when the picker itself is unusable here) one <a download>. Shows
-// the outcome toast itself and returns "saved" | "downloaded" | "cancelled" |
-// "failed". A failure while WRITING to an already chosen file is reported, not
-// papered over with a download.
+// string. Under the desktop wrapper its native save (window.philogg.saveFile:
+// OS dialog + write in Rust; WKWebView/WebKitGTK have no save picker and their
+// <a download> is cancelled or lands unasked in ~/Downloads, see
+// docs/desktop.md); elsewhere the File System Access save picker where the
+// engine has it, else (or when the picker itself is unusable here) one
+// <a download>. Shows the outcome toast itself and returns "saved" |
+// "downloaded" | "cancelled" | "failed". A failure while WRITING to an already
+// chosen file is reported, not papered over with a download.
 async function saveFileWithFeedback(data, filename, { description, mime, ext }) {
   const blob = data instanceof Blob ? data : new Blob([data], { type: mime });
+  const failed = (name, err) => {
+    const reason = String(err && (err.message || err.name) || err || "unknown error").trim().slice(0, 120);
+    showCopyToast("Couldn't save " + name + " \u2014 " + reason, { kind: "error", duration: 6000 });
+    return "failed";
+  };
+  const notSaved = () => { showCopyToast("Not saved", { kind: "neutral" }); return "cancelled"; };
+  const saved = name => { showCopyToast("Saved " + name, { kind: "ok", duration: 3000 }); return "saved"; };
+  if (window.philogg && typeof window.philogg.saveFile === "function") {
+    let name;
+    try {
+      name = await window.philogg.saveFile(filename, new Uint8Array(await blob.arrayBuffer()), { description, ext });
+    } catch (err) {
+      return failed(filename, err);
+    }
+    return name ? saved(name) : notSaved();
+  }
   let handle = null;
   if (window.showSaveFilePicker) {
     try {
@@ -22074,10 +22093,7 @@ async function saveFileWithFeedback(data, filename, { description, mime, ext }) 
         types: [{ description, accept: { [mime.split(";")[0]]: [ext] } }],
       });
     } catch (err) {
-      if (err && err.name === "AbortError") {
-        showCopyToast("Not saved", { kind: "neutral" });
-        return "cancelled";
-      }
+      if (err && err.name === "AbortError") return notSaved();
       // API present but unusable in this context — fall through to a download
     }
   }
@@ -22088,12 +22104,9 @@ async function saveFileWithFeedback(data, filename, { description, mime, ext }) 
       await writable.write(blob);
       await writable.close();
     } catch (err) {
-      const reason = String(err && (err.message || err.name) || "unknown error").trim().slice(0, 120);
-      showCopyToast("Couldn't save " + name + " \u2014 " + reason, { kind: "error", duration: 6000 });
-      return "failed";
+      return failed(name, err);
     }
-    showCopyToast("Saved " + name, { kind: "ok", duration: 3000 });
-    return "saved";
+    return saved(name);
   }
   downloadBlobFallback(blob, filename);
   showCopyToast("Downloaded " + filename, { kind: "download", duration: 3000 });

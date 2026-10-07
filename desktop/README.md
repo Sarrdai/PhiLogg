@@ -8,6 +8,7 @@
 - [Persistent data](#persistent-data)
 - [Portable build (Windows)](#portable-build-windows)
 - [License and third-party notices](#license-and-third-party-notices)
+- [Saving files](#saving-files)
 - [Folder watch](#folder-watch)
 - [Known limitations](#known-limitations)
 - [Status](#status)
@@ -152,6 +153,14 @@ has). Both build workflows regenerate it before bundling anyway, so a CI
 build never ships a stale copy. A dependency under a license missing from
 `about.toml`'s `accepted` list makes the generation fail — check that
 license before adding it.
+
+## Saving files
+
+Every save (session, filter, Export / Share file, CSV, plot image, themes)
+opens the OS's own save dialog and is written by the wrapper, on all three
+platforms. The webviews on macOS and Linux have no save picker of their own:
+there a save used to vanish (macOS) or land unasked in ~/Downloads (Linux).
+Verified in the real Linux app (Xvfb, 2026-10-07); macOS is untested.
 
 ## Folder watch
 
