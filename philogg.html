@@ -37415,8 +37415,8 @@ async function loadFolderFile(folder, rec, auto, quiet) {
     const mapKey = folderFileKey(rec);
     // Same bookkeeping as finishFolderFileNode does for a node (set before
     // the open, whose render shows the auto badge) — except the start
-    // filters: those are filter-library records for a LOG node, a viewer has
-    // no filter tree, so they stay log-only.
+    // filters: those are filter-library records for a file node's filter
+    // tree, an image viewer has none, so they stay skipped.
     rec.openedByAuto = !!auto;
     if (auto) rec.autoOpenFired = true;
     await openInlineViewer(rec.name, bytes, viewKind, { ownerKind: "folder", ownerId: folder.id, map: folder.inlineViewers, mapKey,
@@ -37449,8 +37449,11 @@ async function finishFolderFileNode(folder, rec, node, auto) {
   rec.openedByAuto = !!auto;
   if (auto) {
     rec.autoOpenFired = true;
-    // Filter-library start filters are for LOG nodes: a text file skips them.
-    if (node.textSyntax === undefined) await applyFolderStartFilter(folder, rec, node);
+    // Start filters apply to every file node, text files (Plain text format
+    // + a normal filter tree) included. An image never gets here: it opens
+    // as an inline viewer without a filter tree (loadFolderFile's viewKind
+    // branch) and so skips them.
+    await applyFolderStartFilter(folder, rec, node);
   }
   // Under a wrapper that listed the folder natively the file's real path
   // and its philogg://local/… URL are both known, so a folder file gets

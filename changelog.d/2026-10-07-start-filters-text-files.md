@@ -1,0 +1,4 @@
+- **feat: folder-watch start filters also apply to auto-opened text files (2026-10-07, backlog #110)**
+  - A pattern's "Start filters" (and its Primary) now apply when the pattern auto-opens a `.txt`/`.json`/`.xml` file, so it lands in the wanted filter view like an auto-opened log. Text files are ordinary Plain-text file nodes with a filter tree, so only the old log-only guard was removed.
+  - Files opened by hand still get nothing; images (inline viewer, no filter tree) still skip.
+  - **Tests**: GROUP folder-start-filters-text-files. Docs: docs/persistence-and-sync.md.
