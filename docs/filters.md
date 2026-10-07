@@ -31,6 +31,7 @@
 - [Time context filter: window around reference entries](#time-context-filter-window-around-reference-entries)
 - [Count context filter: fixed number of entries around reference entries](#count-context-filter-fixed-number-of-entries-around-reference-entries)
 - [Gap filter: time distance to the previous entry ("gap")](#gap-filter-time-distance-to-the-previous-entry-gap)
+- ["Why is this row here?" (explainEntry, FEATURE_BACKLOG #15)](#why-is-this-row-here-explainentry-feature_backlog-15)
 - [Muting a filter node](#muting-a-filter-node)
 - [Recent-filter suggestions](#recent-filter-suggestions)
 - [Filter rules: the three movement classes, and Table/Plot upward-lookup inheritance](#filter-rules-the-three-movement-classes-and-tableplot-upward-lookup-inheritance)
@@ -466,6 +467,10 @@ A sibling of the Time context filter above (`filterType: "countContext"`, fields
 - **Not done** (optional in the request): a "⏸ 31.8 s without entries" label in the Context view's gap separators.
 
 Tested: **GROUP 289**.
+
+## "Why is this row here?" (`explainEntry`, FEATURE_BACKLOG #15)
+
+`explainEntry(entryId, activeId)` (next to `getEntriesUncached`) explains one entry against the chain from the file down to the active node. It adds no filter semantics: a node keeps the entry iff the entry's id is in `getEntries(node.id)` (`explainKeptIds`, memoized per result array; a link node's synthetic pair entries are expanded through `getTupleEntries`, so both ends of a pair count as kept). The reason line comes from `explainCondition`, which re-tests the node's own condition on `[entry]` through `evaluateFilterCondition` for per-entry types (`PER_ENTRY_FILTER_TYPES`; an inverted node reports `found → excluded` / `not found → kept`), counts matched baked conditions for AND/OR (one sub-line each, recursively), and reads membership for link, context, count-context and everything else. Walking from the top, the first node missing the entry is `rejected` and later ones `skipped`; a muted node is `muted`; a node a later context node re-adds the entry past stays `kept` with a note. The result also carries the head text and a `view` step (level bar hides the row, or Pin bookmarks shows it). The Why tab renders it, see docs/ui-and-views.md. GROUP explain-row.
 
 ## Muting a filter node
 

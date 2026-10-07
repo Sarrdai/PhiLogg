@@ -745,12 +745,12 @@ Filtered view lists, without pinned bookmarks — by message shape.
 
 ## Facet panel (value distribution per column)
 
-The bottom panel (`#detailPanel`) has three tabs: **Entry detail | Statistics |
-Facets** (`#lowerTabDetail` / `#lowerTabStats` / `#lowerTabFacets`,
+The bottom panel (`#detailPanel`) has four tabs: **Entry detail | Why | Statistics |
+Facets** (`#lowerTabDetail` / `#lowerTabWhy` / `#lowerTabStats` / `#lowerTabFacets`,
 `role="tab"`, `aria-selected`). The facets used to be a 280px side panel, which
 squeezed the log's Message column to a few pixels; now the log list keeps its
 full width and the panel's height comes from the existing `#detailResizer`.
-The selected tab is the one `lowerTab` value (`"detail" | "stats" | "facets"`,
+The selected tab is the one `lowerTab` value (`"detail" | "stats" | "facets" | "why"`,
 persisted in `philogg-lower-tab`); the switches are the tabs and `Ctrl+I`
 (`toggleFacets`, rebindable, "Show/hide Facets (bottom panel tab)"): with
 Facets selected and the panel expanded and visible it goes back to Entry
@@ -768,6 +768,24 @@ Raw/Parsed/Pretty are replaced by the entry count (`#facetPanelCount`) and
 `renderStatsBar`) replaces it and the header shows no Raw/Parsed/Pretty.
 `applyLowerPanel()` (from `renderMainView`) sets the tab state from
 `fhActiveTab`; `renderFacetPanel()` fills the facet body.
+
+**Why tab** ("Why is this row here?", FEATURE_BACKLOG #15). With Why selected
+(`.lower-why`, `whyActive()`) `#whyPanelBody` replaces the entry body. It shows
+`explainEntry(selectedEntry, activeId)` (see docs/filters.md → "Why is this row
+here?") and follows the selection: `updateDetailPanel()` calls
+`renderWhyPanel()` on every selection change, which writes only into its own
+body (never `render()`/`renderTree()`). Head line (green when the entry is in
+the active node's result, red when not), then one step per chain node, top-down:
+number, node name (a button that activates the node like a plain tree click and
+leaves the entry selected), badge `kept` / `rejected` / `not reached` / `muted`,
+the reason line, and for AND/OR one indented ✓/✗ line per baked condition. The
+rejecting step is red, `not reached` steps are dimmed, a last line names a
+view filter that hides the row (level bar) or the pin that shows it. Colors are
+`--status-ok` / `--level-error` / `--accent-strong`. Row context menu: **Why is
+this row here?** (`#ctxWhyRow`, after Pair with…, real rows only) selects the row
+and opens the tab (`openWhyTab()`; expands a collapsed panel). Phone: `Why` is a
+sheet tab beside Entry (`phoneSheetTab` `"why"`, enabled only with a selection,
+not persisted; a card tap keeps it). GROUP explain-row.
 Visibility per view: Context/Filtered/link view as above. **Table and Plot**
 show a normal panel with all three tabs: Entry detail shows the selected entry
 (`state.selectedId`; on Table a click on a body cell or row gutter selects

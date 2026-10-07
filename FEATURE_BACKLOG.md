@@ -35,7 +35,6 @@ Wiedervorlage → empty, Verworfen → verworfen).
 
 | Nr | Vorschlag | Begründung | Aufwand | Prio |
 |---|---|---|---|---|
-| 15 | "Why is this row here?" explain popup | For the selected entry, show which node of the active chain matched it; for a context row in the Context view, show which node rejects it. A debugging aid for deep trees, and the natural answer to the "view sometimes doesn't refresh" class of confusion. | mittel | 2 |
 | 19 | File-independent (universal) cache for the `.html` build | Today the cache appears keyed per filename; a shared/universal cache would keep working across renamed or re-opened files. Open question: how to handle a cached payload left over from an incompatible older/newer app version (versioning or invalidation needed). | mittel | 2 |
 | 58 | Inline editing of an AND/OR node's `baked` conditions | Link nodes have their own edit dialog ("Edit link…"); AND/OR still don't — changing what a combiner matches means Unpack (materializes its baked conditions as sibling filters, leaving the combiner unchanged) or delete-and-recreate. A small dialog listing the baked conditions as editable pattern fields (like the link dialog's sides) would let one condition be swapped directly. | mittel | 2 |
 | 73 | Custom plots — a script window as a Plot variant | A small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint. | groß | 2 |
