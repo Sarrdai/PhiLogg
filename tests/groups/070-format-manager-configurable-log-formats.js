@@ -378,9 +378,9 @@ await withApp(async (w, d, T) => {
 
   const defaultRow = () => d.querySelector("#formatList .filter-library-row");
   assert(defaultRow().querySelector(".filter-library-row-del") === null, "the builtin default row has no Delete button");
-  const resetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.textContent === "Reset");
+  const resetBtn = () => [...defaultRow().querySelectorAll("button")].find(b => b.title === "Reset to default");
   assert(resetBtn(), "...and has a Reset button in its place");
-  assert(resetBtn().className === "btn-mini-outline", "Reset is a lightweight .btn-mini-outline list-row action, got " + resetBtn().className);
+  assert(resetBtn().classList.contains("list-icon-btn") && !resetBtn().textContent.trim(), "Reset is a ghost icon button in the row's icon slot, got " + resetBtn().className);
 
   // Sanity: an unedited default parses a normal log4net-shaped file correctly.
   const before = await w.addFile("before.log", makeLog(0, 3), () => {});

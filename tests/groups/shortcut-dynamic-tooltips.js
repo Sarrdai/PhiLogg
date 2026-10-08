@@ -42,7 +42,7 @@ group("shortcut-dynamic-tooltips");
     w.eval('pushUndo({ kind: "text", label: "x", undo() {}, redo() {} })');
     assert(/\(Ctrl\+Q\)$/.test(title("btnUndo")), "undo tooltip follows after an action, got " + title("btnUndo"));
     rebind(d, w, "zoomIn", "9", { ctrlKey: true });
-    assert(title("fontScaleUp") === "Increase UI scale (Ctrl+9)", "font scale tooltip follows, got " + title("fontScaleUp"));
+    assert(title("fontScaleUp") === "Increase (Ctrl+9)", "font scale tooltip follows, got " + title("fontScaleUp"));
 
     fireClick(d.getElementById("btnResetShortcuts"), w);
     assert(title("btnFindPhone") === "Find in view (Ctrl+F)", "reset all restores the find tooltip");

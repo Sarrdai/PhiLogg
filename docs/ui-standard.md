@@ -21,7 +21,7 @@ documents the reusable class to reach for instead of a new one.
 state, not a target: the `.pill-toggle` component below exists and every listed
 single-boolean checkbox was converted to it, buttons collapsed to the
 `.btn-mini` / `.btn-mini-secondary` pair with footer order secondary→primary,
-and every overlong `.settings-row-hint` trimmed to one ≤~90-char line. Keep new
+and every overlong `.settings-row-hint` trimmed to one short line (since the 2026-10-07 Settings cleanup: ≤ ~60 chars). Keep new
 dialogs conforming to it. See `changelog.d/` (2026-09-14) and
 `docs/ui-and-views.md` → "Boolean pill toggle & the dialog consistency sweep".
 
@@ -74,6 +74,17 @@ carries `.active` (accent border + `--accent-strong` text +
 (e.g. #29's *Difference / Start time* mode) instead of a `<select>` or
 radios.
 
+**In Settings, every short choice (2–4 options) is a segmented control**, and
+the way to make one is `segmentFromSelect(select)`: write the `<select
+data-seg>` with the short option texts (they become the button texts) and
+keep using it as the state carrier — option values, `change` listener, init
+code and storage keys stay as they are. The helper hides the select, builds
+the `.assert-mode-btn` group next to it (equal widths, `flex:1 1 0%`), turns a
+click into `select.value = v` + `change`, and overrides the select's instance
+`value` setter so a programmatic `select.value = x` re-syncs the active
+button. A `<select>` stays only for open lists (themes, fonts, schemes,
+instances, models).
+
 ## Boolean toggle — `.pill-toggle` (the #69 replacement for checkboxes)
 
 A single on/off option is a **pill toggle**, not a native `<input
@@ -121,14 +132,37 @@ the left in `.settings-row-text`, control right in `.settings-row-control`):
 - `.settings-row-label`: `font-size:13.5px`, `font-weight:550`,
   `--text-primary`. The clickable label wires to its control.
 - `.settings-row-hint`: `font-size:12px`, `--text-tertiary`,
-  `line-height:1.5`. **One line, ≤ ~90 chars.** A hint states *what the
+  `line-height:1.5`. **One line, ≤ ~60 chars.** A hint states *what the
   option does*, not caveats, history, or examples — move anything longer
-  out of the UI. Trim the existing verbose hints as part of #69.
-- Controls in a column are **right-edge aligned**: same control width /
-  right margin down the column so pills, selects and number inputs line
-  up. `<select>` and `input[type=number]` use the existing
-  `.settings-row-control select` / `input` rules — don't restyle per
-  dialog.
+  out of the UI.
+- **One control column (Settings dialog).** Every `.settings-row` in
+  `#settingsDialog` is the grid `minmax(0,1fr) var(--settings-ctl-w)` with
+  `--settings-ctl-w: 248px`. Selects, segmented controls, text inputs and
+  the accent button fill the column (`width:100%`); pill toggles are
+  right-aligned in it; rows with two controls (select + button) keep both
+  inside it. On phone the column is the row's full width. Other dialogs keep
+  the plain label | control row and right-align their controls. `<select>`
+  and `input[type=number]` use the existing `.settings-row-control select` /
+  `input` rules — don't restyle per dialog.
+- **Steppers** (UI scale, Log text size, Lines/Time per step, Anchor fade
+  time) are the shared 120px `.stepper` plus a 30px icon button
+  (`.settings-reset-btn`, title "Reset to default") that restores the
+  default constant — a stepper without one is incomplete, and no text
+  "Reset" buttons.
+- **Group header.** A group of rows or a list is a `.settings-subsection-title`
+  (24px above it, the first group under a section's one-line
+  `.settings-section-desc` included) + `.settings-card`. The header is a
+  flex row: short title (+ a `.settings-group-count` for lists) left, the
+  `.btn-mini-dashed` add button right ("+ Add format", "+ New theme"; no
+  card footer), an optional `.settings-group-note` hint line below.
+- **Lists don't scroll inside.** A list in a card grows and the dialog body
+  scrolls. Row actions sit in fixed slots of one grid so they line up from
+  row to row (formats: Edit · Export · icon slot; rules: ▲ · ▼ · text · Edit
+  · ×; shortcuts: label · key chip · ↺ slot); a row without an action keeps
+  the slot empty. Empty states use the row padding (18px).
+- **Tooltips** say what the click does, ≤ ~40 chars, with the shortcut in
+  parentheses where there is one ("Export as JSON", "Reset to default",
+  "Decrease (Ctrl −)"); the same wording on every control of one kind.
 
 ## Dialog shell & header
 

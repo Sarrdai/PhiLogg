@@ -22,19 +22,19 @@ await withApp(async (w, d, T) => {
   w.openSettingsDialog();
   assert(!d.querySelector("#settingsDialog").classList.contains("hidden"), "openSettingsDialog opens Settings");
   assert(d.querySelector("#settingsSectionShortcuts"), "a dedicated Shortcuts section exists in Settings");
-  assert(!d.querySelector("#settingsSectionShortcuts .settings-section-desc"), "the usage-instruction prose under the section title is gone");
-  const rebindableRows = d.querySelectorAll("#shortcutBindingsList > div[data-action-id]");
+  assert(d.querySelector("#settingsSectionShortcuts .settings-section-desc").textContent === "Click a key combination to change it.", "the section carries the one-line desc, no longer prose");
+  const rebindableRows = d.querySelectorAll("#shortcutBindingsList .shortcut-row[data-action-id]");
   // Compared against the live SHORTCUT_ACTIONS length (a top-level const,
   // reachable via global eval) rather than a hardcoded number, so adding a
   // rebindable action (e.g. exportView, GROUP 283) doesn't need this edited.
   assert(rebindableRows.length === w.eval("SHORTCUT_ACTIONS.length") && rebindableRows.length >= 20, "the rebindable-actions rows render one per registered action");
-  const fixedRows = d.querySelectorAll("#shortcutBindingsList > div.shortcut-row-fixed");
+  const fixedRows = d.querySelectorAll("#shortcutBindingsList .shortcut-row-fixed");
   assert(fixedRows.length > 0, "fixed (non-rebindable) shortcuts are listed too, so the list stays complete");
   fixedRows.forEach(row => {
     assert(!row.querySelector(".shortcut-rebind-btn") && !row.querySelector(".shortcut-reset-btn"),
       "a fixed row has no Change/Reset controls — it can't be edited or deleted");
   });
-  assert(d.querySelector("#shortcutBindingsList").children.length === rebindableRows.length + fixedRows.length,
+  assert(d.querySelectorAll("#shortcutBindingsList .shortcut-row").length === rebindableRows.length + fixedRows.length,
     "rebindable and fixed rows together make up the whole list");
 });
 
@@ -57,7 +57,8 @@ await withApp(async (w, d, T) => {
   // a re-render (which would silently go stale/detached).
   fireClick(d.querySelector("[data-action-id='bookmark'] .shortcut-rebind-btn"), w);
   assert(d.querySelector("[data-action-id='bookmark'] .shortcut-rebind-btn").classList.contains("recording"),
-    "the rebind button shows a recording state while listening");
+    "the key chip (the rebind button) shows a recording state while listening");
+  assert(d.querySelector("[data-action-id='bookmark'] .shortcut-rebind-btn").textContent === "Press keys…", "...and reads 'Press keys…'");
   fireKeydown(d, w, "k");
   assert(w.localStorage.getItem("philogg.shortcutBindings") === JSON.stringify({ bookmark: { ctrl: false, shift: false, alt: false, key: "k" } }),
     "the new combo persists to localStorage under the action's id");
@@ -96,5 +97,5 @@ await withApp(async (w, d, T) => {
   assert(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings")).closeFile, "sanity: an override is stored before reset-all");
   fireClick(d.querySelector("#btnResetShortcuts"), w);
   assert(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings")) && Object.keys(JSON.parse(w.localStorage.getItem("philogg.shortcutBindings"))).length === 0,
-    "\"Reset all to defaults\" clears every override");
+    "\"Reset all\" clears every override");
 });
