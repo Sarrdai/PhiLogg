@@ -54,4 +54,34 @@ await withApp(async (w, d, T) => {
   w.render();
   w.setMinimapView(g.entries[100].ts, g.entries[100].ts + 2000);
   assert(chip() && /^Zoom <1 % /.test(chip().textContent), "chip says <1 %: " + (chip() && chip().textContent));
+
+  section("minimap-zoom-indicator d. One-level zoom: chip only; two levels: crumbs after the chip");
+  w.minimapViewReset();
+  const crumbEls = () => [...meta.querySelectorAll(".minimap-crumb")];
+  w.setMinimapView(e(30), e(90));
+  assert(crumbEls().length === 0 && chip(), "one level: no .minimap-crumb, the chip is there");
+  assert(meta.querySelector(".minimap-res") && !/Whole file ›/.test(meta.textContent), "one level: resolution hint stays, no breadcrumb text");
+  const f2 = await w.addFile("c.log", makeLog(0, 120), () => {});
+  T.state.activeId = f2.id; w.render();
+  w.setMinimapView(f2.entries[30].ts, f2.entries[90].ts);
+  w.setMinimapView(f2.entries[40].ts, f2.entries[60].ts);
+  assert(T.minimapView.trail.length === 2, "two levels");
+  assert(crumbEls().length === 3 && chip() && chip().compareDocumentPosition(crumbEls()[0]) & 4, "two levels: crumbs after the chip");
+  chip().click();
+  assert(T.minimapView.trail.length === 0, "the chip still returns to the whole file from a deep trail");
+
+  section("minimap-zoom-indicator e. Overview box keeps a minimum width; strip geometry in CSS");
+  w.minimapViewReset();
+  const strip = d.querySelector("#timelineMinimapOverview");
+  Object.defineProperty(strip, "clientWidth", { configurable: true, get: () => 1000 });
+  const h = await w.addFile("d.log", makeLog(0, 4000), () => {});
+  T.state.activeId = h.id; w.render();
+  w.setMinimapView(h.entries[3990].ts, h.entries[3990].ts + 2000); // far below 2 % of the file, at its very end
+  const bw = parseFloat(box.style.width), bl = parseFloat(box.style.left);
+  assert(bw >= 0.6 - 0.01, "box width is at least 6 px (0.6 % of a 1000 px strip), got " + box.style.width);
+  assert(bl + bw <= 100.001, "the box stays inside the strip at the end of the file: " + box.style.left + " + " + box.style.width);
+  const st = w.getComputedStyle(d.querySelector("#timelineMinimapOverview"));
+  assert(st.flexBasis === "12px", "strip is 12 px tall, got " + st.flexBasis);
+  assert(w.getComputedStyle(box).minWidth === "6px", "CSS min-width 6 px, got " + w.getComputedStyle(box).minWidth);
+  w.minimapViewReset();
 });

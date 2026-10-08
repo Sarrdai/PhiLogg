@@ -1819,21 +1819,25 @@
      `.level-btn`/etc. already use elsewhere in this file. */
   .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
   .minimap-meta-level:hover{filter:brightness(1.35);}
-  /* Zoom indicator (only while .zoomed): accent frame + glow, edge arrows
-     (the log continues beyond that side), a 10 px overview strip of the whole
-     file with the zoom window as a box, and the "Zoom 18 % ... Whole file"
-     chip in the meta line. The strip is in flow but the minimap's height is
-     fixed, so the SVG gives up 10 px; the table below does not move. */
+  /* Zoom indicator (only while .zoomed): accent frame + glow, bold edge arrows
+     (the log continues beyond that side), a 12 px overview strip of the whole
+     file with the zoom window as a box (min 6 px wide, end ticks), and the
+     "Zoom 18 % ... Whole file" chip in the meta line. The strip is in flow but
+     the minimap's height is fixed, so the SVG gives up 12 px; the table below
+     does not move. */
   #timelineMinimap.zoomed{box-shadow:inset 0 0 0 1px var(--accent), inset 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);}
-  #timelineMinimapOverview{display:none; flex:0 0 10px; position:relative; margin:0 10px; pointer-events:none;
-    background:var(--bg-app); border-radius:3px; box-shadow:inset 0 0 0 1px var(--border);}
+  #timelineMinimapOverview{display:none; flex:0 0 12px; position:relative; margin:0 10px; pointer-events:none;
+    background:var(--bg-elevated-2); border-radius:3px; box-shadow:inset 0 0 0 1px var(--border);}
   #timelineMinimap.zoomed #timelineMinimapOverview{display:block;}
-  #timelineMinimapOverviewBox{position:absolute; top:0; bottom:0; min-width:3px; box-sizing:border-box;
-    border:1.5px solid var(--accent); background:var(--accent-soft); border-radius:3px;}
-  .minimap-edge{display:none; position:absolute; top:26px; bottom:0; width:16px; pointer-events:none; z-index:1;
-    align-items:center; font-size:16px; font-weight:700; line-height:1; color:var(--accent);}
-  .minimap-edge-l{left:0; justify-content:flex-start; padding-left:2px; background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 35%, transparent), transparent);}
-  .minimap-edge-r{right:0; justify-content:flex-end; padding-right:2px; background:linear-gradient(270deg, color-mix(in srgb, var(--accent) 35%, transparent), transparent);}
+  #timelineMinimapOverviewBox{position:absolute; top:0; bottom:0; min-width:6px; box-sizing:border-box;
+    border:2px solid var(--accent); background:color-mix(in srgb, var(--accent) 35%, transparent); border-radius:3px;}
+  #timelineMinimapOverviewBox::before, #timelineMinimapOverviewBox::after{content:""; position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--accent-strong); border-radius:1px;}
+  #timelineMinimapOverviewBox::before{left:-2px;}
+  #timelineMinimapOverviewBox::after{right:-2px;}
+  .minimap-edge{display:none; position:absolute; top:28px; bottom:0; width:24px; pointer-events:none; z-index:1;
+    align-items:center; font-size:18px; font-weight:800; line-height:1; color:var(--accent-strong);}
+  .minimap-edge-l{left:0; justify-content:flex-start; padding-left:4px; background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 50%, transparent), transparent);}
+  .minimap-edge-r{right:0; justify-content:flex-end; padding-right:4px; background:linear-gradient(270deg, color-mix(in srgb, var(--accent) 50%, transparent), transparent);}
   #timelineMinimap.zoomed .minimap-edge.on{display:flex;}
   .minimap-zoom-chip{font:inherit; font-size:11px; font-weight:700; line-height:14px; font-family:var(--font-mono); background:var(--accent); color:var(--bg-app);
     border:0; border-radius:9px; padding:0 8px; margin-right:8px; cursor:pointer; vertical-align:top;}
@@ -31485,6 +31489,9 @@ function updateMinimapZoomIndicator(view) {
     const span = Math.max(1, minimapFileTMax - minimapFileTMin);
     l = (minimapTMin - minimapFileTMin) / span * 100; w = (minimapTMax - minimapTMin) / span * 100;
   }
+  // Keep a tiny window visible: at least 6 px wide, pushed back inside the strip.
+  const stripW = el("#timelineMinimapOverview").clientWidth;
+  if (stripW > 0) { w = Math.max(w, 6 / stripW * 100); l = Math.min(l, 100 - w); }
   box.style.left = l.toFixed(2) + "%";
   box.style.width = w.toFixed(2) + "%";
   eL.classList.toggle("on", view.from > minimapFileTMin);
@@ -31492,6 +31499,9 @@ function updateMinimapZoomIndicator(view) {
 }
 function minimapCrumbsHtml(rootId) {
   const trail = minimapViewTrail;
+  // A one-level zoom on desktop/tablet: the zoom chip already carries the range and
+  // the way back, so the crumbs would only repeat it. The phone has no chip.
+  const crumbsHidden = trail.length === 1 && !document.body.classList.contains("layout-phone");
   const crumb = (label, depth) => '<button type="button" class="minimap-crumb" data-depth="' + depth + '"' +
     (depth === trail.length ? " disabled" : "") + ">" + escapeHtml(label) + "</button>";
   const parts = [crumb("Whole file", 0)];
@@ -31499,7 +31509,7 @@ function minimapCrumbsHtml(rootId) {
     const ms = !nodeIsPlainText(rootId) && v.to - v.from < 10000;
     parts.push(crumb(timeRangeBoundLabel(rootId, v.from, ms) + "–" + timeRangeBoundLabel(rootId, v.to, ms), i + 1));
   });
-  return '<span class="minimap-crumbs">' + parts.join(" › ") + '</span>' +
+  return (crumbsHidden ? "" : '<span class="minimap-crumbs">' + parts.join(" › ") + '</span>') +
     (minimapShownDraft() ? '<span class="minimap-draft-text">' + escapeHtml(minimapDraftLabelText(minimapShownDraft(), false)) + "</span>" : "") +
     '<span class="minimap-res" title="Resolution of the zoomed minimap">' +
     escapeHtml(minimapResolutionText()) + "</span>";

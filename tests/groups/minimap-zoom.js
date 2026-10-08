@@ -54,15 +54,16 @@ await withApp(async (w, d, T) => {
   assert(mzSum(T.minimapBars.bg) === 41, "background bars count only the 41 entries inside the window, got " + mzSum(T.minimapBars.bg));
   assert(mzSum(T.minimapBars.ov) === 41, "overlay bars count the view entries inside the window, got " + mzSum(T.minimapBars.ov));
   assert(mini.classList.contains("zoomed"), "zoomed class set");
-  assert(crumbs().map(b => b.textContent).join("|") === "Whole file|10:00:20–10:01:00", "crumbs: " + crumbs().map(b => b.textContent).join("|"));
-  assert(!crumbs()[0].disabled && crumbs()[1].disabled, "the last crumb is the current view and disabled");
+  assert(crumbs().length === 0 && meta.querySelector(".minimap-zoom-chip"), "one-level zoom: the zoom chip replaces the crumbs");
   assert(/^\d+(\.\d+)? (ms|s)\/px$/.test(meta.querySelector(".minimap-res").textContent), "resolution hint, got " + meta.querySelector(".minimap-res").textContent);
   assert(meta.querySelector(".minimap-res").textContent === "50 ms/px", "40 s over 800 px = 50 ms/px, got " + meta.querySelector(".minimap-res").textContent);
   assert(meta.textContent.includes("Start") && meta.textContent.includes("Duration"), "file facts stay in the meta line");
 
   // A nested zoom adds a crumb; clicking a crumb goes back to it.
   w.setMinimapView(e(30), e(50));
-  assert(crumbs().length === 3 && T.minimapView.trail.length === 2, "second zoom adds a crumb");
+  assert(crumbs().length === 3 && T.minimapView.trail.length === 2, "second zoom brings the crumbs back after the chip");
+  assert(crumbs().map(b => b.textContent).join("|") === "Whole file|10:00:20–10:01:00|10:00:30–10:00:50", "crumbs: " + crumbs().map(b => b.textContent).join("|"));
+  assert(!crumbs()[0].disabled && crumbs()[2].disabled, "the last crumb is the current view and disabled");
   crumbs()[1].click();
   assert(T.minimapView.trail.length === 1 && T.minimapView.tMin === e(20), "clicking the middle crumb goes back one level");
   assert(w.setMinimapView(e(20), e(60)) === false, "re-zooming into the identical view is a no-op");
@@ -75,8 +76,8 @@ await withApp(async (w, d, T) => {
   assert(T.minimapView.trail.length === 1 && full().classList.contains("hidden"), "a result outside the zoomed window hides the range rect");
   T.state.activeId = f.id; w.render();
 
-  crumbs()[0].click();
-  assert(T.minimapView.trail.length === 0 && T.minimapView.tMin === e(0) && T.minimapView.tMax === e(119), "clicking \"Whole file\" resets");
+  meta.querySelector(".minimap-zoom-chip").click();
+  assert(T.minimapView.trail.length === 0 && T.minimapView.tMin === e(0) && T.minimapView.tMax === e(119), "clicking the zoom chip resets");
   assert(crumbs().length === 0 && !mini.classList.contains("zoomed"), "crumbs gone after reset");
   assert(mzSum(T.minimapBars.bg) === 120, "bars cover the whole file again");
 
