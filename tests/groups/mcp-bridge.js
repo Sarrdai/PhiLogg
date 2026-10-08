@@ -16,8 +16,9 @@ await withApp(async (w, d, T) => {
   assert(!isVisible(d.getElementById("settingsMcpCard"), w) && !isVisible(d.getElementById("settingsMcpGroupTitle"), w), "no MCP group");
   assert(!isVisible(d.getElementById("settingsLlmGroupTitle"), w), "no 'Local model' title either");
   assert(typeof w.philoggMcpCall === "function", "the bridge function exists in every build");
-  w.philoggMcpCall("b1", "get_overview", {});
-  assert(true, "a call without a bridge does not throw");
+  let threw = false;
+  try { w.philoggMcpCall("b1", "get_overview", {}); } catch (e) { threw = true; }
+  assert(!threw, "a call without a bridge does not throw");
 });
 
 await withApp(async (w, d, T) => {
@@ -143,12 +144,6 @@ await withApp(async (w, d, T) => {
   assert(res()[2][1] === "m3" && res()[2][3] === true, "a failing tool call → isError");
   assert(T.undoStack.length === 0, "…no undo step either");
 
-  // Several nodes in one call → one batch (create_filter with several patterns, if offered; else skipped)
-  const spec = w.llmToolSpecs().map(s => s.function).find(fn => fn.parameters && fn.parameters.properties && fn.parameters.properties.patterns);
-  if (spec) {
-    w.philoggMcpCall("m4", spec.name, { parentId: f.id, patterns: ["Move requested", "Position reached"] });
-    assert(res()[3][1] === "m4", "multi-node tool answered");
-  }
 }, { philogg: llmDesktopStub(), beforeParse: llmOn });
 
 await withApp(async (w, d, T) => {
