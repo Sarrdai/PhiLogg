@@ -105,6 +105,12 @@ img{max-width:100%}
 .feat-body p{margin:0;color:var(--text-secondary);font-size:14px}
 .feat-body .try{font:12px var(--font-log);color:var(--accent);margin-top:4px;text-decoration:none}
 
+.tasks{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px}
+.task{display:flex;flex-direction:column;gap:4px;background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;padding:14px 16px;text-decoration:none;color:var(--text-primary);min-width:0}
+.task:hover{border-color:var(--accent)}
+.task b{font:600 15px var(--font-body)}
+.task b::before{content:"I want to ";color:var(--text-tertiary);font-weight:400}
+.task span{color:var(--text-secondary);font-size:14px}
 .run{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
 .run div{border-top:2px solid var(--border);padding-top:12px;display:flex;flex-direction:column;gap:6px;min-width:0}
 .run div:first-child{border-top-color:var(--accent)}
@@ -131,7 +137,7 @@ img{max-width:100%}
 .site-foot nav{display:flex;gap:16px}
 
 @media (max-width:860px){
-  .hero,.features,.run{grid-template-columns:minmax(0,1fr)}
+  .hero,.features,.run,.tasks{grid-template-columns:minmax(0,1fr)}
   .site-nav nav{margin-left:0}
   .hero,.sec,.site-nav,.site-foot{padding-inline:16px}
   .facts div{padding-inline:16px}
@@ -139,7 +145,7 @@ img{max-width:100%}
 /* Phone width: the app shows its phone layout there, which has no format
    dialog, so the link into it is hidden (same 600px tier as philogg.html). */
 @media (max-width:599px){
-  .fmt-link{display:none}
+  .fmt-link,.fmt-link-card{display:none}
 }
 </style>
 </head>
@@ -150,6 +156,8 @@ img{max-width:100%}
     <nav aria-label="Main">
       <a href="app/?session=tour/welcome.session.json" id="nav-tour">Tour</a>
       <a href="#features">Features</a>
+      <a href="#tasks">Typical tasks</a>
+      <a href="cheatsheet.html">Cheatsheet</a>
       <a href="#download">Download</a>
       <a href="https://github.com/Sarrdai/PhiLogg/blob/main/LICENSE.md">License</a>
       <a href="https://github.com/Sarrdai/PhiLogg">GitHub</a>
@@ -203,6 +211,18 @@ img{max-width:100%}
       </div>
     </section>
 
+    <section class="sec" id="tasks">
+      <div class="sec-head"><h2>Typical tasks</h2><a class="mono" href="cheatsheet.html">cheatsheet &rarr;</a></div>
+      <div class="tasks">
+        <a class="task" href="app/?session=tour/cards/filters.session.json&amp;view=context"><b>find the error and what led to it</b><span>The Context view shows the rows around every hit.</span></a>
+        <a class="task" href="app/?session=tour/cards/filters.session.json&amp;view=filtered"><b>narrow a big log step by step</b><span>Nested filters, each one cuts down the result above it.</span></a>
+        <a class="task" href="app/?session=tour/cards/link.session.json&amp;view=filtered"><b>compare a request with its response</b><span>A link filter pairs start and end lines and keeps the slow pairs.</span></a>
+        <a class="task" href="app/?session=tour/cards/patterns.session.json&amp;view=patterns"><b>spot recurring messages</b><span>Patterns folds thousands of lines into a few message shapes.</span></a>
+        <a class="task" href="app/?session=tour/cards/plot.session.json&amp;view=plot"><b>plot a value over time</b><span>Pull a number out of the message and chart it.</span></a>
+        <a class="task fmt-link-card" href="app/?session=tour/welcome.session.json&amp;open=format"><b>teach it your own log format</b><span>Mark the fields in your lines, no regex needed.</span></a>
+      </div>
+    </section>
+
     <section class="sec" id="run">
       <div class="sec-head"><h2>Three ways to run it</h2></div>
       <div class="run">
@@ -222,6 +242,8 @@ img{max-width:100%}
   <footer class="site-foot">
     <span>Source-available &middot; free for personal use (PolyForm Noncommercial 1.0.0)</span>
     <nav aria-label="Footer">
+      <a href="cheatsheet.html">Cheatsheet</a>
+      <a href="impressum.html">Impressum</a>
       <a href="app/LICENSE.md">License</a>
       <a href="https://github.com/Sarrdai/PhiLogg">GitHub</a>
     </nav>
