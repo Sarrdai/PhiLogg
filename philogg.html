@@ -5049,7 +5049,9 @@
   .log-row.repeat-member .col-msg, .log-row.repeat-member .col-text{opacity:.88;}
   /* Collapse-repeats options menu (chevron next to the toggle), same shell as #columnsPanel. */
   .repeat-split{display:flex; align-items:center;}
-  .toolbar-icon-btn.repeat-chevron{width:14px; margin-left:-6px; background:none; border:none; color:var(--text-secondary);}
+  /* person-reported, 2026-10-08: no negative margin and a 14px hit area (.tb-hit is 28px by default and overhung the toggle's icon), so each click lands on the control it is drawn on. */
+  .toolbar-icon-btn.repeat-chevron{width:14px; margin-left:0; background:none; border:none; color:var(--text-secondary);}
+  .toolbar-icon-btn.repeat-chevron .tb-hit{width:14px;}
   .toolbar-icon-btn.repeat-chevron:hover{background:var(--bg-elevated-2);}
   .toolbar-icon-btn.repeat-chevron .icon{--icon-md:10px;}
   #repeatMenu{
@@ -5067,14 +5069,10 @@
     flex:0 0 auto; width:13px; height:13px; margin-top:1px; box-sizing:border-box;
     border:1.5px solid var(--border-hover); background:transparent;
   }
-  .repeat-menu-item .rm-check{border-radius:3px;}
-  .repeat-menu-item .rm-radio{border-radius:50%;}
+    .repeat-menu-item .rm-radio{border-radius:50%;}
   .repeat-menu-item.on .rm-mark{border-color:var(--accent-strong); background:var(--accent-strong); box-shadow:inset 0 0 0 2.5px var(--bg-elevated);}
-  .repeat-menu-item .rm-check, .repeat-menu-item.on .rm-check{box-shadow:none;}
-  .repeat-menu-item.on .rm-check{background:var(--accent-strong);}
-  .repeat-menu-item .rm-title{display:block; color:var(--text-primary); font-weight:600;}
+    .repeat-menu-item .rm-title{display:block; color:var(--text-primary); font-weight:600;}
   .repeat-menu-item .rm-sub{display:block; margin-top:1px; font-size:10.5px; color:var(--text-tertiary); line-height:1.35;}
-  .repeat-menu-sep{height:1px; margin:4px 2px; background:var(--border-soft);}
 
   /* ---------- Log view columns popup (#btnColumns) — own fixed-position/
      toggle pattern (used to share it with the License popup, which has
@@ -8379,8 +8377,6 @@ SOFTWARE.</pre>
        own resize handles instead, not from here. -->
   <!-- Collapse repeats rule menu (chevron next to #btnRepeatCollapse), built like #columnsPanel. -->
   <div id="repeatMenu" class="hidden">
-    <button type="button" class="repeat-menu-item" data-repeat-action="toggle"><span class="rm-mark rm-check"></span><span><span class="rm-title">Collapse repeats</span><span class="rm-sub">Fold consecutive repeated rows into one row &times;N</span></span></button>
-    <div class="repeat-menu-sep"></div>
     <button type="button" class="repeat-menu-item" data-repeat-rule="identical"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Identical</span><span class="rm-sub">All columns equal except the time</span></span></button>
     <button type="button" class="repeat-menu-item" data-repeat-rule="pattern"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Same pattern</span><span class="rm-sub">Numbers, IDs, quoted text may differ; same level, thread and source</span></span></button>
   </div>
@@ -27827,7 +27823,6 @@ function updateRepeatButton() {
     b.title = locked ? "Collapse repeats needs the chronological order (clear the column sort)" : "Collapse repeats";
   });
   btnRepeatMenu.forEach(b => { b.disabled = locked; setDisabledReason(b, "clear the column sort", false); });
-  repeatMenu.querySelector('[data-repeat-action="toggle"]').classList.toggle("on", repeatCollapseOn);
   repeatMenu.querySelectorAll("[data-repeat-rule]").forEach(it => it.classList.toggle("on", it.dataset.repeatRule === repeatRule));
 }
 function setRepeatCollapse(on, rule) {
@@ -34668,8 +34663,7 @@ repeatMenu.addEventListener("click", ev => {
   ev.stopPropagation();
   const item = ev.target.closest(".repeat-menu-item");
   if (!item) return;
-  if (item.dataset.repeatRule) setRepeatCollapse(true, item.dataset.repeatRule); // picking a rule also switches collapsing on
-  else setRepeatCollapse(!repeatCollapseOn);
+  setRepeatCollapse(true, item.dataset.repeatRule); // picking a rule also switches collapsing on
   closeRepeatMenu();
 });
 btnResetColumns.addEventListener("click", () => {
