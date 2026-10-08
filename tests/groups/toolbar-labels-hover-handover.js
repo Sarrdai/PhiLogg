@@ -2,14 +2,14 @@
 // (tests/README.md → "Group files").
 
 /* ============================================================
-   GROUP toolbar-labels-hover-handover — "Always" default, calm hover pill
+   GROUP toolbar-labels-hover-handover — defaults, calm hover pill
    hand-over, disabled reason in the pill
-   Origin: 2026-10-08. (1) Both toolbar-label settings default to "Always"
-   (a stored "hover"/"never" still applies). (2) On-hover mode: the first
+   Origin: 2026-10-08. (1) The four toolbar-label settings default to "hover"
+   (Off | On hover | Inline; a stored value applies, a legacy one falls back). (2) On-hover mode: the first
    pill of a hover session fades in, moving to a neighbour in the same group
    puts .labels-live on the container (transition:none) until the pointer
    leaves the group. (3) A disabled button's pill appends its reason
-   (data-disabled-reason, CSS ::after, On-hover mode only).
+   (data-disabled-reason, CSS ::after; not in Inline mode).
    ============================================================ */
 group("toolbar-labels-hover-handover");
 
@@ -20,21 +20,21 @@ await withApp(async (w, d, T) => {
   ["philogg-sidebar-toolbar-labels", "philogg-level-labels", "philogg-filter-toolbar-labels", "philogg-view-toolbar-labels"]
     .forEach(k => assert(w.localStorage.getItem(k) === null, "sanity: " + k + " not persisted"));
   assert(T.filterToolbarLabels === "hover" && T.viewToolbarLabels === "hover", "filter + view default to 'hover'");
-  FOUR.forEach(p => assert(!d.body.classList.contains(p + "-always") && !d.body.classList.contains(p + "-never"), p + ": no body class at the default"));
+  FOUR.forEach(p => assert(!d.body.classList.contains(p + "-inline") && !d.body.classList.contains(p + "-off"), p + ": no body class at the default"));
   ["settingsSidebarToolbarLabels", "settingsLevelLabels", "settingsFilterToolbarLabels", "settingsViewToolbarLabels"]
     .forEach(id => assert(d.querySelector("#" + id).value === "hover", id + " shows On hover"));
   assert(w.normalizeToolbarLabelsMode("garbage") === "hover" && w.normalizeToolbarLabelsMode(null) === "hover", "unknown values fall back to hover");
 });
 await withApp(async (w, d, T) => {
   section("toolbar-labels-hover-handover a2. Stored values apply per setting");
-  assert(d.body.classList.contains("sidebar-toolbar-labels-always") && !d.body.classList.contains("sidebar-toolbar-labels-never"), "sidebar: always");
-  assert(d.body.classList.contains("level-labels-never"), "levels: never");
-  assert(!d.body.classList.contains("filter-toolbar-labels-always") && !d.body.classList.contains("filter-toolbar-labels-never"), "filter: hover, no class");
-  assert(d.body.classList.contains("view-toolbar-labels-never"), "view: never");
-  assert(d.querySelector("#settingsSidebarToolbarLabels").value === "always" && d.querySelector("#settingsLevelLabels").value === "never", "selects reflect the stored values");
+  assert(d.body.classList.contains("sidebar-toolbar-labels-inline") && !d.body.classList.contains("sidebar-toolbar-labels-off"), "sidebar: inline");
+  assert(d.body.classList.contains("level-labels-off"), "levels: off");
+  assert(!d.body.classList.contains("filter-toolbar-labels-inline") && !d.body.classList.contains("filter-toolbar-labels-off"), "filter: hover, no class");
+  assert(!d.body.classList.contains("view-toolbar-labels-inline") && !d.body.classList.contains("view-toolbar-labels-off"), "view: a legacy 'never' falls back to hover");
+  assert(d.querySelector("#settingsSidebarToolbarLabels").value === "inline" && d.querySelector("#settingsLevelLabels").value === "off", "selects reflect the stored values");
 }, { beforeParse(window) {
-  window.localStorage.setItem("philogg-sidebar-toolbar-labels", "always");
-  window.localStorage.setItem("philogg-level-labels", "never");
+  window.localStorage.setItem("philogg-sidebar-toolbar-labels", "inline");
+  window.localStorage.setItem("philogg-level-labels", "off");
   window.localStorage.setItem("philogg-filter-toolbar-labels", "hover");
   window.localStorage.setItem("philogg-view-toolbar-labels", "never");
 } });
@@ -105,13 +105,16 @@ await withApp(async (w, d, T) => {
   const bm = d.querySelector('[data-row-action="bookmark"]');
   assert(bm.disabled && bm.title === "Bookmark", "On hover (default): the pill shows the reason, the tooltip stays plain: " + bm.title);
   assert(bm.querySelector(".row-action-label").getAttribute("data-disabled-reason") === "select a row first", "the label span carries it (CSS attr() source)");
-  assert(bm.querySelector(".row-action-label").textContent === "Bookmark", "label text itself is unchanged");
+  assert(bm.querySelector(".row-action-label .hint-name").textContent === "Bookmark", "label name line itself is unchanged");
   const viewSel = d.querySelector("#settingsViewToolbarLabels");
   const setView = v => { viewSel.value = v; viewSel.dispatchEvent(new w.Event("change", { bubbles: true })); };
-  setView("never");
-  assert(bm.title === "Bookmark \u00b7 select a row first", "Never: the tooltip is the only place for the reason");
-  setView("always");
-  assert(bm.title === "Bookmark \u00b7 select a row first", "Always: tooltip carries the reason");
+  setView("off");
+  assert(bm.title === "Bookmark", "Off with hover descriptions: the card shows the reason, the tooltip stays plain: " + bm.title);
+  w.setHoverDescriptions(false);
+  assert(bm.title.startsWith("Bookmark \u00b7 select a row first"), "Off without descriptions: the tooltip is the only place for the reason");
+  w.setHoverDescriptions(true);
+  setView("inline");
+  assert(bm.title.startsWith("Bookmark \u00b7 select a row first"), "Inline: tooltip carries the reason (the card has no name line)");
   setView("hover");
   assert(bm.title === "Bookmark" && bm.getAttribute("data-disabled-reason") === "select a row first", "back to On hover: plain tooltip, reason still on the button");
 
@@ -146,7 +149,7 @@ await withApp(async (w, d, T) => {
   w.updateTableAssertButton();
   assert(assertBtn.getAttribute("data-disabled-reason") === "select a numeric column first", "Value assertion reason");
   assert(assertBtn.querySelector(".tb-label").getAttribute("data-disabled-reason") === "select a numeric column first", "...also on its .tb-label");
-  assert(assertBtn.querySelector(".tb-label").textContent === "Value assertion…", "tb-label text is the base title");
+  assert(assertBtn.querySelector(".tb-label .hint-name").textContent === "Value assertion…", "tb-label text is the base title");
 
   T.state.sortColumn = "ts";
   w.updateRepeatButton();
@@ -157,7 +160,7 @@ await withApp(async (w, d, T) => {
   w.updateRepeatButton();
   assert(!rep.hasAttribute("data-disabled-reason") && !chev.hasAttribute("data-disabled-reason"), "Repeat: reason cleared when unlocked");
 
-  section("toolbar-labels-hover-handover c3. The reason renders only in On-hover mode");
+  section("toolbar-labels-hover-handover c3. The reason renders unless the button kind is Inline");
   const rules = [];
   const walk = list => { for (const r of list) { if (r.cssRules && !r.selectorText) walk(r.cssRules); else if (r.selectorText) rules.push(r); } };
   for (const sh of d.styleSheets) walk(sh.cssRules);
@@ -167,7 +170,7 @@ await withApp(async (w, d, T) => {
   assert(/content:" \\00b7  " attr\(data-disabled-reason\)/.test(fs.readFileSync(path.join(__dirname, "..", "philogg.html"), "utf8")), "separator keeps a space on both sides of the middle dot");
   const parts = rr.selectorText.split(",").map(s => s.trim());
   assert(parts.length === 3 && parts.every(s => /::after$/.test(s)), "three selectors, all ::after");
-  assert(parts.filter(s => /:not\(\.filter-toolbar-labels-always\):not\(\.filter-toolbar-labels-never\)/.test(s)).length === 1 &&
-    parts.filter(s => /:not\(\.view-toolbar-labels-always\):not\(\.view-toolbar-labels-never\)/.test(s)).length === 2,
-    "each selector is scoped to its own setting being neither Always nor Never");
+  assert(parts.filter(s => /^body:not\(\.filter-toolbar-labels-inline\)/.test(s)).length === 1 &&
+    parts.filter(s => /^body:not\(\.view-toolbar-labels-inline\)/.test(s)).length === 2,
+    "each selector is scoped to its own setting not being Inline");
 });

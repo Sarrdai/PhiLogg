@@ -1,0 +1,4 @@
+- **fix: Where-is-what callouts stay on their regions at any font scale (2026-10-08, round verification)**
+  - With the root zoom of the font-scale setting (80 %, 125 %, 150 %) the callout pills were placed in layout px against visual-px bounds, so they drifted off their regions and left the window; placement now converts (`whereZoomScale`).
+  - Verified in the real app and unchanged: minimap zoom indicator on phone/tablet and across a resize, cheatsheet print layout, homepage deep links.
+  - **Tests**: GROUP where-is-what. Docs: docs/ui-and-views.md.

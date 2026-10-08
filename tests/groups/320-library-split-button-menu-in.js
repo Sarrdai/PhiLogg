@@ -18,8 +18,8 @@ group(320);
 await withApp(async (w, d, T) => {
   section("320a. #btnLibrary: placement, always present with a file (zero presets), empty menu, open/close paths");
   const bar = d.querySelector("#viewBar");
-  const kids = [...bar.children].map(c => c.id);
-  assert(kids.indexOf("btnLibrary") === kids.indexOf("libraryPresetBar") + 1 && kids.indexOf("btnLibrary") < kids.indexOf("viewbarNew"),
+  const kids = [...bar.querySelectorAll("#libraryPresetBar, #btnLibrary, #viewbarNew")].map(c => c.id); // document order (groups are .vb-group wrappers)
+  assert(kids.join() === "libraryPresetBar,btnLibrary,viewbarNew" && d.querySelector("#btnLibrary").previousElementSibling === d.querySelector("#libraryPresetBar"),
     "#btnLibrary sits directly after #libraryPresetBar and before the New group");
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   w.render();

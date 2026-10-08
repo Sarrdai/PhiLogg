@@ -95,7 +95,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", makeLog(0, 5), () => {});
   T.state.activeId = f.id;
   w.render();
-  const kids = [...d.querySelector("#viewBar").children].map(c => c.id || c.dataset.rowActions || c.className);
+  const kids = [...d.querySelector("#viewBar").querySelectorAll("#fhTabs, #levelBar, #btnApplyLevelToTree, [data-row-actions=viewbar], #viewbarNew")].map(c => c.id || c.dataset.rowActions); // document order (groups are .vb-group wrappers)
   const idxOf = pred => kids.findIndex(pred);
   const iTabs = kids.indexOf("fhTabs");
   const iFilters = idxOf(k => k === "viewbar");
@@ -116,8 +116,9 @@ await withApp(async (w, d, T) => {
   // --- Dividing line between the level filter and the standard filters (person-requested, this session) ---
   const iBtnApply = kids.indexOf("btnApplyLevelToTree");
   assert(iLevel < iBtnApply && iBtnApply < iFilters, "sanity: #btnApplyLevelToTree still sits between #levelBar and the standard filters");
-  assert(kids[iBtnApply + 1] === "row-action-separator" && iFilters === iBtnApply + 2,
-    "a separator sits directly between #btnApplyLevelToTree and the standard-filters group, exactly like the divider between the standard filters and the library-presets group, got " + kids.join(","));
+  const levelGroup = d.querySelector("#vbLevel");
+  assert(levelGroup.contains(d.querySelector("#btnApplyLevelToTree")) && levelGroup.nextElementSibling.classList.contains("row-action-separator") && levelGroup.nextElementSibling.nextElementSibling === d.querySelector("#vbAddFilter"),
+    "a separator sits directly between the Level group (#btnApplyLevelToTree) and the standard-filters group, exactly like the divider between the standard filters and the library-presets group");
   const cs = w.getComputedStyle;
   assert(cs(d.querySelector("#levelBar")).marginRight === "4px",
     "#levelBar's own trailing margin is the row's ordinary 4px button gap (grouping it with #btnApplyLevelToTree), not a bespoke wider gap any more");

@@ -1,0 +1,4 @@
+- **feat: On-hover toolbar labels are small cards (2026-10-08, person-requested)**
+  - The floating label of every labelled button (view bar, the four view toolbars, the Files & Filters toolbar, level chips) now shows the name, a one-sentence description and, where the action has a shortcut, its key chip (`Ctrl+E`); the disabled reason stays on the name line.
+  - One table `TOOLBAR_HINTS` holds the texts; the chip follows rebound shortcuts. In Always/Never the native tooltip carries "Name — description (Key)" instead, On hover keeps the plain title.
+  - **Tests**: GROUP hover-card (new: key set complete, descriptions, chips, reason, titles); older groups read the label's name line (`.hint-name`). Docs: docs/ui-and-views.md.

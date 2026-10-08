@@ -26,8 +26,8 @@ await withApp(async (w, d, T) => {
   // --- Name+count moved into the hover label, matching the button's title ---
   const label = errBtn.querySelector(".row-action-label");
   assert(label !== null, "has a .row-action-label span");
-  assert(label.textContent === "ERROR 2", "label reads \"{LEVEL} {count}\", got \"" + label.textContent + "\"");
-  assert(errBtn.title === label.textContent, "title (accessible name) matches the hover label exactly, since the button itself has no visible text");
+  assert(label.querySelector(".hint-name").textContent === "ERROR 2", "label name line reads \"{LEVEL} {count}\", got \"" + label.textContent + "\"");
+  assert(errBtn.title === label.querySelector(".hint-name").textContent, "title (accessible name) matches the hover label exactly, since the button itself has no visible text");
 
   // --- Unchecked = full-strength colored ring; checked = solid fill (person-requested follow-up) ---
   const css = d.querySelector("style").textContent;
@@ -53,7 +53,7 @@ await withApp(async (w, d, T) => {
     "#levelBar's own :hover rule reveals the label (setupHitExpandGroups would never reach a dynamically-rebuilt container)");
 
   // --- Layout: #levelBar now sits BEFORE the filter-creation group (reversing the earlier right-side placement) ---
-  const viewBarKids = [...d.querySelector("#viewBar").children].map(c => c.id || c.dataset.rowActions);
+  const viewBarKids = [...d.querySelector("#viewBar").querySelectorAll("#levelBar, [data-row-actions=viewbar]")].map(c => c.id || c.dataset.rowActions); // document order (groups are .vb-group wrappers)
   assert(viewBarKids.indexOf("levelBar") < viewBarKids.indexOf("viewbar"),
     "#levelBar precedes [data-row-actions=\"viewbar\"] in DOM order, got " + viewBarKids.join(","));
 

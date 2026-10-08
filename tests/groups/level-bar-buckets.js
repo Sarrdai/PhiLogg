@@ -52,7 +52,7 @@ await withApp(async (w, d, T) => {
   assert(Object.values(c).reduce((a, n) => a + n, 0) === 2500, "chip counts sum to the entry count");
   const other = d.querySelector('#levelBar .level-btn[data-level="OTHER"]');
   assert(other.title === "Other 33 (VERBOSE 21 · NOTICE 12)", "Other's tooltip lists the raw levels, got " + other.title);
-  assert(other.classList.contains("lvl-other") && other.querySelector(".row-action-label").textContent === other.title, "Other chip: neutral class, label = tooltip");
+  assert(other.classList.contains("lvl-other") && other.querySelector(".row-action-label .hint-name").textContent === other.title, "Other chip: neutral class, label = tooltip");
   assert(d.querySelector('#levelBar .level-btn[data-level="FATAL"]').title === "FATAL 15", "FATAL chip tooltip");
   assert(d.querySelector('#levelBar .level-btn[data-level="FATAL"]').classList.contains("lvl-fatal"), "FATAL chip has its own lvl-fatal class");
 

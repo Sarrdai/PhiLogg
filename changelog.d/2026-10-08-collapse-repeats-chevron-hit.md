@@ -1,0 +1,4 @@
+- **fix: Collapse-repeats toggle and chevron no longer overlap (2026-10-08, person-reported)**
+  - The chevron had a −6px margin and a 28px `.tb-hit` in a 14px button, so it overhung the toggle's icon and swallowed clicks meant for the toggle.
+  - Now chevron and toggle sit side by side, each hit area exactly its own button. The rule menu lost its extra "Collapse repeats" on/off row: only Identical and Same pattern remain.
+  - **Tests**: GROUP repeat-collapse (menu has no on/off item; the toggle button switches collapsing off). Docs: docs/ui-and-views.md.

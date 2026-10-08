@@ -54,9 +54,19 @@ deployments possible:
 | ![Context view](docs/screenshots/05-context-view.png) Context view — matches plus expandable gaps | ![Bookmarks](docs/screenshots/06-detail-bookmarks.png) Bookmarks & detail panel with a stack trace |
 | ![Dark theme](docs/screenshots/07-dark-theme.png) Dark theme (Catppuccin Mocha) | ![Heatmap](docs/screenshots/08-heatmap.png) Heatmap of an array column over time |
 | ![Patterns](docs/screenshots/09-patterns.png) Patterns tab — messages grouped by shape | ![Assistant](docs/screenshots/10-assistant.png) Assistant (desktop app): a local LLM builds a link and a plot, chat docked |
+| ![Where is what](docs/screenshots/11-where-is-what.png) "Where is what" overlay (press `?`): every region of the window labelled | |
 
 ## Key features
 
+- **"Where is what" overlay** — the **?** button in the header opens a small menu
+  whose first entry (or the keys `?` / `F1`) dims the window and labels every
+  main region with a numbered callout; Esc or a click closes it. A first-time
+  visitor gets a one-line hint offering it after the first log loads.
+- **Toolbar display options** — per area the button names can be off, shown on
+  hover (default) or inline next to the icon; hover cards carry a short
+  description and the shortcut (can be switched off), and small group captions
+  (View, Level, Add filter, ...) can be switched on. The **?** menu switches
+  descriptions and captions live; all of it is under Settings → Behavior → Toolbars.
 - **Collapse repeats** — a toggle in the Filtered view's toolbar folds consecutive
   repeated rows (log spam, retry loops) into one row with a **×N** badge: either
   *Identical* (all columns equal except the time) or *Same pattern* (numbers, IDs and

@@ -146,5 +146,38 @@ if (groupSelected()) {
     const w2 = await loadSite(async u => /api\.github/.test(u) ? resp(true, []) : { ok: true, text: async () => "no tour lines here\n" });
     assert(w2.document.getElementById("term").hidden === true, "no parsable line -> hidden");
   }
+  section("354e. Impressum, cheatsheet, typical tasks");
+  {
+    for (const f of ["impressum.html", "cheatsheet.html"]) assert(exists(f), "built: " + f);
+    const imp = rd("impressum.html"), cheat = rd("cheatsheet.html");
+    assert(/<h1>Impressum<\/h1>/.test(imp) && imp.includes("Angaben gemäß § 5 DDG"), "impressum: heading and DDG line");
+    assert(imp.includes("E-Mail:  philogg [at] kleinphilipp [.de]"), "impressum: the masked e-mail text, verbatim");
+    assert(!/[\w.-]@[\w-]/.test(imp) && !/mailto:|tel:/.test(imp), "impressum: no real e-mail address, no mailto:/tel: link");
+    assert(!/\d{6,}/.test(imp.replace(/<style>[\s\S]*<\/style>/, "")) && !/\+49\s*176\s*\d/.test(imp), "impressum: no raw digit run of the phone number");
+    const blk = imp.slice(imp.indexOf('<div class="reverse-block">'), imp.indexOf("</div>", imp.indexOf('<div class="reverse-block">')));
+    const spans = [...blk.matchAll(/<span>([^<]*)<\/span>/g)].map(m => m[1]);
+    assert(spans.join("|") === "GERMANY|55758|RENDSBURGER STR. 14|PHILIPP KLEIN", "address spans in reversed source order: " + spans);
+    assert(/\.reverse-block\{display:flex;flex-direction:column-reverse\}/.test(imp), "reverse-block CSS");
+    assert(imp.includes("Hinweis zum Datenschutz") && imp.includes("GitHub"), "privacy note present");
+    for (const [name, html] of [["index", siteHtml], ["cheatsheet", cheat], ["impressum", imp]])
+      assert(/<footer[\s\S]*<a href="impressum\.html">Impressum<\/a>/.test(html), name + ": footer links Impressum");
+    assert(/<nav[^>]*>[\s\S]*href="cheatsheet\.html"/.test(siteHtml) && /<footer[\s\S]*href="cheatsheet\.html"/.test(siteHtml), "index links the cheatsheet in nav and footer");
+    assert(/href="\.\/"/.test(cheat) && /href="\.\/"/.test(imp), "subpages link back home");
+    assert(cheat.includes('id="where-is-what"') && /@media print/.test(cheat), "cheatsheet: where-is-what section and print block");
+    assert(/<figure[^>]*>\s*<img src="img\/11-where-is-what\.png" width="1440" height="900"[^>]* alt="[^"]{20,}"/.test(cheat) && cheat.includes("Press <kbd>?</kbd> in the app to get this overlay.") && exists("img/11-where-is-what.png"), "cheatsheet: where-is-what figure (image built into img/, alt text, caption)");
+    for (const k of ["Ctrl</kbd>+<kbd>F", "F2", "Esc", "Ctrl</kbd>+<kbd>E"]) assert(cheat.includes(k), "cheatsheet lists shortcut " + k);
+    const tasks = siteHtml.slice(siteHtml.indexOf('id="tasks"'), siteHtml.indexOf('id="run"'));
+    const tl = [...tasks.matchAll(/class="task[^"]*" href="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&"));
+    assert(tl.length >= 4 && tl.length <= 6 && tl.every(u => u.startsWith("app/?session=tour/")), "4-6 task cards deep-linking into tour sessions: " + tl.length);
+    for (const html of [cheat, imp]) {
+      const refs2 = [...html.matchAll(/\s(?:href|src)="([^"]*)"/g)].map(m => m[1].replace(/&amp;/g, "&")).filter(u => u && !/^(https?:|#)/.test(u));
+      for (const u of refs2) {
+        const [b, q = ""] = u.split("#")[0].split("?");
+        assert(exists(b === "./" ? "index.html" : b.endsWith("/") ? b + "index.html" : b), "subpage link resolves: " + u);
+        const s = new URLSearchParams(q).get("session");
+        if (s) assert(exists(path.posix.join("app", s)), "subpage session exists: " + s);
+      }
+    }
+  }
   fs.rmSync(out, { recursive: true, force: true });
 }

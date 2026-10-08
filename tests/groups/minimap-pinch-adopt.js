@@ -51,7 +51,7 @@ await withApp(async (w, d, T) => {
   assert(Math.abs(w.minimapXToTs(500) - anchorBefore) <= span / 800 + 1, "the time under the midpoint stays under it");
   w.dispatchEvent(paPtr(w, "pointermove", "touch", 2, 800));
   assert(T.minimapView.trail.length === 1, "further pinch steps replace the top crumb");
-  assert(d.querySelectorAll("#timelineMinimapMeta .minimap-crumb").length === 2, "one crumb besides Whole file");
+  assert(d.querySelectorAll("#timelineMinimapMeta .minimap-crumb").length === 0 && d.querySelector("#timelineMinimapMeta .minimap-zoom-chip"), "one-level zoom: chip instead of crumbs");
   w.dispatchEvent(paPtr(w, "pointermove", "touch", 2, 600)); // fingers together -> zoom out
   assert((T.minimapView.tMax - T.minimapView.tMin) > span * 0.5 * 0.6, "pinching in zooms out again");
   w.dispatchEvent(paPtr(w, "pointermove", "touch", 2, 301));

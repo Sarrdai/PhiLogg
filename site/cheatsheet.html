@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Cheatsheet – PhiLogg</title>
+<meta name="description" content="One-page cheatsheet: first steps, best practices and keyboard shortcuts for PhiLogg.">
+<meta name="color-scheme" content="light dark">
+<!--
+  PhiLogg cheatsheet. Static page in the style of index.html (inline CSS, system fonts,
+  no external requests). Built into the Pages artifact by scripts/build-site.js,
+  see docs/homepage.md. Every link is relative.
+-->
+<style>
+
+:root{
+  --bg-app:#f5f6f8; --bg-panel:#ffffff; --bg-elevated:#f0f1f4; --border:#dde1e8; --border-soft:#e7eaf0;
+  --text-primary:#1c2130; --text-secondary:#5b6474; --text-tertiary:#6b7385;
+  --accent:#1b8f8a; --accent-soft:rgba(27,143,138,.12); --accent-strong:#137672; --accent-on:#ffffff;
+  --lv-error:#c0392b; --lv-warn:#a06a1c;
+  --lv-what:#1f5fbf; --lv-how:#1b8f8a; --lv-try:#4a8f3c; --lv-gotcha:#a06a1c; --lv-dont:#c2185b; --lv-deep:#8e44ad;
+  --font-display:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono",Consolas,Menlo,monospace;
+  --font-body:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-log:ui-monospace,"SF Mono",SFMono-Regular,"Cascadia Mono",Consolas,"Liberation Mono",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --bg-app:#10131a; --bg-panel:#151924; --bg-elevated:#1c2130; --border:#262c3c; --border-soft:#1e2330;
+  --text-primary:#e7eaf1; --text-secondary:#8a92a8; --text-tertiary:#7d86a0;
+  --accent:#4fc7c3; --accent-soft:rgba(79,199,195,.14); --accent-strong:#7fe0dc; --accent-on:#08201f;
+  --lv-error:#f16565; --lv-warn:#e8a94a;
+  --lv-what:#6fa8ff; --lv-how:#4fc7c3; --lv-try:#8bd17c; --lv-gotcha:#e8a94a; --lv-dont:#f0708a; --lv-deep:#c792ea;
+  color-scheme:dark }}
+:root[data-theme="dark"]{
+  --bg-app:#10131a; --bg-panel:#151924; --bg-elevated:#1c2130; --border:#262c3c; --border-soft:#1e2330;
+  --text-primary:#e7eaf1; --text-secondary:#8a92a8; --text-tertiary:#7d86a0;
+  --accent:#4fc7c3; --accent-soft:rgba(79,199,195,.14); --accent-strong:#7fe0dc; --accent-on:#08201f;
+  --lv-error:#f16565; --lv-warn:#e8a94a;
+  --lv-what:#6fa8ff; --lv-how:#4fc7c3; --lv-try:#8bd17c; --lv-gotcha:#e8a94a; --lv-dont:#f0708a; --lv-deep:#c792ea;
+  color-scheme:dark }
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:12px}
+body{margin:0;background:var(--bg-app);color:var(--text-primary);font:15px/1.55 var(--font-body)}
+h1,h2,h3,h4{text-wrap:balance;margin:0}
+code,.mono{font-family:var(--font-log);font-size:.9em}
+a{color:var(--accent)}
+img{max-width:100%}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.page{max-width:1180px;margin:0 auto;border-inline:1px solid var(--border-soft);min-height:100vh;background:var(--bg-app)}
+
+.site-nav{display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:14px 28px;border-bottom:1px solid var(--border-soft)}
+.brand{font:800 17px var(--font-display);color:var(--text-primary);text-decoration:none}
+.site-nav nav{display:flex;gap:18px;flex-wrap:wrap;margin-left:auto;font-size:14px}
+.site-nav nav a{color:var(--text-secondary);text-decoration:none}
+.site-nav nav a:hover{color:var(--text-primary)}
+.site-foot{padding:18px 28px;border-top:1px solid var(--border-soft);display:flex;gap:18px;flex-wrap:wrap;justify-content:space-between;font:12px var(--font-log);color:var(--text-tertiary)}
+.site-foot a{color:var(--text-secondary)}
+.site-foot nav{display:flex;gap:16px}
+
+
+.doc{padding:36px 28px 48px;display:flex;flex-direction:column;gap:20px;max-width:900px}
+.doc h1{font:800 clamp(24px,3.4vw,34px)/1.15 var(--font-display)}
+.doc h2{font:800 18px var(--font-display)}
+.doc .lead{margin:0;color:var(--text-secondary);font-size:16px}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.card{background:var(--bg-panel);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.card.wide{grid-column:1/-1}
+.card ol,.card ul{margin:0;padding-left:1.3em;display:flex;flex-direction:column;gap:7px;font-size:14px}
+.card li{color:var(--text-secondary)}
+.card li b{color:var(--text-primary)}
+.card p{margin:0;color:var(--text-secondary);font-size:14px}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:7px 10px 7px 0;border-top:1px solid var(--border-soft);vertical-align:top}
+th{font:600 12px var(--font-log);color:var(--text-tertiary);border-top:0}
+td:first-child{white-space:nowrap}
+td:last-child{color:var(--text-secondary)}
+kbd{font:600 12px var(--font-log);background:var(--bg-elevated);border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:1px 6px;color:var(--text-primary)}
+.try-line{margin:0;font-size:14px}
+.wiw-fig{margin:0;display:flex;flex-direction:column;gap:6px}
+.wiw-fig img{display:block;width:100%;height:auto;border:1px solid var(--border);border-radius:6px}
+.wiw-fig figcaption{font-size:13px;color:var(--text-secondary)}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}td:first-child{white-space:normal}}
+@media print{
+  :root{--bg-app:#fff;--bg-panel:#fff;--bg-elevated:#eee;--border:#bbb;--border-soft:#ccc;--text-primary:#000;--text-secondary:#222;--text-tertiary:#444}
+  .site-nav,.site-foot,.try-line{display:none}
+  .page{border:0}
+  .doc{max-width:none;padding:0;gap:10px}
+  .grid{gap:10px}
+  .card{break-inside:avoid;padding:8px 10px}
+  body{font-size:12px}
+}
+@media (max-width:860px){.site-nav{padding-inline:16px}.site-nav nav{margin-left:0}.doc,.site-foot{padding-inline:16px}}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="site-nav">
+    <a class="brand" href="./">PhiLogg</a>
+    <nav aria-label="Main">
+      <a href="app/?session=tour/welcome.session.json">Tour</a>
+      <a href="./#features">Features</a>
+      <a href="./#tasks">Typical tasks</a>
+      <a href="cheatsheet.html">Cheatsheet</a>
+      <a href="./#download">Download</a>
+      <a href="https://github.com/Sarrdai/PhiLogg">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="doc" style="max-width:1100px">
+    <h1>Cheatsheet</h1>
+    <p class="lead">The shortest path from a log file to an answer, and the habits that make it faster.</p>
+    <p class="try-line">Want to try something right away? See the <a href="./#tasks">typical tasks</a>, each opens a ready-made session in the hosted app.</p>
+    <div class="grid">
+      <section class="card" id="first-5-minutes">
+        <h2>First 5 minutes</h2>
+        <ol>
+          <li><b>Open a log.</b> Drag a file into the window or use Open. Nothing is uploaded.</li>
+          <li><b>Pick the level chips.</b> Click Error or Warn to narrow the Filtered view to those levels.</li>
+          <li><b>Search.</b> <kbd>Ctrl</kbd>+<kbd>F</kbd> opens the find bar; <kbd>Ctrl</kbd>+<kbd>Enter</kbd> in it turns the search into a filter.</li>
+          <li><b>Add a filter.</b> Select a node in Files &amp; Filters and press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd>; each filter narrows the one above it.</li>
+          <li><b>Jump on the minimap.</b> Click the time line above the log to go to that moment; drag to mark a time window.</li>
+        </ol>
+      </section>
+
+      <section class="card" id="where-is-what">
+        <h2>Where is what</h2>
+        <figure class="wiw-fig">
+          <img src="img/11-where-is-what.png" width="1440" height="900" loading="lazy" decoding="async" alt="PhiLogg with the Where is what overlay open: the window is dimmed and sixteen numbered labels point at the Files and filters tree, its toolbar, the timeline minimap, the view tabs, the level and filter buttons, the display options, the log entries, the entry detail panel and the header buttons.">
+          <figcaption>Press <kbd>?</kbd> in the app to get this overlay.</figcaption>
+        </figure>
+        <ul>
+          <li><b>Files &amp; Filters tree</b> (left): your files and the filter nodes below them. The selected node decides what the views show.</li>
+          <li><b>Level chips and filter buttons</b> (row above the log): a view filter by level, plus the buttons that add filters.</li>
+          <li><b>View tabs</b>: Patterns, Context, Filtered, Table, Plot.</li>
+          <li><b>Log toolbar</b>: find, columns, repeat folding and other view settings.</li>
+          <li><b>Minimap</b>: the whole log as a time line, with zoom and time windows.</li>
+          <li><b>Entry detail panel</b>: the selected row as Raw, Parsed or Pretty.</li>
+        </ul>
+      </section>
+
+      <section class="card wide" id="best-practices">
+        <h2>Best practices</h2>
+        <ul>
+          <li><b>Start broad, then narrow.</b> Use the level chips first, then add text filters below the node you are on. The tree keeps your steps readable later.</li>
+          <li><b>Turn a view into a node.</b> The level chips are only a view filter. &ldquo;Add level filter&rdquo; (the button next to the chips) turns the selection into a node in the tree, so it survives switching nodes and saving.</li>
+          <li><b>Fold spam.</b> &ldquo;Collapse repeats&rdquo; (Filtered view) folds consecutive rows into one with a &times;N badge. <i>Identical</i> needs equal text; <i>Same pattern</i> also folds rows that differ only in numbers, ids and paths.</li>
+          <li><b>See what led to it.</b> The Context view shows the rows around each hit, with expandable gaps in between. <kbd>Ctrl</kbd>+<kbd>&darr;</kbd> / <kbd>&uarr;</kbd> steps from hit to hit.</li>
+          <li><b>Measure durations with a link filter.</b> &ldquo;Link two events&hellip;&rdquo; pairs each start line with its end line (by thread or a captured id); you can then keep only the slow pairs.</li>
+          <li><b>Use the minimap as a time window.</b> Drag on it to mark a window, then press Zoom to look closer or Filter to keep only that window.</li>
+          <li><b>Bookmark and annotate.</b> <kbd>B</kbd> bookmarks the selected row, <kbd>Alt</kbd>+<kbd>N</kbd> adds a note. Both are kept in saved sessions.</li>
+          <li><b>Save your work.</b> &ldquo;Save session&hellip;&rdquo; stores files, filters, bookmarks and notes in one file you can reopen later or hand to a colleague.</li>
+          <li><b>Ask why a row is there.</b> The Why tab of the bottom panel lists which filter keeps or rejects the selected row.</li>
+        </ul>
+      </section>
+
+      <section class="card wide" id="keyboard">
+        <h2>Keyboard shortcuts</h2>
+        <p>Defaults; most can be changed in Settings &rarr; Shortcuts. Tree shortcuts apply while the Files &amp; Filters tree has focus, row shortcuts while the log has.</p>
+        <table>
+          <thead><tr><th>Keys</th><th>Does</th></tr></thead>
+          <tbody>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>Find in the current view</td></tr>
+            <tr><td><kbd>F3</kbd> / <kbd>Shift</kbd>+<kbd>F3</kbd></td><td>Next / previous find match</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> &hellip; <kbd>5</kbd></td><td>Switch to view tab 1&ndash;5 (Patterns first)</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>&darr;</kbd> / <kbd>&uarr;</kbd></td><td>Context view: next / previous filter match</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>F</kbd></td><td>New filter on the selected node</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>E</kbd></td><td>Edit the selected filter</td></tr>
+            <tr><td><kbd>F2</kbd></td><td>Rename the selected filter</td></tr>
+            <tr><td><kbd>M</kbd></td><td>Mute / unmute the selected filter</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>C</kbd> / <kbd>X</kbd> / <kbd>V</kbd>, <kbd>Del</kbd></td><td>Copy, cut, paste, delete a filter</td></tr>
+            <tr><td><kbd>&uarr;</kbd> <kbd>&darr;</kbd> <kbd>&larr;</kbd> <kbd>&rarr;</kbd></td><td>Move the selection; in the tree also collapse / expand</td></tr>
+            <tr><td><kbd>Enter</kbd></td><td>Filter selected in the tree: jump to the Filtered view</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>0</kbd></td><td>Focus the filter tree</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>Collapse / expand Files &amp; Filters</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>J</kbd></td><td>Collapse / expand Entry Detail</td></tr>
+            <tr><td><kbd>B</kbd></td><td>Bookmark the selected row</td></tr>
+            <tr><td><kbd>Alt</kbd>+<kbd>N</kbd></td><td>Add / edit a note on the selected row</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy selected rows for a ticket</td></tr>
+            <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Undo / redo</td></tr>
+            <tr><td><kbd>?</kbd> / <kbd>F1</kbd></td><td>Where is what: label every region of the window</td></tr>
+            <tr><td><kbd>Esc</kbd></td><td>Close the open popup, dialog or panel</td></tr>
+          </tbody>
+        </table>
+      </section>
+    </div>
+  </main>
+  <footer class="site-foot">
+    <span>Source-available &middot; free for personal use (PolyForm Noncommercial 1.0.0)</span>
+    <nav aria-label="Footer">
+      <a href="./">Home</a>
+      <a href="cheatsheet.html">Cheatsheet</a>
+      <a href="impressum.html">Impressum</a>
+      <a href="app/LICENSE.md">License</a>
+      <a href="https://github.com/Sarrdai/PhiLogg">GitHub</a>
+    </nav>
+  </footer>
+</div>
+</body>
+</html>

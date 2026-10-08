@@ -280,15 +280,19 @@ async function withApp(run, opts = {}) {
       // their own fetch calls would see). GROUP provided-formats deletes
       // this in its beforeParse to test the hosted fetch route.
       window.__PHILOGG_PROVIDED_FORMATS__ = [];
-      // opts.toolbarLabels: "never" | "hover" | "always" for ALL FOUR toolbar-label
-      // settings (the app default is "hover"; a group testing the Always look
-      // asks for "always").
+      // opts.toolbarLabels: "off" | "hover" | "inline" for ALL FOUR toolbar-label
+      // settings (the app default is "hover"; a group testing the Inline look
+      // asks for "inline").
       if (opts.toolbarLabels) {
         window.localStorage.setItem("philogg-filter-toolbar-labels", opts.toolbarLabels);
         window.localStorage.setItem("philogg-view-toolbar-labels", opts.toolbarLabels);
         window.localStorage.setItem("philogg-sidebar-toolbar-labels", opts.toolbarLabels);
         window.localStorage.setItem("philogg-level-labels", opts.toolbarLabels);
       }
+      // The "Where is what" first-start hint is switched off (flag already set)
+      // so it never covers anything in a group; GROUP where-is-what opts in
+      // with opts.whereHint.
+      if (!opts.whereHint) window.localStorage.setItem("philogg-where-is-what-seen", "1");
       if (opts.beforeParse) opts.beforeParse(window);
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });

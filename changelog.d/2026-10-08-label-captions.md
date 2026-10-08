@@ -1,0 +1,5 @@
+- **feat: "Always" label mode = icon buttons under group captions (2026-10-08, person-requested)**
+  - The filter, view and sidebar toolbars no longer grow a text pill on every button in "Always": buttons stay icon-only and each group gets a small uppercase caption (Level / Add filter / Presets / Create; Edit / Effect / Library; Display / Selection / ...). Level chips keep their name+count pills.
+  - `#viewBar` is made of non-breaking groups and wraps only between them, wrapped lines start at the left; the Files & Filters toolbar is three captioned groups (Edit, Effect, Library); the "+" badge of Add level filter / New is never covered.
+  - "Never" and "On hover" (incl. disabled reasons and the calm hand-over) are unchanged; the Settings hints are shortened accordingly.
+  - **Tests**: GROUP label-captions (new), always-labels-toggle-level reworked, toolbar-always-overflow and toolbar-labels-always-zindex removed (dead pill behaviour). Docs: docs/ui-and-views.md.

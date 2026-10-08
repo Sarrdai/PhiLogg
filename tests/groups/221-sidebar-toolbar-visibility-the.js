@@ -43,7 +43,7 @@ await withApp(async (w, d, T) => {
   let mousemoveBinds = 0;
   const origAdd = w.EventTarget.prototype.addEventListener;
   w.EventTarget.prototype.addEventListener = function (type, ...rest) {
-    if (this.id === "sidebarToolbar" && type === "mousemove") mousemoveBinds++;
+    if (this.classList && this.classList.contains("stb-group-row") && type === "mousemove") mousemoveBinds++; // each captioned group row is its own hit-expand container
     return origAdd.call(this, type, ...rest);
   };
 
@@ -54,7 +54,7 @@ await withApp(async (w, d, T) => {
   w.render();
   w.render();
   w.render();
-  assert(mousemoveBinds === 1, "a container whose button set is rebuilt on every render still gets exactly ONE mousemove listener, not one per render — got " + mousemoveBinds);
+  assert(mousemoveBinds === 3, "the three group rows (Edit/Effect/Library) get exactly ONE mousemove listener each, not one per render — got " + mousemoveBinds);
 
   w.EventTarget.prototype.addEventListener = origAdd;
 

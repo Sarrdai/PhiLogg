@@ -1,0 +1,4 @@
+- **feat: homepage Impressum, Cheatsheet and Typical tasks (2026-10-08, person-requested)**
+  - New static pages `site/impressum.html` (German, § 5 DDG, owner data masked against scrapers) and `site/cheatsheet.html` (first steps, best practices, shortcuts, print-friendly), both linked from every footer.
+  - New "Typical tasks" section on the homepage: six "I want to ..." cards deep-linking into the hosted app via the existing tour sessions.
+  - **Tests**: GROUP 354 (354e). Docs: docs/homepage.md.

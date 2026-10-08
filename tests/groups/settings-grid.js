@@ -19,10 +19,12 @@ const SEG_SELECTS = {
   settingsFhLayout: ["tabs", "stacked"],
   settingsFilterActivationView: ["rememberLast", "alwaysFiltered"],
   settingsOpenScrollPosition: ["start", "end"],
-  settingsSidebarToolbarLabels: ["never", "hover", "always"],
-  settingsLevelLabels: ["never", "hover", "always"],
-  settingsFilterToolbarLabels: ["never", "hover", "always"],
-  settingsViewToolbarLabels: ["never", "hover", "always"],
+  settingsSidebarToolbarLabels: ["off", "hover", "inline"],
+  settingsLevelLabels: ["off", "hover", "inline"],
+  settingsFilterToolbarLabels: ["off", "hover", "inline"],
+  settingsViewToolbarLabels: ["off", "hover", "inline"],
+  settingsHoverDescriptions: ["0", "1"],
+  settingsToolbarCaptions: ["0", "1"],
   settingsContextInitialExpansion: ["aroundJump", "collapsed", "expanded"],
   settingsContextExpandStepUnit: ["entries", "time"],
   settingsMinimapBinningMode: ["time", "entries"],
@@ -109,9 +111,9 @@ await withApp(async (w, d, T) => {
   sel.value = "collapsed";
   assert(segBtn("settingsContextInitialExpansion", "collapsed").classList.contains("active") && sel.value === "collapsed", "and again; the getter still works");
   // Re-opening the dialog and the init functions (which assign .value) keep it in sync too.
-  w.localStorage.setItem("philogg-view-toolbar-labels", "always");
+  w.localStorage.setItem("philogg-view-toolbar-labels", "inline");
   w.eval("initToolbarLabelsSettings()");
-  assert(segBtn("settingsViewToolbarLabels", "always").classList.contains("active"), "an init function's `select.value = x` reaches the buttons");
+  assert(segBtn("settingsViewToolbarLabels", "inline").classList.contains("active"), "an init function's `select.value = x` reaches the buttons");
 });
 
 await withApp(async (w, d, T) => {

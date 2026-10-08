@@ -99,7 +99,7 @@ await withApp(async (w, d, T) => {
   fireClick(chevron, w);
   assert(!menu.classList.contains("hidden"), "the chevron opens the rule menu");
   assert(menu.querySelector('[data-repeat-rule="identical"]').classList.contains("on") && !menu.querySelector('[data-repeat-rule="pattern"]').classList.contains("on"), "Identical is the picked rule");
-  assert(menu.querySelector('[data-repeat-action="toggle"]').classList.contains("on"), "the menu's Collapse repeats item is on");
+  assert(!menu.querySelector("[data-repeat-action]"), "the menu holds only the two rules, no extra on/off item");
   fireClick(menu.querySelector('[data-repeat-rule="pattern"]'), w);
   assert(menu.classList.contains("hidden"), "picking a rule closes the menu");
   assert(rcBtn(d).classList.contains("active"), "collapsing is on");
@@ -121,10 +121,9 @@ await withApp(async (w, d, T) => {
   assert(noThread < ref.length, "the data holds equal messages on different threads (" + noThread + " < " + ref.length + ")");
   assert(T.currentViewEntries.length === ref.length, "...which stay separate rows");
 
-  // toggle menu item switches collapsing off, keeps the rule
-  fireClick(chevron, w);
-  fireClick(menu.querySelector('[data-repeat-action="toggle"]'), w);
-  assert(!rcBtn(d).classList.contains("active") && T.currentViewEntries.length === entries.length, "the menu's toggle item switches collapsing off");
+  // the toggle button switches collapsing off, keeps the rule
+  fireClick(rcBtn(d), w);
+  assert(!rcBtn(d).classList.contains("active") && T.currentViewEntries.length === entries.length, "the toggle button switches collapsing off");
   assert(w.localStorage.getItem("philogg-repeat-collapse") === "0" && w.localStorage.getItem("philogg-repeat-rule") === "pattern", "off persisted, rule kept");
 });
 

@@ -32,7 +32,7 @@ await withApp(async (w, d, T) => {
   const notesBtn = d.querySelector("#contextToolbar .toggle-notes");
   assert(notesBtn.querySelector(".tb-hit") !== null, "wrapped in a .tb-hit span");
   const label = notesBtn.querySelector(".tb-label");
-  assert(label !== null && label.textContent === notesBtn.title, "carries a .tb-label matching its title exactly");
+  assert(label !== null && label.querySelector(".hint-name").textContent === notesBtn.title, "carries a .tb-label matching its title exactly");
   assert(!notesBtn.classList.contains("row-action-btn"), "sanity: not a row-action-btn (different mechanism, same idea)");
 
   assert(!notesBtn.classList.contains("expanded"), "sanity: starts collapsed");

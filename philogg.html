@@ -159,6 +159,7 @@
      those themes also override --level-*-on to light text instead of the
      near-black used against the brighter dark-mode swatches. */
   :root[data-theme="light"]{
+    --where-dim:rgba(28,33,46,.46);
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
     --bg-elevated:#f0f1f4;
@@ -1165,7 +1166,7 @@
   .add-badge{
     position:absolute; right:-3px; bottom:-3px; width:11px; height:11px; border-radius:50%;
     background:var(--accent); color:var(--accent-on);
-    display:grid; place-items:center; pointer-events:none;
+    display:grid; place-items:center; pointer-events:none; z-index:1;
   }
   .add-badge svg{width:8px; height:8px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;}
   /* The 24px sidebar-header button is tighter: a 9px badge with a 6px glyph. */
@@ -1191,20 +1192,49 @@
      #plotToolbar) since #viewBar's other controls (view-tabs, level pills)
      are 28px too — a single #viewBar-only group at a different size would
      look like a misalignment, not a second row. */
-  #viewBar .row-actions{float:left; gap:6px 4px; margin:0 0 0 0;}
-  /* Group-wise wrapping (2026-10-08, was floats): #viewBar is a wrapping flex
-     row whose direct children are the groups (view tabs, level circles,
-     Filter-Toolbar actions, library presets, Library split button, New). A
-     group's max-content basis makes the WHOLE group move to the next line
-     first; only a group wider than a full line shrinks and wraps inside
-     itself. 6px row-gap between lines and inside wrapping groups (the
-     horizontal pill gap). Separators that end up at the start/end of a line
-     are hidden by updateBarSeparators (JS); tablet/phone keep their own
-     rules below (body.layout-compact / layout-phone #viewBar). */
+  #viewBar .row-actions{gap:4px; margin:0; flex-wrap:nowrap;}
+  /* Group-wise wrapping (2026-10-08): #viewBar is a wrapping flex row whose
+     direct children are the view tabs, the "|" separators and the .vb-group
+     wrappers (Level, Add filter, Presets + Library, Create). A group is ONE
+     non-breaking unit (`flex:0 0 auto`, its row is `flex-wrap:nowrap`), so
+     the bar only ever wraps BETWEEN groups, and the wrapped line starts at the
+     bar's left edge. Only a group wider than a whole line (very many chips or
+     pinned presets) wraps inside itself, because `max-width:100%` then lets
+     its level/preset row shrink. Each group is a caption (hidden unless the
+     Group captions setting is on) above its button row. 6px row-gap
+     between lines. Separators that end up at the start/end of a line are
+     hidden by updateBarSeparators (JS); tablet/phone keep their own rules
+     below (body.layout-compact / layout-phone #viewBar). */
   body:not(.layout-phone) #viewBar{row-gap:6px;}
-  #viewBar > .row-actions, #viewBar > #levelBar{flex:0 1 auto; min-width:0; flex-wrap:wrap;}
-  #viewBar > #fhTabs, #viewBar > #btnApplyLevelToTree, #viewBar > #btnLibrary{flex:0 0 auto;}
+  .vb-group{display:flex; flex-direction:column; align-items:flex-start; flex:0 0 auto; min-width:0; max-width:100%;}
+  .vb-group-row{display:flex; align-items:center; flex-wrap:nowrap; gap:4px; min-width:0; max-width:100%;}
+  /* The view tabs are the "View" group; hidden together with #fhTabs (setFhTabsVisible). */
+  #vbView{margin:0 14px 0 0;}
+  #vbView.vb-hidden{display:none;}
+  #vbView #fhTabs{margin:0;}
+  #viewBar .vb-group-row > #levelBar, #viewBar .vb-group-row > #libraryPresetBar{flex:0 1 auto; min-width:0; flex-wrap:wrap;}
+  #viewBar .vb-group-row > #btnApplyLevelToTree, #viewBar .vb-group-row > #btnLibrary{flex:0 0 auto;}
   #viewBar > .row-action-separator.sep-hidden, #sidebarToolbar > .row-action-separator.sep-hidden{display:none;}
+  /* Group captions (Settings -> Group captions, body.toolbar-captions): a small
+     uppercase heading above a group's button row. Decorative (aria-hidden in
+     the markup, the buttons keep their title/aria-label); one global setting
+     switches every caption on, independent of the button-label modes. */
+  .group-caption{
+    display:none; font-size:9.5px; line-height:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--text-tertiary); white-space:nowrap; padding:0 2px 1px; user-select:none; pointer-events:none;
+  }
+  body.toolbar-captions #vbView > .group-caption,
+  body.toolbar-captions #vbLevel:has(.level-btn) > .group-caption,
+  body.toolbar-captions #vbAddFilter > .group-caption,
+  body.toolbar-captions #vbPresets:has(#libraryPresetBar:not([hidden])) > .group-caption,
+  body.toolbar-captions #vbCreate > .group-caption,
+  body.toolbar-captions #sidebarToolbar .stb-group > .group-caption,
+  body.toolbar-captions :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) .toolbar-group > .group-caption{display:block;}
+  body.layout-phone .group-caption{display:none !important;}
+  /* With a caption row the bar's items sit on the buttons' baseline (the
+     separators carry no caption). */
+  body.toolbar-captions:not(.layout-phone) #viewBar{align-items:flex-end;}
+  body.toolbar-captions:not(.layout-phone) #viewBar > .row-action-separator{align-self:flex-end; margin-bottom:4px;}
   /* Which of the two row-actions groups is shown is entirely
      JS-driven (updateViewBarRowActions(), person-requested this session —
      swap the generic five for Plot's own two viewport filters while the
@@ -1311,8 +1341,8 @@
      reveals changed. */
   .row-action-label{
     position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
-    width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
+    width:max-content; max-width:240px; opacity:0; margin-left:0; overflow:visible; white-space:normal; text-align:left; line-height:1.3;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
     box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
     transition:opacity .12s ease, transform .12s ease;
@@ -1343,8 +1373,8 @@
   .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .tb-label{
     position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
-    width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
+    width:max-content; max-width:240px; opacity:0; margin-left:0; overflow:visible; white-space:normal; text-align:left; line-height:1.3;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
     box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
     transition:opacity .12s ease, transform .12s ease;
@@ -1358,79 +1388,152 @@
      pills swap instantly (no fade, no 4px slide) until the pointer leaves the
      group — removed BEFORE the collapse, so the exit still fades. */
   .labels-live .row-action-label, .labels-live .tb-label{transition:none;}
-  /* Disabled reason (On-hover mode only): the pill of a disabled button
-     appends why, in normal weight and secondary colour. The reason sits on
-     the label span too (attr() on a pseudo-element reads its own element);
-     Always pills are inline and must not widen, Never shows no pill. */
-  body:not(.filter-toolbar-labels-always):not(.filter-toolbar-labels-never) .row-action-btn:not(.rect):not(.level-btn):not(.level-apply):disabled .row-action-label[data-disabled-reason]::after,
-  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .row-action-btn.rect:not(.sidebar-btn):disabled .row-action-label[data-disabled-reason]::after,
-  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .toolbar-icon-btn:disabled .tb-label[data-disabled-reason]::after{
+  /* Hover card (2026-10-08): the floating label is a small card, built by
+     decorateHintLabel from TOOLBAR_HINTS: bold name line (.hint-name, the old
+     label text), a one-sentence description (.hint-desc) and, where the app has
+     one, the shortcut as a kbd chip (.hint-key). */
+  .hint-name{display:block;}
+  .hint-more{display:block;}
+  .hint-desc{
+    display:block; margin-top:2px; font-family:var(--font-ui); font-size:11px; font-weight:400; letter-spacing:0;
+    color:var(--text-secondary);
+  }
+  .hint-key{
+    display:inline-block; margin-top:4px; padding:0 5px; border:1px solid var(--border); border-radius:4px;
+    background:var(--bg-app); font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0;
+    color:var(--text-secondary);
+  }
+  /* The coloured level-chip card keeps its text readable on the level colour; the
+     inline pills (Inline, phone) carry name+count only. */
+  .level-btn .hint-desc{color:inherit; opacity:.9;}
+  body.level-labels-inline .level-btn .hint-more,
+  body.layout-phone .level-btn .hint-more{display:none;}
+  /* Settings -> Hover descriptions off: no second line / shortcut chip anywhere. */
+  body.hover-descriptions-off .hint-desc, body.hover-descriptions-off .hint-key{display:none;}
+  /* Disabled reason: the name line of a disabled button's card appends why, in
+     normal weight and secondary colour. The reason sits on the .hint-name span
+     too (attr() on a pseudo-element reads its own element). Not in Inline mode,
+     where the card has no name line (the native tooltip carries it there). */
+  body:not(.filter-toolbar-labels-inline) .row-action-btn:not(.rect):not(.level-btn):not(.level-apply):disabled .hint-name[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-inline) .row-action-btn.rect:not(.sidebar-btn):disabled .hint-name[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-inline) .toolbar-icon-btn:disabled:has(.tb-hit) .hint-name[data-disabled-reason]::after{
     content:" \00b7  " attr(data-disabled-reason); font-weight:400; color:var(--text-secondary);
   }
-  /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
-     button labels" (person-requested, 2026-09-05; redesigned 2026-09-08) —
-     "On hover" is the floating-pill mechanic above, nothing to
-     override here ("Always" is the default since 2026-10-08). "Never" hides the label outright (button stays a plain
-     circle/rect icon). "Always" restores the ORIGINAL inline expand-to-pill
-     look — the button itself grows into a pill and the label sits inside
-     it, permanently, in the toolbar's normal layout flow — since that
-     shape is only confusing when it happens on every hover, not when it's
-     the button's permanent rest state. Applied via a class on <body> so
-     every button of the relevant kind reacts without each one needing its
-     own per-button state; higher specificity (body class + selector) than
-     the plain `.expanded`/`:focus-visible` rules above, so these always
-     win regardless of source order. Split in two independent
-     settings/classes (Filter-Toolbar's `.row-action-btn:not(.rect)` vs
-     View Toolbar's `.row-action-btn.rect`/`.toolbar-icon-btn:has(.tb-hit)`)
-     since the person wanted them settable separately. */
-  body.filter-toolbar-labels-never .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
-  body.level-labels-never .level-btn .row-action-label, body.level-labels-never .level-apply .row-action-label,
-  body.sidebar-toolbar-labels-never .sidebar-btn .row-action-label{display:none !important;}
-  body.filter-toolbar-labels-always .row-action-btn:not(.rect):not(.level-btn):not(.level-apply),
-  body.level-labels-always .level-btn, body.level-labels-always .level-apply{border-radius:20px; width:auto; padding-right:10px; overflow:hidden;}
-  body.filter-toolbar-labels-always .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
-  body.level-labels-always .level-btn .row-action-label, body.level-labels-always .level-apply .row-action-label,
-  body.sidebar-toolbar-labels-always .sidebar-btn .row-action-label{
-    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
+  /* Settings -> Behavior -> Toolbars: button labels per area (Off | On hover |
+     Inline). "On hover" is the floating-card mechanic above, nothing to
+     override. "Off": icon only; the floating card stays only while hover
+     descriptions are on (name + description + key), otherwise nothing floats and
+     the native title carries the name. "Inline": the name sits next to the icon
+     in a compact pill (no clipping, the "+" badge hangs on the icon box); the
+     floating part shrinks to a description card (.hint-more) shown on hover when
+     descriptions are on. Applied via a class on <body> (one per setting), higher
+     specificity than the plain `.expanded`/`:focus-visible` rules above. */
+  body.hover-descriptions-off.filter-toolbar-labels-off .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
+  body.hover-descriptions-off.level-labels-off .level-btn .row-action-label, body.hover-descriptions-off.level-labels-off .level-apply .row-action-label,
+  body.hover-descriptions-off.sidebar-toolbar-labels-off .sidebar-btn .row-action-label,
+  body.hover-descriptions-off.view-toolbar-labels-off .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
+  body.hover-descriptions-off.view-toolbar-labels-off .toolbar-icon-btn:has(.tb-hit) .tb-label{display:none !important;}
+  body.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply),
+  body.level-labels-inline .level-btn, body.level-labels-inline .level-apply,
+  body.sidebar-toolbar-labels-inline .sidebar-btn,
+  body.view-toolbar-labels-inline .row-action-btn.rect:not(.sidebar-btn),
+  body.view-toolbar-labels-inline .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron){width:auto; padding-right:10px;}
+  body.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply),
+  body.level-labels-inline .level-btn, body.level-labels-inline .level-apply{border-radius:20px;}
+  body.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
+  body.level-labels-inline .level-btn .row-action-label, body.level-labels-inline .level-apply .row-action-label,
+  body.sidebar-toolbar-labels-inline .sidebar-btn .row-action-label,
+  body.view-toolbar-labels-inline .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
+  body.view-toolbar-labels-inline .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .tb-label{
+    position:static; z-index:auto; transform:none; opacity:1; max-width:none; width:auto; margin-left:-3px; white-space:nowrap;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
-  /* person-reported, 2026-10-08, Always-label mode: level pills have no icon,
-     so the empty 28px .row-action-hit slot left ~34px of blank space before
-     the text vs 10px after. Desktop/compact Always pills are plain text pills
-     with equal padding (hover/Never circles and the phone chips are other
+  /* The description card of an Inline button: only .hint-desc + .hint-key, floating above the button. */
+  body.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .hint-more,
+  body.level-labels-inline .level-apply .hint-more,
+  body.sidebar-toolbar-labels-inline .sidebar-btn .hint-more,
+  body.view-toolbar-labels-inline .row-action-btn.rect:not(.sidebar-btn) .hint-more,
+  body.view-toolbar-labels-inline .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .hint-more{
+    position:absolute; left:0; bottom:calc(100% + 6px); width:max-content; max-width:240px; white-space:normal; text-align:left;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
+    box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45; opacity:0; transform:translateY(4px);
+    transition:opacity .12s ease, transform .12s ease; font-weight:400; letter-spacing:0; text-transform:none;
+  }
+  body.hover-descriptions-off.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .hint-more,
+  body.hover-descriptions-off.level-labels-inline .level-apply .hint-more,
+  body.hover-descriptions-off.sidebar-toolbar-labels-inline .sidebar-btn .hint-more,
+  body.hover-descriptions-off.view-toolbar-labels-inline .row-action-btn.rect:not(.sidebar-btn) .hint-more,
+  body.hover-descriptions-off.view-toolbar-labels-inline .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .hint-more{display:none;}
+  body.filter-toolbar-labels-inline .row-action-btn:not(.rect):hover .hint-more, body.filter-toolbar-labels-inline .row-action-btn:not(.rect):focus-visible .hint-more,
+  body.level-labels-inline .level-apply:hover .hint-more, body.level-labels-inline .level-apply:focus-visible .hint-more,
+  body.sidebar-toolbar-labels-inline .sidebar-btn:hover .hint-more, body.sidebar-toolbar-labels-inline .sidebar-btn:focus-visible .hint-more,
+  body.view-toolbar-labels-inline .row-action-btn.rect:hover .hint-more, body.view-toolbar-labels-inline .row-action-btn.rect:focus-visible .hint-more,
+  body.view-toolbar-labels-inline .toolbar-icon-btn:hover .hint-more, body.view-toolbar-labels-inline .toolbar-icon-btn:focus-visible .hint-more{opacity:1 !important; transform:translateY(0) !important;}
+  /* A button with a "+" badge (New, Add level filter, Add to library): the badge hangs on the icon's
+     bottom-right corner, so the name starts a few px further right and never covers it. */
+  body.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply):has(.add-badge) .row-action-label,
+  body.level-labels-inline .level-apply:has(.add-badge) .row-action-label,
+  body.view-toolbar-labels-inline .row-action-btn:has(.add-badge) .row-action-label{margin-left:3px;}
+  body.sidebar-toolbar-labels-inline:not(.layout-phone) #sidebarToolbar .sidebar-btn:has(.add-badge) .row-action-short{margin-left:3px;}
+  /* The ID-scoped hover-reveal rules (library presets, Add level filter) would shift the now-static label. */
+  body.filter-toolbar-labels-inline #libraryPresetBar .row-action-btn:hover .row-action-label,
+  body.level-labels-inline #btnApplyLevelToTree:hover .row-action-label{transform:none;}
+  /* The repeat chevron is a 14px sub-control of the toggle next to it: it keeps its
+     icon-only shape in every mode (its title tooltip stays, the floating label is hidden in Inline). */
+  body.view-toolbar-labels-inline .toolbar-icon-btn.repeat-chevron .tb-label{display:none;}
+  /* Level chips in Inline mode: plain name+count pills. They have no icon, so
+     the empty 28px .row-action-hit slot is dropped and the text gets equal
+     padding on both sides (hover/Off circles and the phone chips are other
      rules and stay as they are). */
-  body.level-labels-always:not(.layout-phone) .level-btn{padding:0 12px;}
-  body.level-labels-always:not(.layout-phone) .level-btn .row-action-hit{display:none;}
-  body.level-labels-always:not(.layout-phone) #levelBar .level-btn .row-action-label{margin-left:0;}
+  body.level-labels-inline .level-btn{width:auto;}
+  body.level-labels-inline .level-btn .row-action-label{margin-left:6px;}
+  body.level-labels-inline:not(.layout-phone) .level-btn{padding:0 12px;}
+  body.level-labels-inline:not(.layout-phone) .level-btn .row-action-hit{display:none;}
+  body.level-labels-inline:not(.layout-phone) #levelBar .level-btn .row-action-label{margin-left:0;}
   /* The hover-reveal rule below (#levelBar .level-btn:hover ...) carries an ID and
      would shift the now-static label by -50% on hover, clipping it in the pill. */
-  body.level-labels-always:not(.layout-phone) #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
-
-  body.view-toolbar-labels-never .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
-  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label{display:none !important;}
-  body.view-toolbar-labels-always .row-action-btn.rect:not(.sidebar-btn),
-  body.sidebar-toolbar-labels-always .sidebar-btn,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron){width:auto; padding-right:10px; overflow:hidden;}
-  body.view-toolbar-labels-always .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .tb-label{
-    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
-    background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
+  body.level-labels-inline:not(.layout-phone) #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
+  /* View-toolbar on/off toggles in Inline: the "status light" bar spans the pill content symmetrically
+     (icon's visible left edge and label end each 12px from the edge). */
+  body.view-toolbar-labels-inline .toolbar-icon-btn.icon-toggle:has(.tb-hit):not(.repeat-chevron){padding-left:5px; padding-right:12px;}
+  body.view-toolbar-labels-inline .toolbar-icon-btn.icon-toggle:has(.tb-hit):not(.repeat-chevron)::after{left:12px; right:12px; width:auto; transform:none;}
+  /* View-toolbar groups: caption above a one-row set of buttons. The caption
+     only exists (display) with Group captions on; otherwise the group is
+     just its row, so nothing moves. */
+  .tg-row{display:flex; align-items:center; gap:4px;}
+  :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .toolbar-group:has(> .group-caption){flex-direction:column; align-items:flex-start; gap:0;}
+  /* Captions on: the row grows by the caption's height (the buttons keep their
+     28px), items sit on the buttons' baseline, separators span the button row. */
+  body.toolbar-captions :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
+    height:auto; min-height:36px; align-items:flex-end; padding-top:3px; padding-bottom:4px;
+    padding-left:16px; /* person-reported, 2026-10-08: same left edge as #viewBar's 16px, so the View and Display captions line up */
   }
-  /* person-reported, 2026-10-08, Always-label mode: the Collapse-repeats
-     chevron is a 14px sub-control of the toggle next to it, not a toggle of
-     its own — an inline "Collapse repeats: choose the rule" label turned it
-     into a wide pill. It stays icon-only (excluded from the pill rules
-     above; its title tooltip stays, the floating hover label is hidden). */
-  body.view-toolbar-labels-always .toolbar-icon-btn.repeat-chevron .tb-label{display:none;}
-  /* Same report, view-toolbar on/off toggles: the "status light" bar was
-     60% wide, centered on the button (starting right of the icon's centre,
-     ending before the label end), and the pill had a 13px empty-looking
-     left side vs 10px right. In Always mode the pill content is symmetric
-     (icon's visible left edge and label end each 12px from the edge: 5px
-     padding + the 7px inset of the 14px icon in its 28px slot) and the bar
-     spans exactly that content. */
-  body.view-toolbar-labels-always .toolbar-icon-btn.icon-toggle:has(.tb-hit){padding-left:5px; padding-right:12px;}
-  body.view-toolbar-labels-always .toolbar-icon-btn.icon-toggle:has(.tb-hit)::after{left:12px; right:12px; width:auto; transform:none;}
+  body.toolbar-captions :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .ctx-toolbar-sep{align-self:flex-end; height:28px; margin:0;}
+  /* Inline names make a view toolbar wider than the pane: its groups wrap onto further
+     lines (never an inner scrollbar, that would clip the floating description cards);
+     "|" separators left at a line start/end are hidden by updateBarSeparators. */
+  body.view-toolbar-labels-inline :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
+    height:auto; min-height:36px; flex-wrap:wrap; row-gap:4px; padding-top:3px; padding-bottom:3px;
+  }
+  :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .ctx-toolbar-sep.sep-hidden{display:none;}
+  body.view-toolbar-labels-inline :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .toolbar-group{max-width:100%;}
+  body.view-toolbar-labels-inline :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) .tg-row, body.view-toolbar-labels-inline :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .toolbar-group:not(:has(.tg-row)){flex-wrap:wrap; row-gap:4px;}
+  /* Files & Filters toolbar groups (Edit / Effect / Library): one row of icons
+     per group; the bar wraps only between groups. */
+  .stb-group{display:flex; flex-direction:column; align-items:flex-start; flex:0 0 auto;}
+  .stb-group-row{display:flex; align-items:center; gap:2px;}
+  /* Inline names: the sidebar is narrow, so its buttons show the SHORT names (Rename / Edit / Link,
+     NOT / Mute / Clock, Library: the same words the phone drawer puts under the icons) and every
+     group stays one row; a group that still outgrows the sidebar wraps inside itself, never clips. */
+  body.sidebar-toolbar-labels-inline:not(.layout-phone) #sidebarToolbar .sidebar-btn .hint-name{display:none;}
+  body.sidebar-toolbar-labels-inline:not(.layout-phone) #sidebarToolbar .sidebar-btn .row-action-label{margin-left:0;}
+  body.sidebar-toolbar-labels-inline:not(.layout-phone) #sidebarToolbar .sidebar-btn .row-action-short{
+    display:inline; margin-left:-3px; font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px; white-space:nowrap;
+  }
+  body.sidebar-toolbar-labels-inline .stb-group{max-width:100%;}
+  body.sidebar-toolbar-labels-inline .stb-group-row{flex-wrap:wrap;}
+  body.toolbar-captions:not(.layout-phone) #sidebarToolbar{align-items:flex-end;}
+  body.toolbar-captions:not(.layout-phone) #sidebarToolbar > .row-action-separator{align-self:flex-end; margin-bottom:6px;}
   /* person-reported, 2026-09-15: a disabled button's label is the only
      thing that explains WHY it's grayed out / what would enable it (e.g.
      Table toolbar's "Value assertion" needs a column selected first) — so
@@ -1477,7 +1580,7 @@
   .level-btn.lvl-other .row-action-label{background:var(--text-secondary); color:var(--bg-app); border-color:transparent;}
   .level-btn.lvl-other .level-count{color:var(--text-secondary);}
   .level-btn.active.lvl-other .level-count{color:var(--bg-app);}
-  body.level-labels-always .level-btn.lvl-other:not(.active) .row-action-label{color:var(--text-secondary);}
+  body.level-labels-inline .level-btn.lvl-other:not(.active) .row-action-label{color:var(--text-secondary);}
   /* Checked: the ring's own color fills the whole circle solid. */
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
   .level-btn.active.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 85%, #fff);}
@@ -1519,17 +1622,17 @@
   .level-btn.lvl-custom-5 .row-action-label{background:var(--level-custom-5); color:var(--level-custom-on); border-color:transparent;}
   .level-btn.lvl-custom-6 .row-action-label{background:var(--level-custom-6); color:var(--level-custom-on); border-color:transparent;}
   /* Count inside the level circle (desktop + compact tiers, "On hover" label mode —
-     "Always" pills already carry name + count in their label; the phone chips show
+     Inline pills already carry name + count in their label; the phone chips show
      .level-short instead). The text is the short count (levelCountShort, max 4 chars),
      always centered. Inactive circle: the level's own color on the transparent ring;
      checked: the fill's "on" color. */
   .level-btn .level-count{display:none;}
-  body:not(.layout-phone):not(.level-labels-always) .level-btn .level-count{
+  body:not(.layout-phone):not(.level-labels-inline) .level-btn .level-count{
     display:flex; position:absolute; inset:0; align-items:center; justify-content:center;
     font:600 9.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
   }
   /* A 4-char short count ("1,3k") gets a notch smaller so it clears the 28px ring. */
-  body:not(.layout-phone):not(.level-labels-always) .level-btn .level-count.level-count-long{font-size:8.5px;}
+  body:not(.layout-phone):not(.level-labels-inline) .level-btn .level-count.level-count-long{font-size:8.5px;}
   .level-btn.lvl-error .level-count{color:var(--level-error);}
   .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
   .level-btn.lvl-warn .level-count{color:var(--level-warn);}
@@ -1554,20 +1657,20 @@
   .level-btn.active.lvl-custom-5 .level-count{color:var(--level-custom-on);}
   .level-btn.lvl-custom-6 .level-count{color:var(--level-custom-6);}
   .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
-  /* "Always" pills: an unchecked pill is a transparent ring, so its label takes the
+  /* Inline pills: an unchecked pill is a transparent ring, so its label takes the
      level's own color (the -on color is meant for the solid fill and was white on light). */
-  body.level-labels-always .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
-  body.level-labels-always .level-btn.lvl-warn:not(.active) .row-action-label{color:var(--level-warn);}
-  body.level-labels-always .level-btn.lvl-info:not(.active) .row-action-label{color:var(--level-info);}
-  body.level-labels-always .level-btn.lvl-debug:not(.active) .row-action-label{color:var(--level-debug);}
-  body.level-labels-always .level-btn.lvl-fatal:not(.active) .row-action-label{color:var(--level-fatal);}
-  body.level-labels-always .level-btn.lvl-trace:not(.active) .row-action-label{color:var(--level-trace);}
-  body.level-labels-always .level-btn.lvl-custom-1:not(.active) .row-action-label{color:var(--level-custom-1);}
-  body.level-labels-always .level-btn.lvl-custom-2:not(.active) .row-action-label{color:var(--level-custom-2);}
-  body.level-labels-always .level-btn.lvl-custom-3:not(.active) .row-action-label{color:var(--level-custom-3);}
-  body.level-labels-always .level-btn.lvl-custom-4:not(.active) .row-action-label{color:var(--level-custom-4);}
-  body.level-labels-always .level-btn.lvl-custom-5:not(.active) .row-action-label{color:var(--level-custom-5);}
-  body.level-labels-always .level-btn.lvl-custom-6:not(.active) .row-action-label{color:var(--level-custom-6);}
+  body.level-labels-inline .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
+  body.level-labels-inline .level-btn.lvl-warn:not(.active) .row-action-label{color:var(--level-warn);}
+  body.level-labels-inline .level-btn.lvl-info:not(.active) .row-action-label{color:var(--level-info);}
+  body.level-labels-inline .level-btn.lvl-debug:not(.active) .row-action-label{color:var(--level-debug);}
+  body.level-labels-inline .level-btn.lvl-fatal:not(.active) .row-action-label{color:var(--level-fatal);}
+  body.level-labels-inline .level-btn.lvl-trace:not(.active) .row-action-label{color:var(--level-trace);}
+  body.level-labels-inline .level-btn.lvl-custom-1:not(.active) .row-action-label{color:var(--level-custom-1);}
+  body.level-labels-inline .level-btn.lvl-custom-2:not(.active) .row-action-label{color:var(--level-custom-2);}
+  body.level-labels-inline .level-btn.lvl-custom-3:not(.active) .row-action-label{color:var(--level-custom-3);}
+  body.level-labels-inline .level-btn.lvl-custom-4:not(.active) .row-action-label{color:var(--level-custom-4);}
+  body.level-labels-inline .level-btn.lvl-custom-5:not(.active) .row-action-label{color:var(--level-custom-5);}
+  body.level-labels-inline .level-btn.lvl-custom-6:not(.active) .row-action-label{color:var(--level-custom-6);}
   /* #levelBar is rebuilt on every level toggle/file change (renderLevelBar),
      so the JS setupHitExpandGroups binding (done once at boot, against
      elements that don't exist yet) never reaches these buttons — reveal the
@@ -1802,6 +1905,30 @@
      `.level-btn`/etc. already use elsewhere in this file. */
   .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
   .minimap-meta-level:hover{filter:brightness(1.35);}
+  /* Zoom indicator (only while .zoomed): accent frame + glow, bold edge arrows
+     (the log continues beyond that side), a 12 px overview strip of the whole
+     file with the zoom window as a box (min 6 px wide, end ticks), and the
+     "Zoom 18 % ... Whole file" chip in the meta line. The strip is in flow but
+     the minimap's height is fixed, so the SVG gives up 12 px; the table below
+     does not move. */
+  #timelineMinimap.zoomed{box-shadow:inset 0 0 0 1px var(--accent), inset 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);}
+  #timelineMinimapOverview{display:none; flex:0 0 12px; position:relative; margin:0 10px; pointer-events:none;
+    background:var(--bg-elevated-2); border-radius:3px; box-shadow:inset 0 0 0 1px var(--border);}
+  #timelineMinimap.zoomed #timelineMinimapOverview{display:block;}
+  #timelineMinimapOverviewBox{position:absolute; top:0; bottom:0; min-width:6px; box-sizing:border-box;
+    border:2px solid var(--accent); background:color-mix(in srgb, var(--accent) 35%, transparent); border-radius:3px;}
+  #timelineMinimapOverviewBox::before, #timelineMinimapOverviewBox::after{content:""; position:absolute; top:-2px; bottom:-2px; width:2px; background:var(--accent-strong); border-radius:1px;}
+  #timelineMinimapOverviewBox::before{left:-2px;}
+  #timelineMinimapOverviewBox::after{right:-2px;}
+  .minimap-edge{display:none; position:absolute; top:28px; bottom:0; width:24px; pointer-events:none; z-index:1;
+    align-items:center; font-size:18px; font-weight:800; line-height:1; color:var(--accent-strong);}
+  .minimap-edge-l{left:0; justify-content:flex-start; padding-left:4px; background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 50%, transparent), transparent);}
+  .minimap-edge-r{right:0; justify-content:flex-end; padding-right:4px; background:linear-gradient(270deg, color-mix(in srgb, var(--accent) 50%, transparent), transparent);}
+  #timelineMinimap.zoomed .minimap-edge.on{display:flex;}
+  .minimap-zoom-chip{font:inherit; font-size:11px; font-weight:700; line-height:14px; font-family:var(--font-mono); background:var(--accent); color:var(--bg-app);
+    border:0; border-radius:9px; padding:0 8px; margin-right:8px; cursor:pointer; vertical-align:top;}
+  .minimap-zoom-chip:hover{filter:brightness(1.12);}
+  body.layout-phone #timelineMinimapOverview, body.layout-phone .minimap-edge, body.layout-phone .minimap-zoom-chip{display:none !important;}
   #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block; touch-action:pan-y;}
   .minimap-bg-bar{fill:var(--text-tertiary); opacity:.3;}
   .minimap-ov-bar{opacity:.95;}
@@ -2243,15 +2370,6 @@
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
-  /* "View Toolbar button labels: Always" makes the buttons inline pills, so a
-     toolbar row can outgrow the viewport: scroll inside the row instead of
-     widening the page. Scoped to the always mode because overflow would clip
-     the floating "On hover" label pills (they sit above the button). Heights
-     stay fixed (CONTEXT_TOOLBAR_HEIGHT). */
-  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
-    min-width:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin;
-  }
-  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > *{flex-shrink:0;}
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
@@ -4643,6 +4761,54 @@
   #copyToast[data-kind="error"]::before{content:"!"; color:var(--level-error);}
   #copyToast .toast-text{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
+  /* ---------- "Where is what" overlay + first-start hint ----------
+     Above popups/dialogs, below the toasts (z-index 80). The dim and the
+     region boxes are one SVG (a mask cuts the regions out of the dim);
+     callouts are absolutely placed pills, see placeWhereCallouts(). */
+  #whereIsWhat{position:fixed; inset:0; z-index:78; cursor:pointer; outline:none;}
+  #whereIsWhat.hidden{display:none;}
+  #whereIsWhat .wiw-svg{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;}
+  #whereIsWhat .wiw-dim{fill:var(--where-dim, rgba(16,19,26,.7));}
+  #whereIsWhat .wiw-box{fill:none; stroke:var(--accent); stroke-width:1.5;}
+  #whereIsWhat .wiw-line{stroke:var(--accent); stroke-width:1.25;}
+  #whereIsWhat .wiw-dot{fill:var(--accent);}
+  #whereIsWhat .wiw-callout{
+    position:absolute; display:flex; align-items:flex-start; gap:6px; box-sizing:border-box;
+    padding:3px 10px 3px 3px; border-radius:13px; max-width:260px;
+    background:var(--bg-elevated); border:1px solid var(--accent); color:var(--text-primary);
+    font-size:12px; font-weight:600; line-height:18px; white-space:nowrap;
+    box-shadow:0 4px 12px rgba(0,0,0,.35); pointer-events:none;
+  }
+  #whereIsWhat .wiw-num{
+    flex:none; width:18px; height:18px; border-radius:50%; background:var(--accent); color:var(--accent-on);
+    font-size:10.5px; font-weight:700; line-height:18px; text-align:center;
+  }
+  #whereIsWhat .wiw-note{display:block; font-size:10.5px; font-weight:400; line-height:13px; color:var(--text-secondary); white-space:normal;}
+  #whereIsWhat .wiw-foot{font-weight:400; color:var(--text-secondary); border-color:var(--border); padding-left:10px;}
+  #whereIsWhat .wiw-sr{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;}
+  #whereHint, #hoverNudge{
+    position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:79;
+    display:flex; align-items:center; gap:10px; max-width:calc(100vw - 24px);
+    background:var(--bg-elevated); border:1px solid var(--accent); color:var(--text-primary);
+    padding:7px 10px 7px 14px; border-radius:8px; font-size:12px; box-shadow:0 10px 24px rgba(0,0,0,.4);
+  }
+  #whereHint.hidden, #hoverNudge.hidden{display:none;}
+  #whereHint .btn-mini-outline, #hoverNudge .btn-mini-outline{flex:none;}
+  body.layout-phone #whereHint, body.layout-phone #whereIsWhat, body.layout-phone #hoverNudge, body.layout-phone #helpMenu{display:none !important;}
+  /* "?" quick-switch menu: same shell as the other click-dismissed menus. */
+  #helpMenu{
+    position:fixed; z-index:50; background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:5px;
+    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:220px; max-width:280px;
+  }
+  #helpMenu.hidden{display:none;}
+  #helpMenu .ctx-item{justify-content:space-between; gap:16px; outline:none;}
+  #helpMenu .ctx-item:focus-visible{background:var(--accent-soft); color:var(--accent-strong);}
+  #helpMenu .help-key{font-family:var(--font-mono); font-size:10px; font-weight:600; padding:0 5px; border:1px solid var(--border); border-radius:4px; background:var(--bg-app); color:var(--text-secondary);}
+  #helpMenu .help-sw{flex:none; position:relative; width:26px; height:14px; border-radius:7px; background:var(--bg-elevated-2); border:1px solid var(--border);}
+  #helpMenu .help-sw::after{content:""; position:absolute; top:1px; left:1px; width:10px; height:10px; border-radius:50%; background:var(--text-tertiary); transition:left .12s;}
+  #helpMenu [aria-checked="true"] .help-sw{background:var(--accent-soft); border-color:var(--accent);}
+  #helpMenu [aria-checked="true"] .help-sw::after{left:13px; background:var(--accent);}
+
   /* ---------- Filter popup ---------- */
   /* max-height/overflow-y (person-reported: content below the fold was
      unreachable once the popup grew — target-chain row, the input's own
@@ -5049,7 +5215,9 @@
   .log-row.repeat-member .col-msg, .log-row.repeat-member .col-text{opacity:.88;}
   /* Collapse-repeats options menu (chevron next to the toggle), same shell as #columnsPanel. */
   .repeat-split{display:flex; align-items:center;}
-  .toolbar-icon-btn.repeat-chevron{width:14px; margin-left:-6px; background:none; border:none; color:var(--text-secondary);}
+  /* person-reported, 2026-10-08: no negative margin and a 14px hit area (.tb-hit is 28px by default and overhung the toggle's icon), so each click lands on the control it is drawn on. */
+  .toolbar-icon-btn.repeat-chevron{width:14px; margin-left:0; background:none; border:none; color:var(--text-secondary);}
+  .toolbar-icon-btn.repeat-chevron .tb-hit{width:14px;}
   .toolbar-icon-btn.repeat-chevron:hover{background:var(--bg-elevated-2);}
   .toolbar-icon-btn.repeat-chevron .icon{--icon-md:10px;}
   #repeatMenu{
@@ -5067,14 +5235,10 @@
     flex:0 0 auto; width:13px; height:13px; margin-top:1px; box-sizing:border-box;
     border:1.5px solid var(--border-hover); background:transparent;
   }
-  .repeat-menu-item .rm-check{border-radius:3px;}
-  .repeat-menu-item .rm-radio{border-radius:50%;}
+    .repeat-menu-item .rm-radio{border-radius:50%;}
   .repeat-menu-item.on .rm-mark{border-color:var(--accent-strong); background:var(--accent-strong); box-shadow:inset 0 0 0 2.5px var(--bg-elevated);}
-  .repeat-menu-item .rm-check, .repeat-menu-item.on .rm-check{box-shadow:none;}
-  .repeat-menu-item.on .rm-check{background:var(--accent-strong);}
-  .repeat-menu-item .rm-title{display:block; color:var(--text-primary); font-weight:600;}
+    .repeat-menu-item .rm-title{display:block; color:var(--text-primary); font-weight:600;}
   .repeat-menu-item .rm-sub{display:block; margin-top:1px; font-size:10.5px; color:var(--text-tertiary); line-height:1.35;}
-  .repeat-menu-sep{height:1px; margin:4px 2px; background:var(--border-soft);}
 
   /* ---------- Log view columns popup (#btnColumns) — own fixed-position/
      toggle pattern (used to share it with the License popup, which has
@@ -5224,7 +5388,7 @@
   body.layout-phone .brand-name, body.layout-phone .brand-version, body.layout-phone #navHistoryGroup,
   body.layout-phone #statusText, body.layout-phone #btnUndo, body.layout-phone #btnRedo,
   body.layout-phone #btnExport, body.layout-phone #btnAssistant, body.layout-phone .toolbar-spacer,
-  body.layout-phone .toolbar-right .toolbar-group{display:none !important;}
+  body.layout-phone .toolbar-right .toolbar-group, body.layout-phone #btnHelp{display:none !important;}
   body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
   body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -5261,7 +5425,11 @@
   body.layout-compact .minimap-draft-bar button{min-height:36px;}
 
   body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
-  body.layout-phone #viewBar > :not(#fhTabs):not(#levelBar){display:none !important;}
+  body.layout-phone #viewBar > :not(#vbView):not(#vbLevel){display:none !important;}
+  body.layout-phone #vbView{display:none !important;}
+  /* The Level group wrapper dissolves: #levelBar is a direct flex item of the bar again. */
+  body.layout-phone #vbLevel, body.layout-phone #vbLevel > .vb-group-row{display:contents;}
+  body.layout-phone #btnApplyLevelToTree{display:none !important;}
   /* Phone has no view tabs at all (only Filtered, see phoneEnforceTab());
      !important because renderMainView() sets fhTabs.style.display inline.
      #viewBar then holds only #levelBar — no gap beyond its own padding. */
@@ -5286,7 +5454,7 @@
   }
   body.layout-phone .level-btn .row-action-hit{display:none;}
   body.layout-phone .level-btn .row-action-label{
-    position:static; transform:none; opacity:1; padding:0; border:0; background:none; box-shadow:none;
+    position:static; transform:none; opacity:1; padding:0; border:0; background:none; box-shadow:none; white-space:nowrap;
     color:inherit; font-family:inherit; font-size:12.5px; font-weight:600; letter-spacing:0; z-index:auto;
   }
   body.layout-phone #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
@@ -5596,7 +5764,8 @@
        gets its own full-width row under the tabs and the toolbar wraps instead of scrolling. */
     body.layout-compact #viewBar.level-own-row{flex-wrap:wrap; overflow-x:visible; overflow-y:visible; row-gap:6px;}
     body.layout-compact #viewBar.level-own-row::before{content:""; flex-basis:100%; order:1; height:0; margin-bottom:-6px;}
-    body.layout-compact #viewBar.level-own-row > #levelBar{order:2; flex:1 1 auto; min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:0;}
+    body.layout-compact #viewBar.level-own-row > #vbLevel{order:2; flex:1 1 auto; min-width:0; margin-top:0;}
+    body.layout-compact #viewBar.level-own-row #levelBar{flex-wrap:wrap; justify-content:flex-start;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnAnalyzePhone, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
@@ -5701,9 +5870,10 @@
     background: transparent;
     border-bottom: none;
   }
-  html.pip-mode #viewBar > :not(#fhTabs) {
+  html.pip-mode #viewBar > :not(#vbView) {
     display: none !important;
   }
+  html.pip-mode #vbView > .group-caption {display: none !important;}
   html.pip-mode #fhTabs {
     position: fixed;
     top: 6px;
@@ -5855,7 +6025,7 @@
     <div id="phoneTitle"><b></b><span></span></div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
-      <div class="toolbar-group">
+      <div class="toolbar-group" id="hdrHistory">
         <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" data-sc-title="Undo ({undo})" disabled></button>
         <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" data-sc-title="Redo ({redo})" disabled></button>
       </div>
@@ -5876,6 +6046,10 @@
       <!-- Opens the find bar (Ctrl+F), in every layout. -->
       <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)" data-sc-title="Find in view ({findInView})">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+      </button>
+      <!-- Help / quick-switch menu (#helpMenu: "Where is what?" overlay, hover descriptions, group captions); hidden on the phone tier. -->
+      <button type="button" id="btnHelp" class="toolbar-icon-btn" aria-label="Help and display options" title="Help and display options" aria-haspopup="menu" aria-expanded="false">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M6.1 6.3a2 2 0 0 1 3.85.65c0 1.3-1.95 1.55-1.95 2.75"/><path d="M8 11.7h.01"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -6026,7 +6200,10 @@
 
       <div id="timelineMinimap" class="hidden">
         <div id="timelineMinimapMeta"></div>
+        <div id="timelineMinimapOverview" aria-hidden="true"><div id="timelineMinimapOverviewBox"></div></div>
         <svg id="timelineMinimapSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        <div id="timelineMinimapEdgeL" class="minimap-edge minimap-edge-l" aria-hidden="true">&lsaquo;</div>
+        <div id="timelineMinimapEdgeR" class="minimap-edge minimap-edge-r" aria-hidden="true">&rsaquo;</div>
         <div id="timelineMinimapTooltip" class="hidden"></div>
         <div id="timelineMinimapDragRect" class="hidden"></div>
         <div id="timelineMinimapDragLabel" class="hidden"></div>
@@ -6082,7 +6259,10 @@
              the group entirely when the active node has no extractable
              wildcards (see renderViewTabs's own comment), so the rest of
              the tab group never jumps sideways once they're added. -->
-        <div class="view-tabs" id="fhTabs"></div>
+        <div class="vb-group vb-hidden" id="vbView">
+          <span class="group-caption" aria-hidden="true">View</span>
+          <div class="vb-group-row"><div class="view-tabs" id="fhTabs"></div></div>
+        </div>
         <!-- Level quick-filter — sits LEFT of the filter-creation actions
              (person-requested, this session; reverses an earlier session's
              move to the right of that group). Buttons are fixed 28x28
@@ -6090,8 +6270,17 @@
              filled solid in the level's own color once checked; name+count
              only appear in the hover-revealed label, so there's no variable
              pill width left to guard against. -->
-        <div id="levelBar"></div>
-        <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn level-apply" title="Add level filter"></button>
+        <!-- Groups (2026-10-08): every group of the bar is ONE non-breaking
+             .vb-group (caption + row); the bar wraps only between groups.
+             The .group-caption spans are aria-hidden and only displayed with the
+             Group captions setting (CSS), the buttons keep their title/label. -->
+        <div class="vb-group" id="vbLevel">
+          <span class="group-caption" aria-hidden="true">Level</span>
+          <div class="vb-group-row">
+            <div id="levelBar"></div>
+            <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn level-apply" title="Add level filter"></button>
+          </div>
+        </div>
         <!-- Dividing "|" (person-requested, this session): the level filter
              is its own conceptual group same as the three below it, so it
              gets the exact same #viewBar > .row-action-separator treatment
@@ -6101,23 +6290,34 @@
         <span class="row-action-separator"></span>
         <!-- Group 1: standard filter-creation actions (Before/After/Time
              range/Message/Extract) — directly right of the level filter. -->
-        <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
-        <!-- Group 2: pinned library presets (person-requested). Rendered
-             dynamically by renderLibraryToolbarPresets; the group and its
-             leading "|" divider (#libraryPresetSep) are hidden when no preset
-             is pinned, so the bar never shows an empty "| |". Same circle-pill
-             .row-action-btn styling as the filter buttons; the floating label
-             is driven purely by CSS :hover here (the label floats and shifts
-             nothing, so the JS setupHitExpandGroups mechanism isn't needed). -->
+        <div class="vb-group" id="vbAddFilter">
+          <span class="group-caption" aria-hidden="true">Add filter</span>
+          <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
+        </div>
+        <!-- Group 2: pinned library presets (person-requested) + the
+             "Library ▾" split button (always present while files are loaded,
+             also with zero presets; both segments open #libraryMenu).
+             #libraryPresetBar is rendered dynamically by
+             renderLibraryToolbarPresets; it and the group's caption are
+             hidden when no preset is pinned. Same circle-pill .row-action-btn
+             styling as the filter buttons; the floating label is driven
+             purely by CSS :hover here (the label floats and shifts nothing,
+             so the JS setupHitExpandGroups mechanism isn't needed). -->
         <span class="row-action-separator" id="libraryPresetSep"></span>
-        <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
-        <!-- "Library ▾" split button: always present while files are loaded
-             (also with zero presets); both segments open #libraryMenu. -->
-        <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library" aria-label="Filter library"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
+        <div class="vb-group" id="vbPresets">
+          <span class="group-caption" aria-hidden="true">Presets</span>
+          <div class="vb-group-row">
+            <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
+            <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library" aria-label="Filter library"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
+          </div>
+        </div>
         <!-- Group 3: "New" on its own (person-requested), always divided from
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
-        <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
+        <div class="vb-group" id="vbCreate">
+          <span class="group-caption" aria-hidden="true">Create</span>
+          <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
+        </div>
         <!-- The library management group (#libraryManageBar: "Add to
              Library"/"Library", pinned far-right) that used to live here is
              removed (this session, project-owner review) — its two actions
@@ -6185,13 +6385,18 @@
                  with just Wrap + Show matches; every log-only element hides
                  (see #highlightWrap.text-mode) — renderTextEditorView. -->
             <div class="toolbar-group" data-toolbar-group="textlayout" data-text-only>
+              <span class="group-caption" aria-hidden="true">Layout</span>
+              <div class="tg-row">
               <div class="seg-toggle" id="ctxTextLayout" role="group" aria-label="JSON layout">
                 <button type="button" id="ctxLayoutPretty" data-layout="pretty" title="Pretty-printed: one line per JSON token line">Pretty</button>
                 <button type="button" id="ctxLayoutRaw" data-layout="raw" title="Raw: the file's own text">Raw</button>
               </div>
+              </div>
             </div>
             <span class="ctx-toolbar-sep" id="ctxTextLayoutSep" data-text-only></span>
             <div class="toolbar-group" data-toolbar-group="controls" data-log-only>
+              <span class="group-caption" aria-hidden="true">Matches</span>
+              <div class="tg-row">
               <div class="stepper stepper-compact stepper-nav">
                 <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
                 <span id="contextNavLabel" class="ctx-nav-label stepper-value"></span>
@@ -6200,9 +6405,12 @@
               <button type="button" id="ctxExpandAround" class="toolbar-icon-btn" title="Expand around matches"></button>
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Expand all"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all"></button>
+              </div>
             </div>
             <span class="ctx-toolbar-sep" data-log-only></span>
             <div class="toolbar-group" data-toolbar-group="settings">
+              <span class="group-caption" aria-hidden="true">Display</span>
+              <div class="tg-row">
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" data-log-only title="Show/hide notes"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" data-log-only title="Multi-line messages"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
@@ -6210,9 +6418,13 @@
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" data-log-only title="Underline highlights"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" data-log-only title="Clickable file paths"></button>
+              </div>
             </div>
             <span class="ctx-toolbar-sep" data-log-only></span>
-            <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions" data-log-only></div>
+            <div class="toolbar-group" data-toolbar-group="actions" data-log-only>
+              <span class="group-caption" aria-hidden="true">Selection</span>
+              <div class="tg-row" data-row-actions="toolbar-actions"></div>
+            </div>
           </div>
           <div id="highlightHeader">
             <!-- Content is JS-built by renderColumnHeader (Custom Columns
@@ -6253,6 +6465,8 @@
                  #contextToolbar's own comment for why. -->
             <div id="filteredToolbar">
               <div class="toolbar-group" data-toolbar-group="settings">
+                <span class="group-caption" aria-hidden="true">Display</span>
+                <div class="tg-row">
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-pin" title="Pin bookmarks"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" title="Show/hide notes"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
@@ -6266,9 +6480,13 @@
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" title="Underline highlights"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" title="Clickable file paths"></button>
+                </div>
               </div>
               <span class="ctx-toolbar-sep"></span>
-              <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
+              <div class="toolbar-group" data-toolbar-group="actions">
+                <span class="group-caption" aria-hidden="true">Selection</span>
+                <div class="tg-row" data-row-actions="toolbar-actions"></div>
+              </div>
             </div>
             <!-- Phone only, extraction node active: Table/Plot are not available here (updatePhoneExtractHint). -->
             <div id="phoneExtractHint"><span class="peh-icon"></span><span>Table and Plot for this filter need a wider screen (tablet or desktop).</span></div>
@@ -6408,6 +6626,8 @@
              "Value assertion…", and "Select". -->
         <div id="tableToolbar">
           <div class="toolbar-group" data-toolbar-group="actions">
+            <span class="group-caption" aria-hidden="true">Actions</span>
+            <div class="tg-row">
             <button type="button" id="tableExportCsvBtn" class="toolbar-icon-btn" title="Export as CSV…">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v8M8 9.5L5 6.5M8 9.5l3-3"/><path d="M2.5 11v2.5h11V11"/></svg>
             </button>
@@ -6430,6 +6650,7 @@
                  context-aware: marked-cell rows in Table, viewport entries in
                  Plot (see selectActionEntries). -->
             <span data-row-actions="select-action"></span>
+            </div>
           </div>
           <span id="tableFilterInfo" class="toolbar-filter-info"></span>
         </div>
@@ -6455,6 +6676,8 @@
                regardless. -->
           <div id="plotToolbar">
             <div class="toolbar-group" data-toolbar-group="controls">
+              <span class="group-caption" aria-hidden="true">View</span>
+              <div class="tg-row">
               <div id="plot2dToolsGroup" class="hidden toolbar-group">
                 <div class="stepper stepper-compact">
                   <button type="button" class="stepper-btn" id="plotZoomOutBtn" title="Zoom out">−</button>
@@ -6464,13 +6687,17 @@
                 <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
               </div>
               <button type="button" id="plotFullscreenBtn" class="toolbar-icon-btn" title="Fullscreen"></button>
+              </div>
             </div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions">
-              <button type="button" id="plotSaveImageBtn" class="toolbar-icon-btn" title="Save image"></button>
-              <!-- "Select" (Add to selection) action — see the matching
-                   #tableToolbar comment. -->
-              <span data-row-actions="select-action"></span>
+              <span class="group-caption" aria-hidden="true">Actions</span>
+              <div class="tg-row">
+                <button type="button" id="plotSaveImageBtn" class="toolbar-icon-btn" title="Save image"></button>
+                <!-- "Select" (Add to selection) action — see the matching
+                     #tableToolbar comment. -->
+                <span data-row-actions="select-action"></span>
+              </div>
             </div>
             <span id="plotFilterInfo" class="toolbar-filter-info"></span>
           </div>
@@ -6513,6 +6740,29 @@
       </div>
 
       <div id="copyToast" class="hidden"></div>
+
+      <!-- "Where is what" overlay + its first-start hint — built by showWhereIsWhat()/maybeShowWhereHint(). -->
+      <div id="whereIsWhat" class="hidden" role="dialog" aria-label="Where is what" tabindex="-1"></div>
+      <div id="whereHint" class="hidden" role="status">
+        <span class="wh-text">New here? See where everything is.</span>
+        <button type="button" id="whereHintShow" class="btn-mini-outline">Show me</button>
+        <button type="button" id="whereHintDismiss" class="btn-mini-outline">Dismiss</button>
+      </div>
+      <!-- Hover-card nudge (maybeShowHoverNudge): same shell as #whereHint. -->
+      <div id="hoverNudge" class="hidden" role="status">
+        <span class="wh-text">Seen enough descriptions?</span>
+        <button type="button" id="hoverNudgeHide" class="btn-mini-outline">Got it, hide them</button>
+        <button type="button" id="hoverNudgeKeep" class="btn-mini-outline">Keep</button>
+      </div>
+      <!-- "?" quick-switch menu (header help button): Where is what + the two global toolbar switches. -->
+      <div id="helpMenu" class="hidden" role="menu" aria-label="Help and display options">
+        <div class="ctx-item" role="menuitem" tabindex="-1" id="helpMenuWhere">Where is what?<kbd class="help-key">?</kbd></div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-item" role="menuitemcheckbox" aria-checked="true" tabindex="-1" id="helpMenuDesc">Hover descriptions<span class="help-sw" aria-hidden="true"></span></div>
+        <div class="ctx-item" role="menuitemcheckbox" aria-checked="false" tabindex="-1" id="helpMenuCaps">Group captions<span class="help-sw" aria-hidden="true"></span></div>
+        <div class="ctx-sep"></div>
+        <div class="ctx-item" role="menuitem" tabindex="-1" id="helpMenuSettings">All toolbar settings&hellip;</div>
+      </div>
 
       <div id="detailResizer" title="Drag to resize"></div>
       <div id="detailPanel">
@@ -7459,57 +7709,81 @@
             </div>
           </div>
 
-          <div class="settings-subsection-title">Toolbars</div>
+          <div class="settings-subsection-title" id="settingsToolbarsTitle">Toolbars</div>
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Files &amp; Filters toolbar labels</div>
-                <div class="settings-row-hint">When the buttons above the file tree show their text.</div>
+                <div class="settings-row-hint">Name of each button: Off, On hover or Inline.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsSidebarToolbarLabels" data-seg>
-                  <option value="never">Never</option>
+                  <option value="off">Off</option>
                   <option value="hover">On hover</option>
-                  <option value="always">Always</option>
+                  <option value="inline">Inline</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Level labels</div>
-                <div class="settings-row-hint">When the level circles show name and count as text.</div>
+                <div class="settings-row-hint">Name and count of the level chips.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsLevelLabels" data-seg>
-                  <option value="never">Never</option>
+                  <option value="off">Off</option>
                   <option value="hover">On hover</option>
-                  <option value="always">Always</option>
+                  <option value="inline">Inline</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Filter toolbar labels</div>
-                <div class="settings-row-hint">When the other filter-bar buttons show their text.</div>
+                <div class="settings-row-hint">Name of each filter button.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsFilterToolbarLabels" data-seg>
-                  <option value="never">Never</option>
+                  <option value="off">Off</option>
                   <option value="hover">On hover</option>
-                  <option value="always">Always</option>
+                  <option value="inline">Inline</option>
                 </select>
               </div>
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">View toolbar labels</div>
-                <div class="settings-row-hint">When view-toolbar buttons show their text.</div>
+                <div class="settings-row-hint">Name of each button in the view toolbars.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsViewToolbarLabels" data-seg>
-                  <option value="never">Never</option>
+                  <option value="off">Off</option>
                   <option value="hover">On hover</option>
-                  <option value="always">Always</option>
+                  <option value="inline">Inline</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Hover descriptions</div>
+                <div class="settings-row-hint">Second line and shortcut in the hover card.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsHoverDescriptions" data-seg>
+                  <option value="0">Off</option>
+                  <option value="1">On</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Group captions</div>
+                <div class="settings-row-hint">Small headings above each toolbar group.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsToolbarCaptions" data-seg>
+                  <option value="0">Off</option>
+                  <option value="1">On</option>
                 </select>
               </div>
             </div>
@@ -8379,8 +8653,6 @@ SOFTWARE.</pre>
        own resize handles instead, not from here. -->
   <!-- Collapse repeats rule menu (chevron next to #btnRepeatCollapse), built like #columnsPanel. -->
   <div id="repeatMenu" class="hidden">
-    <button type="button" class="repeat-menu-item" data-repeat-action="toggle"><span class="rm-mark rm-check"></span><span><span class="rm-title">Collapse repeats</span><span class="rm-sub">Fold consecutive repeated rows into one row &times;N</span></span></button>
-    <div class="repeat-menu-sep"></div>
     <button type="button" class="repeat-menu-item" data-repeat-rule="identical"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Identical</span><span class="rm-sub">All columns equal except the time</span></span></button>
     <button type="button" class="repeat-menu-item" data-repeat-rule="pattern"><span class="rm-mark rm-radio"></span><span><span class="rm-title">Same pattern</span><span class="rm-sub">Numbers, IDs, quoted text may differ; same level, thread and source</span></span></button>
   </div>
@@ -10464,28 +10736,32 @@ document.getElementById("settingsFilterActivationView").addEventListener("change
   localStorage.setItem(FILTER_ACTIVATION_VIEW_KEY, filterActivationView);
 });
 
-// Toolbar button label settings (Settings -> Behavior, person-requested,
-// 2026-09-05; split into four 2026-10-08): whether the row-action/toolbar
-// buttons' hover-revealed labels show Never, on Hover (default — the plain
-// mechanics near .row-action-btn/.tb-hit above, nothing extra needed), or
-// Always. Applied as a class on <body> (see the CSS overrides next to
-// .row-action-btn/.toolbar-icon-btn:has(.tb-hit) above) rather than per-
-// button state, so a single change instantly affects every button of that
-// kind, wherever it's duplicated. Two independent settings/keys since the
-// person wanted Filter-Toolbar and View Toolbar controllable separately.
+// Toolbar settings (Settings -> Behavior -> Toolbars), three independent
+// concepts (2026-10-08):
+//  1. Button labels, per area (four selects): Off | On hover (default) | Inline.
+//     Applied as body classes `<prefix>-off` / `<prefix>-inline` (no class = On
+//     hover), see the CSS overrides next to .row-action-btn above.
+//  2. Hover descriptions (global, default on): the second line + shortcut of the
+//     hover card. Body class `hover-descriptions-off`.
+//  3. Group captions (global, default off): small headings above each toolbar
+//     group. Body class `toolbar-captions`.
 const FILTER_TOOLBAR_LABELS_KEY = "philogg-filter-toolbar-labels";
 const VIEW_TOOLBAR_LABELS_KEY = "philogg-view-toolbar-labels";
 const SIDEBAR_TOOLBAR_LABELS_KEY = "philogg-sidebar-toolbar-labels";
 const LEVEL_LABELS_KEY = "philogg-level-labels";
-// Four independent label settings (2026-10-08): the Files & Filters toolbar
-// (#sidebarToolbar), the level circles (#levelBar + "Add level filter"), the
-// remaining Filter-Toolbar buttons (#viewBar) and the four view toolbars.
-// All default to "hover" (a stored value always applies, no migration).
-let filterToolbarLabels = "hover"; // "never" | "hover" | "always"
+const HOVER_DESCRIPTIONS_KEY = "philogg-hover-descriptions";
+const TOOLBAR_CAPTIONS_KEY = "philogg-toolbar-captions";
+// The Files & Filters toolbar (#sidebarToolbar), the level circles (#levelBar +
+// "Add level filter"), the remaining Filter-Toolbar buttons (#viewBar) and the
+// four view toolbars. All default to "hover" (a stored legacy value such as
+// "never"/"always" simply falls back to the default).
+let filterToolbarLabels = "hover"; // "off" | "hover" | "inline"
 let viewToolbarLabels = "hover";
 let sidebarToolbarLabels = "hover";
 let levelLabels = "hover";
-function normalizeToolbarLabelsMode(v) { return v === "never" || v === "always" ? v : "hover"; }
+let hoverDescriptions = true;
+let toolbarCaptions = false;
+function normalizeToolbarLabelsMode(v) { return v === "off" || v === "inline" ? v : "hover"; }
 const TOOLBAR_LABEL_SETTINGS = [
   { selectId: "settingsSidebarToolbarLabels", key: SIDEBAR_TOOLBAR_LABELS_KEY, bodyPrefix: "sidebar-toolbar-labels", get: () => sidebarToolbarLabels, set: v => { sidebarToolbarLabels = v; } },
   { selectId: "settingsLevelLabels", key: LEVEL_LABELS_KEY, bodyPrefix: "level-labels", get: () => levelLabels, set: v => { levelLabels = v; } },
@@ -10493,13 +10769,39 @@ const TOOLBAR_LABEL_SETTINGS = [
   { selectId: "settingsViewToolbarLabels", key: VIEW_TOOLBAR_LABELS_KEY, bodyPrefix: "view-toolbar-labels", get: () => viewToolbarLabels, set: v => { viewToolbarLabels = v; } },
 ];
 function applyToolbarLabelSetting(def) {
-  document.body.classList.toggle(def.bodyPrefix + "-never", def.get() === "never");
-  document.body.classList.toggle(def.bodyPrefix + "-always", def.get() === "always");
+  document.body.classList.toggle(def.bodyPrefix + "-off", def.get() === "off");
+  document.body.classList.toggle(def.bodyPrefix + "-inline", def.get() === "inline");
   syncAllDisabledReasonTitles();
   scheduleBarSeparatorUpdate();
 }
 function applyFilterToolbarLabels() { applyToolbarLabelSetting(TOOLBAR_LABEL_SETTINGS[2]); }
 function applyViewToolbarLabels() { applyToolbarLabelSetting(TOOLBAR_LABEL_SETTINGS[3]); }
+// The two global switches. One setter each, used by the Settings rows, the "?"
+// quick-switch popover and the nudge toast, so all of them stay in sync.
+function applyHoverDescriptions() {
+  document.body.classList.toggle("hover-descriptions-off", !hoverDescriptions);
+  const select = document.getElementById("settingsHoverDescriptions");
+  if (select) select.value = hoverDescriptions ? "1" : "0";
+  syncAllDisabledReasonTitles();
+  if (typeof syncHelpMenuSwitches === "function") syncHelpMenuSwitches();
+}
+function applyToolbarCaptions() {
+  document.body.classList.toggle("toolbar-captions", toolbarCaptions);
+  const select = document.getElementById("settingsToolbarCaptions");
+  if (select) select.value = toolbarCaptions ? "1" : "0";
+  if (typeof syncHelpMenuSwitches === "function") syncHelpMenuSwitches();
+  scheduleBarSeparatorUpdate();
+}
+function setHoverDescriptions(on) {
+  hoverDescriptions = !!on;
+  try { localStorage.setItem(HOVER_DESCRIPTIONS_KEY, hoverDescriptions ? "1" : "0"); } catch (e) { /* storage unavailable */ }
+  applyHoverDescriptions();
+}
+function setToolbarCaptions(on) {
+  toolbarCaptions = !!on;
+  try { localStorage.setItem(TOOLBAR_CAPTIONS_KEY, toolbarCaptions ? "1" : "0"); } catch (e) { /* storage unavailable */ }
+  applyToolbarCaptions();
+}
 function initToolbarLabelsSettings() {
   TOOLBAR_LABEL_SETTINGS.forEach(def => {
     def.set(normalizeToolbarLabelsMode(localStorage.getItem(def.key)));
@@ -10507,6 +10809,10 @@ function initToolbarLabelsSettings() {
     if (select) select.value = def.get();
     applyToolbarLabelSetting(def);
   });
+  hoverDescriptions = localStorage.getItem(HOVER_DESCRIPTIONS_KEY) !== "0";
+  toolbarCaptions = localStorage.getItem(TOOLBAR_CAPTIONS_KEY) === "1";
+  applyHoverDescriptions();
+  applyToolbarCaptions();
 }
 TOOLBAR_LABEL_SETTINGS.forEach(def => {
   document.getElementById(def.selectId).addEventListener("change", ev => {
@@ -10515,6 +10821,8 @@ TOOLBAR_LABEL_SETTINGS.forEach(def => {
     applyToolbarLabelSetting(def);
   });
 });
+document.getElementById("settingsHoverDescriptions").addEventListener("change", ev => setHoverDescriptions(ev.target.value === "1"));
+document.getElementById("settingsToolbarCaptions").addEventListener("change", ev => setToolbarCaptions(ev.target.value === "1"));
 
 /* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
    How (or whether) the "temp anchor" row — the selected entry's would-be
@@ -13832,6 +14140,7 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
   // race) — same guard loadOneFileIntoTree's own finally block has for the
   // identical situation on its own load path.
   if (state.nodes[node.id] === node) flushLoadRender(node.id);
+  maybeShowWhereHint();
   return node;
 }
 
@@ -19473,6 +19782,12 @@ const timelineMinimapDraftLabel = el("#timelineMinimapDraftLabel");
 const timelineMinimapDraftBar = el("#timelineMinimapDraftBar");
 const minimapDraftHandles = [...timelineMinimapEl.querySelectorAll(".minimap-draft-handle")];
 const fhTabs = el("#fhTabs");
+// #fhTabs lives in the "View" group (#vbView, caption + row): show/hide both together.
+function setFhTabsVisible(on) {
+  fhTabs.style.display = on ? "flex" : "none";
+  const grp = document.getElementById("vbView");
+  if (grp) grp.classList.toggle("vb-hidden", !on);
+}
 const fhSplit = el("#fhSplit");
 const viewBarEl = el("#viewBar");
 const filterSlot = el("#filterSlot");
@@ -20479,7 +20794,7 @@ function renderMainView() {
     extractWrap.style.display = "none";
     patternsWrap.style.display = "none";
     linkWrap.style.display = "none";
-    fhTabs.style.display = "none";
+    setFhTabsVisible(false);
     fhSplit.style.display = "none";
     // Bug 1 fix (person-reported): Entry Detail is a log-row concept (its
     // other two gates, 10402 and 18564, both key off hasFiles/an actual log
@@ -20516,7 +20831,7 @@ function renderMainView() {
     extractWrap.style.display = "none";
     patternsWrap.style.display = "none";
     linkWrap.style.display = "none";
-    fhTabs.style.display = "none";
+    setFhTabsVisible(false);
     fhSplit.style.display = "none";
     detailPanel.style.display = "none";
     detailResizer.style.display = "none";
@@ -20553,7 +20868,7 @@ function renderMainView() {
     extractWrap.style.display = "none";
     patternsWrap.style.display = "none";
     linkWrap.style.display = "none";
-    fhTabs.style.display = "none";
+    setFhTabsVisible(false);
     fhSplit.style.display = "none";
     detailPanel.style.display = "none";
     detailResizer.style.display = "none";
@@ -20565,7 +20880,7 @@ function renderMainView() {
     patternsWrap.style.display = "none";
     linkWrap.style.display = "none";
     fhTabs.innerHTML = "";
-    fhTabs.style.display = "none";
+    setFhTabsVisible(false);
     fhSplit.style.display = "none";
     detailResizer.style.display = "none";
     detailPanel.style.display = "none";
@@ -20601,7 +20916,7 @@ function renderMainView() {
   // so staying "on" them would show stale content behind a disabled tab.
   if ((fhActiveTab === "table" || fhActiveTab === "plot") && !extractCapable) fhActiveTab = "filter";
 
-  fhTabs.style.display = "flex";
+  setFhTabsVisible(true);
   renderViewTabs(extractCapable);
   updateViewBarRowActions();
 
@@ -22410,6 +22725,7 @@ function renderLevelBar() {
     const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + n.toLocaleString("de-DE");
     btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count' + (countText.length > 3 ? " level-count-long" : "") + '">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => toggleLevelFilter(lvl));
+    decorateHintLabel(btn);
     levelBarEl.appendChild(btn);
   });
   updateApplyLevelToTreeButtonVisibility();
@@ -22433,12 +22749,18 @@ function updateLevelBarLayout() {
     const chips = [...levelBarEl.children];
     const chipsW = chips.reduce((a, c) => a + c.offsetWidth, 0) + Math.max(0, chips.length - 1) * 6;
     // Natural widths plus each child's horizontal margins (tab strip, separators,
-    // library button, ...) and #levelBar's own margins; display:none children
+    // group wrappers, ...) and #levelBar's own margins; display:none children
     // take no space; a flex column-gap sits between every pair of children.
+    // The Level group (#vbLevel: #levelBar + "Add level filter") is measured by
+    // its natural content (chips + the button + the row gap), never by its current
+    // box, which grows when it sits in its own row.
     const marginsOf = c => { const m = getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
+    const levelGroup = levelBarEl.closest(".vb-group");
+    const applyBtn = document.getElementById("btnApplyLevelToTree");
+    const applyW = applyBtn && getComputedStyle(applyBtn).display !== "none" ? applyBtn.offsetWidth + 4 : 0;
     const shown = [...viewBar.children].filter(c => getComputedStyle(c).display !== "none");
-    const others = shown.filter(c => c !== levelBarEl).reduce((a, c) => a + c.offsetWidth + marginsOf(c), 0) +
-      (shown.includes(levelBarEl) ? marginsOf(levelBarEl) : 0);
+    const others = shown.filter(c => c !== levelGroup).reduce((a, c) => a + c.offsetWidth + marginsOf(c), 0) +
+      (shown.includes(levelGroup) ? marginsOf(levelBarEl) + applyW : 0);
     const cs = getComputedStyle(viewBar);
     const gap = parseFloat(cs.columnGap) || 0;
     const gaps = Math.max(0, shown.length - 1) * gap;
@@ -27827,7 +28149,6 @@ function updateRepeatButton() {
     b.title = locked ? "Collapse repeats needs the chronological order (clear the column sort)" : "Collapse repeats";
   });
   btnRepeatMenu.forEach(b => { b.disabled = locked; setDisabledReason(b, "clear the column sort", false); });
-  repeatMenu.querySelector('[data-repeat-action="toggle"]').classList.toggle("on", repeatCollapseOn);
   repeatMenu.querySelectorAll("[data-repeat-rule]").forEach(it => it.classList.toggle("on", it.dataset.repeatRule === repeatRule));
 }
 function setRepeatCollapse(on, rule) {
@@ -31027,6 +31348,7 @@ function closeEscapeOverlays() {
   closePruneDialog();
   closeNoteDialog();
   closeColumnsPanel();
+  closeHelpMenu();
   closeRepeatMenu();
   closeColorPicker();
   closeSessionExportDialog();
@@ -31046,7 +31368,7 @@ function anyEscapeOverlayOpen() {
     "filterPopup", "settingsDialog", "formatDialog", "folderWatchSettingsDialog", "linkDialog", "andOrDialog", "gapDialog",
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog", "pruneDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
-    "filterLibraryDialog", "libraryMenu", "themeEditorDialog", "columnsPanel", "repeatMenu", "colorPickerPopup", "contextMenu",
+    "filterLibraryDialog", "libraryMenu", "helpMenu", "themeEditorDialog", "columnsPanel", "repeatMenu", "colorPickerPopup", "contextMenu",
     "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
@@ -31375,8 +31697,46 @@ function minimapResolutionText() {
   const ms = (minimapTMax - minimapTMin) / W;
   return ms < 1000 ? fmt(ms) + " ms/px" : (ms / 1000).toFixed(2) + " s/px";
 }
+// Fraction (0..1) of the whole file the zoom window covers, in the same
+// coordinates the minimap draws with (index span in "entries" mode).
+function minimapZoomFraction(view) {
+  if (minimapBinningMode === "entries") return minimapIdxN / Math.max(1, minimapRootEntries.length);
+  return (view.to - view.from) / Math.max(1, minimapFileTMax - minimapFileTMin);
+}
+function minimapZoomChipHtml(rootId, view) {
+  const pct = minimapZoomFraction(view) * 100;
+  const ms = !nodeIsPlainText(rootId) && view.to - view.from < 10000;
+  const text = "Zoom " + (pct < 1 ? "<1" : Math.round(pct)) + " % \u00b7 " +
+    timeRangeBoundLabel(rootId, view.from, ms) + "\u2013" + timeRangeBoundLabel(rootId, view.to, ms) + "  \u2922 Whole file";
+  return '<button type="button" class="minimap-zoom-chip" data-depth="0" title="Back to the whole file">' + escapeHtml(text) + "</button>";
+}
+// Overview box + edge arrows of the zoom indicator (CSS shows them only
+// while .zoomed); the drawn window is minimapTMin/TMax, the file minimapFileTMin/TMax.
+function updateMinimapZoomIndicator(view) {
+  const box = el("#timelineMinimapOverviewBox");
+  const eL = el("#timelineMinimapEdgeL"), eR = el("#timelineMinimapEdgeR");
+  if (!view) { eL.classList.remove("on"); eR.classList.remove("on"); return; }
+  let l, w;
+  if (minimapBinningMode === "entries") {
+    const n = Math.max(1, minimapRootEntries.length);
+    l = minimapIdxLo / n * 100; w = minimapIdxN / n * 100;
+  } else {
+    const span = Math.max(1, minimapFileTMax - minimapFileTMin);
+    l = (minimapTMin - minimapFileTMin) / span * 100; w = (minimapTMax - minimapTMin) / span * 100;
+  }
+  // Keep a tiny window visible: at least 6 px wide, pushed back inside the strip.
+  const stripW = el("#timelineMinimapOverview").clientWidth;
+  if (stripW > 0) { w = Math.max(w, 6 / stripW * 100); l = Math.min(l, 100 - w); }
+  box.style.left = l.toFixed(2) + "%";
+  box.style.width = w.toFixed(2) + "%";
+  eL.classList.toggle("on", view.from > minimapFileTMin);
+  eR.classList.toggle("on", view.to < minimapFileTMax);
+}
 function minimapCrumbsHtml(rootId) {
   const trail = minimapViewTrail;
+  // A one-level zoom on desktop/tablet: the zoom chip already carries the range and
+  // the way back, so the crumbs would only repeat it. The phone has no chip.
+  const crumbsHidden = trail.length === 1 && !document.body.classList.contains("layout-phone");
   const crumb = (label, depth) => '<button type="button" class="minimap-crumb" data-depth="' + depth + '"' +
     (depth === trail.length ? " disabled" : "") + ">" + escapeHtml(label) + "</button>";
   const parts = [crumb("Whole file", 0)];
@@ -31384,7 +31744,7 @@ function minimapCrumbsHtml(rootId) {
     const ms = !nodeIsPlainText(rootId) && v.to - v.from < 10000;
     parts.push(crumb(timeRangeBoundLabel(rootId, v.from, ms) + "–" + timeRangeBoundLabel(rootId, v.to, ms), i + 1));
   });
-  return '<span class="minimap-crumbs">' + parts.join(" › ") + '</span>' +
+  return (crumbsHidden ? "" : '<span class="minimap-crumbs">' + parts.join(" › ") + '</span>') +
     (minimapShownDraft() ? '<span class="minimap-draft-text">' + escapeHtml(minimapDraftLabelText(minimapShownDraft(), false)) + "</span>" : "") +
     '<span class="minimap-res" title="Resolution of the zoomed minimap">' +
     escapeHtml(minimapResolutionText()) + "</span>";
@@ -31522,8 +31882,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
   });
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
-  timelineMinimapMetaEl.innerHTML = (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
+  timelineMinimapMetaEl.innerHTML = (view ? minimapZoomChipHtml(rootId, view) : "") +
+    (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
     '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + repeatMetaHtml() + "</span>";
+  updateMinimapZoomIndicator(view);
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
@@ -31978,7 +32340,7 @@ function updateMinimapSelectionMarkers() {
 // minimapLastRootId rather than a closed-over rootId, since it must resolve
 // to whichever file the CURRENTLY rendered meta line actually belongs to.
 timelineMinimapMetaEl.addEventListener("click", ev => {
-  const crumb = ev.target.closest(".minimap-crumb");
+  const crumb = ev.target.closest(".minimap-crumb, .minimap-zoom-chip");
   if (crumb) { minimapViewGoTo(+crumb.dataset.depth); return; }
   const span = ev.target.closest(".minimap-meta-level");
   if (!span || !minimapLastRootId) return;
@@ -34668,8 +35030,7 @@ repeatMenu.addEventListener("click", ev => {
   ev.stopPropagation();
   const item = ev.target.closest(".repeat-menu-item");
   if (!item) return;
-  if (item.dataset.repeatRule) setRepeatCollapse(true, item.dataset.repeatRule); // picking a rule also switches collapsing on
-  else setRepeatCollapse(!repeatCollapseOn);
+  setRepeatCollapse(true, item.dataset.repeatRule); // picking a rule also switches collapsing on
   closeRepeatMenu();
 });
 btnResetColumns.addEventListener("click", () => {
@@ -36504,6 +36865,7 @@ async function canParseBlobInWorker(file, formatId, encoding) {
 function finishLoadProgress(node) {
   delete node.loadFraction;
   if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
+  maybeShowWhereHint(); // first-start hint after the first log, see "Where is what"
 }
 
 // Finish phase after readParseFileNode succeeded, for a node that is really in
@@ -42176,6 +42538,113 @@ elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.i
 elAll('[data-row-actions="select-action"]').forEach(container => { container.innerHTML = SELECT_ROW_ACTION_HTML; });
 elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
 elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.innerHTML = VIEWBAR_NEW_ROW_ACTION_HTML; });
+// Hover card text of every labelled toolbar button (docs/ui-and-views.md ->
+// "Toolbar labels"). Key = hintKeyOf(btn): the button's id, its data-row-action,
+// its toggle-* class, "levelChip" (level chips; {level} is the chip's level) or
+// "libraryPreset". desc = ONE short sentence; key = a SHORTCUT_ACTIONS id (the
+// chip shows its CURRENT binding, so rebinding is picked up); noTitle: the
+// button's own title already explains it. A test requires an entry per button.
+const TOOLBAR_HINTS = {
+  // #viewBar
+  filterBefore: { desc: "Add a time filter that keeps everything up to the selected rows." },
+  filterAfter: { desc: "Add a time filter that keeps everything from the selected rows on." },
+  timeRangeFromSelection: { desc: "Add a time-range filter spanning the selected rows (or the rows on screen)." },
+  filterForMessage: { desc: "Open the filter dialog prefilled with the selected row's message." },
+  extractMessage: { desc: "Create a value-extraction filter from the numbers and IDs in the selected row's message." },
+  newFilter: { desc: "Open the filter dialog to add a new filter under the active node.", key: "newFilter" },
+  btnApplyLevelToTree: { desc: "Turn the selected level chips into a permanent level filter in the tree." },
+  levelChip: { desc: "Show only {level} entries · click again to remove." },
+  libraryPreset: { desc: "Apply this saved preset from the filter library to the selected node.", noTitle: true },
+  // Context / Filtered toolbars
+  ctxPrevMatch: { desc: "Jump to the previous match of the active filter.", key: "prevMatch" },
+  ctxNextMatch: { desc: "Jump to the next match of the active filter.", key: "nextMatch" },
+  ctxExpandAround: { desc: "Reveal the hidden lines around every match." },
+  ctxExpandAll: { desc: "Reveal every hidden line between the matches." },
+  ctxCollapseAll: { desc: "Hide the revealed lines again and show only the matches." },
+  "toggle-pin": { desc: "Keep bookmarked rows in the Filtered view even when the filter would hide them." },
+  "toggle-notes": { desc: "Show or hide the notes attached to rows." },
+  "toggle-multiline": { desc: "Show every line of multi-line messages instead of only the first." },
+  "toggle-wrap": { desc: "Wrap long messages onto several lines instead of scrolling sideways." },
+  "toggle-columns": { desc: "Choose which columns are shown." },
+  btnRepeatCollapse: { desc: "Fold consecutive repeated rows into one row with a ×N badge." },
+  btnRepeatMenu: { desc: "Choose what counts as a repeat: identical rows or the same pattern." },
+  "toggle-textmatch": { desc: "Mark the text matched by the active filter inside the rows." },
+  "toggle-highlightmatch": { desc: "Underline the text matched by the highlight colour of a filter." },
+  "toggle-filepaths": { desc: "Make file paths in messages clickable." },
+  bookmark: { desc: "Bookmark the selected row so it is easy to find again.", key: "bookmark" },
+  note: { desc: "Attach a note to the selected row.", key: "addNote" },
+  addToSelection: { desc: "Add the selected rows to a selection filter (existing or new)." },
+  // Table / Plot toolbars
+  tableExportCsvBtn: { desc: "Export the extraction table as a CSV file." },
+  tableAssertBtn: { desc: "Flag values of the selected column outside a min/max range or a target ± tolerance." },
+  plotFullscreenBtn: { desc: "Show the plot fullscreen." },
+  plotSaveImageBtn: { desc: "Save the plot as a PNG image." },
+  // Files & Filters toolbar (#sidebarToolbar)
+  rename: { desc: "Rename the selected filter.", key: "renameFilter" },
+  edit: { desc: "Change the selected filter's pattern, time range or conditions.", key: "editFilter" },
+  linkWith: { desc: "Start a link filter with the selected filter as its Start." },
+  invert: { desc: "Keep what the selected filter would drop, and drop what it keeps (NOT)." },
+  mute: { desc: "Switch the selected filter off without deleting it.", key: "muteFilter" },
+  clockOffset: { desc: "Shift all timestamps of the selected file to correct its clock." },
+  addToLibrary: { desc: "Save the selected filter in the filter library to reuse it later." },
+};
+// The TOOLBAR_HINTS key of a labelled button, or null.
+function hintKeyOf(btn) {
+  if (btn.id && TOOLBAR_HINTS[btn.id]) return btn.id;
+  const ra = btn.dataset.rowAction;
+  if (ra && TOOLBAR_HINTS[ra]) return ra;
+  if (btn.dataset.libKey !== undefined) return "libraryPreset";
+  if (btn.classList.contains("level-btn")) return "levelChip";
+  const tog = [...btn.classList].find(c => c.indexOf("toggle-") === 0 && TOOLBAR_HINTS[c]);
+  return tog || null;
+}
+function hintTextOf(btn, hint) {
+  const lvl = btn.dataset.level;
+  return hint.desc.replace("{level}", lvl === "OTHER" ? "other-level" : lvl || "");
+}
+function hintShortcutOf(hint) {
+  return hint.key && SHORTCUT_ACTIONS.some(a => a.id === hint.key) ? shortcutLabel(hint.key) : "";
+}
+// Splits a button's label into name / [description + shortcut chip] (idempotent;
+// the name span keeps the disabled-reason ::after on the first line, and
+// renderSidebarToolbar updates its text). The description and the chip live in
+// one `.hint-more` wrapper so the Inline mode can float just that part as a
+// card under the (already visible) name. Also refreshes the chip text.
+function decorateHintLabel(btn) {
+  const label = btn.querySelector(".row-action-label, .tb-label");
+  const key = hintKeyOf(btn);
+  if (!label || !key) return;
+  const hint = TOOLBAR_HINTS[key];
+  btn.setAttribute("data-hint-key", key);
+  let name = label.querySelector(".hint-name");
+  if (!name) {
+    name = btn.ownerDocument.createElement("span");
+    name.className = "hint-name";
+    name.textContent = label.textContent;
+    label.textContent = "";
+    label.appendChild(name);
+  }
+  const reason = label.getAttribute("data-disabled-reason");
+  if (reason) name.setAttribute("data-disabled-reason", reason); else name.removeAttribute("data-disabled-reason");
+  let more = label.querySelector(".hint-more");
+  if (!more) {
+    more = btn.ownerDocument.createElement("span");
+    more.className = "hint-more";
+    label.appendChild(more);
+  }
+  const part = (cls, tag, text) => {
+    let e = more.querySelector("." + cls);
+    if (text) {
+      if (!e) { e = btn.ownerDocument.createElement(tag); e.className = cls; more.appendChild(e); }
+      if (e.textContent !== text) e.textContent = text;
+    } else if (e) e.remove();
+  };
+  part("hint-desc", "span", hintTextOf(btn, hint));
+  part("hint-key", "kbd", hintShortcutOf(hint));
+}
+function decorateHintLabels(root) {
+  (root || document).querySelectorAll(".row-action-btn, .toolbar-icon-btn").forEach(decorateHintLabel);
+}
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
 // circle specifically, NOT a plain CSS :hover on the button — the button's
 // own box changes width once expanded, pushing later siblings' hit-zones
@@ -42261,6 +42730,7 @@ function labelHandoverTracker(container) {
   return {
     hover(btn) {
       if (last && btn !== last) container.classList.add("labels-live");
+      if (btn !== last && typeof noteHoverCardShown === "function") noteHoverCardShown(btn);
       last = btn;
     },
     leave() {
@@ -42308,21 +42778,23 @@ function updateBarSeparators(bar) {
   const items = kids.map(k => {
     const shown = k.getClientRects().length > 0;
     const r = shown ? k.getBoundingClientRect() : null;
-    return { sep: k.classList.contains("row-action-separator"), y: r ? (r.top + r.bottom) / 2 : null };
+    return { sep: k.classList.contains("row-action-separator") || k.classList.contains("ctx-toolbar-sep"), y: r ? (r.top + r.bottom) / 2 : null };
   });
   danglingSeparatorIndexes(items).forEach(i => kids[i].classList.add("sep-hidden"));
 }
+// Wrapped toolbar rows whose "|" separators can end up at a line start/end.
+const BAR_SEPARATOR_IDS = ["viewBar", "sidebarToolbar", "contextToolbar", "filteredToolbar", "tableToolbar", "plotToolbar"];
 let barSepRaf = 0;
 function scheduleBarSeparatorUpdate() {
   if (barSepRaf || typeof requestAnimationFrame !== "function") return;
   barSepRaf = requestAnimationFrame(() => {
     barSepRaf = 0;
-    ["viewBar", "sidebarToolbar"].forEach(id => updateBarSeparators(document.getElementById(id)));
+    BAR_SEPARATOR_IDS.forEach(id => updateBarSeparators(document.getElementById(id)));
     barSepObservers.forEach(o => o.takeRecords()); // our own class changes must not re-trigger
   });
 }
 const barSepObservers = [];
-["viewBar", "sidebarToolbar"].forEach(id => {
+BAR_SEPARATOR_IDS.forEach(id => {
   const bar = document.getElementById(id);
   if (!bar) return;
   if (typeof ResizeObserver === "function") {
@@ -42439,29 +42911,36 @@ function setDisabledReason(btn, reason, syncTitle) {
   if (!btn) return;
   const r = btn.disabled && reason ? reason : "";
   const label = btn.querySelector(".row-action-label, .tb-label");
+  // The reason is drawn after the card's name line, so it also sits on .hint-name.
+  const targets = label ? [label, label.querySelector(".hint-name")].filter(Boolean) : [];
   if (r) {
     btn.setAttribute("data-disabled-reason", r);
-    if (label) label.setAttribute("data-disabled-reason", r);
+    targets.forEach(t => t.setAttribute("data-disabled-reason", r));
   } else {
     btn.removeAttribute("data-disabled-reason");
-    if (label) label.removeAttribute("data-disabled-reason");
+    targets.forEach(t => t.removeAttribute("data-disabled-reason"));
   }
   if (syncTitle === false) return;
   if (btn.dataset.titleBase === undefined) btn.dataset.titleBase = btn.title;
   syncDisabledReasonTitle(btn);
 }
-// The tooltip carries the reason only when no On-hover pill already shows it
-// (Always/Never mode of the button's own toolbar kind: .row-action-btn:not(.rect)
-// = Filter-Toolbar, everything else = View toolbars) — otherwise the pill and
+// The tooltip carries the reason only when no hover card already shows it
+// (label mode of the button's own toolbar kind: .row-action-btn:not(.rect)
+// = Filter-Toolbar, everything else = View toolbars) — otherwise the card and
 // the native tooltip would say the same thing twice.
+function labelModeOf(btn) {
+  return btn.classList.contains("sidebar-btn") ? sidebarToolbarLabels
+    : btn.classList.contains("level-btn") || btn.classList.contains("level-apply") ? levelLabels
+    : btn.classList.contains("row-action-btn") && !btn.classList.contains("rect") ? filterToolbarLabels : viewToolbarLabels;
+}
 function syncDisabledReasonTitle(btn) {
   const base = btn.dataset.titleBase;
   if (base === undefined) return;
-  const mode = btn.classList.contains("sidebar-btn") ? sidebarToolbarLabels
-    : btn.classList.contains("level-btn") || btn.classList.contains("level-apply") ? levelLabels
-    : btn.classList.contains("row-action-btn") && !btn.classList.contains("rect") ? filterToolbarLabels : viewToolbarLabels;
+  const mode = labelModeOf(btn);
   const r = btn.getAttribute("data-disabled-reason");
-  btn.title = r && mode !== "hover" ? base + " \u00b7 " + r : base;
+  // The hover card (On hover, or Off with descriptions on) already says it on its name line.
+  const cardShowsReason = mode === "hover" || (mode === "off" && hoverDescriptions);
+  btn.title = r && !cardShowsReason ? base + " \u00b7 " + r : base;
 }
 function syncAllDisabledReasonTitles() {
   elAll("[data-title-base]").forEach(syncDisabledReasonTitle);
@@ -43127,7 +43606,10 @@ function performBulkAction(action, ids) {
 // the tree context menu; context/countContext have no creation entry point at all
 // (FEATURE_BACKLOG.md #79).
 //
-// Returns { actions: [{action, label, icon, target, disabled, separator?}] }.
+// Returns { actions: [{action, label, icon, target, disabled, caption}] }; `caption`
+// ("Edit" / "Effect" / "Library") is the caption of the toolbar group the
+// button is drawn in (buildSidebarToolbarHtml), consecutive entries of one
+// group share a row.
 // `target` is the node id handleSidebarToolbarActionClick should act on.
 function describeSidebarToolbarActions() {
   const selectedIds = [...treeSelectionIds()];
@@ -43137,17 +43619,17 @@ function describeSidebarToolbarActions() {
   const ft = filter ? filter.filterType : null;
   const target = node ? node.id : null;
   const actions = [
-    { action: "rename", label: "Rename…", short: "Rename", icon: ICON_RENAME, target, disabled: !filter },
-    { action: "edit", label: ft === "link" ? "Edit link…" : (ft === "and" || ft === "or") ? "Edit conditions…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target,
+    { action: "rename", label: "Rename…", short: "Rename", icon: ICON_RENAME, target, caption: "Edit", disabled: !filter },
+    { action: "edit", label: ft === "link" ? "Edit link…" : (ft === "and" || ft === "or") ? "Edit conditions…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target, caption: "Edit",
       disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || ((ft === "link" || ft === "and" || ft === "or") && hasBakedSides(filter)))) },
-    { action: "linkWith", label: "Link with…", short: "Link", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
-    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", short: "NOT", icon: ICON_INVERT, target,
+    { action: "linkWith", label: "Link with…", short: "Link", icon: ICON_LINK, target, caption: "Edit", disabled: !isLinkBakeableNode(filter) },
+    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", short: "NOT", icon: ICON_INVERT, target, caption: "Effect",
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
-    { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", short: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target,
+    { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", short: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target, caption: "Effect",
       disabled: !filter },
-    { action: "clockOffset", label: "Adjust clock…", short: "Clock", icon: ICON_CLOCK, target, separator: true,
+    { action: "clockOffset", label: "Adjust clock…", short: "Clock", icon: ICON_CLOCK, target, caption: "Effect",
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
-    { action: "addToLibrary", label: "Add to library…", short: "Library", icon: ICON_BOOK, target, separator: true, addBadge: true, disabled: !filter },
+    { action: "addToLibrary", label: "Add to library…", short: "Library", icon: ICON_BOOK, target, caption: "Library", addBadge: true, disabled: !filter },
   ];
   // Phone has no #btnLibrary to apply a library preset, so saving one is pointless there.
   if (currentLayoutTier === "phone") actions.pop();
@@ -43585,6 +44067,24 @@ const sidebarToolbarEl = el("#sidebarToolbar");
 // button that a same-tick render replaced. #sidebarToolbar.multi paints the
 // selected-row highlight.
 let sidebarToolbarMultiKey = null;
+// Single-mode markup: one `.stb-group` per `group` caption (a one-row set of the
+// group's buttons under an aria-hidden `.group-caption` that is only displayed
+// with Group captions on), "|" separators between the groups. Each row is the
+// hit-expand container of its own buttons (floating labels in On-hover mode).
+function buildSidebarToolbarHtml(actions) {
+  const groups = [];
+  actions.forEach(a => {
+    const last = groups[groups.length - 1];
+    if (last && last.name === a.caption) last.actions.push(a); else groups.push({ name: a.caption, actions: [a] });
+  });
+  return groups.map((g, i) =>
+    (i ? '<span class="row-action-separator"></span>' : '') +
+    '<div class="stb-group" data-stb-group="' + escapeHtml(g.name.toLowerCase()) + '">' +
+      '<span class="group-caption" aria-hidden="true">' + escapeHtml(g.name) + '</span>' +
+      '<div class="stb-group-row">' + buildRowActionsHtml(g.actions, "sidebar", "sidebar-toolbar-hit") + '</div>' +
+    '</div>'
+  ).join("");
+}
 function renderSidebarToolbar() {
   const hasFiles = state.rootIds.length > 0;
   // "" restores the CSS class's own display:flex rather than hardcoding a
@@ -43630,7 +44130,8 @@ function renderSidebarToolbar() {
   if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]") ||
       !!sidebarToolbarEl.querySelector('[data-row-action="addToLibrary"]') !== wantsLibBtn) {
     sidebarToolbarMultiKey = null;
-    sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "sidebar", "sidebar-toolbar-hit");
+    sidebarToolbarEl.innerHTML = buildSidebarToolbarHtml(describeSidebarToolbarActions().actions);
+    decorateHintLabels(sidebarToolbarEl);
     // Idempotent (per-container guard), so calling it again never stacks listeners.
     setupHitExpandGroups(".sidebar-toolbar-hit");
   }
@@ -43640,7 +44141,8 @@ function renderSidebarToolbar() {
     btn.disabled = !!a.disabled;
     btn.title = a.label;
     const lbl = btn.querySelector(".row-action-label");
-    if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
+    const lblName = lbl && (lbl.querySelector(".hint-name") || lbl);
+    if (lblName && lblName.textContent !== a.label) lblName.textContent = a.label;
     // Phone-only under-icon label (CSS shows .row-action-short on layout-phone), same source as the title.
     const shortLbl = btn.querySelector(".row-action-short");
     if (shortLbl && a.short && shortLbl.textContent !== a.short) shortLbl.textContent = a.short;
@@ -46876,6 +47378,7 @@ async function renderLibraryToolbarPresets() {
     btn.innerHTML = iconHtml +
       '<span class="row-action-label">' + escapeHtml(rec.name) + '</span>';
     btn.addEventListener("click", () => applyLibraryRecord(rec));
+    decorateHintLabel(btn);
     frag.appendChild(btn);
   });
   libraryPresetBar.appendChild(frag);
@@ -46995,7 +47498,7 @@ function renderLibraryMenu() {
 function openLibraryMenu() {
   // stopPropagation on the opening click keeps the document handler from
   // closing the other popups, so close them here.
-  closeOpenMenu(); closeSaveMenu(); closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFilterPopup(); closeColumnsPanel();
+  closeOpenMenu(); closeSaveMenu(); closeHelpMenu(); closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFilterPopup(); closeColumnsPanel();
   libraryMenuSearch.value = "";
   libraryMenuKb = 0;
   const rect = btnLibrary.getBoundingClientRect();
@@ -47206,6 +47709,7 @@ const FIXED_SHORTCUTS = [
   { label: "Drag a filter onto another node to move it there", display: null },
   { label: "Double-click a filter — edit it",         display: null },
   { label: "Drag the divider beside the tree/detail panel, or between Context and Filtered in Stacked view, to resize", display: null },
+  { label: "Where is what overlay (labels every region of the window; not inside a text field)", display: ["?", "F1"] },
   { label: "Click a row — select it",                 display: null },
   { label: "Multi-select rows",                       display: ["Ctrl", "click"] },
   { label: "Move selection up/down",                  display: ["↑", "↓"] },
@@ -47288,6 +47792,7 @@ function shortcutTemplate(tpl) {
 function refreshShortcutTooltips() {
   document.querySelectorAll("[data-sc-title]").forEach(e => { e.title = shortcutTemplate(e.dataset.scTitle); });
   document.querySelectorAll("[data-sc-text]").forEach(e => { e.textContent = shortcutTemplate(e.dataset.scText); });
+  decorateHintLabels(); // hover-card shortcut chips follow the bindings
   updateUndoRedoButtons();
   updateSidebarToggleIcon();
   updateDetailToggleIcon();
@@ -50383,6 +50888,7 @@ function closeClickDismissedPopups(ev) {
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!openMenu.contains(ev.target) && !btnOpen.contains(ev.target)) closeOpenMenu();
   if (!saveMenu.contains(ev.target) && !btnSave.contains(ev.target)) closeSaveMenu();
+  if (!helpMenu.contains(ev.target) && !btnHelp.contains(ev.target)) closeHelpMenu();
   if (!libraryMenu.contains(ev.target) && !btnLibrary.contains(ev.target)) closeLibraryMenu();
   if (!filterPopup.contains(ev.target) && !filterPopup.classList.contains("hidden")) closeFilterPopup();
   if (!columnsPanel.contains(ev.target) && !btnColumns.some(b => b.contains(ev.target))) closeColumnsPanel();
@@ -50414,6 +50920,7 @@ function clickDismissedPopupHit(target) {
   const open = p => !p.classList.contains("hidden");
   return (open(openMenu) && !openMenu.contains(target) && !btnOpen.contains(target))
     || (open(saveMenu) && !saveMenu.contains(target) && !btnSave.contains(target))
+    || (open(helpMenu) && !helpMenu.contains(target) && !btnHelp.contains(target))
     || (libraryMenuOpen() && !libraryMenu.contains(target) && !btnLibrary.contains(target))
     || (open(filterPopup) && !filterPopup.contains(target))
     || (open(columnsPanel) && !columnsPanel.contains(target) && !btnColumns.some(b => b.contains(target)))
@@ -50450,6 +50957,370 @@ document.addEventListener("dblclick", ev => {
   ev.stopPropagation();
   ev.preventDefault();
 }, true);
+
+/* ===================== "Where is what" overlay ===================== */
+/* Dims the window and labels every main region with a numbered pill and a
+   leader line to the region's outline (docs/ui-and-views.md -> "Where is what
+   overlay"). WHERE_IS_WHAT is the one table: `sel` must match at most one
+   element; regions that are absent or hidden at show time are skipped; of
+   several entries sharing a `group` only the first visible one is drawn (the
+   active view's toolbar / rows area). `side` is where the callout prefers to
+   sit relative to the region ("in" = inside it, for big regions). */
+const WHERE_IS_WHAT = [
+  { sel: "#sidebarScroll",   label: "Files & filters tree",         side: "in" },
+  { sel: "#sidebarToolbar",  label: "Actions on the selected node", side: "bottom" },
+  { sel: "#btnOpen",         label: "Open logs",                    side: "top" },
+  { sel: "#btnSave",         label: "Save session",                 side: "top" },
+  { sel: "#timelineMinimap", label: "Timeline minimap",             side: "top", note: "Click to jump, drag to select a time window" },
+  { sel: "#fhTabs",          label: "Views",                        side: "bottom" },
+  { sel: "#vbLevel",         label: "Level filter",                 side: "bottom" },
+  { sel: "#vbAddFilter",     label: "Filter from selected row",     side: "bottom" },
+  { sel: "#vbCreate",        label: "New filter",                   side: "bottom" },
+  { sel: "#filteredToolbar", label: "Display options", group: "toolbar", side: "inr" },
+  { sel: "#contextToolbar",  label: "Display options", group: "toolbar", side: "inr" },
+  { sel: "#tableToolbar",    label: "Table options",   group: "toolbar", side: "inr" },
+  { sel: "#plotToolbar",     label: "Plot options",    group: "toolbar", side: "inr" },
+  { sel: "#tableBody",       label: "Log entries",     group: "rows", side: "in" },
+  { sel: "#highlightBody",   label: "Log entries",     group: "rows", side: "in" },
+  { sel: "#extractScroll",   label: "Extracted values", group: "rows", side: "in" },
+  { sel: "#plotBody",        label: "Plot",            group: "rows", side: "in" },
+  { sel: "#patternsScroll",  label: "Patterns",        group: "rows", side: "in" },
+  { sel: "#detailPanel",     label: "Entry detail panel", side: "in", note: "Detail, Why, Stats, Facets, Patterns" },
+  { sel: "#hdrHistory",      label: "Undo / redo",     side: "bottom" },
+  { sel: "#btnExport",       label: "Export / Share",  side: "bottom" },
+  { sel: "#btnFindPhone",    label: "Find in view",    side: "bottom" },
+  { sel: "#btnSettings",     label: "Settings",        side: "bottom" },
+];
+const WHERE_SEEN_KEY = "philogg-where-is-what-seen";
+let whereOpener = null;
+let whereHintShownThisPage = false;
+
+// Pure placement: items = [{ rect: {left, top, right, bottom}, w, h, side }] in
+// priority order, bounds = {w, h}, obstacles = [{x, y, w, h}] already taken.
+// Each callout tries its preferred side, then the others; on a side it slides
+// along the region edge and then steps away from it until a spot is inside the
+// window and clear (4px margin) of every placed callout. Deterministic; the
+// last resort is the clamped preferred spot. Returns [{x, y, w, h}].
+function placeWhereCallouts(items, bounds, obstacles) {
+  const M = 4, GAP = 6;
+  const placed = (obstacles || []).map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h }));
+  const out = [];
+  const clash = b => placed.some(p => b.x < p.x + p.w + M && p.x < b.x + b.w + M && b.y < p.y + p.h + M && p.y < b.y + b.h + M);
+  const inside = b => b.x >= M && b.y >= M && b.x + b.w <= bounds.w - M && b.y + b.h <= bounds.h - M;
+  items.forEach(it => {
+    const r = it.rect, w = it.w, h = it.h;
+    const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    const sides = [it.side].concat(["bottom", "top", "right", "left", "in"].filter(s => s !== it.side));
+    let box = null;
+    outer: for (let si = 0; si < sides.length; si++) {
+      const side = sides[si];
+      for (let d = 0; d <= 8; d++) {
+        for (let a = 0; a <= 8; a++) {
+          const slide = (a % 2 ? 1 : -1) * Math.ceil(a / 2) * ((side === "left" || side === "right" || side === "inr") ? h + M : w / 2 + M);
+          const step = d * (h + M);
+          let x, y;
+          if (side === "bottom") { x = cx - w / 2 + slide; y = r.bottom + GAP + step; }
+          else if (side === "top") { x = cx - w / 2 + slide; y = r.top - GAP - h - step; }
+          else if (side === "right") { x = r.right + GAP + step; y = cy - h / 2 + slide; }
+          else if (side === "left") { x = r.left - GAP - w - step; y = cy - h / 2 + slide; }
+          else if (side === "inr") { x = r.right - GAP - w - step; y = cy - h / 2 + slide; }
+          else { x = cx - w / 2 + slide; y = cy - h / 2 + (d % 2 ? 1 : -1) * Math.ceil(d / 2) * (h + M); }
+          const b = { x: Math.round(x), y: Math.round(y), w, h };
+          if (inside(b) && !clash(b)) { box = b; break outer; }
+        }
+      }
+    }
+    if (!box) {
+      const x = Math.min(Math.max(M, cx - w / 2), Math.max(M, bounds.w - w - M));
+      const y = Math.min(Math.max(M, r.bottom + GAP), Math.max(M, bounds.h - h - M));
+      box = { x: Math.round(x), y: Math.round(y), w, h };
+    }
+    placed.push(box);
+    out.push(box);
+  });
+  return out;
+}
+
+function whereRegionVisible(e) {
+  for (let n = e; n && n !== document.body; n = n.parentElement) {
+    if (n.classList.contains("hidden")) return false;
+    const cs = getComputedStyle(n);
+    if (cs.display === "none" || cs.visibility === "hidden") return false;
+  }
+  const r = e.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+// The regions to draw now: [{ entry, el, rect }] in table order.
+function whereCurrentRegions() {
+  const seen = new Set();
+  const out = [];
+  WHERE_IS_WHAT.forEach(entry => {
+    if (entry.group && seen.has(entry.group)) return;
+    const e = document.querySelector(entry.sel);
+    if (!e || !whereRegionVisible(e)) return;
+    if (entry.group) seen.add(entry.group);
+    const b = e.getBoundingClientRect();
+    out.push({ entry, el: e, rect: { left: b.left, top: b.top, right: b.right, bottom: b.bottom } });
+  });
+  return out;
+}
+function whereOverlayOpen() { return !!whereIsWhatEl && !whereIsWhatEl.classList.contains("hidden"); }
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  Object.keys(attrs || {}).forEach(k => e.setAttribute(k, attrs[k]));
+  return e;
+}
+// Visual px per layout px of the fixed overlay (the root zoom of the font-scale
+// setting); 1 without layout or an unusable size.
+function whereZoomScale(layoutW, visualW) {
+  return layoutW > 0 && visualW > 0 ? visualW / layoutW : 1;
+}
+function renderWhereIsWhat() {
+  // Region rects (getBoundingClientRect) and the SVG are in visual px, but the
+  // callout pills are laid out in the root-zoomed (font scale) CSS px:
+  // z converts layout px -> visual px, so placement happens in visual px.
+  const W = window.innerWidth, H = window.innerHeight;
+  const z = whereZoomScale(whereIsWhatEl.clientWidth, W);
+  const regions = whereCurrentRegions();
+  whereIsWhatEl.textContent = "";
+  const svg = svgEl("svg", { class: "wiw-svg", width: W, height: H, viewBox: "0 0 " + W + " " + H, "aria-hidden": "true" });
+  const mask = svgEl("mask", { id: "wiwMask" });
+  mask.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "#fff" }));
+  regions.forEach(g => {
+    const r = g.rect;
+    mask.appendChild(svgEl("rect", { x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, rx: 4, fill: "#000" }));
+  });
+  const defs = svgEl("defs");
+  defs.appendChild(mask);
+  svg.appendChild(defs);
+  svg.appendChild(svgEl("rect", { class: "wiw-dim", x: 0, y: 0, width: W, height: H, mask: "url(#wiwMask)" }));
+  regions.forEach(g => {
+    const r = g.rect;
+    svg.appendChild(svgEl("rect", { class: "wiw-box", x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, rx: 4 }));
+  });
+  whereIsWhatEl.appendChild(svg);
+  // Callout elements first (to measure), then placement, then lines.
+  const layer = document.createElement("div");
+  layer.setAttribute("aria-hidden", "true");
+  const pills = regions.map((g, i) => {
+    const p = document.createElement("div");
+    p.className = "wiw-callout";
+    p.innerHTML = '<span class="wiw-num"></span><span class="wiw-txt"></span>';
+    p.querySelector(".wiw-num").textContent = String(i + 1);
+    const txt = p.querySelector(".wiw-txt");
+    txt.textContent = g.entry.label;
+    if (g.entry.note) {
+      const n = document.createElement("span");
+      n.className = "wiw-note";
+      n.textContent = g.entry.note;
+      txt.appendChild(n);
+    }
+    layer.appendChild(p);
+    return p;
+  });
+  const foot = document.createElement("div");
+  foot.className = "wiw-callout wiw-foot";
+  foot.textContent = "Esc or click anywhere to close";
+  layer.appendChild(foot);
+  whereIsWhatEl.appendChild(layer);
+  // offsetWidth is 0 without layout (jsdom): estimate from the text then.
+  const sizeOf = (p, g) => ({
+    w: p.offsetWidth * z || Math.min(260, 34 + 6.8 * Math.max(g ? g.entry.label.length : 30, g && g.entry.note ? g.entry.note.length * 0.8 : 0)),
+    h: p.offsetHeight * z || (g && g.entry.note ? 36 : 24),
+  });
+  const fs = sizeOf(foot, null);
+  const footBox = { x: Math.round((W - fs.w) / 2), y: H - fs.h - 8, w: fs.w, h: fs.h };
+  foot.style.left = footBox.x / z + "px"; foot.style.top = footBox.y / z + "px";
+  const items = regions.map((g, i) => {
+    const s = sizeOf(pills[i], g);
+    return { rect: g.rect, w: s.w, h: s.h, side: g.entry.side };
+  });
+  const boxes = placeWhereCallouts(items, { w: W, h: H }, [footBox]);
+  boxes.forEach((b, i) => { pills[i].style.left = b.x / z + "px"; pills[i].style.top = b.y / z + "px"; });
+  // Leader lines: callout edge point toward the region -> nearest point on its box.
+  regions.forEach((g, i) => {
+    const b = boxes[i], r = g.rect;
+    const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+    const tx = Math.min(Math.max(bcx, r.left), r.right), ty = Math.min(Math.max(bcy, r.top), r.bottom);
+    const overlapsX = b.x < r.right && b.x + b.w > r.left, overlapsY = b.y < r.bottom && b.y + b.h > r.top;
+    if (overlapsX && overlapsY) return; // callout sits inside the region: no line
+    const sx = Math.min(Math.max(tx, b.x), b.x + b.w), sy = Math.min(Math.max(ty, b.y), b.y + b.h);
+    svg.appendChild(svgEl("line", { class: "wiw-line", x1: sx, y1: sy, x2: tx, y2: ty }));
+    svg.appendChild(svgEl("circle", { class: "wiw-dot", cx: tx, cy: ty, r: 2.5 }));
+  });
+  // Screen readers get the plain list of region names; the pills are decoration.
+  const ul = document.createElement("ul");
+  ul.className = "wiw-sr";
+  regions.forEach(g => {
+    const li = document.createElement("li");
+    li.textContent = g.entry.label + (g.entry.note ? ": " + g.entry.note : "");
+    ul.appendChild(li);
+  });
+  whereIsWhatEl.appendChild(ul);
+  whereIsWhatEl.dataset.regions = String(regions.length);
+}
+function markWhereSeen() {
+  try { localStorage.setItem(WHERE_SEEN_KEY, "1"); } catch (e) { /* storage blocked: the in-memory flag still limits it to once per page */ }
+  whereHintShownThisPage = true;
+  whereHint.classList.add("hidden");
+}
+function showWhereIsWhat() {
+  if (document.body.classList.contains("layout-phone")) return;
+  if (whereOverlayOpen()) return;
+  whereOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : btnHelp;
+  markWhereSeen();
+  whereIsWhatEl.classList.remove("hidden");
+  renderWhereIsWhat();
+  btnHelp.setAttribute("aria-expanded", "true");
+  whereIsWhatEl.focus({ preventScroll: true });
+}
+function hideWhereIsWhat() {
+  if (!whereOverlayOpen()) return;
+  whereIsWhatEl.classList.add("hidden");
+  whereIsWhatEl.textContent = "";
+  btnHelp.removeAttribute("aria-expanded");
+  const back = whereOpener && document.contains(whereOpener) ? whereOpener : btnHelp;
+  whereOpener = null;
+  if (back && typeof back.focus === "function") back.focus({ preventScroll: true });
+}
+function toggleWhereIsWhat() { if (whereOverlayOpen()) hideWhereIsWhat(); else showWhereIsWhat(); }
+
+const whereIsWhatEl = el("#whereIsWhat");
+const whereHint = el("#whereHint");
+const btnHelp = el("#btnHelp");
+// The header "?" button opens the quick-switch menu; the overlay itself opens from its first row (or ?/F1).
+const helpMenu = el("#helpMenu");
+const helpMenuItems = () => [...helpMenu.querySelectorAll("[role^=menuitem]")];
+function helpMenuOpen() { return !helpMenu.classList.contains("hidden"); }
+function closeHelpMenu() {
+  if (!helpMenuOpen()) return;
+  helpMenu.classList.add("hidden");
+  btnHelp.setAttribute("aria-expanded", "false");
+}
+function syncHelpMenuSwitches() {
+  const set = (id, on) => el(id).setAttribute("aria-checked", on ? "true" : "false");
+  set("#helpMenuDesc", hoverDescriptions);
+  set("#helpMenuCaps", toolbarCaptions);
+}
+function openHelpMenu() {
+  // stopPropagation on the opening click keeps the document handler from closing the other popups.
+  closeOpenMenu(); closeSaveMenu(); closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFilterPopup(); closeColumnsPanel(); closeLibraryMenu();
+  syncHelpMenuSwitches();
+  const rect = btnHelp.getBoundingClientRect();
+  helpMenu.classList.remove("hidden");
+  helpMenu.style.top = (rect.bottom + 6) + "px";
+  helpMenu.style.left = Math.max(8, Math.min(rect.right - helpMenu.offsetWidth, window.innerWidth - helpMenu.offsetWidth - 8)) + "px";
+  btnHelp.setAttribute("aria-expanded", "true");
+  const first = helpMenuItems()[0];
+  if (first) first.focus({ preventScroll: true });
+}
+btnHelp.addEventListener("click", ev => { ev.stopPropagation(); if (helpMenuOpen()) closeHelpMenu(); else openHelpMenu(); });
+helpMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const item = ev.target.closest("[role^=menuitem]");
+  if (!item) return;
+  if (item.id === "helpMenuDesc") { setHoverDescriptions(!hoverDescriptions); return; } // toggles keep the menu open
+  if (item.id === "helpMenuCaps") { setToolbarCaptions(!toolbarCaptions); return; }
+  closeHelpMenu();
+  if (item.id === "helpMenuWhere") { btnHelp.focus({ preventScroll: true }); showWhereIsWhat(); }
+  else if (item.id === "helpMenuSettings") {
+    openSettingsDialog();
+    const title = document.getElementById("settingsToolbarsTitle");
+    if (title && title.scrollIntoView) title.scrollIntoView({ block: "start" });
+  }
+});
+helpMenu.addEventListener("keydown", ev => {
+  const items = helpMenuItems(), i = items.indexOf(document.activeElement);
+  if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+    ev.preventDefault();
+    items[(i + (ev.key === "ArrowDown" ? 1 : -1) + items.length) % items.length].focus();
+  } else if (ev.key === "Enter" || ev.key === " ") {
+    ev.preventDefault();
+    if (i >= 0) items[i].click();
+  } else if (ev.key === "Escape") {
+    ev.preventDefault(); ev.stopPropagation();
+    closeHelpMenu(); btnHelp.focus({ preventScroll: true });
+  }
+});
+whereIsWhatEl.addEventListener("click", ev => { ev.stopPropagation(); hideWhereIsWhat(); });
+window.addEventListener("resize", () => {
+  if (!whereOverlayOpen()) return;
+  if (document.body.classList.contains("layout-phone")) hideWhereIsWhat(); else renderWhereIsWhat();
+});
+// Capture phase: Esc closes only the overlay (never also exits focus mode etc.);
+// ? and F1 open it unless a text field has focus, a modifier is held or another
+// popup/dialog is open.
+document.addEventListener("keydown", ev => {
+  if (whereOverlayOpen()) {
+    if (ev.key === "Escape" || ev.key === "?" || ev.key === "F1") {
+      ev.preventDefault(); ev.stopImmediatePropagation(); hideWhereIsWhat();
+    }
+    return;
+  }
+  if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+  if (ev.key !== "?" && ev.key !== "F1") return;
+  if (document.body.classList.contains("layout-phone")) return;
+  if (shortcutRecordingId !== null) return;
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) return;
+  if (anyEscapeOverlayOpen()) return;
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  showWhereIsWhat();
+}, true);
+
+// First-start hint: once per browser, after the first log has loaded (called
+// from addFile). Not for ?session= deep links (the tour banner guides there),
+// not on the phone; shown at most once per page load even without storage.
+function maybeShowWhereHint() {
+  if (whereHintShownThisPage || document.body.classList.contains("layout-phone")) return;
+  try { if (localStorage.getItem(WHERE_SEEN_KEY)) return; } catch (e) { /* unreadable: fall through, the page flag limits it */ }
+  if (new URLSearchParams(location.search).has("session")) return;
+  whereHintShownThisPage = true;
+  whereHint.classList.remove("hidden");
+}
+el("#whereHintShow").addEventListener("click", () => { markWhereSeen(); showWhereIsWhat(); });
+el("#whereHintDismiss").addEventListener("click", markWhereSeen);
+
+// Hover-card nudge: after HOVER_NUDGE_AFTER hover cards have been shown (counted
+// in localStorage, across sessions) ONE toast offers to hide the descriptions.
+// "Got it, hide them" turns Hover descriptions off; "Keep" changes nothing; both
+// (or any other way it goes away) set the seen flag, so it never comes back.
+let HOVER_NUDGE_AFTER = 60; // a `let` so a test can lower it
+const HOVER_CARD_VIEWS_KEY = "philogg-hover-card-views";
+const HOVER_NUDGE_SEEN_KEY = "philogg-hover-nudge-seen";
+const hoverNudge = el("#hoverNudge");
+let hoverCardViews = null; // lazily read from storage
+let hoverNudgeShownThisPage = false;
+function hoverNudgeAllowed() {
+  return hoverDescriptions && !hoverNudgeShownThisPage
+    && currentLayoutTier !== "phone" && currentLayoutTier !== "compact" && !isCoarsePointer()
+    && whereHint.classList.contains("hidden");
+}
+// Called by labelHandoverTracker whenever the pointer arrives on a different button of a toolbar group.
+function noteHoverCardShown(btn) {
+  if (!hoverDescriptions || !btn || !btn.hasAttribute("data-hint-key")) return;
+  try {
+    if (hoverCardViews === null) hoverCardViews = parseInt(localStorage.getItem(HOVER_CARD_VIEWS_KEY), 10) || 0;
+    hoverCardViews++;
+    localStorage.setItem(HOVER_CARD_VIEWS_KEY, String(hoverCardViews));
+    if (hoverCardViews < HOVER_NUDGE_AFTER || localStorage.getItem(HOVER_NUDGE_SEEN_KEY)) return;
+  } catch (e) { return; } // no storage: no counting, no nudge
+  if (!hoverNudgeAllowed()) return;
+  hoverNudgeShownThisPage = true;
+  hoverNudge.classList.remove("hidden");
+}
+function markHoverNudgeSeen() {
+  try { localStorage.setItem(HOVER_NUDGE_SEEN_KEY, "1"); } catch (e) { /* storage unavailable */ }
+  hoverNudge.classList.add("hidden");
+}
+el("#hoverNudgeHide").addEventListener("click", () => {
+  markHoverNudgeSeen();
+  setHoverDescriptions(false);
+  showCopyToast("Descriptions are off. Turn them on again in the ? menu or Settings.", { duration: 5000 });
+});
+el("#hoverNudgeKeep").addEventListener("click", markHoverNudgeSeen);
 
 /* ===================== Keyboard shortcuts ===================== */
 
@@ -54324,6 +55195,9 @@ elAll(
 // .row-action-hit above (see setupHitExpandGroups) — avoids the same
 // flicker/stuck-animation bug for these toolbars' buttons.
 setupHitExpandGroups(".tb-hit");
+// One pass for every label that exists at boot (the level chips, presets and the
+// sidebar toolbar decorate themselves when they are rebuilt).
+decorateHintLabels();
 // Log format config (Settings -> Format Manager) loads in parallel with the
 // rest of boot, not gating it — restoreSessionFromCache/loadFromUrlParam
 // fire at their original, unchanged timing below. addFile is the one place

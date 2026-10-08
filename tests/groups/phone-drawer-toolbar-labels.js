@@ -8,7 +8,7 @@
    whatever the "View Toolbar button labels" setting says; the short text is
    built by buildRowActionsHtml from describeSidebarToolbarActions (`short`),
    so Mute <-> Unmute follows the node state. The drawer header's Open / Save
-   get the same under-icon labels. Desktop / compact keep the hover/always/never
+   get the same under-icon labels. Desktop / compact keep the hover/inline/off
    behaviour (the short label stays display:none there).
    Data: log-sim "basic" scenario.
    ============================================================ */
@@ -46,7 +46,7 @@ await withApp(async (w, d, T) => {
   section("phone-drawer-toolbar-labels c. CSS: label under the icon, >=44px wide, floating label hidden");
   const btnCss = css("body.layout-phone #sidebarToolbar .row-action-btn");
   assert(/flex-direction:column/.test(btnCss) && /width:44px/.test(btnCss) && /height:auto/.test(btnCss) && /min-height:5\dpx/.test(btnCss), "column layout, 44px wide, grows in height");
-  assert(/display:none!important/.test(css("body.layout-phone #sidebarToolbar .row-action-btn .row-action-label")), "floating hover/always label hidden on phone");
+  assert(/display:none!important/.test(css("body.layout-phone #sidebarToolbar .row-action-btn .row-action-label")), "floating hover/inline label hidden on phone");
   const shortCss = css("body.layout-phone #sidebarToolbar .row-action-short");
   assert(/display:block/.test(shortCss) && /font-size:10px/.test(shortCss) && /text-overflow:ellipsis/.test(shortCss) && /white-space:nowrap/.test(shortCss) && /color:var\(--text-secondary\)/.test(shortCss), "10px, one line, ellipsis, secondary colour");
   assert(/opacity:0?\.45/.test(css("body.layout-phone #sidebarToolbar .row-action-btn:disabled .row-action-short")), "disabled buttons dim their label too");
@@ -61,9 +61,9 @@ await withApp(async (w, d, T) => {
   section("phone-drawer-toolbar-labels e. Desktop and compact: no under-icon labels");
   const scoped = rules.filter(r => /row-action-short|btn-short-label/.test(r.sel) && /display:block/.test(r.css));
   assert(scoped.length >= 2 && scoped.every(r => r.sel.split(",").every(s => /^body\.layout-phone\s/.test(s.trim()))), "every rule that shows a short label is phone-scoped");
-  const labelRules = rules.filter(r => /view-toolbar-labels-(always|never)/.test(r.sel) && /row-action/.test(r.sel));
-  assert(labelRules.length >= 3 && labelRules.every(r => !/layout-phone/.test(r.sel)), "desktop always/never label rules untouched");
+  const labelRules = rules.filter(r => /view-toolbar-labels-(inline|off)/.test(r.sel) && /row-action/.test(r.sel));
+  assert(labelRules.length >= 1 && labelRules.every(r => !/layout-phone/.test(r.sel)), "desktop inline/off label rules untouched (the merged Off/Inline list is not phone-scoped)");
   w.innerWidth = 1440; w.dispatchEvent(new w.Event("resize")); w.render();
   assert(d.body.classList.contains("layout-phone") === false, "desktop tier");
-  assert(!d.body.classList.contains("layout-phone") && btn("rename") && btn("rename").querySelector(".row-action-label").textContent === "Rename…", "desktop: the floating label keeps the full text");
+  assert(!d.body.classList.contains("layout-phone") && btn("rename") && btn("rename").querySelector(".row-action-label .hint-name").textContent === "Rename…", "desktop: the floating label keeps the full text");
 });

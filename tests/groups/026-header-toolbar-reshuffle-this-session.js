@@ -57,14 +57,14 @@ await withApp(async (w, d, T) => {
   // and #viewBar (person-requested placement, not below it). ---
   const viewBar = d.querySelector("#viewBar");
   assert(viewBar !== null, "#viewBar exists");
-  const viewBarChildren = [...viewBar.children].map(c => c.id);
+  const viewBarChildren = [...viewBar.querySelectorAll("#fhTabs, #levelBar, #breadcrumb")].map(c => c.id); // document order (the groups are .vb-group wrappers)
   assert(
     viewBarChildren.indexOf("fhTabs") !== -1 &&
     viewBarChildren.indexOf("fhTabs") < viewBarChildren.indexOf("levelBar"),
     "view bar order is tabs, then level filter, got " + viewBarChildren.join(",")
   );
   assert(viewBarChildren.indexOf("breadcrumb") === -1, "breadcrumb is NOT inside #viewBar any more");
-  assert(d.querySelector("#levelBar").parentElement === viewBar, "level bar is nested INSIDE #viewBar");
+  assert(viewBar.contains(d.querySelector("#levelBar")), "level bar is nested INSIDE #viewBar (in its Level group)");
   assert(viewBar.querySelector('[data-row-actions="viewbar"]') !== null, "the row-actions group is nested INSIDE #viewBar too, right of the level filter");
   // Breadcrumb bar removed (2026-09-23, person-requested) — the active path
   // is drawn as highlighted connector lines in the tree instead (GROUP 262).

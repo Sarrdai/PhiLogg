@@ -6,7 +6,7 @@
    Origin: 2026-10-08 (round 2). The two label settings became four:
    Files & Filters toolbar (#sidebarToolbar), Level labels (#levelBar +
    "Add level filter"), Filter toolbar (the remaining #viewBar buttons) and
-   View toolbar. #viewBar wraps group-wise (flex-wrap, 6px row-gap) and
+   View toolbar, each Off | On hover | Inline (renamed from Never/Always). #viewBar wraps group-wise (flex-wrap, 6px row-gap) and
    hides separators left at a line start/end.
    ============================================================ */
 group("toolbar-labels-split-settings");
@@ -19,13 +19,13 @@ await withApp(async (w, d, T) => {
     ["settingsViewToolbarLabels", "philogg-view-toolbar-labels", "view-toolbar-labels"],
   ];
   const set = (id, v) => { const s = d.getElementById(id); s.value = v; s.dispatchEvent(new w.Event("change", { bubbles: true })); };
-  const cls = p => ["always", "never"].filter(m => d.body.classList.contains(p + "-" + m));
+  const cls = p => ["inline", "off"].filter(m => d.body.classList.contains(p + "-" + m));
   defs.forEach(([id, key, prefix]) => {
-    set(id, "always");
-    assert(w.localStorage.getItem(key) === "always" && cls(prefix).join() === "always", prefix + ": always stored + class");
+    set(id, "inline");
+    assert(w.localStorage.getItem(key) === "inline" && cls(prefix).join() === "inline", prefix + ": inline stored + class");
     defs.filter(x => x[2] !== prefix).forEach(o => assert(cls(o[2]).length === 0, prefix + " does not touch " + o[2]));
-    set(id, "never");
-    assert(w.localStorage.getItem(key) === "never" && cls(prefix).join() === "never", prefix + ": never");
+    set(id, "off");
+    assert(w.localStorage.getItem(key) === "off" && cls(prefix).join() === "off", prefix + ": off");
     set(id, "hover");
     assert(w.localStorage.getItem(key) === "hover" && cls(prefix).length === 0, prefix + ": hover = no class");
   });
@@ -47,24 +47,24 @@ await withApp(async (w, d, T) => {
   const walk = list => { for (const r of list) { if (r.cssRules && !r.selectorText) walk(r.cssRules); else if (r.selectorText) rules.push(r); } };
   for (const sh of d.styleSheets) walk(sh.cssRules);
   const has = (selRe, cssRe) => rules.some(r => selRe.test(r.selectorText) && (!cssRe || cssRe.test(r.cssText)));
-  assert(has(/body\.level-labels-always:not\(\.layout-phone\) \.level-btn/, /padding/), "level Always pill padding follows level-labels");
-  assert(!rules.some(r => r.selectorText.split(",").some(p => /filter-toolbar-labels-always/.test(p) && /\.level-btn(?!\))/.test(p) && !/:not\(\.level-btn\)/.test(p))), "no level rule is keyed on filter-toolbar-labels any more");
-  assert(has(/body\.level-labels-never \.level-btn \.row-action-label/, /display:\s*none/), "level Never hides the pill text");
-  assert(has(/body:not\(\.layout-phone\):not\(\.level-labels-always\) \.level-btn \.level-count/), "in-circle count shows unless level labels are Always");
-  assert(has(/body\.sidebar-toolbar-labels-always \.sidebar-btn/), "sidebar Always rule");
-  assert(has(/body\.sidebar-toolbar-labels-never \.sidebar-btn \.row-action-label/, /display:\s*none/), "sidebar Never rule");
-  assert(has(/body\.filter-toolbar-labels-always \.row-action-btn:not\(\.rect\):not\(\.level-btn\):not\(\.level-apply\)/), "filter Always excludes level + sidebar buttons");
-  assert(has(/body\.view-toolbar-labels-always \.row-action-btn\.rect:not\(\.sidebar-btn\)/), "view Always excludes sidebar buttons");
+  assert(has(/body\.level-labels-inline:not\(\.layout-phone\) \.level-btn/, /padding/), "level Inline pill padding follows level-labels");
+  assert(!rules.some(r => r.selectorText.split(",").some(p => /filter-toolbar-labels-inline/.test(p) && /\.level-btn(?!\))/.test(p) && !/:not\(\.level-btn\)/.test(p))), "no level rule is keyed on filter-toolbar-labels any more");
+  assert(has(/body\.hover-descriptions-off\.level-labels-off \.level-btn \.row-action-label/, /display:\s*none/), "level Off (descriptions off) hides the floating card");
+  assert(has(/body:not\(\.layout-phone\):not\(\.level-labels-inline\) \.level-btn \.level-count/), "in-circle count shows unless level labels are Inline");
+  assert(has(/body\.sidebar-toolbar-labels-inline \.sidebar-btn/), "sidebar Inline rule");
+  assert(has(/body\.hover-descriptions-off\.sidebar-toolbar-labels-off \.sidebar-btn \.row-action-label/, /display:\s*none/), "sidebar Off rule");
+  assert(has(/body\.filter-toolbar-labels-inline \.row-action-btn:not\(\.rect\):not\(\.level-btn\):not\(\.level-apply\)/), "filter Inline excludes level + sidebar buttons");
+  assert(has(/body\.view-toolbar-labels-inline \.row-action-btn\.rect:not\(\.sidebar-btn\)/), "view Inline excludes sidebar buttons");
 
   section("toolbar-labels-split-settings d. #viewBar wraps group-wise with a 6px row gap");
   const cs = el => w.getComputedStyle(el);
   const vb = d.querySelector("#viewBar");
   assert(cs(vb).display === "flex" && cs(vb).flexWrap === "wrap", "#viewBar: wrapping flex row");
   assert(cs(vb).rowGap === "6px", "row-gap 6px, got " + cs(vb).rowGap);
-  const grp = d.querySelector('#viewBar > [data-row-actions="viewbar"]');
-  assert(cs(grp).flexShrink === "1" && cs(grp).flexWrap === "wrap" && cs(grp).minWidth === "0px", "an action group shrinks/wraps only internally");
-  assert(has(/^#viewBar \.row-actions$/, /gap:\s*6px 4px/), "inside-group row gap 6px (CSS rule)");
-  assert(cs(d.querySelector("#fhTabs")).flexShrink === "0", "view tabs never break apart");
+  const grp = d.querySelector('#vbAddFilter > [data-row-actions="viewbar"]');
+  assert(cs(d.querySelector("#vbAddFilter")).flexShrink === "0" && cs(grp).flexWrap === "nowrap", "an action group is non-breaking (flex:none, nowrap row; see GROUP label-captions)");
+  assert(has(/^#viewBar \.row-actions$/, /gap:\s*4px/), "inside-group gap 4px (CSS rule)");
+  assert(cs(d.querySelector("#vbView")).flexShrink === "0", "the view tabs group never breaks apart");
   assert(has(/^#sidebarToolbar$/, /row-gap:\s*6px|gap:\s*6px 2px/), "#sidebarToolbar has the 6px row gap");
 
   section("toolbar-labels-split-settings e. Dangling separators (pure helper)");

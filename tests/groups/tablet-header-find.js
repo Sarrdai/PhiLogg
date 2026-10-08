@@ -6,7 +6,7 @@
    (tablet UX round, step 2). Origin: 2026-10-03 usability test.
    Find button on the compact tier too; the compact header names the active
    filter ("<filter> · n / total entries", tap opens the drawer); level
-   circles show their count (compact, "On hover" labels); unchecked "Always"
+   circles show their count (compact, "On hover" labels); unchecked "Inline"
    pills use the level color; the log views' "Time range" button is never
    disabled (falls back to a dialog prefilled with the visible span); the
    minimap meta strip carries level letters (FATAL its own segment); English placeholder/hint texts, touch variants.
@@ -68,7 +68,7 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
-  section("tablet-header-find b. Level circles show counts (compact); Always pills use the level color");
+  section("tablet-header-find b. Level circles show counts (compact); Inline pills use the level color");
   const [sim] = LOGSIM.generateToStrings({ scenarios: ["levels"], entries: 300, seed: 5 });
   const f = await w.addFile(sim.name, sim.text, () => {});
   T.state.activeId = f.id;
@@ -80,17 +80,17 @@ await withApp(async (w, d, T) => {
   assert(w.getComputedStyle(cnt()).display !== "none", "desktop: the count is shown inside the circle too");
   thSetWidth(w, 800);
   assert(w.getComputedStyle(cnt()).display !== "none", "tablet: the count is shown in the circle");
-  d.body.classList.add("level-labels-always");
-  assert(w.getComputedStyle(cnt()).display === "none", "tablet, 'Always' labels: no duplicate count in the pill");
-  d.body.classList.remove("level-labels-always");
+  d.body.classList.add("level-labels-inline");
+  assert(w.getComputedStyle(cnt()).display === "none", "tablet, 'Inline' labels: no duplicate count in the pill");
+  d.body.classList.remove("level-labels-inline");
   thSetWidth(w, 400);
   assert(w.getComputedStyle(cnt()).display === "none", "phone: pills keep their own label, no circle count");
   thSetWidth(w, 1400);
 
   const rules = thCssRules(d);
   ["error", "warn", "info", "debug", "trace"].forEach(l => {
-    assert(rules.some(r => r.selectorText === "body.level-labels-always .level-btn.lvl-" + l + ":not(.active) .row-action-label" && r.style.color === "var(--level-" + l + ")"),
-      "'Always' mode: an unchecked " + l + " pill's label uses the level color");
+    assert(rules.some(r => r.selectorText === "body.level-labels-inline .level-btn.lvl-" + l + ":not(.active) .row-action-label" && r.style.color === "var(--level-" + l + ")"),
+      "'Inline' mode: an unchecked " + l + " pill's label uses the level color");
     assert(rules.some(r => r.selectorText === ".level-btn.active.lvl-" + l + " .level-count" && /-on\)/.test(r.style.color)),
       "checked " + l + " circle: the count uses the fill's on-color");
   });
