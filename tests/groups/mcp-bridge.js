@@ -69,7 +69,7 @@ await withApp(async (w, d, T) => {
   assert(await waitFor(() => stub.calls.filter(c => c[0] === "mcpConfigure").length === n0 + 2), "a port change reconfigures");
   const cfg3 = stub.calls.filter(c => c[0] === "mcpConfigure").pop()[1];
   assert(cfg3.port === 8123 && cfg3.token === cfg2.token, "…with the new port, same token");
-  assert(cmdEl.textContent.includes("127.0.0.1:8123/mcp") && d.getElementById("settingsMcpUrl").textContent === "http://127.0.0.1:8123/mcp", "command and URL follow the port");
+  assert(cmdEl.textContent.includes("127.0.0.1:8123/mcp"), "command follows the port");
   port.value = "80";
   port.dispatchEvent(new w.Event("change"));
   assert(port.value === "1024" && w.mcpPort() === 1024, "port clamped to 1024..65535");

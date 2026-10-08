@@ -115,6 +115,8 @@ const pfBtns = row => [...row.querySelectorAll("button")].map(b => b.textContent
     fireClick(d.querySelector("#formatEditSave"), w);
     await waitFor(() => T.state.logFormats.length === nFormats + 1);
     const copy = T.state.logFormats.find(f => f.name === "Team log (copy)");
+    // The rule for the checked pattern lands after the format itself: wait for it too (load-dependent otherwise).
+    await waitFor(() => copy && T.state.formatRules.some(r => !r.provided && r.glob === "team-*.log" && r.formatId === copy.id));
     assert(copy && !copy.provided && copy.id.startsWith("fmt-") && !copy.id.startsWith("fmt-provided") && copy.regex === byId("fmt-provided-team").regex, "an own, non-provided copy with the same definition");
     assert(T.state.formatRules.some(r => !r.provided && r.glob === "team-*.log" && r.formatId === copy.id) && w.resolveFormatIdForFilename("team-9.log") === copy.id, "the checked pattern became a user rule that outranks the provided one");
     assert(pfBtns(pfRow(d, "Team log (copy)")).includes("Edit") && pfBtns(pfRow(d, "Team log (copy)")).includes("Delete format"), "the copy has Edit and a delete button");

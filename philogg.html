@@ -3972,7 +3972,6 @@
   .settings-mcp-cmd code{flex:1 1 auto; min-width:0; color:var(--text-primary); font-family:var(--font-mono, monospace); font-size:11.5px; line-height:1.6; word-break:break-all; white-space:pre-wrap;}
   .settings-mcp-cmd-side{display:flex; flex-direction:column; align-items:flex-end; gap:4px;}
   .settings-mcp-toast{font-size:11.5px; color:var(--accent-strong); min-height:1em;}
-  #settingsMcpUrl{font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-secondary);}
   .settings-mcp-status{display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums;}
   .settings-mcp-status .ide-status-dot.ok{background:var(--status-ok);}
   .settings-mcp-status .ide-status-dot.wait{background:var(--warn, #e8a94a);}
@@ -8173,7 +8172,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsMcpEnabled">Enable MCP server</label>
-                <div class="settings-row-hint">Lets Claude Code and other MCP clients use PhiLogg's tools on this computer.</div>
+                <div class="settings-row-hint">Lets Claude Code and other MCP clients use PhiLogg's tools.</div>
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsMcpEnabled"></button>
@@ -8191,7 +8190,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label">Access token</label>
-                <div class="settings-row-hint">Clients send it as a bearer token. Regenerate disconnects every client.</div>
+                <div class="settings-row-hint">Sent as a bearer token. Regenerating disconnects clients.</div>
               </div>
               <div class="settings-row-control">
                 <span class="settings-mcp-token" id="settingsMcpToken"></span>
@@ -8202,7 +8201,7 @@
             <div class="settings-row settings-mcp-full">
               <div class="settings-row-text">
                 <label class="settings-row-label">Connect Claude Code</label>
-                <div class="settings-row-hint">Run this once in a terminal. Other clients: URL <code id="settingsMcpUrl"></code>, header <code>Authorization: Bearer &lt;token&gt;</code>.</div>
+                <div class="settings-row-hint">Run once in a terminal. Other clients: same URL and header.</div>
               </div>
               <div class="settings-mcp-cmd">
                 <code id="settingsMcpCommand"></code>
@@ -55268,7 +55267,6 @@ function mcpRenderUi() {
   const show = q("settingsMcpTokenShow");
   show.title = mcp.showToken ? "Hide" : "Show";
   show.setAttribute("aria-label", (mcp.showToken ? "Hide" : "Show") + " token");
-  q("settingsMcpUrl").textContent = "http://127.0.0.1:" + mcpPort() + "/mcp";
   q("settingsMcpCommand").textContent = mcpCommand(shown || "<token>");
   const v = mcpStatusView(mcpEnabled(), mcp.status, mcpQueue.length);
   q("settingsMcpStatusText").textContent = v.text;
