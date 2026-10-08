@@ -466,10 +466,9 @@ shape:
   now takes a `shape` argument, `"circle"` for `VIEWBAR_ROW_ACTIONS`/
   Plot's viewport filters or `"rect"` for `TOOLBAR_ROW_ACTIONS`) reuse the
   exact same `.row-action-btn`/`.row-action-hit`/`.row-action-label`
-  markup and JS, just with an added `.rect` class (only relevant to the
-  "Always" setting below, which restores the button's own border-radius —
-  20px pill vs. 7px rounded rectangle — since the floating label itself
-  doesn't depend on the button's shape).
+  markup and JS, just with an added `.rect` class (the 7px rounded rectangle instead of
+  the circle; it also tells the four label settings below which kind of
+  button it is).
 
   **Settings -> Behavior -> Toolbars: four label settings** (split from two on
   2026-10-08) — app-wide, independent, each Never / On hover / Always, **all
@@ -482,7 +481,7 @@ shape:
   | Setting (select id) | localStorage key | Body class prefix | Governs |
   |---|---|---|---|
   | Files & Filters toolbar labels (`settingsSidebarToolbarLabels`) | `philogg-sidebar-toolbar-labels` | `sidebar-toolbar-labels` | `#sidebarToolbar` buttons (`.row-action-btn.sidebar-btn`; phone-drawer short labels are independent) |
-  | Level labels (`settingsLevelLabels`) | `philogg-level-labels` | `level-labels` | `#levelBar` circles (`.level-btn`, incl. the in-circle count in On-hover mode; Always = name+count pills) and "Add level filter" (`.level-apply`) |
+  | Level labels (`settingsLevelLabels`) | `philogg-level-labels` | `level-labels` | `#levelBar` circles (`.level-btn`, incl. the in-circle count in On-hover mode; Always = name+count pills) and "Add level filter" (`.level-apply`, icon-only in Always) |
   | Filter toolbar labels (`settingsFilterToolbarLabels`) | `philogg-filter-toolbar-labels` | `filter-toolbar-labels` | the remaining `#viewBar` buttons: `.row-action-btn:not(.rect):not(.level-btn):not(.level-apply)` (Before/After/Time range/Message/Extract, library presets, New) |
   | View toolbar labels (`settingsViewToolbarLabels`) | `philogg-view-toolbar-labels` | `view-toolbar-labels` | the four view toolbars incl. their `.rect` Bookmark/Note/Select (`.row-action-btn.rect:not(.sidebar-btn)`, `.toolbar-icon-btn:has(.tb-hit)`) |
 
@@ -509,7 +508,7 @@ shape:
   `attr()` in the `::after` rule reads the pseudo-element's own element) and
   clears it when the button is enabled; CSS appends ` · <reason>` (normal
   weight, `--text-secondary`) to the pill, only in On-hover mode of that
-  button kind's setting (not Always, where the pills are inline, not Never). The native
+  button kind's setting (not Always or Never, which show no hover pill). The native
   tooltip carries the reason in Always/Never mode instead (`data-title-base`
   keeps the plain title; `syncAllDisabledReasonTitles` re-syncs on a mode
   change, `syncDisabledReasonTitle` looks the mode up per button kind) so On hover never says it twice. Reasons live next to the code that
@@ -527,52 +526,69 @@ shape:
   keep their own explanatory titles. Level pills are never disabled. Group
   toolbar-labels-hover-handover.
 
-  **Group-wise wrapping and line spacing** (2026-10-08). `#viewBar` is a
-  wrapping flex row (it was a float row): its direct children are the groups
-  — view tabs (`#fhTabs`, never splits), level circles (`#levelBar`, wraps
-  inside itself), Filter-Toolbar actions, library presets (`.row-actions`:
-  `flex:0 1 auto; min-width:0; flex-wrap:wrap`), the Library split button and
-  New. A group's max-content basis makes the WHOLE group move to the next line
-  first; only a group wider than a line shrinks and wraps internally. Wrapped
-  lines get `row-gap:6px` (between groups, inside wrapping groups, and for
-  the tablet `level-own-row` layout; `#sidebarToolbar` has `gap:6px 2px`),
-  and the bar's height simply grows (no fixed height). The "|" separators are
-  direct children: after every layout change `updateBarSeparators` measures
-  with all shown and hides (`.sep-hidden`) any separator that is not between
-  two displayed items of its own line (pure rule: `danglingSeparatorIndexes`),
-  so no lone separator at a line start/end; ResizeObserver/MutationObserver
-  drive it. "Add level filter" is its own flex item (a lone button may wrap
-  after the level group) and `#sidebarToolbar` wraps pill by pill, not group by
-  group. The four view toolbars keep their horizontal scroll in Always mode.
-  Group toolbar-labels-split-settings. "Never" (`display:none` on
-  the label) hides it outright — the button stays a plain icon regardless of
-  hover/focus. "Always" restores the ORIGINAL (pre-2026-09-08) inline
-  expand-to-pill look: the body-class override switches the button itself
-  to `width:auto` with the pill/rect border-radius, and switches the label
-  from a floating, styled pill (`position:absolute`, its own background/
-  border/shadow) back to a plain inline span (`position:static`, no
-  background/border, `max-width`-driven reveal) sitting inside it — that
-  layout-shifting look is only confusing when it happens transiently on
-  every hover, not when it's the button's permanent rest state. The inline labels reset `z-index:auto` (a static flex item still honours the floating pill's `z-index:45` and would paint over `#filterPopup`), and in the View Toolbar's always mode the four toolbar rows (`#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) get `overflow-x:auto` so they scroll inside themselves instead of widening the page; hover mode must not (it would clip the floating pills). CSS rules
-  scoped under those body classes have higher specificity than the plain
-  `.expanded`/`:focus-visible` rules, so they always win regardless of
-  source order. The Filter-Toolbar's class targets `.row-action-btn:not(.rect)`
-  (the circle buttons in `#viewBar`); the View Toolbar's targets
-  `.row-action-btn.rect` and `.toolbar-icon-btn:has(.tb-hit)` together
-  (every button in `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/
-  `#plotToolbar`).
-  **Current "Always" look of three controls (2026-10-08, person-reported):**
-  the view-toolbar on/off toggles (`.icon-toggle:has(.tb-hit)`) get
-  `padding:… 12px … 5px` so the icon's visible left edge and the label's end
-  are both 12px from the pill edge, and their accent "status light" bar
-  (`::after`) runs `left:12px; right:12px` — exactly icon start to label end
-  (in the icon-only modes it stays the 60%-wide centered bar); the level
-  pills (`.level-btn`, desktop/compact, not the phone chips) hide their empty
-  `.row-action-hit` slot and use `padding:0 12px` with no label margin — a
-  plain text pill like "ERROR 190", hover not shifting the label; the
-  Collapse-repeats chevron (`#btnRepeatMenu`, `.repeat-chevron`) is excluded
-  from the inline-pill rules and keeps its 14px icon-only shape (label
-  hidden, `title` tooltip stays).
+  **"Always" = icon-only buttons + group captions** (label concept step 1,
+  2026-10-08; the earlier "one inline text pill per button" Always look and
+  its CSS are gone). With a setting on Always its buttons stay the plain
+  28px icon buttons (no pill growth, no inline label, the floating hover pill
+  is switched off, the name stays in the `title` tooltip, which also carries a
+  disabled reason in Always/Never mode) and every GROUP of that setting gets a
+  small uppercase caption above its row of icons: a `.group-caption` span
+  (9.5px, `letter-spacing:.09em`, `--text-tertiary`, `aria-hidden`) that is
+  `display:none` unless the owning setting is Always (and always hidden on the
+  phone tier). "Never" hides the label outright; "On hover" is the
+  floating-pill mechanic above, untouched. The one exception are the level
+  chips: in Always they stay name+count text pills (`.level-btn`, desktop and
+  compact: no empty `.row-action-hit` slot, `padding:0 12px`, hover not
+  shifting the label), "Add level filter" is icon-only. The Collapse-repeats
+  chevron (`.repeat-chevron`) keeps its 14px icon-only shape in every mode.
+  Captions, per setting:
+
+  | Setting | Groups (caption) |
+  |---|---|
+  | Level labels | `#vbLevel`: "Level" (chips + "Add level filter"; caption only while chips exist) |
+  | Filter toolbar labels | `#vbAddFilter` "Add filter" (Before/After/Time range/Message/Extract), `#vbPresets` "Presets" (pinned presets + Library button; caption only while a preset is pinned), `#vbCreate` "Create" (New). The view tabs carry text and get no caption |
+  | Sidebar toolbar labels | `.stb-group`s "Edit" (Rename, Edit filter, Link with), "Effect" (Invert/NOT, Mute, Adjust clock), "Library" (Add to library) |
+  | View toolbar labels | Context: "Layout" (text files' Pretty/Raw), "Matches" (match nav, expand/collapse), "Display" (toggles), "Selection" (Bookmark/Note/Select); Filtered: "Display", "Selection"; Table: "Actions"; Plot: "View" (zoom, fullscreen), "Actions" |
+
+  **Markup.** Every captioned group is `caption + row`: `#viewBar`'s groups
+  are `.vb-group` wrappers (`.vb-group-row` holds the buttons; `#fhTabs` and
+  the "|" separators stay direct children), `#sidebarToolbar`'s are
+  `.stb-group` > `.stb-group-row` (built by `buildSidebarToolbarHtml` from the
+  `caption` field of `describeSidebarToolbarActions`; each row is the
+  hit-expand container of its own buttons), and the view toolbars' existing
+  `.toolbar-group`s got a `.group-caption` plus a `.tg-row` around the
+  buttons (the `data-row-actions` containers are the `.tg-row`s, so filling
+  them never wipes a caption). `.toolbar-group:has(> .group-caption)` is a
+  column, so without a visible caption the group is just its row. In Always
+  the view toolbars switch from the fixed 36px to `height:auto;
+  min-height:36px` (they grow by exactly the caption row; the tablet's 52px
+  minimum still wins), items sit on the buttons' baseline and separators
+  span the button row; `#viewBar`/`#sidebarToolbar` do the same
+  (`align-items:flex-end`) while a caption is shown. No inner horizontal
+  scrolling any more (icon-only buttons always fit).
+
+  **Group-wise wrapping and line spacing.** `#viewBar` is a wrapping flex
+  row (`row-gap:6px`) whose children are the view tabs (`#fhTabs`), the "|"
+  separators and the four non-breaking `.vb-group`s (`flex:0 0 auto;
+  max-width:100%`, rows `flex-wrap:nowrap`): the bar wraps only BETWEEN
+  groups, the wrapped line starts at the bar's left edge, and only a level or
+  preset row wider than a whole line wraps inside itself. After every layout
+  change `updateBarSeparators` measures with all separators shown and hides
+  (`.sep-hidden`) any that is not between two displayed items of its own line
+  (pure rule: `danglingSeparatorIndexes`; ResizeObserver/MutationObserver
+  drive it). `#sidebarToolbar` wraps group by group (`gap:6px 2px`). Tablet
+  (`layout-compact`): one scrolling row, or the whole Level group
+  (`#vbLevel`) moves to its own row (`#viewBar.level-own-row`, measured by
+  `updateLevelBarLayout` from the natural width of chips + "Add level
+  filter"); phone: `#vbLevel` and its row are `display:contents` so
+  `#levelBar` is a direct item again. Groups: label-captions,
+  toolbar-labels-split-settings.
+
+  **The "+" badge** (`withAddBadge`, New / Add level filter / Add to library)
+  anchors to the 28px icon box (`.row-action-hit`, `position:relative`) and
+  sits above its neighbours (`z-index:1`); no mode makes the button
+  `overflow:hidden` any more (that, plus the inline label, was what covered it
+  in Always).
 - **Each view's own toolbar** (Zeile 2, directly under `#viewBar` —
   `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) —
   same position/shape in every tab, only the content differs.

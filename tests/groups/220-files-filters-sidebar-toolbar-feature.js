@@ -33,8 +33,8 @@ await withApp(async (w, d, T) => {
   assert(actions.every(a => a.disabled === true), "nothing selected: every button disabled (not hidden), got " + sbState(actions));
   assert(!note, "no explanatory note");
   assert(!actions.some(a => a.action === "applyFromLibrary"), "Apply from library… is no longer on the toolbar");
-  const seps = actions.filter(a => a.separator).map(a => a.action).join(",");
-  assert(seps === "clockOffset,addToLibrary", "separators before Adjust clock… and Add to library…, got " + seps);
+  const caps = actions.map(a => a.caption).join(",");
+  assert(caps === "Edit,Edit,Edit,Effect,Effect,Effect,Library", "toolbar groups (captions): Edit | Effect | Library, got " + caps);
 });
 
 await withApp(async (w, d, T) => {
@@ -205,7 +205,7 @@ await withApp(async (w, d, T) => {
   const f = await w.addFile("a.log", makeLog(0, 20), () => {});
   const t1 = w.createFilterNode(f.id, "text", "message 1");
   const t2 = w.createFilterNode(f.id, "text", "message 2");
-  const btns = () => [...d.querySelectorAll('#sidebarToolbar > [data-row-action]')];
+  const btns = () => [...d.querySelectorAll('#sidebarToolbar [data-row-action]')];
   T.state.multiSelect = new Set(); T.state.activeId = null; w.render();
   assert(btns().map(b => b.dataset.rowAction).join(",") === SB_FIXED, "seven fixed buttons rendered, got " + btns().map(b => b.dataset.rowAction).join(","));
   assert(btns().every(b => b.disabled), "all disabled with nothing selected");

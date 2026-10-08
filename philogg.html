@@ -1165,7 +1165,7 @@
   .add-badge{
     position:absolute; right:-3px; bottom:-3px; width:11px; height:11px; border-radius:50%;
     background:var(--accent); color:var(--accent-on);
-    display:grid; place-items:center; pointer-events:none;
+    display:grid; place-items:center; pointer-events:none; z-index:1;
   }
   .add-badge svg{width:8px; height:8px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;}
   /* The 24px sidebar-header button is tighter: a 9px badge with a 6px glyph. */
@@ -1191,20 +1191,47 @@
      #plotToolbar) since #viewBar's other controls (view-tabs, level pills)
      are 28px too — a single #viewBar-only group at a different size would
      look like a misalignment, not a second row. */
-  #viewBar .row-actions{float:left; gap:6px 4px; margin:0 0 0 0;}
-  /* Group-wise wrapping (2026-10-08, was floats): #viewBar is a wrapping flex
-     row whose direct children are the groups (view tabs, level circles,
-     Filter-Toolbar actions, library presets, Library split button, New). A
-     group's max-content basis makes the WHOLE group move to the next line
-     first; only a group wider than a full line shrinks and wraps inside
-     itself. 6px row-gap between lines and inside wrapping groups (the
-     horizontal pill gap). Separators that end up at the start/end of a line
-     are hidden by updateBarSeparators (JS); tablet/phone keep their own
-     rules below (body.layout-compact / layout-phone #viewBar). */
+  #viewBar .row-actions{gap:4px; margin:0; flex-wrap:nowrap;}
+  /* Group-wise wrapping (2026-10-08): #viewBar is a wrapping flex row whose
+     direct children are the view tabs, the "|" separators and the .vb-group
+     wrappers (Level, Add filter, Presets + Library, Create). A group is ONE
+     non-breaking unit (`flex:0 0 auto`, its row is `flex-wrap:nowrap`), so
+     the bar only ever wraps BETWEEN groups, and the wrapped line starts at the
+     bar's left edge. Only a group wider than a whole line (very many chips or
+     pinned presets) wraps inside itself, because `max-width:100%` then lets
+     its level/preset row shrink. Each group is a caption (hidden unless the
+     matching "Always" label setting is on) above its button row. 6px row-gap
+     between lines. Separators that end up at the start/end of a line are
+     hidden by updateBarSeparators (JS); tablet/phone keep their own rules
+     below (body.layout-compact / layout-phone #viewBar). */
   body:not(.layout-phone) #viewBar{row-gap:6px;}
-  #viewBar > .row-actions, #viewBar > #levelBar{flex:0 1 auto; min-width:0; flex-wrap:wrap;}
-  #viewBar > #fhTabs, #viewBar > #btnApplyLevelToTree, #viewBar > #btnLibrary{flex:0 0 auto;}
+  .vb-group{display:flex; flex-direction:column; align-items:flex-start; flex:0 0 auto; min-width:0; max-width:100%;}
+  .vb-group-row{display:flex; align-items:center; flex-wrap:nowrap; gap:4px; min-width:0; max-width:100%;}
+  #viewBar > #fhTabs{flex:0 0 auto;}
+  #viewBar .vb-group-row > #levelBar, #viewBar .vb-group-row > #libraryPresetBar{flex:0 1 auto; min-width:0; flex-wrap:wrap;}
+  #viewBar .vb-group-row > #btnApplyLevelToTree, #viewBar .vb-group-row > #btnLibrary{flex:0 0 auto;}
   #viewBar > .row-action-separator.sep-hidden, #sidebarToolbar > .row-action-separator.sep-hidden{display:none;}
+  /* Group captions (Always label modes only): a small uppercase heading above
+     a group's button row instead of a text pill on every button. Decorative
+     (aria-hidden in the markup, the buttons keep their title/aria-label); each
+     group's caption is switched on by the label setting that governs its
+     buttons. */
+  .group-caption{
+    display:none; font-size:9.5px; line-height:11px; font-weight:600; letter-spacing:.09em; text-transform:uppercase;
+    color:var(--text-tertiary); white-space:nowrap; padding:0 2px 1px; user-select:none; pointer-events:none;
+  }
+  body.level-labels-always #vbLevel:has(.level-btn) > .group-caption,
+  body.filter-toolbar-labels-always #vbAddFilter > .group-caption,
+  body.filter-toolbar-labels-always #vbPresets:has(#libraryPresetBar:not([hidden])) > .group-caption,
+  body.filter-toolbar-labels-always #vbCreate > .group-caption,
+  body.sidebar-toolbar-labels-always #sidebarToolbar .stb-group > .group-caption,
+  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) .toolbar-group > .group-caption{display:block;}
+  body.layout-phone .group-caption{display:none !important;}
+  /* With a caption row the bar's items sit on the buttons' baseline (the tab
+     strip and the separators carry no caption). */
+  body.level-labels-always:not(.layout-phone) #viewBar, body.filter-toolbar-labels-always:not(.layout-phone) #viewBar{align-items:flex-end;}
+  body.level-labels-always:not(.layout-phone) #viewBar > .row-action-separator,
+  body.filter-toolbar-labels-always:not(.layout-phone) #viewBar > .row-action-separator{align-self:flex-end; margin-bottom:4px;}
   /* Which of the two row-actions groups is shown is entirely
      JS-driven (updateViewBarRowActions(), person-requested this session —
      swap the generic five for Plot's own two viewport filters while the
@@ -1361,76 +1388,66 @@
   /* Disabled reason (On-hover mode only): the pill of a disabled button
      appends why, in normal weight and secondary colour. The reason sits on
      the label span too (attr() on a pseudo-element reads its own element);
-     Always pills are inline and must not widen, Never shows no pill. */
+     Always and Never show no hover pill (Always: group captions). */
   body:not(.filter-toolbar-labels-always):not(.filter-toolbar-labels-never) .row-action-btn:not(.rect):not(.level-btn):not(.level-apply):disabled .row-action-label[data-disabled-reason]::after,
   body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .row-action-btn.rect:not(.sidebar-btn):disabled .row-action-label[data-disabled-reason]::after,
   body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .toolbar-icon-btn:disabled .tb-label[data-disabled-reason]::after{
     content:" \00b7  " attr(data-disabled-reason); font-weight:400; color:var(--text-secondary);
   }
-  /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
-     button labels" (person-requested, 2026-09-05; redesigned 2026-09-08) —
-     "On hover" is the floating-pill mechanic above, nothing to
-     override here ("Always" is the default since 2026-10-08). "Never" hides the label outright (button stays a plain
-     circle/rect icon). "Always" restores the ORIGINAL inline expand-to-pill
-     look — the button itself grows into a pill and the label sits inside
-     it, permanently, in the toolbar's normal layout flow — since that
-     shape is only confusing when it happens on every hover, not when it's
-     the button's permanent rest state. Applied via a class on <body> so
-     every button of the relevant kind reacts without each one needing its
-     own per-button state; higher specificity (body class + selector) than
-     the plain `.expanded`/`:focus-visible` rules above, so these always
-     win regardless of source order. Split in two independent
-     settings/classes (Filter-Toolbar's `.row-action-btn:not(.rect)` vs
-     View Toolbar's `.row-action-btn.rect`/`.toolbar-icon-btn:has(.tb-hit)`)
-     since the person wanted them settable separately. */
+  /* Settings -> Behavior -> Toolbars (four label settings; redesigned
+     2026-10-08). "On hover" is the floating-pill mechanic above, nothing to
+     override here. "Never" hides the label outright (the button stays a plain
+     circle/rect icon). "Always" no longer grows a text pill on every button:
+     the buttons stay icon-only and each GROUP gets a small uppercase caption
+     above it (.group-caption, switched on further above and next to the
+     toolbars), the button name stays in its title tooltip; the floating hover
+     pill is switched off too so a button is not described twice. The one
+     exception are the level chips, which have their own text and keep their
+     name+count pills in Always. Applied via a class on <body> (one per
+     setting), higher specificity than the plain `.expanded`/`:focus-visible`
+     rules above. */
   body.filter-toolbar-labels-never .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
   body.level-labels-never .level-btn .row-action-label, body.level-labels-never .level-apply .row-action-label,
-  body.sidebar-toolbar-labels-never .sidebar-btn .row-action-label{display:none !important;}
-  body.filter-toolbar-labels-always .row-action-btn:not(.rect):not(.level-btn):not(.level-apply),
-  body.level-labels-always .level-btn, body.level-labels-always .level-apply{border-radius:20px; width:auto; padding-right:10px; overflow:hidden;}
+  body.sidebar-toolbar-labels-never .sidebar-btn .row-action-label,
+  body.view-toolbar-labels-never .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
+  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label,
   body.filter-toolbar-labels-always .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
-  body.level-labels-always .level-btn .row-action-label, body.level-labels-always .level-apply .row-action-label,
-  body.sidebar-toolbar-labels-always .sidebar-btn .row-action-label{
+  body.level-labels-always .level-apply .row-action-label,
+  body.sidebar-toolbar-labels-always .sidebar-btn .row-action-label,
+  body.view-toolbar-labels-always .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
+  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit) .tb-label{display:none !important;}
+  /* Level chips in Always mode: plain name+count pills. They have no icon, so
+     the empty 28px .row-action-hit slot is dropped and the text gets equal
+     padding on both sides (hover/Never circles and the phone chips are other
+     rules and stay as they are). */
+  body.level-labels-always .level-btn{border-radius:20px; width:auto; overflow:hidden;}
+  body.level-labels-always .level-btn .row-action-label{
     position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
-  /* person-reported, 2026-10-08, Always-label mode: level pills have no icon,
-     so the empty 28px .row-action-hit slot left ~34px of blank space before
-     the text vs 10px after. Desktop/compact Always pills are plain text pills
-     with equal padding (hover/Never circles and the phone chips are other
-     rules and stay as they are). */
   body.level-labels-always:not(.layout-phone) .level-btn{padding:0 12px;}
   body.level-labels-always:not(.layout-phone) .level-btn .row-action-hit{display:none;}
   body.level-labels-always:not(.layout-phone) #levelBar .level-btn .row-action-label{margin-left:0;}
   /* The hover-reveal rule below (#levelBar .level-btn:hover ...) carries an ID and
      would shift the now-static label by -50% on hover, clipping it in the pill. */
   body.level-labels-always:not(.layout-phone) #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
-
-  body.view-toolbar-labels-never .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
-  body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label{display:none !important;}
-  body.view-toolbar-labels-always .row-action-btn.rect:not(.sidebar-btn),
-  body.sidebar-toolbar-labels-always .sidebar-btn,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron){width:auto; padding-right:10px; overflow:hidden;}
-  body.view-toolbar-labels-always .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .tb-label{
-    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
-    background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
+  /* View-toolbar groups: caption above a one-row set of buttons. The caption
+     only exists (display) in Always mode; in the other modes the group is
+     just its row, so nothing moves. */
+  .tg-row{display:flex; align-items:center; gap:4px;}
+  :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .toolbar-group:has(> .group-caption){flex-direction:column; align-items:flex-start; gap:0;}
+  /* Always: the row grows by the caption's height (the buttons keep their
+     28px), items sit on the buttons' baseline, separators span the button row. */
+  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
+    height:auto; min-height:36px; align-items:flex-end; padding-top:3px; padding-bottom:4px;
   }
-  /* person-reported, 2026-10-08, Always-label mode: the Collapse-repeats
-     chevron is a 14px sub-control of the toggle next to it, not a toggle of
-     its own — an inline "Collapse repeats: choose the rule" label turned it
-     into a wide pill. It stays icon-only (excluded from the pill rules
-     above; its title tooltip stays, the floating hover label is hidden). */
-  body.view-toolbar-labels-always .toolbar-icon-btn.repeat-chevron .tb-label{display:none;}
-  /* Same report, view-toolbar on/off toggles: the "status light" bar was
-     60% wide, centered on the button (starting right of the icon's centre,
-     ending before the label end), and the pill had a 13px empty-looking
-     left side vs 10px right. In Always mode the pill content is symmetric
-     (icon's visible left edge and label end each 12px from the edge: 5px
-     padding + the 7px inset of the 14px icon in its 28px slot) and the bar
-     spans exactly that content. */
-  body.view-toolbar-labels-always .toolbar-icon-btn.icon-toggle:has(.tb-hit){padding-left:5px; padding-right:12px;}
-  body.view-toolbar-labels-always .toolbar-icon-btn.icon-toggle:has(.tb-hit)::after{left:12px; right:12px; width:auto; transform:none;}
+  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .ctx-toolbar-sep{align-self:flex-end; height:28px; margin:0;}
+  /* Files & Filters toolbar groups (Edit / Effect / Library): one row of icons
+     per group; the bar wraps only between groups. */
+  .stb-group{display:flex; flex-direction:column; align-items:flex-start; flex:0 0 auto;}
+  .stb-group-row{display:flex; align-items:center; gap:2px;}
+  body.sidebar-toolbar-labels-always:not(.layout-phone) #sidebarToolbar{align-items:flex-end;}
+  body.sidebar-toolbar-labels-always:not(.layout-phone) #sidebarToolbar > .row-action-separator{align-self:flex-end; margin-bottom:6px;}
   /* person-reported, 2026-09-15: a disabled button's label is the only
      thing that explains WHY it's grayed out / what would enable it (e.g.
      Table toolbar's "Value assertion" needs a column selected first) — so
@@ -2263,15 +2280,6 @@
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
-  /* "View Toolbar button labels: Always" makes the buttons inline pills, so a
-     toolbar row can outgrow the viewport: scroll inside the row instead of
-     widening the page. Scoped to the always mode because overflow would clip
-     the floating "On hover" label pills (they sit above the button). Heights
-     stay fixed (CONTEXT_TOOLBAR_HEIGHT). */
-  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
-    min-width:0; overflow-x:auto; overflow-y:hidden; scrollbar-width:thin;
-  }
-  body.view-toolbar-labels-always :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > *{flex-shrink:0;}
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
@@ -5279,7 +5287,10 @@
   body.layout-compact .minimap-draft-bar button{min-height:36px;}
 
   body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
-  body.layout-phone #viewBar > :not(#fhTabs):not(#levelBar){display:none !important;}
+  body.layout-phone #viewBar > :not(#fhTabs):not(#vbLevel){display:none !important;}
+  /* The Level group wrapper dissolves: #levelBar is a direct flex item of the bar again. */
+  body.layout-phone #vbLevel, body.layout-phone #vbLevel > .vb-group-row{display:contents;}
+  body.layout-phone #btnApplyLevelToTree{display:none !important;}
   /* Phone has no view tabs at all (only Filtered, see phoneEnforceTab());
      !important because renderMainView() sets fhTabs.style.display inline.
      #viewBar then holds only #levelBar — no gap beyond its own padding. */
@@ -5614,7 +5625,8 @@
        gets its own full-width row under the tabs and the toolbar wraps instead of scrolling. */
     body.layout-compact #viewBar.level-own-row{flex-wrap:wrap; overflow-x:visible; overflow-y:visible; row-gap:6px;}
     body.layout-compact #viewBar.level-own-row::before{content:""; flex-basis:100%; order:1; height:0; margin-bottom:-6px;}
-    body.layout-compact #viewBar.level-own-row > #levelBar{order:2; flex:1 1 auto; min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:0;}
+    body.layout-compact #viewBar.level-own-row > #vbLevel{order:2; flex:1 1 auto; min-width:0; margin-top:0;}
+    body.layout-compact #viewBar.level-own-row #levelBar{flex-wrap:wrap; justify-content:flex-start;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnAnalyzePhone, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
@@ -6111,8 +6123,17 @@
              filled solid in the level's own color once checked; name+count
              only appear in the hover-revealed label, so there's no variable
              pill width left to guard against. -->
-        <div id="levelBar"></div>
-        <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn level-apply" title="Add level filter"></button>
+        <!-- Groups (2026-10-08): every group of the bar is ONE non-breaking
+             .vb-group (caption + row); the bar wraps only between groups.
+             The .group-caption spans are aria-hidden and only displayed in the
+             "Always" label modes (CSS), the buttons keep their title/label. -->
+        <div class="vb-group" id="vbLevel">
+          <span class="group-caption" aria-hidden="true">Level</span>
+          <div class="vb-group-row">
+            <div id="levelBar"></div>
+            <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn level-apply" title="Add level filter"></button>
+          </div>
+        </div>
         <!-- Dividing "|" (person-requested, this session): the level filter
              is its own conceptual group same as the three below it, so it
              gets the exact same #viewBar > .row-action-separator treatment
@@ -6122,23 +6143,34 @@
         <span class="row-action-separator"></span>
         <!-- Group 1: standard filter-creation actions (Before/After/Time
              range/Message/Extract) — directly right of the level filter. -->
-        <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
-        <!-- Group 2: pinned library presets (person-requested). Rendered
-             dynamically by renderLibraryToolbarPresets; the group and its
-             leading "|" divider (#libraryPresetSep) are hidden when no preset
-             is pinned, so the bar never shows an empty "| |". Same circle-pill
-             .row-action-btn styling as the filter buttons; the floating label
-             is driven purely by CSS :hover here (the label floats and shifts
-             nothing, so the JS setupHitExpandGroups mechanism isn't needed). -->
+        <div class="vb-group" id="vbAddFilter">
+          <span class="group-caption" aria-hidden="true">Add filter</span>
+          <div class="toolbar-group row-actions" data-row-actions="viewbar"></div>
+        </div>
+        <!-- Group 2: pinned library presets (person-requested) + the
+             "Library ▾" split button (always present while files are loaded,
+             also with zero presets; both segments open #libraryMenu).
+             #libraryPresetBar is rendered dynamically by
+             renderLibraryToolbarPresets; it and the group's caption are
+             hidden when no preset is pinned. Same circle-pill .row-action-btn
+             styling as the filter buttons; the floating label is driven
+             purely by CSS :hover here (the label floats and shifts nothing,
+             so the JS setupHitExpandGroups mechanism isn't needed). -->
         <span class="row-action-separator" id="libraryPresetSep"></span>
-        <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
-        <!-- "Library ▾" split button: always present while files are loaded
-             (also with zero presets); both segments open #libraryMenu. -->
-        <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library" aria-label="Filter library"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
+        <div class="vb-group" id="vbPresets">
+          <span class="group-caption" aria-hidden="true">Presets</span>
+          <div class="vb-group-row">
+            <div class="toolbar-group row-actions" id="libraryPresetBar"></div>
+            <button type="button" id="btnLibrary" aria-haspopup="menu" aria-expanded="false" title="Filter library" aria-label="Filter library"><span><svg class="icon" aria-hidden="true"><use href="#i-book"/></svg></span><span><svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></span></button>
+          </div>
+        </div>
         <!-- Group 3: "New" on its own (person-requested), always divided from
              whatever precedes it by this "|". -->
         <span class="row-action-separator"></span>
-        <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
+        <div class="vb-group" id="vbCreate">
+          <span class="group-caption" aria-hidden="true">Create</span>
+          <div class="toolbar-group row-actions" data-row-actions="viewbar-new" id="viewbarNew"></div>
+        </div>
         <!-- The library management group (#libraryManageBar: "Add to
              Library"/"Library", pinned far-right) that used to live here is
              removed (this session, project-owner review) — its two actions
@@ -6206,13 +6238,18 @@
                  with just Wrap + Show matches; every log-only element hides
                  (see #highlightWrap.text-mode) — renderTextEditorView. -->
             <div class="toolbar-group" data-toolbar-group="textlayout" data-text-only>
+              <span class="group-caption" aria-hidden="true">Layout</span>
+              <div class="tg-row">
               <div class="seg-toggle" id="ctxTextLayout" role="group" aria-label="JSON layout">
                 <button type="button" id="ctxLayoutPretty" data-layout="pretty" title="Pretty-printed: one line per JSON token line">Pretty</button>
                 <button type="button" id="ctxLayoutRaw" data-layout="raw" title="Raw: the file's own text">Raw</button>
               </div>
+              </div>
             </div>
             <span class="ctx-toolbar-sep" id="ctxTextLayoutSep" data-text-only></span>
             <div class="toolbar-group" data-toolbar-group="controls" data-log-only>
+              <span class="group-caption" aria-hidden="true">Matches</span>
+              <div class="tg-row">
               <div class="stepper stepper-compact stepper-nav">
                 <button type="button" id="ctxPrevMatch" class="toolbar-icon-btn" title="Previous match"></button>
                 <span id="contextNavLabel" class="ctx-nav-label stepper-value"></span>
@@ -6221,9 +6258,12 @@
               <button type="button" id="ctxExpandAround" class="toolbar-icon-btn" title="Expand around matches"></button>
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Expand all"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all"></button>
+              </div>
             </div>
             <span class="ctx-toolbar-sep" data-log-only></span>
             <div class="toolbar-group" data-toolbar-group="settings">
+              <span class="group-caption" aria-hidden="true">Display</span>
+              <div class="tg-row">
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" data-log-only title="Show/hide notes"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" data-log-only title="Multi-line messages"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
@@ -6231,9 +6271,13 @@
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" data-log-only title="Underline highlights"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" data-log-only title="Clickable file paths"></button>
+              </div>
             </div>
             <span class="ctx-toolbar-sep" data-log-only></span>
-            <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions" data-log-only></div>
+            <div class="toolbar-group" data-toolbar-group="actions" data-log-only>
+              <span class="group-caption" aria-hidden="true">Selection</span>
+              <div class="tg-row" data-row-actions="toolbar-actions"></div>
+            </div>
           </div>
           <div id="highlightHeader">
             <!-- Content is JS-built by renderColumnHeader (Custom Columns
@@ -6274,6 +6318,8 @@
                  #contextToolbar's own comment for why. -->
             <div id="filteredToolbar">
               <div class="toolbar-group" data-toolbar-group="settings">
+                <span class="group-caption" aria-hidden="true">Display</span>
+                <div class="tg-row">
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-pin" title="Pin bookmarks"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-notes" title="Show/hide notes"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
@@ -6287,9 +6333,13 @@
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" title="Underline highlights"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" title="Clickable file paths"></button>
+                </div>
               </div>
               <span class="ctx-toolbar-sep"></span>
-              <div class="toolbar-group" data-toolbar-group="actions" data-row-actions="toolbar-actions"></div>
+              <div class="toolbar-group" data-toolbar-group="actions">
+                <span class="group-caption" aria-hidden="true">Selection</span>
+                <div class="tg-row" data-row-actions="toolbar-actions"></div>
+              </div>
             </div>
             <!-- Phone only, extraction node active: Table/Plot are not available here (updatePhoneExtractHint). -->
             <div id="phoneExtractHint"><span class="peh-icon"></span><span>Table and Plot for this filter need a wider screen (tablet or desktop).</span></div>
@@ -6429,6 +6479,8 @@
              "Value assertion…", and "Select". -->
         <div id="tableToolbar">
           <div class="toolbar-group" data-toolbar-group="actions">
+            <span class="group-caption" aria-hidden="true">Actions</span>
+            <div class="tg-row">
             <button type="button" id="tableExportCsvBtn" class="toolbar-icon-btn" title="Export as CSV…">
               <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5v8M8 9.5L5 6.5M8 9.5l3-3"/><path d="M2.5 11v2.5h11V11"/></svg>
             </button>
@@ -6451,6 +6503,7 @@
                  context-aware: marked-cell rows in Table, viewport entries in
                  Plot (see selectActionEntries). -->
             <span data-row-actions="select-action"></span>
+            </div>
           </div>
           <span id="tableFilterInfo" class="toolbar-filter-info"></span>
         </div>
@@ -6476,6 +6529,8 @@
                regardless. -->
           <div id="plotToolbar">
             <div class="toolbar-group" data-toolbar-group="controls">
+              <span class="group-caption" aria-hidden="true">View</span>
+              <div class="tg-row">
               <div id="plot2dToolsGroup" class="hidden toolbar-group">
                 <div class="stepper stepper-compact">
                   <button type="button" class="stepper-btn" id="plotZoomOutBtn" title="Zoom out">−</button>
@@ -6485,13 +6540,17 @@
                 <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
               </div>
               <button type="button" id="plotFullscreenBtn" class="toolbar-icon-btn" title="Fullscreen"></button>
+              </div>
             </div>
             <span class="ctx-toolbar-sep"></span>
             <div class="toolbar-group" data-toolbar-group="actions">
-              <button type="button" id="plotSaveImageBtn" class="toolbar-icon-btn" title="Save image"></button>
-              <!-- "Select" (Add to selection) action — see the matching
-                   #tableToolbar comment. -->
-              <span data-row-actions="select-action"></span>
+              <span class="group-caption" aria-hidden="true">Actions</span>
+              <div class="tg-row">
+                <button type="button" id="plotSaveImageBtn" class="toolbar-icon-btn" title="Save image"></button>
+                <!-- "Select" (Add to selection) action — see the matching
+                     #tableToolbar comment. -->
+                <span data-row-actions="select-action"></span>
+              </div>
             </div>
             <span id="plotFilterInfo" class="toolbar-filter-info"></span>
           </div>
@@ -7485,7 +7544,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Files &amp; Filters toolbar labels</div>
-                <div class="settings-row-hint">When the buttons above the file tree show their text.</div>
+                <div class="settings-row-hint">Always: icon buttons under group captions (Edit, Effect, ...).</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsSidebarToolbarLabels" data-seg>
@@ -7498,7 +7557,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Level labels</div>
-                <div class="settings-row-hint">When the level circles show name and count as text.</div>
+                <div class="settings-row-hint">Always: name and count on each chip.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsLevelLabels" data-seg>
@@ -7511,7 +7570,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">Filter toolbar labels</div>
-                <div class="settings-row-hint">When the other filter-bar buttons show their text.</div>
+                <div class="settings-row-hint">Always: icon buttons under group captions (Add filter, ...).</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsFilterToolbarLabels" data-seg>
@@ -7524,7 +7583,7 @@
             <div class="settings-row">
               <div class="settings-row-text">
                 <div class="settings-row-label">View toolbar labels</div>
-                <div class="settings-row-hint">When view-toolbar buttons show their text.</div>
+                <div class="settings-row-hint">Always: icon buttons under group captions (Display, ...).</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsViewToolbarLabels" data-seg>
@@ -22452,12 +22511,18 @@ function updateLevelBarLayout() {
     const chips = [...levelBarEl.children];
     const chipsW = chips.reduce((a, c) => a + c.offsetWidth, 0) + Math.max(0, chips.length - 1) * 6;
     // Natural widths plus each child's horizontal margins (tab strip, separators,
-    // library button, ...) and #levelBar's own margins; display:none children
+    // group wrappers, ...) and #levelBar's own margins; display:none children
     // take no space; a flex column-gap sits between every pair of children.
+    // The Level group (#vbLevel: #levelBar + "Add level filter") is measured by
+    // its natural content (chips + the button + the row gap), never by its current
+    // box, which grows when it sits in its own row.
     const marginsOf = c => { const m = getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
+    const levelGroup = levelBarEl.closest(".vb-group");
+    const applyBtn = document.getElementById("btnApplyLevelToTree");
+    const applyW = applyBtn && getComputedStyle(applyBtn).display !== "none" ? applyBtn.offsetWidth + 4 : 0;
     const shown = [...viewBar.children].filter(c => getComputedStyle(c).display !== "none");
-    const others = shown.filter(c => c !== levelBarEl).reduce((a, c) => a + c.offsetWidth + marginsOf(c), 0) +
-      (shown.includes(levelBarEl) ? marginsOf(levelBarEl) : 0);
+    const others = shown.filter(c => c !== levelGroup).reduce((a, c) => a + c.offsetWidth + marginsOf(c), 0) +
+      (shown.includes(levelGroup) ? marginsOf(levelBarEl) + applyW : 0);
     const cs = getComputedStyle(viewBar);
     const gap = parseFloat(cs.columnGap) || 0;
     const gaps = Math.max(0, shown.length - 1) * gap;
@@ -43178,7 +43243,10 @@ function performBulkAction(action, ids) {
 // the tree context menu; context/countContext have no creation entry point at all
 // (FEATURE_BACKLOG.md #79).
 //
-// Returns { actions: [{action, label, icon, target, disabled, separator?}] }.
+// Returns { actions: [{action, label, icon, target, disabled, caption}] }; `caption`
+// ("Edit" / "Effect" / "Library") is the caption of the toolbar group the
+// button is drawn in (buildSidebarToolbarHtml), consecutive entries of one
+// group share a row.
 // `target` is the node id handleSidebarToolbarActionClick should act on.
 function describeSidebarToolbarActions() {
   const selectedIds = [...treeSelectionIds()];
@@ -43188,17 +43256,17 @@ function describeSidebarToolbarActions() {
   const ft = filter ? filter.filterType : null;
   const target = node ? node.id : null;
   const actions = [
-    { action: "rename", label: "Rename…", short: "Rename", icon: ICON_RENAME, target, disabled: !filter },
-    { action: "edit", label: ft === "link" ? "Edit link…" : (ft === "and" || ft === "or") ? "Edit conditions…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target,
+    { action: "rename", label: "Rename…", short: "Rename", icon: ICON_RENAME, target, caption: "Edit", disabled: !filter },
+    { action: "edit", label: ft === "link" ? "Edit link…" : (ft === "and" || ft === "or") ? "Edit conditions…" : "Edit filter…", short: "Edit", icon: ICON_EDIT, target, caption: "Edit",
       disabled: !(filter && (ft === "text" || ft === "gap" || isTimeFilterType(ft) || ((ft === "link" || ft === "and" || ft === "or") && hasBakedSides(filter)))) },
-    { action: "linkWith", label: "Link with…", short: "Link", icon: ICON_LINK, target, disabled: !isLinkBakeableNode(filter) },
-    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", short: "NOT", icon: ICON_INVERT, target,
+    { action: "linkWith", label: "Link with…", short: "Link", icon: ICON_LINK, target, caption: "Edit", disabled: !isLinkBakeableNode(filter) },
+    { action: "invert", label: filter && filter.inverted ? "Remove NOT" : "Invert (NOT)", short: "NOT", icon: ICON_INVERT, target, caption: "Effect",
       disabled: !(filter && ft !== "link" && ft !== "context" && ft !== "countContext") },
-    { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", short: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target,
+    { action: "mute", label: filter && filter.muted ? "Unmute" : "Mute", short: filter && filter.muted ? "Unmute" : "Mute", icon: filter && filter.muted ? ICON_EYE_OFF : ICON_EYE, target, caption: "Effect",
       disabled: !filter },
-    { action: "clockOffset", label: "Adjust clock…", short: "Clock", icon: ICON_CLOCK, target, separator: true,
+    { action: "clockOffset", label: "Adjust clock…", short: "Clock", icon: ICON_CLOCK, target, caption: "Effect",
       disabled: !(node && node.type === "file" && !node.merged && node.entries && node.entries.length) },
-    { action: "addToLibrary", label: "Add to library…", short: "Library", icon: ICON_BOOK, target, separator: true, addBadge: true, disabled: !filter },
+    { action: "addToLibrary", label: "Add to library…", short: "Library", icon: ICON_BOOK, target, caption: "Library", addBadge: true, disabled: !filter },
   ];
   // Phone has no #btnLibrary to apply a library preset, so saving one is pointless there.
   if (currentLayoutTier === "phone") actions.pop();
@@ -43636,6 +43704,24 @@ const sidebarToolbarEl = el("#sidebarToolbar");
 // button that a same-tick render replaced. #sidebarToolbar.multi paints the
 // selected-row highlight.
 let sidebarToolbarMultiKey = null;
+// Single-mode markup: one `.stb-group` per `group` caption (a one-row set of the
+// group's buttons under an aria-hidden `.group-caption` that is only displayed
+// in the "Always" label mode), "|" separators between the groups. Each row is the
+// hit-expand container of its own buttons (floating labels in On-hover mode).
+function buildSidebarToolbarHtml(actions) {
+  const groups = [];
+  actions.forEach(a => {
+    const last = groups[groups.length - 1];
+    if (last && last.name === a.caption) last.actions.push(a); else groups.push({ name: a.caption, actions: [a] });
+  });
+  return groups.map((g, i) =>
+    (i ? '<span class="row-action-separator"></span>' : '') +
+    '<div class="stb-group" data-stb-group="' + escapeHtml(g.name.toLowerCase()) + '">' +
+      '<span class="group-caption" aria-hidden="true">' + escapeHtml(g.name) + '</span>' +
+      '<div class="stb-group-row">' + buildRowActionsHtml(g.actions, "sidebar", "sidebar-toolbar-hit") + '</div>' +
+    '</div>'
+  ).join("");
+}
 function renderSidebarToolbar() {
   const hasFiles = state.rootIds.length > 0;
   // "" restores the CSS class's own display:flex rather than hardcoding a
@@ -43681,7 +43767,7 @@ function renderSidebarToolbar() {
   if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]") ||
       !!sidebarToolbarEl.querySelector('[data-row-action="addToLibrary"]') !== wantsLibBtn) {
     sidebarToolbarMultiKey = null;
-    sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "sidebar", "sidebar-toolbar-hit");
+    sidebarToolbarEl.innerHTML = buildSidebarToolbarHtml(describeSidebarToolbarActions().actions);
     // Idempotent (per-container guard), so calling it again never stacks listeners.
     setupHitExpandGroups(".sidebar-toolbar-hit");
   }
@@ -47233,9 +47319,9 @@ const SHORTCUT_ACTIONS = [
   { id: "addNote",       group: "Rows", label: "Add/edit a note on the selected row", default: { alt: true, key: "n" } },
   { id: "copyForTicket", group: "Rows", label: "Copy selected rows for ticket",       default: { ctrl: true, shift: true, key: "c" } },
   { id: "exportView",    group: "Rows", label: "Export / Share the current view",     default: { ctrl: true, shift: true, key: "e" } },
-  { id: "undo",          group: "Edit", label: "Undo",                                default: { ctrl: true, key: "z" } },
-  { id: "redo",          group: "Edit", label: "Redo",                                default: { ctrl: true, shift: true, key: "z" } },
-  { id: "closeFile",     group: "Edit", label: "Close the currently open file",       default: { ctrl: true, key: "w" }, browserDefault: { alt: true, key: "w" } },
+  { id: "undo",          caption: "Edit", label: "Undo",                                default: { ctrl: true, key: "z" } },
+  { id: "redo",          caption: "Edit", label: "Redo",                                default: { ctrl: true, shift: true, key: "z" } },
+  { id: "closeFile",     caption: "Edit", label: "Close the currently open file",       default: { ctrl: true, key: "w" }, browserDefault: { alt: true, key: "w" } },
 ];
 
 // Fixed shortcuts (mouse-driven or otherwise not a single rebindable combo)

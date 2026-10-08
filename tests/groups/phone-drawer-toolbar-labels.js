@@ -62,7 +62,7 @@ await withApp(async (w, d, T) => {
   const scoped = rules.filter(r => /row-action-short|btn-short-label/.test(r.sel) && /display:block/.test(r.css));
   assert(scoped.length >= 2 && scoped.every(r => r.sel.split(",").every(s => /^body\.layout-phone\s/.test(s.trim()))), "every rule that shows a short label is phone-scoped");
   const labelRules = rules.filter(r => /view-toolbar-labels-(always|never)/.test(r.sel) && /row-action/.test(r.sel));
-  assert(labelRules.length >= 3 && labelRules.every(r => !/layout-phone/.test(r.sel)), "desktop always/never label rules untouched");
+  assert(labelRules.length >= 1 && labelRules.every(r => !/layout-phone/.test(r.sel)), "desktop always/never label rules untouched (the merged Never/Always list is not phone-scoped)");
   w.innerWidth = 1440; w.dispatchEvent(new w.Event("resize")); w.render();
   assert(d.body.classList.contains("layout-phone") === false, "desktop tier");
   assert(!d.body.classList.contains("layout-phone") && btn("rename") && btn("rename").querySelector(".row-action-label").textContent === "Rename…", "desktop: the floating label keeps the full text");

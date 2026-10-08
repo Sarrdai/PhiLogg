@@ -53,7 +53,7 @@ await withApp(async (w, d, T) => {
     "#levelBar's own :hover rule reveals the label (setupHitExpandGroups would never reach a dynamically-rebuilt container)");
 
   // --- Layout: #levelBar now sits BEFORE the filter-creation group (reversing the earlier right-side placement) ---
-  const viewBarKids = [...d.querySelector("#viewBar").children].map(c => c.id || c.dataset.rowActions);
+  const viewBarKids = [...d.querySelector("#viewBar").querySelectorAll("#levelBar, [data-row-actions=viewbar]")].map(c => c.id || c.dataset.rowActions); // document order (groups are .vb-group wrappers)
   assert(viewBarKids.indexOf("levelBar") < viewBarKids.indexOf("viewbar"),
     "#levelBar precedes [data-row-actions=\"viewbar\"] in DOM order, got " + viewBarKids.join(","));
 

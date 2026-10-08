@@ -2,13 +2,13 @@
 // (tests/README.md → "Group files").
 
 /* ============================================================
-   GROUP always-labels-toggle-level — three controls that looked broken with
-   the toolbar labels set to "Always" (person-reported 2026-10-08, mockup
-   variant A + A): (1) the view-toolbar on/off toggles' accent bar spans the
-   whole pill content (icon's left edge → label end, symmetric 12px) instead
-   of a centered 60%; (2) level pills have no empty icon slot — a plain text
-   pill with equal left/right padding; (3) the Collapse-repeats chevron stays
-   icon-only. "On hover"/"Never" and the phone chips are unchanged.
+   GROUP always-labels-toggle-level — level pills and the chevron in "Always"
+   (person-reported 2026-10-08, mockup variant A + A). Since the label concept
+   (step 1, group captions) "Always" no longer draws text pills on toggles or
+   buttons: (1) the toggles keep their default centered 60% status bar;
+   (2) the level chips ARE still text pills, with no empty icon slot and equal
+   left/right padding; (3) the Collapse-repeats chevron stays icon-only.
+   "On hover"/"Never" and the phone chips are unchanged.
    jsdom has no layout and no pseudo-element styles, so the bar is checked
    through the stylesheet rules and everything else through computed styles.
    ============================================================ */
@@ -37,6 +37,7 @@ await withApp(async (w, d, T) => {
   const chevron = d.querySelector("#btnRepeatMenu");
   assert(chevron && chevron.classList.contains("repeat-chevron") && chevron.querySelector(".tb-label"), "sanity: #btnRepeatMenu is the wrapped chevron");
   const levels = [...d.querySelectorAll("#levelBar .level-btn")];
+  const l0Label = () => levels[0].querySelector(".row-action-label");
   assert(levels.length >= 3, "sanity: the simulator log produces level pills, got " + levels.length);
 
   section("always-labels-toggle-level a. Hover mode: toggle bar 60% centered, level circle with hit slot + count, chevron label wired up");
@@ -51,28 +52,17 @@ await withApp(async (w, d, T) => {
   assert(cs(chevron).width === "14px", "hover: chevron is 14px wide, got " + cs(chevron).width);
   assert(cs(chevron.querySelector(".tb-label")).display !== "none", "hover: the chevron keeps its (floating) label");
 
-  section("always-labels-toggle-level b. Always view labels: toggle bar spans icon start to label end, symmetric");
+  section("always-labels-toggle-level b. Always view labels (group captions, no pills): chevron stays icon-only, toggles keep their default bar");
   d.body.classList.add("view-toolbar-labels-always");
-  assert(barRule(ALWAYS_BAR).length === 1, "an Always bar rule exists for the toggles");
-  const bar = barRule(ALWAYS_BAR)[0].style;
-  assert(bar.getPropertyValue("left") === "12px" && bar.getPropertyValue("right") === "12px", "bar left/right 12px, got " + bar.getPropertyValue("left") + " / " + bar.getPropertyValue("right"));
-  assert(bar.getPropertyValue("width") === "auto" && bar.getPropertyValue("transform") === "none", "bar width auto, no translate");
-  assert(cs(toggle).paddingLeft === "5px" && cs(toggle).paddingRight === "12px", "toggle padding 5px / 12px (icon inset 7px + 5px = 12px = label end gap), got " + cs(toggle).paddingLeft + " / " + cs(toggle).paddingRight);
-  assert(cs(toggle.querySelector(".tb-hit")).width === "28px", "the 14px icon still sits centered in its 28px slot (7px inset)");
-  assert(cs(toggle.querySelector(".tb-label")).position === "static", "toggle label inline");
-  d.querySelectorAll(".toolbar-icon-btn.icon-toggle").forEach(b => {
-    if (b.querySelector(".tb-hit")) assert(cs(b).paddingLeft === "5px", "every wrapped toggle gets the symmetric padding: " + b.className);
-  });
-
-  section("always-labels-toggle-level c. Chevron stays icon-only in Always view labels");
   assert(cs(chevron).width === "14px", "chevron still 14px, got " + cs(chevron).width);
   assert(cs(chevron).paddingRight !== "10px" && cs(chevron).paddingRight !== "12px", "chevron gets no pill padding, got " + cs(chevron).paddingRight);
   assert(cs(chevron.querySelector(".tb-label")).display === "none", "chevron label hidden");
   assert(chevron.title && chevron.title.length > 0, "chevron keeps its title tooltip");
-  assert(cs(toggle.querySelector(".tb-label")).display !== "none", "regular toggle labels stay visible");
+  assert(cs(toggle).paddingLeft !== "5px" && cs(toggle).paddingRight !== "12px", "toggles keep the plain icon padding (no pill padding)");
+  assert(barRule(ALWAYS_BAR).length === 0, "no Always-specific status-bar rule is left (the toggles are icon-only, the 60% bar stays)");
   d.body.classList.remove("view-toolbar-labels-always");
 
-  section("always-labels-toggle-level d. Always filter labels: level pills are text-only with equal padding");
+  section("always-labels-toggle-level c. Always filter labels: level pills are text-only with equal padding");
   d.body.classList.add("level-labels-always");
   levels.forEach(l => {
     const lab = l.querySelector(".row-action-label");
@@ -84,10 +74,9 @@ await withApp(async (w, d, T) => {
   });
   assert(rules.some(r => /#levelBar \.level-btn:hover:not\(:disabled\) \.row-action-label/.test(r.selectorText) && /level-labels-always/.test(r.selectorText) && /transform:\s*none/.test(r.cssText)),
     "hovering an Always level pill does not shift its label (ID hover rule overridden)");
-  const rowBtn = d.querySelector("#viewBar .row-actions .row-action-btn:not(.level-btn):not(.rect)");
-  if (rowBtn) assert(cs(rowBtn.querySelector(".row-action-hit")).display !== "none", "other filter-toolbar pills keep their icon slot");
+  assert(cs(l0Label()).zIndex === "auto", "level pill label does not paint above popups (z-index auto)");
 
-  section("always-labels-toggle-level e. Phone layout and view toolbar are unaffected by the filter Always rules / vice versa");
+  section("always-labels-toggle-level d. Phone layout and view toolbar are unaffected by the filter Always rules / vice versa");
   d.body.classList.add("layout-phone");
   assert(cs(levels[0]).paddingLeft === "12px" && cs(levels[0]).height === "32px", "phone chips keep their own 32px/12px shape, got " + cs(levels[0]).height);
   d.body.classList.remove("layout-phone");

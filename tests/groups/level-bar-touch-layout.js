@@ -65,8 +65,9 @@ await withApp(async (w, d, T) => {
   const viewBar = d.querySelector("#viewBar"), bar = d.querySelector("#levelBar");
   let avail = 2000, others = 600;
   lbtDef(w, viewBar, { clientWidth: () => avail });
-  [...viewBar.children].forEach(c => { if (c !== bar) lbtDef(w, c, { offsetWidth: 0 }); });
-  const first = [...viewBar.children].find(c => c !== bar);
+  const lvGroup = d.querySelector("#vbLevel"); // the Level group wraps #levelBar + "Add level filter"
+  [...viewBar.children].forEach(c => { if (c !== lvGroup) lbtDef(w, c, { offsetWidth: 0 }); });
+  const first = [...viewBar.children].find(c => c !== lvGroup);
   lbtDef(w, first, { offsetWidth: () => others });
   [...bar.children].forEach(c => lbtDef(w, c, { offsetWidth: 44 }));
   const n = bar.children.length;
@@ -74,7 +75,7 @@ await withApp(async (w, d, T) => {
   const pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
   // The padding and every child's horizontal margins count against the available width.
   const mg = c => { const m = w.getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
-  const margins = [...viewBar.children].reduce((a, c) => a + mg(c), 0);
+  const margins = [...viewBar.children].reduce((a, c) => a + mg(c), 0) + mg(bar);
   const chipsW = n * 44 + (n - 1) * 6 + pad + margins;
   w.updateLevelBarLayout();
   assert(!viewBar.classList.contains("level-own-row"), "fits in one row: no own row");
@@ -92,11 +93,11 @@ await withApp(async (w, d, T) => {
   const rules = [];
   const walk = rs => { for (const r of rs) { if (r.cssRules && !r.selectorText) walk(r.cssRules); else if (r.selectorText) rules.push(r); } };
   for (const sh of d.styleSheets) walk(sh.cssRules);
-  const own = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row > #levelBar");
+  const own = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row > #vbLevel");
   const br = rules.find(r => r.selectorText === "body.layout-compact #viewBar.level-own-row::before");
   assert(br && br.style.flexBasis === "100%" && br.style.order === "1" && br.style.height === "0px" || (br && br.style.height === "0"), "own-row CSS: a ::before forces a line break (flex-basis 100%, order 1, height 0)");
-  assert(own && own.style.order === "2" && own.style.minWidth === "0px" || (own && own.style.order === "2" && own.style.minWidth === "0"), "own-row CSS: #levelBar is ordered after the break and may shrink");
-  assert(own && /1 1 auto/.test(own.style.flex) && !/calc|100px/.test(own.style.flex), "no reserved width: #levelBar is flex:1 1 auto");
+  assert(own && own.style.order === "2" && own.style.minWidth === "0px" || (own && own.style.order === "2" && own.style.minWidth === "0"), "own-row CSS: the Level group is ordered after the break and may shrink");
+  assert(own && /1 1 auto/.test(own.style.flex) && !/calc|100px/.test(own.style.flex), "no reserved width: the Level group is flex:1 1 auto");
   assert(!rules.some(r => /btnFacets/.test(r.selectorText)), "no #btnFacets rule left (Facets is a bottom-panel tab)");
   assert(!rules.some(r => /level-own-row/.test(r.selectorText) && /calc\(100% - /.test(r.cssText)), "no calc() reserve anywhere in the own-row rules");
   assert(rules.every(r => !/level-own-row/.test(r.selectorText) || /layout-compact/.test(r.selectorText)), "every own-row rule is scoped to the compact tier");

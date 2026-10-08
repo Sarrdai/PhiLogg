@@ -61,9 +61,9 @@ await withApp(async (w, d, T) => {
   const vb = d.querySelector("#viewBar");
   assert(cs(vb).display === "flex" && cs(vb).flexWrap === "wrap", "#viewBar: wrapping flex row");
   assert(cs(vb).rowGap === "6px", "row-gap 6px, got " + cs(vb).rowGap);
-  const grp = d.querySelector('#viewBar > [data-row-actions="viewbar"]');
-  assert(cs(grp).flexShrink === "1" && cs(grp).flexWrap === "wrap" && cs(grp).minWidth === "0px", "an action group shrinks/wraps only internally");
-  assert(has(/^#viewBar \.row-actions$/, /gap:\s*6px 4px/), "inside-group row gap 6px (CSS rule)");
+  const grp = d.querySelector('#vbAddFilter > [data-row-actions="viewbar"]');
+  assert(cs(d.querySelector("#vbAddFilter")).flexShrink === "0" && cs(grp).flexWrap === "nowrap", "an action group is non-breaking (flex:none, nowrap row; see GROUP label-captions)");
+  assert(has(/^#viewBar \.row-actions$/, /gap:\s*4px/), "inside-group gap 4px (CSS rule)");
   assert(cs(d.querySelector("#fhTabs")).flexShrink === "0", "view tabs never break apart");
   assert(has(/^#sidebarToolbar$/, /row-gap:\s*6px|gap:\s*6px 2px/), "#sidebarToolbar has the 6px row gap");
 
