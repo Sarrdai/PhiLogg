@@ -76,6 +76,9 @@ td:first-child{white-space:nowrap}
 td:last-child{color:var(--text-secondary)}
 kbd{font:600 12px var(--font-log);background:var(--bg-elevated);border:1px solid var(--border);border-bottom-width:2px;border-radius:4px;padding:1px 6px;color:var(--text-primary)}
 .try-line{margin:0;font-size:14px}
+.wiw-fig{margin:0;display:flex;flex-direction:column;gap:6px}
+.wiw-fig img{display:block;width:100%;height:auto;border:1px solid var(--border);border-radius:6px}
+.wiw-fig figcaption{font-size:13px;color:var(--text-secondary)}
 @media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}td:first-child{white-space:normal}}
 @media print{
   :root{--bg-app:#fff;--bg-panel:#fff;--bg-elevated:#eee;--border:#bbb;--border-soft:#ccc;--text-primary:#000;--text-secondary:#222;--text-tertiary:#444}
@@ -121,7 +124,10 @@ kbd{font:600 12px var(--font-log);background:var(--bg-elevated);border:1px solid
 
       <section class="card" id="where-is-what">
         <h2>Where is what</h2>
-        <!-- where-is-what screenshot goes here -->
+        <figure class="wiw-fig">
+          <img src="img/11-where-is-what.png" width="1440" height="900" loading="lazy" decoding="async" alt="PhiLogg with the Where is what overlay open: the window is dimmed and sixteen numbered labels point at the Files and filters tree, its toolbar, the timeline minimap, the view tabs, the level and filter buttons, the display options, the log entries, the entry detail panel and the header buttons.">
+          <figcaption>Press <kbd>?</kbd> in the app to get this overlay.</figcaption>
+        </figure>
         <ul>
           <li><b>Files &amp; Filters tree</b> (left): your files and the filter nodes below them. The selected node decides what the views show.</li>
           <li><b>Level chips and filter buttons</b> (row above the log): a view filter by level, plus the buttons that add filters.</li>
@@ -171,6 +177,7 @@ kbd{font:600 12px var(--font-log);background:var(--bg-elevated);border:1px solid
             <tr><td><kbd>Alt</kbd>+<kbd>N</kbd></td><td>Add / edit a note on the selected row</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>C</kbd></td><td>Copy selected rows for a ticket</td></tr>
             <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Z</kbd></td><td>Undo / redo</td></tr>
+            <tr><td><kbd>?</kbd> / <kbd>F1</kbd></td><td>Where is what: label every region of the window</td></tr>
             <tr><td><kbd>Esc</kbd></td><td>Close the open popup, dialog or panel</td></tr>
           </tbody>
         </table>

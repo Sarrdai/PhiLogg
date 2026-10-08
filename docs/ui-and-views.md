@@ -616,6 +616,58 @@ shape:
   sits above its neighbours (`z-index:1`); no mode makes the button
   `overflow:hidden` any more (that, plus the inline label, was what covered it
   in Always).
+
+  **Where is what overlay** (label concept step 3, 2026-10-08). A help
+  button (`#btnHelp`, "?" in a circle, title "Where is what? (?)") sits in
+  the header right before Settings; the keys `?` (no modifier, never while an
+  input/textarea/select/contenteditable has focus or another popup/dialog is
+  open) and `F1` do the same; `?`/`F1` are listed under Settings -> Shortcuts
+  as a fixed row (`FIXED_SHORTCUTS`). It dims the window and labels the main
+  regions: `#whereIsWhat` (`role="dialog"`, `aria-label="Where is what"`, no
+  `aria-modal`, z-index 78: above the popups/dialogs, below the toasts) holds
+  one SVG (dim rectangle with a mask that cuts every region out, an accent
+  outline per region, leader lines with a dot on the region's box) and one
+  numbered pill per region (`.wiw-callout`, number + a 2-5 word label, a few
+  with a small second line), all `aria-hidden`; screen readers get a
+  visually hidden `<ul>` of the region names. The regions are the one table
+  `WHERE_IS_WHAT = [{sel, label, side, group?, note?}]`: each `sel` matches at
+  most one element, entries whose element is absent or hidden
+  (`whereRegionVisible`: no `.hidden`/`display:none`/`visibility:hidden` on
+  the chain, non-empty rect) are skipped at show time, and of several entries
+  sharing a `group` (the active view's toolbar, the active view's rows area)
+  only the first visible one is drawn; the rects come from
+  `getBoundingClientRect()` of the real elements. Placement is the pure
+  function `placeWhereCallouts(items, bounds, obstacles)`: each callout tries
+  its preferred `side` (`top`/`bottom`/`left`/`right` of the region, `in` =
+  centred inside a big region, `inr` = inside at its right end, used for the
+  wide toolbars), slides along that edge, steps away from it, then tries the
+  other sides, taking the first spot that lies inside the window and keeps a
+  4px margin to every callout placed before it (table order is priority;
+  the footer "Esc or click anywhere to close" is a fixed obstacle); the last
+  resort is the clamped preferred spot. It re-renders on window resize.
+  Closing: Esc (captured, so it never also leaves focus mode), a click
+  anywhere, `?`/`F1` again or the help button; focus returns to the element
+  that had it when the overlay opened (else the help button). On the phone
+  tier (`body.layout-phone`) the button is hidden, the keys do nothing and
+  `showWhereIsWhat()` returns without effect. API: plain globals
+  `showWhereIsWhat()`, `hideWhereIsWhat()` (used by the screenshot scene
+  `docs/screenshots/scenes/11-where-is-what.js` through `screenshot.js
+  --eval`); they are page functions and deliberately NOT part of
+  `window.philogg`, which only exists in the desktop build and is how the page
+  detects it.
+  **First-start hint.** After the first log has loaded (end of `addFile` and
+  `finishLoadProgress`) in a browser whose `localStorage` key
+  `philogg-where-is-what-seen` is unset, a small bottom banner `#whereHint`
+  shows "New here? See where everything is." with "Show me" (opens the
+  overlay) and "Dismiss". Either button, or the overlay being opened by any
+  means, sets the key (`markWhereSeen`) and hides the banner; it shows at
+  most once per page load even if storage is blocked. Not shown on the phone
+  tier or for `?session=` deep links (the tour banner guides there). The test
+  harness pre-sets the key (`withApp` option `whereHint:true` opts in) and
+  `tools/log-sim/screenshot.js` does too (`SHOW_WHERE_HINT=1` opts in), so the
+  banner never appears in groups or documentation pictures. The cheatsheet
+  page shows the overlay as `img/11-where-is-what.png` (docs/homepage.md).
+  Group where-is-what.
 - **Each view's own toolbar** (Zeile 2, directly under `#viewBar` —
   `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) —
   same position/shape in every tab, only the content differs.

@@ -27,8 +27,9 @@ const { execFileSync } = require("child_process");
 const { stripDocument } = require("./strip-comments.js");
 
 const ROOT = path.join(__dirname, "..");
-// docs/screenshots/<file> -> img/<file>; keep in sync with site/index.html.
-const SCREENSHOTS = ["01-log-view.png", "04-link-view.png", "09-patterns.png", "03-plot.png"];
+// docs/screenshots/<file> -> img/<file>; keep in sync with site/index.html
+// (the four feature cards) and site/cheatsheet.html (11-where-is-what.png).
+const SCREENSHOTS = ["01-log-view.png", "04-link-view.png", "09-patterns.png", "03-plot.png", "11-where-is-what.png"];
 
 function buildSite(outDir) {
   const out = path.resolve(outDir);

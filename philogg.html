@@ -159,6 +159,7 @@
      those themes also override --level-*-on to light text instead of the
      near-black used against the brighter dark-mode swatches. */
   :root[data-theme="light"]{
+    --where-dim:rgba(28,33,46,.46);
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
     --bg-elevated:#f0f1f4;
@@ -4694,6 +4695,41 @@
   #copyToast[data-kind="error"]::before{content:"!"; color:var(--level-error);}
   #copyToast .toast-text{min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
 
+  /* ---------- "Where is what" overlay + first-start hint ----------
+     Above popups/dialogs, below the toasts (z-index 80). The dim and the
+     region boxes are one SVG (a mask cuts the regions out of the dim);
+     callouts are absolutely placed pills, see placeWhereCallouts(). */
+  #whereIsWhat{position:fixed; inset:0; z-index:78; cursor:pointer; outline:none;}
+  #whereIsWhat.hidden{display:none;}
+  #whereIsWhat .wiw-svg{position:absolute; inset:0; width:100%; height:100%; pointer-events:none;}
+  #whereIsWhat .wiw-dim{fill:var(--where-dim, rgba(16,19,26,.7));}
+  #whereIsWhat .wiw-box{fill:none; stroke:var(--accent); stroke-width:1.5;}
+  #whereIsWhat .wiw-line{stroke:var(--accent); stroke-width:1.25;}
+  #whereIsWhat .wiw-dot{fill:var(--accent);}
+  #whereIsWhat .wiw-callout{
+    position:absolute; display:flex; align-items:flex-start; gap:6px; box-sizing:border-box;
+    padding:3px 10px 3px 3px; border-radius:13px; max-width:260px;
+    background:var(--bg-elevated); border:1px solid var(--accent); color:var(--text-primary);
+    font-size:12px; font-weight:600; line-height:18px; white-space:nowrap;
+    box-shadow:0 4px 12px rgba(0,0,0,.35); pointer-events:none;
+  }
+  #whereIsWhat .wiw-num{
+    flex:none; width:18px; height:18px; border-radius:50%; background:var(--accent); color:var(--accent-on);
+    font-size:10.5px; font-weight:700; line-height:18px; text-align:center;
+  }
+  #whereIsWhat .wiw-note{display:block; font-size:10.5px; font-weight:400; line-height:13px; color:var(--text-secondary); white-space:normal;}
+  #whereIsWhat .wiw-foot{font-weight:400; color:var(--text-secondary); border-color:var(--border); padding-left:10px;}
+  #whereIsWhat .wiw-sr{position:absolute; width:1px; height:1px; margin:-1px; padding:0; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0;}
+  #whereHint{
+    position:fixed; left:50%; bottom:16px; transform:translateX(-50%); z-index:79;
+    display:flex; align-items:center; gap:10px; max-width:calc(100vw - 24px);
+    background:var(--bg-elevated); border:1px solid var(--accent); color:var(--text-primary);
+    padding:7px 10px 7px 14px; border-radius:8px; font-size:12px; box-shadow:0 10px 24px rgba(0,0,0,.4);
+  }
+  #whereHint.hidden{display:none;}
+  #whereHint .btn-mini-outline{flex:none;}
+  body.layout-phone #whereHint, body.layout-phone #whereIsWhat{display:none !important;}
+
   /* ---------- Filter popup ---------- */
   /* max-height/overflow-y (person-reported: content below the fold was
      unreachable once the popup grew — target-chain row, the input's own
@@ -5273,7 +5309,7 @@
   body.layout-phone .brand-name, body.layout-phone .brand-version, body.layout-phone #navHistoryGroup,
   body.layout-phone #statusText, body.layout-phone #btnUndo, body.layout-phone #btnRedo,
   body.layout-phone #btnExport, body.layout-phone #btnAssistant, body.layout-phone .toolbar-spacer,
-  body.layout-phone .toolbar-right .toolbar-group{display:none !important;}
+  body.layout-phone .toolbar-right .toolbar-group, body.layout-phone #btnHelp{display:none !important;}
   body.layout-phone #phoneTitle{display:flex; flex:1 1 auto; min-width:0; flex-direction:column; line-height:1.2;}
   body.layout-phone #phoneTitle b{font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone #phoneTitle span{font-size:11.5px; color:var(--text-tertiary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -5908,7 +5944,7 @@
     <div id="phoneTitle"><b></b><span></span></div>
     <div class="toolbar-right">
       <span class="status-text" id="statusText"></span>
-      <div class="toolbar-group">
+      <div class="toolbar-group" id="hdrHistory">
         <button id="btnUndo" class="toolbar-icon-btn" title="Undo (Ctrl+Z)" data-sc-title="Undo ({undo})" disabled></button>
         <button id="btnRedo" class="toolbar-icon-btn" title="Redo (Ctrl+Shift+Z)" data-sc-title="Redo ({redo})" disabled></button>
       </div>
@@ -5929,6 +5965,10 @@
       <!-- Opens the find bar (Ctrl+F), in every layout. -->
       <button type="button" id="btnFindPhone" class="toolbar-icon-btn" aria-label="Find in view" title="Find in view (Ctrl+F)" data-sc-title="Find in view ({findInView})">
         <svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="7" cy="7" r="4.5"/><path d="m10.5 10.5 3 3"/></svg>
+      </button>
+      <!-- "Where is what" overlay (showWhereIsWhat, docs/ui-and-views.md); hidden on the phone tier. -->
+      <button type="button" id="btnHelp" class="toolbar-icon-btn" aria-label="Where is what?" title="Where is what? (?)" aria-haspopup="dialog">
+        <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="6.25"/><path d="M6.1 6.3a2 2 0 0 1 3.85.65c0 1.3-1.95 1.55-1.95 2.75"/><path d="M8 11.7h.01"/></svg>
       </button>
       <button id="btnSettings" class="toolbar-icon-btn" title="Settings">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
@@ -6616,6 +6656,14 @@
       </div>
 
       <div id="copyToast" class="hidden"></div>
+
+      <!-- "Where is what" overlay + its first-start hint — built by showWhereIsWhat()/maybeShowWhereHint(). -->
+      <div id="whereIsWhat" class="hidden" role="dialog" aria-label="Where is what" tabindex="-1"></div>
+      <div id="whereHint" class="hidden" role="status">
+        <span class="wh-text">New here? See where everything is.</span>
+        <button type="button" id="whereHintShow" class="btn-mini-outline">Show me</button>
+        <button type="button" id="whereHintDismiss" class="btn-mini-outline">Dismiss</button>
+      </div>
 
       <div id="detailResizer" title="Drag to resize"></div>
       <div id="detailPanel">
@@ -13934,6 +13982,7 @@ async function addFile(name, text, onProgress, formatIdOverride, existingNode) {
   // race) — same guard loadOneFileIntoTree's own finally block has for the
   // identical situation on its own load path.
   if (state.nodes[node.id] === node) flushLoadRender(node.id);
+  maybeShowWhereHint();
   return node;
 }
 
@@ -36651,6 +36700,7 @@ async function canParseBlobInWorker(file, formatId, encoding) {
 function finishLoadProgress(node) {
   delete node.loadFraction;
   if (state.nodes[node.id] === node) invalidateCachesForRoots([node.id]);
+  maybeShowWhereHint(); // first-start hint after the first log, see "Where is what"
 }
 
 // Finish phase after readParseFileNode succeeded, for a node that is really in
@@ -47512,6 +47562,7 @@ const FIXED_SHORTCUTS = [
   { label: "Drag a filter onto another node to move it there", display: null },
   { label: "Double-click a filter — edit it",         display: null },
   { label: "Drag the divider beside the tree/detail panel, or between Context and Filtered in Stacked view, to resize", display: null },
+  { label: "Where is what overlay (labels every region of the window; not inside a text field)", display: ["?", "F1"] },
   { label: "Click a row — select it",                 display: null },
   { label: "Multi-select rows",                       display: ["Ctrl", "click"] },
   { label: "Move selection up/down",                  display: ["↑", "↓"] },
@@ -50757,6 +50808,269 @@ document.addEventListener("dblclick", ev => {
   ev.stopPropagation();
   ev.preventDefault();
 }, true);
+
+/* ===================== "Where is what" overlay ===================== */
+/* Dims the window and labels every main region with a numbered pill and a
+   leader line to the region's outline (docs/ui-and-views.md -> "Where is what
+   overlay"). WHERE_IS_WHAT is the one table: `sel` must match at most one
+   element; regions that are absent or hidden at show time are skipped; of
+   several entries sharing a `group` only the first visible one is drawn (the
+   active view's toolbar / rows area). `side` is where the callout prefers to
+   sit relative to the region ("in" = inside it, for big regions). */
+const WHERE_IS_WHAT = [
+  { sel: "#sidebarScroll",   label: "Files & filters tree",         side: "in" },
+  { sel: "#sidebarToolbar",  label: "Actions on the selected node", side: "bottom" },
+  { sel: "#btnOpen",         label: "Open logs",                    side: "top" },
+  { sel: "#btnSave",         label: "Save session",                 side: "top" },
+  { sel: "#timelineMinimap", label: "Timeline minimap",             side: "top", note: "Click to jump, drag to select a time window" },
+  { sel: "#fhTabs",          label: "Views",                        side: "bottom" },
+  { sel: "#vbLevel",         label: "Level filter",                 side: "bottom" },
+  { sel: "#vbAddFilter",     label: "Filter from selected row",     side: "bottom" },
+  { sel: "#vbCreate",        label: "New filter",                   side: "bottom" },
+  { sel: "#filteredToolbar", label: "Display options", group: "toolbar", side: "inr" },
+  { sel: "#contextToolbar",  label: "Display options", group: "toolbar", side: "inr" },
+  { sel: "#tableToolbar",    label: "Table options",   group: "toolbar", side: "inr" },
+  { sel: "#plotToolbar",     label: "Plot options",    group: "toolbar", side: "inr" },
+  { sel: "#tableBody",       label: "Log entries",     group: "rows", side: "in" },
+  { sel: "#highlightBody",   label: "Log entries",     group: "rows", side: "in" },
+  { sel: "#extractScroll",   label: "Extracted values", group: "rows", side: "in" },
+  { sel: "#plotBody",        label: "Plot",            group: "rows", side: "in" },
+  { sel: "#patternsScroll",  label: "Patterns",        group: "rows", side: "in" },
+  { sel: "#detailPanel",     label: "Entry detail panel", side: "in", note: "Detail, Why, Stats, Facets, Patterns" },
+  { sel: "#hdrHistory",      label: "Undo / redo",     side: "bottom" },
+  { sel: "#btnExport",       label: "Export / Share",  side: "bottom" },
+  { sel: "#btnFindPhone",    label: "Find in view",    side: "bottom" },
+  { sel: "#btnSettings",     label: "Settings",        side: "bottom" },
+];
+const WHERE_SEEN_KEY = "philogg-where-is-what-seen";
+let whereOpener = null;
+let whereHintShownThisPage = false;
+
+// Pure placement: items = [{ rect: {left, top, right, bottom}, w, h, side }] in
+// priority order, bounds = {w, h}, obstacles = [{x, y, w, h}] already taken.
+// Each callout tries its preferred side, then the others; on a side it slides
+// along the region edge and then steps away from it until a spot is inside the
+// window and clear (4px margin) of every placed callout. Deterministic; the
+// last resort is the clamped preferred spot. Returns [{x, y, w, h}].
+function placeWhereCallouts(items, bounds, obstacles) {
+  const M = 4, GAP = 6;
+  const placed = (obstacles || []).map(o => ({ x: o.x, y: o.y, w: o.w, h: o.h }));
+  const out = [];
+  const clash = b => placed.some(p => b.x < p.x + p.w + M && p.x < b.x + b.w + M && b.y < p.y + p.h + M && p.y < b.y + b.h + M);
+  const inside = b => b.x >= M && b.y >= M && b.x + b.w <= bounds.w - M && b.y + b.h <= bounds.h - M;
+  items.forEach(it => {
+    const r = it.rect, w = it.w, h = it.h;
+    const cx = (r.left + r.right) / 2, cy = (r.top + r.bottom) / 2;
+    const sides = [it.side].concat(["bottom", "top", "right", "left", "in"].filter(s => s !== it.side));
+    let box = null;
+    outer: for (let si = 0; si < sides.length; si++) {
+      const side = sides[si];
+      for (let d = 0; d <= 8; d++) {
+        for (let a = 0; a <= 8; a++) {
+          const slide = (a % 2 ? 1 : -1) * Math.ceil(a / 2) * ((side === "left" || side === "right" || side === "inr") ? h + M : w / 2 + M);
+          const step = d * (h + M);
+          let x, y;
+          if (side === "bottom") { x = cx - w / 2 + slide; y = r.bottom + GAP + step; }
+          else if (side === "top") { x = cx - w / 2 + slide; y = r.top - GAP - h - step; }
+          else if (side === "right") { x = r.right + GAP + step; y = cy - h / 2 + slide; }
+          else if (side === "left") { x = r.left - GAP - w - step; y = cy - h / 2 + slide; }
+          else if (side === "inr") { x = r.right - GAP - w - step; y = cy - h / 2 + slide; }
+          else { x = cx - w / 2 + slide; y = cy - h / 2 + (d % 2 ? 1 : -1) * Math.ceil(d / 2) * (h + M); }
+          const b = { x: Math.round(x), y: Math.round(y), w, h };
+          if (inside(b) && !clash(b)) { box = b; break outer; }
+        }
+      }
+    }
+    if (!box) {
+      const x = Math.min(Math.max(M, cx - w / 2), Math.max(M, bounds.w - w - M));
+      const y = Math.min(Math.max(M, r.bottom + GAP), Math.max(M, bounds.h - h - M));
+      box = { x: Math.round(x), y: Math.round(y), w, h };
+    }
+    placed.push(box);
+    out.push(box);
+  });
+  return out;
+}
+
+function whereRegionVisible(e) {
+  for (let n = e; n && n !== document.body; n = n.parentElement) {
+    if (n.classList.contains("hidden")) return false;
+    const cs = getComputedStyle(n);
+    if (cs.display === "none" || cs.visibility === "hidden") return false;
+  }
+  const r = e.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+// The regions to draw now: [{ entry, el, rect }] in table order.
+function whereCurrentRegions() {
+  const seen = new Set();
+  const out = [];
+  WHERE_IS_WHAT.forEach(entry => {
+    if (entry.group && seen.has(entry.group)) return;
+    const e = document.querySelector(entry.sel);
+    if (!e || !whereRegionVisible(e)) return;
+    if (entry.group) seen.add(entry.group);
+    const b = e.getBoundingClientRect();
+    out.push({ entry, el: e, rect: { left: b.left, top: b.top, right: b.right, bottom: b.bottom } });
+  });
+  return out;
+}
+function whereOverlayOpen() { return !!whereIsWhatEl && !whereIsWhatEl.classList.contains("hidden"); }
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  Object.keys(attrs || {}).forEach(k => e.setAttribute(k, attrs[k]));
+  return e;
+}
+function renderWhereIsWhat() {
+  const W = window.innerWidth, H = window.innerHeight;
+  const regions = whereCurrentRegions();
+  whereIsWhatEl.textContent = "";
+  const svg = svgEl("svg", { class: "wiw-svg", width: W, height: H, viewBox: "0 0 " + W + " " + H, "aria-hidden": "true" });
+  const mask = svgEl("mask", { id: "wiwMask" });
+  mask.appendChild(svgEl("rect", { x: 0, y: 0, width: W, height: H, fill: "#fff" }));
+  regions.forEach(g => {
+    const r = g.rect;
+    mask.appendChild(svgEl("rect", { x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, rx: 4, fill: "#000" }));
+  });
+  const defs = svgEl("defs");
+  defs.appendChild(mask);
+  svg.appendChild(defs);
+  svg.appendChild(svgEl("rect", { class: "wiw-dim", x: 0, y: 0, width: W, height: H, mask: "url(#wiwMask)" }));
+  regions.forEach(g => {
+    const r = g.rect;
+    svg.appendChild(svgEl("rect", { class: "wiw-box", x: r.left, y: r.top, width: r.right - r.left, height: r.bottom - r.top, rx: 4 }));
+  });
+  whereIsWhatEl.appendChild(svg);
+  // Callout elements first (to measure), then placement, then lines.
+  const layer = document.createElement("div");
+  layer.setAttribute("aria-hidden", "true");
+  const pills = regions.map((g, i) => {
+    const p = document.createElement("div");
+    p.className = "wiw-callout";
+    p.innerHTML = '<span class="wiw-num"></span><span class="wiw-txt"></span>';
+    p.querySelector(".wiw-num").textContent = String(i + 1);
+    const txt = p.querySelector(".wiw-txt");
+    txt.textContent = g.entry.label;
+    if (g.entry.note) {
+      const n = document.createElement("span");
+      n.className = "wiw-note";
+      n.textContent = g.entry.note;
+      txt.appendChild(n);
+    }
+    layer.appendChild(p);
+    return p;
+  });
+  const foot = document.createElement("div");
+  foot.className = "wiw-callout wiw-foot";
+  foot.textContent = "Esc or click anywhere to close";
+  layer.appendChild(foot);
+  whereIsWhatEl.appendChild(layer);
+  // offsetWidth is 0 without layout (jsdom): estimate from the text then.
+  const sizeOf = (p, g) => ({
+    w: p.offsetWidth || Math.min(260, 34 + 6.8 * Math.max(g ? g.entry.label.length : 30, g && g.entry.note ? g.entry.note.length * 0.8 : 0)),
+    h: p.offsetHeight || (g && g.entry.note ? 36 : 24),
+  });
+  const fs = sizeOf(foot, null);
+  const footBox = { x: Math.round((W - fs.w) / 2), y: H - fs.h - 8, w: fs.w, h: fs.h };
+  foot.style.left = footBox.x + "px"; foot.style.top = footBox.y + "px";
+  const items = regions.map((g, i) => {
+    const s = sizeOf(pills[i], g);
+    return { rect: g.rect, w: s.w, h: s.h, side: g.entry.side };
+  });
+  const boxes = placeWhereCallouts(items, { w: W, h: H }, [footBox]);
+  boxes.forEach((b, i) => { pills[i].style.left = b.x + "px"; pills[i].style.top = b.y + "px"; });
+  // Leader lines: callout edge point toward the region -> nearest point on its box.
+  regions.forEach((g, i) => {
+    const b = boxes[i], r = g.rect;
+    const bcx = b.x + b.w / 2, bcy = b.y + b.h / 2;
+    const tx = Math.min(Math.max(bcx, r.left), r.right), ty = Math.min(Math.max(bcy, r.top), r.bottom);
+    const overlapsX = b.x < r.right && b.x + b.w > r.left, overlapsY = b.y < r.bottom && b.y + b.h > r.top;
+    if (overlapsX && overlapsY) return; // callout sits inside the region: no line
+    const sx = Math.min(Math.max(tx, b.x), b.x + b.w), sy = Math.min(Math.max(ty, b.y), b.y + b.h);
+    svg.appendChild(svgEl("line", { class: "wiw-line", x1: sx, y1: sy, x2: tx, y2: ty }));
+    svg.appendChild(svgEl("circle", { class: "wiw-dot", cx: tx, cy: ty, r: 2.5 }));
+  });
+  // Screen readers get the plain list of region names; the pills are decoration.
+  const ul = document.createElement("ul");
+  ul.className = "wiw-sr";
+  regions.forEach(g => {
+    const li = document.createElement("li");
+    li.textContent = g.entry.label + (g.entry.note ? ": " + g.entry.note : "");
+    ul.appendChild(li);
+  });
+  whereIsWhatEl.appendChild(ul);
+  whereIsWhatEl.dataset.regions = String(regions.length);
+}
+function markWhereSeen() {
+  try { localStorage.setItem(WHERE_SEEN_KEY, "1"); } catch (e) { /* storage blocked: the in-memory flag still limits it to once per page */ }
+  whereHintShownThisPage = true;
+  whereHint.classList.add("hidden");
+}
+function showWhereIsWhat() {
+  if (document.body.classList.contains("layout-phone")) return;
+  if (whereOverlayOpen()) return;
+  whereOpener = document.activeElement && document.activeElement !== document.body ? document.activeElement : btnHelp;
+  markWhereSeen();
+  whereIsWhatEl.classList.remove("hidden");
+  renderWhereIsWhat();
+  btnHelp.setAttribute("aria-expanded", "true");
+  whereIsWhatEl.focus({ preventScroll: true });
+}
+function hideWhereIsWhat() {
+  if (!whereOverlayOpen()) return;
+  whereIsWhatEl.classList.add("hidden");
+  whereIsWhatEl.textContent = "";
+  btnHelp.removeAttribute("aria-expanded");
+  const back = whereOpener && document.contains(whereOpener) ? whereOpener : btnHelp;
+  whereOpener = null;
+  if (back && typeof back.focus === "function") back.focus({ preventScroll: true });
+}
+function toggleWhereIsWhat() { if (whereOverlayOpen()) hideWhereIsWhat(); else showWhereIsWhat(); }
+
+const whereIsWhatEl = el("#whereIsWhat");
+const whereHint = el("#whereHint");
+const btnHelp = el("#btnHelp");
+btnHelp.addEventListener("click", ev => { ev.stopPropagation(); toggleWhereIsWhat(); });
+whereIsWhatEl.addEventListener("click", ev => { ev.stopPropagation(); hideWhereIsWhat(); });
+window.addEventListener("resize", () => {
+  if (!whereOverlayOpen()) return;
+  if (document.body.classList.contains("layout-phone")) hideWhereIsWhat(); else renderWhereIsWhat();
+});
+// Capture phase: Esc closes only the overlay (never also exits focus mode etc.);
+// ? and F1 open it unless a text field has focus, a modifier is held or another
+// popup/dialog is open.
+document.addEventListener("keydown", ev => {
+  if (whereOverlayOpen()) {
+    if (ev.key === "Escape" || ev.key === "?" || ev.key === "F1") {
+      ev.preventDefault(); ev.stopImmediatePropagation(); hideWhereIsWhat();
+    }
+    return;
+  }
+  if (ev.ctrlKey || ev.altKey || ev.metaKey) return;
+  if (ev.key !== "?" && ev.key !== "F1") return;
+  if (document.body.classList.contains("layout-phone")) return;
+  if (shortcutRecordingId !== null) return;
+  const a = document.activeElement;
+  if (a && (a.tagName === "INPUT" || a.tagName === "TEXTAREA" || a.tagName === "SELECT" || a.isContentEditable)) return;
+  if (anyEscapeOverlayOpen()) return;
+  ev.preventDefault(); ev.stopImmediatePropagation();
+  showWhereIsWhat();
+}, true);
+
+// First-start hint: once per browser, after the first log has loaded (called
+// from addFile). Not for ?session= deep links (the tour banner guides there),
+// not on the phone; shown at most once per page load even without storage.
+function maybeShowWhereHint() {
+  if (whereHintShownThisPage || document.body.classList.contains("layout-phone")) return;
+  try { if (localStorage.getItem(WHERE_SEEN_KEY)) return; } catch (e) { /* unreadable: fall through, the page flag limits it */ }
+  if (new URLSearchParams(location.search).has("session")) return;
+  whereHintShownThisPage = true;
+  whereHint.classList.remove("hidden");
+}
+el("#whereHintShow").addEventListener("click", () => { markWhereSeen(); showWhereIsWhat(); });
+el("#whereHintDismiss").addEventListener("click", markWhereSeen);
 
 /* ===================== Keyboard shortcuts ===================== */
 

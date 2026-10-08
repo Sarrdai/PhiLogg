@@ -163,7 +163,8 @@ if (groupSelected()) {
       assert(/<footer[\s\S]*<a href="impressum\.html">Impressum<\/a>/.test(html), name + ": footer links Impressum");
     assert(/<nav[^>]*>[\s\S]*href="cheatsheet\.html"/.test(siteHtml) && /<footer[\s\S]*href="cheatsheet\.html"/.test(siteHtml), "index links the cheatsheet in nav and footer");
     assert(/href="\.\/"/.test(cheat) && /href="\.\/"/.test(imp), "subpages link back home");
-    assert(cheat.includes('id="where-is-what"') && cheat.includes("<!-- where-is-what screenshot goes here -->") && /@media print/.test(cheat), "cheatsheet: where-is-what placeholder and print block");
+    assert(cheat.includes('id="where-is-what"') && /@media print/.test(cheat), "cheatsheet: where-is-what section and print block");
+    assert(/<figure[^>]*>\s*<img src="img\/11-where-is-what\.png" width="1440" height="900"[^>]* alt="[^"]{20,}"/.test(cheat) && cheat.includes("Press <kbd>?</kbd> in the app to get this overlay.") && exists("img/11-where-is-what.png"), "cheatsheet: where-is-what figure (image built into img/, alt text, caption)");
     for (const k of ["Ctrl</kbd>+<kbd>F", "F2", "Esc", "Ctrl</kbd>+<kbd>E"]) assert(cheat.includes(k), "cheatsheet lists shortcut " + k);
     const tasks = siteHtml.slice(siteHtml.indexOf('id="tasks"'), siteHtml.indexOf('id="run"'));
     const tl = [...tasks.matchAll(/class="task[^"]*" href="([^"]+)"/g)].map(m => m[1].replace(/&amp;/g, "&"));

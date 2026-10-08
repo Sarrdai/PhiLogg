@@ -55,6 +55,9 @@ async function main() {
     const page = await browser.newPage(Object.assign({ viewport: { width, height } },
       opt.touch ? { hasTouch: true, isMobile: true, deviceScaleFactor: 3 } : {}));
     page.on("pageerror", e => errors.push(e.message));
+    // The first-start "Where is what" hint would sit in every picture: mark it
+    // seen, unless the shot is about the hint (SHOW_WHERE_HINT=1).
+    if (!process.env.SHOW_WHERE_HINT) await page.addInitScript(() => { try { localStorage.setItem("philogg-where-is-what-seen", "1"); } catch (e) { /* no storage */ } });
     await page.goto(opt.url || "file://" + path.resolve(__dirname, "..", "..", "philogg.html"));
     await page.waitForFunction(() => state.logFormats.length > 0);
     for (const f of formats) {
