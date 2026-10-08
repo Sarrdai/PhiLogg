@@ -15408,6 +15408,11 @@ async function mergeFiles(fileIds) {
 
 /* ===================== Link filter: nearest-match pairing ===================== */
 
+// A link side must carry a condition to bake (a combiner with nothing baked has none).
+function linkSideBakeable(n) {
+  return (n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n);
+}
+
 // Creates a link filter: for every entry in the reference filter, finds the
 // Nth entry of the target filter before/after it in time and pairs them up
 // (references with no match are dropped). Self-contained like AND/OR — a
@@ -15431,9 +15436,7 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   if (!ref || !target) return null;
   // Unlike AND/OR, a `link` side IS allowed here (that's how a multi-hop
   // tuple is chained) — only a combiner with nothing baked to copy is not.
-  const bakeable = n =>
-    (n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n);
-  if (!bakeable(ref) || !bakeable(target)) return null;
+  if (!linkSideBakeable(ref) || !linkSideBakeable(target)) return null;
   const arrow = direction === "before" ? " ←" : " →";
   const nSuffix = n > 1 ? n : "";
   return createLinkNodeFromBaked(getRootFileId(refId), bakeNodeCondition(ref), bakeNodeCondition(target),
@@ -19466,21 +19469,32 @@ if (typeof ResizeObserver === "function") {
 function createFacetFilter(column, value, inverted) {
   const parentId = state.activeId;
   if (!parentId || !state.nodes[parentId]) return;
-  let node;
-  if (column.key === "level") {
-    node = createFilterNode(parentId, "level", [value], inverted);
-  } else if (column.key === "__source") {
+  finishAnalysisFilter(createFacetFilterNode(parentId, column, value, inverted), fhActiveTab === "patterns" ? "patterns" : null);
+}
+// The filter condition createFacetFilter builds for one facet value, as plain
+// data: { filterType, value, inverted, [ignoredColumns, caseSensitive, columns,
+// isRegex], name } — the shape evaluateFilterCondition reads, so the LLM
+// tools' preview can evaluate it without a node. null: no such Source.
+function facetFilterSpec(parentId, column, value, inverted) {
+  if (column.key === "level") return { filterType: "level", value: [value], inverted: !!inverted };
+  if (column.key === "__source") {
     const root = state.nodes[getRootFileId(parentId)];
     const src = root && root.sources && root.sources.find(s => s.name === value);
-    if (!src) return;
+    if (!src) return null;
     const ids = getEntries(parentId).filter(e => e.sourceId === src.id).map(e => e.id);
-    node = createFilterNode(parentId, "idset", ids, inverted);
-    if (node) node.name = "Source = " + value;
-  } else {
-    node = createFilterNode(parentId, "text", "^" + escapeRegExp(value) + "$", inverted, [], true, [column.key], true, false);
-    if (node) node.name = column.label + " = " + (value || "(empty)");
+    return { filterType: "idset", value: ids, inverted: !!inverted, name: "Source = " + value };
   }
-  finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
+  return { filterType: "text", value: "^" + escapeRegExp(value) + "$", inverted: !!inverted, ignoredColumns: [], caseSensitive: true, columns: [column.key], isRegex: true, name: column.label + " = " + (value || "(empty)") };
+}
+function createFilterNodeFromSpec(parentId, spec) {
+  const node = createFilterNode(parentId, spec.filterType, spec.value, !!spec.inverted, spec.ignoredColumns || null, !!spec.caseSensitive, spec.columns || null, !!spec.isRegex, !!spec.wholeWord);
+  if (node && spec.name) node.name = spec.name;
+  return node;
+}
+function createFacetFilterNode(parentId, column, value, inverted) {
+  if (!parentId || !state.nodes[parentId]) return null;
+  const spec = facetFilterSpec(parentId, column, value, inverted);
+  return spec ? createFilterNodeFromSpec(parentId, spec) : null;
 }
 
 // Selects a bottom-panel tab ("detail" | "stats" | "facets" | "why"; desktop/tablet — the phone
@@ -53727,6 +53741,7 @@ function llmFitBudget(result, budget = LLM_TOOL_BUDGET_CHARS) {
 }
 
 function llmNode(id, what) {
+  if (llmIsPatternId(id)) return { error: "\"" + id + "\" is a pattern id, not a node. Build a node from it with create_filter (patternId)." };
   const node = state.nodes[String(id || "")];
   if (!node) return { error: "Unknown " + (what || "node") + " id \"" + id + "\". Call get_overview for the current ids." };
   return { node };
@@ -53820,6 +53835,175 @@ function messagePatternValues(message) {
   return out;
 }
 
+/* ---------- Analysis engines ----------
+   Pure functions over entry arrays (sorted by ts, from getEntries): plain
+   data in, plain data out — no node creation, no DOM, no formatting, no
+   budgeting. The LLM tools below wrap them (resolve ids, format times,
+   budget the result), and the Analyze UI calls them directly. */
+
+// Groups `entries` by message pattern (normalizeMessagePattern). Returns an
+// array sorted by count (most frequent first, ties in first-seen order):
+//   { key, count, floatMask, levels: {bucket: n}, first, last (ts), example (entry),
+//     entries? (only with opts.keepEntries) }
+// `key` is the pattern key (patternDisplayText(key) is its readable form,
+// patternFilterValue(key, floatMask, true) its filter pattern).
+function analysisPatternCounts(entries, opts) {
+  const keep = !!(opts && opts.keepEntries);
+  const groups = new Map();
+  const bucketOf = makeLevelBucketer();
+  for (const e of entries) {
+    const key = normalizeMessagePattern(e.message);
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, count: 0, floatMask: 0, levels: {}, first: e.ts, last: e.ts, example: e };
+      if (keep) g.entries = [];
+      groups.set(key, g);
+    }
+    g.count++;
+    g.floatMask |= patternFloatMask;
+    const lvl = bucketOf(e.level, e.formatId);
+    g.levels[lvl] = (g.levels[lvl] || 0) + 1;
+    if (e.ts < g.first) g.first = e.ts;
+    if (e.ts > g.last) g.last = e.ts;
+    if (keep) g.entries.push(e);
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}
+
+// Which message patterns stand before/after the reference entries more often
+// than elsewhere in the file. `refEntries`: the references (a link's
+// unmatched list, a node's entries); `fileEntries`: the whole file, sorted by
+// ts. opts: { direction: "before" | "after" (default "before"), windowMs
+// (default 5000), sameThread (default true), minLift (default 2) }.
+// Every reference gets its own window — before: [ts-w, ts), after: (ts, ts+w]
+// — and the references themselves never count as neighbours. With sameThread
+// both the windows and the base rate only count entries on the reference's
+// thread. Returns
+//   { direction, windowMs, sameThread, minLift, references,
+//     rows: [{ patternKey, floatMask, covered, coverage: "n/refs", inWindows,
+//              lift, medianDistMs, maxLevel, example (entry), significant }] }
+// covered = references with the pattern in their window; inWindows = its
+// occurrences over all windows; lift = rate in the windows ÷ rate in the rest
+// of the file (rest count smoothed by +0.5 so a pattern that only ever occurs
+// in the windows gets a large but finite lift); medianDistMs = median |Δt| to
+// the reference; significant = lift ≥ minLift. rows (all patterns seen in a
+// window) are sorted by covered, then lift; the caller filters on `significant`.
+function analysisNeighbors(refEntries, fileEntries, opts) {
+  opts = opts || {};
+  const direction = opts.direction === "after" ? "after" : "before";
+  const windowMs = Math.max(1, +opts.windowMs || 5000);
+  const sameThread = opts.sameThread !== false;
+  const minLift = opts.minLift == null || !Number.isFinite(+opts.minLift) ? 2 : +opts.minLift;
+  const refs = refEntries.filter(r => Number.isFinite(r.ts));
+  const out = { direction, windowMs, sameThread, minLift, references: refs.length, rows: [] };
+  if (!refs.length || !fileEntries.length) return out;
+  const refIds = new Set();
+  for (const r of refs) for (const x of getTupleEntries(r)) refIds.add(x.id);
+  const groupOf = e => (sameThread ? e.thread || "" : "");
+  const refsPerGroup = new Map();
+  for (const r of refs) refsPerGroup.set(groupOf(r), (refsPerGroup.get(groupOf(r)) || 0) + 1);
+
+  // first index with ts >= t (strict: false) / ts > t (strict: true)
+  const bound = (t, strict) => {
+    let lo = 0, hi = fileEntries.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (strict ? fileEntries[mid].ts <= t : fileEntries[mid].ts < t) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  };
+  const bucketOf = makeLevelBucketer();
+  const rows = new Map();
+  refs.forEach((ref, refIdx) => {
+    const from = direction === "before" ? bound(ref.ts - windowMs, false) : bound(ref.ts, true);
+    const to = direction === "before" ? bound(ref.ts, false) : bound(ref.ts + windowMs, true);
+    const group = groupOf(ref);
+    for (let i = from; i < to; i++) {
+      const e = fileEntries[i];
+      if (refIds.has(e.id)) continue;
+      if (sameThread && (e.thread || "") !== group) continue;
+      const key = normalizeMessagePattern(e.message);
+      let row = rows.get(key);
+      if (!row) {
+        row = { patternKey: key, floatMask: 0, covered: 0, lastRef: -1, inWindows: 0, dists: [], rank: Infinity, maxLevel: "", example: e, inByGroup: new Map(), baseByGroup: new Map() };
+        rows.set(key, row);
+      }
+      row.floatMask |= patternFloatMask;
+      if (row.lastRef !== refIdx) { row.lastRef = refIdx; row.covered++; }
+      row.inWindows++;
+      row.dists.push(Math.abs(e.ts - ref.ts));
+      row.inByGroup.set(group, (row.inByGroup.get(group) || 0) + 1);
+      const b = bucketOf(e.level, e.formatId);
+      const rank = levelSortRank(b, e.formatId);
+      if (rank < row.rank) { row.rank = rank; row.maxLevel = b; }
+    }
+  });
+  if (!rows.size) return out;
+
+  // Base rate: how often each pattern occurs per reference group over the file.
+  for (const e of fileEntries) {
+    if (refIds.has(e.id)) continue;
+    const group = groupOf(e);
+    if (!refsPerGroup.has(group)) continue;
+    const row = rows.get(normalizeMessagePattern(e.message));
+    if (row) row.baseByGroup.set(group, (row.baseByGroup.get(group) || 0) + 1);
+  }
+  const span = Math.max(fileEntries[fileEntries.length - 1].ts - fileEntries[0].ts, windowMs);
+  for (const row of rows.values()) {
+    let expected = 0;
+    for (const [group, nRefs] of refsPerGroup) {
+      const windowTime = nRefs * windowMs;
+      const restCount = Math.max((row.baseByGroup.get(group) || 0) - (row.inByGroup.get(group) || 0), 0);
+      expected += windowTime * (restCount + 0.5) / Math.max(span - windowTime, windowMs);
+    }
+    const lift = row.inWindows / expected;
+    row.dists.sort((a, b) => a - b);
+    out.rows.push({
+      patternKey: row.patternKey, floatMask: row.floatMask,
+      covered: row.covered, coverage: row.covered + "/" + refs.length,
+      inWindows: row.inWindows, lift, medianDistMs: row.dists[Math.floor(row.dists.length / 2)],
+      maxLevel: row.maxLevel, example: row.example, significant: lift >= minLift,
+    });
+  }
+  out.rows.sort((a, b) => b.covered - a.covered || b.lift - a.lift);
+  return out;
+}
+
+/* ---------- Pattern ids (docs/concept-llm-analysis-tools.md → 1.1) ----------
+   find_message_types gives every type it returns an id "p<n>". Per app run,
+   in memory only (like llmCreatedNodeIds): a virtual node = the entries of
+   one file whose pattern key matches. */
+const llmPatternIds = new Map();  // fileId + "\0" + key -> "p<n>"
+const llmPatternInfo = new Map(); // "p<n>" -> { fileId, key, floatMask }
+function llmPatternIdFor(fileId, key, floatMask) {
+  const k = fileId + "\0" + key;
+  let id = llmPatternIds.get(k);
+  if (!id) {
+    id = "p" + (llmPatternIds.size + 1);
+    llmPatternIds.set(k, id);
+    llmPatternInfo.set(id, { fileId, key, floatMask: 0 });
+  }
+  llmPatternInfo.get(id).floatMask |= floatMask;
+  return id;
+}
+function llmIsPatternId(id) { return /^p\d+$/.test(String(id == null ? "" : id)); }
+function llmUnknownPatternError(id) {
+  return "Unknown pattern id \"" + id + "\". Call find_message_types again for the current pattern ids.";
+}
+// The one resolver of the reading tools: a node id or a pattern id →
+// { entries, node (null for a pattern), fileId, label } or { error }.
+function llmResolveEntries(id) {
+  if (llmIsPatternId(id)) {
+    const info = llmPatternInfo.get(String(id));
+    if (!info || !state.nodes[info.fileId]) return { error: llmUnknownPatternError(id) };
+    const entries = getEntries(info.fileId).filter(e => normalizeMessagePattern(e.message) === info.key);
+    return { entries, node: null, fileId: info.fileId, label: patternDisplayText(info.key) };
+  }
+  const { node, error } = llmNode(id);
+  if (error) return { error };
+  return { entries: getEntries(node.id), node, fileId: getRootFileId(node.id), label: nodeDisplayName(node) };
+}
+
 function llmToolGetOverview() {
   const files = state.rootIds.map(id => state.nodes[id]).filter(n => n && n.type === "file" && !n.mergeSourceHidden);
   const tree = [];
@@ -53850,86 +54034,123 @@ function llmToolGetOverview() {
 }
 
 function llmToolFindMessageTypes(args) {
-  const nodeId = args.nodeId || llmDefaultFileId();
-  if (!nodeId) return { error: "No log file is loaded." };
-  const { node, error } = llmNode(nodeId);
-  if (error) return { error };
+  let target;
+  if (args.nodeId) target = llmResolveEntries(args.nodeId);
+  else {
+    const fileId = llmDefaultFileId();
+    if (!fileId) return { error: "No log file is loaded." };
+    target = llmResolveEntries(fileId);
+  }
+  if (target.error) return { error: target.error };
   const limit = Math.max(1, Math.min(40, +args.limit || 15));
   const query = typeof args.query === "string" ? args.query.trim().toLowerCase() : "";
-  const groups = new Map();
-  const entries = getEntries(node.id);
-  const bucketOf = makeLevelBucketer();
-  for (const e of entries) {
-    const key = normalizeMessagePattern(e.message);
-    let g = groups.get(key);
-    if (!g) {
-      g = { key, count: 0, floatMask: 0, levels: {}, first: e.ts, last: e.ts, dists: null, sample: e };
-      groups.set(key, g);
-    }
-    g.count++;
-    g.floatMask |= patternFloatMask;
-    const lvl = bucketOf(e.level, e.formatId);
-    g.levels[lvl] = (g.levels[lvl] || 0) + 1;
-    if (e.ts < g.first) g.first = e.ts;
-    if (e.ts > g.last) g.last = e.ts;
-    g.pending = g.pending || [];
-    g.pending.push(e);
-  }
-  let list = [...groups.values()];
+  const entries = target.entries;
+  let list = analysisPatternCounts(entries, { keepEntries: true });
   if (query) list = list.filter(g => patternDisplayText(g.key).toLowerCase().includes(query));
-  list.sort((a, b) => b.count - a.count);
   const total = list.length;
   list = list.slice(0, limit);
   // Value distributions only for the groups actually returned.
   const types = list.map(g => {
     const dists = [];
-    for (const e of g.pending) {
+    for (const e of g.entries) {
       messagePatternValues(e.message).forEach((v, i) => {
         if (!dists[i]) dists[i] = { values: new Map() };
         llmDistStep(dists[i], v);
       });
     }
     return {
+      patternId: llmPatternIdFor(target.fileId, g.key, g.floatMask),
       count: g.count,
       levels: g.levels,
       type: patternDisplayText(g.key),
       pattern: patternFilterValue(g.key, g.floatMask, true),
       placeholders: dists.map(llmDistResult),
-      first: llmTime(node.id, g.first),
-      last: llmTime(node.id, g.last),
-      example: llmEntrySummary(node.id, g.sample),
+      first: llmTime(target.fileId, g.first),
+      last: llmTime(target.fileId, g.last),
+      example: llmEntrySummary(target.fileId, g.example),
     };
   });
-  return { nodeId: node.id, entries: entries.length, typesFound: total, types };
+  return { nodeId: target.node ? target.node.id : String(args.nodeId), entries: entries.length, typesFound: total, types };
 }
 
+// The first few rows of an extraction pattern over `entries`, without a node
+// (create_filter preview): the columns and up to 5 value rows.
+function llmExtractPreview(pattern, entries) {
+  const spec = compileExtractPattern(pattern);
+  if (!spec) return null;
+  return {
+    columns: spec.columns.map((c, i) => ({ index: i + 1, name: c.name, type: c.type })),
+    sampleValues: entries.slice(0, 5).map(e => {
+      const m = spec.regex.exec(e.message);
+      return spec.columns.map((c, i) => (m ? normalizeExtractedNumber(m[i + 1] ?? "", c) : ""));
+    }),
+  };
+}
+
+// create_filter: a text/regex filter, a pattern id's filter, or a column
+// filter (the Facets panel's "Thread = axis-2"). With preview: true nothing
+// is created — the condition is evaluated as plain data over the parent's
+// entries (evaluateFilterCondition, the same evaluator a node uses), so the
+// tree, the active node and the undo stack stay untouched.
 function llmToolCreateFilter(args) {
-  const parentId = args.parentId || llmDefaultFileId();
+  const patternRef = args.patternId != null && String(args.patternId).trim() ? String(args.patternId).trim() : null;
+  const info = patternRef ? llmPatternInfo.get(patternRef) : null;
+  if (patternRef && (!info || !state.nodes[info.fileId])) return { error: llmUnknownPatternError(patternRef) };
+  const parentId = args.parentId || (info ? info.fileId : llmDefaultFileId());
   if (!parentId) return { error: "No log file is loaded." };
   const { node: parent, error } = llmNode(parentId, "parent");
   if (error) return { error };
-  const pattern = typeof args.pattern === "string" ? args.pattern : "";
-  if (!pattern.trim()) return { error: "pattern is empty." };
-  const mode = args.mode === "regex" ? "regex" : "text";
+  const preview = args.preview === true;
   const invert = !!args.invert;
-  if (mode === "regex") {
-    try { new RegExp(pattern); } catch (e) { return { error: "Invalid regex: " + e.message }; }
-  } else if (isExtractPattern(pattern) && !compileExtractPattern(pattern)) {
-    return { error: "Invalid extraction pattern. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*]; value conditions and number formats (@en = 1,234.5, @de = 1.234,5) only on int/float, e.g. [*:float>85], [*:float@de]." };
+  let spec, pattern = "", extraction = false;
+  const columnArg = typeof args.column === "string" ? args.column.trim() : "";
+  if (columnArg) {
+    if (patternRef) return { error: "Give either column + pattern (the column's value) or patternId, not both." };
+    if (typeof args.pattern !== "string") return { error: "pattern is the value the column must have." };
+    const cols = facetColumnsFor(parent.id);
+    const col = cols.find(c => c.key.toLowerCase() === columnArg.toLowerCase() || c.label.toLowerCase() === columnArg.toLowerCase());
+    if (!col) return { error: "Unknown column \"" + columnArg + "\". Columns: " + cols.map(c => c.key).join(", ") + "." };
+    let value = args.pattern;
+    if (col.key === "level") {
+      const bucketOf = makeLevelBucketer();
+      const seen = new Set(getEntries(parent.id).map(e => bucketOf(e.level, e.formatId)));
+      value = [...seen].find(v => v.toLowerCase() === value.trim().toLowerCase()) || value.trim();
+    }
+    spec = facetFilterSpec(parent.id, col, value, invert);
+    if (!spec) return { error: "No such value \"" + value + "\" in column " + col.key + "." };
+  } else {
+    pattern = info ? patternFilterValue(info.key, info.floatMask, true) : typeof args.pattern === "string" ? args.pattern : "";
+    if (!pattern.trim()) return { error: "pattern is empty." };
+    const mode = !info && args.mode === "regex" ? "regex" : "text";
+    if (mode === "regex") {
+      try { new RegExp(pattern); } catch (e) { return { error: "Invalid regex: " + e.message }; }
+    } else if (isExtractPattern(pattern) && !compileExtractPattern(pattern)) {
+      return { error: "Invalid extraction pattern. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*]; value conditions and number formats (@en = 1,234.5, @de = 1.234,5) only on int/float, e.g. [*:float>85], [*:float@de]." };
+    }
+    extraction = mode === "text" && isExtractPattern(pattern);
+    if (extraction && invert) return { error: "An extraction pattern can't be inverted — drop invert or the placeholders." };
+    spec = { filterType: "text", value: pattern, inverted: invert, isRegex: mode === "regex" };
   }
-  const extraction = mode === "text" && isExtractPattern(pattern);
-  if (extraction && invert) return { error: "An extraction pattern can't be inverted — drop invert or the placeholders." };
-  const node = createFilterNode(parent.id, "text", pattern, invert, null, false, null, mode === "regex", false);
-  if (!node) return { error: "Could not create the filter." };
-  llmNoteCreated(node);
-  const entries = getEntries(node.id);
-  const out = { nodeId: node.id, name: node.name, parentId: parent.id, matches: entries.length, of: getEntries(parent.id).length, tablePlot: nodeIsExtractionView(node) };
+  let node = null, entries;
+  if (preview) entries = evaluateFilterCondition(spec, getEntries(parent.id), getRootFileId(parent.id), null);
+  else {
+    node = createFilterNodeFromSpec(parent.id, spec);
+    if (!node) return { error: "Could not create the filter." };
+    llmNoteCreated(node);
+    entries = getEntries(node.id);
+  }
+  const timeId = node ? node.id : parent.id;
+  const out = preview ? { preview: true } : { nodeId: node.id, name: node.name };
+  out.parentId = parent.id;
+  out.matches = entries.length;
+  out.of = getEntries(parent.id).length;
+  out.tablePlot = node ? nodeIsExtractionView(node) : extraction || nodeIsExtractionView(parent);
   if (extraction) {
-    const ex = llmExtractRows(node);
+    const ex = node ? llmExtractRows(node) : llmExtractPreview(pattern, entries);
     out.columns = ex.columns;
-    out.sampleValues = ex.rows.slice(0, 5).map(r => r.values);
+    out.sampleValues = node ? ex.rows.slice(0, 5).map(r => r.values) : ex.sampleValues;
   }
-  out.examples = entries.slice(0, 4).map(e => llmEntrySummary(node.id, e));
+  out.examples = entries.slice(0, 4).map(e => llmEntrySummary(timeId, e));
   if (!entries.length) out.hint = "No match. Check the exact text with find_message_types (case, spacing) or loosen the pattern.";
   return out;
 }
@@ -53941,7 +54162,8 @@ function llmToolCreateLink(args) {
   if (b.error) return { error: b.error };
   const ref = a.node, target = b.node;
   if (ref.type !== "filter" || target.type !== "filter") return { error: "Both sides of a link must be filter nodes (create_filter first)." };
-  if (getRootFileId(ref.id) !== getRootFileId(target.id)) return { error: "Both sides must belong to the same file." };
+  const fileId = getRootFileId(ref.id);
+  if (fileId !== getRootFileId(target.id)) return { error: "Both sides must belong to the same file." };
   const direction = args.direction === "before" ? "before" : "after";
   let key = null;
   if (typeof args.key === "string" && args.key.trim()) {
@@ -53957,28 +54179,106 @@ function llmToolCreateLink(args) {
     if (!Number.isFinite(ms) || ms < 0) return { error: "maxDtMs/minDtMs must be a non-negative number of milliseconds." };
     dt = { op: args.maxDtMs != null ? "<" : ">", ms };
   }
-  const node = createLinkNode(ref.id, target.id, direction, 1, { orderEnforced: false, exclusive: false, dt, key });
-  if (!node) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
-  llmNoteCreated(node);
-  const pairs = getEntries(node.id);
+  const preview = args.preview === true;
+  let node = null, pairs, unmatched;
+  if (preview) {
+    // No node: the link condition as plain data, evaluated over the file the
+    // way a real link node (a top-level child of the file) would be.
+    if (!linkSideBakeable(ref) || !linkSideBakeable(target)) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
+    const cond = {
+      filterType: "link", value: null, inverted: false,
+      bakedA: bakeNodeCondition(ref), bakedB: bakeNodeCondition(target),
+      linkDirection: direction, linkN: 1, linkOrderEnforced: false, linkExclusive: false,
+    };
+    copyLinkOptions({ linkDt: dt, linkKey: key }, cond);
+    const meta = {};
+    pairs = evaluateFilterCondition(cond, getEntries(fileId), fileId, meta);
+    unmatched = meta.linkUnmatched || [];
+  } else {
+    node = createLinkNode(ref.id, target.id, direction, 1, { orderEnforced: false, exclusive: false, dt, key });
+    if (!node) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
+    llmNoteCreated(node);
+    pairs = getEntries(node.id);
+    unmatched = node._linkUnmatched || [];
+  }
   const dts = pairs.map(p => p.dtMs).filter(Number.isFinite).sort((x, y) => x - y);
   const refCount = getEntries(ref.id).length;
-  const out = { nodeId: node.id, name: node.name, pairs: pairs.length, references: refCount, unpaired: Math.max(0, refCount - pairs.length), tablePlot: false };
+  const out = preview ? { preview: true } : { nodeId: node.id, name: node.name };
+  out.pairs = pairs.length;
+  out.references = refCount;
+  out.unpaired = unmatched.length;
+  out.tablePlot = false;
   if (dts.length) out.dtMs = { min: dts[0], median: dts[Math.floor(dts.length / 2)], max: dts[dts.length - 1] };
-  out.examples = pairs.slice(0, 3).map(p => llmEntrySummary(node.id, p));
-  out.tip = "This link has no table/plot itself. To get values from the paired lines, create_filter under this link with a pattern such as \"temperature=[*:float]\", then show_view table/plot on THAT new node.";
+  if (unmatched.length) {
+    out.unpairedExamples = unmatched.slice(0, 3).map(llmEntryId);
+    // What typically follows a reference without an end (same thread, within
+    // the pairs' own p90 Δt, at least 1 s): why the move never finished.
+    const windowMs = Math.max(1000, Math.ceil(llmPercentile(dts, 0.9) || 0));
+    const nb = analysisNeighbors(unmatched, getEntries(fileId), { direction: "after", windowMs, sameThread: true, minLift: 2 });
+    const rows = nb.rows.filter(r => r.significant).slice(0, 5).map(r => ({
+      type: patternDisplayText(r.patternKey),
+      patternId: llmPatternIdFor(fileId, r.patternKey, r.floatMask),
+      coverage: r.coverage,
+      medianDtMs: r.medianDistMs,
+    }));
+    if (rows.length) out.unpairedFollowedBy = rows;
+  }
+  out.examples = pairs.slice(0, 3).map(p => llmEntrySummary(node ? node.id : fileId, p));
+  out.tip = preview
+    ? "Preview only — no node was created. Call create_link again without preview to build it."
+    : "This link has no table/plot itself. To get values from the paired lines, create_filter under this link with a pattern such as \"temperature=[*:float]\", then show_view table/plot on THAT new node.";
+  return out;
+}
+
+const LLM_FULL_LINES_MAX = 60, LLM_FULL_LINES_HEAD = 15, LLM_FULL_LINES_TAIL = 30, LLM_FULL_LINE_CHARS = 300;
+// get_entries full: every line of the message (a long one keeps its head and
+// its tail — a stack trace's innermost exception is at the end), plus the
+// thread/location/method columns and the file.
+function llmFullEntry(timeNodeId, e) {
+  const lines = String(e.message == null ? "" : e.message).split("\n");
+  let shown = lines;
+  if (lines.length > LLM_FULL_LINES_MAX) {
+    shown = lines.slice(0, LLM_FULL_LINES_HEAD).concat("… " + (lines.length - LLM_FULL_LINES_HEAD - LLM_FULL_LINES_TAIL) + " lines …", lines.slice(-LLM_FULL_LINES_TAIL));
+  }
+  const out = { id: llmEntryId(e), time: llmTime(timeNodeId, e.ts), level: e.level || undefined, lines: lines.length };
+  out.message = shown.map(l => (l.length > LLM_FULL_LINE_CHARS ? l.slice(0, LLM_FULL_LINE_CHARS) + "…" : l)).join("\n");
+  if (e.thread) out.thread = e.thread;
+  if (e.location) out.location = e.location;
+  if (e.method) out.method = e.method;
+  const root = state.nodes[findRootIdForEntry(llmEntryId(e))];
+  if (root) {
+    const src = root.sources && root.sources.find(s => s.id === e.sourceId);
+    out.file = src ? src.name : root.name;
+  }
   return out;
 }
 
 function llmToolGetEntries(args) {
+  const full = args.full === true;
+  if (args.ids != null) {
+    const ids = (Array.isArray(args.ids) ? args.ids : [args.ids]).map(String);
+    if (!ids.length) return { error: "ids is empty." };
+    if (ids.length > 20) return { error: "At most 20 ids per call." };
+    const found = [], unknown = [];
+    for (const id of ids) (entryIndex[id] ? found : unknown).push(id);
+    if (!found.length) return { error: "Unknown entry id(s): " + unknown.slice(0, 5).join(", ") + ". Use the ids from get_entries/find_message_types." };
+    const out = { entries: found.map(id => {
+      const e = entryIndex[id];
+      const timeId = findRootIdForEntry(id) || llmDefaultNodeId();
+      return full ? llmFullEntry(timeId, e) : llmEntrySummary(timeId, e);
+    }) };
+    if (unknown.length) out.unknown = unknown;
+    return out;
+  }
   const nodeId = args.nodeId || llmDefaultNodeId();
   if (!nodeId) return { error: "No log file is loaded." };
-  const { node, error } = llmNode(nodeId);
-  if (error) return { error };
-  const entries = getEntries(node.id);
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const entries = target.entries;
+  const timeId = target.node ? target.node.id : target.fileId;
   const from = Math.max(0, Math.floor(+args.from || 0));
   const max = Math.max(1, Math.min(20, Math.floor(+args.max || 10)));
-  return { nodeId: node.id, total: entries.length, from, entries: entries.slice(from, from + max).map(e => llmEntrySummary(node.id, e)) };
+  return { nodeId: target.node ? target.node.id : String(nodeId), total: entries.length, from, entries: entries.slice(from, from + max).map(e => (full ? llmFullEntry(timeId, e) : llmEntrySummary(timeId, e))) };
 }
 
 function llmPercentile(sorted, p) {
@@ -54021,6 +54321,9 @@ function llmToolShowView(args) {
   if (error) return { error };
   const view = LLM_VIEWS[args.view] ? args.view : "filtered";
   const tab = LLM_VIEWS[view];
+  const unpairedOnly = args.unpaired === "only";
+  if (args.unpaired != null && args.unpaired !== "" && !unpairedOnly) return { error: "unpaired must be \"only\" (or left out)." };
+  if (unpairedOnly && (!isLinkNode(node) || tab !== "filter")) return { error: "unpaired: \"only\" works on a link node with view \"filtered\" (node " + node.id + " is " + (isLinkNode(node) ? "a link, but the view is " + view : "not a link") + ")." };
   if ((tab === "table" || tab === "plot") && !nodeIsExtractionView(node)) {
     const fix = node.type === "filter" && node.filterType === "link"
       ? "create_filter under this link (parentId " + node.id + ") with placeholders such as \"temperature=[*:float]\""
@@ -54113,6 +54416,13 @@ function llmToolShowView(args) {
   }
   render();
   applyFhView(tab);
+  if (unpairedOnly) {
+    // The link view's "N without end" chip, set to its "only these" state.
+    if (linkNodeId !== node.id) renderLinkView(node);
+    linkViewUnmatched = 2;
+    relayoutLinkView();
+    out.unpaired = linkViewUnmatched === 2 ? "only" : "none (every reference has an end)";
+  }
   return out;
 }
 
@@ -54153,9 +54463,9 @@ const LLM_TOOLS = [
   },
   {
     name: "find_message_types",
-    description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
+    description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with patternId, count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
     parameters: { type: "object", properties: {
-      nodeId: { type: "string", description: "Node to analyse; default: the whole file of the active node" },
+      nodeId: { type: "string", description: "Node (or pattern id) to analyse; default: the whole file of the active node" },
       query: { type: "string", description: "Only types whose text contains this (case-insensitive)" },
       limit: { type: "integer", description: "Max. types to return (default 15, max 40)" },
     } },
@@ -54163,18 +54473,21 @@ const LLM_TOOLS = [
   },
   {
     name: "create_filter",
-    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further; [*:float@en] / [*:float@de] fix the thousands/decimal separators (1,234.5 vs 1.234,5). mode \"regex\": JavaScript regex. Returns the new nodeId, match count and examples, or an error to correct.",
+    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further; [*:float@en] / [*:float@de] fix the thousands/decimal separators (1,234.5 vs 1.234,5). mode \"regex\": JavaScript regex. Alternatives to pattern: patternId (a type from find_message_types) or column + pattern (exact column value). preview: true creates nothing and only reports matches. Returns the new nodeId, match count and examples, or an error to correct.",
     parameters: { type: "object", properties: {
       parentId: { type: "string", description: "Node to filter (a file or filter id); default: the whole file of the active node" },
-      pattern: { type: "string" },
+      pattern: { type: "string", description: "The text to match; with column: the value that column must have" },
+      patternId: { type: "string", description: "A message type's id (p1, p2, ... from find_message_types) instead of pattern" },
+      column: { type: "string", description: "Filter on a column's exact value instead (thread, location, method, level, ...): pattern is the value" },
       mode: { type: "string", enum: ["text", "regex"] },
       invert: { type: "boolean", description: "Keep everything that does NOT match (not for extraction patterns)" },
-    }, required: ["pattern"] },
+      preview: { type: "boolean", description: "Only count the matches and show examples; creates no node" },
+    } },
     run: llmToolCreateFilter,
   },
   {
     name: "create_link",
-    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread) or of a pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references and Δt statistics.",
+    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread) or of a pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references (with examples and the message types that typically follow them) and Δt statistics. preview: true creates no node.",
     parameters: { type: "object", properties: {
       refId: { type: "string" },
       targetId: { type: "string" },
@@ -54182,14 +54495,17 @@ const LLM_TOOLS = [
       key: { type: "string", description: "Column name or wildcard pattern both sides must share" },
       maxDtMs: { type: "number", description: "Keep only pairs closer than this (ms)" },
       minDtMs: { type: "number", description: "Keep only pairs further apart than this (ms)" },
+      preview: { type: "boolean", description: "Only report the pairs and unpaired references; creates no node" },
     }, required: ["refId", "targetId"] },
     run: llmToolCreateLink,
   },
   {
     name: "get_entries",
-    description: "A few entries of a node (at most 20, messages shortened), with their entry ids for annotate.",
+    description: "A few entries of a node or message type (at most 20, messages shortened), with their entry ids for annotate. ids: look up specific entries instead. full: true returns every line of the message (long ones: first 15 + last 30 lines) plus thread, location, method and file.",
     parameters: { type: "object", properties: {
-      nodeId: { type: "string" },
+      nodeId: { type: "string", description: "A node id, or a pattern id (p1, ...) from find_message_types" },
+      ids: { type: "array", items: { type: "string" }, description: "Entry ids (at most 20) instead of nodeId/from/max" },
+      full: { type: "boolean", description: "Complete message lines and columns instead of the shortened first line" },
       from: { type: "integer", description: "Start index (default 0)" },
       max: { type: "integer", description: "Default 10, max 20" },
     } },
@@ -54215,6 +54531,7 @@ const LLM_TOOLS = [
     parameters: { type: "object", properties: {
       nodeId: { type: "string" },
       view: { type: "string", enum: ["log", "filtered", "table", "plot", "patterns"] },
+      unpaired: { type: "string", enum: ["only"], description: "On a link node with view filtered: show only the references without an end" },
       plot: { type: "object", properties: {
         type: { type: "string", enum: ["line", "bar", "scatter", "3d", "heatmap", "profile", "radar", "parallel"] },
         x: { type: "string" },
@@ -54559,9 +54876,9 @@ function llmToolSummary(name, out) {
   switch (name) {
     case "get_overview": return "get_overview → " + (r.files || []).length + " file(s), " + (r.tree || []).length + " node(s)";
     case "find_message_types": return "find_message_types → " + (r.types || []).length + " of " + r.typesFound + " type(s)" + ((r.types || [])[0] ? ", top: " + llmCut(r.types[0].type, 60) : "");
-    case "create_filter": return "create_filter → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.matches + " match(es)";
-    case "create_link": return "create_link → " + r.nodeId + ", " + r.pairs + " pair(s), " + r.unpaired + " unpaired";
-    case "get_entries": return "get_entries → " + (r.entries || []).length + " of " + r.total + " (" + r.nodeId + ")";
+    case "create_filter": return r.preview ? "create_filter (preview) → " + r.matches + " match(es) of " + r.of : "create_filter → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.matches + " match(es)";
+    case "create_link": return r.preview ? "create_link (preview) → " + r.pairs + " pair(s), " + r.unpaired + " unpaired" : "create_link → " + r.nodeId + ", " + r.pairs + " pair(s), " + r.unpaired + " unpaired";
+    case "get_entries": return "get_entries → " + (r.entries || []).length + (r.total != null ? " of " + r.total + " (" + r.nodeId + ")" : " by id");
     case "get_value_stats": return "get_value_stats → " + r.nodeId + (r.n != null ? " n=" + r.n + " min " + r.min + " median " + r.median + " max " + r.max : "");
     case "show_view": return "show_view → " + r.nodeId + " " + r.view;
     case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "");
