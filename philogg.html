@@ -50923,8 +50923,17 @@ function svgEl(tag, attrs) {
   Object.keys(attrs || {}).forEach(k => e.setAttribute(k, attrs[k]));
   return e;
 }
+// Visual px per layout px of the fixed overlay (the root zoom of the font-scale
+// setting); 1 without layout or an unusable size.
+function whereZoomScale(layoutW, visualW) {
+  return layoutW > 0 && visualW > 0 ? visualW / layoutW : 1;
+}
 function renderWhereIsWhat() {
+  // Region rects (getBoundingClientRect) and the SVG are in visual px, but the
+  // callout pills are laid out in the root-zoomed (font scale) CSS px:
+  // z converts layout px -> visual px, so placement happens in visual px.
   const W = window.innerWidth, H = window.innerHeight;
+  const z = whereZoomScale(whereIsWhatEl.clientWidth, W);
   const regions = whereCurrentRegions();
   whereIsWhatEl.textContent = "";
   const svg = svgEl("svg", { class: "wiw-svg", width: W, height: H, viewBox: "0 0 " + W + " " + H, "aria-hidden": "true" });
@@ -50969,18 +50978,18 @@ function renderWhereIsWhat() {
   whereIsWhatEl.appendChild(layer);
   // offsetWidth is 0 without layout (jsdom): estimate from the text then.
   const sizeOf = (p, g) => ({
-    w: p.offsetWidth || Math.min(260, 34 + 6.8 * Math.max(g ? g.entry.label.length : 30, g && g.entry.note ? g.entry.note.length * 0.8 : 0)),
-    h: p.offsetHeight || (g && g.entry.note ? 36 : 24),
+    w: p.offsetWidth * z || Math.min(260, 34 + 6.8 * Math.max(g ? g.entry.label.length : 30, g && g.entry.note ? g.entry.note.length * 0.8 : 0)),
+    h: p.offsetHeight * z || (g && g.entry.note ? 36 : 24),
   });
   const fs = sizeOf(foot, null);
   const footBox = { x: Math.round((W - fs.w) / 2), y: H - fs.h - 8, w: fs.w, h: fs.h };
-  foot.style.left = footBox.x + "px"; foot.style.top = footBox.y + "px";
+  foot.style.left = footBox.x / z + "px"; foot.style.top = footBox.y / z + "px";
   const items = regions.map((g, i) => {
     const s = sizeOf(pills[i], g);
     return { rect: g.rect, w: s.w, h: s.h, side: g.entry.side };
   });
   const boxes = placeWhereCallouts(items, { w: W, h: H }, [footBox]);
-  boxes.forEach((b, i) => { pills[i].style.left = b.x + "px"; pills[i].style.top = b.y + "px"; });
+  boxes.forEach((b, i) => { pills[i].style.left = b.x / z + "px"; pills[i].style.top = b.y / z + "px"; });
   // Leader lines: callout edge point toward the region -> nearest point on its box.
   regions.forEach((g, i) => {
     const b = boxes[i], r = g.rect;

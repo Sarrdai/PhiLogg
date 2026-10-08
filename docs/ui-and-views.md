@@ -644,7 +644,9 @@ shape:
   other sides, taking the first spot that lies inside the window and keeps a
   4px margin to every callout placed before it (table order is priority;
   the footer "Esc or click anywhere to close" is a fixed obstacle); the last
-  resort is the clamped preferred spot. It re-renders on window resize.
+  resort is the clamped preferred spot. The rects and the SVG are in visual
+  px, the pills in the root-zoomed (font scale) layout px, so placement runs in
+  visual px and `left/top` are divided by `whereZoomScale`. It re-renders on window resize.
   Closing: Esc (captured, so it never also leaves focus mode), a click
   anywhere, `?`/`F1` again or the help button; focus returns to the element
   that had it when the overlay opened (else the help button). On the phone

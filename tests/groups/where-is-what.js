@@ -193,6 +193,18 @@ await withApp(async (w) => {
   assert(bad === 0, "twelve callouts for the same spot are nudged apart");
 });
 
+// ---- h2. root zoom (font scale): layout px vs. visual px ----
+await withApp(async (w) => {
+  section("where-is-what h2. whereZoomScale converts the zoomed overlay's layout px to visual px");
+  assert(w.whereZoomScale(960, 1440) === 1.5, "150 %: 960 layout px = 1440 visual px");
+  assert(Math.abs(w.whereZoomScale(1800, 1440) - 0.8) < 1e-9, "80 %: 1800 layout px = 1440 visual px");
+  assert(w.whereZoomScale(0, 1440) === 1 && w.whereZoomScale(1440, 1440) === 1, "no layout (jsdom) / 100 %: 1");
+  // Placement in visual px, converted back for left/top: a callout placed at x lands at x / z in the zoomed layer.
+  const z = w.whereZoomScale(960, 1440);
+  const [b] = w.placeWhereCallouts([{ side: "bottom", rect: { left: 1300, top: 20, right: 1430, bottom: 60 }, w: 150 * z, h: 24 * z }], { w: 1440, h: 900 }, []);
+  assert(b.x + b.w <= 1440 - 4 && (b.x / z) + 150 <= 960, "callout stays inside the window after the layout-px conversion");
+});
+
 // ---- i. first-start hint ----
 await withApp(async (w, d, T) => {
   section("where-is-what i. Hint: shown once after the first log, Show me opens the overlay, never again");
