@@ -17,6 +17,7 @@
   - [docs/ui-and-views.md](#docsui-and-viewsmd)
   - [docs/ui-sketches.md](#docsui-sketchesmd)
   - [docs/llm-assistant-plan.md](#docsllm-assistant-planmd)
+  - [docs/concept-llm-analysis-tools.md](#docsconcept-llm-analysis-toolsmd)
   - [docs/llm-assistant.md](#docsllm-assistantmd)
   - [docs/extraction-and-plotting.md](#docsextraction-and-plottingmd)
   - [docs/persistence-and-sync.md](#docspersistence-and-syncmd)
@@ -230,6 +231,9 @@ bookmarks/notes) instead of reading the raw log. Covers the architecture
 pull-snapshot view — avoiding the popout's sync bugs), the chat window
 (owned/always-on-top, hide into the app, dock, multiple sessions), one
 undo step per LLM turn, and a phased rollout. Refines backlog #70.
+
+### `docs/concept-llm-analysis-tools.md`
+Concept (German, not implemented, backlog #119): analysis tools that give the LLM assistant a real edge over an LLM working the raw file with grep — a benchmark first (shell vs. tools-only vs. local model, simulator ground truth), then pattern ids as virtual nodes, previews, full entry text, explained unpaired link references, the read-only tools `timeline`/`what_changed`/`common_neighbors`/`group_by`/`create_window`, and a loopback MCP endpoint for external agents.
 
 ### `docs/llm-assistant.md`
 The LLM assistant as built (desktop only): the tool registry the model
