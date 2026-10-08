@@ -710,3 +710,133 @@ pub fn llm_main_to_view(app: AppHandle, msg: serde_json::Value) {
         let _ = chat.eval(&format!("window.philoggChatReceive && window.philoggChatReceive({msg})"));
     }
 }
+
+/// What the page sends to `mcp_configure` (`window.philogg.mcpConfigure`).
+#[derive(serde::Deserialize)]
+pub struct McpConfig {
+    enabled: bool,
+    port: u32,
+    token: String,
+    tools: serde_json::Value,
+}
+
+/// What `mcp_configure` / `mcp_status` answer with.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct McpStatus {
+    listening: bool,
+    port: Option<u16>,
+    calls: u64,
+    /// Epoch milliseconds.
+    last_call_at: Option<u64>,
+    last_client: Option<String>,
+    error: Option<String>,
+}
+
+/// How long an MCP `tools/call` waits for the page before it answers with
+/// an error result.
+const MCP_CALL_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
+
+fn mcp_status_of(mcp: &crate::state::McpState) -> McpStatus {
+    let stats = mcp.server.as_ref().map(|s| s.stats());
+    McpStatus {
+        listening: mcp.server.is_some(),
+        port: mcp.server.as_ref().map(|s| s.port()),
+        calls: stats.as_ref().map_or(0, |s| s.calls),
+        last_call_at: stats
+            .as_ref()
+            .and_then(|s| s.last_call_at)
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64),
+        last_client: stats.and_then(|s| s.last_client),
+        error: mcp.error.clone(),
+    }
+}
+
+/// Runs one MCP tool call in the main window and waits for the page's
+/// `mcp_tool_result`. Runs on a connection thread of the MCP server, never
+/// on the main thread, and holds no lock while it evals or waits.
+fn mcp_call_page(app: &AppHandle, name: &str, args: serde_json::Value) -> (String, bool) {
+    let Some(main) = app.get_webview_window(windows::MAIN) else {
+        return ("PhiLogg's main window is not open.".to_string(), true);
+    };
+    let state = app.state::<AppState>();
+    let id = format!("mcp-{}", state.mcp_next_id.fetch_add(1, Ordering::Relaxed));
+    let (tx, rx) = std::sync::mpsc::channel();
+    state.mcp_pending.lock().expect("mcp_pending poisoned").insert(id.clone(), tx);
+    let js = |v: &serde_json::Value| serde_json::to_string(v).unwrap_or_else(|_| "null".to_string());
+    let script = format!(
+        "window.philoggMcpCall && window.philoggMcpCall({}, {}, {})",
+        js(&serde_json::Value::String(id.clone())),
+        js(&serde_json::Value::String(name.to_string())),
+        js(&args)
+    );
+    let answer = match main.eval(&script) {
+        Ok(()) => rx
+            .recv_timeout(MCP_CALL_TIMEOUT)
+            .unwrap_or_else(|_| ("PhiLogg did not answer within 300 s.".to_string(), true)),
+        Err(e) => (format!("Could not reach PhiLogg's main window: {e}"), true),
+    };
+    state.mcp_pending.lock().expect("mcp_pending poisoned").remove(&id);
+    answer
+}
+
+/// Starts, restarts or stops the MCP server (`philogg-mcp`) and returns its
+/// status. Stopped when `enabled` is false, restarted when port or token
+/// changed (or it is not running), otherwise only the tool list is swapped.
+/// A bind failure is a status with `error`, not a rejection.
+#[tauri::command]
+pub fn mcp_configure(app: AppHandle, config: McpConfig, state: State<'_, AppState>) -> McpStatus {
+    let mut mcp = state.mcp.lock().expect("mcp poisoned");
+    if !config.enabled {
+        mcp.server = None; // Drop stops it.
+        mcp.error = None;
+        return mcp_status_of(&mcp);
+    }
+    let port = u16::try_from(config.port).ok().filter(|p| *p != 0);
+    let Some(port) = port else {
+        mcp.server = None;
+        mcp.error = Some(format!("Port {} is not valid.", config.port));
+        return mcp_status_of(&mcp);
+    };
+    if mcp.server.is_some() && mcp.port == port && mcp.token == config.token {
+        if let Some(server) = &mcp.server {
+            server.set_tools(config.tools);
+        }
+        return mcp_status_of(&mcp);
+    }
+    mcp.server = None; // Free the old port first (the new one may be the same).
+    let handle = app.clone();
+    let call: philogg_mcp::CallTool = std::sync::Arc::new(move |name, args| mcp_call_page(&handle, name, args));
+    match philogg_mcp::Server::start(port, config.token.clone(), config.tools, call) {
+        Ok(server) => {
+            mcp.server = Some(server);
+            mcp.port = port;
+            mcp.token = config.token;
+            mcp.error = None;
+        }
+        Err(e) => {
+            mcp.error = Some(if e.kind() == std::io::ErrorKind::AddrInUse {
+                format!("Port {port} is in use.")
+            } else {
+                e.to_string()
+            });
+        }
+    }
+    mcp_status_of(&mcp)
+}
+
+#[tauri::command]
+pub fn mcp_status(state: State<'_, AppState>) -> McpStatus {
+    mcp_status_of(&state.mcp.lock().expect("mcp poisoned"))
+}
+
+/// The page's answer to one `philoggMcpCall` (answered at most once per id;
+/// an unknown or already-expired id is ignored).
+#[tauri::command]
+pub fn mcp_tool_result(id: String, text: String, is_error: bool, state: State<'_, AppState>) {
+    let tx = state.mcp_pending.lock().expect("mcp_pending poisoned").remove(&id);
+    if let Some(tx) = tx {
+        let _ = tx.send((text, is_error));
+    }
+}

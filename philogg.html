@@ -3963,6 +3963,21 @@
      initLlmAssistantUi): toolbar button with an activity dot while a round
      runs, and the Settings → Assistant section. */
   #btnAssistant.hidden, #settingsNavItemLlm.hidden, #settingsSectionLlm.hidden{display:none;}
+  /* Settings → Assistant → External agents (MCP): desktop build only (initMcpUi). */
+  #settingsLlmGroupTitle.hidden, #settingsMcpGroupTitle.hidden, #settingsMcpCard.hidden{display:none;}
+  #settingsDialog .settings-mcp-token{flex:1 1 auto; min-width:0; box-sizing:border-box; height:30px; display:flex; align-items:center; padding:0 10px; background:var(--bg-app); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-family:var(--font-mono, monospace); font-size:11.5px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+  #settingsDialog .settings-mcp-ib{width:30px; height:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:0 0 30px;}
+  #settingsDialog .settings-row.settings-mcp-full{grid-template-columns:minmax(0,1fr); gap:10px;}
+  .settings-mcp-cmd{display:flex; gap:10px; align-items:flex-start; background:var(--bg-app); border:1px solid var(--border); border-radius:8px; padding:10px 12px;}
+  .settings-mcp-cmd code{flex:1 1 auto; min-width:0; color:var(--text-primary); font-family:var(--font-mono, monospace); font-size:11.5px; line-height:1.6; word-break:break-all; white-space:pre-wrap;}
+  .settings-mcp-cmd-side{display:flex; flex-direction:column; align-items:flex-end; gap:4px;}
+  .settings-mcp-toast{font-size:11.5px; color:var(--accent-strong); min-height:1em;}
+  #settingsMcpUrl{font-family:var(--font-mono, monospace); font-size:11.5px; color:var(--text-secondary);}
+  .settings-mcp-status{display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums;}
+  .settings-mcp-status .ide-status-dot.ok{background:var(--status-ok);}
+  .settings-mcp-status .ide-status-dot.wait{background:var(--warn, #e8a94a);}
+  .settings-mcp-status .ide-status-dot.err{background:var(--danger);}
+  .settings-mcp-status.err{color:var(--danger);}
   #btnAssistant{position:relative;}
   #llmDockPanel{flex:0 0 380px; width:380px; min-width:0; display:flex; border-left:1px solid var(--border); background:var(--bg-panel);}
   #llmDockPanel.hidden, html.pip-mode #llmDockPanel{display:none;}
@@ -8093,8 +8108,9 @@
 
         <section class="settings-section hidden" id="settingsSectionLlm">
           <div class="settings-section-title">Assistant</div>
-          <div class="settings-section-desc">A local LLM builds filters, links and plots. Localhost only.</div>
-          <div class="settings-card">
+          <div class="settings-section-desc">Language models build filters, links and plots: a local model in the chat, or an external agent over MCP.</div>
+          <div class="settings-subsection-title hidden" id="settingsLlmGroupTitle"><span>Local model</span></div>
+          <div class="settings-card" id="settingsLlmCard">
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLlmEnabled">Enable assistant</label>
@@ -8149,6 +8165,56 @@
               <div class="settings-row-control">
                 <button type="button" class="btn-mini-outline" id="settingsLlmTest">Test connection</button>
               </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title hidden" id="settingsMcpGroupTitle"><span>External agents (MCP)</span></div>
+          <div class="settings-card hidden" id="settingsMcpCard">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsMcpEnabled">Enable MCP server</label>
+                <div class="settings-row-hint">Lets Claude Code and other MCP clients use PhiLogg's tools on this computer.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsMcpEnabled"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsMcpPort">Port</label>
+                <div class="settings-row-hint">Listens on 127.0.0.1 only. Changing it restarts the server.</div>
+              </div>
+              <div class="settings-row-control">
+                <input type="number" class="llm-num" id="settingsMcpPort" min="1024" max="65535" step="1">
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label">Access token</label>
+                <div class="settings-row-hint">Clients send it as a bearer token. Regenerate disconnects every client.</div>
+              </div>
+              <div class="settings-row-control">
+                <span class="settings-mcp-token" id="settingsMcpToken"></span>
+                <button type="button" class="btn-mini-outline settings-mcp-ib" id="settingsMcpTokenShow" title="Show" aria-label="Show token"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg></button>
+                <button type="button" class="btn-mini-outline settings-mcp-ib" id="settingsMcpTokenRegen" title="Regenerate" aria-label="Regenerate token"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v2.8h-2.8"/></svg></button>
+              </div>
+            </div>
+            <div class="settings-row settings-mcp-full">
+              <div class="settings-row-text">
+                <label class="settings-row-label">Connect Claude Code</label>
+                <div class="settings-row-hint">Run this once in a terminal. Other clients: URL <code id="settingsMcpUrl"></code>, header <code>Authorization: Bearer &lt;token&gt;</code>.</div>
+              </div>
+              <div class="settings-mcp-cmd">
+                <code id="settingsMcpCommand"></code>
+                <div class="settings-mcp-cmd-side"><button type="button" class="btn-mini-outline" id="settingsMcpCopy">Copy</button><span class="settings-mcp-toast" id="settingsMcpToast" aria-live="polite"></span></div>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label">Status</label>
+                <div class="settings-row-hint settings-mcp-status" id="settingsMcpStatus"><span class="ide-status-dot" id="settingsMcpDot"></span><span id="settingsMcpStatusText">Off</span></div>
+              </div>
+              <div class="settings-row-control"></div>
             </div>
           </div>
         </section>
@@ -54269,6 +54335,58 @@ function runLlmTool(name, args) {
   return { result, text: llmFitBudget(result), error: result.error || null };
 }
 
+/* ===================== MCP bridge (external agents) =====================
+   The desktop app's MCP server (desktop/src-tauri/mcp) evaluates
+   window.philoggMcpCall(id, name, args) in this window for every tools/call
+   and expects exactly one window.philogg.mcpToolResult(id, text, isError)
+   back. Calls run FIFO, one at a time, and only while the in-app assistant
+   is not in a round (llm.running); the agent loop's finally drains the
+   queue. One call = one undo step; created nodes get the assistant mark. */
+const mcpQueue = [];
+function mcpAnswer(id, text, isError) {
+  try {
+    if (window.philogg && typeof window.philogg.mcpToolResult === "function") {
+      Promise.resolve(window.philogg.mcpToolResult(id, String(text), !!isError)).catch(() => {});
+    }
+  } catch (e) { /* bridge gone */ }
+}
+function philoggMcpCall(id, name, args) {
+  mcpQueue.push({ id, name, args });
+  mcpDrainQueue();
+  if (typeof mcpOnQueueChange === "function") mcpOnQueueChange();
+}
+window.philoggMcpCall = philoggMcpCall;
+function mcpDrainQueue() {
+  while (mcpQueue.length && !llm.running) {
+    const job = mcpQueue.shift();
+    mcpRunCall(job);
+  }
+  if (typeof mcpOnQueueChange === "function") mcpOnQueueChange();
+}
+function mcpRunCall(job) {
+  let text = "", isError = true;
+  const created = [];
+  const prevRound = llmRoundCreated;
+  llmRoundCreated = created;
+  try {
+    const r = runLlmTool(job.name, job.args || {});
+    text = r.text; isError = !!r.error;
+  } catch (e) {
+    text = JSON.stringify({ error: "Tool failed: " + (e && e.message || e) });
+  } finally {
+    llmRoundCreated = prevRound;
+    try {
+      const label = "MCP: " + job.name;
+      const actions = created.filter(nid => state.nodes[nid]).map(nid => ({ kind: "create", nodeId: nid, parentId: state.nodes[nid].parentId }));
+      if (actions.length === 1) pushUndo({ ...actions[0], label });
+      else if (actions.length > 1) pushUndo({ kind: "batch", label, actions });
+      render();
+      llmNotify();
+    } catch (e) { /* the answer below must still go out */ }
+    mcpAnswer(job.id, text, isError);
+  }
+}
+
 /* ===================== LLM assistant: agent loop and sessions =====================
    Lives in the main window only (docs/llm-assistant-plan.md → Architektur):
    the chat window is a thin view that pulls complete session snapshots
@@ -54708,6 +54826,7 @@ async function llmSend(text) {
     llmRoundCreated = null;
     llmPushRoundBatch(round);
     llm.running = null;
+    mcpDrainQueue();
     llmTouch(session);
     llmSaveSession(session);
     render();
@@ -55096,6 +55215,137 @@ function initLlmAssistantUi() {
   document.getElementById("settingsLlmTest").addEventListener("click", refresh);
 }
 
+// Settings → Assistant → External agents (MCP), desktop build only.
+const MCP_KEYS = { enabled: "philogg-mcp-enabled", port: "philogg-mcp-port", token: "philogg-mcp-token" };
+const MCP_DEFAULT_PORT = 7337;
+const mcp = { status: null, showToken: false, timer: null, copyTimer: null };
+function mcpAvailable() {
+  return !!(window.philogg && typeof window.philogg.mcpConfigure === "function");
+}
+function mcpStore(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function mcpStoreSet(key, v) { try { localStorage.setItem(key, v); } catch (e) { /* storage unavailable */ } }
+function mcpEnabled() { return mcpStore(MCP_KEYS.enabled) === "1"; }
+function mcpPort() {
+  const n = parseInt(mcpStore(MCP_KEYS.port), 10);
+  return Number.isFinite(n) && n >= 1024 && n <= 65535 ? n : MCP_DEFAULT_PORT;
+}
+function mcpNewToken() {
+  const a = new Uint8Array(32);
+  crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
+}
+function mcpToken() { return mcpStore(MCP_KEYS.token) || ""; }
+function mcpMaskToken(t) { return t ? t.slice(0, 4) + "•".repeat(20) : ""; }
+function mcpCommand(token) {
+  return 'claude mcp add --transport http philogg http://127.0.0.1:' + mcpPort() + '/mcp --header "Authorization: Bearer ' + token + '"';
+}
+// Pure: the status line for the settings row. `status` is the last
+// mcpStatus() answer (or null), `queued` the calls waiting for a round.
+function mcpStatusView(enabled, status, queued) {
+  if (!enabled) return { text: "Off", kind: "" };
+  if (status && status.error) return { text: status.error + (/in use/.test(status.error) ? " Pick another port." : ""), kind: "err" };
+  if (!status || !status.listening) return { text: "Starting…", kind: "wait" };
+  const pad = n => String(n).padStart(2, "0");
+  let text = "Listening on 127.0.0.1:" + status.port;
+  if (!status.calls) text += " · no calls yet";
+  else {
+    text += " · " + status.calls + (status.calls === 1 ? " call" : " calls");
+    if (status.lastCallAt) {
+      const t = new Date(status.lastCallAt);
+      text += " · last " + pad(t.getHours()) + ":" + pad(t.getMinutes()) + ":" + pad(t.getSeconds());
+      if (status.lastClient) text += " from " + status.lastClient;
+    }
+  }
+  if (queued) text += " · " + queued + (queued === 1 ? " call waits" : " calls wait") + " for the assistant's round";
+  return { text, kind: queued ? "wait" : "ok" };
+}
+function mcpRenderUi() {
+  const q = id => document.getElementById(id);
+  const token = mcpToken();
+  const shown = mcp.showToken ? token : mcpMaskToken(token);
+  q("settingsMcpToken").textContent = shown;
+  q("settingsMcpToken").title = mcp.showToken ? token : "";
+  const show = q("settingsMcpTokenShow");
+  show.title = mcp.showToken ? "Hide" : "Show";
+  show.setAttribute("aria-label", (mcp.showToken ? "Hide" : "Show") + " token");
+  q("settingsMcpUrl").textContent = "http://127.0.0.1:" + mcpPort() + "/mcp";
+  q("settingsMcpCommand").textContent = mcpCommand(shown || "<token>");
+  const v = mcpStatusView(mcpEnabled(), mcp.status, mcpQueue.length);
+  q("settingsMcpStatusText").textContent = v.text;
+  q("settingsMcpDot").className = "ide-status-dot" + (v.kind && v.kind !== "err" ? " " + v.kind : v.kind ? " err" : "");
+  q("settingsMcpStatus").classList.toggle("err", v.kind === "err");
+}
+function mcpOnQueueChange() { if (mcpAvailable() && document.getElementById("settingsMcpCard")) mcpRenderUi(); }
+function mcpToolsList() {
+  return llmToolSpecs().map(s => ({ name: s.function.name, description: s.function.description, inputSchema: s.function.parameters }));
+}
+function mcpApply() {
+  const enabled = mcpEnabled();
+  if (enabled && !mcpToken()) mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+  mcp.status = null;
+  mcpRenderUi();
+  let p;
+  try {
+    p = Promise.resolve(window.philogg.mcpConfigure({ enabled, port: mcpPort(), token: mcpToken(), tools: mcpToolsList() }));
+  } catch (e) { p = Promise.reject(e); }
+  return p.then(st => { mcp.status = st || null; }, e => { mcp.status = { listening: false, error: String(e && e.message || e) }; })
+    .then(() => mcpRenderUi());
+}
+function mcpRefreshStatus() {
+  if (!mcpEnabled() || document.getElementById("settingsDialog").classList.contains("hidden")) return;
+  let p;
+  try { p = Promise.resolve(window.philogg.mcpStatus()); } catch (e) { return; }
+  p.then(st => { if (st) { mcp.status = st; mcpRenderUi(); } }, () => {});
+}
+function initMcpUi() {
+  if (!mcpAvailable()) return;
+  const q = id => document.getElementById(id);
+  ["settingsNavItemLlm", "settingsSectionLlm", "settingsMcpGroupTitle", "settingsMcpCard"].forEach(id => q(id).classList.remove("hidden"));
+  // "Local model" title only when the section holds both groups; without the
+  // chat bridge the local-model card has nothing to configure.
+  const llmThere = llmAvailable();
+  q("settingsLlmGroupTitle").classList.toggle("hidden", !llmThere);
+  q("settingsLlmCard").classList.toggle("hidden", !llmThere);
+  const toggle = q("settingsMcpEnabled");
+  const port = q("settingsMcpPort");
+  pillSet(toggle, mcpEnabled());
+  port.value = mcpPort();
+  toggle.addEventListener("change", () => {
+    mcpStoreSet(MCP_KEYS.enabled, pillGet(toggle) ? "1" : "0");
+    mcpApply();
+  });
+  port.addEventListener("change", () => {
+    const n = parseInt(port.value, 10);
+    mcpStoreSet(MCP_KEYS.port, String(Number.isFinite(n) ? Math.min(65535, Math.max(1024, n)) : MCP_DEFAULT_PORT));
+    port.value = mcpPort();
+    mcpApply();
+  });
+  q("settingsMcpTokenShow").addEventListener("click", () => {
+    if (!mcpToken()) mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+    mcp.showToken = !mcp.showToken;
+    mcpRenderUi();
+  });
+  q("settingsMcpTokenRegen").addEventListener("click", () => {
+    mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+    mcpToast("New token");
+    mcpApply();
+  });
+  q("settingsMcpCopy").addEventListener("click", () => {
+    if (!mcpToken()) mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+    copyTextToClipboard(mcpCommand(mcpToken()));
+    mcpToast("Copied");
+  });
+  mcpRenderUi();
+  if (mcpEnabled()) mcpApply();
+  mcp.timer = setInterval(mcpRefreshStatus, 1000);
+}
+function mcpToast(text) {
+  const t = document.getElementById("settingsMcpToast");
+  t.textContent = text;
+  clearTimeout(mcp.copyTimer);
+  mcp.copyTimer = setTimeout(() => { t.textContent = ""; }, 1500);
+}
+
 /* ===================== Init ===================== */
 btnUndo.innerHTML = ICON_UNDO;
 btnRedo.innerHTML = ICON_REDO;
@@ -55243,6 +55493,7 @@ bootRestore.catch(() => {}).then(() => new URLSearchParams(bootSearch).has("url"
 // LLM assistant (desktop build only — window.philogg.llmChat): toolbar
 // button, Settings section, stored chat sessions. See "LLM assistant".
 initLlmAssistantUi();
+initMcpUi();
 </script>
 </body>
 </html>

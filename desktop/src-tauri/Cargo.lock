@@ -2587,6 +2587,7 @@ version = "0.1.0"
 dependencies = [
  "philogg-llm",
  "philogg-logparse",
+ "philogg-mcp",
  "serde",
  "serde_json",
  "tauri",
@@ -2614,6 +2615,13 @@ dependencies = [
  "rayon",
  "regex",
  "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "philogg-mcp"
+version = "0.1.0"
+dependencies = [
  "serde_json",
 ]
 

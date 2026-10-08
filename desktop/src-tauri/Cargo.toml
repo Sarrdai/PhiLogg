@@ -15,7 +15,7 @@ rust-version = "1.77"
 # The native log parser lives in its own Tauri-free crate so `cargo test -p
 # philogg-logparse` runs without the webview toolchain — see logparse/src/lib.rs.
 [workspace]
-members = ["logparse", "llm"]
+members = ["logparse", "llm", "mcp"]
 
 [[bin]]
 name = "philogg-desktop"
@@ -34,6 +34,7 @@ serde_json = "1"
 urlencoding = "2"
 philogg-logparse = { path = "logparse" }
 philogg-llm = { path = "llm" }
+philogg-mcp = { path = "mcp" }
 
 # Windows-only: reaches into the WebView2 controller to turn off its
 # Alt-as-accelerator-key handling (see windows.rs's disable_alt_accelerator_keys).
