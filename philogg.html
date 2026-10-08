@@ -1361,16 +1361,42 @@
     position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
+  /* person-reported, 2026-10-08, Always-label mode: level pills have no icon,
+     so the empty 28px .row-action-hit slot left ~34px of blank space before
+     the text vs 10px after. Desktop/compact Always pills are plain text pills
+     with equal padding (hover/Never circles and the phone chips are other
+     rules and stay as they are). */
+  body.filter-toolbar-labels-always:not(.layout-phone) .level-btn{padding:0 12px;}
+  body.filter-toolbar-labels-always:not(.layout-phone) .level-btn .row-action-hit{display:none;}
+  body.filter-toolbar-labels-always:not(.layout-phone) .level-btn .row-action-label{margin-left:0;}
+  /* The hover-reveal rule below (#levelBar .level-btn:hover ...) carries an ID and
+     would shift the now-static label by -50% on hover, clipping it in the pill. */
+  body.filter-toolbar-labels-always:not(.layout-phone) #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
 
   body.view-toolbar-labels-never .row-action-btn.rect .row-action-label,
   body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label{display:none !important;}
   body.view-toolbar-labels-always .row-action-btn.rect,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit){width:auto; padding-right:10px; overflow:hidden;}
+  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron){width:auto; padding-right:10px; overflow:hidden;}
   body.view-toolbar-labels-always .row-action-btn.rect .row-action-label,
-  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit) .tb-label{
+  body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .tb-label{
     position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
+  /* person-reported, 2026-10-08, Always-label mode: the Collapse-repeats
+     chevron is a 14px sub-control of the toggle next to it, not a toggle of
+     its own — an inline "Collapse repeats: choose the rule" label turned it
+     into a wide pill. It stays icon-only (excluded from the pill rules
+     above; its title tooltip stays, the floating hover label is hidden). */
+  body.view-toolbar-labels-always .toolbar-icon-btn.repeat-chevron .tb-label{display:none;}
+  /* Same report, view-toolbar on/off toggles: the "status light" bar was
+     60% wide, centered on the button (starting right of the icon's centre,
+     ending before the label end), and the pill had a 13px empty-looking
+     left side vs 10px right. In Always mode the pill content is symmetric
+     (icon's visible left edge and label end each 12px from the edge: 5px
+     padding + the 7px inset of the 14px icon in its 28px slot) and the bar
+     spans exactly that content. */
+  body.view-toolbar-labels-always .toolbar-icon-btn.icon-toggle:has(.tb-hit){padding-left:5px; padding-right:12px;}
+  body.view-toolbar-labels-always .toolbar-icon-btn.icon-toggle:has(.tb-hit)::after{left:12px; right:12px; width:auto; transform:none;}
   /* person-reported, 2026-09-15: a disabled button's label is the only
      thing that explains WHY it's grayed out / what would enable it (e.g.
      Table toolbar's "Value assertion" needs a column selected first) — so
