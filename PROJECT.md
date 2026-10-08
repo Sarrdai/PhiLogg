@@ -233,7 +233,7 @@ pull-snapshot view — avoiding the popout's sync bugs), the chat window
 undo step per LLM turn, and a phased rollout. Refines backlog #70.
 
 ### `docs/concept-llm-analysis-tools.md`
-Concept (German, not implemented, backlog #119): analysis tools that give the LLM assistant a real edge over an LLM working the raw file with grep — a benchmark first (shell vs. tools-only vs. local model, simulator ground truth), then pattern ids as virtual nodes, previews, full entry text, explained unpaired link references, the read-only tools `timeline`/`what_changed`/`common_neighbors`/`group_by`/`create_window`, and a loopback MCP endpoint for external agents.
+Concept (German, being implemented, backlog #119 + #120): analysis tools for people, the LLM assistant and external agents — decisions of 2026-10-08 at the top (no benchmark, UI entry points per mockup variant A), pattern ids as virtual nodes, previews, full entry text, explained unpaired link references, the read-only tools `timeline`/`what_changed`/`common_neighbors`/`group_by`/`create_window`, and a loopback MCP endpoint for external agents.
 
 ### `docs/llm-assistant.md`
 The LLM assistant as built (desktop only): the tool registry the model
