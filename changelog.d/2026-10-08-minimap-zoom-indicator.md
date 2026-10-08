@@ -1,4 +1,4 @@
 - **feat: a zoomed timeline minimap is obvious at a glance (2026-10-08, person-requested)**
-  - While the minimap is zoomed it gets an accent frame with glow, `‹`/`›` edge arrows on the sides the log continues, a 10 px overview strip of the whole file with the zoom window as a box, and a `Zoom 18 % · from–to ⤢ Whole file` chip that returns to the whole file.
-  - Not zoomed: unchanged. Phone: frame only.
+  - While the minimap is zoomed it gets an accent frame with glow, bold `‹`/`›` edge arrows on the sides the log continues, a 12 px overview strip of the whole file with the zoom window as a box (min 6 px wide, end ticks), and a `Zoom 18 % · from–to ⤢ Whole file` chip that returns to the whole file.
+  - The chip replaces the breadcrumbs for a one-level zoom; deeper trails keep the crumbs after it. Not zoomed: unchanged. Phone: frame and crumb line only.
   - **Tests**: GROUP minimap-zoom-indicator. Docs: docs/filters.md.
