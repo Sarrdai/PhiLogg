@@ -6,6 +6,22 @@ the user, what is paused, and the plan usage.
 
 **Board:** https://claude.ai/artifact/53kyphTY6TuPpFtQypVVjF
 
+**Boards per account.** A board's database can only be written by sessions of
+the account that may write to it (a board shared from another organization
+refuses writes from invited editors). Each account therefore keeps its own
+board; the page code is the same:
+
+| Account | Board |
+|---|---|
+| main | https://claude.ai/artifact/53kyphTY6TuPpFtQypVVjF |
+| `accounts2` | https://claude.ai/artifact/DKz8nkWobi5RiQ6Ep3rYfz |
+
+Use the board of the account your session runs under. Every session entry
+carries `account` (the label above; omit it on the main account's board),
+and the usage reading goes to `meta/usage` (main) or `meta/usage-<account>`
+with the same `account` field. The page shows one usage group per account
+and an account chip on each card.
+
 Every session that runs under `orchestrate` or `package-sessions` keeps
 its own entry current with the `ArtifactData` tool (deferred: load it with
 ToolSearch `select:ArtifactData`). A failed write never blocks the work:
@@ -24,6 +40,7 @@ without `session_id` → `ccr.id`). Timestamps UTC ISO (`date -u +%FT%TZ`).
 | `note` | One line: the current step, or exactly what you wait for |
 | `parent` | Orchestrator's session ID (packages and subagents) |
 | `continues` | Session ID this one takes over from (handover, pause) |
+| `account` | Account label (see "Boards per account"); empty on the main account |
 | `branch`, `model` | Working branch; `opus` / `sonnet` |
 | `resumes_at` | `paused` only: when work continues (`five_hour.resetsAt`) |
 | `planned_5h` | Remaining share of the current five-hour window this session still plans to use (0–1, from the `usage-budget.md` estimates); `0` when done, paused or waiting for the user |
