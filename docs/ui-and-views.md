@@ -497,6 +497,18 @@ shape:
   `.row-action-btn.rect` and `.toolbar-icon-btn:has(.tb-hit)` together
   (every button in `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/
   `#plotToolbar`).
+  **Current "Always" look of three controls (2026-10-08, person-reported):**
+  the view-toolbar on/off toggles (`.icon-toggle:has(.tb-hit)`) get
+  `padding:… 12px … 5px` so the icon's visible left edge and the label's end
+  are both 12px from the pill edge, and their accent "status light" bar
+  (`::after`) runs `left:12px; right:12px` — exactly icon start to label end
+  (in the icon-only modes it stays the 60%-wide centered bar); the level
+  pills (`.level-btn`, desktop/compact, not the phone chips) hide their empty
+  `.row-action-hit` slot and use `padding:0 12px` with no label margin — a
+  plain text pill like "ERROR 190", hover not shifting the label; the
+  Collapse-repeats chevron (`#btnRepeatMenu`, `.repeat-chevron`) is excluded
+  from the inline-pill rules and keeps its 14px icon-only shape (label
+  hidden, `title` tooltip stays).
 - **Each view's own toolbar** (Zeile 2, directly under `#viewBar` —
   `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) —
   same position/shape in every tab, only the content differs.

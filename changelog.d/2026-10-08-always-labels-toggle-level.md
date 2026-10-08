@@ -1,0 +1,4 @@
+- **fix: three controls look right with toolbar labels set to "Always" (2026-10-08, person-reported)**
+  - View-toolbar on/off toggles: the accent bar under the icon now spans the whole pill (icon start to label end) and the pill content is symmetric (12px both sides) instead of a centered 60% bar and uneven padding.
+  - Level pills are plain text pills ("ERROR 190") with equal left/right padding, no empty icon slot, and their label no longer jumps on hover; the Collapse-repeats chevron stays an icon-only 14px control. "On hover"/"Never" and the phone chips are unchanged.
+  - **Tests**: GROUP always-labels-toggle-level. Docs: docs/ui-and-views.md.
