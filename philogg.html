@@ -53884,8 +53884,9 @@ function analysisPatternCounts(entries, opts) {
 //              lift, medianDistMs, maxLevel, example (entry), significant }] }
 // covered = references with the pattern in their window; inWindows = its
 // occurrences over all windows; lift = rate in the windows ÷ rate in the rest
-// of the file (rest count smoothed by +0.5 so a pattern that only ever occurs
-// in the windows gets a large but finite lift); medianDistMs = median |Δt| to
+// of the file (entries outside every window ÷ time outside every window; the
+// rest count is smoothed by +0.5 so a pattern that only ever occurs in the
+// windows gets a large but finite lift); medianDistMs = median |Δt| to
 // the reference; significant = lift ≥ minLift. rows (all patterns seen in a
 // window) are sorted by covered, then lift; the caller filters on `significant`.
 function analysisNeighbors(refEntries, fileEntries, opts) {
@@ -53914,6 +53915,7 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
   };
   const bucketOf = makeLevelBucketer();
   const rows = new Map();
+  const seenByGroup = new Map(); // group -> Set of entry ids already inside some window
   refs.forEach((ref, refIdx) => {
     const from = direction === "before" ? bound(ref.ts - windowMs, false) : bound(ref.ts, true);
     const to = direction === "before" ? bound(ref.ts, false) : bound(ref.ts + windowMs, true);
@@ -53932,7 +53934,9 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
       if (row.lastRef !== refIdx) { row.lastRef = refIdx; row.covered++; }
       row.inWindows++;
       row.dists.push(Math.abs(e.ts - ref.ts));
-      row.inByGroup.set(group, (row.inByGroup.get(group) || 0) + 1);
+      let seen = seenByGroup.get(group);
+      if (!seen) seenByGroup.set(group, seen = new Set());
+      if (!seen.has(e.id)) { seen.add(e.id); row.inByGroup.set(group, (row.inByGroup.get(group) || 0) + 1); } // distinct entries: windows may overlap
       const b = bucketOf(e.level, e.formatId);
       const rank = levelSortRank(b, e.formatId);
       if (rank < row.rank) { row.rank = rank; row.maxLevel = b; }
@@ -53949,12 +53953,28 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
     if (row) row.baseByGroup.set(group, (row.baseByGroup.get(group) || 0) + 1);
   }
   const span = Math.max(fileEntries[fileEntries.length - 1].ts - fileEntries[0].ts, windowMs);
+  // Time covered by the windows of each group (overlapping windows counted once).
+  const coveredByGroup = new Map();
+  const rangesByGroup = new Map();
+  for (const r of refs) {
+    const g = groupOf(r);
+    if (!rangesByGroup.has(g)) rangesByGroup.set(g, []);
+    rangesByGroup.get(g).push(direction === "before" ? [r.ts - windowMs, r.ts] : [r.ts, r.ts + windowMs]);
+  }
+  for (const [g, list] of rangesByGroup) {
+    list.sort((a, b) => a[0] - b[0]);
+    let total = 0, curS = null, curE = null;
+    for (const [s0, e0] of list) {
+      if (curE === null || s0 > curE) { if (curE !== null) total += curE - curS; curS = s0; curE = e0; }
+      else if (e0 > curE) curE = e0;
+    }
+    coveredByGroup.set(g, total + (curE === null ? 0 : curE - curS));
+  }
   for (const row of rows.values()) {
     let expected = 0;
     for (const [group, nRefs] of refsPerGroup) {
-      const windowTime = nRefs * windowMs;
       const restCount = Math.max((row.baseByGroup.get(group) || 0) - (row.inByGroup.get(group) || 0), 0);
-      expected += windowTime * (restCount + 0.5) / Math.max(span - windowTime, windowMs);
+      expected += nRefs * windowMs * (restCount + 0.5) / Math.max(span - coveredByGroup.get(group), windowMs);
     }
     const lift = row.inWindows / expected;
     row.dists.sort((a, b) => a - b);
@@ -53967,6 +53987,140 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
   }
   out.rows.sort((a, b) => b.covered - a.covered || b.lift - a.lift);
   return out;
+}
+
+// Rate over time and bursts. `entries` sorted by ts. opts: { buckets (default
+// 40, max 120) }. Returns
+//   { entries, from, to (ts of the first/last entry), buckets, bucketMs,
+//     counts: [n per bucket], usualPerSec,
+//     bursts: [{ from, to (ts of the burst's first/last entry), count, seconds,
+//                factor, levels: {bucket: n}, topPatterns: [{key, floatMask, count}] (≤ 3) }] }
+// Burst: a 1 s bin (bins anchored at the first entry: [t0+k·1000, t0+(k+1)·1000)) with ≥ 5 entries and ≥ 4 × the median count of the non-empty
+// seconds (usualPerSec); adjacent burst seconds merge; the window is then
+// trimmed to the real first/last entry in it. factor = the burst's entries per
+// bin ÷ usualPerSec (1 decimal). Bins are 1000 ts units wide, so callers skip
+// bursts for plain-text files (ts = line number).
+function analysisTimeline(entries, opts) {
+  const buckets = Math.max(1, Math.min(120, Math.floor(+(opts && opts.buckets) || 40)));
+  const list = entries.filter(e => Number.isFinite(e.ts));
+  const out = { entries: list.length, from: null, to: null, buckets, bucketMs: 0, counts: [], usualPerSec: 0, bursts: [] };
+  if (!list.length) return out;
+  const from = list[0].ts, to = list[list.length - 1].ts;
+  out.from = from; out.to = to;
+  out.bucketMs = (to - from) / buckets;
+  out.counts = new Array(buckets).fill(0);
+  for (const e of list) out.counts[out.bucketMs > 0 ? Math.min(buckets - 1, Math.floor((e.ts - from) / out.bucketMs)) : 0]++;
+
+  // per-second runs: { sec, lo, hi } index ranges of `list`
+  const secs = [];
+  for (let i = 0; i < list.length; i++) {
+    const sec = Math.floor((list[i].ts - from) / 1000);
+    const last = secs[secs.length - 1];
+    if (last && last.sec === sec) last.hi = i + 1; else secs.push({ sec, lo: i, hi: i + 1 });
+  }
+  const sorted = secs.map(s => s.hi - s.lo).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  out.usualPerSec = median;
+  const isBurst = s => s.hi - s.lo >= 5 && s.hi - s.lo >= 4 * median;
+  const bucketOf = makeLevelBucketer();
+  for (let i = 0; i < secs.length; i++) {
+    if (!isBurst(secs[i])) continue;
+    let j = i;
+    while (j + 1 < secs.length && secs[j + 1].sec === secs[j].sec + 1 && isBurst(secs[j + 1])) j++;
+    const lo = secs[i].lo, hi = secs[j].hi;
+    const slice = list.slice(lo, hi);
+    const levels = {};
+    for (const e of slice) { const l = bucketOf(e.level, e.formatId); levels[l] = (levels[l] || 0) + 1; }
+    const seconds = secs[j].sec - secs[i].sec + 1;
+    out.bursts.push({
+      from: slice[0].ts, to: slice[slice.length - 1].ts, count: slice.length, seconds,
+      factor: Math.round(slice.length / seconds / median * 10) / 10, levels,
+      topPatterns: analysisPatternCounts(slice).slice(0, 3).map(g => ({ key: g.key, floatMask: g.floatMask, count: g.count })),
+    });
+    i = j;
+  }
+  return out;
+}
+
+// Contrast of two entry sets on pattern level. entriesA / entriesB sorted by
+// ts. opts: { durationAMs, durationBMs (default: the sets' own first-to-last
+// span, at least 1000), minCount (3), minFactor (2) }. Expected = countB ×
+// durationA ÷ durationB. Returns
+//   { a: {entries, durationMs}, b: {entries, durationMs},
+//     new:   [row] — countB = 0, countA ≥ minCount,
+//     more:  [row] — countA ≥ minCount, countA ≥ minFactor × expected,
+//     rarer: [row] — 0 < countA ≤ expected ÷ minFactor, expected ≥ minCount,
+//     gone:  [row] — countA = 0, expected ≥ minCount }
+// row = { key, floatMask, countA, countB, expected, factor (countA ÷ expected,
+// null when expected is 0), example (entry: from A, for `gone` from B) }.
+// Each group is ranked by |ln((countA+.5)/(expected+.5))| × √max(countA, expected).
+function analysisWhatChanged(entriesA, entriesB, opts) {
+  opts = opts || {};
+  const minCount = opts.minCount == null ? 3 : +opts.minCount;
+  const minFactor = opts.minFactor == null ? 2 : +opts.minFactor;
+  const span = list => (list.length ? Math.max(list[list.length - 1].ts - list[0].ts, 1000) : 1000);
+  const durA = +opts.durationAMs > 0 ? +opts.durationAMs : span(entriesA);
+  const durB = +opts.durationBMs > 0 ? +opts.durationBMs : span(entriesB);
+  const out = { a: { entries: entriesA.length, durationMs: durA }, b: { entries: entriesB.length, durationMs: durB }, new: [], more: [], rarer: [], gone: [] };
+  const rows = new Map();
+  for (const g of analysisPatternCounts(entriesA)) rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: g.count, countB: 0, example: g.example });
+  for (const g of analysisPatternCounts(entriesB)) {
+    const r = rows.get(g.key);
+    if (r) r.countB = g.count;
+    else rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: 0, countB: g.count, example: g.example });
+  }
+  const score = r => Math.abs(Math.log((r.countA + 0.5) / (r.expected + 0.5))) * Math.sqrt(Math.max(r.countA, r.expected));
+  for (const r of rows.values()) {
+    r.expected = r.countB * durA / durB;
+    r.factor = r.expected > 0 ? r.countA / r.expected : null;
+    let group = null;
+    if (r.countA === 0) { if (r.expected >= minCount) group = "gone"; }
+    else if (r.countB === 0) { if (r.countA >= minCount) group = "new"; }
+    else if (r.countA >= minCount && r.countA >= minFactor * r.expected) group = "more";
+    else if (r.expected >= minCount && r.countA <= r.expected / minFactor) group = "rarer";
+    if (group) out[group].push(r);
+  }
+  for (const k of ["new", "more", "rarer", "gone"]) out[k].sort((x, y) => score(y) - score(x));
+  return out;
+}
+
+// Distribution of `entries` over a column. columnFn(entry) → the value (string).
+// opts: { max (default 20), dtOf(entry) → Δt ms (link pairs), unpaired:
+// [entries] (references without an end, counted as `noEnd`) }. Returns
+//   { total, distinct, values: [{ value, count, levels: {bucket: n}, noEnd?, dtMs?: {min, median, max} }],
+//     others: { values, count } | null }
+// values are sorted by count (then noEnd, then value); beyond `max` they
+// collapse into `others`. total = entries.length (the unpaired are not counted in it).
+function analysisGroupBy(entries, columnFn, opts) {
+  opts = opts || {};
+  const max = Math.max(1, +opts.max || 20);
+  const bucketOf = makeLevelBucketer();
+  const map = new Map();
+  const slot = v => {
+    let s = map.get(v);
+    if (!s) map.set(v, s = { value: v, count: 0, levels: {}, noEnd: 0, dts: [] });
+    return s;
+  };
+  for (const e of entries) {
+    const s = slot(columnFn(e));
+    s.count++;
+    const l = bucketOf(e.level, e.formatId);
+    s.levels[l] = (s.levels[l] || 0) + 1;
+    if (opts.dtOf) { const dt = opts.dtOf(e); if (Number.isFinite(dt)) s.dts.push(dt); }
+  }
+  for (const e of opts.unpaired || []) slot(columnFn(e)).noEnd++;
+  const all = [...map.values()].sort((a, b) => b.count - a.count || b.noEnd - a.noEnd || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+  const values = all.slice(0, max).map(s => {
+    const v = { value: s.value, count: s.count, levels: s.levels };
+    if (opts.unpaired) v.noEnd = s.noEnd;
+    if (s.dts.length) { s.dts.sort((x, y) => x - y); v.dtMs = { min: s.dts[0], median: s.dts[Math.floor(s.dts.length / 2)], max: s.dts[s.dts.length - 1] }; }
+    return v;
+  });
+  const rest = all.slice(max);
+  return {
+    total: entries.length, distinct: all.length, values,
+    others: rest.length ? { values: rest.length, count: rest.reduce((n, s) => n + s.count, 0) } : null,
+  };
 }
 
 /* ---------- Pattern ids (docs/concept-llm-analysis-tools.md → 1.1) ----------
@@ -54315,6 +54469,198 @@ function llmToolGetValueStats(args) {
   };
 }
 
+// "08:00:02.022", "2026-01-15 08:00:02.022" (or with T), "line 120" → ts for a
+// view over nodeId's file — the strings llmTime produces. NaN when unreadable.
+function llmParseTime(nodeId, text) {
+  const s = String(text == null ? "" : text).trim();
+  if (nodeIsPlainText(nodeId)) {
+    const m = /^(?:line\s*)?(\d+(?:\.\d+)?)$/i.exec(s);
+    return m ? +m[1] : NaN;
+  }
+  const ms = f => (f ? +(f + "00").slice(0, 3) : 0);
+  const clockOk = (h, mi, sec) => +h <= 23 && +mi <= 59 && +(sec || 0) <= 59;
+  let m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?$/.exec(s);
+  if (m) return clockOk(m[4], m[5], m[6]) && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31 ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0), ms(m[7])).getTime() : NaN;
+  m = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?$/.exec(s);
+  if (m) {
+    if (!clockOk(m[1], m[2], m[3])) return NaN;
+    const first = getEntries(getRootFileId(nodeId))[0];
+    const base = new Date(first ? first.ts : 0);
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate(), +m[1], +m[2], +(m[3] || 0), ms(m[4])).getTime();
+  }
+  return NaN;
+}
+
+function llmToolTimeline(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const tl = analysisTimeline(target.entries, { buckets: args.buckets });
+  const out = { nodeId: target.node ? target.node.id : String(nodeId), entries: tl.entries };
+  if (!tl.entries) { out.note = "No entries."; return out; }
+  const plain = nodeIsPlainText(target.fileId);
+  out.from = llmTime(target.fileId, tl.from);
+  out.to = llmTime(target.fileId, tl.to);
+  out.bucketMs = Math.round(tl.bucketMs);
+  out.counts = tl.counts;
+  out.usualPerSec = tl.usualPerSec;
+  if (plain) { out.bursts = []; out.note = "Plain-text file: no time axis, so no bursts."; return out; }
+  out.bursts = tl.bursts.map(b => ({
+    from: llmTime(target.fileId, b.from), to: llmTime(target.fileId, b.to), count: b.count, factor: b.factor, levels: b.levels,
+    topTypes: b.topPatterns.map(p => ({ patternId: llmPatternIdFor(target.fileId, p.key, p.floatMask), type: patternDisplayText(p.key), count: p.count })),
+  }));
+  if (tl.bursts.length) out.tip = "create_window with from/to of a burst builds a time-window node; what_changed compares it with the rest; common_neighbors finds what precedes it.";
+  return out;
+}
+
+// One side of what_changed: a node / pattern id, optionally narrowed to a time
+// window, or only a window of the default file.
+function llmWhatSide(label, nodeArg, fromArg, toArg) {
+  const hasWindow = fromArg != null || toArg != null;
+  if (!nodeArg && !hasWindow) return { missing: true };
+  const base = llmResolveEntries(nodeArg || llmDefaultFileId());
+  if (base.error) return { error: base.error };
+  let from = null, to = null, entries = base.entries;
+  if (hasWindow) {
+    if (fromArg != null) { from = llmParseTime(base.fileId, fromArg); if (Number.isNaN(from)) return { error: label + "From \"" + fromArg + "\" is not a time. Use the format of the times the tools return." }; }
+    if (toArg != null) { to = llmParseTime(base.fileId, toArg); if (Number.isNaN(to)) return { error: label + "To \"" + toArg + "\" is not a time. Use the format of the times the tools return." }; }
+    entries = entries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
+  }
+  return { base, entries, windowMs: from != null && to != null ? Math.abs(to - from) : null, label: nodeArg ? String(nodeArg) : "file " + base.fileId };
+}
+
+function llmToolWhatChanged(args) {
+  const a = llmWhatSide("a", args.aNodeId, args.aFrom, args.aTo);
+  if (a.error) return { error: a.error };
+  if (a.missing) return { error: "Say what to examine: aNodeId (a node or pattern id) and/or aFrom/aTo (a time window of the file)." };
+  const fileId = a.base.fileId;
+  const b = llmWhatSide("b", args.bNodeId, args.bFrom, args.bTo);
+  if (b.error) return { error: b.error };
+  let entriesB, durationB = null, bLabel;
+  if (b.missing) {
+    // B = the rest of A's file: everything not in A, over the time left over.
+    const inA = new Set(a.entries.map(e => e.id));
+    const all = getEntries(fileId);
+    entriesB = all.filter(e => !inA.has(e.id));
+    const r = fileEntryTimeRange(all);
+    const spanA = a.entries.length ? a.entries[a.entries.length - 1].ts - a.entries[0].ts : 0;
+    durationB = r ? Math.max((r.max - r.min) - (a.windowMs != null ? a.windowMs : spanA), 1000) : 1000;
+    bLabel = "rest of file";
+  } else {
+    entriesB = b.entries;
+    durationB = b.windowMs;
+    bLabel = b.label;
+  }
+  const wc = analysisWhatChanged(a.entries, entriesB, { durationAMs: a.windowMs, durationBMs: durationB });
+  const round1 = v => (v == null ? null : Math.round(v * 10) / 10);
+  const row = (r, limit) => r.slice(0, limit).map(x => ({
+    patternId: llmPatternIdFor(fileId, x.key, x.floatMask), type: patternDisplayText(x.key),
+    countA: x.countA, countB: x.countB, expected: round1(x.expected), factor: round1(x.factor), example: llmEntryId(x.example),
+  }));
+  const side = (s, label) => ({ what: label, entries: s.entries, seconds: Math.round(s.durationMs / 100) / 10 });
+  const out = { a: side(wc.a, a.label), b: side(wc.b, bLabel) };
+  for (const k of ["new", "more", "rarer", "gone"]) out[k] = row(wc[k], 8);
+  if (!wc.new.length && !wc.more.length && !wc.rarer.length && !wc.gone.length) out.note = "No pattern differs clearly (needs ≥ 3 occurrences and a factor ≥ 2).";
+  return out;
+}
+
+function llmToolCommonNeighbors(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const direction = args.direction === "after" ? "after" : "before";
+  const windowMs = args.windowMs == null ? 5000 : +args.windowMs;
+  if (!(windowMs > 0)) return { error: "windowMs must be a positive number of milliseconds." };
+  const minLift = args.minLift == null ? 2 : +args.minLift;
+  if (!Number.isFinite(minLift)) return { error: "minLift must be a number." };
+  const showAll = args.showAll === true;
+  const nb = analysisNeighbors(target.entries, getEntries(target.fileId), { direction, windowMs, sameThread: args.sameThread !== false, minLift });
+  const rows = (showAll ? nb.rows : nb.rows.filter(r => r.significant)).slice(0, 12);
+  const out = { nodeId: target.node ? target.node.id : String(nodeId), references: nb.references, direction, windowMs, sameThread: nb.sameThread, minLift };
+  out.neighbors = rows.map(r => {
+    const n = {
+      patternId: llmPatternIdFor(target.fileId, r.patternKey, r.floatMask), type: patternDisplayText(r.patternKey),
+      coverage: r.coverage, inWindows: r.inWindows, lift: Math.round(r.lift * 10) / 10, medianDistMs: r.medianDistMs, maxLevel: r.maxLevel, example: llmEntryId(r.example),
+    };
+    if (showAll) n.significant = r.significant;
+    return n;
+  });
+  if (!nb.references) out.note = "The node has no entries.";
+  else if (!out.neighbors.length) out.hint = "Nothing stands out (lift < " + minLift + "). Try a longer windowMs, sameThread: false, or showAll: true.";
+  else out.tip = "create_window with aroundNodeId = this node and " + (direction === "before" ? "beforeMs" : "afterMs") + " = " + windowMs + " shows the context; create_filter with a patternId keeps one type.";
+  return out;
+}
+
+function llmToolGroupBy(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const want = String(args.column == null ? "" : args.column).trim().toLowerCase();
+  if (!want) return { error: "column is empty." };
+  const cols = facetColumnsFor(target.fileId);
+  let col = cols.find(c => c.key.toLowerCase() === want || c.label.toLowerCase() === want);
+  let valueOf = null;
+  if (col) valueOf = col.value;
+  else if (target.node) {
+    const ex = llmExtractRows(target.node);
+    const ec = ex && ex.columns.find(c => String(c.index) === want || c.name.toLowerCase() === want);
+    if (ec) {
+      const byEntry = new Map(ex.rows.map(r => [r.entry, r.values[ec.index - 1]]));
+      col = { key: ec.name };
+      valueOf = e => byEntry.get(e) || "";
+    }
+  }
+  if (!col) {
+    const names = cols.map(c => c.key);
+    if (target.node) { const ex = llmExtractRows(target.node); if (ex) ex.columns.forEach(c => names.push(c.name)); }
+    return { error: "Unknown column \"" + args.column + "\". Columns: " + names.join(", ") + "." };
+  }
+  const link = !!target.node && isLinkNode(target.node);
+  const first = e => getTupleEntries(e)[0];
+  const g = analysisGroupBy(target.entries, link ? e => valueOf(first(e)) : valueOf, link ? { dtOf: e => e.dtMs, unpaired: (target.node._linkUnmatched || []).map(first) } : {});
+  const out = { nodeId: target.node ? target.node.id : String(nodeId), column: col.key, total: g.total, distinct: g.distinct, values: g.values.map(v => ({ ...v, value: v.value === "" ? "(empty)" : v.value })) };
+  if (link) { out.byStartEntry = true; out.noEnd = (target.node._linkUnmatched || []).length; }
+  if (g.others) out.others = g.others;
+  return out;
+}
+
+function llmToolCreateWindow(args) {
+  const timed = args.from != null || args.to != null;
+  const around = args.aroundNodeId != null && args.aroundNodeId !== "";
+  if (timed === around) return { error: timed ? "Give either from/to or aroundNodeId, not both." : "Give from/to (a time window) or aroundNodeId with beforeMs/afterMs (the context around a node's entries)." };
+  let node;
+  if (around) {
+    const { node: ref, error } = llmNode(args.aroundNodeId, "reference node");
+    if (error) return { error };
+    if (ref.type !== "filter") return { error: "aroundNodeId must be a filter node (its entries are the references); create_filter first." };
+    let before = args.beforeMs == null ? null : +args.beforeMs, after = args.afterMs == null ? null : +args.afterMs;
+    if ((before != null && !(before >= 0)) || (after != null && !(after >= 0))) return { error: "beforeMs/afterMs must be non-negative numbers of milliseconds." };
+    if (before == null && after == null) { before = 1000; after = 1000; }
+    before = before || 0; after = after || 0;
+    if (before === 0 && after === 0) return { error: "beforeMs and afterMs are both 0." };
+    node = createContextNode(ref.id, before, after);
+    if (!node) return { error: "Could not create the window." };
+  } else {
+    const parentId = args.parentId || llmDefaultFileId();
+    if (!parentId) return { error: "No log file is loaded." };
+    const { node: parent, error } = llmNode(parentId, "parent");
+    if (error) return { error };
+    const from = args.from == null ? null : llmParseTime(parent.id, args.from);
+    const to = args.to == null ? null : llmParseTime(parent.id, args.to);
+    if (Number.isNaN(from)) return { error: "from \"" + args.from + "\" is not a time. Use the format of the times the tools return, e.g. \"" + llmTime(parent.id, getEntries(parent.id)[0] ? getEntries(parent.id)[0].ts : 0) + "\"." };
+    if (Number.isNaN(to)) return { error: "to \"" + args.to + "\" is not a time. Use the format of the times the tools return." };
+    node = createFilterNode(parent.id, "timerange", from != null && to != null && from > to ? { from: to, to: from } : { from, to });
+    if (!node) return { error: "Could not create the window." };
+  }
+  llmNoteCreated(node);
+  const out = { nodeId: node.id, name: node.name, parentId: node.parentId, entries: getEntries(node.id).length };
+  if (!around) out.of = getEntries(node.parentId).length;
+  return out;
+}
+
 const LLM_VIEWS = { log: "highlight", context: "highlight", filtered: "filter", table: "table", plot: "plot", patterns: "patterns" };
 function llmToolShowView(args) {
   const { node, error } = llmNode(args.nodeId);
@@ -54557,6 +54903,59 @@ const LLM_TOOLS = [
     }, required: ["entryIds"] },
     run: llmToolAnnotate,
   },
+  {
+    name: "timeline",
+    description: "How a node's (or message type's) entries are spread over time: counts per time bucket, the usual rate, and bursts (seconds with at least 4x the usual rate) with their time window, size, levels and top message types. Start here to find when something happened.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "Node or pattern id; default: the active node" },
+      buckets: { type: "integer", description: "Number of time buckets (default 40, max 120)" },
+    } },
+    run: llmToolTimeline,
+  },
+  {
+    name: "what_changed",
+    description: "Contrasts set A with set B on message-type level: types that are new in A, more or rarer than expected from B's rate, or gone. A = aNodeId (node or pattern id) and/or the time window aFrom..aTo of the file; B defaults to the rest of the same file, or give bNodeId / bFrom..bTo (another node, window or file). Only types with at least 3 occurrences count. Times as returned by timeline.",
+    parameters: { type: "object", properties: {
+      aNodeId: { type: "string", description: "Node or pattern id for A; default: the file of the active node when only aFrom/aTo are given" },
+      aFrom: { type: "string" }, aTo: { type: "string" },
+      bNodeId: { type: "string", description: "Node for B (default: the rest of A's file)" },
+      bFrom: { type: "string" }, bTo: { type: "string" },
+    } },
+    run: llmToolWhatChanged,
+  },
+  {
+    name: "common_neighbors",
+    description: "Which message types typically stand BEFORE (or AFTER) the entries of a node, more often than elsewhere in the file. Per reference entry a window of windowMs is looked at (references themselves excluded). coverage n/refs = in how many windows the type occurs; lift = its rate there / its rate elsewhere (default: only lift >= 2, up to 12 rows). Use it to find causes of errors.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "Node or pattern id whose entries are the references" },
+      direction: { type: "string", enum: ["before", "after"], description: "Default before" },
+      windowMs: { type: "number", description: "Window size per reference in ms (default 5000)" },
+      sameThread: { type: "boolean", description: "Only count entries of the reference's thread (default true)" },
+      minLift: { type: "number", description: "Minimum lift (default 2)" },
+      showAll: { type: "boolean", description: "Also list types below minLift" },
+    }, required: ["nodeId"] },
+    run: llmToolCommonNeighbors,
+  },
+  {
+    name: "group_by",
+    description: "Distribution of a node's entries over one column (thread, location, method, level, a format column or an extraction column): count and levels per value, at most 20 values. On a link node it groups the pairs by their START entry's value and adds, per value, entries without end (noEnd) and the Δt min/median/max.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "Node or pattern id" },
+      column: { type: "string", description: "Column key/name, or an extraction column's number/name" },
+    }, required: ["nodeId", "column"] },
+    run: llmToolGroupBy,
+  },
+  {
+    name: "create_window",
+    description: "Creates a time-window node. Either from/to (times as returned by timeline, either may be left out) under parentId (default: the file), or aroundNodeId + beforeMs/afterMs: every entry of the file within that time of each entry of the node (default 1000 ms each side).",
+    parameters: { type: "object", properties: {
+      parentId: { type: "string", description: "With from/to: node to narrow; default: the whole file of the active node" },
+      from: { type: "string" }, to: { type: "string" },
+      aroundNodeId: { type: "string", description: "Filter node whose entries get context" },
+      beforeMs: { type: "number" }, afterMs: { type: "number" },
+    } },
+    run: llmToolCreateWindow,
+  },
 ];
 const LLM_TOOL_MAP = new Map(LLM_TOOLS.map(t => [t.name, t]));
 
@@ -54635,6 +55034,8 @@ const LLM_SYSTEM_PROMPT = [
   "2. If the request is ambiguous (which axis? which sensor? which event counts as 'done'?), ASK a short question instead of guessing — list the concrete options you found. Asking ends your turn; the person answers in the next message. When you ask, put each option on its own line starting with '- '.",
   "3. Build: create the filters/links; check the counts in each result and fix the pattern if it matched nothing or an error came back.",
   "4. Show: show_view (table or plot) so the person sees the result — but only with the id of a node whose result said tablePlot: true. No such node yet? Create the extraction filter first (under a link: create_filter with parentId = the link node), then show_view on that new id. If there is nothing to extract, use view \"filtered\" instead. Plot types: line/bar/scatter/3d for values over time or against each other; radar (one row against selected ones) and parallel (every row across several axes, ranges highlight rows) for several columns with different units; heatmap/profile for an array column or same-unit columns.",
+  "5. Diagnose (\"what is going on?\", \"why do these happen?\"): the analysis tools only read and create no nodes. Overview: get_overview, timeline (when are the bursts?). Find the unusual: find_message_types, what_changed (a burst or a run against the rest, or one file against another). Find causes: common_neighbors (what typically comes BEFORE the entries of a node, coverage n/refs and lift), group_by (which thread/axis/value), and create_link's unpairedFollowedBy (what follows references without an end). Prove it: get_entries with full: true (complete message, stack trace) or ids. Show it: create_window (a time window, or context around a node), create_filter, show_view, annotate.",
+  "Pattern ids: find_message_types, timeline, what_changed, common_neighbors and create_link give message types an id like p7. Pass it wherever a nodeId is accepted by a reading tool (get_entries, timeline, group_by, common_neighbors, what_changed), or to create_filter as patternId to keep that type. create_filter and create_link accept preview: true to check the count without creating a node.",
   "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something.",
 ].join("\n");
 
@@ -54881,6 +55282,11 @@ function llmToolSummary(name, out) {
     case "get_entries": return "get_entries → " + (r.entries || []).length + (r.total != null ? " of " + r.total + " (" + r.nodeId + ")" : " by id");
     case "get_value_stats": return "get_value_stats → " + r.nodeId + (r.n != null ? " n=" + r.n + " min " + r.min + " median " + r.median + " max " + r.max : "");
     case "show_view": return "show_view → " + r.nodeId + " " + r.view;
+    case "timeline": return "timeline → " + (r.entries || 0) + " entries, " + (r.bursts || []).length + " burst(s)";
+    case "what_changed": return "what_changed → " + ["new", "more", "rarer", "gone"].map(k => (r[k] || []).length + " " + k).join(", ");
+    case "common_neighbors": return "common_neighbors → " + (r.neighbors || []).length + " type(s) " + r.direction + " " + r.references + " reference(s)" + ((r.neighbors || [])[0] ? ", top: " + llmCut(r.neighbors[0].type, 50) + " " + r.neighbors[0].coverage : "");
+    case "group_by": return "group_by → " + r.column + ": " + r.distinct + " value(s)";
+    case "create_window": return "create_window → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies");
     case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "");
     default: return name;
   }

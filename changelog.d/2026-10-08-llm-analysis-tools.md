@@ -1,0 +1,4 @@
+- **feat: analysis tools for the LLM assistant (2026-10-08, person-requested, backlog #119)**
+  - New read-only tools `timeline` (bursts), `what_changed`, `common_neighbors` (what comes before/after), `group_by` (incl. Δt and "no end" on links) and `create_window`; they run on pure engines (`analysisTimeline`, `analysisWhatChanged`, `analysisNeighbors`, `analysisGroupBy`, `analysisPatternCounts`) that the Analyze UI (#120) will reuse.
+  - Existing tools: pattern ids `p<n>` as virtual nodes, `create_filter` by `patternId`/`column`, `preview: true` (no node), `get_entries` `ids`/`full`, `create_link` explains unpaired references, `show_view` `unpaired: "only"`. The system prompt got a diagnosis flow.
+  - **Tests**: GROUP llm-pattern-ids, llm-preview, llm-entries-full, llm-link-unpaired, llm-timeline, llm-what-changed, llm-common-neighbors, llm-group-by, llm-create-window, 303. Docs: docs/llm-assistant.md.
