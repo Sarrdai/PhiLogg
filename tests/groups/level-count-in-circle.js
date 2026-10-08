@@ -26,7 +26,7 @@ await withApp(async (w, d, T) => {
   table.forEach(([n, exp]) => assert(s(n) === exp, "levelCountShort(" + n + ") = " + exp + ", got " + s(n)));
   assert(table.every(([n]) => s(n).length <= 4), "every short count has at most 4 characters");
   assert(s(999999) !== "1000k", "999999 never rounds up to 1000k");
-});
+}, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
   section("level-count-in-circle b. Rendered text on the tiers, exact count in title, phone chips exact, 'Always' hides the circle count");
@@ -83,7 +83,7 @@ await withApp(async (w, d, T) => {
     w.renderLevelBar();
     lcSetWidth(w, 1400);
   }
-});
+}, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
   section("level-count-in-circle c. CSS: centered, 9.5px / 11px, level colours on desktop for every level, active in the -on colour");

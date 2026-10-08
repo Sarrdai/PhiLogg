@@ -94,7 +94,7 @@ await withApp(async (w, d, T) => {
     assert(rules.some(r => r.selectorText === ".level-btn.active.lvl-" + l + " .level-count" && /-on\)/.test(r.style.color)),
       "checked " + l + " circle: the count uses the fill's on-color");
   });
-});
+}, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
   section("tablet-header-find c. 'Time range' is never disabled in the log views");

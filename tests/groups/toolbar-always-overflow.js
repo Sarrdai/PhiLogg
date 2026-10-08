@@ -29,4 +29,4 @@ await withApp(async (w, d, T) => {
   assert(group && w.getComputedStyle(group).flexShrink === "0", "toolbar children don't shrink (they scroll instead)");
   d.body.classList.remove("view-toolbar-labels-always");
   for (const s of ids) assert(ox(s) === "visible" || ox(s) === "", s + " back to visible when the mode is left");
-});
+}, { toolbarLabels: "hover" });

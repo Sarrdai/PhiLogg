@@ -280,6 +280,13 @@ async function withApp(run, opts = {}) {
       // their own fetch calls would see). GROUP provided-formats deletes
       // this in its beforeParse to test the hosted fetch route.
       window.__PHILOGG_PROVIDED_FORMATS__ = [];
+      // opts.toolbarLabels: "never" | "hover" | "always" for BOTH toolbar-label
+      // settings (the app default is "always"; a group testing the On-hover
+      // look or the plain geometry asks for "hover").
+      if (opts.toolbarLabels) {
+        window.localStorage.setItem("philogg-filter-toolbar-labels", opts.toolbarLabels);
+        window.localStorage.setItem("philogg-view-toolbar-labels", opts.toolbarLabels);
+      }
       if (opts.beforeParse) opts.beforeParse(window);
       Object.defineProperty(window.Element.prototype, "clientHeight", { get() { return 400; }, configurable: true });
       Object.defineProperty(window.Element.prototype, "clientWidth", { get() { return 800; }, configurable: true });

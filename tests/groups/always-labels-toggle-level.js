@@ -94,4 +94,4 @@ await withApp(async (w, d, T) => {
   assert(cs(toggle).paddingLeft !== "5px", "filter 'Always' alone does not change the view-toolbar toggles");
   d.body.classList.remove("filter-toolbar-labels-always");
   assert(cs(levels[0]).paddingLeft === "0px" && cs(levels[0].querySelector(".row-action-hit")).display !== "none", "back to hover: level circle restored");
-});
+}, { toolbarLabels: "hover" });

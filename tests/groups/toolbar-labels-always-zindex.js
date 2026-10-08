@@ -39,4 +39,4 @@ await withApp(async (w, d, T) => {
   assert(z(tb.querySelector(".tb-label")) === "auto", ".tb-label z-index auto, got " + z(tb.querySelector(".tb-label")));
   assert(z(rowFilter.l) === "45", "the filter-toolbar label is not affected by the view-toolbar mode");
   d.body.classList.remove("view-toolbar-labels-always");
-});
+}, { toolbarLabels: "hover" });

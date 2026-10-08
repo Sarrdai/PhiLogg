@@ -1339,10 +1339,25 @@
   .toolbar-icon-btn.expanded .tb-label, .toolbar-icon-btn:focus-visible .tb-label{
     opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);
   }
+  /* Calm hand-over (2026-10-08): only the first pill of a hover session fades
+     in; once the pointer moved on to another button of the same group, JS
+     (labelHandoverTracker) puts `.labels-live` on the group container and the
+     pills swap instantly (no fade, no 4px slide) until the pointer leaves the
+     group — removed BEFORE the collapse, so the exit still fades. */
+  .labels-live .row-action-label, .labels-live .tb-label{transition:none;}
+  /* Disabled reason (On-hover mode only): the pill of a disabled button
+     appends why, in normal weight and secondary colour. The reason sits on
+     the label span too (attr() on a pseudo-element reads its own element);
+     Always pills are inline and must not widen, Never shows no pill. */
+  body:not(.filter-toolbar-labels-always):not(.filter-toolbar-labels-never) .row-action-btn:not(.rect):disabled .row-action-label[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .row-action-btn.rect:disabled .row-action-label[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .toolbar-icon-btn:disabled .tb-label[data-disabled-reason]::after{
+    content:" \00b7  " attr(data-disabled-reason); font-weight:400; color:var(--text-secondary);
+  }
   /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
      button labels" (person-requested, 2026-09-05; redesigned 2026-09-08) —
-     "On hover" (default) is the floating-pill mechanic above, nothing to
-     override here. "Never" hides the label outright (button stays a plain
+     "On hover" is the floating-pill mechanic above, nothing to
+     override here ("Always" is the default since 2026-10-08). "Never" hides the label outright (button stays a plain
      circle/rect icon). "Always" restores the ORIGINAL inline expand-to-pill
      look — the button itself grows into a pill and the label sits inside
      it, permanently, in the toolbar's normal layout flow — since that
@@ -10415,16 +10430,18 @@ document.getElementById("settingsFilterActivationView").addEventListener("change
 // person wanted Filter-Toolbar and View Toolbar controllable separately.
 const FILTER_TOOLBAR_LABELS_KEY = "philogg-filter-toolbar-labels";
 const VIEW_TOOLBAR_LABELS_KEY = "philogg-view-toolbar-labels";
-let filterToolbarLabels = "hover"; // "never" | "hover" | "always"
-let viewToolbarLabels = "hover";
-function normalizeToolbarLabelsMode(v) { return v === "never" || v === "always" ? v : "hover"; }
+let filterToolbarLabels = "always"; // "never" | "hover" | "always" (default: always)
+let viewToolbarLabels = "always";
+function normalizeToolbarLabelsMode(v) { return v === "never" || v === "hover" ? v : "always"; }
 function applyFilterToolbarLabels() {
   document.body.classList.toggle("filter-toolbar-labels-never", filterToolbarLabels === "never");
   document.body.classList.toggle("filter-toolbar-labels-always", filterToolbarLabels === "always");
+  syncAllDisabledReasonTitles();
 }
 function applyViewToolbarLabels() {
   document.body.classList.toggle("view-toolbar-labels-never", viewToolbarLabels === "never");
   document.body.classList.toggle("view-toolbar-labels-always", viewToolbarLabels === "always");
+  syncAllDisabledReasonTitles();
 }
 function initToolbarLabelsSettings() {
   filterToolbarLabels = normalizeToolbarLabelsMode(localStorage.getItem(FILTER_TOOLBAR_LABELS_KEY));
@@ -23003,7 +23020,7 @@ function assertableSelectedColumns() {
 // and at the end of renderExtractTable (node switch, sort, tail tick, ...).
 function updateTableAssertButton() {
   const btn = el("#tableAssertBtn");
-  if (btn) btn.disabled = assertableSelectedColumns().length === 0;
+  if (btn) { btn.disabled = assertableSelectedColumns().length === 0; setDisabledReason(btn, "select a numeric column first"); }
 }
 
 let selectionAnchor = null; // {row, col} last click origin, used for shift-click range extension
@@ -27754,9 +27771,10 @@ function updateRepeatButton() {
   btnRepeat.forEach(b => {
     b.classList.toggle("active", repeatCollapseOn && !locked);
     b.disabled = locked;
+    setDisabledReason(b, "clear the column sort", false);
     b.title = locked ? "Collapse repeats needs the chronological order (clear the column sort)" : "Collapse repeats";
   });
-  btnRepeatMenu.forEach(b => { b.disabled = locked; });
+  btnRepeatMenu.forEach(b => { b.disabled = locked; setDisabledReason(b, "clear the column sort", false); });
   repeatMenu.querySelector('[data-repeat-action="toggle"]').classList.toggle("on", repeatCollapseOn);
   repeatMenu.querySelectorAll("[data-repeat-rule]").forEach(it => it.classList.toggle("on", it.dataset.repeatRule === repeatRule));
 }
@@ -29293,6 +29311,8 @@ function updateContextToolbar() {
   const matchCount = contextMatchRows.length;
   ctxPrevMatch.disabled = matchCount < 2;
   ctxNextMatch.disabled = matchCount < 2;
+  setDisabledReason(ctxPrevMatch, "needs 2 or more matches");
+  setDisabledReason(ctxNextMatch, "needs 2 or more matches");
 
   const pos = state.selectedId ? contextMatchPos.get(state.selectedId) : undefined;
   contextNavLabel.textContent =
@@ -29305,6 +29325,9 @@ function updateContextToolbar() {
   ctxExpandAround.disabled = !contextGaps.length;
   ctxExpandAll.disabled = !hiddenLeft;
   ctxCollapseAll.disabled = !anyRevealed;
+  setDisabledReason(ctxExpandAround, "no hidden lines between matches");
+  setDisabledReason(ctxExpandAll, "nothing left to expand");
+  setDisabledReason(ctxCollapseAll, "nothing expanded");
 }
 
 // The bar sits in #highlightWrap's flex column, so showing it takes
@@ -33823,6 +33846,7 @@ function updateWrapMsgButton() {
     b.classList.toggle("active", on);
     if (b.dataset.baseTitle === undefined) b.dataset.baseTitle = b.title;
     b.disabled = locked;
+    setDisabledReason(b, "always wrapped in a narrow window", false);
     b.title = locked ? "Always wrapped in a narrow window" : b.dataset.baseTitle;
   });
   document.body.classList.toggle("wrap-messages", wrapMessagesEff());
@@ -42174,6 +42198,39 @@ function clampLabelOffset(rect, viewportWidth) {
   if (rect.right > viewportWidth - EDGE_MARGIN) return (viewportWidth - EDGE_MARGIN) - rect.right; // overflowing the right edge -> shift left
   return 0; // already fits, no correction needed
 }
+// Hover hand-over state of one toolbar group (container): `hover(btn)` is
+// called whenever a button is under the pointer, `leave()` when the pointer
+// leaves the container. The first button of a session fades its pill in as
+// usual; as soon as a DIFFERENT button is hovered the container gets
+// `.labels-live` (transition:none on the pills) and keeps it until `leave()`.
+// Pure bookkeeping on a container's classList, so it is unit-testable.
+function labelHandoverTracker(container) {
+  let last = null;
+  return {
+    hover(btn) {
+      if (last && btn !== last) container.classList.add("labels-live");
+      last = btn;
+    },
+    leave() {
+      container.classList.remove("labels-live");
+      last = null;
+    },
+  };
+}
+// Same hand-over for the containers whose pills are revealed by plain CSS
+// :hover (#levelBar, #libraryPresetBar — their buttons are rebuilt on every
+// toggle/library change, so the container is the only stable listener target).
+function setupLabelHandoverHover(container) {
+  if (!container) return;
+  const handover = labelHandoverTracker(container);
+  container.addEventListener("mouseover", ev => {
+    const btn = ev.target.closest && ev.target.closest(".row-action-btn");
+    if (btn && container.contains(btn)) handover.hover(btn);
+  });
+  container.addEventListener("mouseleave", () => handover.leave());
+}
+setupLabelHandoverHover(document.getElementById("levelBar"));
+setupLabelHandoverHover(document.getElementById("libraryPresetBar"));
 function setupHitExpandGroups(hitSelector) {
   const groups = new Map(); // container element -> [{hit, btn}, ...] (first-seen membership, just to find containers)
   elAll(hitSelector).forEach(hit => {
@@ -42187,6 +42244,12 @@ function setupHitExpandGroups(hitSelector) {
     if (container.dataset.hitExpandBound) return;
     container.dataset.hitExpandBound = "1";
     let restRects = null; // Array<{btn, rect}>, measured only while collapsed
+    // Calm hand-over: the FIRST pill of a hover session fades in; once the
+    // pointer moves on to a different button of the same group the container
+    // gets `.labels-live` (CSS: no transition), so the pills swap instantly.
+    // Only leaving the container ends the session (a gap between buttons
+    // keeps it) — see labelHandoverTracker.
+    const handover = labelHandoverTracker(container);
     const liveEntries = () => [...container.querySelectorAll(hitSelector)]
       .map(hit => ({ hit, btn: hit.closest(".toolbar-icon-btn") }))
       .filter(e => e.btn);
@@ -42219,6 +42282,7 @@ function setupHitExpandGroups(hitSelector) {
       }
       const { clientX: x, clientY: y } = ev;
       const hovered = restRects.find(r => x >= r.rect.left && x <= r.rect.right && y >= r.rect.top && y <= r.rect.bottom);
+      if (hovered) handover.hover(hovered.btn);
       entries.forEach(e => {
         const isExpanded = !!hovered && e.btn === hovered.btn;
         e.btn.classList.toggle("expanded", isExpanded);
@@ -42236,6 +42300,7 @@ function setupHitExpandGroups(hitSelector) {
       if (btn && !btn.classList.contains("expanded")) resetLabelClamp(btn);
     });
     container.addEventListener("mouseleave", () => {
+      handover.leave(); // BEFORE collapsing, so the exit still fades
       const entries = liveEntries();
       collapseAll(entries);
       entries.forEach(e => resetLabelClamp(e.btn));
@@ -42253,6 +42318,41 @@ function currentRowActionEntry() {
   return (state.selectedId && entryIndex[state.selectedId]) || null;
 }
 
+// Disabled-reason pill text: `reason` is shown after the label ("Bookmark ·
+// select a row first") in the On-hover pill (CSS, see .labels-live above) and
+// in the native tooltip — only while the button is actually disabled; "" or an
+// enabled button clears it. The attribute lives on the button (state) and on
+// its label span (CSS attr() reads the pseudo-element's own element).
+// `syncTitle:false` for buttons whose title is already an own explanation.
+function setDisabledReason(btn, reason, syncTitle) {
+  if (!btn) return;
+  const r = btn.disabled && reason ? reason : "";
+  const label = btn.querySelector(".row-action-label, .tb-label");
+  if (r) {
+    btn.setAttribute("data-disabled-reason", r);
+    if (label) label.setAttribute("data-disabled-reason", r);
+  } else {
+    btn.removeAttribute("data-disabled-reason");
+    if (label) label.removeAttribute("data-disabled-reason");
+  }
+  if (syncTitle === false) return;
+  if (btn.dataset.titleBase === undefined) btn.dataset.titleBase = btn.title;
+  syncDisabledReasonTitle(btn);
+}
+// The tooltip carries the reason only when no On-hover pill already shows it
+// (Always/Never mode of the button's own toolbar kind: .row-action-btn:not(.rect)
+// = Filter-Toolbar, everything else = View toolbars) — otherwise the pill and
+// the native tooltip would say the same thing twice.
+function syncDisabledReasonTitle(btn) {
+  const base = btn.dataset.titleBase;
+  if (base === undefined) return;
+  const mode = btn.classList.contains("row-action-btn") && !btn.classList.contains("rect") ? filterToolbarLabels : viewToolbarLabels;
+  const r = btn.getAttribute("data-disabled-reason");
+  btn.title = r && mode !== "hover" ? base + " \u00b7 " + r : base;
+}
+function syncAllDisabledReasonTitles() {
+  elAll("[data-title-base]").forEach(syncDisabledReasonTitle);
+}
 // Keeps every row-action button's disabled state (and the bookmark/note
 // buttons' pressed look, mirroring the context menu's own label swap
 // between "Bookmark this row"/"Remove bookmark" and "Add note"/"Edit note")
@@ -42294,23 +42394,36 @@ function updateRowActionButtons() {
   // requested, 2026-09-08 — use "Message" for that case instead).
   const extractActionEnabled = messageActionEnabled &&
     buildNumericExtractPattern(entryColumnValue(messageActionEntry, "message")) !== null;
+  // Disabled reasons (hover pill + tooltip, see setDisabledReason): one short
+  // phrase per blocker, derived from the same conditions as the flags above.
+  const NO_2D_PLOT = "needs a 2D plot";
+  const rowReason = entry ? "select one row" : "select a row first";
+  const sourceReason = onTable ? "mark a row first" : onPlot ? NO_2D_PLOT : "select a row first";
+  const messageReason = onTable || onPlot ? "not available here" : "select one row";
+  const timeRangeReason = onTable ? "mark two rows first" : NO_2D_PLOT;
+  const setBtns = (action, disabled, reason) => elAll('[data-row-action="' + action + '"]').forEach(b => {
+    b.disabled = disabled;
+    setDisabledReason(b, reason);
+  });
   elAll('[data-row-action="bookmark"]').forEach(b => {
     b.disabled = !singleRowEnabled;
+    setDisabledReason(b, rowReason);
     b.classList.toggle("active", !!entry && state.bookmarks.has(entry.id));
   });
   elAll('[data-row-action="note"]').forEach(b => {
     b.disabled = !singleRowEnabled;
+    setDisabledReason(b, rowReason);
     b.classList.toggle("active", !!entry && state.notes.has(entry.id));
   });
-  elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
-  elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
-  elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !messageActionEnabled; });
-  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !extractActionEnabled; });
-  elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !timeRangeEnabled; });
+  setBtns("filterAfter", !afterBeforeEnabled, sourceReason);
+  setBtns("filterBefore", !afterBeforeEnabled, sourceReason);
+  setBtns("filterForMessage", !messageActionEnabled, messageReason);
+  setBtns("extractMessage", !extractActionEnabled, messageActionEnabled ? "select a row with a number or ID" : messageReason);
+  setBtns("timeRangeFromSelection", !timeRangeEnabled, timeRangeReason);
   // "New" needs no selected row at all — just an active filter tree to add
   // to (same guard openFilterPopup itself applies).
-  elAll('[data-row-action="newFilter"]').forEach(b => { b.disabled = !state.activeId; });
-  elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
+  setBtns("newFilter", !state.activeId, "open a file first");
+  setBtns("addToSelection", !selectEnabled, sourceReason);
 }
 
 // Dispatches a toolbar row-action click by name — shares the exact same
@@ -54083,7 +54196,10 @@ render();
 function makeToolbarBtnExpandable(btn) {
   if (!btn || btn.querySelector(".tb-hit")) return;
   const icon = btn.innerHTML;
-  btn.innerHTML = '<span class="tb-hit">' + icon + '</span><span class="tb-label">' + escapeHtml(btn.title) + '</span>';
+  // The label is the BASE title (setDisabledReason may already have appended a reason to btn.title).
+  btn.innerHTML = '<span class="tb-hit">' + icon + '</span><span class="tb-label">' + escapeHtml(btn.dataset.titleBase !== undefined ? btn.dataset.titleBase : btn.title) + '</span>';
+  // A disabled reason set before this wrapping moves onto the fresh label span (CSS attr() reads it there).
+  if (btn.dataset.disabledReason) btn.querySelector(".tb-label").setAttribute("data-disabled-reason", btn.dataset.disabledReason);
 }
 elAll(
   "#contextToolbar .toolbar-icon-btn:not(.row-action-btn), " +
