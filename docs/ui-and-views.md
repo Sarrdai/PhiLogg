@@ -487,8 +487,34 @@ shape:
 
   Every Always/Never/disabled-reason selector is keyed on the setting of the
   button kind it styles (level pill rules on `level-labels-*`, sidebar on
-  `sidebar-toolbar-labels-*`, ...). "On hover" needs no override at all, it's just the floating-pill
+  `sidebar-toolbar-labels-*`, ...). "On hover" needs no override at all, it's just the floating-label
   mechanics above with no body class present.
+
+  **Hover card** (2026-10-08). The floating On-hover label is a small card
+  (`max-width:240px`, text wraps, `border-radius:10px`): the bold name line
+  (`.hint-name`, the old label text), a one-sentence description (`.hint-desc`,
+  11px, `--text-secondary`) and, where the action has a real shortcut, a `kbd`
+  chip (`.hint-key`). The text lives in ONE table, `TOOLBAR_HINTS`
+  (`{desc, key?, noTitle?}`), keyed by `hintKeyOf(btn)`: the button id, else its
+  `data-row-action`, else `levelChip` / `libraryPreset`, else its `toggle-*`
+  class. `key` is a `SHORTCUT_ACTIONS` id, so the chip shows the CURRENT binding
+  (`refreshShortcutTooltips` re-decorates after a rebind). `decorateHintLabel(btn)`
+  (idempotent) splits an existing label into those spans and is called once at
+  boot (`decorateHintLabels`) and by whatever rebuilds buttons
+  (`renderSidebarToolbar`, `renderLevelBar`, `renderLibraryToolbarPresets`);
+  `renderSidebarToolbar` updates only the `.hint-name` text (Mute / Unmute ...).
+  The level chip keeps `ERROR 1.327` as its name; its description is "Show only
+  ERROR entries · click again to remove." (the chips are a pure view filter).
+  The Always level pills and the phone chips show name + count only
+  (`.hint-desc`/`.hint-key` hidden there). A new labelled button needs a
+  `TOOLBAR_HINTS` entry (GROUP hover-card enumerates the DOM and fails on a
+  missing or stale key, a description over 120 characters or with a newline).
+  *Titles:* On hover the native `title` stays the plain name (the card says the
+  rest); in Always and Never `syncHintTitle` makes it `Name — description (Ctrl+E)`
+  (the disabled reason, if any, stays right after the name). Titles are written
+  from many places, so a `MutationObserver` on `title` re-composes them
+  (`dataset.hintTitle`/`hintBase` mark what it wrote); library presets
+  (`noTitle`) keep their own "Apply … to …" title.
 
   **On-hover hand-over and disabled reason** (2026-10-08, On-hover mode
   only). *Calm hand-over:* only the FIRST pill of a hover session fades in
@@ -504,11 +530,12 @@ shape:
   same tracker through a delegated `mouseover` on the container
   (`setupLabelHandoverHover`). Keyboard `:focus-visible` is unchanged.
   *Disabled reason:* `setDisabledReason(btn, reason)` sets
-  `data-disabled-reason` on a disabled button (and on its label span, because
-  `attr()` in the `::after` rule reads the pseudo-element's own element) and
+  `data-disabled-reason` on a disabled button (and on its label and the card's
+  `.hint-name` span, because `attr()` in the `::after` rule reads the
+  pseudo-element's own element) and
   clears it when the button is enabled; CSS appends ` · <reason>` (normal
-  weight, `--text-secondary`) to the pill, only in On-hover mode of that
-  button kind's setting (not Always or Never, which show no hover pill). The native
+  weight, `--text-secondary`) to the card's name line, only in On-hover mode of that
+  button kind's setting (not Always or Never, which show no hover card). The native
   tooltip carries the reason in Always/Never mode instead (`data-title-base`
   keeps the plain title; `syncAllDisabledReasonTitles` re-syncs on a mode
   change, `syncDisabledReasonTitle` looks the mode up per button kind) so On hover never says it twice. Reasons live next to the code that

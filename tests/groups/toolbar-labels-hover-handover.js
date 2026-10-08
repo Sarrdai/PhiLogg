@@ -105,13 +105,13 @@ await withApp(async (w, d, T) => {
   const bm = d.querySelector('[data-row-action="bookmark"]');
   assert(bm.disabled && bm.title === "Bookmark", "On hover (default): the pill shows the reason, the tooltip stays plain: " + bm.title);
   assert(bm.querySelector(".row-action-label").getAttribute("data-disabled-reason") === "select a row first", "the label span carries it (CSS attr() source)");
-  assert(bm.querySelector(".row-action-label").textContent === "Bookmark", "label text itself is unchanged");
+  assert(bm.querySelector(".row-action-label .hint-name").textContent === "Bookmark", "label name line itself is unchanged");
   const viewSel = d.querySelector("#settingsViewToolbarLabels");
   const setView = v => { viewSel.value = v; viewSel.dispatchEvent(new w.Event("change", { bubbles: true })); };
   setView("never");
-  assert(bm.title === "Bookmark \u00b7 select a row first", "Never: the tooltip is the only place for the reason");
+  assert(bm.title.startsWith("Bookmark \u00b7 select a row first"), "Never: the tooltip is the only place for the reason");
   setView("always");
-  assert(bm.title === "Bookmark \u00b7 select a row first", "Always: tooltip carries the reason");
+  assert(bm.title.startsWith("Bookmark \u00b7 select a row first"), "Always: tooltip carries the reason");
   setView("hover");
   assert(bm.title === "Bookmark" && bm.getAttribute("data-disabled-reason") === "select a row first", "back to On hover: plain tooltip, reason still on the button");
 
@@ -146,7 +146,7 @@ await withApp(async (w, d, T) => {
   w.updateTableAssertButton();
   assert(assertBtn.getAttribute("data-disabled-reason") === "select a numeric column first", "Value assertion reason");
   assert(assertBtn.querySelector(".tb-label").getAttribute("data-disabled-reason") === "select a numeric column first", "...also on its .tb-label");
-  assert(assertBtn.querySelector(".tb-label").textContent === "Value assertion…", "tb-label text is the base title");
+  assert(assertBtn.querySelector(".tb-label .hint-name").textContent === "Value assertion…", "tb-label text is the base title");
 
   T.state.sortColumn = "ts";
   w.updateRepeatButton();

@@ -65,5 +65,5 @@ await withApp(async (w, d, T) => {
   assert(labelRules.length >= 1 && labelRules.every(r => !/layout-phone/.test(r.sel)), "desktop always/never label rules untouched (the merged Never/Always list is not phone-scoped)");
   w.innerWidth = 1440; w.dispatchEvent(new w.Event("resize")); w.render();
   assert(d.body.classList.contains("layout-phone") === false, "desktop tier");
-  assert(!d.body.classList.contains("layout-phone") && btn("rename") && btn("rename").querySelector(".row-action-label").textContent === "Rename…", "desktop: the floating label keeps the full text");
+  assert(!d.body.classList.contains("layout-phone") && btn("rename") && btn("rename").querySelector(".row-action-label .hint-name").textContent === "Rename…", "desktop: the floating label keeps the full text");
 });

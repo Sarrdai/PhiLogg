@@ -26,8 +26,8 @@ await withApp(async (w, d, T) => {
   // --- Name+count moved into the hover label, matching the button's title ---
   const label = errBtn.querySelector(".row-action-label");
   assert(label !== null, "has a .row-action-label span");
-  assert(label.textContent === "ERROR 2", "label reads \"{LEVEL} {count}\", got \"" + label.textContent + "\"");
-  assert(errBtn.title === label.textContent, "title (accessible name) matches the hover label exactly, since the button itself has no visible text");
+  assert(label.querySelector(".hint-name").textContent === "ERROR 2", "label name line reads \"{LEVEL} {count}\", got \"" + label.textContent + "\"");
+  assert(errBtn.title === label.querySelector(".hint-name").textContent, "title (accessible name) matches the hover label exactly, since the button itself has no visible text");
 
   // --- Unchecked = full-strength colored ring; checked = solid fill (person-requested follow-up) ---
   const css = d.querySelector("style").textContent;

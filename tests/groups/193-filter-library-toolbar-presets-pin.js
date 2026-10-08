@@ -57,7 +57,7 @@ await withApp(async (w, d, T) => {
   await waitFor(() => d.querySelectorAll("#libraryPresetBar .row-action-btn[data-lib-key]").length === 1);
   const pill = d.querySelector("#libraryPresetBar .row-action-btn[data-lib-key]");
   assert(pill, "pinning the preset adds a pill to #libraryPresetBar");
-  assert(pill.querySelector(".row-action-label").textContent === "toolbar preset", "the pill carries the preset name as its label");
+  assert(pill.querySelector(".row-action-label .hint-name").textContent === "toolbar preset", "the pill carries the preset name as its label");
   T.state.activeId = textNode.id; T.state.multiSelect = new Set();
   pill.dispatchEvent(new w.MouseEvent("mouseenter"));
   assert(pill.title === "Apply toolbar preset to " + w.nodeDisplayName(textNode), "pill tooltip names the preset and the target, got " + pill.title);

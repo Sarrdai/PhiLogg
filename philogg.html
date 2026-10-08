@@ -1338,8 +1338,8 @@
      reveals changed. */
   .row-action-label{
     position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
-    width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
+    width:max-content; max-width:240px; opacity:0; margin-left:0; overflow:visible; white-space:normal; text-align:left; line-height:1.3;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
     box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
     transition:opacity .12s ease, transform .12s ease;
@@ -1370,8 +1370,8 @@
   .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   .tb-label{
     position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
-    width:max-content; max-width:none; opacity:0; margin-left:0; overflow:visible; white-space:nowrap;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:20px; padding:4px 10px;
+    width:max-content; max-width:240px; opacity:0; margin-left:0; overflow:visible; white-space:normal; text-align:left; line-height:1.3;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
     box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
     transition:opacity .12s ease, transform .12s ease;
@@ -1385,13 +1385,32 @@
      pills swap instantly (no fade, no 4px slide) until the pointer leaves the
      group — removed BEFORE the collapse, so the exit still fades. */
   .labels-live .row-action-label, .labels-live .tb-label{transition:none;}
-  /* Disabled reason (On-hover mode only): the pill of a disabled button
-     appends why, in normal weight and secondary colour. The reason sits on
-     the label span too (attr() on a pseudo-element reads its own element);
-     Always and Never show no hover pill (Always: group captions). */
-  body:not(.filter-toolbar-labels-always):not(.filter-toolbar-labels-never) .row-action-btn:not(.rect):not(.level-btn):not(.level-apply):disabled .row-action-label[data-disabled-reason]::after,
-  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .row-action-btn.rect:not(.sidebar-btn):disabled .row-action-label[data-disabled-reason]::after,
-  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .toolbar-icon-btn:disabled .tb-label[data-disabled-reason]::after{
+  /* Hover card (2026-10-08): the floating label is a small card, built by
+     decorateHintLabel from TOOLBAR_HINTS: bold name line (.hint-name, the old
+     label text), a one-sentence description (.hint-desc) and, where the app has
+     one, the shortcut as a kbd chip (.hint-key). */
+  .hint-name{display:block;}
+  .hint-desc{
+    display:block; margin-top:2px; font-family:var(--font-ui); font-size:11px; font-weight:400; letter-spacing:0;
+    color:var(--text-secondary);
+  }
+  .hint-key{
+    display:inline-block; margin-top:4px; padding:0 5px; border:1px solid var(--border); border-radius:4px;
+    background:var(--bg-app); font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0;
+    color:var(--text-secondary);
+  }
+  /* The coloured level-chip card keeps its text readable on the level colour; the
+     inline pills (Always, phone) carry name+count only. */
+  .level-btn .hint-desc{color:inherit; opacity:.9;}
+  body.level-labels-always .level-btn .hint-desc, body.level-labels-always .level-btn .hint-key,
+  body.layout-phone .level-btn .hint-desc, body.layout-phone .level-btn .hint-key{display:none;}
+  /* Disabled reason (On-hover mode only): the name line of a disabled button's
+     card appends why, in normal weight and secondary colour. The reason sits on
+     the .hint-name span too (attr() on a pseudo-element reads its own element);
+     Always and Never show no hover card (Always: group captions). */
+  body:not(.filter-toolbar-labels-always):not(.filter-toolbar-labels-never) .row-action-btn:not(.rect):not(.level-btn):not(.level-apply):disabled .hint-name[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .row-action-btn.rect:not(.sidebar-btn):disabled .hint-name[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .toolbar-icon-btn:disabled:has(.tb-hit) .hint-name[data-disabled-reason]::after{
     content:" \00b7  " attr(data-disabled-reason); font-weight:400; color:var(--text-secondary);
   }
   /* Settings -> Behavior -> Toolbars (four label settings; redesigned
@@ -1422,7 +1441,7 @@
      rules and stay as they are). */
   body.level-labels-always .level-btn{border-radius:20px; width:auto; overflow:hidden;}
   body.level-labels-always .level-btn .row-action-label{
-    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
+    position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px; white-space:nowrap;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
   body.level-labels-always:not(.layout-phone) .level-btn{padding:0 12px;}
@@ -5319,7 +5338,7 @@
   }
   body.layout-phone .level-btn .row-action-hit{display:none;}
   body.layout-phone .level-btn .row-action-label{
-    position:static; transform:none; opacity:1; padding:0; border:0; background:none; box-shadow:none;
+    position:static; transform:none; opacity:1; padding:0; border:0; background:none; box-shadow:none; white-space:nowrap;
     color:inherit; font-family:inherit; font-size:12.5px; font-weight:600; letter-spacing:0; z-index:auto;
   }
   body.layout-phone #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
@@ -10578,6 +10597,7 @@ function applyToolbarLabelSetting(def) {
   document.body.classList.toggle(def.bodyPrefix + "-never", def.get() === "never");
   document.body.classList.toggle(def.bodyPrefix + "-always", def.get() === "always");
   syncAllDisabledReasonTitles();
+  syncAllHintTitles();
   scheduleBarSeparatorUpdate();
 }
 function applyFilterToolbarLabels() { applyToolbarLabelSetting(TOOLBAR_LABEL_SETTINGS[2]); }
@@ -22492,6 +22512,7 @@ function renderLevelBar() {
     const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + n.toLocaleString("de-DE");
     btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count' + (countText.length > 3 ? " level-count-long" : "") + '">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => toggleLevelFilter(lvl));
+    decorateHintLabel(btn);
     levelBarEl.appendChild(btn);
   });
   updateApplyLevelToTreeButtonVisibility();
@@ -42302,6 +42323,136 @@ elAll('[data-row-actions="toolbar-actions"]').forEach(container => { container.i
 elAll('[data-row-actions="select-action"]').forEach(container => { container.innerHTML = SELECT_ROW_ACTION_HTML; });
 elAll('[data-row-actions="viewbar"]').forEach(container => { container.innerHTML = VIEWBAR_ROW_ACTIONS_HTML; });
 elAll('[data-row-actions="viewbar-new"]').forEach(container => { container.innerHTML = VIEWBAR_NEW_ROW_ACTION_HTML; });
+// Hover card text of every labelled toolbar button (docs/ui-and-views.md ->
+// "Toolbar labels"). Key = hintKeyOf(btn): the button's id, its data-row-action,
+// its toggle-* class, "levelChip" (level chips; {level} is the chip's level) or
+// "libraryPreset". desc = ONE short sentence; key = a SHORTCUT_ACTIONS id (the
+// chip shows its CURRENT binding, so rebinding is picked up); noTitle: the
+// button's own title already explains it. A test requires an entry per button.
+const TOOLBAR_HINTS = {
+  // #viewBar
+  filterBefore: { desc: "Add a time filter that keeps everything up to the selected rows." },
+  filterAfter: { desc: "Add a time filter that keeps everything from the selected rows on." },
+  timeRangeFromSelection: { desc: "Add a time-range filter spanning the selected rows (or the rows on screen)." },
+  filterForMessage: { desc: "Open the filter dialog prefilled with the selected row's message." },
+  extractMessage: { desc: "Create a value-extraction filter from the numbers and IDs in the selected row's message." },
+  newFilter: { desc: "Open the filter dialog to add a new filter under the active node.", key: "newFilter" },
+  btnApplyLevelToTree: { desc: "Turn the selected level chips into a permanent level filter in the tree." },
+  levelChip: { desc: "Show only {level} entries · click again to remove." },
+  libraryPreset: { desc: "Apply this saved preset from the filter library to the selected node.", noTitle: true },
+  // Context / Filtered toolbars
+  ctxPrevMatch: { desc: "Jump to the previous match of the active filter.", key: "prevMatch" },
+  ctxNextMatch: { desc: "Jump to the next match of the active filter.", key: "nextMatch" },
+  ctxExpandAround: { desc: "Reveal the hidden lines around every match." },
+  ctxExpandAll: { desc: "Reveal every hidden line between the matches." },
+  ctxCollapseAll: { desc: "Hide the revealed lines again and show only the matches." },
+  "toggle-pin": { desc: "Keep bookmarked rows in the Filtered view even when the filter would hide them." },
+  "toggle-notes": { desc: "Show or hide the notes attached to rows." },
+  "toggle-multiline": { desc: "Show every line of multi-line messages instead of only the first." },
+  "toggle-wrap": { desc: "Wrap long messages onto several lines instead of scrolling sideways." },
+  "toggle-columns": { desc: "Choose which columns are shown." },
+  btnRepeatCollapse: { desc: "Fold consecutive repeated rows into one row with a ×N badge." },
+  btnRepeatMenu: { desc: "Choose what counts as a repeat: identical rows or the same pattern." },
+  "toggle-textmatch": { desc: "Mark the text matched by the active filter inside the rows." },
+  "toggle-highlightmatch": { desc: "Underline the text matched by the highlight colour of a filter." },
+  "toggle-filepaths": { desc: "Make file paths in messages clickable." },
+  bookmark: { desc: "Bookmark the selected row so it is easy to find again.", key: "bookmark" },
+  note: { desc: "Attach a note to the selected row.", key: "addNote" },
+  addToSelection: { desc: "Add the selected rows to a selection filter (existing or new)." },
+  // Table / Plot toolbars
+  tableExportCsvBtn: { desc: "Export the extraction table as a CSV file." },
+  tableAssertBtn: { desc: "Flag values of the selected column outside a min/max range or a target ± tolerance." },
+  plotFullscreenBtn: { desc: "Show the plot fullscreen." },
+  plotSaveImageBtn: { desc: "Save the plot as a PNG image." },
+  // Files & Filters toolbar (#sidebarToolbar)
+  rename: { desc: "Rename the selected filter.", key: "renameFilter" },
+  edit: { desc: "Change the selected filter's pattern, time range or conditions.", key: "editFilter" },
+  linkWith: { desc: "Start a link filter with the selected filter as its Start." },
+  invert: { desc: "Keep what the selected filter would drop, and drop what it keeps (NOT)." },
+  mute: { desc: "Switch the selected filter off without deleting it.", key: "muteFilter" },
+  clockOffset: { desc: "Shift all timestamps of the selected file to correct its clock." },
+  addToLibrary: { desc: "Save the selected filter in the filter library to reuse it later." },
+};
+// The TOOLBAR_HINTS key of a labelled button, or null.
+function hintKeyOf(btn) {
+  if (btn.id && TOOLBAR_HINTS[btn.id]) return btn.id;
+  const ra = btn.dataset.rowAction;
+  if (ra && TOOLBAR_HINTS[ra]) return ra;
+  if (btn.dataset.libKey !== undefined) return "libraryPreset";
+  if (btn.classList.contains("level-btn")) return "levelChip";
+  const tog = [...btn.classList].find(c => c.indexOf("toggle-") === 0 && TOOLBAR_HINTS[c]);
+  return tog || null;
+}
+function hintTextOf(btn, hint) {
+  const lvl = btn.dataset.level;
+  return hint.desc.replace("{level}", lvl === "OTHER" ? "other-level" : lvl || "");
+}
+function hintShortcutOf(hint) {
+  return hint.key && SHORTCUT_ACTIONS.some(a => a.id === hint.key) ? shortcutLabel(hint.key) : "";
+}
+// Splits a button's label into name / description / shortcut chip (idempotent;
+// the name span keeps the disabled-reason ::after on the first line, and
+// renderSidebarToolbar updates its text). Also refreshes the chip text.
+function decorateHintLabel(btn) {
+  const label = btn.querySelector(".row-action-label, .tb-label");
+  const key = hintKeyOf(btn);
+  if (!label || !key) return;
+  const hint = TOOLBAR_HINTS[key];
+  btn.setAttribute("data-hint-key", key);
+  let name = label.querySelector(".hint-name");
+  if (!name) {
+    name = btn.ownerDocument.createElement("span");
+    name.className = "hint-name";
+    name.textContent = label.textContent;
+    label.textContent = "";
+    label.appendChild(name);
+  }
+  const reason = label.getAttribute("data-disabled-reason");
+  if (reason) name.setAttribute("data-disabled-reason", reason); else name.removeAttribute("data-disabled-reason");
+  const part = (cls, tag, text) => {
+    let e = label.querySelector("." + cls);
+    if (text) {
+      if (!e) { e = btn.ownerDocument.createElement(tag); e.className = cls; label.appendChild(e); }
+      if (e.textContent !== text) e.textContent = text;
+    } else if (e) e.remove();
+  };
+  part("hint-desc", "span", hintTextOf(btn, hint));
+  part("hint-key", "kbd", hintShortcutOf(hint));
+  syncHintTitle(btn);
+}
+function decorateHintLabels(root) {
+  (root || document).querySelectorAll(".row-action-btn, .toolbar-icon-btn").forEach(decorateHintLabel);
+}
+// Tooltip of a hint button: unchanged in On hover mode (the card says it); in
+// Always/Never "Name — description (Key)". The title is set from many places,
+// so a MutationObserver (below) re-composes whenever one of them writes it:
+// dataset.hintTitle marks the value this function wrote, dataset.hintBase is
+// the plain title it was built from.
+function syncHintTitle(btn) {
+  const key = btn.getAttribute("data-hint-key");
+  const hint = key && TOOLBAR_HINTS[key];
+  if (!hint || hint.noTitle) return;
+  const ours = btn.dataset.hintTitle !== undefined && btn.title === btn.dataset.hintTitle;
+  const base = ours ? btn.dataset.hintBase : btn.title;
+  let want = base;
+  if (labelModeOf(btn) !== "hover") {
+    const sc = hintShortcutOf(hint);
+    want = base + " — " + hintTextOf(btn, hint) + (sc ? " (" + sc + ")" : "");
+    btn.dataset.hintBase = base;
+    btn.dataset.hintTitle = want;
+  } else {
+    delete btn.dataset.hintBase;
+    delete btn.dataset.hintTitle;
+  }
+  if (btn.title !== want) btn.title = want;
+}
+function syncAllHintTitles() {
+  document.querySelectorAll("[data-hint-key]").forEach(syncHintTitle);
+}
+if (typeof MutationObserver === "function") {
+  new MutationObserver(recs => recs.forEach(r => { if (r.target.hasAttribute && r.target.hasAttribute("data-hint-key")) syncHintTitle(r.target); }))
+    .observe(document.body, { attributes: true, attributeFilter: ["title"], subtree: true });
+}
 // Expand/collapse keys off entering/leaving the fixed-size .row-action-hit
 // circle specifically, NOT a plain CSS :hover on the button — the button's
 // own box changes width once expanded, pushing later siblings' hit-zones
@@ -42565,12 +42716,14 @@ function setDisabledReason(btn, reason, syncTitle) {
   if (!btn) return;
   const r = btn.disabled && reason ? reason : "";
   const label = btn.querySelector(".row-action-label, .tb-label");
+  // The reason is drawn after the card's name line, so it also sits on .hint-name.
+  const targets = label ? [label, label.querySelector(".hint-name")].filter(Boolean) : [];
   if (r) {
     btn.setAttribute("data-disabled-reason", r);
-    if (label) label.setAttribute("data-disabled-reason", r);
+    targets.forEach(t => t.setAttribute("data-disabled-reason", r));
   } else {
     btn.removeAttribute("data-disabled-reason");
-    if (label) label.removeAttribute("data-disabled-reason");
+    targets.forEach(t => t.removeAttribute("data-disabled-reason"));
   }
   if (syncTitle === false) return;
   if (btn.dataset.titleBase === undefined) btn.dataset.titleBase = btn.title;
@@ -42580,12 +42733,15 @@ function setDisabledReason(btn, reason, syncTitle) {
 // (Always/Never mode of the button's own toolbar kind: .row-action-btn:not(.rect)
 // = Filter-Toolbar, everything else = View toolbars) — otherwise the pill and
 // the native tooltip would say the same thing twice.
+function labelModeOf(btn) {
+  return btn.classList.contains("sidebar-btn") ? sidebarToolbarLabels
+    : btn.classList.contains("level-btn") || btn.classList.contains("level-apply") ? levelLabels
+    : btn.classList.contains("row-action-btn") && !btn.classList.contains("rect") ? filterToolbarLabels : viewToolbarLabels;
+}
 function syncDisabledReasonTitle(btn) {
   const base = btn.dataset.titleBase;
   if (base === undefined) return;
-  const mode = btn.classList.contains("sidebar-btn") ? sidebarToolbarLabels
-    : btn.classList.contains("level-btn") || btn.classList.contains("level-apply") ? levelLabels
-    : btn.classList.contains("row-action-btn") && !btn.classList.contains("rect") ? filterToolbarLabels : viewToolbarLabels;
+  const mode = labelModeOf(btn);
   const r = btn.getAttribute("data-disabled-reason");
   btn.title = r && mode !== "hover" ? base + " \u00b7 " + r : base;
 }
@@ -43778,6 +43934,7 @@ function renderSidebarToolbar() {
       !!sidebarToolbarEl.querySelector('[data-row-action="addToLibrary"]') !== wantsLibBtn) {
     sidebarToolbarMultiKey = null;
     sidebarToolbarEl.innerHTML = buildSidebarToolbarHtml(describeSidebarToolbarActions().actions);
+    decorateHintLabels(sidebarToolbarEl);
     // Idempotent (per-container guard), so calling it again never stacks listeners.
     setupHitExpandGroups(".sidebar-toolbar-hit");
   }
@@ -43787,7 +43944,8 @@ function renderSidebarToolbar() {
     btn.disabled = !!a.disabled;
     btn.title = a.label;
     const lbl = btn.querySelector(".row-action-label");
-    if (lbl && lbl.textContent !== a.label) lbl.textContent = a.label;
+    const lblName = lbl && (lbl.querySelector(".hint-name") || lbl);
+    if (lblName && lblName.textContent !== a.label) lblName.textContent = a.label;
     // Phone-only under-icon label (CSS shows .row-action-short on layout-phone), same source as the title.
     const shortLbl = btn.querySelector(".row-action-short");
     if (shortLbl && a.short && shortLbl.textContent !== a.short) shortLbl.textContent = a.short;
@@ -47023,6 +47181,7 @@ async function renderLibraryToolbarPresets() {
     btn.innerHTML = iconHtml +
       '<span class="row-action-label">' + escapeHtml(rec.name) + '</span>';
     btn.addEventListener("click", () => applyLibraryRecord(rec));
+    decorateHintLabel(btn);
     frag.appendChild(btn);
   });
   libraryPresetBar.appendChild(frag);
@@ -47435,6 +47594,7 @@ function shortcutTemplate(tpl) {
 function refreshShortcutTooltips() {
   document.querySelectorAll("[data-sc-title]").forEach(e => { e.title = shortcutTemplate(e.dataset.scTitle); });
   document.querySelectorAll("[data-sc-text]").forEach(e => { e.textContent = shortcutTemplate(e.dataset.scText); });
+  decorateHintLabels(); // hover-card shortcut chips + Always/Never titles follow the bindings
   updateUndoRedoButtons();
   updateSidebarToggleIcon();
   updateDetailToggleIcon();
@@ -54471,6 +54631,9 @@ elAll(
 // .row-action-hit above (see setupHitExpandGroups) — avoids the same
 // flicker/stuck-animation bug for these toolbars' buttons.
 setupHitExpandGroups(".tb-hit");
+// One pass for every label that exists at boot (the level chips, presets and the
+// sidebar toolbar decorate themselves when they are rebuilt).
+decorateHintLabels();
 // Log format config (Settings -> Format Manager) loads in parallel with the
 // rest of boot, not gating it — restoreSessionFromCache/loadFromUrlParam
 // fire at their original, unchanged timing below. addFile is the one place

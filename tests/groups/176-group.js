@@ -59,7 +59,7 @@ await withApp(async (w, d, T) => {
     assert(btn.classList.contains("row-action-btn"), btn.dataset.rowAction + " has the .row-action-btn circle/hover-pill class");
     const label = btn.querySelector(".row-action-label");
     assert(label !== null, btn.dataset.rowAction + " has a .row-action-label span");
-    assert(label.textContent === btn.title && btn.title.length > 0,
+    assert(label.querySelector(".hint-name").textContent === btn.title && btn.title.length > 0,
       btn.dataset.rowAction + "'s label text matches its title exactly, got label=" + JSON.stringify(label.textContent) + " title=" + JSON.stringify(btn.title));
     assert(btn.querySelector(".row-action-hit svg") !== null, btn.dataset.rowAction + "'s icon is wrapped in a fixed-size .row-action-hit span");
   });
