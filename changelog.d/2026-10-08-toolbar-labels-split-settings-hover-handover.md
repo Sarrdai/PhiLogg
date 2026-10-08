@@ -1,0 +1,5 @@
+- **feat: four toolbar-label settings, calmer On-hover pills with disabled reasons, group-wise wrapping (2026-10-08, person-requested)**
+  - Settings → Behavior → Toolbars now has four label settings (Files & Filters toolbar, Level labels, Filter toolbar, View toolbar), each Never / On hover / Always, all defaulting to On hover.
+  - On hover: only the first pill of a toolbar group fades in, moving to a neighbour swaps it instantly; a disabled button's pill appends why ("Bookmark · select a row first"), in Always/Never mode the reason is in the tooltip.
+  - The Filter bar wraps whole groups to the next line before anything wraps inside a group, with a 6px gap between lines and no dangling "|" separators.
+  - **Tests**: GROUPS toolbar-labels-hover-handover, toolbar-labels-split-settings. Docs: docs/ui-and-views.md.

@@ -19,6 +19,8 @@ const SEG_SELECTS = {
   settingsFhLayout: ["tabs", "stacked"],
   settingsFilterActivationView: ["rememberLast", "alwaysFiltered"],
   settingsOpenScrollPosition: ["start", "end"],
+  settingsSidebarToolbarLabels: ["never", "hover", "always"],
+  settingsLevelLabels: ["never", "hover", "always"],
   settingsFilterToolbarLabels: ["never", "hover", "always"],
   settingsViewToolbarLabels: ["never", "hover", "always"],
   settingsContextInitialExpansion: ["aroundJump", "collapsed", "expanded"],

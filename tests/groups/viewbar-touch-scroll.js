@@ -31,7 +31,7 @@ await withApp(async (w, d, T) => {
   assert(!coarse.some(r => /btnFacets/.test(r.selectorText)), "no #btnFacets rule (Facets is a bottom-panel tab)");
 
   section("viewbar-touch-scroll b. Desktop and phone rules unchanged");
-  assert(decl(plain, "#viewBar", "display") === "flow-root", "desktop: flow-root");
+  assert(decl(plain, "#viewBar", "display") === "flex" && decl(plain, "#viewBar", "flex-wrap") === "wrap", "desktop: wrapping flex row (whole groups wrap)");
   assert(decl(plain, "body.layout-phone #viewBar", "flex-wrap") === "wrap", "phone: wrap (own rule)");
   assert(!plain.some(r => /layout-compact #viewBar/.test(r.selectorText)), "no un-media'd compact #viewBar rule (mouse windows keep floats)");
 });

@@ -1,5 +1,0 @@
-- **feat: toolbar labels default to "Always"; calmer On-hover pills with disabled reasons (2026-10-08, person-requested)**
-  - "Filter toolbar labels" and "View toolbar labels" now default to Always (a saved On hover/Never choice is kept).
-  - On hover: only the first pill of a toolbar group fades in; moving to a neighbouring button swaps the pill instantly, leaving the group fades it out.
-  - A disabled button's hover pill appends why ("Bookmark · select a row first"); in Always/Never mode the reason is in the tooltip.
-  - **Tests**: GROUP toolbar-labels-hover-handover (groups that assume the On-hover look now set it via `withApp(..., { toolbarLabels: "hover" })`). Docs: docs/ui-and-views.md.

@@ -67,11 +67,11 @@ await withApp(async (w, d, T) => {
     assert(w.getComputedStyle(cnt("INFO")).display !== "none", "compact: the count is displayed in the circle");
     assert(cnt("INFO").textContent === "1,3k", "compact: same short text as on desktop (28px and 44px read the same)");
 
-    d.body.classList.add("filter-toolbar-labels-always");
+    d.body.classList.add("level-labels-always");
     assert(w.getComputedStyle(cnt("INFO")).display === "none", "compact, 'Always' labels: no in-circle count");
     lcSetWidth(w, 1400);
     assert(w.getComputedStyle(cnt("INFO")).display === "none", "desktop, 'Always' labels: no in-circle count (the pill carries it)");
-    d.body.classList.remove("filter-toolbar-labels-always");
+    d.body.classList.remove("level-labels-always");
     assert(w.getComputedStyle(cnt("INFO")).display !== "none", "desktop, hover labels: the count is back");
 
     lcSetWidth(w, 400);
@@ -89,7 +89,7 @@ await withApp(async (w, d, T) => {
   section("level-count-in-circle c. CSS: centered, 9.5px / 11px, level colours on desktop for every level, active in the -on colour");
   const rules = lcCssRules(d);
   const find = sel => rules.find(r => r.selectorText === sel);
-  const base = rules.find(r => /^body:not\(\.layout-phone\):not\(\.filter-toolbar-labels-always\) \.level-btn \.level-count$/.test(r.selectorText));
+  const base = rules.find(r => /^body:not\(\.layout-phone\):not\(\.level-labels-always\) \.level-btn \.level-count$/.test(r.selectorText));
   assert(base, "the in-circle count rule applies to every tier but the phone (and not in 'Always' mode)");
   assert(base.style.position === "absolute" && base.style.display === "flex" && base.style.alignItems === "center" && base.style.justifyContent === "center",
     "the count is absolutely positioned and centered both ways");

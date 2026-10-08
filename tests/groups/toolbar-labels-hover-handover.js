@@ -14,23 +14,27 @@
 group("toolbar-labels-hover-handover");
 
 // ---- a. defaults ----
+const FOUR = ["sidebar-toolbar-labels", "level-labels", "filter-toolbar-labels", "view-toolbar-labels"];
 await withApp(async (w, d, T) => {
-  section("toolbar-labels-hover-handover a. Default is 'always' with empty localStorage");
-  assert(w.localStorage.getItem("philogg-filter-toolbar-labels") === null, "sanity: nothing persisted");
-  assert(T.filterToolbarLabels === "always" && T.viewToolbarLabels === "always", "both default to 'always'");
-  assert(d.body.classList.contains("filter-toolbar-labels-always") && d.body.classList.contains("view-toolbar-labels-always"),
-    "both body classes present");
-  assert(d.querySelector("#settingsFilterToolbarLabels").value === "always", "filter select shows Always");
-  assert(d.querySelector("#settingsViewToolbarLabels").value === "always", "view select shows Always");
-  assert(w.normalizeToolbarLabelsMode("garbage") === "always" && w.normalizeToolbarLabelsMode(null) === "always", "unknown values fall back to always");
+  section("toolbar-labels-hover-handover a. All four settings default to 'hover' with empty localStorage");
+  ["philogg-sidebar-toolbar-labels", "philogg-level-labels", "philogg-filter-toolbar-labels", "philogg-view-toolbar-labels"]
+    .forEach(k => assert(w.localStorage.getItem(k) === null, "sanity: " + k + " not persisted"));
+  assert(T.filterToolbarLabels === "hover" && T.viewToolbarLabels === "hover", "filter + view default to 'hover'");
+  FOUR.forEach(p => assert(!d.body.classList.contains(p + "-always") && !d.body.classList.contains(p + "-never"), p + ": no body class at the default"));
+  ["settingsSidebarToolbarLabels", "settingsLevelLabels", "settingsFilterToolbarLabels", "settingsViewToolbarLabels"]
+    .forEach(id => assert(d.querySelector("#" + id).value === "hover", id + " shows On hover"));
+  assert(w.normalizeToolbarLabelsMode("garbage") === "hover" && w.normalizeToolbarLabelsMode(null) === "hover", "unknown values fall back to hover");
 });
 await withApp(async (w, d, T) => {
-  section("toolbar-labels-hover-handover a2. A stored 'hover' / 'never' still applies");
-  assert(T.filterToolbarLabels === "hover" && T.viewToolbarLabels === "never", "stored values are kept");
-  assert(!d.body.classList.contains("filter-toolbar-labels-always") && !d.body.classList.contains("filter-toolbar-labels-never"), "hover: no filter class");
-  assert(d.body.classList.contains("view-toolbar-labels-never"), "never: view class");
-  assert(d.querySelector("#settingsFilterToolbarLabels").value === "hover", "select shows On hover");
+  section("toolbar-labels-hover-handover a2. Stored values apply per setting");
+  assert(d.body.classList.contains("sidebar-toolbar-labels-always") && !d.body.classList.contains("sidebar-toolbar-labels-never"), "sidebar: always");
+  assert(d.body.classList.contains("level-labels-never"), "levels: never");
+  assert(!d.body.classList.contains("filter-toolbar-labels-always") && !d.body.classList.contains("filter-toolbar-labels-never"), "filter: hover, no class");
+  assert(d.body.classList.contains("view-toolbar-labels-never"), "view: never");
+  assert(d.querySelector("#settingsSidebarToolbarLabels").value === "always" && d.querySelector("#settingsLevelLabels").value === "never", "selects reflect the stored values");
 }, { beforeParse(window) {
+  window.localStorage.setItem("philogg-sidebar-toolbar-labels", "always");
+  window.localStorage.setItem("philogg-level-labels", "never");
   window.localStorage.setItem("philogg-filter-toolbar-labels", "hover");
   window.localStorage.setItem("philogg-view-toolbar-labels", "never");
 } });
@@ -99,17 +103,17 @@ await withApp(async (w, d, T) => {
   assert(all("filterForMessage", "select one row"), "Message: select one row");
   assert(all("extractMessage", "select one row"), "Extract with no row: select one row, got " + reason("extractMessage"));
   const bm = d.querySelector('[data-row-action="bookmark"]');
-  assert(bm.disabled && bm.title === "Bookmark · select a row first", "tooltip carries the reason too: " + bm.title);
+  assert(bm.disabled && bm.title === "Bookmark", "On hover (default): the pill shows the reason, the tooltip stays plain: " + bm.title);
   assert(bm.querySelector(".row-action-label").getAttribute("data-disabled-reason") === "select a row first", "the label span carries it (CSS attr() source)");
   assert(bm.querySelector(".row-action-label").textContent === "Bookmark", "label text itself is unchanged");
   const viewSel = d.querySelector("#settingsViewToolbarLabels");
   const setView = v => { viewSel.value = v; viewSel.dispatchEvent(new w.Event("change", { bubbles: true })); };
-  setView("hover");
-  assert(bm.title === "Bookmark" && bm.getAttribute("data-disabled-reason") === "select a row first", "On hover: the pill shows the reason, the tooltip stays the plain label (no double text)");
   setView("never");
   assert(bm.title === "Bookmark \u00b7 select a row first", "Never: the tooltip is the only place for the reason");
   setView("always");
   assert(bm.title === "Bookmark \u00b7 select a row first", "Always: tooltip carries the reason");
+  setView("hover");
+  assert(bm.title === "Bookmark" && bm.getAttribute("data-disabled-reason") === "select a row first", "back to On hover: plain tooltip, reason still on the button");
 
   // select a row: everything with a row source enables and the reason goes away
   const entry = f.entries.find(e => /\d/.test(e.message || "")) || f.entries[0];
