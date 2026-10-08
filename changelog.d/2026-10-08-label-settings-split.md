@@ -3,3 +3,4 @@
   - New global settings under Behavior → Toolbars: **Hover descriptions** (the second line and shortcut of the hover card, default on) and **Group captions** (default off; the view tabs got a "View" caption).
   - The header **?** button opens a small menu: Where is what?, live switches for the two new settings, "All toolbar settings…". After 60 hover cards one toast offers to hide the descriptions ("Got it, hide them" / "Keep"), once.
   - **Tests**: GROUP label-settings (new); label-captions, hover-card, toolbar-labels-*, where-is-what and the old Always/Never groups updated, always-labels-toggle-level renamed inline-labels-toggle-level. Docs: docs/ui-and-views.md, README.
+  - With captions on, the view toolbars start at `#viewBar`'s left edge (16px), so the "View" and "Display" captions line up (person-reported, GROUP label-captions).

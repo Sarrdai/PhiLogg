@@ -1506,6 +1506,7 @@
      28px), items sit on the buttons' baseline, separators span the button row. */
   body.toolbar-captions :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar){
     height:auto; min-height:36px; align-items:flex-end; padding-top:3px; padding-bottom:4px;
+    padding-left:16px; /* person-reported, 2026-10-08: same left edge as #viewBar's 16px, so the View and Display captions line up */
   }
   body.toolbar-captions :is(#contextToolbar, #filteredToolbar, #tableToolbar, #plotToolbar) > .ctx-toolbar-sep{align-self:flex-end; height:28px; margin:0;}
   /* Inline names make a view toolbar wider than the pane: its groups wrap onto further

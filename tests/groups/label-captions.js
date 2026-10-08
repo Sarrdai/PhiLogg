@@ -171,3 +171,17 @@ await withApp(async (w, d, T) => {
   w.setFhTabsVisible(true);
   assert(cs(vbView).display !== "none", "shown again");
 }, { toolbarLabels: "hover" });
+
+await withApp(async (w, d, T) => {
+  section("label-captions: with captions on the view toolbars start at #viewBar's left edge (View and Display line up)");
+  const [sim] = LOGSIM.generateToStrings({ scenarios: ["basic"], entries: 200, seed: 7 });
+  const f = await w.addFile(sim.name, sim.text, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  // jsdom resolves the padding shorthand vs. longhand across rules unreliably: assert the stylesheet rule itself.
+  const rules = [...d.styleSheets].flatMap(sh => [...sh.cssRules]).filter(r => r.selectorText && /body\.toolbar-captions/.test(r.selectorText) && /#filteredToolbar/.test(r.selectorText) && r.style && r.style.paddingLeft);
+  assert(rules.length === 1, "one captions-on rule sets the view toolbars' padding-left, got " + rules.length);
+  const barPad = w.getComputedStyle(d.getElementById("viewBar")).paddingLeft;
+  assert(rules[0].style.paddingLeft === barPad, "its padding-left equals #viewBar's (" + barPad + "), got " + rules[0].style.paddingLeft);
+  for (const id of ["contextToolbar", "tableToolbar", "plotToolbar"]) assert(rules[0].selectorText.includes("#" + id), "the rule covers #" + id);
+});
