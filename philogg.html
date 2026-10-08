@@ -1802,6 +1802,26 @@
      `.level-btn`/etc. already use elsewhere in this file. */
   .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
   .minimap-meta-level:hover{filter:brightness(1.35);}
+  /* Zoom indicator (only while .zoomed): accent frame + glow, edge arrows
+     (the log continues beyond that side), a 10 px overview strip of the whole
+     file with the zoom window as a box, and the "Zoom 18 % ... Whole file"
+     chip in the meta line. The strip is in flow but the minimap's height is
+     fixed, so the SVG gives up 10 px; the table below does not move. */
+  #timelineMinimap.zoomed{box-shadow:inset 0 0 0 1px var(--accent), inset 0 0 14px color-mix(in srgb, var(--accent) 35%, transparent);}
+  #timelineMinimapOverview{display:none; flex:0 0 10px; position:relative; margin:0 10px; pointer-events:none;
+    background:var(--bg-app); border-radius:3px; box-shadow:inset 0 0 0 1px var(--border);}
+  #timelineMinimap.zoomed #timelineMinimapOverview{display:block;}
+  #timelineMinimapOverviewBox{position:absolute; top:0; bottom:0; min-width:3px; box-sizing:border-box;
+    border:1.5px solid var(--accent); background:var(--accent-soft); border-radius:3px;}
+  .minimap-edge{display:none; position:absolute; top:26px; bottom:0; width:16px; pointer-events:none; z-index:1;
+    align-items:center; font-size:16px; font-weight:700; line-height:1; color:var(--accent);}
+  .minimap-edge-l{left:0; justify-content:flex-start; padding-left:2px; background:linear-gradient(90deg, color-mix(in srgb, var(--accent) 35%, transparent), transparent);}
+  .minimap-edge-r{right:0; justify-content:flex-end; padding-right:2px; background:linear-gradient(270deg, color-mix(in srgb, var(--accent) 35%, transparent), transparent);}
+  #timelineMinimap.zoomed .minimap-edge.on{display:flex;}
+  .minimap-zoom-chip{font:inherit; font-size:11px; font-weight:700; line-height:14px; font-family:var(--font-mono); background:var(--accent); color:var(--bg-app);
+    border:0; border-radius:9px; padding:0 8px; margin-right:8px; cursor:pointer; vertical-align:top;}
+  .minimap-zoom-chip:hover{filter:brightness(1.12);}
+  body.layout-phone #timelineMinimapOverview, body.layout-phone .minimap-edge, body.layout-phone .minimap-zoom-chip{display:none !important;}
   #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block; touch-action:pan-y;}
   .minimap-bg-bar{fill:var(--text-tertiary); opacity:.3;}
   .minimap-ov-bar{opacity:.95;}
@@ -6024,7 +6044,10 @@
 
       <div id="timelineMinimap" class="hidden">
         <div id="timelineMinimapMeta"></div>
+        <div id="timelineMinimapOverview" aria-hidden="true"><div id="timelineMinimapOverviewBox"></div></div>
         <svg id="timelineMinimapSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        <div id="timelineMinimapEdgeL" class="minimap-edge minimap-edge-l" aria-hidden="true">&lsaquo;</div>
+        <div id="timelineMinimapEdgeR" class="minimap-edge minimap-edge-r" aria-hidden="true">&rsaquo;</div>
         <div id="timelineMinimapTooltip" class="hidden"></div>
         <div id="timelineMinimapDragRect" class="hidden"></div>
         <div id="timelineMinimapDragLabel" class="hidden"></div>
@@ -31370,6 +31393,38 @@ function minimapResolutionText() {
   const ms = (minimapTMax - minimapTMin) / W;
   return ms < 1000 ? fmt(ms) + " ms/px" : (ms / 1000).toFixed(2) + " s/px";
 }
+// Fraction (0..1) of the whole file the zoom window covers, in the same
+// coordinates the minimap draws with (index span in "entries" mode).
+function minimapZoomFraction(view) {
+  if (minimapBinningMode === "entries") return minimapIdxN / Math.max(1, minimapRootEntries.length);
+  return (view.to - view.from) / Math.max(1, minimapFileTMax - minimapFileTMin);
+}
+function minimapZoomChipHtml(rootId, view) {
+  const pct = minimapZoomFraction(view) * 100;
+  const ms = !nodeIsPlainText(rootId) && view.to - view.from < 10000;
+  const text = "Zoom " + (pct < 1 ? "<1" : Math.round(pct)) + " % \u00b7 " +
+    timeRangeBoundLabel(rootId, view.from, ms) + "\u2013" + timeRangeBoundLabel(rootId, view.to, ms) + "  \u2922 Whole file";
+  return '<button type="button" class="minimap-zoom-chip" data-depth="0" title="Back to the whole file">' + escapeHtml(text) + "</button>";
+}
+// Overview box + edge arrows of the zoom indicator (CSS shows them only
+// while .zoomed); the drawn window is minimapTMin/TMax, the file minimapFileTMin/TMax.
+function updateMinimapZoomIndicator(view) {
+  const box = el("#timelineMinimapOverviewBox");
+  const eL = el("#timelineMinimapEdgeL"), eR = el("#timelineMinimapEdgeR");
+  if (!view) { eL.classList.remove("on"); eR.classList.remove("on"); return; }
+  let l, w;
+  if (minimapBinningMode === "entries") {
+    const n = Math.max(1, minimapRootEntries.length);
+    l = minimapIdxLo / n * 100; w = minimapIdxN / n * 100;
+  } else {
+    const span = Math.max(1, minimapFileTMax - minimapFileTMin);
+    l = (minimapTMin - minimapFileTMin) / span * 100; w = (minimapTMax - minimapTMin) / span * 100;
+  }
+  box.style.left = l.toFixed(2) + "%";
+  box.style.width = w.toFixed(2) + "%";
+  eL.classList.toggle("on", view.from > minimapFileTMin);
+  eR.classList.toggle("on", view.to < minimapFileTMax);
+}
 function minimapCrumbsHtml(rootId) {
   const trail = minimapViewTrail;
   const crumb = (label, depth) => '<button type="button" class="minimap-crumb" data-depth="' + depth + '"' +
@@ -31517,8 +31572,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
   });
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
-  timelineMinimapMetaEl.innerHTML = (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
+  timelineMinimapMetaEl.innerHTML = (view ? minimapZoomChipHtml(rootId, view) : "") +
+    (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
     '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + repeatMetaHtml() + "</span>";
+  updateMinimapZoomIndicator(view);
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
 
@@ -31973,7 +32030,7 @@ function updateMinimapSelectionMarkers() {
 // minimapLastRootId rather than a closed-over rootId, since it must resolve
 // to whichever file the CURRENTLY rendered meta line actually belongs to.
 timelineMinimapMetaEl.addEventListener("click", ev => {
-  const crumb = ev.target.closest(".minimap-crumb");
+  const crumb = ev.target.closest(".minimap-crumb, .minimap-zoom-chip");
   if (crumb) { minimapViewGoTo(+crumb.dataset.depth); return; }
   const span = ev.target.closest(".minimap-meta-level");
   if (!span || !minimapLastRootId) return;
