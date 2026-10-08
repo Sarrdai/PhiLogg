@@ -470,53 +470,77 @@ shape:
   the circle; it also tells the four label settings below which kind of
   button it is).
 
-  **Settings -> Behavior -> Toolbars: four label settings** (split from two on
-  2026-10-08) — app-wide, independent, each Never / On hover / Always, **all
-  default to On hover** (`normalizeToolbarLabelsMode` falls back to "hover";
-  a stored value always applies). Each is a plain localStorage-preference select
-  that toggles `<body>` classes `<prefix>-never` / `<prefix>-always` (no class =
-  On hover) rather than touching buttons; the four are defined once in
-  `TOOLBAR_LABEL_SETTINGS`:
+  **Settings -> Behavior -> Toolbars: three independent concepts** (label
+  settings split, 2026-10-08, variant A of the mockup). Nothing here depends on
+  anything else; each is a plain `localStorage` preference applied as a class
+  on `<body>`.
 
-  | Setting (select id) | localStorage key | Body class prefix | Governs |
+  1. **Button labels, per area** (four selects, defined once in
+     `TOOLBAR_LABEL_SETTINGS`): **Off / On hover / Inline**, stored
+     `off|hover|inline`, default `hover`. `normalizeToolbarLabelsMode` falls
+     back to hover for anything else (a legacy `never`/`always` included, no
+     migration below 1.0.0). Body classes `<prefix>-off` / `<prefix>-inline`
+     (no class = On hover).
+
+     | Setting (select id) | localStorage key | Body class prefix | Governs |
+     |---|---|---|---|
+     | Files & Filters toolbar labels (`settingsSidebarToolbarLabels`) | `philogg-sidebar-toolbar-labels` | `sidebar-toolbar-labels` | `#sidebarToolbar` buttons (`.row-action-btn.sidebar-btn`; phone-drawer short labels are independent) |
+     | Level labels (`settingsLevelLabels`) | `philogg-level-labels` | `level-labels` | `#levelBar` circles (`.level-btn`, incl. the in-circle count unless Inline: name+count pills) and "Add level filter" (`.level-apply`) |
+     | Filter toolbar labels (`settingsFilterToolbarLabels`) | `philogg-filter-toolbar-labels` | `filter-toolbar-labels` | the remaining `#viewBar` buttons: `.row-action-btn:not(.rect):not(.level-btn):not(.level-apply)` (Before/After/Time range/Message/Extract, library presets, New) |
+     | View toolbar labels (`settingsViewToolbarLabels`) | `philogg-view-toolbar-labels` | `view-toolbar-labels` | the four view toolbars incl. their `.rect` Bookmark/Note/Select (`.row-action-btn.rect:not(.sidebar-btn)`, `.toolbar-icon-btn:has(.tb-hit)`) |
+
+  2. **Hover descriptions** (global, `settingsHoverDescriptions`, key
+     `philogg-hover-descriptions` `"1"`/`"0"`, default on, body class
+     `hover-descriptions-off`): the second line and the shortcut chip of the
+     hover card. Off hides `.hint-desc`/`.hint-key` everywhere; the
+     `TOOLBAR_HINTS` table and `decorateHintLabel` stay.
+  3. **Group captions** (global, `settingsToolbarCaptions`, key
+     `philogg-toolbar-captions`, default **off**, body class
+     `toolbar-captions`): the small headings above each toolbar group (see
+     "Group captions" below). The "?" menu has the same two switches.
+
+  What the combination does (`setHoverDescriptions`/`setToolbarCaptions` are
+  the one setter each, used by the Settings rows, the "?" menu and the nudge
+  toast so they stay in sync):
+
+  | Button labels | On the button | On hover, descriptions on | On hover, descriptions off |
   |---|---|---|---|
-  | Files & Filters toolbar labels (`settingsSidebarToolbarLabels`) | `philogg-sidebar-toolbar-labels` | `sidebar-toolbar-labels` | `#sidebarToolbar` buttons (`.row-action-btn.sidebar-btn`; phone-drawer short labels are independent) |
-  | Level labels (`settingsLevelLabels`) | `philogg-level-labels` | `level-labels` | `#levelBar` circles (`.level-btn`, incl. the in-circle count in On-hover mode; Always = name+count pills) and "Add level filter" (`.level-apply`, icon-only in Always) |
-  | Filter toolbar labels (`settingsFilterToolbarLabels`) | `philogg-filter-toolbar-labels` | `filter-toolbar-labels` | the remaining `#viewBar` buttons: `.row-action-btn:not(.rect):not(.level-btn):not(.level-apply)` (Before/After/Time range/Message/Extract, library presets, New) |
-  | View toolbar labels (`settingsViewToolbarLabels`) | `philogg-view-toolbar-labels` | `view-toolbar-labels` | the four view toolbars incl. their `.rect` Bookmark/Note/Select (`.row-action-btn.rect:not(.sidebar-btn)`, `.toolbar-icon-btn:has(.tb-hit)`) |
+  | Off | icon only | card: name, description, key | native `title` only (the name) |
+  | On hover (default) | icon only | card: name, description, key | name pill |
+  | Inline | icon + name in a compact pill | description card above the button (description + key, no name line) | nothing floats |
 
-  Every Always/Never/disabled-reason selector is keyed on the setting of the
+  Every Off/Inline/disabled-reason selector is keyed on the setting of the
   button kind it styles (level pill rules on `level-labels-*`, sidebar on
-  `sidebar-toolbar-labels-*`, ...). "On hover" needs no override at all, it's just the floating-label
-  mechanics above with no body class present.
+  `sidebar-toolbar-labels-*`, ...). "On hover" needs no override at all, it's
+  just the floating-label mechanics above with no body class present; Off
+  only switches the label off when descriptions are off too
+  (`body.hover-descriptions-off.<prefix>-off ... {display:none}`).
 
-  **Hover card** (2026-10-08). The floating On-hover label is a small card
+  **Hover card** (2026-10-08). The floating label is a small card
   (`max-width:240px`, text wraps, `border-radius:10px`): the bold name line
-  (`.hint-name`, the old label text), a one-sentence description (`.hint-desc`,
-  11px, `--text-secondary`) and, where the action has a real shortcut, a `kbd`
-  chip (`.hint-key`). The text lives in ONE table, `TOOLBAR_HINTS`
-  (`{desc, key?, noTitle?}`), keyed by `hintKeyOf(btn)`: the button id, else its
-  `data-row-action`, else `levelChip` / `libraryPreset`, else its `toggle-*`
-  class. `key` is a `SHORTCUT_ACTIONS` id, so the chip shows the CURRENT binding
-  (`refreshShortcutTooltips` re-decorates after a rebind). `decorateHintLabel(btn)`
-  (idempotent) splits an existing label into those spans and is called once at
-  boot (`decorateHintLabels`) and by whatever rebuilds buttons
+  (`.hint-name`, the old label text) and a `.hint-more` wrapper holding a
+  one-sentence description (`.hint-desc`, 11px, `--text-secondary`) and, where
+  the action has a real shortcut, a `kbd` chip (`.hint-key`). The text lives in
+  ONE table, `TOOLBAR_HINTS` (`{desc, key?, noTitle?}`), keyed by
+  `hintKeyOf(btn)`: the button id, else its `data-row-action`, else `levelChip`
+  / `libraryPreset`, else its `toggle-*` class. `key` is a `SHORTCUT_ACTIONS`
+  id, so the chip shows the CURRENT binding (`refreshShortcutTooltips`
+  re-decorates after a rebind). `decorateHintLabel(btn)` (idempotent) splits an
+  existing label into those spans and is called once at boot
+  (`decorateHintLabels`) and by whatever rebuilds buttons
   (`renderSidebarToolbar`, `renderLevelBar`, `renderLibraryToolbarPresets`);
   `renderSidebarToolbar` updates only the `.hint-name` text (Mute / Unmute ...).
   The level chip keeps `ERROR 1.327` as its name; its description is "Show only
   ERROR entries · click again to remove." (the chips are a pure view filter).
-  The Always level pills and the phone chips show name + count only
-  (`.hint-desc`/`.hint-key` hidden there). A new labelled button needs a
-  `TOOLBAR_HINTS` entry (GROUP hover-card enumerates the DOM and fails on a
-  missing or stale key, a description over 120 characters or with a newline).
-  *Titles:* On hover the native `title` stays the plain name (the card says the
-  rest); in Always and Never `syncHintTitle` makes it `Name — description (Ctrl+E)`
-  (the disabled reason, if any, stays right after the name). Titles are written
-  from many places, so a `MutationObserver` on `title` re-composes them
-  (`dataset.hintTitle`/`hintBase` mark what it wrote); library presets
-  (`noTitle`) keep their own "Apply … to …" title.
+  The Inline level pills and the phone chips show name + count only
+  (`.hint-more` hidden there). A new labelled button needs a `TOOLBAR_HINTS`
+  entry (GROUP hover-card enumerates the DOM and fails on a missing or stale
+  key, a description over 120 characters or with a newline).
+  *Titles:* the native `title` is the plain name in every mode (the card or the
+  visible name says the rest); only a disabled reason is added to it where no
+  card shows it (see below).
 
-  **On-hover hand-over and disabled reason** (2026-10-08, On-hover mode
+  **Hover hand-over and disabled reason** (2026-10-08, floating cards
   only). *Calm hand-over:* only the FIRST pill of a hover session fades in
   (.12s opacity + 4px translate); while the pointer stays inside the same
   toolbar group, moving to a neighbour swaps the pill instantly. Mechanism:
@@ -534,11 +558,12 @@ shape:
   `.hint-name` span, because `attr()` in the `::after` rule reads the
   pseudo-element's own element) and
   clears it when the button is enabled; CSS appends ` · <reason>` (normal
-  weight, `--text-secondary`) to the card's name line, only in On-hover mode of that
-  button kind's setting (not Always or Never, which show no hover card). The native
-  tooltip carries the reason in Always/Never mode instead (`data-title-base`
-  keeps the plain title; `syncAllDisabledReasonTitles` re-syncs on a mode
-  change, `syncDisabledReasonTitle` looks the mode up per button kind) so On hover never says it twice. Reasons live next to the code that
+  weight, `--text-secondary`) to the card's name line, except in Inline mode of that
+  button kind's setting (its card has no name line). The native tooltip carries
+  the reason exactly where no card shows it: Inline, or Off with descriptions off
+  (`data-title-base` keeps the plain title; `syncAllDisabledReasonTitles`
+  re-syncs on a mode or descriptions change, `syncDisabledReasonTitle` looks the
+  mode up per button kind), so it is never said twice. Reasons live next to the code that
   sets `.disabled`: `updateRowActionButtons` (Bookmark/Note "select a row
   first" or "select one row" with a multi-selection; Before/After/Select
   "select a row first", Table "mark a row first", Plot "needs a 2D plot";
@@ -553,50 +578,63 @@ shape:
   keep their own explanatory titles. Level pills are never disabled. Group
   toolbar-labels-hover-handover.
 
-  **"Always" = icon-only buttons + group captions** (label concept step 1,
-  2026-10-08; the earlier "one inline text pill per button" Always look and
-  its CSS are gone). With a setting on Always its buttons stay the plain
-  28px icon buttons (no pill growth, no inline label, the floating hover pill
-  is switched off, the name stays in the `title` tooltip, which also carries a
-  disabled reason in Always/Never mode) and every GROUP of that setting gets a
-  small uppercase caption above its row of icons: a `.group-caption` span
-  (9.5px, `letter-spacing:.09em`, `--text-tertiary`, `aria-hidden`) that is
-  `display:none` unless the owning setting is Always (and always hidden on the
-  phone tier). "Never" hides the label outright; "On hover" is the
-  floating-pill mechanic above, untouched. The one exception are the level
-  chips: in Always they stay name+count text pills (`.level-btn`, desktop and
-  compact: no empty `.row-action-hit` slot, `padding:0 12px`, hover not
-  shifting the label), "Add level filter" is icon-only. The Collapse-repeats
-  chevron (`.repeat-chevron`) keeps its 14px icon-only shape in every mode.
-  Captions, per setting:
+  **Inline** (label concept, restored in the settings split 2026-10-08; the
+  step-1 "Always" mode with icon buttons under captions is gone). With a
+  setting on Inline its buttons show the name inline right of the icon in a
+  compact pill: `width:auto`, `padding-right:10px`, the label static with
+  `margin-left:-3px` (about 4px between the icon's edge and the text), no
+  `overflow:hidden` anywhere, so the "+" badge (anchored to the 28px icon box)
+  is never clipped; buttons with a badge (New, Add level filter, Add to
+  library) start the name 3px right of the box so the "+" never covers it. The
+  view toolbars' on/off toggles keep a symmetric status bar (12px both sides).
+  The level chips become name+count text pills (no empty icon slot, `padding:0
+  12px`, hover not shifting the label, no in-circle count); the Collapse-repeats
+  chevron (`.repeat-chevron`) keeps its 14px icon-only shape in every mode. The
+  floating card shrinks to the `.hint-more` part (description + key), absolutely
+  positioned above the button, revealed on `:hover`/`:focus-visible` (specificity
+  forced with `!important`), hidden when descriptions are off and for the level
+  pills. **Sidebar toolbar:** it is only ~270px wide, so Inline shows the SHORT
+  names (`.row-action-short`: Rename / Edit / Link, NOT / Mute / Clock, Library, the
+  phone drawer's words) instead of `.hint-name`, one row per group, wrapping
+  between the three groups (a group wider than the sidebar still wraps inside
+  itself, never clips). **View toolbars:** inline names make a toolbar wider than its
+  pane, so its groups wrap onto further lines (`height:auto; min-height:36px`,
+  `flex-wrap:wrap`; no inner scrollbar, that would clip the cards) and
+  `updateBarSeparators` also hides `.ctx-toolbar-sep` separators at a line
+  start/end (`BAR_SEPARATOR_IDS`). Groups: label-settings,
+  inline-labels-toggle-level.
 
-  | Setting | Groups (caption) |
+  **Group captions** (label concept step 1, now a global setting). With
+  `body.toolbar-captions` every GROUP of buttons gets a small uppercase caption
+  above its row: a `.group-caption` span (9.5px, `letter-spacing:.09em`,
+  `--text-tertiary`, `aria-hidden`) that is `display:none` otherwise (and always
+  hidden on the phone tier), independent of the button-label modes. Captions:
+
+  | Area | Groups (caption) |
   |---|---|
-  | Level labels | `#vbLevel`: "Level" (chips + "Add level filter"; caption only while chips exist) |
-  | Filter toolbar labels | `#vbAddFilter` "Add filter" (Before/After/Time range/Message/Extract), `#vbPresets` "Presets" (pinned presets + Library button; caption only while a preset is pinned), `#vbCreate` "Create" (New). The view tabs carry text and get no caption |
-  | Sidebar toolbar labels | `.stb-group`s "Edit" (Rename, Edit filter, Link with), "Effect" (Invert/NOT, Mute, Adjust clock), "Library" (Add to library) |
-  | View toolbar labels | Context: "Layout" (text files' Pretty/Raw), "Matches" (match nav, expand/collapse), "Display" (toggles), "Selection" (Bookmark/Note/Select); Filtered: "Display", "Selection"; Table: "Actions"; Plot: "View" (zoom, fullscreen), "Actions" |
+  | `#viewBar` | `#vbView` "View" (the view tabs `#fhTabs`; hidden together with them, see `setFhTabsVisible`), `#vbLevel` "Level" (chips + "Add level filter"; caption only while chips exist), `#vbAddFilter` "Add filter" (Before/After/Time range/Message/Extract), `#vbPresets` "Presets" (pinned presets + Library button; caption only while a preset is pinned), `#vbCreate` "Create" (New) |
+  | `#sidebarToolbar` | `.stb-group`s "Edit" (Rename, Edit filter, Link with), "Effect" (Invert/NOT, Mute, Adjust clock), "Library" (Add to library) |
+  | View toolbars | Context: "Layout" (text files' Pretty/Raw), "Matches" (match nav, expand/collapse), "Display" (toggles), "Selection" (Bookmark/Note/Select); Filtered: "Display", "Selection"; Table: "Actions"; Plot: "View" (zoom, fullscreen), "Actions" |
 
   **Markup.** Every captioned group is `caption + row`: `#viewBar`'s groups
-  are `.vb-group` wrappers (`.vb-group-row` holds the buttons; `#fhTabs` and
-  the "|" separators stay direct children), `#sidebarToolbar`'s are
+  are `.vb-group` wrappers (`.vb-group-row` holds the buttons; `#fhTabs` sits in
+  the `#vbView` group, caption "View"; the "|" separators stay direct children), `#sidebarToolbar`'s are
   `.stb-group` > `.stb-group-row` (built by `buildSidebarToolbarHtml` from the
   `caption` field of `describeSidebarToolbarActions`; each row is the
   hit-expand container of its own buttons), and the view toolbars' existing
   `.toolbar-group`s got a `.group-caption` plus a `.tg-row` around the
   buttons (the `data-row-actions` containers are the `.tg-row`s, so filling
   them never wipes a caption). `.toolbar-group:has(> .group-caption)` is a
-  column, so without a visible caption the group is just its row. In Always
-  the view toolbars switch from the fixed 36px to `height:auto;
+  column, so without a visible caption the group is just its row. With
+  captions on the view toolbars switch from the fixed 36px to `height:auto;
   min-height:36px` (they grow by exactly the caption row; the tablet's 52px
   minimum still wins), items sit on the buttons' baseline and separators
   span the button row; `#viewBar`/`#sidebarToolbar` do the same
-  (`align-items:flex-end`) while a caption is shown. No inner horizontal
-  scrolling any more (icon-only buttons always fit).
+  (`align-items:flex-end`). Captions off: the layout is exactly the plain one.
 
   **Group-wise wrapping and line spacing.** `#viewBar` is a wrapping flex
-  row (`row-gap:6px`) whose children are the view tabs (`#fhTabs`), the "|"
-  separators and the four non-breaking `.vb-group`s (`flex:0 0 auto;
+  row (`row-gap:6px`) whose children are the "|"
+  separators and the five non-breaking `.vb-group`s (View, Level, Add filter, Presets, Create) (`flex:0 0 auto;
   max-width:100%`, rows `flex-wrap:nowrap`): the bar wraps only BETWEEN
   groups, the wrapped line starts at the bar's left edge, and only a level or
   preset row wider than a whole line wraps inside itself. After every layout
@@ -614,12 +652,12 @@ shape:
   **The "+" badge** (`withAddBadge`, New / Add level filter / Add to library)
   anchors to the 28px icon box (`.row-action-hit`, `position:relative`) and
   sits above its neighbours (`z-index:1`); no mode makes the button
-  `overflow:hidden` any more (that, plus the inline label, was what covered it
-  in Always).
+  `overflow:hidden` (that, plus the inline label, is what once covered it).
 
   **Where is what overlay** (label concept step 3, 2026-10-08). A help
-  button (`#btnHelp`, "?" in a circle, title "Where is what? (?)") sits in
-  the header right before Settings; the keys `?` (no modifier, never while an
+  button (`#btnHelp`, "?" in a circle, title "Help and display options") sits in
+  the header right before Settings and opens the "?" menu (below), whose first
+  row opens the overlay; the keys `?` (no modifier, never while an
   input/textarea/select/contenteditable has focus or another popup/dialog is
   open) and `F1` do the same; `?`/`F1` are listed under Settings -> Shortcuts
   as a fixed row (`FIXED_SHORTCUTS`). It dims the window and labels the main
@@ -648,8 +686,9 @@ shape:
   px, the pills in the root-zoomed (font scale) layout px, so placement runs in
   visual px and `left/top` are divided by `whereZoomScale`. It re-renders on window resize.
   Closing: Esc (captured, so it never also leaves focus mode), a click
-  anywhere, `?`/`F1` again or the help button; focus returns to the element
-  that had it when the overlay opened (else the help button). On the phone
+  anywhere or `?`/`F1` again; focus returns to the element
+  that had it when the overlay opened (else the help button; opened from the "?"
+  menu it is the help button). On the phone
   tier (`body.layout-phone`) the button is hidden, the keys do nothing and
   `showWhereIsWhat()` returns without effect. API: plain globals
   `showWhereIsWhat()`, `hideWhereIsWhat()` (used by the screenshot scene
@@ -670,6 +709,31 @@ shape:
   banner never appears in groups or documentation pictures. The cheatsheet
   page shows the overlay as `img/11-where-is-what.png` (docs/homepage.md).
   Group where-is-what.
+
+  **"?" menu** (`#helpMenu`, label settings split). The header help button opens
+  a small click-dismissed menu (the shell of the other popups: `stopPropagation`
+  on the opener, Esc and an outside click close it via `closeClickDismissedPopups`
+  / `closeEscapeOverlays`, listed in `anyEscapeOverlayOpen` and
+  `clickDismissedPopupHit`; arrow keys move, Enter/Space act; hidden on the phone
+  tier): "Where is what?" (opens the overlay), the switches "Hover descriptions"
+  and "Group captions" (`role="menuitemcheckbox"`, live: they call
+  `setHoverDescriptions`/`setToolbarCaptions`, keep the menu open and follow every
+  change made in Settings through `syncHelpMenuSwitches`) and "All toolbar
+  settings..." (opens Settings scrolled to `#settingsToolbarsTitle`). Group
+  label-settings.
+
+  **Hover-card nudge.** `noteHoverCardShown(btn)` (called by
+  `labelHandoverTracker.hover` whenever the pointer arrives on a different button
+  of a toolbar group; only with descriptions on and a button that has a hint)
+  counts card views in `philogg-hover-card-views`. When the count reaches
+  `HOVER_NUDGE_AFTER` (60; a `let` so a test can lower it) and
+  `philogg-hover-nudge-seen` is unset, descriptions are on, the device is neither
+  phone/compact tier nor a coarse pointer and the first-start hint is not showing,
+  ONE bottom banner `#hoverNudge` (same shell as `#whereHint`) asks "Seen enough
+  descriptions?": **Got it, hide them** turns descriptions off and shows the toast
+  "Descriptions are off. Turn them on again in the ? menu or Settings."; **Keep**
+  changes nothing. Both set the seen flag, so it never comes back (it also shows at
+  most once per page load). Group label-settings.
 - **Each view's own toolbar** (Zeile 2, directly under `#viewBar` —
   `#contextToolbar`/`#filteredToolbar`/`#tableToolbar`/`#plotToolbar`) —
   same position/shape in every tab, only the content differs.

@@ -86,15 +86,19 @@ await withApp(async (w, d, T) => {
 
   section("where-is-what b. Header button, title and the fixed-shortcut row");
   const btn = d.getElementById("btnHelp");
-  assert(btn && btn.title.startsWith("Where is what?") && btn.getAttribute("aria-label") === "Where is what?", "help button with title/aria-label");
+  assert(btn && btn.title === "Help and display options" && btn.getAttribute("aria-label") === "Help and display options" && btn.getAttribute("aria-haspopup") === "menu", "help button (quick-switch menu) with title/aria-label");
   assert(btn.nextElementSibling === d.getElementById("btnSettings"), "sits right before Settings");
   assert(overlay.getAttribute("role") === "dialog" && overlay.getAttribute("aria-label") === "Where is what" && !overlay.hasAttribute("aria-modal"), "role=dialog, labelled, not aria-modal");
   assert(w.eval("FIXED_SHORTCUTS.some(f => f.display && f.display.includes('?') && f.display.includes('F1'))"), "listed in Settings -> Shortcuts (fixed)");
   assert(!open(), "closed at start");
 
   section("where-is-what c. Open via the button: one callout per visible region, screen-reader list, focus");
+  const openViaMenu = () => { fireClick(btn, w); fireClick(d.getElementById("helpMenuWhere"), w); };
   btn.focus();
   fireClick(btn, w);
+  assert(!d.getElementById("helpMenu").classList.contains("hidden") && !open(), "the button opens the quick-switch menu, not the overlay");
+  fireClick(d.getElementById("helpMenuWhere"), w);
+  assert(d.getElementById("helpMenu").classList.contains("hidden"), "the menu closes");
   assert(open(), "overlay is open");
   const pills = d.querySelectorAll("#whereIsWhat .wiw-callout:not(.wiw-foot)");
   const expected = w.whereCurrentRegions().length;
@@ -110,8 +114,8 @@ await withApp(async (w, d, T) => {
   assert(!open(), "F1 while open closes it again");
   assert(d.activeElement === btn, "focus returns to the opener (the button)");
 
-  section("where-is-what d. Esc, click anywhere, and the button close it; focus returns");
-  fireClick(btn, w); assert(open(), "open again");
+  section("where-is-what d. Esc and a click anywhere close it; focus returns");
+  openViaMenu(); assert(open(), "open again");
   key("Escape");
   assert(!open() && d.activeElement === btn, "Esc closes, focus on the button");
   const row = d.querySelector("#tree .tree-row, #tree [data-node-id]") || d.querySelector("#tree > *");
@@ -121,8 +125,8 @@ await withApp(async (w, d, T) => {
   assert(!open() && d.activeElement === row, "click closes, focus returns to what had it");
   w.showWhereIsWhat();
   assert(open(), "reopened");
-  fireClick(btn, w);
-  assert(!open(), "the button toggles it closed");
+  key("?");
+  assert(!open(), "? toggles it closed");
   w.showWhereIsWhat(); w.hideWhereIsWhat();
   assert(!open() && overlay.childNodes.length === 0, "hideWhereIsWhat() closes and clears the overlay");
 

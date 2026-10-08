@@ -7,9 +7,10 @@
    Origin: 2026-10-08 (label concept, step 2). TOOLBAR_HINTS holds one
    {desc, key?} entry per labelled button (#viewBar, the four view toolbars,
    #sidebarToolbar, level chips, library presets). decorateHintLabel splits the
-   existing label into .hint-name / .hint-desc / .hint-key; the disabled reason
-   stays on the name line; Always/Never (no floating card) carry the description
-   in the native title instead, On hover keeps the plain title. jsdom has no
+   existing label into .hint-name and a .hint-more wrapper holding .hint-desc /
+   .hint-key; the disabled reason stays on the name line; the native title is
+   the plain name in every label mode (the card carries the description; with
+   Hover descriptions off .hint-desc/.hint-key are hidden). jsdom has no
    layout: structure, texts, titles and stylesheet rules are checked.
    ============================================================ */
 group("hover-card");
@@ -112,37 +113,31 @@ await withApp(async (w, d, T) => {
   [base, tb].forEach(r => assert(r && /max-width:\s*240px/.test(r.cssText) && /white-space:\s*normal/.test(r.cssText), r && r.selectorText + ": 240px max, wrapping"));
   const descRule = rules.find(r => r.selectorText === ".hint-desc");
   assert(descRule && /font-size:\s*11px/.test(descRule.cssText) && /--text-secondary/.test(descRule.cssText), "description: 11px, --text-secondary");
-  assert(rules.some(r => /level-labels-always \.level-btn \.hint-desc/.test(r.selectorText) && /display:\s*none/.test(r.cssText)), "the Always level pills (and phone chips) show name+count only");
+  assert(rules.some(r => /level-labels-inline \.level-btn \.hint-more/.test(r.selectorText) && /display:\s*none/.test(r.cssText)), "the Inline level pills (and phone chips) show name+count only");
+  assert(rules.some(r => /^body\.hover-descriptions-off \.hint-desc, body\.hover-descriptions-off \.hint-key$/.test(r.selectorText) && /display:\s*none/.test(r.cssText)), "Hover descriptions off hides the second line and the chip");
 
-  section("hover-card f. Titles: plain On hover, 'Name — description (Key)' in Always/Never");
+  section("hover-card f. Titles: the plain name in every label mode, with or without descriptions");
   const mute = () => d.querySelector('#sidebarToolbar [data-row-action="mute"]');
   const edit = () => d.querySelector('#sidebarToolbar [data-row-action="edit"]');
-  setAll("hover");
-  assert(bmBtn.title === "Bookmark" && mute().title === "Mute" && edit().title === "Edit filter…", "On hover: titles stay plain");
-  assert(d.querySelector("#levelBar .lvl-error").title === d.querySelector("#levelBar .lvl-error .hint-name").textContent, "On hover: chip title stays name+count");
   const preset = d.querySelector("#libraryPresetBar [data-lib-key]");
   const presetTitle = preset.title;
-  ["always", "never"].forEach(mode => {
-    setAll(mode);
-    assert(edit().title === "Edit filter… — " + HINTS.edit.desc + " (Ctrl+E)", mode + ": sidebar Edit title carries description + shortcut, got " + edit().title);
-    assert(mute().title === "Mute — " + HINTS.mute.desc + " (M)", mode + ": Mute title");
-    assert(d.querySelector('[data-row-action="filterAfter"]').title.startsWith("After · ") === false || true, "");
-    assert(d.querySelector('[data-row-action="newFilter"]').title === "New — " + HINTS.newFilter.desc + " (Ctrl+Shift+F)", mode + ": New title");
-    assert(/^After .*Add a time filter that keeps everything from the selected rows on\.$/.test(d.querySelector('[data-row-action="filterAfter"]').title), mode + ": After title (with its reason, if any)");
-    const err = d.querySelector("#levelBar .lvl-error");
-    assert(err.title === err.querySelector(".hint-name").textContent + " — Show only ERROR entries · click again to remove.", mode + ": chip title");
-    assert(d.querySelector("#btnRepeatCollapse").title.indexOf(" — " + HINTS.btnRepeatCollapse.desc) > 0, mode + ": view toolbar toggle title");
-    assert(preset.title === presetTitle, mode + ": preset keeps its own 'Apply …' title");
+  ["hover", "off", "inline"].forEach(mode => {
+    [true, false].forEach(desc => {
+      setAll(mode);
+      w.setHoverDescriptions(desc);
+      const tag = mode + (desc ? " + descriptions" : " without descriptions");
+      assert(bmBtn.title === "Bookmark" && mute().title === "Mute" && edit().title === "Edit filter…", tag + ": titles stay plain names");
+      assert(d.querySelector("#levelBar .lvl-error").title === d.querySelector("#levelBar .lvl-error .hint-name").textContent, tag + ": chip title stays name+count");
+      assert(d.querySelector('[data-row-action="newFilter"]').title === "New", tag + ": New title");
+      assert(preset.title === presetTitle, tag + ": preset keeps its own 'Apply …' title");
+    });
   });
-  // A title written by the app later (here: the sidebar re-render) is composed again.
-  w.eval("renderSidebarToolbar()");
-  await waitFor(() => mute().title.indexOf("—") > 0);
-  assert(mute().title === "Mute — " + HINTS.mute.desc + " (M)", "re-rendered sidebar button gets its description again");
-  setAll("hover");
-  assert(bmBtn.title === "Bookmark" && mute().title === "Mute" && edit().title === "Edit filter…", "back to On hover: plain titles again");
+  w.setHoverDescriptions(true);
+  setAll("inline");
   w.eval("renderSidebarToolbar()");
   await new Promise(r => setTimeout(r, 0));
-  assert(mute().title === "Mute", "On hover stays plain after a re-render");
+  assert(mute().title === "Mute" && mute().querySelector(".hint-desc").textContent === HINTS.mute.desc, "a re-rendered sidebar button gets its description again, title plain");
+  setAll("hover");
 
   section("hover-card g. A changing label text (Mute <-> Unmute) updates only the name line");
   const filt = w.createFilterNode(f.id, "text", "message 2");

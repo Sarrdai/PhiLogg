@@ -1,0 +1,5 @@
+- **feat: toolbar labels split into three independent settings, "?" quick switch and a one-time nudge (2026-10-08, person-requested)**
+  - Button labels per area are now **Off / On hover / Inline** ("Never"/"Always" are gone; a stored old value falls back to On hover). Inline puts the name next to the icon in a compact pill again (the "+" badge stays visible; the narrow sidebar toolbar shows the short names, the view toolbars wrap by group).
+  - New global settings under Behavior → Toolbars: **Hover descriptions** (the second line and shortcut of the hover card, default on) and **Group captions** (default off; the view tabs got a "View" caption).
+  - The header **?** button opens a small menu: Where is what?, live switches for the two new settings, "All toolbar settings…". After 60 hover cards one toast offers to hide the descriptions ("Got it, hide them" / "Keep"), once.
+  - **Tests**: GROUP label-settings (new); label-captions, hover-card, toolbar-labels-*, where-is-what and the old Always/Never groups updated, always-labels-toggle-level renamed inline-labels-toggle-level. Docs: docs/ui-and-views.md, README.

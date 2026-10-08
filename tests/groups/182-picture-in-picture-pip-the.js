@@ -55,13 +55,13 @@ await withApp(async (w, d, T) => {
     "#treeActionBar is retired (FEATURE_BACKLOG.md #77) — no stray rule targeting it should remain");
 
   // #viewBar is not hidden wholesale — it collapses and hides everything but
-  // #fhTabs, which is surfaced into the mini strip (position:fixed above the
+  // #vbView (the View group around #fhTabs), whose tabs are surfaced into the mini strip (position:fixed above the
   // injected #tauri-pip). Pin that contract too: the ViewMode switcher stays
   // usable in PiP.
   assert(css.includes("html.pip-mode #fhTabs"), "html.pip-mode surfaces #fhTabs (the ViewMode switcher)");
   assert(/html\.pip-mode\s+#fhTabs\s*\{[\s\S]*?position\s*:\s*fixed/.test(css),
     "...as a fixed element, so it sits in the mini strip rather than inside the (collapsed) #viewBar");
-  assert(css.includes("html.pip-mode #viewBar > :not(#fhTabs)"),
+  assert(css.includes("html.pip-mode #viewBar > :not(#vbView)"),
     "...and #viewBar's other children (level bar, row-actions) are hidden");
 });
 

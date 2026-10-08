@@ -5,23 +5,23 @@
 /* ============================================================
    GROUP 181 — this session (2026-09-05), person-requested: a real Settings
    -> Behavior setting (not a view-toolbar control) for whether the row-
-   action/toolbar buttons' hover-revealed labels show Never, on Hover
-   (default), or Always — independently for the Filter-Toolbar
+   action/toolbar buttons' hover-revealed labels are Off, on Hover
+   (default), or Inline (renamed from Never/Always 2026-10-08) — independently for the Filter-Toolbar
    (`#settingsFilterToolbarLabels`) and the View Toolbars
    (`#settingsViewToolbarLabels`). Applied as a class on <body>
-   (`filter-toolbar-labels-never`/`-always`, `view-toolbar-labels-never`/
-   `-always`) rather than per-button state.
+   (`filter-toolbar-labels-off`/`-inline`, `view-toolbar-labels-off`/
+   `-inline`) rather than per-button state.
    ============================================================ */
 group(181);
 await withApp(async (w, d, T) => {
-  section("181a. Defaults to 'hover' for all (round 1 of 2026-10-08 briefly made it 'always'), with no localStorage entry yet");
+  section("181a. Defaults to 'hover' for all (a stored legacy value falls back to it), with no localStorage entry yet");
 
   assert(w.localStorage.getItem("philogg-filter-toolbar-labels") === null, "sanity: nothing persisted yet");
   assert(w.localStorage.getItem("philogg-view-toolbar-labels") === null, "sanity: nothing persisted yet");
   assert(T.filterToolbarLabels === "hover" && T.viewToolbarLabels === "hover", "both default to 'hover'");
-  assert(!d.body.classList.contains("filter-toolbar-labels-never") && !d.body.classList.contains("filter-toolbar-labels-always"),
+  assert(!d.body.classList.contains("filter-toolbar-labels-off") && !d.body.classList.contains("filter-toolbar-labels-inline"),
     "no override class on <body> for the Filter-Toolbar at the default");
-  assert(!d.body.classList.contains("view-toolbar-labels-never") && !d.body.classList.contains("view-toolbar-labels-always"),
+  assert(!d.body.classList.contains("view-toolbar-labels-off") && !d.body.classList.contains("view-toolbar-labels-inline"),
     "no override class on <body> for View Toolbars at the default");
   assert(d.querySelector("#settingsFilterToolbarLabels").value === "hover", "select reflects the default");
   assert(d.querySelector("#settingsViewToolbarLabels").value === "hover", "select reflects the default");
@@ -33,18 +33,18 @@ await withApp(async (w, d, T) => {
   const filterSelect = d.querySelector("#settingsFilterToolbarLabels");
   const viewSelect = d.querySelector("#settingsViewToolbarLabels");
 
-  filterSelect.value = "never";
+  filterSelect.value = "off";
   filterSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.filterToolbarLabels === "never", "Filter-Toolbar setting updates in JS");
-  assert(w.localStorage.getItem("philogg-filter-toolbar-labels") === "never", "...and persists to its own key");
-  assert(d.body.classList.contains("filter-toolbar-labels-never"), "<body> carries the Filter-Toolbar 'never' class");
+  assert(T.filterToolbarLabels === "off", "Filter-Toolbar setting updates in JS");
+  assert(w.localStorage.getItem("philogg-filter-toolbar-labels") === "off", "...and persists to its own key");
+  assert(d.body.classList.contains("filter-toolbar-labels-off"), "<body> carries the Filter-Toolbar 'off' class");
   assert(T.viewToolbarLabels === "hover", "View Toolbar setting is untouched by the Filter-Toolbar change");
-  assert(!d.body.classList.contains("view-toolbar-labels-never"), "...no View Toolbar class added either");
+  assert(!d.body.classList.contains("view-toolbar-labels-off"), "...no View Toolbar class added either");
 
-  viewSelect.value = "never";
+  viewSelect.value = "off";
   viewSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.viewToolbarLabels === "never", "View Toolbar setting updates independently");
-  assert(w.localStorage.getItem("philogg-view-toolbar-labels") === "never", "...and persists to its own key");
-  assert(d.body.classList.contains("view-toolbar-labels-never") && !d.body.classList.contains("view-toolbar-labels-always"), "<body> carries the View Toolbar 'never' class");
-  assert(d.body.classList.contains("filter-toolbar-labels-never"), "...while the Filter-Toolbar's earlier 'never' choice is still in effect");
+  assert(T.viewToolbarLabels === "off", "View Toolbar setting updates independently");
+  assert(w.localStorage.getItem("philogg-view-toolbar-labels") === "off", "...and persists to its own key");
+  assert(d.body.classList.contains("view-toolbar-labels-off") && !d.body.classList.contains("view-toolbar-labels-inline"), "<body> carries the View Toolbar 'off' class");
+  assert(d.body.classList.contains("filter-toolbar-labels-off"), "...while the Filter-Toolbar's earlier 'off' choice is still in effect");
 });

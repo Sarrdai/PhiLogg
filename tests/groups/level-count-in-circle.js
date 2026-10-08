@@ -5,7 +5,7 @@
    GROUP level-count-in-circle — the level-bar circles show their entry
    count on the desktop tier too (not only compact), shortened to at most 4
    characters (levelCountShort); the exact count stays in the title and the
-   phone chips. "Always" labels carry the count in the pill instead.
+   phone chips. "Inline" labels carry the count in the pill instead.
    Origin: 2026-10-06 (person-decided, mockup variant B).
    ============================================================ */
 group("level-count-in-circle");
@@ -29,7 +29,7 @@ await withApp(async (w, d, T) => {
 }, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
-  section("level-count-in-circle b. Rendered text on the tiers, exact count in title, phone chips exact, 'Always' hides the circle count");
+  section("level-count-in-circle b. Rendered text on the tiers, exact count in title, phone chips exact, 'Inline' hides the circle count");
   const [sim] = LOGSIM.generateToStrings({ scenarios: ["basic"], entries: 3000, seed: 7 });
   const f = await w.addFile(sim.name, sim.text, () => {});
   T.state.activeId = f.id;
@@ -67,11 +67,11 @@ await withApp(async (w, d, T) => {
     assert(w.getComputedStyle(cnt("INFO")).display !== "none", "compact: the count is displayed in the circle");
     assert(cnt("INFO").textContent === "1,3k", "compact: same short text as on desktop (28px and 44px read the same)");
 
-    d.body.classList.add("level-labels-always");
-    assert(w.getComputedStyle(cnt("INFO")).display === "none", "compact, 'Always' labels: no in-circle count");
+    d.body.classList.add("level-labels-inline");
+    assert(w.getComputedStyle(cnt("INFO")).display === "none", "compact, 'Inline' labels: no in-circle count");
     lcSetWidth(w, 1400);
-    assert(w.getComputedStyle(cnt("INFO")).display === "none", "desktop, 'Always' labels: no in-circle count (the pill carries it)");
-    d.body.classList.remove("level-labels-always");
+    assert(w.getComputedStyle(cnt("INFO")).display === "none", "desktop, 'Inline' labels: no in-circle count (the pill carries it)");
+    d.body.classList.remove("level-labels-inline");
     assert(w.getComputedStyle(cnt("INFO")).display !== "none", "desktop, hover labels: the count is back");
 
     lcSetWidth(w, 400);
@@ -89,8 +89,8 @@ await withApp(async (w, d, T) => {
   section("level-count-in-circle c. CSS: centered, 9.5px / 11px, level colours on desktop for every level, active in the -on colour");
   const rules = lcCssRules(d);
   const find = sel => rules.find(r => r.selectorText === sel);
-  const base = rules.find(r => /^body:not\(\.layout-phone\):not\(\.level-labels-always\) \.level-btn \.level-count$/.test(r.selectorText));
-  assert(base, "the in-circle count rule applies to every tier but the phone (and not in 'Always' mode)");
+  const base = rules.find(r => /^body:not\(\.layout-phone\):not\(\.level-labels-inline\) \.level-btn \.level-count$/.test(r.selectorText));
+  assert(base, "the in-circle count rule applies to every tier but the phone (and not in 'Inline' mode)");
   assert(base.style.position === "absolute" && base.style.display === "flex" && base.style.alignItems === "center" && base.style.justifyContent === "center",
     "the count is absolutely positioned and centered both ways");
   assert(base.style.fontSize === "" ? /9\.5px/.test(base.style.font) : base.style.fontSize === "9.5px", "28px circles: 9.5px text");
