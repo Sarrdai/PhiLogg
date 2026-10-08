@@ -17,12 +17,13 @@ await withApp(async (w, d, T) => {
     const m = /^M8 (\d+)/.exec(path);
     return /M8 3v10|M8 3l/.test(path) && m[1] === "3" ? "up" : "down";
   };
-  const ctxPath = id => d.querySelector("#" + id + " svg path").getAttribute("d");
+  // The menu items reference the sprite symbols (the tree icons' own), so their arrows ARE the tree symbols.
+  const ctxSymbol = id => d.querySelector("#" + id + " svg use").getAttribute("href");
   const rowPath = action => d.querySelector('#viewBar [data-row-action="' + action + '"] svg path').getAttribute("d");
   const symPath = id => d.querySelector("symbol#" + id + " path").getAttribute("d");
   assert(dirOf(rowPath("filterBefore")) === "up" && dirOf(rowPath("filterAfter")) === "down", "row actions: before up, after down");
   assert(/^M8 13V3/.test(symPath("i-time-before")) && /^M8 3v10/.test(symPath("i-time-after")), "tree symbols: before up (tip at 3), after down");
-  assert(ctxPath("ctxBefore") === rowPath("filterBefore"), "ctxBefore uses the same arrow as the Before row action");
-  assert(ctxPath("ctxAfter") === rowPath("filterAfter"), "ctxAfter uses the same arrow as the After row action");
-  assert(dirOf(ctxPath("ctxBefore")) === "up" && dirOf(ctxPath("ctxAfter")) === "down", "menu: before up, after down");
+  assert(ctxSymbol("ctxBefore") === "#i-time-before" && ctxSymbol("ctxAfter") === "#i-time-after", "menu items use the before/after sprite symbols");
+  assert(ctxSymbol("ctxTimeRangeFromSelection") === "#i-time-range", "the time-range item uses the time-range symbol");
+  assert(symPath("i-time-before") === "M8 13V3M5 6l3-3 3 3" && symPath("i-time-after") === "M8 3v10M5 10l3 3 3-3", "the symbols: before up, after down");
 });

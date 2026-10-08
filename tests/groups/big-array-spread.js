@@ -179,7 +179,7 @@ await withApp(async (w, d, T) => {
 
   // Log view: every row multi-selected (what Shift+click over the whole file
   // or a Select-all produces), then the toolbar's three actions and the
-  // context menu's "Time filter from selection".
+  // context menu's "Filter selected time range".
   w.applyFhView("filter");
   T.state.activeId = f.id;
   w.render();
@@ -215,7 +215,7 @@ await withApp(async (w, d, T) => {
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[N - 1]);
   fireClick(d.querySelector("#ctxTimeRangeFromSelection"), w);
   tr = newChild(f);
-  assert(tr && tr.value.from === firstTs && tr.value.to === lastTs, "context menu: Time filter from selection spans the first to the last timestamp, got " + JSON.stringify(tr && tr.value));
+  assert(tr && tr.value.from === firstTs && tr.value.to === lastTs, "context menu: Filter selected time range spans the first to the last timestamp, got " + JSON.stringify(tr && tr.value));
   T.state.logMultiSelect = new Set();
 
   // Plot tab: the whole plot is visible, so every entry counts.

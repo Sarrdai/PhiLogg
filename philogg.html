@@ -4842,6 +4842,15 @@
   .ctx-item svg{flex:0 0 auto; color:var(--text-tertiary);}
   .ctx-item:hover svg{color:var(--accent-strong);}
   .ctx-sep{height:1px; background:var(--border-soft); margin:5px 4px;}
+  /* Group heading inside a context menu: non-interactive label above a group of
+     items (see syncCtxGroups, which hides it together with its separator when
+     the whole group is hidden). */
+  .ctx-head{
+    padding:7px 10px 3px; font-size:10px; font-family:var(--font-mono); letter-spacing:.08em;
+    text-transform:uppercase; color:var(--text-tertiary); user-select:none; -webkit-user-select:none;
+  }
+  /* Same icon size as the 13px inline icons of the row menu's other items. */
+  #contextMenu .ctx-item{--icon-md:13px;}
   /* white-space/word-break/overflow-wrap: a long filter name (a text/extract
      value, or a link/detach-copy node whose name concatenates its two
      source names) used to have nothing stopping it from forcing the whole
@@ -5745,6 +5754,7 @@
     <symbol id="i-columns" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.25"/><path d="M6 2.75v10.5M10 2.75v10.5"/></symbol>
     <symbol id="i-highlight-pen" viewBox="0 0 16 16"><path d="M9.5 2.5 13.5 6.5 7.25 12.75 3 13.5l.75-4.25Z"/><path d="M2.25 14.5h5"/></symbol>
     <symbol id="i-highlight-text" viewBox="0 0 16 16"><path d="M4 3.25h8M8 3.25v6M2.5 11.75h11M2.5 14.25h11"/></symbol>
+    <symbol id="i-help" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M6.4 6.4a1.7 1.7 0 0 1 3.2.6c0 1.1-1.6 1.4-1.6 2.4"/><circle cx="8" cy="11.2" r=".8" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-info" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.25v3.5"/><circle cx="8" cy="5" r=".9" fill="currentColor" stroke="none"/></symbol>
     <symbol id="i-level" viewBox="0 0 16 16"><circle cx="8" cy="4" r="2.4" fill="var(--level-error)" stroke="none"/><circle cx="4" cy="11.5" r="2.4" fill="var(--level-warn)" stroke="none"/><circle cx="12" cy="11.5" r="2.4" fill="var(--level-info)" stroke="none"/></symbol>
     <symbol id="i-chevron-left" viewBox="0 0 16 16"><path d="M9.5 4 5.5 8l4 4M12.5 3.5v9"/></symbol>
@@ -6540,8 +6550,11 @@
   <div id="facetValueMenu" class="hidden">
     <div class="ctx-meta" id="facetValueMenuValue"></div>
     <div class="ctx-sep"></div>
+    <div class="ctx-head">Filter</div>
     <div class="ctx-item" data-act="only">Show only this</div>
     <div class="ctx-item" data-act="exclude">Exclude this</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-head">Copy</div>
     <div class="ctx-item" data-act="copy">Copy value</div>
   </div>
 
@@ -6549,15 +6562,21 @@
   <div id="patternMenu" class="hidden">
     <div class="ctx-meta" id="patternMenuText"></div>
     <div class="ctx-sep"></div>
+    <div class="ctx-head">Filter</div>
     <div class="ctx-item" data-act="filter">Show only this</div>
     <div class="ctx-item" data-act="hide">Hide this</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-head">Navigate</div>
     <div class="ctx-item" data-act="jump">Jump to first entry</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-head">Copy</div>
     <div class="ctx-item" data-act="copy">Copy pattern</div>
   </div>
 
   <div id="contextMenu" class="hidden">
     <div class="ctx-meta" id="ctxMeta"></div>
     <div class="ctx-sep"></div>
+    <div class="ctx-head">Filter</div>
     <div class="ctx-item" id="ctxFilterForColumn">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h12l-4.5 5.5v4L7 14v-5.5Z"/></svg>
       <span id="ctxFilterForColumnLabel">Filter for this message</span>
@@ -6566,30 +6585,30 @@
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><path d="M2 6.7h12M2 11.3h12M6.5 2v12M10.7 2v12"/></svg>
       Extract
     </div>
-    <div class="ctx-item" id="ctxPairWith"><span>Pair with…</span></div>
-    <div class="ctx-item" id="ctxWhyRow"><span>Why is this row here?</span></div>
-    <div class="ctx-item" id="ctxOpenInVs">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
-      Open in Visual Studio
-    </div>
-    <div class="ctx-item" id="ctxOpenInRider">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
-      Open in Rider
-    </div>
     <div class="ctx-sep"></div>
-    <div class="ctx-item" id="ctxAfter">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 13l-3-3M8 13l3-3"/></svg>
-      Filter after this (incl.)
-    </div>
+    <div class="ctx-head">Time filter</div>
     <div class="ctx-item" id="ctxBefore">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 3v10M8 3l-3 3M8 3l3 3"/></svg>
+      <svg class="icon" aria-hidden="true"><use href="#i-time-before"/></svg>
       Filter before this (incl.)
     </div>
+    <div class="ctx-item" id="ctxAfter">
+      <svg class="icon" aria-hidden="true"><use href="#i-time-after"/></svg>
+      Filter after this (incl.)
+    </div>
     <div class="ctx-item" id="ctxTimeRangeFromSelection">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M8 13V3M8 3l-3 3M8 3l3 3M8 13l-3-3M8 13l3-3"/></svg>
-      Time filter from selection
+      <svg class="icon" aria-hidden="true"><use href="#i-time-range"/></svg>
+      Filter selected time range
     </div>
     <div class="ctx-sep"></div>
+    <div class="ctx-head">Analyze</div>
+    <div class="ctx-item" id="ctxWhyRow"><svg class="icon" aria-hidden="true"><use href="#i-help"/></svg><span>Why is this row here?</span></div>
+    <div class="ctx-item" id="ctxPairWith"><span>Pair with…</span></div>
+    <div class="ctx-item" id="ctxTimeZero">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
+      <span id="ctxTimeZeroLabel">Set as time zero</span>
+    </div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-head">Mark</div>
     <div class="ctx-item" id="ctxBookmark">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5h8v11l-4-2.6-4 2.6z"/></svg>
       <span id="ctxBookmarkLabel">Bookmark this row</span>
@@ -6603,11 +6622,8 @@
       <span id="ctxAddToSelectionLabel">Add to selection</span>
       <svg class="ctx-submenu-arrow" width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 3l5 5-5 5"/></svg>
     </div>
-    <div class="ctx-item" id="ctxTimeZero">
-      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3l2 1.5"/></svg>
-      <span id="ctxTimeZeroLabel">Set as time zero</span>
-    </div>
     <div class="ctx-sep"></div>
+    <div class="ctx-head">Copy &amp; open</div>
     <div class="ctx-item" id="ctxCopy">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>
       Copy
@@ -6615,6 +6631,14 @@
     <div class="ctx-item" id="ctxCopyTicket">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/><path d="M11.5 6.5v3M10 8h3"/></svg>
       Copy for ticket
+    </div>
+    <div class="ctx-item" id="ctxOpenInVs">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
+      Open in Visual Studio
+    </div>
+    <div class="ctx-item" id="ctxOpenInRider">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5.5 5 2.6 8l2.9 3M10.5 5l2.9 3-2.9 3"/></svg>
+      Open in Rider
     </div>
   </div>
 
@@ -6635,14 +6659,19 @@
   </div>
 
   <div id="extractContextMenu" class="hidden">
+    <div class="ctx-head">Column</div>
     <div class="ctx-item hidden" id="ctxRenameColumn">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 8.3 2 3a1 1 0 0 1 1-1h5.3L14 8.7 8.7 14 2 8.3Z"/><circle cx="5.3" cy="5.3" r="1" fill="currentColor" stroke="none"/></svg>
       Rename column…
     </div>
-    <div class="ctx-item hidden ctx-array-view" data-array-mode="joined">Array: Joined</div>
-    <div class="ctx-item hidden ctx-array-view" data-array-mode="index">Array: One column per element</div>
-    <div class="ctx-item hidden ctx-array-view" data-array-mode="aggregate">Array: Aggregates (len/min/max/avg/sum)</div>
-    <div class="ctx-item hidden ctx-array-view" data-array-mode="explode">Array: One row per element</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-head">Array view</div>
+    <div class="ctx-item hidden ctx-array-view" data-array-mode="joined">Joined</div>
+    <div class="ctx-item hidden ctx-array-view" data-array-mode="index">One column per element</div>
+    <div class="ctx-item hidden ctx-array-view" data-array-mode="aggregate">Aggregates (len/min/max/avg/sum)</div>
+    <div class="ctx-item hidden ctx-array-view" data-array-mode="explode">One row per element</div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-head">Table</div>
     <div class="ctx-item" id="ctxExportCsv">
       <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3 2h6.5L12 4.5V14H3z"/><path d="M5.5 8.5h5M5.5 11h5"/></svg>
       Export as CSV…
@@ -26949,9 +26978,10 @@ function openExtractContextMenu(ev) {
   const col = extractContextMenuColIndex == null ? null : findExtractColumn(extractContextMenuColIndex);
   showArrayViewItems(col && col.arrayBase != null ? col.arrayBase : null);
   el("#ctxExportCsv").classList.remove("hidden");
+  syncCtxGroups(extractContextMenu);
   extractContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
-  extractContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 60) + "px";
   extractContextMenu.classList.remove("hidden");
+  extractContextMenu.style.top = ctxMenuTop(extractContextMenu, ev.clientY, 60);
 }
 // The array-view items of the extraction context menu, for array column
 // `base` (null hides them); the current view is marked active.
@@ -26972,9 +27002,10 @@ function openArrayViewMenu(base, x, y) {
   el("#ctxRenameColumn").classList.add("hidden");
   el("#ctxExportCsv").classList.add("hidden");
   showArrayViewItems(base);
+  syncCtxGroups(extractContextMenu);
   extractContextMenu.style.left = Math.min(x, window.innerWidth - 260) + "px";
-  extractContextMenu.style.top = Math.min(y, window.innerHeight - 120) + "px";
   extractContextMenu.classList.remove("hidden");
+  extractContextMenu.style.top = ctxMenuTop(extractContextMenu, y, 120);
 }
 extractContextMenu.querySelectorAll(".ctx-array-view").forEach(item => {
   item.addEventListener("click", () => {
@@ -38563,11 +38594,11 @@ function openFolderFileContextMenu(ev, folder, rec) {
   treeCtxId = null;
   folderCtxTarget = { folderId: folder.id, name: rec.name };
   const html = '<div class="ctx-meta">' + escapeHtml(rec.name) + '</div><div class="ctx-sep"></div>' +
-    '<div class="ctx-item" data-action="loadFolderFile">' + ICON_LOAD + ' Load file</div>';
+    ctxGroupsHtml([{ head: "File", items: ['<div class="ctx-item" data-action="loadFolderFile">' + ICON_LOAD + ' Load file</div>'] }]);
   treeContextMenu.innerHTML = html;
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
-  treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
   treeContextMenu.classList.remove("hidden");
+  treeContextMenu.style.top = ctxMenuTop(treeContextMenu, ev.clientY, 250);
   fitPopupToViewport(treeContextMenu);
 }
 
@@ -41097,6 +41128,45 @@ function fitPopupToViewport(menu) {
   menu.style.left = Math.max(m, Math.min(r.left, vw - r.width - m)) + "px";
   menu.style.top = Math.max(m, Math.min(r.top, vh - r.height - m)) + "px";
 }
+// Context-menu groups. A menu is a flat list of children: an optional
+// .ctx-meta head line, then groups of an optional .ctx-head heading plus its
+// .ctx-item/.ctx-note rows, a .ctx-sep before every group but the first. The
+// per-item show/hide logic stays where it was (inline display:none or .hidden);
+// this runs after it and hides the heading and separator of every group left
+// without a visible row, so a separator only ever sits between two visible
+// groups (and after the head line). Static menus call it on every open; the
+// dynamically built menus (ctxGroupsHtml) skip empty groups while building.
+function syncCtxGroups(menu) {
+  const hiddenRow = c => c.classList.contains("hidden") || c.style.display === "none";
+  const segs = [];
+  let seg = { sep: null, heads: [], visible: false };
+  segs.push(seg);
+  for (const c of Array.from(menu.children)) {
+    if (c.classList.contains("ctx-sep")) { seg = { sep: c, heads: [], visible: false }; segs.push(seg); }
+    else if (c.classList.contains("ctx-head")) seg.heads.push(c);
+    else if (!hiddenRow(c)) seg.visible = true;
+  }
+  let shownBefore = false;
+  for (const g of segs) {
+    if (g.sep) g.sep.style.display = g.visible && shownBefore ? "" : "none";
+    for (const h of g.heads) h.style.display = g.visible ? "" : "none";
+    if (g.visible) shownBefore = true;
+  }
+}
+// Top offset for a just-shown menu: clamped against its real height (the
+// grouped menus are tall); `guess` is the old fixed reserve, used where there
+// is no layout to measure.
+function ctxMenuTop(menu, y, guess) {
+  const h = menu.getBoundingClientRect().height;
+  return h ? Math.max(8, Math.min(y, window.innerHeight - h - 8)) + "px" : Math.min(y, window.innerHeight - guess) + "px";
+}
+// HTML of a dynamically built menu body: groups = [{ head?: "Heading", items: [html, ...] }];
+// empty groups are skipped, the rest are joined by a .ctx-sep.
+function ctxGroupsHtml(groups) {
+  return groups.filter(g => g.items.length)
+    .map(g => (g.head ? '<div class="ctx-head">' + escapeHtml(g.head) + "</div>" : "") + g.items.join(""))
+    .join('<div class="ctx-sep"></div>');
+}
 function openContextMenu(ev, entry) {
   ctxEntry = entry;
   ctxFilterColumn = resolveContextFilterColumn(ev);
@@ -41145,9 +41215,10 @@ function openContextMenu(ev, entry) {
     ? resolveIdeSourcePath(entry.location, ideAnchorFolder, "")
     : null;
   ctxOpenInRider.style.display = ctxRiderTarget && !ctxRiderTarget.error ? "" : "none";
+  syncCtxGroups(contextMenu);
   contextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
-  contextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 170) + "px";
   contextMenu.classList.remove("hidden");
+  contextMenu.style.top = ctxMenuTop(contextMenu, ev.clientY, 170);
   fitPopupToViewport(contextMenu);
 }
 function closeContextMenu() { contextMenu.classList.add("hidden"); closeAddToSelectionMenu(); ctxEntry = null; }
@@ -42923,20 +42994,22 @@ function openTreeContextMenu(ev, clickedId) {
     // entry point. Merge is unaffected (not in this exclusion list).
     const actions = bulkActions.filter(a => a.action !== "and" && a.action !== "or" && a.action !== "link");
     html = '<div class="ctx-meta">' + nodes.length + " selected</div><div class=\"ctx-sep\"></div>";
-    html += actions.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join("");
-    if (note) html += '<div class="ctx-note">' + note + "</div>";
+    // Heading "Selection" over the actions and the note below them; with no
+    // action at all (mixed selection, plain-text files) just the note.
+    const noteHtml = note ? '<div class="ctx-note">' + note + "</div>" : "";
+    html += actions.length
+      ? '<div class="ctx-head">Selection</div>' +
+        actions.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join("") + noteHtml
+      : noteHtml;
   } else {
-    // Grouped the same way #contextMenu (the log-row menu) already groups
-    // its own, much shorter, list — related actions bucketed together with
-    // a .ctx-sep between groups (person-requested, this session: the list
-    // had grown long enough — 11 items on a filter node once Save/Apply
-    // from library joined it — to read as one undifferentiated wall).
-    // GROUP_ORDER is the fixed rendering order; items are collected into
-    // buckets (not just tagged in push order) since e.g. "paste" is only
-    // conditionally pushed well after the other clipboard items, so a
-    // group's members aren't naturally contiguous in push order.
-    const GROUP_ORDER = ["edit", "clipboard", "library", "danger"];
-    const buckets = { edit: [], clipboard: [], library: [], danger: [] };
+    // Groups (person-requested menu order, shared with every other context
+    // menu — see syncCtxGroups/ctxGroupsHtml): Info/Select multiple (no
+    // heading) -> Edit -> Create from this -> Clipboard (a file node's is
+    // "Location & clipboard") -> Remove (no heading). Items are collected into
+    // arrays, not just tagged in push order, since e.g. "paste" is only
+    // conditionally pushed well after the other clipboard items, so a group's
+    // members aren't naturally contiguous in push order.
+    const edit = [], create = [], clipFilter = [], clipTail = [], locations = [], paste = [], remove = [];
     // Restricted node (auto-managed "Bookmarks" filter, see
     // syncBookmarksFilterNode): only "Copy" is offered — no rename/edit/
     // invert/context/cut/save/delete, since it's only ever
@@ -42964,31 +43037,19 @@ function openTreeContextMenu(ev, clickedId) {
     // other half of what people want a known path for.
     if (node.type === "file" && window.philogg) {
       if (node.localPath || (node.sourceUrl && isDesktopLocalUrl(node.sourceUrl))) {
-        buckets.edit.push({ action: "revealLocation", label: "Open File Location", icon: ICON_FOLDER });
-        buckets.edit.push({ action: "copyPath", label: "Copy Path", icon: ICON_COPY });
+        locations.push({ action: "revealLocation", label: "Open File Location", icon: ICON_FOLDER });
+        locations.push({ action: "copyPath", label: "Copy Path", icon: ICON_COPY });
       }
     }
     if (node.type === "file" && node.sourceUrl && !isDesktopLocalUrl(node.sourceUrl)) {
-      buckets.edit.push({ action: "copyUrl", label: "Copy URL", icon: ICON_COPY });
-    }
-    // Per-file clock offset (FEATURE_BACKLOG.md #29): only on a real
-    // (non-merged) file with entries to shift — a merged file reuses its
-    // sources' entry objects by reference, so shifting it would silently move
-    // the source files' clocks too (see applyClockOffset's own guard).
-    if (node.type === "file" && !node.merged && node.entries && node.entries.length) {
-      buckets.edit.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK });
+      locations.push({ action: "copyUrl", label: "Copy URL", icon: ICON_COPY });
     }
     // "Gap filter…" (FEATURE_BACKLOG.md #24): a new gap filter as a child
     // of this node, measuring over its result — see openGapDialog.
-    if (!node.locked) buckets.edit.push({ action: "gap", label: "Gap filter…", icon: ICON_CLOCK });
+    if (!node.locked) create.push({ action: "gap", label: "Gap filter…", icon: ICON_CLOCK });
     if (node.type === "filter" && node.locked) {
-      buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
+      clipFilter.push({ action: "copy", label: "Copy", icon: ICON_COPY });
     } else if (node.type === "filter") {
-      // Rename (FEATURE_BACKLOG.md #12) works on every filterType — a
-      // human-readable step name makes sense on and/or/link/context/level
-      // nodes just as much as a plain text filter — so it's unconditional,
-      // unlike "Edit filter…" below.
-      buckets.edit.push({ action: "rename", label: "Rename…", icon: ICON_RENAME });
       // "text" (extraction-capable or not — there is no separate "extract"
       // filterType anymore) has a plain value the filter popup's single
       // input can represent (see openEditFilterPopup); "after"/"before"/
@@ -42996,14 +43057,25 @@ function openTreeContextMenu(ev, clickedId) {
       // openTimeRangeDialog). and/or/link nodes derive their value from two
       // other nodes, and context filters have their own before/after dialog.
       if (node.filterType === "text" || node.filterType === "gap" || isTimeFilterType(node.filterType)) {
-        buckets.edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
+        edit.push({ action: "edit", label: "Edit filter…", icon: ICON_EDIT });
       } else if (node.filterType === "link" && hasBakedSides(node)) {
-        buckets.edit.push({ action: "edit", label: "Edit link…", icon: ICON_EDIT });
+        edit.push({ action: "edit", label: "Edit link…", icon: ICON_EDIT });
       } else if ((node.filterType === "and" || node.filterType === "or") && hasBakedSides(node)) {
-        buckets.edit.push({ action: "edit", label: "Edit conditions…", icon: ICON_EDIT });
+        edit.push({ action: "edit", label: "Edit conditions…", icon: ICON_EDIT });
       }
-      if (isLinkBakeableNode(node)) buckets.edit.push({ action: "linkWith", label: "Link with…", icon: ICON_LINK });
-      if (canPruneToNode(node)) buckets.edit.push({ action: "pruneToNode", label: "Prune file to this result…", icon: ICON_FILE_PRUNED });
+      // Rename (FEATURE_BACKLOG.md #12) works on every filterType — a
+      // human-readable step name makes sense on and/or/link/context/level
+      // nodes just as much as a plain text filter — so it's unconditional,
+      // unlike "Edit filter…" above.
+      edit.push({ action: "rename", label: "Rename…", icon: ICON_RENAME });
+      if (isLinkBakeableNode(node)) create.push({ action: "linkWith", label: "Link with…", icon: ICON_LINK });
+      // "Unpack" (and/or/link only): materializes the node's two baked
+      // inputs as real, visible sibling filters next to it — the node
+      // itself is untouched — see unpackAndOrLinkNode.
+      if ((node.filterType === "and" || node.filterType === "or" || node.filterType === "link") && hasBakedSides(node)) {
+        create.push({ action: "unpack", label: "Unpack…", icon: node.filterType === "or" ? ICON_OR : node.filterType === "and" ? ICON_AND : ICON_LINK });
+      }
+      if (canPruneToNode(node)) create.push({ action: "pruneToNode", label: "Prune file to this result…", icon: ICON_FILE_PRUNED });
       // "link" results are pair entries with no parent-relative complement
       // (see getEntries), and "context"/"countContext" always contain their
       // own reference entries so a parent-relative difference is always
@@ -43014,26 +43086,26 @@ function openTreeContextMenu(ev, clickedId) {
       // inverted filter).
       if (node.filterType !== "link" &&
           node.filterType !== "context" && node.filterType !== "countContext") {
-        buckets.edit.push({
+        edit.push({
           action: "invert",
           label: node.inverted ? "Remove NOT" : "Invert (NOT)",
           icon: ICON_INVERT,
         });
       }
       // Mute (FEATURE_BACKLOG #14) applies to every filter type.
-      buckets.edit.push({
+      edit.push({
         action: "mute",
         label: node.muted ? "Unmute" : "Mute",
         icon: node.muted ? ICON_EYE_OFF : ICON_EYE,
       });
       // Alert on new matches while tailing (FEATURE_BACKLOG #87).
-      buckets.edit.push({
+      edit.push({
         action: "alert",
         label: node.alert ? "Stop alerting" : "Alert on new matches",
         icon: ICON_BELL,
       });
       // "Time context…"/"Count context…" — CREATION menu items removed
-      // (FEATURE_BACKLOG.md #79, person-confirmed, this session): there is
+      // (FEATURE_BACKLOG.md #79, person-confirmed): there is
       // now no user-facing way to create a fresh context/countContext node,
       // neither here nor on the sidebar toolbar (describeSidebarToolbarActions'
       // own comment has the full reasoning/pointer). This ONLY removes these
@@ -43045,22 +43117,23 @@ function openTreeContextMenu(ev, clickedId) {
       // exactly as before. Leaving openContextDialog/openCountContextDialog
       // now unreferenced by any menu item is expected, not dead code to clean
       // up — see FEATURE_BACKLOG.md #79 for the planned replacement.
-      buckets.clipboard.push({ action: "copy", label: "Copy", icon: ICON_COPY });
+      clipFilter.push({ action: "copy", label: "Copy", icon: ICON_COPY });
+      clipFilter.push({ action: "cut", label: "Cut", icon: ICON_CUT });
       if (node.filterType === "idset" && node.selectionFilter) {
-        buckets.clipboard.push({ action: "copyTicket", label: "Copy for ticket", icon: ICON_COPY });
+        clipTail.push({ action: "copyTicket", label: "Copy for ticket", icon: ICON_COPY });
       }
-      buckets.clipboard.push({ action: "cut", label: "Cut", icon: ICON_CUT });
-      buckets.library.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
+      clipTail.push({ action: "saveFilter", label: "Save filter…", icon: ICON_SAVE });
       // "Save to library…" moved out of the context menu (person-requested):
       // it's now "Add to library…" on the Files & Filters sidebar toolbar
       // (#sidebarToolbar, describeSidebarToolbarActions), acting on the
       // specific selected node rather than always the active filter.
-      // "Unpack" (and/or/link only): materializes the node's two baked
-      // inputs as real, visible sibling filters next to it — the node
-      // itself is untouched — see unpackAndOrLinkNode.
-      if ((node.filterType === "and" || node.filterType === "or" || node.filterType === "link") && hasBakedSides(node)) {
-        buckets.edit.push({ action: "unpack", label: "Unpack…", icon: node.filterType === "or" ? ICON_OR : node.filterType === "and" ? ICON_AND : ICON_LINK });
-      }
+    }
+    // Per-file clock offset (FEATURE_BACKLOG.md #29): only on a real
+    // (non-merged) file with entries to shift — a merged file reuses its
+    // sources' entry objects by reference, so shifting it would silently move
+    // the source files' clocks too (see applyClockOffset's own guard).
+    if (node.type === "file" && !node.merged && node.entries && node.entries.length) {
+      edit.push({ action: "clockOffset", label: "Adjust clock…", icon: ICON_CLOCK });
     }
     // Applying a library preset is not offered here: it lives in the
     // "Library ▾" menu of #viewBar (openLibraryMenu), which targets the
@@ -43072,21 +43145,25 @@ function openTreeContextMenu(ev, clickedId) {
     // a file for something that has nothing to do with that file — moved to
     // the "Session…" toolbar button (analogous to "Open…") instead.
     if (!node.locked && state.clipboard && state.nodes[state.clipboard.id]) {
-      buckets.clipboard.push({ action: "paste", label: "Paste", icon: ICON_PASTE });
+      paste.push({ action: "paste", label: "Paste", icon: ICON_PASTE });
     }
     if (!node.locked) {
-      buckets.danger.push({
+      remove.push({
         action: "delete",
         label: node.type === "file" ? (node.folderId ? "Close file" : "Remove file") : "Remove filter",
         icon: ICON_CLOSE,
       });
     }
 
-    const sectionsHtml = GROUP_ORDER
-      .map(g => buckets[g])
-      .filter(section => section.length)
-      .map(section => section.map(a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>").join(""))
-      .join('<div class="ctx-sep"></div>');
+    const itemHtml = a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>";
+    const sectionsHtml = ctxGroupsHtml([
+      { head: "Edit", items: edit.map(itemHtml) },
+      { head: "Create from this", items: create.map(itemHtml) },
+      node.type === "file"
+        ? { head: "Location & clipboard", items: locations.concat(paste).map(itemHtml) }
+        : { head: "Clipboard", items: clipFilter.concat(paste, clipTail).map(itemHtml) },
+      { items: remove.map(itemHtml) },
+    ]);
 
     // "Info" (person-reported): the node's full display name used to sit
     // inline here, unbounded — a long extraction pattern or a link's own
@@ -43104,8 +43181,8 @@ function openTreeContextMenu(ev, clickedId) {
 
   treeContextMenu.innerHTML = html;
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
-  treeContextMenu.style.top = Math.min(ev.clientY, window.innerHeight - 250) + "px";
   treeContextMenu.classList.remove("hidden");
+  treeContextMenu.style.top = ctxMenuTop(treeContextMenu, ev.clientY, 250);
   fitPopupToViewport(treeContextMenu);
 }
 
