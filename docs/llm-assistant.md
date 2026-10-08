@@ -6,6 +6,7 @@
 - [Agent loop and sessions (philogg.html, "LLM assistant: agent loop and sessions")](#agent-loop-and-sessions-philogghtml-llm-assistant-agent-loop-and-sessions)
 - [Chat view (desktop/chat.html)](#chat-view-desktopchathtml)
 - [Docking](#docking)
+- [MCP server (external agents)](#mcp-server-external-agents)
 - [Screenshot](#screenshot)
 <!-- /toc -->
 
@@ -301,6 +302,62 @@ nothing about it. Hidden in picture-in-picture.
 
 Tests: GROUP 306 (dock/undock, postMessage routing and source check, toolbar
 toggle, the docked state at boot, chat.html's docked transport).
+
+## MCP server (external agents)
+
+Desktop app only, off by default (Settings → Assistant → External agents
+(MCP), independent of "Enable assistant"). External MCP clients (Claude
+Code, Claude Desktop, ...) use the tool registry of this assistant while the
+person watches the filter tree. Backlog #119.
+
+- **Transport**: Streamable HTTP, JSON-RPC 2.0, `POST /mcp` on `127.0.0.1`
+  only (the bind address is a constant), default port 7337. Hand-written
+  HTTP/1.1 in the Tauri-free workspace crate `desktop/src-tauri/mcp`
+  (`philogg-mcp`, dependency `serde_json` only; `cargo test -p philogg-mcp`),
+  same reasoning as `philogg-llm`. One response per connection
+  (`Connection: close`). No stdio, no SSE stream (GET), no sessions, no
+  batches, no resources/prompts.
+- **Checks, in this order**: `Host` must be loopback with the server's port
+  (403), `Origin` if present must be a loopback origin (403, DNS rebinding),
+  `Authorization: Bearer <token>` compared in constant time (401 with
+  `WWW-Authenticate: Bearer`), path `/mcp` (404), `POST` only (405),
+  `Transfer-Encoding: chunked` (411), body over 4 MiB (413), request head
+  over 16 KiB (431).
+- **JSON-RPC**: `initialize` (negotiates `2025-06-18`, `2025-03-26` or
+  `2024-11-05`, else `2025-06-18`; records `clientInfo.name`), `ping`,
+  `tools/list` (the tool list the page sent with its last `mcpConfigure`),
+  `tools/call`. Notifications and client responses get 202. Errors: -32700
+  parse, -32600 invalid request (also a batch array), -32601 unknown
+  method, -32602 invalid params.
+- **Token**: 32 random bytes as 64 hex chars, generated in the page with
+  `crypto.getRandomValues` on first enable. Regenerate needs no
+  confirmation; the old token gets 401 at once. Stored as
+  `philogg-mcp-token`, so the settings mirror writes it to `settings.json`
+  in plain text (the person's own config dir). Other keys:
+  `philogg-mcp-enabled` ("1"/"0"), `philogg-mcp-port`.
+- **Desktop wiring**: commands `mcp_configure` (starts, restarts when port or
+  token changed, swaps the tool list, stops when disabled; a bind failure
+  resolves with `listening: false, error: "Port 7337 is in use."`),
+  `mcp_status`, `mcp_tool_result`; bridge `window.philogg.mcpConfigure /
+  mcpStatus / mcpToolResult` (`inject.js`).
+- **Call path**: for each `tools/call` Rust evaluates
+  `window.philoggMcpCall(id, name, args)` in the main window and waits up to
+  300 s for `mcpToolResult(id, text, isError)`; no main window → "PhiLogg's
+  main window is not open.", no answer → isError after 300 s.
+- **Page side** (`philogg.html`, "MCP bridge"): calls run FIFO, one at a
+  time, and only while the in-app assistant is not in a round
+  (`llm.running`); the agent loop's `finally` drains the queue. Each call
+  runs `runLlmTool`, nodes it creates get the ✦ marking
+  (`llmCreatedNodeIds`) and the call is ONE undo step labelled
+  `MCP: <tool>`; then `render()` and `llmNotify()`. The page answers exactly
+  once per id, also when the tool throws.
+- **Settings**: toggle, port (1024-65535), masked token with Show/Regenerate,
+  the `claude mcp add ...` command (Copy always copies the real token) and a
+  status line polled once a second while the dialog is open (Rust's call
+  count, last call time and client, plus the page's queue length).
+- **Tests**: `cargo test -p philogg-mcp`; GROUP `mcp-bridge` (bridge,
+  queueing, undo, settings, status texts, against a stubbed
+  `window.philogg`).
 
 ## Screenshot
 

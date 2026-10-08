@@ -512,6 +512,17 @@ deployments possible:
   or docked as a side panel; several chats are kept. A bar above the input
   shows how full the model's context window is (hover for the token
   details). Needs a model with tool-calling support.
+- **MCP server: let Claude Code operate PhiLogg** (desktop app, off by
+  default — Settings → Assistant → External agents (MCP)) — external MCP
+  clients use the same tools as the assistant while you watch the filter
+  tree; what they create is marked ✦ and every call is one undo step. The
+  server listens on `127.0.0.1` only (default port 7337) and needs the
+  access token shown in Settings. To connect Claude Code, run once in a
+  terminal (Settings has the ready command with your port and token, with a
+  Copy button):
+  `claude mcp add --transport http philogg http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"`.
+  Calls wait while the in-app assistant is answering. The token is kept in
+  plain text in PhiLogg's settings file.
 
 See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
 actually works internally.
