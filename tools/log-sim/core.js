@@ -439,6 +439,26 @@
       },
     },
 
+    causechain: {
+      label: "Cause chain",
+      weight: 1,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): an ERROR 'Order processing failed: unhandled exception, order O-xxxxx' on one thread; in ~80% of cases 1-3 WARN 'Connection pool exhausted (active=a, max=50)' lines on the SAME thread precede it by 0.5-2 s (the other ~20% have no cause). Neighbors analysis (common neighbors before an entry, same thread, lift against the rest of the file); combine with basic for background (-s causechain,basic).",
+      make(g, ts) {
+        const thread = g.pick(BASE_THREADS);
+        const order = "O-" + pad(g.int(1, 99999), 5);
+        const boom = { level: "ERROR", thread, cls: "orders", method: "Process", msg: "Order processing failed: unhandled exception, order " + order };
+        if (!g.chance(0.8)) return boom;
+        const warn = () => ({ level: "WARN", thread, cls: "repo", method: "Acquire", msg: "Connection pool exhausted (active=" + g.int(45, 50) + ", max=50)" });
+        // distances before the exception, 0.5-2 s, earliest first; the earliest warning is returned (emitted now), the rest and the exception are scheduled
+        const gaps = Array.from({ length: g.int(1, 3) }, () => g.int(500, 2000)).sort((a, b) => b - a);
+        const end = ts + gaps[0];
+        for (let i = 1; i < gaps.length; i++) g.schedule(end - gaps[i], warn());
+        g.schedule(end, boom);
+        return warn();
+      },
+    },
+
     grouped: {
       label: "Thousands separators",
       weight: 4,

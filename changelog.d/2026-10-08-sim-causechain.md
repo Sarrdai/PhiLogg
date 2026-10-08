@@ -1,0 +1,4 @@
+- **feat: log simulator scenario `causechain` (2026-10-08, backlog #119 step 1)**
+  - New opt-in scenario (never part of `all`, existing seeds unchanged): ERROR `Order processing failed: unhandled exception, order O-xxxxx`, in ~80 % preceded on the same thread by 1-3 WARN `Connection pool exhausted (active=a, max=50)` 0.5-2 s earlier.
+  - Test data for the neighbors analysis (`-s causechain,basic`). Docs: tools/log-sim/README.md.
+  - **Tests**: GROUP sim-causechain (new).
