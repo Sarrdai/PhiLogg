@@ -53995,11 +53995,11 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
 //     counts: [n per bucket], usualPerSec,
 //     bursts: [{ from, to (ts of the burst's first/last entry), count, seconds,
 //                factor, levels: {bucket: n}, topPatterns: [{key, floatMask, count}] (≤ 3) }] }
-// Burst: a 1 s bin (bins anchored at the first entry: [t0+k·1000, t0+(k+1)·1000)) with ≥ 5 entries and ≥ 4 × the median count of the non-empty
+// Burst: a second with ≥ 5 entries and ≥ 4 × the median count of the non-empty
 // seconds (usualPerSec); adjacent burst seconds merge; the window is then
 // trimmed to the real first/last entry in it. factor = the burst's entries per
-// bin ÷ usualPerSec (1 decimal). Bins are 1000 ts units wide, so callers skip
-// bursts for plain-text files (ts = line number).
+// second ÷ usualPerSec (1 decimal). Seconds are wall-clock seconds of ts, so
+// callers skip bursts for plain-text files (ts = line number).
 function analysisTimeline(entries, opts) {
   const buckets = Math.max(1, Math.min(120, Math.floor(+(opts && opts.buckets) || 40)));
   const list = entries.filter(e => Number.isFinite(e.ts));
@@ -54014,7 +54014,7 @@ function analysisTimeline(entries, opts) {
   // per-second runs: { sec, lo, hi } index ranges of `list`
   const secs = [];
   for (let i = 0; i < list.length; i++) {
-    const sec = Math.floor((list[i].ts - from) / 1000);
+    const sec = Math.floor(list[i].ts / 1000);
     const last = secs[secs.length - 1];
     if (last && last.sec === sec) last.hi = i + 1; else secs.push({ sec, lo: i, hi: i + 1 });
   }
