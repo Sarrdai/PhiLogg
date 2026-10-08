@@ -225,7 +225,7 @@ await withApp(async (w, d, T) => {
   T.state.levelFilter.clear();
   w.render();
 
-  section("explain-row j. Context menu: entry after 'Pair with…', selects the row and opens the tab (expands a collapsed panel)");
+  section("explain-row j. Context menu: entry in the Analyze group, selects the row and opens the tab (expands a collapsed panel)");
   w.setLowerTab("detail");
   w.toggleDetailCollapsed(true);
   assert(panel.classList.contains("collapsed"), "panel collapsed");
@@ -233,7 +233,7 @@ await withApp(async (w, d, T) => {
   w.openContextMenu(ev, kept[1]);
   const item = d.getElementById("ctxWhyRow");
   assert(isVisible(item, w) && item.textContent.trim() === "Why is this row here?", "menu item shown");
-  assert(item.previousElementSibling === d.getElementById("ctxPairWith"), "right after 'Pair with…'");
+  assert(item.nextElementSibling === d.getElementById("ctxPairWith") && item.previousElementSibling.textContent === "Analyze", "first item of the Analyze group, right before 'Pair with…'");
   fireClick(item, w);
   assert(d.getElementById("contextMenu").classList.contains("hidden"), "menu closes");
   assert(T.state.selectedId === kept[1].id, "row selected");

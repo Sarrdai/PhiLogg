@@ -60,7 +60,7 @@ await withApp(async (w, d, T) => {
   const menu = d.querySelector("#treeContextMenu");
   const children = [...menu.children];
   const seps = children.filter(c => c.classList.contains("ctx-sep")).length;
-  assert(seps >= 4, "a filter node's context menu has at least 4 separators (meta + 3 group boundaries among edit/clipboard/library/danger), got " + seps);
+  assert(seps >= 4, "a filter node's context menu has at least 4 separators (head group + 3 group boundaries among edit/create/clipboard/danger), got " + seps);
 
   // Group order: edit (edit/invert) before clipboard (copy/cut) before
   // library (saveFilter) before danger (delete)
@@ -86,8 +86,9 @@ await withApp(async (w, d, T) => {
   // just "somewhere in the menu") — the item right after "invert" (edit
   // group's now-last item) up to "copy" (clipboard's first) is exactly one sep.
   const invertIdx = indexOf("alert"); // "Alert on new matches" (#87) follows Mute, which follows Invert (NOT), as the edit group's last item
-  assert(children[invertIdx + 1].classList.contains("ctx-sep") && children[invertIdx + 2].dataset.action === "copy",
-    "a .ctx-sep sits directly between the edit group's last item and the clipboard group's first");
+  assert(children[invertIdx + 1].classList.contains("ctx-sep") && children[invertIdx + 2].classList.contains("ctx-head") &&
+    children[invertIdx + 2].textContent === "Create from this" && children[invertIdx + 3].dataset.action === "gap",
+    "a .ctx-sep + heading sit directly between the edit group's last item and the next group (Create from this: gap filter)");
 
   w.closeTreeContextMenu();
 
@@ -119,7 +120,7 @@ await withApp(async (w, d, T) => {
     "a file node's context menu offers 'Adjust clock…' in the edit group, before the danger (remove file) item");
   assert(fileIndexOf("loadFilter") === -1 && fileIndexOf("applyFromLibrary") === -1, "a file node's menu has no filter-library items any more");
   const libSep = fileChildren.filter(c => c.classList.contains("ctx-sep")).length;
-  assert(libSep === 2, "file node menu has 2 separators (meta, edit->danger; the library group is empty), got " + libSep);
+  assert(libSep === 3, "file node menu has 3 separators (Info/Select multiple -> Edit -> Create from this -> Remove; the clipboard group is empty), got " + libSep);
 });
 
 await withApp(async (w, d, T) => {

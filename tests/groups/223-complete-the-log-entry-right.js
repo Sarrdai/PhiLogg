@@ -17,7 +17,8 @@
    the exact same gate the #viewBar row-action's own "Extract" button
    already uses for its disabled state. The rest of the menu is regrouped
    by separators (meta -> Filter-for-this-___ + Extract -> After/Before/
-   Time filter from selection -> Bookmark/Note/Add to selection -> Copy)
+   Time filter from selection -> Bookmark/Note/Add to selection -> Copy;
+   regrouped and headed again 2026-10-08, GROUP context-menu-groups)
    but otherwise unchanged. (3) A new "Copy" item (#ctxCopy) at the very
    bottom: NOT a plain copyLogSelectionToClipboard() call (which reads
    whatever state.logMultiSelect/state.selectedId currently holds,
@@ -40,26 +41,18 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
 
-  // --- (1) Reorder: "Filter for this ___" is the first actionable item,
-  // right after the meta row's own separator ---
+  // --- (1) Order: meta, then five headed groups (GROUP context-menu-groups
+  // pins the headings and the show/hide behaviour in detail) ---
   const menuChildren = [...d.querySelector("#contextMenu").children];
   assert(menuChildren[0].id === "ctxMeta", "sanity: the timestamp meta row is still the menu's first child");
-  assert(menuChildren[1].classList.contains("ctx-sep"), "sanity: a separator follows the meta row");
-  assert(menuChildren[2].id === "ctxFilterForColumn",
-    "'Filter for this ___' is the first actionable item, directly after the meta row's separator, got #" + menuChildren[2].id);
-  assert(menuChildren[3].id === "ctxExtractMessage", "'Extract' sits directly next to 'Filter for this ___', got #" + menuChildren[3].id);
-  // GROUP 230 (IDE Integration) added two more items to this same
-  // "act on this entry's data" group, right after Extract.
-  assert(menuChildren[4].id === "ctxPairWith", "'Pair with…' sits directly after Extract, got #" + menuChildren[4].id);
-  assert(menuChildren[5].id === "ctxWhyRow", "'Why is this row here?' sits directly after 'Pair with…', got #" + menuChildren[5].id);
-  assert(menuChildren[6].id === "ctxOpenInVs", "'Open in Visual Studio' sits directly after 'Why is this row here?', got #" + menuChildren[6].id);
-  assert(menuChildren[7].id === "ctxOpenInRider", "'Open in Rider' sits directly after 'Open in Visual Studio', got #" + menuChildren[7].id);
-  assert(menuChildren[8].classList.contains("ctx-sep"), "a separator follows the Filter-for-this-___/Extract/IDE-Integration group");
-  // Regroup: After/Before/Time-range-from-selection, then a separator, then
-  // Bookmark/Note/Add-to-selection, then a separator, then Copy at the end.
-  const idsFrom = i => menuChildren.slice(i).map(c => c.id || (c.classList.contains("ctx-sep") ? "sep" : "?"));
-  assert(JSON.stringify(idsFrom(9)) === JSON.stringify(["ctxAfter", "ctxBefore", "ctxTimeRangeFromSelection", "sep", "ctxBookmark", "ctxNote", "ctxAddToSelection", "ctxTimeZero", "sep", "ctxCopy", "ctxCopyTicket"]),
-    "menu regrouped as After/Before/TimeRange -> sep -> Bookmark/Note/AddToSelection/TimeZero -> sep -> Copy, Copy for ticket, got " + JSON.stringify(idsFrom(9)));
+  const tokens = menuChildren.map(c => c.id || (c.classList.contains("ctx-sep") ? "sep" : c.classList.contains("ctx-head") ? "head:" + c.textContent : "?"));
+  const expectedOrder = ["ctxMeta", "sep", "head:Filter", "ctxFilterForColumn", "ctxExtractMessage",
+    "sep", "head:Time filter", "ctxBefore", "ctxAfter", "ctxTimeRangeFromSelection",
+    "sep", "head:Analyze", "ctxWhyRow", "ctxPairWith", "ctxTimeZero",
+    "sep", "head:Mark", "ctxBookmark", "ctxNote", "ctxAddToSelection",
+    "sep", "head:Copy & open", "ctxCopy", "ctxCopyTicket", "ctxOpenInVs", "ctxOpenInRider"];
+  assert(JSON.stringify(tokens) === JSON.stringify(expectedOrder),
+    "menu order: Filter / Time filter / Analyze / Mark / Copy & open, got " + JSON.stringify(tokens));
 
   // --- (2) Extract item: visible + correct outcome for an extractable
   // message, hidden for a message with nothing extractable ---
@@ -143,7 +136,7 @@ await withApp(async (w, d, T) => {
   clickWith(rowAt(2), {});
   clickWith(rowAt(4), { ctrlKey: true });
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[4]);
-  assert(isVisible(d.querySelector("#ctxTimeRangeFromSelection"), w) === true, "'Time filter from selection' still shows for a 2+ selection");
+  assert(isVisible(d.querySelector("#ctxTimeRangeFromSelection"), w) === true, "'Filter selected time range' still shows for a 2+ selection");
   assert(isVisible(d.querySelector("#ctxAddToSelection"), w) === true, "'Add to selection' is still always offered");
   w.closeContextMenu();
 });

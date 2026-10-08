@@ -3,7 +3,8 @@
 // helper (withApp, waitFor, assert, section, fs, path, ...) is in scope.
 
 /* ============================================================
-   GROUP 174 — This session (2026-09-04): "Time filter from selection" —
+   GROUP 174 — This session (2026-09-04): "Filter selected time range" (the context-menu label since the
+   2026-10-08 menu regrouping; the #viewBar button is still "Time filter from selection") —
    right-clicking a 2+ row multi-selection (state.logMultiSelect) offers a
    new context-menu item, #ctxTimeRangeFromSelection, that creates one
    "timerange" filter node spanning from the EARLIEST to the LATEST ts
@@ -14,7 +15,7 @@
    ============================================================ */
 group(174);
 await withApp(async (w, d, T) => {
-  section("174. \"Time filter from selection\": timerange node spanning selected rows' min/max ts");
+  section("174. \"Filter selected time range\": timerange node spanning selected rows' min/max ts");
 
   const f = await w.addFile("timesel.log", makeLog(0, 10), () => {});
   T.state.activeId = f.id;
@@ -28,7 +29,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.logMultiSelect.size <= 1, "sanity: no 2+ row multi-selection active");
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[2]);
   assert(isVisible(d.querySelector("#ctxTimeRangeFromSelection"), w) === false,
-    "with a single row selected, \"Time filter from selection\" is hidden (already covered by Filter after/before this)");
+    "with a single row selected, \"Filter selected time range\" is hidden (already covered by Filter after/before this)");
   w.closeContextMenu();
 
   // --- Multi-select 3 rows out of order (2, 7, 4) — the resulting filter
@@ -41,6 +42,7 @@ await withApp(async (w, d, T) => {
   w.openContextMenu({ clientX: 10, clientY: 10 }, f.entries[4]);
   assert(isVisible(d.querySelector("#ctxTimeRangeFromSelection"), w) === true,
     "with a 2+ row multi-selection, the item is shown");
+  assert(d.querySelector("#ctxTimeRangeFromSelection").textContent.trim() === "Filter selected time range", "the item's label");
 
   const beforeChildren = f.children.slice();
   fireClick(d.querySelector("#ctxTimeRangeFromSelection"), w);
