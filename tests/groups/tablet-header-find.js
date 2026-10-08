@@ -80,21 +80,21 @@ await withApp(async (w, d, T) => {
   assert(w.getComputedStyle(cnt()).display !== "none", "desktop: the count is shown inside the circle too");
   thSetWidth(w, 800);
   assert(w.getComputedStyle(cnt()).display !== "none", "tablet: the count is shown in the circle");
-  d.body.classList.add("filter-toolbar-labels-always");
+  d.body.classList.add("level-labels-always");
   assert(w.getComputedStyle(cnt()).display === "none", "tablet, 'Always' labels: no duplicate count in the pill");
-  d.body.classList.remove("filter-toolbar-labels-always");
+  d.body.classList.remove("level-labels-always");
   thSetWidth(w, 400);
   assert(w.getComputedStyle(cnt()).display === "none", "phone: pills keep their own label, no circle count");
   thSetWidth(w, 1400);
 
   const rules = thCssRules(d);
   ["error", "warn", "info", "debug", "trace"].forEach(l => {
-    assert(rules.some(r => r.selectorText === "body.filter-toolbar-labels-always .level-btn.lvl-" + l + ":not(.active) .row-action-label" && r.style.color === "var(--level-" + l + ")"),
+    assert(rules.some(r => r.selectorText === "body.level-labels-always .level-btn.lvl-" + l + ":not(.active) .row-action-label" && r.style.color === "var(--level-" + l + ")"),
       "'Always' mode: an unchecked " + l + " pill's label uses the level color");
     assert(rules.some(r => r.selectorText === ".level-btn.active.lvl-" + l + " .level-count" && /-on\)/.test(r.style.color)),
       "checked " + l + " circle: the count uses the fill's on-color");
   });
-});
+}, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
   section("tablet-header-find c. 'Time range' is never disabled in the log views");

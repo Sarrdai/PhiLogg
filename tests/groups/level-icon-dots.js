@@ -22,7 +22,7 @@ await withApp(async (w, d, T) => {
     "fills are the ERROR, WARN, INFO tokens in that order, got " + circles.map(c => c.getAttribute("fill")).join("|"));
   assert(circles.every(c => c.getAttribute("stroke") === "none" && c.getAttribute("r") === "2.4"), "no stroke, r=2.4 on every dot");
   assert(circles.map(c => c.getAttribute("cx") + "," + c.getAttribute("cy")).join(" ") === "8,4 4,11.5 12,11.5", "dots sit at the agreed positions");
-});
+}, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
   section("level-icon-dots b. #btnApplyLevelToTree: the icon plus exactly one + badge; tooltip unchanged");
@@ -47,7 +47,7 @@ await withApp(async (w, d, T) => {
   // Re-render of the level bar must not duplicate the badge.
   fireClick(d.querySelector('#levelBar .level-btn[data-level="INFO"]'), w);
   assert(btn.querySelectorAll(".add-badge").length === 1 && btn.querySelectorAll("svg.icon").length === 1, "still one icon and one badge after more chip clicks");
-});
+}, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
   section("level-icon-dots c. The tree's level node shows the dots icon without a badge");

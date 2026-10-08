@@ -44,7 +44,7 @@ await withApp(async (w, d, T) => {
   const cardOf = id => d.getElementById(id).closest(".settings-card");
   const groupOf = {
     0: ["settingsFhLayout", "settingsFilterActivationView", "settingsOpenScrollPosition"],
-    1: ["settingsFilterToolbarLabels", "settingsViewToolbarLabels"],
+    1: ["settingsSidebarToolbarLabels", "settingsLevelLabels", "settingsFilterToolbarLabels", "settingsViewToolbarLabels"],
     2: ["settingsHoverExpandSidebar", "settingsHoverExpandDetail"],
     3: ["settingsContextInitialExpansion", "settingsContextExpandStepUnit", "settingsContextExpandStep", "settingsContextExpandStepMs"],
     4: ["settingsHideMinimapFullRangeInFullView", "settingsMinimapBinningMode"],

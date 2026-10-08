@@ -471,17 +471,80 @@ shape:
   20px pill vs. 7px rounded rectangle — since the floating label itself
   doesn't depend on the button's shape).
 
-  **Settings -> Behavior: "Filter-Toolbar button labels" /
-  "View Toolbar button labels"** — a real app-wide setting (not a
-  per-toolbar control), independent for each of the two: Never/On hover
-  (default)/Always. `#settingsFilterToolbarLabels`/
-  `#settingsViewToolbarLabels` are plain localStorage-preference selects
-  (`philogg-filter-toolbar-labels`/`philogg-view-toolbar-labels`, same
-  wiring shape as `settingsFilterActivationView`) that toggle a class on
-  `<body>` — `filter-toolbar-labels-never`/`-always` and
-  `view-toolbar-labels-never`/`-always` — rather than touching individual
-  buttons. "On hover" needs no override at all, it's just the floating-pill
-  mechanics above with no body class present. "Never" (`display:none` on
+  **Settings -> Behavior -> Toolbars: four label settings** (split from two on
+  2026-10-08) — app-wide, independent, each Never / On hover / Always, **all
+  default to On hover** (`normalizeToolbarLabelsMode` falls back to "hover";
+  a stored value always applies). Each is a plain localStorage-preference select
+  that toggles `<body>` classes `<prefix>-never` / `<prefix>-always` (no class =
+  On hover) rather than touching buttons; the four are defined once in
+  `TOOLBAR_LABEL_SETTINGS`:
+
+  | Setting (select id) | localStorage key | Body class prefix | Governs |
+  |---|---|---|---|
+  | Files & Filters toolbar labels (`settingsSidebarToolbarLabels`) | `philogg-sidebar-toolbar-labels` | `sidebar-toolbar-labels` | `#sidebarToolbar` buttons (`.row-action-btn.sidebar-btn`; phone-drawer short labels are independent) |
+  | Level labels (`settingsLevelLabels`) | `philogg-level-labels` | `level-labels` | `#levelBar` circles (`.level-btn`, incl. the in-circle count in On-hover mode; Always = name+count pills) and "Add level filter" (`.level-apply`) |
+  | Filter toolbar labels (`settingsFilterToolbarLabels`) | `philogg-filter-toolbar-labels` | `filter-toolbar-labels` | the remaining `#viewBar` buttons: `.row-action-btn:not(.rect):not(.level-btn):not(.level-apply)` (Before/After/Time range/Message/Extract, library presets, New) |
+  | View toolbar labels (`settingsViewToolbarLabels`) | `philogg-view-toolbar-labels` | `view-toolbar-labels` | the four view toolbars incl. their `.rect` Bookmark/Note/Select (`.row-action-btn.rect:not(.sidebar-btn)`, `.toolbar-icon-btn:has(.tb-hit)`) |
+
+  Every Always/Never/disabled-reason selector is keyed on the setting of the
+  button kind it styles (level pill rules on `level-labels-*`, sidebar on
+  `sidebar-toolbar-labels-*`, ...). "On hover" needs no override at all, it's just the floating-pill
+  mechanics above with no body class present.
+
+  **On-hover hand-over and disabled reason** (2026-10-08, On-hover mode
+  only). *Calm hand-over:* only the FIRST pill of a hover session fades in
+  (.12s opacity + 4px translate); while the pointer stays inside the same
+  toolbar group, moving to a neighbour swaps the pill instantly. Mechanism:
+  `labelHandoverTracker(container)` puts `.labels-live` on the group
+  container as soon as a DIFFERENT button than the first is hovered
+  (`.labels-live .row-action-label, .labels-live .tb-label{transition:none}`)
+  and removes it on the container's `mouseleave` BEFORE `setupHitExpandGroups`
+  collapses the pills, so the exit still fades; a gap between buttons does not
+  end the session. `setupHitExpandGroups` feeds it from its rect hit test;
+  `#levelBar` and `#libraryPresetBar` (plain `:hover`, rebuilt buttons) use the
+  same tracker through a delegated `mouseover` on the container
+  (`setupLabelHandoverHover`). Keyboard `:focus-visible` is unchanged.
+  *Disabled reason:* `setDisabledReason(btn, reason)` sets
+  `data-disabled-reason` on a disabled button (and on its label span, because
+  `attr()` in the `::after` rule reads the pseudo-element's own element) and
+  clears it when the button is enabled; CSS appends ` · <reason>` (normal
+  weight, `--text-secondary`) to the pill, only in On-hover mode of that
+  button kind's setting (not Always, where the pills are inline, not Never). The native
+  tooltip carries the reason in Always/Never mode instead (`data-title-base`
+  keeps the plain title; `syncAllDisabledReasonTitles` re-syncs on a mode
+  change, `syncDisabledReasonTitle` looks the mode up per button kind) so On hover never says it twice. Reasons live next to the code that
+  sets `.disabled`: `updateRowActionButtons` (Bookmark/Note "select a row
+  first" or "select one row" with a multi-selection; Before/After/Select
+  "select a row first", Table "mark a row first", Plot "needs a 2D plot";
+  Message "select one row"; Extract "select one row" or "select a row with a
+  number or ID"; Time range Table "mark two rows first", Plot "needs a 2D
+  plot"; New "open a file first"), `updateContextToolbar` (match arrows "needs
+  2 or more matches", Expand around "no hidden lines between matches", Expand
+  all "nothing left to expand", Collapse all "nothing expanded"),
+  `updateTableAssertButton` ("select a numeric column first"),
+  `updateRepeatButton` ("clear the column sort", toggle and chevron) and
+  `updateWrapMsgButton` ("always wrapped in a narrow window"); the last two
+  keep their own explanatory titles. Level pills are never disabled. Group
+  toolbar-labels-hover-handover.
+
+  **Group-wise wrapping and line spacing** (2026-10-08). `#viewBar` is a
+  wrapping flex row (it was a float row): its direct children are the groups
+  — view tabs (`#fhTabs`, never splits), level circles (`#levelBar`, wraps
+  inside itself), Filter-Toolbar actions, library presets (`.row-actions`:
+  `flex:0 1 auto; min-width:0; flex-wrap:wrap`), the Library split button and
+  New. A group's max-content basis makes the WHOLE group move to the next line
+  first; only a group wider than a line shrinks and wraps internally. Wrapped
+  lines get `row-gap:6px` (between groups, inside wrapping groups, and for
+  the tablet `level-own-row` layout; `#sidebarToolbar` has `gap:6px 2px`),
+  and the bar's height simply grows (no fixed height). The "|" separators are
+  direct children: after every layout change `updateBarSeparators` measures
+  with all shown and hides (`.sep-hidden`) any separator that is not between
+  two displayed items of its own line (pure rule: `danglingSeparatorIndexes`),
+  so no lone separator at a line start/end; ResizeObserver/MutationObserver
+  drive it. "Add level filter" is its own flex item (a lone button may wrap
+  after the level group) and `#sidebarToolbar` wraps pill by pill, not group by
+  group. The four view toolbars keep their horizontal scroll in Always mode.
+  Group toolbar-labels-split-settings. "Never" (`display:none` on
   the label) hides it outright — the button stays a plain icon regardless of
   hover/focus. "Always" restores the ORIGINAL (pre-2026-09-08) inline
   expand-to-pill look: the body-class override switches the button itself

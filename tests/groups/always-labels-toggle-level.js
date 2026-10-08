@@ -73,7 +73,7 @@ await withApp(async (w, d, T) => {
   d.body.classList.remove("view-toolbar-labels-always");
 
   section("always-labels-toggle-level d. Always filter labels: level pills are text-only with equal padding");
-  d.body.classList.add("filter-toolbar-labels-always");
+  d.body.classList.add("level-labels-always");
   levels.forEach(l => {
     const lab = l.querySelector(".row-action-label");
     assert(cs(l.querySelector(".row-action-hit")).display === "none", l.dataset.level + ": empty icon slot hidden");
@@ -82,7 +82,7 @@ await withApp(async (w, d, T) => {
     assert(cs(l).height === "28px" && cs(l).width === "auto", l.dataset.level + ": 28px high pill, auto width");
     assert(cs(l.querySelector(".level-count")).display === "none", l.dataset.level + ": no in-circle count (the label carries it)");
   });
-  assert(rules.some(r => /#levelBar \.level-btn:hover:not\(:disabled\) \.row-action-label/.test(r.selectorText) && /filter-toolbar-labels-always/.test(r.selectorText) && /transform:\s*none/.test(r.cssText)),
+  assert(rules.some(r => /#levelBar \.level-btn:hover:not\(:disabled\) \.row-action-label/.test(r.selectorText) && /level-labels-always/.test(r.selectorText) && /transform:\s*none/.test(r.cssText)),
     "hovering an Always level pill does not shift its label (ID hover rule overridden)");
   const rowBtn = d.querySelector("#viewBar .row-actions .row-action-btn:not(.level-btn):not(.rect)");
   if (rowBtn) assert(cs(rowBtn.querySelector(".row-action-hit")).display !== "none", "other filter-toolbar pills keep their icon slot");
@@ -92,6 +92,6 @@ await withApp(async (w, d, T) => {
   assert(cs(levels[0]).paddingLeft === "12px" && cs(levels[0]).height === "32px", "phone chips keep their own 32px/12px shape, got " + cs(levels[0]).height);
   d.body.classList.remove("layout-phone");
   assert(cs(toggle).paddingLeft !== "5px", "filter 'Always' alone does not change the view-toolbar toggles");
-  d.body.classList.remove("filter-toolbar-labels-always");
+  d.body.classList.remove("level-labels-always");
   assert(cs(levels[0]).paddingLeft === "0px" && cs(levels[0].querySelector(".row-action-hit")).display !== "none", "back to hover: level circle restored");
-});
+}, { toolbarLabels: "hover" });

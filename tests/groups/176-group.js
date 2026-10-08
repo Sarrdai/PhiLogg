@@ -162,7 +162,7 @@ await withApp(async (w, d, T) => {
   w.render();
   w.applyFhView("table");
   assert(isVisible(d.querySelector('[data-row-actions="viewbar"]'), w) === true, "row-actions group stays visible on the Table tab — it's part of the universal Filter-Toolbar");
-});
+}, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
   section("176b. Row-action buttons: bookmark/note reflect state, and clicking one produces the same effect as the context-menu equivalent");

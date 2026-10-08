@@ -97,7 +97,7 @@ await withApp(async (w, d, T) => {
   // jsdom's computed styles (unlike real line-wrapping) CAN detect even
   // without a layout engine. Checked with a file loaded (#viewBar visible)
   // since these are its own internal layout mechanics, not its visibility.
-  assert(cs(viewBar).display === "flow-root", "#viewBar is a flow-root (contains the floats regardless of breadcrumb height)");
+  assert(cs(viewBar).display === "flex" && cs(viewBar).flexWrap === "wrap", "#viewBar is a wrapping flex row (whole groups wrap, 2026-10-08; was a flow-root of floats)");
   assert(cs(d.querySelector("#fhTabs")).float === "left", "#fhTabs floats left so it stays pinned to the top line");
   assert(cs(d.querySelector("#levelBar")).float === "left", "#levelBar floats left so it stays pinned to the top line");
   // Regression guard for a real bug hit once already: #viewBar's flow-root

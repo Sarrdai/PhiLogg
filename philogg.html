@@ -791,7 +791,7 @@
      and the scrollable #sidebarScroll so it never scrolls away with the
      tree, unlike #treeActionBar which used to live inside #sidebarScroll. */
   #sidebarToolbar{
-    flex:0 0 auto; display:flex; align-items:center; gap:2px; flex-wrap:wrap;
+    flex:0 0 auto; display:flex; align-items:center; gap:6px 2px; flex-wrap:wrap;
     padding:4px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-panel);
     min-height:36px;
   }
@@ -1127,7 +1127,7 @@
   }
   #tourBannerClose:hover{color:var(--text-primary);}
   #viewBar{
-    flex:0 0 auto; display:flow-root;
+    flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center;
     padding:8px 16px; min-height:16px;
     background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
@@ -1191,7 +1191,20 @@
      #plotToolbar) since #viewBar's other controls (view-tabs, level pills)
      are 28px too — a single #viewBar-only group at a different size would
      look like a misalignment, not a second row. */
-  #viewBar .row-actions{float:left; gap:4px; margin:0 0 0 0;}
+  #viewBar .row-actions{float:left; gap:6px 4px; margin:0 0 0 0;}
+  /* Group-wise wrapping (2026-10-08, was floats): #viewBar is a wrapping flex
+     row whose direct children are the groups (view tabs, level circles,
+     Filter-Toolbar actions, library presets, Library split button, New). A
+     group's max-content basis makes the WHOLE group move to the next line
+     first; only a group wider than a full line shrinks and wraps inside
+     itself. 6px row-gap between lines and inside wrapping groups (the
+     horizontal pill gap). Separators that end up at the start/end of a line
+     are hidden by updateBarSeparators (JS); tablet/phone keep their own
+     rules below (body.layout-compact / layout-phone #viewBar). */
+  body:not(.layout-phone) #viewBar{row-gap:6px;}
+  #viewBar > .row-actions, #viewBar > #levelBar{flex:0 1 auto; min-width:0; flex-wrap:wrap;}
+  #viewBar > #fhTabs, #viewBar > #btnApplyLevelToTree, #viewBar > #btnLibrary{flex:0 0 auto;}
+  #viewBar > .row-action-separator.sep-hidden, #sidebarToolbar > .row-action-separator.sep-hidden{display:none;}
   /* Which of the two row-actions groups is shown is entirely
      JS-driven (updateViewBarRowActions(), person-requested this session —
      swap the generic five for Plot's own two viewport filters while the
@@ -1211,7 +1224,7 @@
      the gap from the separator to the button on each side equal to the gap
      between two adjacent filter buttons (.row-actions gap:4px), person-
      requested. 20px bar + 4px top/bottom margin = the row's 28px. */
-  #viewBar > .row-action-separator{float:left; height:20px; margin:4px 4px;}
+  #viewBar > .row-action-separator{float:left; height:20px; margin:0 4px; align-self:center; flex:0 0 auto;}
 
   /* ---------- Level filter bar ---------- */
   #levelBar{
@@ -1339,10 +1352,25 @@
   .toolbar-icon-btn.expanded .tb-label, .toolbar-icon-btn:focus-visible .tb-label{
     opacity:1; transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(0);
   }
+  /* Calm hand-over (2026-10-08): only the first pill of a hover session fades
+     in; once the pointer moved on to another button of the same group, JS
+     (labelHandoverTracker) puts `.labels-live` on the group container and the
+     pills swap instantly (no fade, no 4px slide) until the pointer leaves the
+     group — removed BEFORE the collapse, so the exit still fades. */
+  .labels-live .row-action-label, .labels-live .tb-label{transition:none;}
+  /* Disabled reason (On-hover mode only): the pill of a disabled button
+     appends why, in normal weight and secondary colour. The reason sits on
+     the label span too (attr() on a pseudo-element reads its own element);
+     Always pills are inline and must not widen, Never shows no pill. */
+  body:not(.filter-toolbar-labels-always):not(.filter-toolbar-labels-never) .row-action-btn:not(.rect):not(.level-btn):not(.level-apply):disabled .row-action-label[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .row-action-btn.rect:not(.sidebar-btn):disabled .row-action-label[data-disabled-reason]::after,
+  body:not(.view-toolbar-labels-always):not(.view-toolbar-labels-never) .toolbar-icon-btn:disabled .tb-label[data-disabled-reason]::after{
+    content:" \00b7  " attr(data-disabled-reason); font-weight:400; color:var(--text-secondary);
+  }
   /* Settings -> Behavior: "Filter-Toolbar button labels" / "View Toolbar
      button labels" (person-requested, 2026-09-05; redesigned 2026-09-08) —
-     "On hover" (default) is the floating-pill mechanic above, nothing to
-     override here. "Never" hides the label outright (button stays a plain
+     "On hover" is the floating-pill mechanic above, nothing to
+     override here ("Always" is the default since 2026-10-08). "Never" hides the label outright (button stays a plain
      circle/rect icon). "Always" restores the ORIGINAL inline expand-to-pill
      look — the button itself grows into a pill and the label sits inside
      it, permanently, in the toolbar's normal layout flow — since that
@@ -1355,9 +1383,14 @@
      settings/classes (Filter-Toolbar's `.row-action-btn:not(.rect)` vs
      View Toolbar's `.row-action-btn.rect`/`.toolbar-icon-btn:has(.tb-hit)`)
      since the person wanted them settable separately. */
-  body.filter-toolbar-labels-never .row-action-btn:not(.rect) .row-action-label{display:none !important;}
-  body.filter-toolbar-labels-always .row-action-btn:not(.rect){border-radius:20px; width:auto; padding-right:10px; overflow:hidden;}
-  body.filter-toolbar-labels-always .row-action-btn:not(.rect) .row-action-label{
+  body.filter-toolbar-labels-never .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
+  body.level-labels-never .level-btn .row-action-label, body.level-labels-never .level-apply .row-action-label,
+  body.sidebar-toolbar-labels-never .sidebar-btn .row-action-label{display:none !important;}
+  body.filter-toolbar-labels-always .row-action-btn:not(.rect):not(.level-btn):not(.level-apply),
+  body.level-labels-always .level-btn, body.level-labels-always .level-apply{border-radius:20px; width:auto; padding-right:10px; overflow:hidden;}
+  body.filter-toolbar-labels-always .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
+  body.level-labels-always .level-btn .row-action-label, body.level-labels-always .level-apply .row-action-label,
+  body.sidebar-toolbar-labels-always .sidebar-btn .row-action-label{
     position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
   }
@@ -1366,18 +1399,19 @@
      the text vs 10px after. Desktop/compact Always pills are plain text pills
      with equal padding (hover/Never circles and the phone chips are other
      rules and stay as they are). */
-  body.filter-toolbar-labels-always:not(.layout-phone) .level-btn{padding:0 12px;}
-  body.filter-toolbar-labels-always:not(.layout-phone) .level-btn .row-action-hit{display:none;}
-  body.filter-toolbar-labels-always:not(.layout-phone) .level-btn .row-action-label{margin-left:0;}
+  body.level-labels-always:not(.layout-phone) .level-btn{padding:0 12px;}
+  body.level-labels-always:not(.layout-phone) .level-btn .row-action-hit{display:none;}
+  body.level-labels-always:not(.layout-phone) #levelBar .level-btn .row-action-label{margin-left:0;}
   /* The hover-reveal rule below (#levelBar .level-btn:hover ...) carries an ID and
      would shift the now-static label by -50% on hover, clipping it in the pill. */
-  body.filter-toolbar-labels-always:not(.layout-phone) #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
+  body.level-labels-always:not(.layout-phone) #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
 
-  body.view-toolbar-labels-never .row-action-btn.rect .row-action-label,
+  body.view-toolbar-labels-never .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
   body.view-toolbar-labels-never .toolbar-icon-btn:has(.tb-hit) .tb-label{display:none !important;}
-  body.view-toolbar-labels-always .row-action-btn.rect,
+  body.view-toolbar-labels-always .row-action-btn.rect:not(.sidebar-btn),
+  body.sidebar-toolbar-labels-always .sidebar-btn,
   body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron){width:auto; padding-right:10px; overflow:hidden;}
-  body.view-toolbar-labels-always .row-action-btn.rect .row-action-label,
+  body.view-toolbar-labels-always .row-action-btn.rect:not(.sidebar-btn) .row-action-label,
   body.view-toolbar-labels-always .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .tb-label{
     position:static; z-index:auto; transform:none; opacity:1; max-width:240px; margin-left:6px;
     background:transparent; border:none; box-shadow:none; border-radius:0; padding:0;
@@ -1443,7 +1477,7 @@
   .level-btn.lvl-other .row-action-label{background:var(--text-secondary); color:var(--bg-app); border-color:transparent;}
   .level-btn.lvl-other .level-count{color:var(--text-secondary);}
   .level-btn.active.lvl-other .level-count{color:var(--bg-app);}
-  body.filter-toolbar-labels-always .level-btn.lvl-other:not(.active) .row-action-label{color:var(--text-secondary);}
+  body.level-labels-always .level-btn.lvl-other:not(.active) .row-action-label{color:var(--text-secondary);}
   /* Checked: the ring's own color fills the whole circle solid. */
   .level-btn.active.lvl-error{background:var(--level-error); color:var(--level-error-on);}
   .level-btn.active.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 85%, #fff);}
@@ -1490,12 +1524,12 @@
      always centered. Inactive circle: the level's own color on the transparent ring;
      checked: the fill's "on" color. */
   .level-btn .level-count{display:none;}
-  body:not(.layout-phone):not(.filter-toolbar-labels-always) .level-btn .level-count{
+  body:not(.layout-phone):not(.level-labels-always) .level-btn .level-count{
     display:flex; position:absolute; inset:0; align-items:center; justify-content:center;
     font:600 9.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
   }
   /* A 4-char short count ("1,3k") gets a notch smaller so it clears the 28px ring. */
-  body:not(.layout-phone):not(.filter-toolbar-labels-always) .level-btn .level-count.level-count-long{font-size:8.5px;}
+  body:not(.layout-phone):not(.level-labels-always) .level-btn .level-count.level-count-long{font-size:8.5px;}
   .level-btn.lvl-error .level-count{color:var(--level-error);}
   .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
   .level-btn.lvl-warn .level-count{color:var(--level-warn);}
@@ -1522,18 +1556,18 @@
   .level-btn.active.lvl-custom-6 .level-count{color:var(--level-custom-on);}
   /* "Always" pills: an unchecked pill is a transparent ring, so its label takes the
      level's own color (the -on color is meant for the solid fill and was white on light). */
-  body.filter-toolbar-labels-always .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
-  body.filter-toolbar-labels-always .level-btn.lvl-warn:not(.active) .row-action-label{color:var(--level-warn);}
-  body.filter-toolbar-labels-always .level-btn.lvl-info:not(.active) .row-action-label{color:var(--level-info);}
-  body.filter-toolbar-labels-always .level-btn.lvl-debug:not(.active) .row-action-label{color:var(--level-debug);}
-  body.filter-toolbar-labels-always .level-btn.lvl-fatal:not(.active) .row-action-label{color:var(--level-fatal);}
-  body.filter-toolbar-labels-always .level-btn.lvl-trace:not(.active) .row-action-label{color:var(--level-trace);}
-  body.filter-toolbar-labels-always .level-btn.lvl-custom-1:not(.active) .row-action-label{color:var(--level-custom-1);}
-  body.filter-toolbar-labels-always .level-btn.lvl-custom-2:not(.active) .row-action-label{color:var(--level-custom-2);}
-  body.filter-toolbar-labels-always .level-btn.lvl-custom-3:not(.active) .row-action-label{color:var(--level-custom-3);}
-  body.filter-toolbar-labels-always .level-btn.lvl-custom-4:not(.active) .row-action-label{color:var(--level-custom-4);}
-  body.filter-toolbar-labels-always .level-btn.lvl-custom-5:not(.active) .row-action-label{color:var(--level-custom-5);}
-  body.filter-toolbar-labels-always .level-btn.lvl-custom-6:not(.active) .row-action-label{color:var(--level-custom-6);}
+  body.level-labels-always .level-btn.lvl-error:not(.active) .row-action-label{color:var(--level-error);}
+  body.level-labels-always .level-btn.lvl-warn:not(.active) .row-action-label{color:var(--level-warn);}
+  body.level-labels-always .level-btn.lvl-info:not(.active) .row-action-label{color:var(--level-info);}
+  body.level-labels-always .level-btn.lvl-debug:not(.active) .row-action-label{color:var(--level-debug);}
+  body.level-labels-always .level-btn.lvl-fatal:not(.active) .row-action-label{color:var(--level-fatal);}
+  body.level-labels-always .level-btn.lvl-trace:not(.active) .row-action-label{color:var(--level-trace);}
+  body.level-labels-always .level-btn.lvl-custom-1:not(.active) .row-action-label{color:var(--level-custom-1);}
+  body.level-labels-always .level-btn.lvl-custom-2:not(.active) .row-action-label{color:var(--level-custom-2);}
+  body.level-labels-always .level-btn.lvl-custom-3:not(.active) .row-action-label{color:var(--level-custom-3);}
+  body.level-labels-always .level-btn.lvl-custom-4:not(.active) .row-action-label{color:var(--level-custom-4);}
+  body.level-labels-always .level-btn.lvl-custom-5:not(.active) .row-action-label{color:var(--level-custom-5);}
+  body.level-labels-always .level-btn.lvl-custom-6:not(.active) .row-action-label{color:var(--level-custom-6);}
   /* #levelBar is rebuilt on every level toggle/file change (renderLevelBar),
      so the JS setupHitExpandGroups binding (done once at boot, against
      elements that don't exist yet) never reaches these buttons — reveal the
@@ -5560,9 +5594,9 @@
     body.layout-compact #viewBar > *{float:none; flex:0 0 auto;}
     /* Tablet: when the toolbar does not fit one row (JS: updateLevelBarLayout), the level bar
        gets its own full-width row under the tabs and the toolbar wraps instead of scrolling. */
-    body.layout-compact #viewBar.level-own-row{flex-wrap:wrap; overflow-x:visible; overflow-y:visible;}
-    body.layout-compact #viewBar.level-own-row::before{content:""; flex-basis:100%; order:1; height:0;}
-    body.layout-compact #viewBar.level-own-row > #levelBar{order:2; flex:1 1 auto; min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:6px;}
+    body.layout-compact #viewBar.level-own-row{flex-wrap:wrap; overflow-x:visible; overflow-y:visible; row-gap:6px;}
+    body.layout-compact #viewBar.level-own-row::before{content:""; flex-basis:100%; order:1; height:0; margin-bottom:-6px;}
+    body.layout-compact #viewBar.level-own-row > #levelBar{order:2; flex:1 1 auto; min-width:0; flex-wrap:wrap; justify-content:flex-start; margin-top:0;}
     body.layout-compact #contextToolbar, body.layout-compact #filteredToolbar, body.layout-compact #tableToolbar, body.layout-compact #extractToolbar, body.layout-compact #plotToolbar, body.layout-compact #detailPanelHeader{height:auto; min-height:52px;}
     body.layout-phone #btnDrawer, body.layout-compact #btnDrawer, body.layout-phone #btnAnalyzePhone, body.layout-phone #btnFindPhone, body.layout-compact #btnFindPhone, body.layout-phone #btnSettings, body.layout-compact #btnSettings, body.layout-phone #btnOpen, body.layout-compact #btnOpen, body.layout-phone #btnSave, body.layout-compact #btnSave{width:44px; height:44px;}
     body.layout-phone #sidebarHeader, body.layout-compact #sidebarHeader{height:auto; min-height:52px;}
@@ -6057,7 +6091,7 @@
              only appear in the hover-revealed label, so there's no variable
              pill width left to guard against. -->
         <div id="levelBar"></div>
-        <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn" title="Add level filter"></button>
+        <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn level-apply" title="Add level filter"></button>
         <!-- Dividing "|" (person-requested, this session): the level filter
              is its own conceptual group same as the three below it, so it
              gets the exact same #viewBar > .row-action-separator treatment
@@ -7429,8 +7463,34 @@
           <div class="settings-card">
             <div class="settings-row">
               <div class="settings-row-text">
+                <div class="settings-row-label">Files &amp; Filters toolbar labels</div>
+                <div class="settings-row-hint">When the buttons above the file tree show their text.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsSidebarToolbarLabels" data-seg>
+                  <option value="never">Never</option>
+                  <option value="hover">On hover</option>
+                  <option value="always">Always</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <div class="settings-row-label">Level labels</div>
+                <div class="settings-row-hint">When the level circles show name and count as text.</div>
+              </div>
+              <div class="settings-row-control">
+                <select id="settingsLevelLabels" data-seg>
+                  <option value="never">Never</option>
+                  <option value="hover">On hover</option>
+                  <option value="always">Always</option>
+                </select>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
                 <div class="settings-row-label">Filter toolbar labels</div>
-                <div class="settings-row-hint">When filter-bar buttons show their text.</div>
+                <div class="settings-row-hint">When the other filter-bar buttons show their text.</div>
               </div>
               <div class="settings-row-control">
                 <select id="settingsFilterToolbarLabels" data-seg>
@@ -10404,8 +10464,8 @@ document.getElementById("settingsFilterActivationView").addEventListener("change
   localStorage.setItem(FILTER_ACTIVATION_VIEW_KEY, filterActivationView);
 });
 
-// "Filter-Toolbar button labels" / "View Toolbar button labels" (Settings ->
-// Behavior, person-requested, 2026-09-05): whether the row-action/toolbar
+// Toolbar button label settings (Settings -> Behavior, person-requested,
+// 2026-09-05; split into four 2026-10-08): whether the row-action/toolbar
 // buttons' hover-revealed labels show Never, on Hover (default — the plain
 // mechanics near .row-action-btn/.tb-hit above, nothing extra needed), or
 // Always. Applied as a class on <body> (see the CSS overrides next to
@@ -10415,36 +10475,45 @@ document.getElementById("settingsFilterActivationView").addEventListener("change
 // person wanted Filter-Toolbar and View Toolbar controllable separately.
 const FILTER_TOOLBAR_LABELS_KEY = "philogg-filter-toolbar-labels";
 const VIEW_TOOLBAR_LABELS_KEY = "philogg-view-toolbar-labels";
+const SIDEBAR_TOOLBAR_LABELS_KEY = "philogg-sidebar-toolbar-labels";
+const LEVEL_LABELS_KEY = "philogg-level-labels";
+// Four independent label settings (2026-10-08): the Files & Filters toolbar
+// (#sidebarToolbar), the level circles (#levelBar + "Add level filter"), the
+// remaining Filter-Toolbar buttons (#viewBar) and the four view toolbars.
+// All default to "hover" (a stored value always applies, no migration).
 let filterToolbarLabels = "hover"; // "never" | "hover" | "always"
 let viewToolbarLabels = "hover";
+let sidebarToolbarLabels = "hover";
+let levelLabels = "hover";
 function normalizeToolbarLabelsMode(v) { return v === "never" || v === "always" ? v : "hover"; }
-function applyFilterToolbarLabels() {
-  document.body.classList.toggle("filter-toolbar-labels-never", filterToolbarLabels === "never");
-  document.body.classList.toggle("filter-toolbar-labels-always", filterToolbarLabels === "always");
+const TOOLBAR_LABEL_SETTINGS = [
+  { selectId: "settingsSidebarToolbarLabels", key: SIDEBAR_TOOLBAR_LABELS_KEY, bodyPrefix: "sidebar-toolbar-labels", get: () => sidebarToolbarLabels, set: v => { sidebarToolbarLabels = v; } },
+  { selectId: "settingsLevelLabels", key: LEVEL_LABELS_KEY, bodyPrefix: "level-labels", get: () => levelLabels, set: v => { levelLabels = v; } },
+  { selectId: "settingsFilterToolbarLabels", key: FILTER_TOOLBAR_LABELS_KEY, bodyPrefix: "filter-toolbar-labels", get: () => filterToolbarLabels, set: v => { filterToolbarLabels = v; } },
+  { selectId: "settingsViewToolbarLabels", key: VIEW_TOOLBAR_LABELS_KEY, bodyPrefix: "view-toolbar-labels", get: () => viewToolbarLabels, set: v => { viewToolbarLabels = v; } },
+];
+function applyToolbarLabelSetting(def) {
+  document.body.classList.toggle(def.bodyPrefix + "-never", def.get() === "never");
+  document.body.classList.toggle(def.bodyPrefix + "-always", def.get() === "always");
+  syncAllDisabledReasonTitles();
+  scheduleBarSeparatorUpdate();
 }
-function applyViewToolbarLabels() {
-  document.body.classList.toggle("view-toolbar-labels-never", viewToolbarLabels === "never");
-  document.body.classList.toggle("view-toolbar-labels-always", viewToolbarLabels === "always");
-}
+function applyFilterToolbarLabels() { applyToolbarLabelSetting(TOOLBAR_LABEL_SETTINGS[2]); }
+function applyViewToolbarLabels() { applyToolbarLabelSetting(TOOLBAR_LABEL_SETTINGS[3]); }
 function initToolbarLabelsSettings() {
-  filterToolbarLabels = normalizeToolbarLabelsMode(localStorage.getItem(FILTER_TOOLBAR_LABELS_KEY));
-  viewToolbarLabels = normalizeToolbarLabelsMode(localStorage.getItem(VIEW_TOOLBAR_LABELS_KEY));
-  const filterSelect = document.getElementById("settingsFilterToolbarLabels");
-  if (filterSelect) filterSelect.value = filterToolbarLabels;
-  const viewSelect = document.getElementById("settingsViewToolbarLabels");
-  if (viewSelect) viewSelect.value = viewToolbarLabels;
-  applyFilterToolbarLabels();
-  applyViewToolbarLabels();
+  TOOLBAR_LABEL_SETTINGS.forEach(def => {
+    def.set(normalizeToolbarLabelsMode(localStorage.getItem(def.key)));
+    const select = document.getElementById(def.selectId);
+    if (select) select.value = def.get();
+    applyToolbarLabelSetting(def);
+  });
 }
-document.getElementById("settingsFilterToolbarLabels").addEventListener("change", ev => {
-  filterToolbarLabels = normalizeToolbarLabelsMode(ev.target.value);
-  localStorage.setItem(FILTER_TOOLBAR_LABELS_KEY, filterToolbarLabels);
-  applyFilterToolbarLabels();
-});
-document.getElementById("settingsViewToolbarLabels").addEventListener("change", ev => {
-  viewToolbarLabels = normalizeToolbarLabelsMode(ev.target.value);
-  localStorage.setItem(VIEW_TOOLBAR_LABELS_KEY, viewToolbarLabels);
-  applyViewToolbarLabels();
+TOOLBAR_LABEL_SETTINGS.forEach(def => {
+  document.getElementById(def.selectId).addEventListener("change", ev => {
+    def.set(normalizeToolbarLabelsMode(ev.target.value));
+    localStorage.setItem(def.key, def.get());
+    applyToolbarLabelSetting(def);
+  });
 });
 
 /* ===================== Temporary anchor settings (FEATURE_BACKLOG #18) =====
@@ -23003,7 +23072,7 @@ function assertableSelectedColumns() {
 // and at the end of renderExtractTable (node switch, sort, tail tick, ...).
 function updateTableAssertButton() {
   const btn = el("#tableAssertBtn");
-  if (btn) btn.disabled = assertableSelectedColumns().length === 0;
+  if (btn) { btn.disabled = assertableSelectedColumns().length === 0; setDisabledReason(btn, "select a numeric column first"); }
 }
 
 let selectionAnchor = null; // {row, col} last click origin, used for shift-click range extension
@@ -27754,9 +27823,10 @@ function updateRepeatButton() {
   btnRepeat.forEach(b => {
     b.classList.toggle("active", repeatCollapseOn && !locked);
     b.disabled = locked;
+    setDisabledReason(b, "clear the column sort", false);
     b.title = locked ? "Collapse repeats needs the chronological order (clear the column sort)" : "Collapse repeats";
   });
-  btnRepeatMenu.forEach(b => { b.disabled = locked; });
+  btnRepeatMenu.forEach(b => { b.disabled = locked; setDisabledReason(b, "clear the column sort", false); });
   repeatMenu.querySelector('[data-repeat-action="toggle"]').classList.toggle("on", repeatCollapseOn);
   repeatMenu.querySelectorAll("[data-repeat-rule]").forEach(it => it.classList.toggle("on", it.dataset.repeatRule === repeatRule));
 }
@@ -29293,6 +29363,8 @@ function updateContextToolbar() {
   const matchCount = contextMatchRows.length;
   ctxPrevMatch.disabled = matchCount < 2;
   ctxNextMatch.disabled = matchCount < 2;
+  setDisabledReason(ctxPrevMatch, "needs 2 or more matches");
+  setDisabledReason(ctxNextMatch, "needs 2 or more matches");
 
   const pos = state.selectedId ? contextMatchPos.get(state.selectedId) : undefined;
   contextNavLabel.textContent =
@@ -29305,6 +29377,9 @@ function updateContextToolbar() {
   ctxExpandAround.disabled = !contextGaps.length;
   ctxExpandAll.disabled = !hiddenLeft;
   ctxCollapseAll.disabled = !anyRevealed;
+  setDisabledReason(ctxExpandAround, "no hidden lines between matches");
+  setDisabledReason(ctxExpandAll, "nothing left to expand");
+  setDisabledReason(ctxCollapseAll, "nothing expanded");
 }
 
 // The bar sits in #highlightWrap's flex column, so showing it takes
@@ -33823,6 +33898,7 @@ function updateWrapMsgButton() {
     b.classList.toggle("active", on);
     if (b.dataset.baseTitle === undefined) b.dataset.baseTitle = b.title;
     b.disabled = locked;
+    setDisabledReason(b, "always wrapped in a narrow window", false);
     b.title = locked ? "Always wrapped in a narrow window" : b.dataset.baseTitle;
   });
   document.body.classList.toggle("wrap-messages", wrapMessagesEff());
@@ -42057,7 +42133,7 @@ const VIEWBAR_NEW_ROW_ACTION = [
 // own comment for why re-scanning the whole page on every rebuild would be
 // wrong. Every existing caller omits it, so this is a no-op for them.
 function buildRowActionsHtml(list, shape, hitClass) {
-  const shapeClass = shape === "rect" ? " rect" : "";
+  const shapeClass = shape === "sidebar" ? " rect sidebar-btn" : shape === "rect" ? " rect" : "";
   const hitClassAttr = hitClass ? " " + hitClass : "";
   return list.map(a =>
     // .row-action-hit is the fixed-size circle/square (icon centered
@@ -42174,6 +42250,98 @@ function clampLabelOffset(rect, viewportWidth) {
   if (rect.right > viewportWidth - EDGE_MARGIN) return (viewportWidth - EDGE_MARGIN) - rect.right; // overflowing the right edge -> shift left
   return 0; // already fits, no correction needed
 }
+// Hover hand-over state of one toolbar group (container): `hover(btn)` is
+// called whenever a button is under the pointer, `leave()` when the pointer
+// leaves the container. The first button of a session fades its pill in as
+// usual; as soon as a DIFFERENT button is hovered the container gets
+// `.labels-live` (transition:none on the pills) and keeps it until `leave()`.
+// Pure bookkeeping on a container's classList, so it is unit-testable.
+function labelHandoverTracker(container) {
+  let last = null;
+  return {
+    hover(btn) {
+      if (last && btn !== last) container.classList.add("labels-live");
+      last = btn;
+    },
+    leave() {
+      container.classList.remove("labels-live");
+      last = null;
+    },
+  };
+}
+// Same hand-over for the containers whose pills are revealed by plain CSS
+// :hover (#levelBar, #libraryPresetBar — their buttons are rebuilt on every
+// toggle/library change, so the container is the only stable listener target).
+function setupLabelHandoverHover(container) {
+  if (!container) return;
+  const handover = labelHandoverTracker(container);
+  container.addEventListener("mouseover", ev => {
+    const btn = ev.target.closest && ev.target.closest(".row-action-btn");
+    if (btn && container.contains(btn)) handover.hover(btn);
+  });
+  container.addEventListener("mouseleave", () => handover.leave());
+}
+setupLabelHandoverHover(document.getElementById("levelBar"));
+setupLabelHandoverHover(document.getElementById("libraryPresetBar"));
+// Wrapped toolbar rows (#viewBar, #sidebarToolbar): a "|" separator that is
+// not between two displayed items of its own line (a line start, a line end,
+// or next to a wrapped neighbour) is hidden (`.sep-hidden`). Pure: `items`
+// are { sep: bool, y: line-centre y or null when not displayed } in DOM
+// order; returns the indexes of the separators to hide.
+function danglingSeparatorIndexes(items) {
+  const SAME_LINE = 10;
+  const hide = [];
+  items.forEach((it, i) => {
+    if (!it.sep || it.y === null) return;
+    let prev = null, next = null;
+    for (let k = i - 1; k >= 0 && !prev; k--) if (!items[k].sep && items[k].y !== null) prev = items[k];
+    for (let k = i + 1; k < items.length && !next; k++) if (!items[k].sep && items[k].y !== null) next = items[k];
+    const ok = prev && next && Math.abs(prev.y - it.y) <= SAME_LINE && Math.abs(next.y - it.y) <= SAME_LINE;
+    if (!ok) hide.push(i);
+  });
+  return hide;
+}
+function updateBarSeparators(bar) {
+  if (!bar) return;
+  const kids = [...bar.children];
+  kids.forEach(k => k.classList.remove("sep-hidden")); // measure with every separator shown
+  const items = kids.map(k => {
+    const shown = k.getClientRects().length > 0;
+    const r = shown ? k.getBoundingClientRect() : null;
+    return { sep: k.classList.contains("row-action-separator"), y: r ? (r.top + r.bottom) / 2 : null };
+  });
+  danglingSeparatorIndexes(items).forEach(i => kids[i].classList.add("sep-hidden"));
+}
+let barSepRaf = 0;
+function scheduleBarSeparatorUpdate() {
+  if (barSepRaf || typeof requestAnimationFrame !== "function") return;
+  barSepRaf = requestAnimationFrame(() => {
+    barSepRaf = 0;
+    ["viewBar", "sidebarToolbar"].forEach(id => updateBarSeparators(document.getElementById(id)));
+    barSepObservers.forEach(o => o.takeRecords()); // our own class changes must not re-trigger
+  });
+}
+const barSepObservers = [];
+["viewBar", "sidebarToolbar"].forEach(id => {
+  const bar = document.getElementById(id);
+  if (!bar) return;
+  if (typeof ResizeObserver === "function") {
+    // The bar itself (width changes) and its groups (a button shown/hidden changes the line breaks).
+    const ro = new ResizeObserver(scheduleBarSeparatorUpdate);
+    ro.observe(bar);
+    [...bar.children].forEach(c => ro.observe(c));
+  }
+  if (typeof MutationObserver === "function") {
+    // Structure changes anywhere inside, class/hidden/style changes of the direct children (group
+    // show/hide) only — hover/active classes deeper down must not trigger a re-measure.
+    const kids = new MutationObserver(scheduleBarSeparatorUpdate);
+    kids.observe(bar, { childList: true, subtree: true });
+    const attrs = new MutationObserver(scheduleBarSeparatorUpdate);
+    attrs.observe(bar, { attributes: true, subtree: false });
+    [...bar.children].forEach(c => attrs.observe(c, { attributes: true, attributeFilter: ["class", "hidden", "style"] }));
+    barSepObservers.push(kids, attrs);
+  }
+});
 function setupHitExpandGroups(hitSelector) {
   const groups = new Map(); // container element -> [{hit, btn}, ...] (first-seen membership, just to find containers)
   elAll(hitSelector).forEach(hit => {
@@ -42187,6 +42355,12 @@ function setupHitExpandGroups(hitSelector) {
     if (container.dataset.hitExpandBound) return;
     container.dataset.hitExpandBound = "1";
     let restRects = null; // Array<{btn, rect}>, measured only while collapsed
+    // Calm hand-over: the FIRST pill of a hover session fades in; once the
+    // pointer moves on to a different button of the same group the container
+    // gets `.labels-live` (CSS: no transition), so the pills swap instantly.
+    // Only leaving the container ends the session (a gap between buttons
+    // keeps it) — see labelHandoverTracker.
+    const handover = labelHandoverTracker(container);
     const liveEntries = () => [...container.querySelectorAll(hitSelector)]
       .map(hit => ({ hit, btn: hit.closest(".toolbar-icon-btn") }))
       .filter(e => e.btn);
@@ -42219,6 +42393,7 @@ function setupHitExpandGroups(hitSelector) {
       }
       const { clientX: x, clientY: y } = ev;
       const hovered = restRects.find(r => x >= r.rect.left && x <= r.rect.right && y >= r.rect.top && y <= r.rect.bottom);
+      if (hovered) handover.hover(hovered.btn);
       entries.forEach(e => {
         const isExpanded = !!hovered && e.btn === hovered.btn;
         e.btn.classList.toggle("expanded", isExpanded);
@@ -42236,6 +42411,7 @@ function setupHitExpandGroups(hitSelector) {
       if (btn && !btn.classList.contains("expanded")) resetLabelClamp(btn);
     });
     container.addEventListener("mouseleave", () => {
+      handover.leave(); // BEFORE collapsing, so the exit still fades
       const entries = liveEntries();
       collapseAll(entries);
       entries.forEach(e => resetLabelClamp(e.btn));
@@ -42253,6 +42429,43 @@ function currentRowActionEntry() {
   return (state.selectedId && entryIndex[state.selectedId]) || null;
 }
 
+// Disabled-reason pill text: `reason` is shown after the label ("Bookmark ·
+// select a row first") in the On-hover pill (CSS, see .labels-live above) and
+// in the native tooltip — only while the button is actually disabled; "" or an
+// enabled button clears it. The attribute lives on the button (state) and on
+// its label span (CSS attr() reads the pseudo-element's own element).
+// `syncTitle:false` for buttons whose title is already an own explanation.
+function setDisabledReason(btn, reason, syncTitle) {
+  if (!btn) return;
+  const r = btn.disabled && reason ? reason : "";
+  const label = btn.querySelector(".row-action-label, .tb-label");
+  if (r) {
+    btn.setAttribute("data-disabled-reason", r);
+    if (label) label.setAttribute("data-disabled-reason", r);
+  } else {
+    btn.removeAttribute("data-disabled-reason");
+    if (label) label.removeAttribute("data-disabled-reason");
+  }
+  if (syncTitle === false) return;
+  if (btn.dataset.titleBase === undefined) btn.dataset.titleBase = btn.title;
+  syncDisabledReasonTitle(btn);
+}
+// The tooltip carries the reason only when no On-hover pill already shows it
+// (Always/Never mode of the button's own toolbar kind: .row-action-btn:not(.rect)
+// = Filter-Toolbar, everything else = View toolbars) — otherwise the pill and
+// the native tooltip would say the same thing twice.
+function syncDisabledReasonTitle(btn) {
+  const base = btn.dataset.titleBase;
+  if (base === undefined) return;
+  const mode = btn.classList.contains("sidebar-btn") ? sidebarToolbarLabels
+    : btn.classList.contains("level-btn") || btn.classList.contains("level-apply") ? levelLabels
+    : btn.classList.contains("row-action-btn") && !btn.classList.contains("rect") ? filterToolbarLabels : viewToolbarLabels;
+  const r = btn.getAttribute("data-disabled-reason");
+  btn.title = r && mode !== "hover" ? base + " \u00b7 " + r : base;
+}
+function syncAllDisabledReasonTitles() {
+  elAll("[data-title-base]").forEach(syncDisabledReasonTitle);
+}
 // Keeps every row-action button's disabled state (and the bookmark/note
 // buttons' pressed look, mirroring the context menu's own label swap
 // between "Bookmark this row"/"Remove bookmark" and "Add note"/"Edit note")
@@ -42294,23 +42507,36 @@ function updateRowActionButtons() {
   // requested, 2026-09-08 — use "Message" for that case instead).
   const extractActionEnabled = messageActionEnabled &&
     buildNumericExtractPattern(entryColumnValue(messageActionEntry, "message")) !== null;
+  // Disabled reasons (hover pill + tooltip, see setDisabledReason): one short
+  // phrase per blocker, derived from the same conditions as the flags above.
+  const NO_2D_PLOT = "needs a 2D plot";
+  const rowReason = entry ? "select one row" : "select a row first";
+  const sourceReason = onTable ? "mark a row first" : onPlot ? NO_2D_PLOT : "select a row first";
+  const messageReason = onTable || onPlot ? "not available here" : "select one row";
+  const timeRangeReason = onTable ? "mark two rows first" : NO_2D_PLOT;
+  const setBtns = (action, disabled, reason) => elAll('[data-row-action="' + action + '"]').forEach(b => {
+    b.disabled = disabled;
+    setDisabledReason(b, reason);
+  });
   elAll('[data-row-action="bookmark"]').forEach(b => {
     b.disabled = !singleRowEnabled;
+    setDisabledReason(b, rowReason);
     b.classList.toggle("active", !!entry && state.bookmarks.has(entry.id));
   });
   elAll('[data-row-action="note"]').forEach(b => {
     b.disabled = !singleRowEnabled;
+    setDisabledReason(b, rowReason);
     b.classList.toggle("active", !!entry && state.notes.has(entry.id));
   });
-  elAll('[data-row-action="filterAfter"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
-  elAll('[data-row-action="filterBefore"]').forEach(b => { b.disabled = !afterBeforeEnabled; });
-  elAll('[data-row-action="filterForMessage"]').forEach(b => { b.disabled = !messageActionEnabled; });
-  elAll('[data-row-action="extractMessage"]').forEach(b => { b.disabled = !extractActionEnabled; });
-  elAll('[data-row-action="timeRangeFromSelection"]').forEach(b => { b.disabled = !timeRangeEnabled; });
+  setBtns("filterAfter", !afterBeforeEnabled, sourceReason);
+  setBtns("filterBefore", !afterBeforeEnabled, sourceReason);
+  setBtns("filterForMessage", !messageActionEnabled, messageReason);
+  setBtns("extractMessage", !extractActionEnabled, messageActionEnabled ? "select a row with a number or ID" : messageReason);
+  setBtns("timeRangeFromSelection", !timeRangeEnabled, timeRangeReason);
   // "New" needs no selected row at all — just an active filter tree to add
   // to (same guard openFilterPopup itself applies).
-  elAll('[data-row-action="newFilter"]').forEach(b => { b.disabled = !state.activeId; });
-  elAll('[data-row-action="addToSelection"]').forEach(b => { b.disabled = !selectEnabled; });
+  setBtns("newFilter", !state.activeId, "open a file first");
+  setBtns("addToSelection", !selectEnabled, sourceReason);
 }
 
 // Dispatches a toolbar row-action click by name — shares the exact same
@@ -43404,7 +43630,7 @@ function renderSidebarToolbar() {
   if (sidebarToolbarMultiKey !== null || !sidebarToolbarEl.querySelector("[data-row-action]") ||
       !!sidebarToolbarEl.querySelector('[data-row-action="addToLibrary"]') !== wantsLibBtn) {
     sidebarToolbarMultiKey = null;
-    sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "rect", "sidebar-toolbar-hit");
+    sidebarToolbarEl.innerHTML = buildRowActionsHtml(describeSidebarToolbarActions().actions, "sidebar", "sidebar-toolbar-hit");
     // Idempotent (per-container guard), so calling it again never stacks listeners.
     setupHitExpandGroups(".sidebar-toolbar-hit");
   }
@@ -54083,7 +54309,10 @@ render();
 function makeToolbarBtnExpandable(btn) {
   if (!btn || btn.querySelector(".tb-hit")) return;
   const icon = btn.innerHTML;
-  btn.innerHTML = '<span class="tb-hit">' + icon + '</span><span class="tb-label">' + escapeHtml(btn.title) + '</span>';
+  // The label is the BASE title (setDisabledReason may already have appended a reason to btn.title).
+  btn.innerHTML = '<span class="tb-hit">' + icon + '</span><span class="tb-label">' + escapeHtml(btn.dataset.titleBase !== undefined ? btn.dataset.titleBase : btn.title) + '</span>';
+  // A disabled reason set before this wrapping moves onto the fresh label span (CSS attr() reads it there).
+  if (btn.dataset.disabledReason) btn.querySelector(".tb-label").setAttribute("data-disabled-reason", btn.dataset.disabledReason);
 }
 elAll(
   "#contextToolbar .toolbar-icon-btn:not(.row-action-btn), " +

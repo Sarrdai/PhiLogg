@@ -14,7 +14,7 @@
    ============================================================ */
 group(181);
 await withApp(async (w, d, T) => {
-  section("181a. Defaults to 'hover' for both, with no localStorage entry yet");
+  section("181a. Defaults to 'hover' for all (round 1 of 2026-10-08 briefly made it 'always'), with no localStorage entry yet");
 
   assert(w.localStorage.getItem("philogg-filter-toolbar-labels") === null, "sanity: nothing persisted yet");
   assert(w.localStorage.getItem("philogg-view-toolbar-labels") === null, "sanity: nothing persisted yet");
@@ -41,10 +41,10 @@ await withApp(async (w, d, T) => {
   assert(T.viewToolbarLabels === "hover", "View Toolbar setting is untouched by the Filter-Toolbar change");
   assert(!d.body.classList.contains("view-toolbar-labels-never"), "...no View Toolbar class added either");
 
-  viewSelect.value = "always";
+  viewSelect.value = "never";
   viewSelect.dispatchEvent(new w.Event("change", { bubbles: true }));
-  assert(T.viewToolbarLabels === "always", "View Toolbar setting updates independently");
-  assert(w.localStorage.getItem("philogg-view-toolbar-labels") === "always", "...and persists to its own key");
-  assert(d.body.classList.contains("view-toolbar-labels-always"), "<body> carries the View Toolbar 'always' class");
+  assert(T.viewToolbarLabels === "never", "View Toolbar setting updates independently");
+  assert(w.localStorage.getItem("philogg-view-toolbar-labels") === "never", "...and persists to its own key");
+  assert(d.body.classList.contains("view-toolbar-labels-never") && !d.body.classList.contains("view-toolbar-labels-always"), "<body> carries the View Toolbar 'never' class");
   assert(d.body.classList.contains("filter-toolbar-labels-never"), "...while the Filter-Toolbar's earlier 'never' choice is still in effect");
 });

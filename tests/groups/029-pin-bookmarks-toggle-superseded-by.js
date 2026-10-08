@@ -63,4 +63,4 @@ await withApp(async (w, d) => {
     const bcs = cs(btn);
     assert(bcs.width === "28px" && bcs.height === "28px", sel + " has no size override — it shares .toolbar-icon-btn's 28x28 shape, got " + bcs.width + "x" + bcs.height);
   });
-});
+}, { toolbarLabels: "hover" });
