@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 126
+LAST_ID: 127
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -40,6 +40,7 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 124 | One value statistic over several message types in Table/Plot | MCP usability test 2026-10-09 (task 19): the demo log has two GET formats (`Request GET … completed in Nms status=N` and `GET https://… -> N (N ms)`). For agents this is solved since round H (`get_value_stats` `sources`); the Table/Plot still work on one extraction only. Idea: an OR group of extraction filters whose columns map onto shared names. Needs a mockup and new persistence. | mittel–groß | 2 |
 | 125 | Treat hex and decimal ids as one message type | MCP usability test 2026-10-09 (task 16): `Request r-<hex> rejected: 503 …` and `Request r-<#> rejected: 503 …` are two types in `analysisPatternCounts` (15 + 5 instead of 20), so burst/what_changed counts are split. Idea: `normalizeMessagePattern` maps an id-like token (hex or digits after the same prefix) to one placeholder. Affects the Patterns tab too. | mittel | 2 |
 | 126 | Better automatic extraction column names | MCP usability tests 2026-10-09 (task 19): `completed in [*:int]ms` names its column `completed`, `-> [*:int] ([*:int] ms)` gives `value 3`, a `[*]` before "completed" is called `GET`. Idea: take a trailing unit (`ms`, `C`, `bar`) or a key before `=`/`:` and prefer it over the preceding word. Shared with the Table headers. (`key=prefix[*]` → `key` is done since round H.) | klein–mittel | 2 |
+| 127 | Split plot series by a word column | Desktop usability test 2026-10-09 (task 13): Extract on a `Sensor T1 …` row yields `Sensor [*:word] …`, so the Plot joins T1, T2 and T3 into one saw-tooth line; the `Sensor` column chip only offers "Ignore column". Idea: a "Split series by" choice under the Y axis that draws one line per value of a word column (own color, legend entry, click to hide); the column chip gets "Split by". Needs persistence (plot settings, sessions) and a decision for the Table view. Mockup variant A: https://claude.ai/artifact/BKWsrguFZ4UR17cRMPav9s (package I5). Round I only adds the smaller "Keep only <value>" in the column chip. | mittel | 2 |
 | 88 | Very large files (multi-GB) in the desktop build | Keep raw data and a line/time index on the Rust side and hand JS only the window it currently needs, instead of holding every entry in memory. Today the whole file lives in RAM — fine up to a few hundred MB, a hard limit beyond that; Prune (docs/persistence-and-sync.md) only mitigates it. | groß | 3 |
 | 12 | Dedup check on filter-file / session import | Prevents duplicate branches when the same filter (tree) is loaded/imported again. | klein |  |
 | 22 | Diff view between two filter results | E.g. comparing two runs of the same log. | groß |  |

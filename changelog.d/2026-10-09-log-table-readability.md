@@ -1,0 +1,5 @@
+- **feat: log table readability (2026-10-09, person-decided)**
+  - Selected row: 3px accent bar plus accent tint (visible on ERROR rows). Current find hit: solid accent block; other hits: tint with an underline, distinct from filter marks.
+  - Location truncates at the start so the end of the path (file name, line) stays visible, also in cells with marks and at every filter depth; default column widths leave Message more room. Multi-line/wrapped rows align time, level, thread etc. to the first message line.
+  - Word wrap stays character-based: word-boundary wrap was measured in Chromium and rejected (browser breaks inside tokens, so the line count is not exact). Tabs in multiline+wrap rows now count 4 columns (fixes a clipped last line).
+  - **Tests**: GROUP log-table-readability. Docs: docs/ui-and-views.md.

@@ -1,0 +1,4 @@
+- **feat: filter-path match marks are a soft tint with a thin outline (2026-10-09, person-requested)**
+  - `mark.text-match-mark` was a solid 55% `--warn` block that hurt readability (dark theme) and hid the find-bar hit; it is now an 18% fill with a 1px inset outline, no padding.
+  - When a rule/find/token boundary cuts one filter range into pieces, `.mm-start`/`.mm-end`/`.mm-stripe` make the outline read as one box (edges and radius only at the real ends; the rule stripe replaces the bottom edge). Find-bar and rule-stripe marks are unchanged.
+  - **Tests**: GROUP filter-match-mark-outline (new), 137 and 274 updated. Docs: docs/filters.md.

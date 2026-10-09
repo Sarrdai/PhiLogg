@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PhiLogg</title>
+<!-- Inline icon: the page is one self-contained file, so the browser makes no extra icon request (it used to get a 404) on load. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234fc7c3'/><stop offset='1' stop-color='%237fe0dc'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><path d='M11 8v16h11' fill='none' stroke='%2308201f' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <style>
   :root{
     --icon-md:14px; --icon-sm:12px;
@@ -20,6 +22,7 @@
     --accent-soft:rgba(79,199,195,.14);
     --accent-strong:#7fe0dc;
     --multi-select-fill:color-mix(in srgb, var(--accent) 24%, var(--bg-app));
+    --selected-row-tint:color-mix(in srgb, var(--accent) 16%, transparent);
     --level-error:#f16565;
     --level-error-soft:rgba(241,101,101,.14);
     --level-warn:#e8a94a;
@@ -114,7 +117,7 @@
        link-pair rows — independently of --ui-scale's whole-interface zoom.
        Driven by the "Log text size" setting, see applyLogTextScale(). */
     --log-text-scale:1;
-    --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
+    --row-grid:5px 178px 56px 66px 92px 190px 110px 1fr;
     /* Color-mark gutter (see updateColorMarkGutter): width of the .hl-markers
        lane, sized for the true max number of simultaneous colored-filter
        matches any one row reaches across the whole file, so N marks always
@@ -929,7 +932,7 @@
      are tinted by kind (an active row's accent still wins). */
   .icon{width:var(--icon-md); height:var(--icon-md); flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
   .icon.icon-xs{width:10px; height:10px;}
-  .tree-icon, .ctx-item, .ctx-run-cap, .ctx-gap-icon{--icon-md:var(--icon-sm);}
+  .tree-icon, .ctx-item, .ctx-gap-icon{--icon-md:var(--icon-sm);}
   .tree-row.filter-and:not(.active):not(.multi-selected) .tree-icon{color:var(--level-info);}
   .tree-row.filter-or:not(.active):not(.multi-selected) .tree-icon{color:var(--level-warn);}
   /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
@@ -950,19 +953,32 @@
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
   }
-  /* Time-filter labels: up to 2 lines, breaking only between .tl-seg segments. */
-  .tree-label.tree-label-wrap{
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
-    white-space:normal; line-height:1.3;
+  /* Time-filter labels stay on ONE line ("08:38:05–08:38:06 · 1.9s", no
+     milliseconds: those are in the tooltip): the bounds (.tl-range) shrink
+     with an ellipsis, the duration (.tl-dur) never does. */
+  .tree-label.tree-label-time{display:flex; align-items:baseline; gap:.3em;}
+  .tree-label-time .tl-range{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .tree-label-time .tl-dur{flex:none; white-space:nowrap;}
+  /* Long plain labels are cut in the MIDDLE: the head shrinks with an
+     ellipsis, the last few characters (.tl-tail) always stay visible, since
+     the end is what tells similar nodes apart. white-space:pre keeps the
+     blank at the split point. */
+  .tree-label.tree-label-mid{display:flex; white-space:pre;}
+  .tree-label-mid .tl-head{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:pre;}
+  .tree-label-mid .tl-tail{flex:none; white-space:pre;}
+  /* Inverted (NOT) nodes: small red badge before the label. */
+  .tree-not-badge{
+    flex:0 0 auto; font-family:var(--font-mono); font-size:8.5px; font-weight:700; letter-spacing:.04em;
+    line-height:1.2; padding:1px 4px; border-radius:3px; margin-right:-2px;
+    background:var(--level-error); color:var(--bg-app);
   }
-  .tree-label-wrap .tl-seg{white-space:nowrap;}
-  /* With a duration: flex row, bounds shrink (2-line clamp + ellipsis), the duration never does. */
-  .tree-label.tree-label-dur{display:flex; align-items:baseline; gap:.3em;}
-  .tree-label-dur .tl-range{
-    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  /* Target of the open tree context menu (the selection itself is unchanged). */
+  .tree-row.ctx-target{outline:1.5px solid var(--accent); outline-offset:-1.5px; border-radius:4px; background:var(--bg-elevated);}
+  #treeContextMenu .ctx-target-head{
+    color:var(--text-tertiary); font-family:var(--font-ui); font-size:11px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; padding:6px 10px 5px; border-bottom:1px solid var(--border);
   }
-  .tree-label-dur .tl-dur{flex:none; white-space:nowrap;}
+  #treeContextMenu .ctx-target-head b{color:var(--text-primary); font-weight:600;}
   [data-type="file"] > .tree-row .tree-label{font-weight:600; color:var(--text-primary);}
   .tree-rename-input{
     width:100%; min-width:0; font:inherit; font-size:12.3px; color:var(--text-primary);
@@ -975,9 +991,9 @@
     letter-spacing:.3px; color:var(--text-tertiary); background:var(--bg-elevated-2);
     border:1px solid var(--border-soft); border-radius:4px; padding:1px 4px;
   }
-  /* Inverted (NOT) filters get a red-tinted type tag and a "¬" prefix on
-     their label (added in renderNode) so the negation is visible at a glance
-     without having to open the node. */
+  /* Inverted (NOT) filters get a red-tinted type tag and a red "NOT" badge
+     before their label (added in renderNode) so the negation is visible at a
+     glance without having to open the node. */
   .tree-row.inverted .tree-type-tag{color:var(--level-error); border-color:var(--level-error);}
   .tree-llm-mark{flex:0 0 auto; font-size:10px; color:var(--accent); margin-left:4px; opacity:.85;}
   .tree-count{
@@ -1013,6 +1029,36 @@
   .tree-mute:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-mute .icon{width:12px; height:12px;}
   .tree-row.muted .tree-mute{opacity:1; color:var(--level-warn);}
+  /* Hover buttons (desktop): ONE group, .tree-actions [NOT][mute][delete], overlays the row's
+     right end instead of reserving ~60px next to the count, so a label uses the full width up to
+     the count. It has an opaque background that matches the row (a soft left edge fades the label
+     out, so the icons never sit on top of text): the row's tint (--tree-row-tint: hover, selected,
+     right-click target; translucent for the selection) is layered over the sidebar's panel
+     colour. A muted row's un-mute button is in the same group (it used to sit in flow under the
+     absolutely positioned delete button, so hover never showed it). The compact and phone layouts
+     keep the buttons in flow (display:contents), their touch targets are bigger. */
+  .tree-actions{display:contents;}
+  .tree-row{--tree-row-tint:transparent;}
+  .tree-row:hover, .tree-row.ctx-target{--tree-row-tint:var(--bg-elevated);}
+  .tree-row.active, .tree-row.multi-selected, .tree-row.drag-over{--tree-row-tint:var(--accent-soft);}
+  .tree-row.select-mode.active:not(.multi-selected){--tree-row-tint:transparent;}
+  body:not(.layout-compact):not(.layout-phone) .tree-actions{
+    display:flex; align-items:center; gap:2px; position:absolute; right:0; top:0; bottom:0; z-index:1;
+    padding:0 6px 0 18px; opacity:0; pointer-events:none;
+    background-image:linear-gradient(90deg, transparent, var(--tree-row-tint) 14px), linear-gradient(90deg, transparent, var(--bg-panel) 14px);
+  }
+  body:not(.layout-compact):not(.layout-phone) .tree-row:hover .tree-actions,
+  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-actions:focus-within{opacity:1; pointer-events:auto;}
+  body:not(.layout-compact):not(.layout-phone) .tree-actions > button{opacity:1;}
+  .tree-invert{
+    flex:0 0 auto; background:none; border:none; cursor:pointer;
+    color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
+  }
+  .tree-invert .icon{width:12px; height:12px;}
+  .tree-invert:hover{color:var(--accent-strong); background:var(--accent-soft);}
+  .tree-row.inverted .tree-invert{color:var(--level-error);}
+  .tree-row.inverted .tree-invert:hover{background:var(--level-error-soft);}
+  body.layout-compact .tree-invert, body.layout-phone .tree-invert{display:none;}
   .tree-row.muted .tree-label{text-decoration:line-through; text-decoration-color:var(--text-tertiary); color:var(--text-tertiary);}
   .tree-row.muted .tree-icon,.tree-row.muted .tree-swatch{opacity:.45;}
   .tree-row.muted .tree-count{font-style:italic;}
@@ -1825,7 +1871,7 @@
     padding:0 16px 0 calc(26px + (var(--color-mark-w) - 3px));
   }
   #highlightHeader.ctx-active{
-    padding-left: calc(38px + (var(--color-mark-w) - 3px));
+    padding-left: calc(44px + (var(--color-mark-w) - 3px));
   }
   #tableHeader .row-grid, #highlightHeader .row-grid{padding:9px 0;}
   /* Horizontal scrollbar in the Filter view, Filter
@@ -2164,24 +2210,26 @@
 
   /* Text-filter match highlighting (Settings -> Behavior) — unrelated to the
      highlight-RULE markers above (.hl-marker/.hl-markers, a per-node gutter
-     color) despite the naming proximity; this instead marks the actual
-     matched substring inline in a row/detail field, see markRangesHtml(). A
-     plain <mark>, restyled to use the theme's --warn token (tinted via
-     color-mix so it reads consistently across every theme without a
-     hardcoded color) instead of the browser default yellow.
-     padding:0, deliberately (person-reported 2026-08-30): this used to carry
-     `padding:0 1px` for a little visual breathing room, which is layout-
-     affecting on an inline element — unlike background/box-shadow, side
-     padding on <mark> actually widens the line, shifting every character
-     after it by 2px. That widening used to appear/disappear depending on
-     whether a coloured highlight rule ALSO happened to match the same field
-     (see markCombinedHtml: the mark-seg path zeroed padding, the plain
-     markRangesHtml fallback didn't), which is why toggling the unrelated
-     highlight-rule feature visibly reflowed text nowhere near a highlight
-     rule. Marking text must never change its layout — only what's painted
-     on top of it — so padding is 0 unconditionally now, on every path. */
+     color); this marks the actual matched substring inline, see
+     markRangesHtml(). A plain <mark> in the theme's --warn token: a soft 18%
+     tinted fill plus a 1px inset outline (70%), so the text stays readable on
+     every theme and the find-bar hit / rule stripes stay distinguishable.
+     padding:0, deliberately: side padding on an inline <mark> widens the line
+     and shifts every character after it, and it used to appear/disappear
+     depending on whether a highlight rule also matched the field. Marking
+     must never change layout, only what is painted — fill and outline are
+     background/box-shadow only.
+     Plain path (markRangesHtml): one mark per range, full outline, 2px radius.
+     Segmented path (markCombinedHtml, .mark-seg): a range cut into several
+     pieces must still read as ONE box. Every piece keeps the top edge;
+     .mm-start / .mm-end (piece starts / ends at the range's own start / end)
+     add the left / right edge and that side's radius; inner cuts get no
+     vertical line and square corners. Pieces under a highlight-rule stripe
+     carry .mm-stripe and drop the bottom edge — the 2px stripe is the bottom
+     edge there (the inset shadow would paint over it). */
   mark.text-match-mark{
-    background:color-mix(in srgb, var(--warn) 55%, transparent); color:inherit;
+    background:color-mix(in srgb, var(--warn) 18%, transparent); color:inherit;
+    box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--warn) 70%, transparent);
     border-radius:2px; padding:0;
   }
   /* Highlight-RULE match text (FEATURE_BACKLOG.md #20, see markCombinedHtml):
@@ -2215,18 +2263,31 @@
      too, harmlessly, so this rule doesn't silently depend on that.) Must
      stay AFTER mark.text-match-mark: same specificity, later wins. */
   mark.mark-seg{padding:0; border-radius:0;}
-  /* Find-bar hits (FEATURE_BACKLOG.md #3, see markCombinedHtml's findRanges):
-     accent-tinted rather than the filter mark's --warn so "what I'm
-     searching for right now" and "what the active filter matched" stay
-     distinguishable when both mark the same row; the selected row (which is
-     the current hit after every find step) gets a stronger fill. Must stay
-     AFTER mark.mark-seg — a segmented find mark keeps square corners too. */
-  mark.find-match-mark{
-    background:color-mix(in srgb, var(--accent) 38%, transparent); color:inherit;
-    border-radius:2px; padding:0; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+  mark.text-match-mark.mark-seg{
+    --sl:0px; --sr:0px; --sb:1px;
+    box-shadow:inset 0 1px 0 color-mix(in srgb, var(--warn) 70%, transparent),
+      inset 0 calc(-1 * var(--sb)) 0 color-mix(in srgb, var(--warn) 70%, transparent),
+      inset var(--sl) 0 0 color-mix(in srgb, var(--warn) 70%, transparent),
+      inset calc(-1 * var(--sr)) 0 0 color-mix(in srgb, var(--warn) 70%, transparent);
   }
-  mark.find-match-mark.mark-seg{border-radius:0;}
-  .log-row.selected mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
+  mark.text-match-mark.mm-start{--sl:1px; border-top-left-radius:2px; border-bottom-left-radius:2px;}
+  mark.text-match-mark.mm-end{--sr:1px; border-top-right-radius:2px; border-bottom-right-radius:2px;}
+  mark.text-match-mark.mm-stripe{--sb:0px;}
+  /* Find-bar hits (FEATURE_BACKLOG.md #3, see markCombinedHtml's findRanges).
+     Three looks that stay apart on a row that carries all of them: a filter
+     match is a warm (--warn) tint inside a thin full outline; any other find
+     hit is a cool (--accent) tint with a 2px UNDERLINE instead of the outline
+     (different hue AND shape); the CURRENT hit — the row the bar last stepped
+     to is the selected row — is a solid --accent block with --accent-on text,
+     the only mark that is not a tint. Must stay AFTER mark.mark-seg — a
+     segmented find mark keeps square corners too. */
+  mark.find-match-mark{
+    background:color-mix(in srgb, var(--accent) 24%, transparent); color:inherit;
+    border-radius:0; padding:0; box-shadow:inset 0 -2px 0 var(--accent);
+  }
+  .log-row.selected mark.find-match-mark{
+    background:var(--accent); color:var(--accent-on); border-radius:2px; box-shadow:none;
+  }
 
   .log-row{
     height:28px; box-sizing:border-box; position:relative;
@@ -2234,7 +2295,11 @@
     cursor:default;
   }
   .log-row:hover{background:var(--bg-elevated);}
-  .log-row.selected{box-shadow:inset 0 0 0 1px var(--accent);}
+  /* The selected row (state.selectedId): a 3px accent bar on the left edge
+     plus a light accent tint (the tint is painted as a background-image
+     further down, after the level tints, so it also shows on an ERROR/WARN
+     row where a 1px outline was invisible). */
+  .log-row.selected{box-shadow:inset 3px 0 0 var(--accent);}
   /* Ctrl/Shift-click multi-select (see handleLogRowClick): every member row
      gets the SAME full-width fill (--multi-select-fill, painted as a
      background-image gradient further down, after the level tints), no
@@ -2275,51 +2340,66 @@
      left padding by the same rule, so nothing clips into col-bar. */
   #highlightRows.ctx-active{
     --ctx-lane-x: calc(-9px - (var(--color-mark-w) - 3px) - 26px);
-    --rows-pad-left: calc(38px + (var(--color-mark-w) - 3px));
+    --rows-pad-left: calc(44px + (var(--color-mark-w) - 3px));
   }
-  /* -1.5px centres the 5px dot on the 2px line the runs draw at --ctx-lane-x. */
+  /* -1.5px centres a 5px dot on the lane axis (--ctx-lane-x + 1px), where the run band is centred. */
   #highlightRows.ctx-active .ctx-anchor-dot{ left: calc(var(--ctx-lane-x) - 1.5px); }
+  /* Match rows stand out from the revealed context rows (I3): accent tint, a
+     bigger 10px dot (centred on the same lane axis: 2px line + 4px each side
+     = -4px) and a bold time. background-image, not background-color, for the
+     same reason as the selected-row fill (level tints use the `background`
+     shorthand). Context rows are deliberately left untouched. */
+  #highlightRows.ctx-active .ctx-anchor-dot{ width:10px; height:10px; left: calc(var(--ctx-lane-x) - 4px); }
+  #highlightRows .log-row.ctx-match{background-image:linear-gradient(var(--accent-soft), var(--accent-soft));}
+  #highlightRows .log-row.ctx-match > .col-time{font-weight:700;}
+  /* Selected + match: both fills stack (selected is the stronger, plus its
+     3px bar), so a selected match stays distinguishable from a plain one. */
+  #highlightRows .log-row.ctx-match.selected, #highlightRows .log-row.ctx-match.selected:hover{
+    background-image:linear-gradient(var(--selected-row-tint), var(--selected-row-tint)), linear-gradient(var(--accent-soft), var(--accent-soft));
+  }
+  .ctx-legend{display:inline-flex; align-items:center; gap:5px; margin-left:6px; font-size:11px; color:var(--text-tertiary); white-space:nowrap;}
+  .ctx-legend-dot{width:10px; height:10px; border-radius:50%; background:var(--accent); flex:0 0 auto;}
 
-  /* One revealed context row's slice of its run's connecting line: a plain
-     border-left spanning the row's full height, so stacking the rows of a run
-     draws one continuous line from its first row to its last, capped by a
-     caret at either end (.ctx-run-cap, pointing "into" the fold). The whole
-     slice is a button — clicking ANYWHERE on the line collapses the entire
-     run (person-requested), not just the row it was clicked on;
-     stopPropagation in its own click handler (see JS) keeps that from also
-     selecting the row underneath. Revealed rows carry no indent any more:
-     the line lives in the gutter lane above, left of the row content, so
-     opening a run never shifts a single character of log text sideways.
-     top/bottom are inset on a capped end so the line stops where its caret
-     starts instead of running through the glyph. */
+  /* One revealed context row's slice of its run's connecting line. Stacked,
+     the slices of a run draw ONE continuous rounded band with grips: 14px
+     wide, centred on the lane axis (--ctx-lane-x + 1px, the same axis the
+     10px I3 match dot is centred on), a faint --text-tertiary fill and a 1px
+     contour on the left/right of every slice. The run's first slice adds the
+     top contour and a 7px rounded top, inset 3px from the row top; the last
+     slice the bottom contour and rounded bottom, inset 3px from the row
+     bottom. Every slice that is not the run's last row reaches over the
+     row's 1px border-bottom (bottom:-1px), so the band has no gap at row
+     borders. The contour is real borders, not an inset box-shadow (which
+     would draw a horizontal line at every slice joint). The first/last
+     slice carries a 10px caret grip pointing "into" the fold; a single-row
+     run (first AND last) one centred "two chevrons toward each other" grip.
+     The whole slice is a button: clicking ANYWHERE on the band collapses the
+     entire run (person-requested); stopPropagation in its own click handler
+     (see JS) keeps that from also selecting the row underneath. Revealed
+     rows carry no indent: the band lives in the gutter lane left of the row
+     content, so opening a run never shifts log text sideways. */
   .ctx-run-line{
-    position:absolute; left:var(--ctx-lane-x, -9px); top:0; bottom:0; width:14px; padding:0; z-index:1;
-    background:none; border:none; border-left:2px solid var(--text-tertiary); border-radius:0;
-    color:var(--text-tertiary); cursor:pointer;
+    --ctx-band-fill:color-mix(in srgb, var(--text-tertiary) 16%, transparent);
+    --ctx-band-edge:color-mix(in srgb, var(--text-tertiary) 30%, transparent);
+    --ctx-band-grip:var(--text-tertiary);
+    position:absolute; left:calc(var(--ctx-lane-x, -9px) - 6px); top:0; bottom:-1px; width:14px; padding:2px 0; z-index:1;
+    box-sizing:border-box; cursor:pointer;
+    background:var(--ctx-band-fill); border:none; border-left:1px solid var(--ctx-band-edge); border-right:1px solid var(--ctx-band-edge);
+    border-radius:0; color:var(--ctx-band-grip);
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
   }
+  .ctx-run-line.ctx-run-top{ top:3px; border-top:1px solid var(--ctx-band-edge); border-radius:7px 7px 0 0; }
+  .ctx-run-line.ctx-run-bottom{ bottom:3px; justify-content:flex-end; border-bottom:1px solid var(--ctx-band-edge); border-radius:0 0 7px 7px; }
+  .ctx-run-line.ctx-run-top.ctx-run-bottom{ justify-content:center; }
   /* .ctx-run-hover (JS-toggled across every slice sharing a data-run-id, see
-     makeContextRunHandle) makes the WHOLE run highlight together on hover,
-     not just the one row segment the pointer happens to be over — plain
-     :hover can't do that on its own since each slice is a separate button. */
-  .ctx-run-line:hover, .ctx-run-line.ctx-run-hover{ border-left-color:var(--accent); color:var(--accent); }
-  /* The caret box is exactly the glyph's own 12x12, offset so the chevron's
-     apex sits on the line's axis. An absolutely positioned child is placed
-     against its parent's PADDING box, which here starts INSIDE the 2px
-     border-left — so the offset that centres a 12px box on that border's own
-     axis is -7px, not -5px (which is what left the arrows sitting 2px to the
-     right of the line, person-reported). The inset on a capped
-     end is 8px rather than the box's full height because the chevron's ink
-     only reaches ~8.25px down its own box — at 13px the line visibly stopped
-     short of the arrow (person-reported), at 8px the two just touch. */
-  .ctx-run-line.ctx-run-top{ top:8px; }
-  .ctx-run-line.ctx-run-bottom{ bottom:8px; }
-  .ctx-run-cap{
-    position:absolute; left:-7px; width:12px; height:12px;
-    display:flex; align-items:center; justify-content:center;
+     makeContextRunHandle; also set by keyboard focus) makes the WHOLE run
+     highlight together, not just the one row slice the pointer is over —
+     plain :hover can't do that since each slice is a separate button. */
+  .ctx-run-line:hover, .ctx-run-line.ctx-run-hover, .ctx-run-line:focus-visible{
+    --ctx-band-fill:var(--accent-soft); --ctx-band-edge:var(--accent); --ctx-band-grip:var(--accent-strong);
   }
-  .ctx-run-cap svg{ display:block; }
-  .ctx-run-line.ctx-run-top .ctx-run-cap{ top:-8px; }
-  .ctx-run-line.ctx-run-bottom .ctx-run-cap{ bottom:-8px; }
+  .ctx-run-line:focus-visible{ outline:none; }
+  .ctx-run-line .icon{ width:10px; height:10px; display:block; }
 
   /* The two filler rows a partially/fully hidden run puts between the log
      rows (see appendContextFillers): the "... N lines" stand-in for everything
@@ -2434,12 +2514,25 @@
   .col-delta.delta-warn{color:var(--level-warn);}
   .col-delta.delta-error{color:var(--level-error); font-weight:650;}
   .col-level{align-self:center;}
+  /* A row taller than one line (multiline messages, word wrap — the message
+     cell grows, see baseRowHeightForEntry): the other cells align to the FIRST
+     message line instead of floating in the middle of the block. They sit at
+     the top in a one-line-high box (ROW_HEIGHT minus the 1px bottom border), so
+     their text lands exactly where a one-line row centers it. */
+  .log-row.row-tall > .col-time, .log-row.row-tall > .col-delta, .log-row.row-tall > .col-thread,
+  .log-row.row-tall > .col-location, .log-row.row-tall > .col-method, .log-row.row-tall > .col-custom{align-self:start; line-height:27px;}
+  .log-row.row-tall > .col-level{align-self:start; height:27px; display:flex; align-items:center;}
   .level-badge{
     font-family:var(--font-log); font-size:calc(10px * var(--log-text-scale)); font-weight:700; letter-spacing:.3px;
     padding:2px 6px; border-radius:4px; white-space:nowrap;
   }
   .col-thread{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-location{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* Start truncation (middleCellHtml): a long path keeps its end visible,
+     "…rc\Shop\Data\Repository.cs line 263". direction:rtl puts the clipped
+     part and the ellipsis on the LEFT; .loc-text restores the character order
+     (an isolate, so marks inside it stay ordinary inline children). */
+  .col-location{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left;}
+  .col-location .loc-text{direction:ltr; unicode-bidi:isolate;}
   .col-method{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* Custom columns (Custom Columns feature): every user-defined column
      shares one style, same as col-location/col-method above — the actual
@@ -2508,7 +2601,7 @@
      line then soft-wraps. Applied via a body-level class so it reaches both
      #tableRows and #highlightRows, exactly like .multiline-messages. */
   .wrap-messages:not(.multiline-messages) .col-msg{white-space:normal; word-break:break-all; text-overflow:clip; line-height:15px;}
-  .wrap-messages.multiline-messages .col-msg{white-space:pre-wrap; word-break:break-all; text-overflow:clip; line-height:15px;}
+  .wrap-messages.multiline-messages .col-msg{white-space:pre-wrap; word-break:break-all; tab-size:4; text-overflow:clip; line-height:15px;}
   /* A plain-text file's line (see msgColClass): leading spaces/tabs are its
      indentation, so whitespace is preserved rather than collapsed. */
   .col-msg.plaintext{white-space:pre; tab-size:4; text-overflow:clip;}
@@ -2714,7 +2807,8 @@
      (green strings, orange numbers) are unreadable on the mark fill. */
   .itv-line mark.find-match-mark, .itv-line mark.find-match-mark *,
   .itv-line mark.text-match-mark, .itv-line mark.text-match-mark *{color:var(--text-primary);}
-  .itv-line.find-cur mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
+  .itv-line.find-cur mark.find-match-mark{background:var(--accent); border-radius:2px; box-shadow:none;}
+  .itv-line.find-cur mark.find-match-mark, .itv-line.find-cur mark.find-match-mark *{color:var(--accent-on);}
   .itv-line.flash{background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent);}
   .itv-fold-toggle{
     position:absolute; left:var(--text-num-w); top:0; width:var(--text-fold-w); text-align:center;
@@ -3229,25 +3323,29 @@
     padding:2px 8px 2px 28px; cursor:pointer; font-size:11.5px; color:var(--text-secondary);
   }
   .facet-value:hover{background:var(--bg-elevated); color:var(--text-primary);}
-  .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:7px;}
   .facet-value-name.facet-empty{font-style:italic; color:var(--text-tertiary);}
-  /* Value name in the colour of the most severe level among its entries. */
-  .facet-value-name.lvl-error{color:var(--level-error);}
-  .facet-value-name.lvl-warn{color:var(--level-warn);}
-  .facet-value-name.lvl-info{color:var(--level-info);}
-  .facet-value-name.lvl-debug{color:var(--level-debug);}
-  .facet-value-name.lvl-fatal{color:var(--level-fatal);}
-  .facet-value-name.lvl-trace{color:var(--level-trace);}
-  .facet-value-name.lvl-custom-1{color:var(--level-custom-1);}
-  .facet-value-name.lvl-custom-2{color:var(--level-custom-2);}
-  .facet-value-name.lvl-custom-3{color:var(--level-custom-3);}
-  .facet-value-name.lvl-custom-4{color:var(--level-custom-4);}
-  .facet-value-name.lvl-custom-5{color:var(--level-custom-5);}
-  .facet-value-name.lvl-custom-6{color:var(--level-custom-6);}
-  /* The share bar is drawn behind the value row (empty track transparent), not in a column of its own. */
-  .facet-bar{position:absolute; left:28px; right:8px; top:1px; bottom:1px; border-radius:3px; overflow:hidden; pointer-events:none;}
+  /* The most severe level among a value's entries is a 3px stripe at the left of the name (text stays in the normal colour). */
+  .facet-value-name.lvl-error{--lvl:var(--level-error);}
+  .facet-value-name.lvl-warn{--lvl:var(--level-warn);}
+  .facet-value-name.lvl-info{--lvl:var(--level-info);}
+  .facet-value-name.lvl-debug{--lvl:var(--level-debug);}
+  .facet-value-name.lvl-fatal{--lvl:var(--level-fatal);}
+  .facet-value-name.lvl-trace{--lvl:var(--level-trace);}
+  .facet-value-name.lvl-custom-1{--lvl:var(--level-custom-1);}
+  .facet-value-name.lvl-custom-2{--lvl:var(--level-custom-2);}
+  .facet-value-name.lvl-custom-3{--lvl:var(--level-custom-3);}
+  .facet-value-name.lvl-custom-4{--lvl:var(--level-custom-4);}
+  .facet-value-name.lvl-custom-5{--lvl:var(--level-custom-5);}
+  .facet-value-name.lvl-custom-6{--lvl:var(--level-custom-6);}
+  .facet-value-name[class*="lvl-"]{box-shadow:inset 3px 0 0 var(--lvl);}
+  /* The share bar is drawn behind the name cell only: it ends before the number columns (--facet-bar-r = their width). */
+  .facet-value{--facet-bar-r:92px;}
+  .facet-bar{position:absolute; left:28px; right:var(--facet-bar-r); top:1px; bottom:1px; border-radius:3px; overflow:hidden; pointer-events:none;}
   .facet-bar > i{display:block; height:100%; background:var(--accent-soft);}
   .facet-value > :not(.facet-bar){position:relative;}
+  /* Rank in the left gutter: equal counts share a rank (1, 1, 3). */
+  .facet-value > .facet-rank{position:absolute; left:6px; width:18px; text-align:right; font-size:10px; font-variant-numeric:tabular-nums; color:var(--text-tertiary);}
   .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
   .facet-pct{color:var(--text-tertiary);}
   /* Link node: values with pairs / no end / a Δt stroke; the sections need more room than the plain ones. */
@@ -3257,7 +3355,7 @@
     font-size:11.5px; color:var(--text-secondary);
   }
   .facet-link-sum{flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
-  .facet-value-link{grid-template-columns:minmax(0,1fr) 42px 40px 120px;}
+  .facet-value-link{grid-template-columns:minmax(0,1fr) 42px 40px 120px; --facet-bar-r:228px;}
   .facet-value-link.facet-value-static{cursor:default;}
   .facet-value-link.facet-value-static:hover{background:transparent; color:var(--text-secondary);}
   .facet-value-link.facet-link-colhead{cursor:default; font-size:10px; font-weight:650; color:var(--text-tertiary); white-space:nowrap;}
@@ -3270,7 +3368,7 @@
   .facet-dt-rng{position:absolute; top:6px; height:2px; min-width:2px; background:var(--text-tertiary); border-radius:1px;}
   .facet-dt-med{position:absolute; top:2px; width:2px; height:10px; margin-left:-1px; background:var(--accent); border-radius:1px;}
   body.layout-phone #facetPanelBody.facet-link{grid-template-columns:minmax(0,1fr);}
-  body.layout-phone .facet-value-link{grid-template-columns:minmax(0,1fr) 38px 38px 100px;}
+  body.layout-phone .facet-value-link{grid-template-columns:minmax(0,1fr) 38px 38px 100px; --facet-bar-r:202px;}
   .facet-more{padding:2px 12px 4px 28px; font-size:11px; color:var(--accent-strong); cursor:pointer;}
   .facet-more:hover{text-decoration:underline;}
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
@@ -3542,6 +3640,9 @@
   /* Link dialog v2: Start / End side rows, the sentence between them, the
      "Same" key chips, the "▾" filter picker menu. */
   #linkDialog .link-dialog-card, #andOrDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
+  /* The link dialog grows as steps are added: it hangs from a fixed top edge instead of staying centred (which moved the top up). */
+  #linkDialog{align-items:flex-start; padding-top:max(16px, 10vh); box-sizing:border-box;}
+  #linkDialog .link-dialog-card{max-height:calc(100vh - max(16px, 10vh) - 16px);}
   .link-side{display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;}
   .link-side-lab{flex:0 0 40px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
   .link-side input.link-side-input{flex:1 1 auto; min-width:0; width:auto;}
@@ -3560,7 +3661,13 @@
   .link-sentence{font-size:12px; color:var(--text-secondary); margin:2px 0 6px 46px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
   .link-sentence.link-hop-row{background:none; border:0; padding:0; line-height:1.4;}
   .link-sentence input[type="number"]{width:48px !important; margin:0;}
-  .link-sentence .link-hop-ord{margin-left:-4px;}
+  /* The ordinal suffix sits inside the number field's frame, so it reads "1st", not "1 st". */
+  .link-sentence .link-hop-field{display:inline-flex; align-items:baseline; background:var(--bg-app); border:1px solid var(--border); border-radius:6px; padding:0 8px 0 0; font-family:var(--font-mono); font-size:12px; color:var(--text-primary);}
+  .link-sentence .link-hop-field:focus-within{border-color:var(--accent);}
+  .link-sentence .link-hop-field input[type="number"]{width:34px !important; border:0; background:transparent; padding:6px 0 6px 6px; text-align:right; outline:none; -moz-appearance:textfield; appearance:textfield;}
+  .link-sentence .link-hop-field input[type="number"]::-webkit-inner-spin-button, .link-sentence .link-hop-field input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none; margin:0;}
+  .link-sentence .link-hop-ord{margin:0;}
+  body.layout-phone .link-sentence .link-hop-field input[type="number"]{width:40px !important;}
   .link-dialog-card .link-side input.link-side-input[type="text"]:not(.stepper-value){width:auto; flex:1 1 0;}
   #andOrDialog .link-sentence{margin-left:0; margin-bottom:10px;}
   #andOrDialog .link-addstep{margin-bottom:10px;}
@@ -3625,6 +3732,7 @@
      image set earlier) and a colour here would lose to them; an image layer
      composes over ANY tint. Keep this block AFTER every .log-row background
      shorthand (level tints and their :hover, pair-start/end). */
+  .log-row.selected, .log-row.selected:hover{background-image:linear-gradient(var(--selected-row-tint), var(--selected-row-tint));}
   .log-row.row-multi-selected, .log-row.row-multi-selected:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill));}
   .log-row.row-multi-selected.row-zero, .log-row.row-multi-selected.row-zero:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill)), linear-gradient(var(--accent-soft), var(--accent-soft));}
 
@@ -5710,6 +5818,7 @@
   /* Link dialog v2 on the phone: a full-screen sheet (the sticky action row above stays
      pinned to its bottom), 40px controls, rows stacked under their labels. */
   body.layout-phone #linkDialog, body.layout-phone #andOrDialog{align-items:stretch; justify-content:stretch;}
+  body.layout-phone #linkDialog{padding-top:0;}
   body.layout-phone #linkDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
   body.layout-phone #andOrDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
   body.layout-phone .link-side{flex-wrap:wrap;}
@@ -6141,6 +6250,7 @@
     <symbol id="i-caret-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></symbol>
     <symbol id="i-expand-around" viewBox="0 0 16 16"><path d="M2.25 8h11.5M5 4.5l3-3 3 3M5 11.5l3 3 3-3"/></symbol>
     <symbol id="i-expand-all" viewBox="0 0 16 16"><path d="M2.25 1.75h11.5M2.25 14.25h11.5M5 6.5l3-3 3 3M5 9.5l3 3 3-3"/></symbol>
+    <symbol id="i-collapse-in" viewBox="0 0 16 16"><path d="M4 3l4 3 4-3M4 13l4-3 4 3"/></symbol><!-- new: single-row context run grip -->
     <symbol id="i-collapse-all" viewBox="0 0 16 16"><path d="M2.25 1.75h11.5M2.25 14.25h11.5M5 3.5l3 3 3-3M5 12.5l3-3 3 3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
 </svg>
@@ -6578,6 +6688,7 @@
               <button type="button" id="ctxExpandAround" class="toolbar-icon-btn" title="Expand around matches"></button>
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Expand all"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all"></button>
+              <span class="ctx-legend" id="ctxLegend" title="Rows matching the active filter; the other rows are context"><span class="ctx-legend-dot"></span>match</span>
               </div>
             </div>
             <span class="ctx-toolbar-sep" data-log-only></span>
@@ -7647,12 +7758,12 @@
 
   <div id="sessionExportDialog" class="hidden">
     <div class="link-dialog-card">
-      <div class="link-dialog-title">Export session</div>
+      <div class="link-dialog-title">Save session</div>
       <div id="sessionExportRows"></div>
       <div class="session-dialog-note">Embedding the log text makes the export self-contained (the importer can re-create the file with one click), but it includes the raw log content and can make the export large.</div>
       <div class="link-dialog-actions">
         <button type="button" id="sessionExportCancel" class="btn-mini-secondary">Cancel</button>
-        <button type="button" id="sessionExportConfirm" class="btn-mini">Export</button>
+        <button type="button" id="sessionExportConfirm" class="btn-mini">Save</button>
       </div>
     </div>
   </div>
@@ -10957,7 +11068,18 @@ document.getElementById("settingsTreeIndicatorMode").addEventListener("change", 
    a selection (state.levelFilter): the chips are a pure view filter, and this
    button turns the selection into a real level node. */
 function updateApplyLevelToTreeButtonVisibility() {
-  btnApplyLevelToTree.style.display = state.levelFilter.size ? "" : "none";
+  const on = state.levelFilter.size > 0;
+  btnApplyLevelToTree.disabled = !on;
+}
+/* Entries left by the active level chips for the active node: { shown, total },
+   or null without a node. Sums the node's cached per-level counts (getLevelCounts),
+   so it costs nothing per render. */
+function levelFilterCounts() {
+  if (!state.activeId || !state.nodes[state.activeId]) return null;
+  const counts = getLevelCounts(state.activeId) || {};
+  let shown = 0, total = 0;
+  for (const lvl in counts) { total += counts[lvl]; if (state.levelFilter.has(lvl)) shown += counts[lvl]; }
+  return { shown, total };
 }
 
 /* ===================== "On open, scroll log to" setting (Settings ->
@@ -11324,7 +11446,7 @@ const state = {
   // columnWidthFor below, which fall back to sane defaults when absent —
   // so this object never needs an entry pre-created for every possible key.
   columnVisible: { delta: true, thread: true, location: true, method: true, message: true },
-  columnWidths: { time: 178, delta: 72, level: 66, thread: 92, location: 158, method: 168 },
+  columnWidths: { time: 178, delta: 56, level: 66, thread: 92, location: 190, method: 110 },
 
   // Watched folders (FEATURE_BACKLOG.md "Folder watch + lazy loading"), see
   // "Folder watch (lazy loading)" section near the Tailing code. Each entry:
@@ -11761,6 +11883,19 @@ function entryColumnValue(e, key) {
 // .col-custom CSS rule.
 const BUILTIN_FIELD_KEYS = new Set(["time", "delta", "level", "thread", "location", "method", "message"]);
 function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? key : "custom"); }
+
+// A log row's middle cell (Thread/Location/Method/custom). Location is
+// truncated at the START, so the end of a long path stays visible
+// ("…/MyProject/ThisLocation.cs line 263"): the cell is a right-to-left box
+// (CSS: .col-location, the text-overflow ellipsis then sits on its left edge)
+// whose content is wrapped in one left-to-right isolate (.loc-text) so the
+// characters keep their order. The wrapper takes `html` as is, so marked cells
+// (filter/find/highlight marks) truncate the same way and keep their marks.
+// Text content is the same either way (copy, selection, the title).
+function middleCellHtml(key, val, html) {
+  const inner = key === "location" ? '<span class="loc-text">' + html + '</span>' : html;
+  return '<span class="' + columnCssClass(key) + '" data-col="' + key + '" data-sel-col="' + key + '" title="' + escapeHtml(val) + '">' + inner + '</span>';
+}
 
 // Severity ordering used when the log table is sorted by the Level column,
 // and as the minimap's "most severe bucket" index. Custom level names sit
@@ -15149,12 +15284,12 @@ function timeRangeBoundLabel(nodeId, ts, withMs) {
   const sameDay = first && !isNaN(first) && first.getFullYear() === d.getFullYear() && first.getMonth() === d.getMonth() && first.getDate() === d.getDate();
   return sameDay ? text : `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${text}`;
 }
-function timeRangeFilterName(value, nodeId) {
+function timeRangeFilterName(value, nodeId, compact) {
   const from = value && value.from, to = value && value.to;
   const plain = nodeIsPlainText(nodeId);
-  const ms = from != null && to != null && Math.abs(to - from) < 10000 && !plain;
+  const ms = !compact && from != null && to != null && Math.abs(to - from) < 10000 && !plain;
   const f = ts => timeRangeBoundLabel(nodeId, ts, ms);
-  if (from != null && to != null) return `${f(from)} – ${f(to)}` + (plain ? "" : ` · ${formatMs(Math.abs(to - from))}`);
+  if (from != null && to != null) return `${f(from)}${compact ? "–" : " – "}${f(to)}` + (plain ? "" : ` · ${formatMs(Math.abs(to - from))}`);
   if (from != null) return `from ${f(from)}`;
   if (to != null) return `until ${f(to)}`;
   return "any time";
@@ -17383,7 +17518,8 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
       const t = tokRanges[ti];
       if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '"' + (t.title ? ' title="' + escapeHtml(t.title) + '"' : "") + '>' + slice + "</span>";
     }
-    const marked = ranges.some(r => r[0] <= s && r[1] >= e);
+    const mr = ranges.find(r => r[0] <= s && r[1] >= e);
+    const marked = !!mr;
     // Find-bar hit (FEATURE_BACKLOG.md #3): its own background class, which
     // takes precedence over the filter mark's for the same characters — the
     // search is what the person is looking at right now. Rule stripes still
@@ -17398,7 +17534,9 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
       ? ' style="background-image:' + hlStripeGradient(colors) +
         ';background-repeat:no-repeat;background-position:left bottom;background-size:100% ' + HL_MATCH_STRIPE_H + 'px"'
       : "";
-    out += '<mark class="' + (found ? "find-match-mark" : marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg"' + style + '>' + slice + '</mark>';
+    // Outline edges of a filter-mark piece (CSS: mark.text-match-mark.mm-*).
+    const mm = found || !marked ? "" : (mr[0] === s ? " mm-start" : "") + (mr[1] === e ? " mm-end" : "") + (colors.length ? " mm-stripe" : "");
+    out += '<mark class="' + (found ? "find-match-mark" : marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg' + mm + '"' + style + '>' + slice + '</mark>';
   }
   return out;
 }
@@ -18575,7 +18713,7 @@ function remapColumnSettings(node, map, tally) {
     if (base >= oldCount) return null;
     const t = map[base];
     const to = t < 0 ? null : derived ? arrayDerivedColIndex(t, -idx % ARRAY_COL_BASE) : t;
-    if (to == null) tally.removed++; else if (to !== idx) tally.moved++;
+    if (to == null) { tally.removed++; tally.removedBases.add(base); } else if (to !== idx) { tally.moved++; tally.movedBases.add(base); }
     return to;
   };
   const list = arr => arr.map(one).filter(v => v != null);
@@ -18611,7 +18749,8 @@ function migrateExtractionColumns(node, map, ignoredAreNew, mutate) {
   });
   walk(node);
   const befores = targets.map(t => captureNodeFields(t, true));
-  const tally = { moved: 0, removed: 0 };
+  const tally = { moved: 0, removed: 0, movedBases: new Set(), removedBases: new Set() };
+  const oldSpec = compileExtractPattern(node.value);
   mutate();
   targets.forEach(t => {
     const keep = t === node && ignoredAreNew ? t.ignoredColumns : undefined;
@@ -18624,7 +18763,37 @@ function migrateExtractionColumns(node, map, ignoredAreNew, mutate) {
   }
   const entries = targets.map((t, i) => ({ kind: "edit", nodeId: t.id, before: befores[i], after: captureNodeFields(t, true) }));
   pushUndo(entries.length === 1 ? entries[0] : { kind: "batch", actions: entries, label: "edit" });
-  return changed ? tally : null;
+  if (!changed) return null;
+  // Column names for the toast: a moved column by its new name, a dropped one by its old name.
+  const newSpec = compileExtractPattern(node.value);
+  const nameOf = (spec, i) => spec && spec.columns[i] ? getColumnDisplayName(node, i, spec.columns[i].name) : "column " + (i + 1);
+  tally.movedNames = [...tally.movedBases].sort((a, b) => a - b).map(b => nameOf(newSpec, map[b]));
+  tally.removedNames = [...tally.removedBases].sort((a, b) => a - b).map(b => (oldSpec && oldSpec.columns[b] ? oldSpec.columns[b].name : "column " + (b + 1)));
+  return tally;
+}
+// "Pattern changed — settings kept for temperature, pressure · dropped for voltage" (names capped at 3 each).
+function patternChangedToastText(tally) {
+  const list = names => names.length > 3 ? names.slice(0, 3).join(", ") + " +" + (names.length - 3) + " more" : names.join(", ");
+  const parts = [];
+  if (tally.movedNames.length) parts.push("settings kept for " + list(tally.movedNames));
+  if (tally.removedNames.length) parts.push("dropped for " + list(tally.removedNames));
+  return "Pattern changed \u2014 " + parts.join(" \u00b7 ");
+}
+// Plot column chip "Keep only <value>": the placeholder of column `colIndex` becomes the literal `value`
+// (the pattern then matches only entries with that value), as one undoable edit that re-keys the other
+// columns' settings like any pattern edit. A pattern without another placeholder would stop being an
+// extraction, so that is refused.
+function keepOnlyColumnValue(node, colIndex, value) {
+  if (!node || !value || node.isRegex) return;
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  let m, i = 0, next = null;
+  while ((m = EXTRACT_TOKEN_RE.exec(node.value)) !== null) {
+    if (i++ === colIndex) { next = node.value.slice(0, m.index) + value + node.value.slice(m.index + m[0].length); break; }
+  }
+  if (next == null || !compileExtractPattern(next)) return;
+  const shifted = updateFilterNodeWithUndo(node.id, "text", next, node.inverted, undefined, node.caseSensitive, node.columns, false, false, false);
+  if (shifted) showCopyToast(patternChangedToastText(shifted));
+  render();
 }
 function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
   withFieldEditUndo(nodeId, () => updateTimeRangeFilterNode(nodeId, from, to));
@@ -18644,6 +18813,12 @@ function toggleInvertWithUndo(nodeId) {
 // Files and the locked Bookmarks/Sources-style nodes are not mutable.
 function isMutableNode(node) {
   return !!node && node.type === "filter" && !node.locked;
+}
+// Nodes the NOT toggle applies to: every unlocked filter but link/context/countContext
+// (their results have no parent-relative complement; same guard as the context menu).
+function isInvertibleNode(node) {
+  return !!node && node.type === "filter" && !node.locked &&
+    node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext";
 }
 function toggleMuteWithUndo(ids, forceMuted) {
   const nodes = (Array.isArray(ids) ? ids : [ids]).map(id => state.nodes[id]).filter(isMutableNode);
@@ -18738,12 +18913,11 @@ function undo() {
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
 }
 
-// Phone has no visible Undo button and no keyboard, so a tree-menu removal would be
-// permanent: offer a toast with an Undo button. prevTop = undoStack's top before the
-// removal; nothing to offer when no new action was pushed (folder-watch file close).
+// A removal shows a toast with an Undo button on every layout (phone has no visible Undo button
+// and no keyboard; elsewhere the toast is the quick way back). prevTop = undoStack's top before
+// the removal; nothing to offer when no new action was pushed (folder-watch file close).
 // The button only undoes while that very action is still on top.
-function offerPhoneUndoToast(prevTop, text) {
-  if (currentLayoutTier !== "phone") return;
+function offerUndoToast(prevTop, text) {
   const action = undoStack[undoStack.length - 1];
   if (!action || action === prevTop) return;
   showCopyToast(text || (action.kind === "deleteFile" ? "File removed" : "Filter removed"), {
@@ -20162,14 +20336,18 @@ function renderFacetPanel() {
     const collapsed = facetsCollapsed.has(col.key);
     html += '<div class="facet-section" data-col="' + escapeHtml(col.key) + '">' +
       '<div class="facet-section-head" data-toggle="1"><span class="facet-caret">' + (collapsed ? "▸" : "▾") + "</span>" +
-      escapeHtml(col.label) + ' <span class="facet-section-note">' + col.values.length.toLocaleString("de-DE") + " value" + (col.values.length === 1 ? "" : "s") + "</span></div>";
+      escapeHtml(col.label) + ' <span class="facet-section-note">' + col.values.length.toLocaleString("de-DE") + " value" + (col.values.length === 1 ? "" : "s") +
+      (col.values.length > 1 && col.values[0][1] === col.values[1][1] ? " \u00b7 top tied" : "") + "</span></div>";
     if (!collapsed) {
       const shown = Math.min(col.values.length, FACET_TOP_N + (facetsShown.get(col.key) || 0));
       const max = col.values.length ? col.values[0][1] : 1;
+      let rank = 1;
       for (let i = 0; i < shown; i++) {
         const [value, count, lvlCls] = col.values[i];
+        if (i && count !== col.values[i - 1][1]) rank = i + 1;
         const pct = count / total * 100;
         html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
+          '<span class="facet-rank">' + rank + "</span>" +
           '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
           '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
@@ -20554,7 +20732,7 @@ function phonePatternAction(group, action) {
   if (action === "hide") {
     const prevTop = undoStack[undoStack.length - 1];
     applyPatternAction(group, "hide");
-    offerPhoneUndoToast(prevTop, "Pattern hidden");
+    offerUndoToast(prevTop, "Pattern hidden");
   } else {
     closePhoneSheet();
     applyPatternAction(group, action);
@@ -21963,7 +22141,12 @@ function renderStatus() {
   updatePhoneTitle();
   if (fileCount === 0) { statusText.textContent = ""; return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
-  const filesText = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
+  // With level chips active the entry count becomes "<shown> of <total> entries shown"
+  // (the active node's figures, from levelFilterCounts).
+  const lc = state.levelFilter.size ? levelFilterCounts() : null;
+  const entriesText = lc && lc.total ? `${lc.shown.toLocaleString("de-DE")} of ${lc.total.toLocaleString("de-DE")} entries shown`
+    : `${total.toLocaleString("de-DE")} entries`;
+  const filesText = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${entriesText}`;
   // Compact tier (tablet): the sidebar is a drawer, so the header names the
   // active filter and its result size ("<filter> · <count> / <total> entries");
   // tapping it opens the drawer. A root file (or nothing) active keeps the
@@ -22857,6 +23040,16 @@ function startRenameNode(nodeId) {
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
 // default, etc.) still reads it directly.
+// Middle-ellipsis labels (see .tree-label-mid): only labels longer than the
+// minimum are split, the tail is the part that always stays visible.
+const TREE_LABEL_MID_MIN = 24, TREE_LABEL_TAIL = 10;
+// Node id whose context menu is open (outlined via .ctx-target); null otherwise.
+let treeCtxTargetId = null;
+function setTreeCtxTarget(id) {
+  treeCtxTargetId = id;
+  document.querySelectorAll("#tree .tree-row.ctx-target").forEach(r => r.classList.remove("ctx-target"));
+  if (id) { const r = document.querySelector('#tree .tree-row[data-node-id="' + id + '"]'); if (r) r.classList.add("ctx-target"); }
+}
 function nodeDisplayName(node) {
   if (node.type === "filter" && node.label) return node.label;
   return node.name;
@@ -22977,7 +23170,7 @@ function renderNode(id, depth, opts) {
   const kbLoadId = kbLoadNavIdOf(node); // being loaded from the keyboard: the cursor's row while it loads
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + (kbLoadId && treeCursorId() === kbLoadId ? " tree-cursor" : "") + clipClass + multiClass + invertClass + muteClass +
     (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "") +
-    (treeSelectMode ? " select-mode" : "");
+    (treeSelectMode ? " select-mode" : "") + (id === treeCtxTargetId ? " ctx-target" : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
   // to the RIGHT of its file's icon column instead of visually overlapping
@@ -23113,45 +23306,47 @@ function renderNode(id, depth, opts) {
     // opts.labelText: a ZIP entry nested under its subfolder rows shows
     // just its basename (renderZipSection); the title keeps the full path.
     const displayName = (opts && opts.labelText) || nodeDisplayName(node);
-    const shownName = node.inverted ? "¬ " + displayName : displayName;
-    if (!(opts && opts.labelText) && !node.label && node.type === "filter" &&
-        (node.filterType === "timerange" || node.filterType === "after" || node.filterType === "before")) {
-      // Time-filter labels wrap onto at most 2 lines, breaking only after the
-      // " – " / " · " separators: each segment is a nowrap span, the single
-      // spaces between them are the only break opportunities. textContent
-      // stays identical to the plain name.
-      // A timerange label with a duration ("… · 4.2s") keeps the duration in
-      // its own non-shrinking .tl-dur: when space runs out the bounds
-      // (.tl-range) get clamped/ellipsized, never the duration.
-      label.classList.add("tree-label-wrap");
-      const durAt = node.filterType === "timerange" ? shownName.lastIndexOf(" · ") : -1;
-      let rangeHost = label;
+    const isTimeNode = !(opts && opts.labelText) && !node.label && node.type === "filter" &&
+      (node.filterType === "timerange" || node.filterType === "after" || node.filterType === "before");
+    if (isTimeNode) {
+      // One line, no milliseconds (the tooltip has them): a timerange label
+      // "08:38:05–08:38:06 · 1.9s" keeps the duration in its own non-shrinking
+      // .tl-dur, the bounds (.tl-range) get the ellipsis when space runs out.
+      const name = node.filterType === "timerange" ? timeRangeFilterName(node.value, node.parentId, true) : displayName;
+      const durAt = node.filterType === "timerange" ? name.lastIndexOf(" · ") : -1;
       if (durAt > 0) {
-        label.classList.add("tree-label-dur");
-        rangeHost = document.createElement("span");
-        rangeHost.className = "tl-range";
-        label.appendChild(rangeHost);
-      }
-      const rangeText = durAt > 0 ? shownName.slice(0, durAt + 2) : shownName;
-      rangeText.split(/(?<=[–·]) /).forEach((seg, i) => {
-        if (i) rangeHost.appendChild(document.createTextNode(" "));
-        const sp = document.createElement("span");
-        sp.className = "tl-seg";
-        sp.textContent = seg;
-        rangeHost.appendChild(sp);
-      });
-      if (durAt > 0) {
+        label.classList.add("tree-label-time");
+        const range = document.createElement("span");
+        range.className = "tl-range";
+        range.textContent = name.slice(0, durAt + 2);
+        label.appendChild(range);
         label.appendChild(document.createTextNode(" "));
         const dur = document.createElement("span");
         dur.className = "tl-dur";
-        dur.textContent = shownName.slice(durAt + 3);
+        dur.textContent = name.slice(durAt + 3);
         label.appendChild(dur);
-      }
-    } else label.textContent = shownName;
+      } else label.textContent = name;
+    } else if (displayName.length > TREE_LABEL_MID_MIN) {
+      // Middle ellipsis: head shrinks, the last TREE_LABEL_TAIL characters stay.
+      label.classList.add("tree-label-mid");
+      const head = document.createElement("span");
+      head.className = "tl-head";
+      head.textContent = displayName.slice(0, -TREE_LABEL_TAIL);
+      const tail = document.createElement("span");
+      tail.className = "tl-tail";
+      tail.textContent = displayName.slice(-TREE_LABEL_TAIL);
+      label.append(head, tail);
+    } else label.textContent = displayName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
     (node.label ? "  [" + node.name + "]" : "") +
     (node.type === "filter" && node.filterType === "timerange" ? "\n" + timeRangeFullTitle(node.value, node.parentId) : "");
+  if (node.inverted) {
+    const badge = document.createElement("span");
+    badge.className = "tree-not-badge";
+    badge.textContent = "NOT";
+    row.appendChild(badge);
+  }
   row.appendChild(label);
   // Created by the LLM assistant in this run (llmCreatedNodeIds — an
   // in-memory set, not a node field).
@@ -23207,13 +23402,24 @@ function renderNode(id, depth, opts) {
   // when the same node is ALSO an ordinary top-level row elsewhere (the
   // bulk-merge case), where it keeps its own ✕ since opts.mergeSourceColor
   // isn't set for that call.
+  // The hover buttons live in ONE group (.tree-actions, see its CSS): NOT, mute/unmute, delete.
+  const actions = document.createElement("span");
+  actions.className = "tree-actions";
+  if (isInvertibleNode(node) && !(opts && opts.mergeSourceColor)) {
+    const inv = document.createElement("button");
+    inv.className = "tree-invert";
+    inv.innerHTML = ICON_INVERT;
+    inv.title = node.inverted ? "Remove NOT" : "Invert (NOT)";
+    inv.addEventListener("click", ev => { ev.stopPropagation(); toggleInvertWithUndo(id); render(); });
+    actions.appendChild(inv);
+  }
   if (isMutableNode(node) && !(opts && opts.mergeSourceColor)) {
     const mute = document.createElement("button");
     mute.className = "tree-mute";
     mute.innerHTML = node.muted ? ICON_EYE_OFF : ICON_EYE;
     mute.title = node.muted ? "Unmute (M)" : "Mute — pass entries through unchanged (M)";
     mute.addEventListener("click", ev => { ev.stopPropagation(); toggleMuteWithUndo([id]); render(); });
-    row.appendChild(mute);
+    actions.appendChild(mute);
   }
   if (!node.locked && !(opts && opts.mergeSourceColor)) {
     const del = document.createElement("button");
@@ -23227,10 +23433,11 @@ function renderNode(id, depth, opts) {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(id);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     });
-    row.appendChild(del);
+    actions.appendChild(del);
   }
+  if (actions.childElementCount) row.appendChild(actions);
 
   // Progress fill along the row's bottom edge while this file is still
   // being read/parsed (see createFileNode/loadOneFileIntoTree) — the row
@@ -23332,7 +23539,7 @@ function renderNode(id, depth, opts) {
     const prevTop = undoStack[undoStack.length - 1];
     deleteFilterNodeWithUndo(id);
     render();
-    offerPhoneUndoToast(prevTop);
+    offerUndoToast(prevTop);
   });
 
   // Drag-and-drop reparenting (mouse-event based — see treeDrag's comment):
@@ -23631,6 +23838,7 @@ function renderLevelBar() {
     levelBarEl.appendChild(btn);
   });
   updateApplyLevelToTreeButtonVisibility();
+  renderStatus(); // the header's "<n> of <total> entries shown" follows the chips
   updateLevelBarLayout();
 }
 
@@ -23803,9 +24011,45 @@ const COLUMN_PALETTE = ["#4fc7c3", "#c792ea", "#e8a94a", "#6fa8ff", "#f0708a", "
 // Modulo, not remainder — a naive `i % n` returns negative for the synthetic
 // columns' negative colIndex (e.g. -1 % 6 === -1 in JS), which would index
 // before the array. ((i % n) + n) % n normalizes that back into [0, n).
-function columnColor(i) {
+function columnColorByIndex(i) {
   const n = COLUMN_PALETTE.length;
   return COLUMN_PALETTE[((i % n) + n) % n];
+}
+// The colour of an extraction column of the active Table/Plot view stays with the COLUMN (its compiled
+// name), not with its position: editing the pattern so placeholders are inserted, removed or reordered
+// (extractColumnMigrationMap) moves the index but a "temperature" series keeps its colour. The first
+// request for a pattern owner claims a palette slot per column in index order (= the plain index
+// colours); a column that appears later takes its own slot if free, else the next free one.
+// In memory only (colours of a reloaded session start again by index); the owner is set by
+// renderExtractView. Synthetic columns (negative index) and an unknown owner use the index colour.
+let extractColorOwnerId = null;
+const columnColorMemory = new Map(); // pattern owner id -> { value, names: [compiled name per index], slots: Map(name -> slot) }
+function columnColor(i) {
+  const owner = extractColorOwnerId != null ? state.nodes[extractColorOwnerId] : null;
+  if (!owner || !(i >= 0)) return columnColorByIndex(i);
+  let mem = columnColorMemory.get(owner.id);
+  if (!mem) { mem = { value: null, names: [], slots: new Map() }; columnColorMemory.set(owner.id, mem); }
+  if (mem.value !== owner.value) {
+    // columnColor runs inside loops over EXTRACT_TOKEN_RE (the pattern chips): keep its lastIndex.
+    const savedIndex = EXTRACT_TOKEN_RE.lastIndex;
+    const spec = compileExtractPattern(owner.value);
+    EXTRACT_TOKEN_RE.lastIndex = savedIndex;
+    mem.value = owner.value;
+    mem.names = spec ? spec.columns.map(c => c.name) : [];
+  }
+  const name = mem.names[i];
+  if (name == null) return columnColorByIndex(i);
+  const n = COLUMN_PALETTE.length;
+  const claim = (nm, idx) => {
+    if (mem.slots.has(nm)) return;
+    const used = new Set(mem.slots.values());
+    let slot = idx % n;
+    for (let k = 0; used.has(slot) && k < n; k++) slot = (slot + 1) % n;
+    mem.slots.set(nm, slot);
+  };
+  if (!mem.slots.size) mem.names.forEach((nm, idx) => claim(nm, idx));
+  claim(name, i);
+  return COLUMN_PALETTE[mem.slots.get(name)];
 }
 
 /* ===================== Renamed extraction columns =====================
@@ -24637,6 +24881,21 @@ function plotRoleMenuItems(ci) {
     const col = lastPatternViewArgs[1][ci];
     if (items.length) items.push({ sep: true });
     items.push({ t: col && col.ignored ? "Include column" : "Ignore column", fn: () => lastPatternViewArgs[2].onToggle(ci) });
+    // A word/text column: "Keep only <value of the selected row>" turns its placeholder into that literal
+    // (the small step towards FEATURE_BACKLOG #127, a real split by value).
+    const keep = lastPatternViewArgs[2].onKeepOnly;
+    if (keep && col && (col.type === "word" || col.type === "text") && !col.ignored) {
+      const selRow = state.selectedId != null ? extractRowsData.find(r => r.entry && r.entry.id === state.selectedId) : null;
+      const val = selRow ? String(selRow.values[ci] == null ? "" : selRow.values[ci]) : "";
+      const lastToken = lastPatternViewArgs[1].length < 2;
+      const shown = val.length > 24 ? val.slice(0, 23) + "\u2026" : val;
+      items.push({
+        t: val ? "Keep only \u201c" + shown + "\u201d" : "Keep only the selected row\u2019s value",
+        dis: !val || lastToken,
+        note: !val ? "select a row" : lastToken ? "only column" : "",
+        fn: () => keep(ci, val),
+      });
+    }
   }
   return items;
 }
@@ -27944,6 +28203,7 @@ function renderExtractTable(node) {
   }
   const spec = compileExtractPattern(patternNode.value);
   extractNodeId = node.id;
+  extractColorOwnerId = patternNode.id;
   if (!spec) {
     extractColumns = [];
     extractRowsData = [];
@@ -28022,6 +28282,7 @@ function renderExtractTable(node) {
   const patternColumns = spec.columns.map((c, i) => ({ ...c, colIndex: i, ignored: ignoredSet.has(i), name: getColumnDisplayName(node, i, c.name) }));
   renderExtractPatternView(patternNode.value, patternColumns, {
     onToggle: colIndex => { setColumnIgnored(patternNode, colIndex, !isColumnIgnored(patternNode, colIndex)); renderExtractTable(node); },
+    onKeepOnly: (colIndex, value) => keepOnlyColumnValue(patternNode, colIndex, value),
   });
   renderStatsBar(node);
 
@@ -28682,13 +28943,14 @@ function textWrapLines(message, cols) {
 // the .wrap-messages CSS (break-all packs each line to `cols` chars). Honors
 // multiline: with it on, literal "\n"s split first and each part wraps; with
 // it off, runs of whitespace collapse to single spaces exactly as
-// white-space:normal renders them.
+// white-space:normal renders them. Tabs (multiline) count 4 columns, matching
+// the rule's tab-size:4 (textWrapLines).
 function messageWrapLines(message, cols) {
   if (cols < 1) return 1;
   if (state.multilineMessages) {
     let total = 0;
     const parts = message ? message.split("\n") : [""];
-    for (const p of parts) total += Math.max(1, Math.ceil(p.length / cols));
+    for (const p of parts) total += textWrapLines(p, cols);
     return total;
   }
   const collapsed = message ? message.replace(/\s+/g, " ").trim() : "";
@@ -29575,7 +29837,7 @@ function appendLogRow(frag, i, rc) {
   for (const col of rc.columnDefs) {
     const val = entryColumnValue(e, col.key);
     const html = markFieldHtml(rc.mm, val, col.key);
-    middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" data-sel-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+    middleHtml += middleCellHtml(col.key, val, html);
   }
   const syntaxRanges = plainTextSyntaxRanges(e, rc.syntax);
   const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message",
@@ -29583,8 +29845,10 @@ function appendLogRow(frag, i, rc) {
   const msgHtml = (repeatHead ? repeatBadgeHtml(repeatRun, rc.zero) : "") + (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
     (filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase);
 
+  const rowH = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode());
+  if (rowH > ROW_HEIGHT && !rc.textMode && !cardMode()) cls += " row-tall";
   row.className = cls;
-  row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode()) + "px";
+  row.style.height = rowH + "px";
   row.dataset.entryId = e.id;
   row.dataset.viewIdx = String(i); // table text selection: this row's index in currentViewEntries
   // Text mode: no level stripe/Δt/Level/columns — line number, the (empty)
@@ -31572,8 +31836,10 @@ function renderHighlightVisibleRows() {
     }
     const deltaMs = highlightRowDeltaMs(i, e);
 
+    const rowH = baseRowHeightForEntry(e, highlightWrapCols);
+    if (rowH > ROW_HEIGHT) cls += " row-tall";
     row.className = cls;
-    row.style.height = baseRowHeightForEntry(e, highlightWrapCols) + "px";
+    row.style.height = rowH + "px";
     row.dataset.entryId = e.id;
     row.dataset.viewIdx = String(i); // table text selection: this row's index in currentHighlightViewEntries
     // markFieldHtml short-circuits to a plain escapeHtml before any range
@@ -31593,7 +31859,7 @@ function renderHighlightVisibleRows() {
     for (const col of columnDefs) {
       const val = entryColumnValue(e, col.key);
       const html = markFieldHtml(mm, val, col.key);
-      middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" data-sel-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+      middleHtml += middleCellHtml(col.key, val, html);
     }
     row.innerHTML =
       markerHtml +
@@ -31629,37 +31895,46 @@ function renderHighlightVisibleRows() {
   paintTableTextSel();
 }
 
-// One revealed row's slice of its run's connecting line: a full-row-height
-// bar in the gutter lane whose border-left, stacked across the run's rows,
-// draws one continuous line (see .ctx-run-line). Clicking ANYWHERE on it
-// collapses the whole run (person-requested), which is why the line itself is
-// the button and not just its end caps. The first/last row of the run also
-// gets a caret cap pointing "into" the fold; a single-row run gets exactly
-// one cap, not two overlapping ones.
+// One revealed row's slice of its run's connecting band: a full-row-height
+// button in the gutter lane which, stacked across the run's rows, draws one
+// continuous rounded band (see .ctx-run-line). Clicking ANYWHERE on it
+// collapses the whole run (person-requested), which is why the band itself is
+// the button and not just its grips. The first row gets a caret grip pointing
+// down, the last one pointing up ("into" the fold); a single-row run is both
+// first and last and gets exactly one centred ICON_COLLAPSE_IN grip.
 //
-// Hover highlights the WHOLE run (person-requested), not just the one row
-// segment under the pointer — since each row's slice is its own separate DOM
+// Hover and keyboard focus highlight the WHOLE run (person-requested), not
+// just the one row slice — since each row's slice is its own separate DOM
 // button, plain CSS :hover can't do that on its own. `run.firstRow` is a
 // stable-for-this-render key shared by every slice of the same run
-// (data-run-id), so mouseenter/mouseleave toggle a .ctx-run-hover class
-// across ALL of them at once, including the end caps' carets.
+// (data-run-id), so mouseenter/mouseleave and focus/blur toggle a
+// .ctx-run-hover class across ALL of them at once.
+// Tooltip times are the Time column's text for those rows (displayTimeText,
+// so relative-time display is honoured) without the leading date.
 function makeContextRunHandle(run, isTop, isBottom) {
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "ctx-run-line" + (isTop ? " ctx-run-top" : isBottom ? " ctx-run-bottom" : "");
-  btn.title = "Collapse these lines again";
+  btn.className = "ctx-run-line" + (isTop ? " ctx-run-top" : "") + (isBottom ? " ctx-run-bottom" : "");
+  const n = run.lastRow - run.firstRow + 1;
+  let tip = "Collapse " + n + (n === 1 ? " line" : " lines");
+  if (n > 1) {
+    const zero = timeZeroContext();
+    const first = currentHighlightViewEntries[run.firstRow], last = currentHighlightViewEntries[run.lastRow];
+    // Time-of-day part only: the Time column's text minus a leading date.
+    const tod = e => displayTimeText(e, zero).replace(/^\d{4}-\d\d-\d\d[ T]/, "");
+    if (first && last) tip += " (" + tod(first) + " \u2013 " + tod(last) + ")";
+  }
+  btn.title = tip;
   btn.dataset.runId = String(run.firstRow);
-  // Caps point INWARD, toward each other — the direction the run will
-  // shrink to on click — rather than outward (which used to read like an
-  // "expand more" affordance instead of "collapse this").
-  btn.innerHTML = isTop ? '<span class="ctx-run-cap">' + ICON_CARET_DOWN + '</span>'
-    : isBottom ? '<span class="ctx-run-cap">' + ICON_CARET_UP + '</span>' : "";
+  btn.innerHTML = isTop && isBottom ? ICON_COLLAPSE_IN : isTop ? ICON_CARET_DOWN : isBottom ? ICON_CARET_UP : "";
   const setRunHover = hovered => {
     highlightRows.querySelectorAll('.ctx-run-line[data-run-id="' + run.firstRow + '"]')
       .forEach(el => el.classList.toggle("ctx-run-hover", hovered));
   };
   btn.addEventListener("mouseenter", () => setRunHover(true));
   btn.addEventListener("mouseleave", () => setRunHover(false));
+  btn.addEventListener("focus", () => setRunHover(true));
+  btn.addEventListener("blur", () => setRunHover(false));
   btn.addEventListener("click", ev => { ev.stopPropagation(); collapseContextRun(run); });
   return btn;
 }
@@ -31979,6 +32254,8 @@ const ICON_CARET_DOWN = icon("caret-down");
 const ICON_EXPAND_AROUND = icon("expand-around");
 const ICON_EXPAND_ALL = icon("expand-all");
 const ICON_COLLAPSE_ALL = icon("collapse-all");
+// Grip of a single-row context run band: two chevrons pointing toward each other.
+const ICON_COLLAPSE_IN = icon("collapse-in");
 // The "Show more (+n)" filler row's own glyph — a plain plus, deliberately
 // different from the ellipsis the "… N lines" row next to it carries.
 const ICON_PLUS_SMALL = icon("plus");
@@ -35910,7 +36187,7 @@ btnFilePathLinks.forEach(b => b.addEventListener("click", () => {
    define that key, not reset every time the active file changes. */
 // `line`: the Time track's own width key while only plain-text files are
 // loaded (line numbers need far less room — see applyRowGrid).
-const FIXED_COLUMN_WIDTHS = { time: 178, line: 64, delta: 72, level: 66, thread: 92, location: 158, method: 168 };
+const FIXED_COLUMN_WIDTHS = { time: 178, line: 64, delta: 56, level: 66, thread: 92, location: 190, method: 110 };
 const DEFAULT_CUSTOM_COLUMN_WIDTH = 120; // initial width for a column this dictionary has no entry for yet
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_GRID_GAP = 12; // must match .row-grid's column-gap
@@ -40583,6 +40860,7 @@ function buildInactiveFileRow(folder, rec, text) {
 let folderCtxTarget = null; // { folderId, name } while this menu is open
 function openFolderFileContextMenu(ev, folder, rec) {
   treeCtxId = null;
+  setTreeCtxTarget(null);
   folderCtxTarget = { folderId: folder.id, name: rec.name };
   const html = '<div class="ctx-meta">' + escapeHtml(rec.name) + '</div><div class="ctx-sep"></div>' +
     ctxGroupsHtml([{ head: "File", items: ['<div class="ctx-item" data-action="loadFolderFile">' + ICON_LOAD + ' Load file</div>'] }]);
@@ -42304,7 +42582,7 @@ function updateFilterPatternPreview(val, baseEntries) {
     if (!range) return; // shouldn't happen — every placeholder here is a mandatory group
     const [start, end] = range;
     if (start > cursor) frag.appendChild(document.createTextNode(msg.slice(cursor, start)));
-    const color = columnColor(i);
+    const color = columnColorByIndex(i);
     const ignored = shownIgnored.has(i);
     const span = document.createElement("span");
     span.className = "preview-value-span" + (ignored ? " chip-ignored" : "");
@@ -42409,11 +42687,7 @@ function commitFilter() {
     // An untouched ignore set is still in the OLD pattern's indices (re-keyed with the other column settings).
     const shifted = updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord, filterPopupIgnoredTouched);
     if (shifted) {
-      const noun = n => n + " column setting" + (n === 1 ? "" : "s");
-      const parts = [];
-      if (shifted.moved) parts.push(noun(shifted.moved) + " moved");
-      if (shifted.removed) parts.push(shifted.moved ? shifted.removed + " removed" : noun(shifted.removed) + " removed");
-      showCopyToast("Pattern changed: " + parts.join(", "));
+      showCopyToast(patternChangedToastText(shifted));
     }
   } else createFilterNode(filterPopupBaseId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
   closeFilterPopup();
@@ -44458,6 +44732,25 @@ function setupHitExpandGroups(hitSelector) {
 }
 setupHitExpandGroups(".row-action-hit");
 
+// Tooltips close when a dialog (or the filter popup) opens: the pointer stays over the button that
+// opened it, so its floating label would otherwise hang over the dialog until the mouse moves
+// (person-reported: the "Edit filter…" card stayed over the logo). Dismisses the JS-driven hover
+// cards (.expanded, .labels-live), the focus-visible one of a still-focused toolbar button and the
+// chart/minimap tooltips; a later hover shows them again as usual.
+function dismissHoverTooltips() {
+  document.querySelectorAll(".row-action-btn.expanded, .toolbar-icon-btn.expanded").forEach(b => b.classList.remove("expanded"));
+  document.querySelectorAll(".labels-live").forEach(c => c.classList.remove("labels-live"));
+  const a = document.activeElement;
+  if (a && a !== document.body && a.matches && a.matches(".row-action-btn, .toolbar-icon-btn") && !a.closest("[id$='Dialog'], #filterPopup")) a.blur();
+  [plotTooltip, timelineMinimapTooltip, folderMinimapTooltip].forEach(t => { if (t) t.classList.add("hidden"); });
+}
+if (typeof MutationObserver === "function") {
+  const dialogObserver = new MutationObserver(records => {
+    if (records.some(r => r.target.classList && !r.target.classList.contains("hidden") && (r.oldValue || "").split(/\s+/).includes("hidden"))) dismissHoverTooltips();
+  });
+  document.querySelectorAll("[id$='Dialog'], #filterPopup").forEach(d => dialogObserver.observe(d, { attributes: true, attributeFilter: ["class"], attributeOldValue: true }));
+}
+
 // The row-action buttons' "current row" — state.selectedId, NOT ctxEntry
 // (that's only ever set while the right-click menu is open). Falls back to
 // null with no selection, same as ctxEntry defaults to when nothing was
@@ -44808,7 +45101,7 @@ const treeCtxInfoMenu = el("#treeCtxInfoMenu");
 
 function closeTreeCtxInfoMenu() { treeCtxInfoMenu.classList.add("hidden"); }
 
-function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); closeTreeCtxInfoMenu(); }
+function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); closeTreeCtxInfoMenu(); setTreeCtxTarget(null); }
 
 // Hover/click submenu for the tree context menu's "Info" trigger (see
 // openTreeContextMenu) — same #addToSelectionMenu shape (position next to
@@ -45452,7 +45745,12 @@ function openTreeContextMenu(ev, clickedId) {
       "<div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
+  // The menu names its target and the row gets an outline while it is open
+  // (the selection itself does not change on a right-click).
+  const targetName = (node.inverted ? "NOT " : "") + nodeDisplayName(node);
+  html = '<div class="ctx-target-head" title="' + escapeHtml(targetName) + '">Menu for <b>' + escapeHtml(targetName) + "</b></div>" + html;
   treeContextMenu.innerHTML = html;
+  setTreeCtxTarget(clickedId);
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   treeContextMenu.classList.remove("hidden");
   treeContextMenu.style.top = ctxMenuTop(treeContextMenu, ev.clientY, 250);
@@ -45568,7 +45866,7 @@ treeContextMenu.addEventListener("click", ev => {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(treeCtxId);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     }
     return;
   }
@@ -46009,7 +46307,7 @@ function renderLinkSides() {
     if (i >= 1) {
       const h = linkDlg.hops[i - 1];
       html += '<div class="link-sentence link-hop-row" data-hop="' + (i - 1) + '">' + (i === 1 ? "for each start, find the" : "then, from that end, find the") +
-        ' <input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span> " +
+        ' <span class="link-hop-field"><input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span></span> " +
         '<span class="link-seg link-hop-dir" role="group" aria-label="Direction">' + dirBtn(i - 1, "after", "next") + dirBtn(i - 1, "before", "previous") + "</span> end</div>";
     }
     html += '<div class="link-side" data-side="' + i + '"><span class="link-side-lab">' + (i === 0 ? "Start" : "End") + "</span>";
@@ -52552,11 +52850,12 @@ const WHERE_IS_WHAT = [
   { sel: "#extractScroll",   label: "Extracted values", group: "rows", side: "in" },
   { sel: "#plotBody",        label: "Plot",            group: "rows", side: "in" },
   { sel: "#patternsScroll",  label: "Patterns",        group: "rows", side: "in" },
-  { sel: "#detailPanel",     label: "Entry detail panel", side: "in", note: "Detail, Why, Stats, Facets, Patterns" },
-  { sel: "#hdrHistory",      label: "Undo / redo",     side: "bottom" },
-  { sel: "#btnExport",       label: "Export / Share",  side: "bottom" },
-  { sel: "#btnFindPhone",    label: "Find in view",    side: "bottom" },
-  { sel: "#btnSettings",     label: "Settings",        side: "bottom" },
+  { sel: "#detailPanel",     label: "Entry detail panel", side: "in", note: "Detail, Why, Facets, Neighbors" },
+  // The four header buttons sit in a row: each callout starts on its own row below it (`row`), so they form a staircase.
+  { sel: "#hdrHistory",      label: "Undo / redo",     side: "bottom", row: 3 },
+  { sel: "#btnExport",       label: "Export / Share",  side: "bottom", row: 2 },
+  { sel: "#btnFindPhone",    label: "Find in view",    side: "bottom", row: 1 },
+  { sel: "#btnSettings",     label: "Settings",        side: "bottom", row: 0 },
 ];
 const WHERE_SEEN_KEY = "philogg-where-is-what-seen";
 let whereOpener = null;
@@ -52581,7 +52880,7 @@ function placeWhereCallouts(items, bounds, obstacles) {
     let box = null;
     outer: for (let si = 0; si < sides.length; si++) {
       const side = sides[si];
-      for (let d = 0; d <= 8; d++) {
+      for (let d = it.row || 0; d <= (it.row || 0) + 8; d++) {
         for (let a = 0; a <= 8; a++) {
           const slide = (a % 2 ? 1 : -1) * Math.ceil(a / 2) * ((side === "left" || side === "right" || side === "inr") ? h + M : w / 2 + M);
           const step = d * (h + M);
@@ -52702,7 +53001,7 @@ function renderWhereIsWhat() {
   foot.style.left = footBox.x / z + "px"; foot.style.top = footBox.y / z + "px";
   const items = regions.map((g, i) => {
     const s = sizeOf(pills[i], g);
-    return { rect: g.rect, w: s.w, h: s.h, side: g.entry.side };
+    return { rect: g.rect, w: s.w, h: s.h, side: g.entry.side, row: g.entry.row };
   });
   const boxes = placeWhereCallouts(items, { w: W, h: H }, [footBox]);
   boxes.forEach((b, i) => { pills[i].style.left = b.x / z + "px"; pills[i].style.top = b.y / z + "px"; });
@@ -53037,7 +53336,7 @@ document.addEventListener("keydown", ev => {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(state.activeId);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     }
     return;
   }
@@ -53203,7 +53502,7 @@ document.addEventListener("keydown", ev => {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(rootId);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     }
     return;
   }

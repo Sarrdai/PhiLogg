@@ -44,7 +44,7 @@ if (groupSelected()) {
     assert(Object.keys(n.columnRenames).join() === "3" && n.columnRenames[3] === "Press", "rename follows pressure");
     assert(JSON.stringify(n.plotConfig.yCols) === "[1,3]" && n.plotConfig.colorCol === 3 && n.plotConfig.xCol === -1, "plot refs re-keyed, synthetic t(ms) untouched: " + JSON.stringify(n.plotConfig));
     assert(Object.keys(c.assertions).join() === "4" && JSON.stringify(c.plotConfig.yCols) === "[4]", "the inheriting child's assertion and plot moved too");
-    assert(toastText(d) === "Pattern changed: 7 column settings moved", "one toast counting the moved settings, got: " + toastText(d));
+    assert(toastText(d) === "Pattern changed \u2014 settings kept for Press, voltage", "one toast naming the columns whose settings moved, got: " + toastText(d));
     assert(T.undoStack.length === undoBefore + 1, "pattern and settings are ONE undo step");
 
     section("extract-column-migration b. one Undo restores pattern and settings together; Redo re-applies");
@@ -68,7 +68,7 @@ if (groupSelected()) {
     assert(JSON.stringify(n.ignoredColumns) === "[2]", "ignored voltage follows it");
     assert(JSON.stringify(n.plotConfig.yCols) === "[1]" && n.plotConfig.colorCol === null, "plot refs to the removed column dropped: " + JSON.stringify(n.plotConfig));
     assert(Object.keys(c.assertions).join() === "2" && JSON.stringify(c.plotConfig.yCols) === "[2]", "child follows voltage");
-    assert(toastText(d) === "Pattern changed: 4 column settings moved, 4 removed", "toast says moved and removed, got: " + toastText(d));
+    assert(toastText(d) === "Pattern changed \u2014 settings kept for voltage \u00b7 dropped for pressure", "toast names moved and dropped columns, got: " + toastText(d));
   });
 
   await withApp(async (w, d, T) => {
@@ -125,7 +125,7 @@ if (groupSelected()) {
     assert(m("[*:int] [*:int]", "[*:int] [*:int] [*:int]") === "[0,1]", "an appended unlabeled column keeps the old ones in place");
     assert(m("plain text", "x=[*:int]") === "null" && m("x=[*:int]", "plain text") === "null", "a non-extraction side never migrates");
     const node = { assertions: {}, arrayViews: { 1: "index" }, columnRenames: { [w.arrayDerivedColIndex(1, 3)]: "ch3" } };
-    const tally = { moved: 0, removed: 0 };
+    const tally = { moved: 0, removed: 0, movedBases: new Set(), removedBases: new Set() };
     w.remapColumnSettings(node, [0, 2], tally);
     assert(JSON.stringify(node.arrayViews) === '{"2":"index"}' && node.columnRenames[w.arrayDerivedColIndex(2, 3)] === "ch3", "a derived column's base is re-based, slot kept");
     assert(tally.moved === 2 && tally.removed === 0, "tally " + JSON.stringify(tally));

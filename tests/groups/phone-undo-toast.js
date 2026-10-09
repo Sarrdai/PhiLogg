@@ -6,8 +6,8 @@
    GROUP phone-undo-toast — Undo toast after a tree-menu removal on phone
    Origin: 2026-10-04 (usability test). Phone hides #btnUndo and has no
    keyboard, so "Remove filter"/"Remove file" in the tree context menu got an
-   "Undo" toast (offerPhoneUndoToast). Desktop/compact keep the visible Undo
-   button only.
+   "Undo" toast (offerUndoToast). Since 2026-10-09 (Round I, I6) every layout
+   shows it: desktop/compact keep the visible Undo button AND get the toast.
    ============================================================ */
 group("phone-undo-toast");
 
@@ -61,13 +61,15 @@ await withApp(async (w, d, T) => {
 
 for (const [px, name] of [[1440, "desktop"], [820, "compact"]]) {
   await withApp(async (w, d, T) => {
-    section("phone-undo-toast e. " + name + ": tree-menu delete shows no Undo toast");
+    section("phone-undo-toast e. " + name + ": tree-menu delete shows the Undo toast too");
     const f = await w.addFile("a.log", makeLog(0, 20), () => {});
     const flt = w.createFilterNode(f.id, "text", "message 1");
     w.render();
     ptWidth(w, px);
     ptTreeMenuDelete(w, d, flt.id);
     assert(!T.state.nodes[flt.id], name + ": filter removed");
-    assert(!ptHasUndo(d), name + ": no Undo toast");
+    assert(ptToastText(d) === "Filter removed" && ptHasUndo(d), name + ": toast 'Filter removed' with Undo, got " + ptToast(d).textContent);
+    fireClick(ptToast(d).querySelector(".toast-action"), w);
+    assert(!!T.state.nodes[flt.id], name + ": Undo restores the filter");
   });
 }
