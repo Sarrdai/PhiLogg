@@ -1,0 +1,3 @@
+- **fix: filters can be dragged by their label text (2026-10-09, person-reported)**
+  - Drag & drop of a tree filter only worked from the icon/count, not from the text, the most common grab point: the label's glyphs are native-selectable text, so a press there started a text selection / native text drag. Tree rows are now `user-select:none` (the rename input stays selectable).
+  - **Tests**: GROUP tree-label-drag (new). Docs: docs/ui-and-views.md.

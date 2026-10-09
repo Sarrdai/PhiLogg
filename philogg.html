@@ -861,6 +861,13 @@
   .tree-row.cut{outline:1.5px dashed var(--accent); outline-offset:-2px; opacity:.75;}
   .tree-row.copied{outline:1.5px dotted var(--accent); outline-offset:-2px;}
   .tree-row.tree-draggable{cursor:grab;}
+  /* A press on the label's glyphs would otherwise start a native text
+     selection (or, on already-selected text, a native text drag that swallows
+     the mouse events treeDrag relies on) instead of a row drag — the label is
+     the most common grab point (person-reported). The rename input stays
+     selectable. */
+  .tree-row{user-select:none; -webkit-user-select:none; -webkit-user-drag:none;}
+  .tree-row .tree-rename-input{user-select:text; -webkit-user-select:text;}
   body.tree-dragging, body.tree-dragging *{cursor:grabbing !important; user-select:none;}
   .tree-row.dragging{opacity:.4;}
   .tree-row.drag-over{background:var(--accent-soft); box-shadow:inset 0 0 0 1.5px var(--accent);}
