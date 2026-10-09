@@ -57,7 +57,7 @@ await withApp(async (w, d, T) => {
   assert(llmRun(w, "common_neighbors", { nodeId: ex.nodeId, windowMs: -5 }).error.includes("windowMs"), "bad windowMs → error");
   assert(llmRun(w, "common_neighbors", { nodeId: "n424242" }).error.includes("Unknown node"), "unknown node");
   assert(llmRun(w, "common_neighbors", { nodeId: "p9999" }).error.includes("find_message_types again"), "unknown pattern id");
-  const none = llmRun(w, "create_filter", { parentId: f.id, pattern: "nothing like this" }).result;
+  const none = { nodeId: w.createFilterNode(f.id, "text", "nothing like this", false).id }; // create_filter makes no node without matches
   assert(llmRun(w, "common_neighbors", { nodeId: none.nodeId }).result.note, "a node without entries → note");
 });
 

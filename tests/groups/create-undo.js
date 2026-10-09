@@ -158,7 +158,7 @@ await withApp(async (w, d, T) => {
   assert(made.every(id => T.state.nodes[id]), "redo brings them back");
 
   T.resetUndoRedo();
-  const r = w.runLlmTool("create_filter", { parentId: f.id, pattern: "Sensor T2" });
+  const r = w.runLlmTool("create_filter", { parentId: f.id, pattern: "Scheduler tick" });
   assert(r.result && r.result.nodeId && T.state.nodes[r.result.nodeId], "sanity: the LLM tool created a filter");
   assert(T.undoStack.length === 0, "LLM tool run pushes no per-node create entry (the round batch owns it), got " + T.undoStack.length);
 });
