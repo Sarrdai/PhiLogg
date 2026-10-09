@@ -55263,6 +55263,11 @@ const llmCreatedNodeIds = new Set();
 // Set by the agent loop while a round runs: every node a tool creates is
 // recorded there too (the round's own undo batch and "undo this round").
 let llmRoundCreated = null;
+// Same lifetime as llmRoundCreated: every undoable change a tool makes, as ready
+// undo actions in chronological order (creations via llmNoteCreated, delete_node /
+// rename_node via llmRecordUndo). One MCP call / one agent round becomes one undo
+// step from it (llmRoundUndoActions).
+let llmRoundActions = null;
 
 function llmCut(s, n) {
   s = String(s == null ? "" : s);
@@ -55332,8 +55337,21 @@ function llmDefaultFileId() {
   return id ? getRootFileId(id) : null;
 }
 
+// The values of one compiled extraction pattern for one entry (the pattern
+// node's `columns` restriction applies like in the Table): one string per
+// placeholder, "" everywhere when the entry does not match.
+function llmExtractValuesOf(spec, restrictCols, e) {
+  let m = null;
+  if (!restrictCols) m = spec.regex.exec(e.message);
+  else for (const key of restrictCols) { m = spec.regex.exec(entryColumnValue(e, key)); if (m) break; }
+  return spec.columns.map((c, i) => (m ? normalizeExtractedNumber(m[i + 1] ?? "", c) : ""));
+}
+
 // The extraction values of a node (its own pattern, or the one it inherits
 // — findExtractionAncestor), without touching the Table view's globals.
+// `columns` / `rows` are the NEAREST extraction's (what the Table shows and
+// what the 1-based column numbers refer to); the extraction filters further
+// up the chain are reachable through llmExtractColumns.
 function llmExtractRows(node) {
   const patternNode = findExtractionAncestor(node);
   if (!patternNode) return null;
@@ -55341,15 +55359,60 @@ function llmExtractRows(node) {
   if (!spec) return null;
   const restrictCols = patternNode.columns && patternNode.columns.length ? patternNode.columns : null;
   const rows = [];
-  for (const e of getEntries(node.id)) {
-    let m = null;
-    if (!restrictCols) m = spec.regex.exec(e.message);
-    else for (const key of restrictCols) { m = spec.regex.exec(entryColumnValue(e, key)); if (m) break; }
-    rows.push({ entry: e, values: spec.columns.map((c, i) => (m ? normalizeExtractedNumber(m[i + 1] ?? "", c) : "")) });
-  }
+  for (const e of getEntries(node.id)) rows.push({ entry: e, values: llmExtractValuesOf(spec, restrictCols, e) });
   const columns = spec.columns.map((c, i) => ({ index: i + 1, name: getColumnDisplayName(node, i, c.name), type: c.type }));
   return { patternNode, spec, columns, rows };
 }
+
+// The typed extraction pattern of a message type (pattern id) applied to its
+// entries — same shape as llmExtractRows, so group_by / get_value_stats treat
+// both alike. null when the type has no placeholders.
+function llmPatternExtractRows(id) {
+  const info = llmPatternInfo.get(String(id));
+  const target = llmResolveEntries(id);
+  if (!info || target.error) return null;
+  const spec = compileExtractPattern(patternFilterValue(info.key, info.floatMask, true));
+  if (!spec) return null;
+  const rows = target.entries.map(e => ({ entry: e, values: llmExtractValuesOf(spec, null, e) }));
+  const columns = spec.columns.map((c, i) => ({ index: i + 1, name: c.name, type: c.type }));
+  return { patternNode: null, spec, columns, rows };
+}
+
+// All columns a tool may address on an llmExtractRows result: the nearest
+// extraction's first (numbered, index = its 1-based placeholder number), then
+// those of every extraction filter further up the chain (index null, `from` =
+// that filter's id; the nearest wins a name clash). Values of an ancestor
+// column come from applying the ancestor's pattern to the node's entries.
+// Each column: { index, name, type, from, valueAt(rowIndex) }.
+function llmExtractColumns(ex) {
+  const out = ex.columns.map(c => ({ ...c, from: null, valueAt: i => ex.rows[i].values[c.index - 1] }));
+  const seen = new Set(out.map(c => c.name.toLowerCase()));
+  let anc = ex.patternNode && state.nodes[ex.patternNode.parentId];
+  while (anc && (anc = findExtractionAncestor(anc))) {
+    const spec = compileExtractPattern(anc.value);
+    if (spec) {
+      const restrictCols = anc.columns && anc.columns.length ? anc.columns : null;
+      const vals = ex.rows.map(r => llmExtractValuesOf(spec, restrictCols, r.entry));
+      spec.columns.forEach((c, k) => {
+        const name = getColumnDisplayName(anc, k, c.name);
+        if (seen.has(name.toLowerCase())) return;
+        seen.add(name.toLowerCase());
+        out.push({ index: null, name, type: c.type, from: anc.id, valueAt: i => vals[i][k] });
+      });
+    }
+    anc = state.nodes[anc.parentId];
+  }
+  return out;
+}
+// A column by number (nearest extraction only) or name (case-insensitive).
+function llmFindExtractColumn(cols, want) {
+  const w = String(want).trim().toLowerCase();
+  return cols.find(c => c.index != null && String(c.index) === w) || cols.find(c => c.name.toLowerCase() === w);
+}
+// The column listing of an "Unknown column" error: names, inherited ones
+// marked with the filter they come from.
+function llmColumnLabels(cols) { return cols.map(c => c.name + (c.from ? " (from " + c.from + ")" : "")); }
+const llmPublicColumn = c => (c.index != null ? { index: c.index, name: c.name, type: c.type } : { name: c.name, type: c.type, from: c.from });
 
 // Per-placeholder value distribution for one message type: ≤ 10 distinct
 // values → each value with its count, else the numeric range (or a few
@@ -55674,10 +55737,11 @@ function analysisTimeline(entries, opts) {
 
 // Contrast of two entry sets on pattern level. entriesA / entriesB sorted by
 // ts. opts: { durationAMs, durationBMs (default: the sets' own first-to-last
-// span, at least 1000), minCount (3), minFactor (2) }. Expected = countB ×
-// durationA ÷ durationB. Returns
+// span, at least 1000), minCount (3), minFactor (2), keepSevere (false) }.
+// Expected = countB × durationA ÷ durationB. Returns
 //   { a: {entries, durationMs}, b: {entries, durationMs},
-//     new:   [row] — countB = 0, countA ≥ minCount,
+//     new:   [row] — countB = 0, countA ≥ minCount (with keepSevere also a
+//            type below minCount whose A entries include ERROR/FATAL ones),
 //     more:  [row] — countA ≥ minCount, countA ≥ minFactor × expected,
 //     rarer: [row] — 0 < countA ≤ expected ÷ minFactor, expected ≥ minCount,
 //     gone:  [row] — countA = 0, expected ≥ minCount }
@@ -55689,13 +55753,14 @@ function* analysisWhatChangedSteps(entriesA, entriesB, opts) {
   opts = opts || {};
   const minCount = opts.minCount == null ? 3 : +opts.minCount;
   const minFactor = opts.minFactor == null ? 2 : +opts.minFactor;
+  const keepSevere = !!opts.keepSevere;
   const span = list => (list.length ? Math.max(list[list.length - 1].ts - list[0].ts, 1000) : 1000);
   const durA = +opts.durationAMs > 0 ? +opts.durationAMs : span(entriesA);
   const durB = +opts.durationBMs > 0 ? +opts.durationBMs : span(entriesB);
   const out = { a: { entries: entriesA.length, durationMs: durA }, b: { entries: entriesB.length, durationMs: durB }, new: [], more: [], rarer: [], gone: [] };
   const rows = new Map();
   const wA = entriesA.length / Math.max(entriesA.length + entriesB.length, 1);
-  for (const g of yield* analysisScaled(analysisPatternCountsSteps(entriesA), 0, wA)) rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: g.count, countB: 0, example: g.example });
+  for (const g of yield* analysisScaled(analysisPatternCountsSteps(entriesA), 0, wA)) rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: g.count, countB: 0, example: g.example, severe: keepSevere && !!(g.levels.ERROR || g.levels.FATAL) });
   for (const g of yield* analysisScaled(analysisPatternCountsSteps(entriesB), wA, 1)) {
     const r = rows.get(g.key);
     if (r) r.countB = g.count;
@@ -55707,7 +55772,7 @@ function* analysisWhatChangedSteps(entriesA, entriesB, opts) {
     r.factor = r.expected > 0 ? r.countA / r.expected : null;
     let group = null;
     if (r.countA === 0) { if (r.expected >= minCount) group = "gone"; }
-    else if (r.countB === 0) { if (r.countA >= minCount) group = "new"; }
+    else if (r.countB === 0) { if (r.countA >= minCount || r.severe) group = "new"; }
     else if (r.countA >= minCount && r.countA >= minFactor * r.expected) group = "more";
     else if (r.expected >= minCount && r.countA <= r.expected / minFactor) group = "rarer";
     if (group) out[group].push(r);
@@ -55829,10 +55894,12 @@ function llmToolFindMessageTypes(args) {
   }
   if (target.error) return { error: target.error };
   const limit = Math.max(1, Math.min(40, +args.limit || 15));
-  const query = typeof args.query === "string" ? args.query.trim().toLowerCase() : "";
+  const query = typeof args.query === "string" ? args.query.trim() : "";
+  // Smart case: an uppercase letter in the query makes it case-sensitive.
+  const sensitive = query !== query.toLowerCase();
   const entries = target.entries;
   let list = analysisPatternCounts(entries, { keepEntries: true });
-  if (query) list = list.filter(g => patternDisplayText(g.key).toLowerCase().includes(query));
+  if (query) list = list.filter(g => { const t = patternDisplayText(g.key); return (sensitive ? t : t.toLowerCase()).includes(sensitive ? query : query.toLowerCase()); });
   const total = list.length;
   list = list.slice(0, limit);
   // Value distributions only for the groups actually returned.
@@ -56007,7 +56074,10 @@ function llmToolCreateLink(args) {
       coverage: r.coverage,
       medianDtMs: r.medianDistMs,
     }));
-    if (rows.length) out.unpairedFollowedBy = rows;
+    if (rows.length) {
+      out.unpairedFollowedBy = rows;
+      out.note = "unpairedFollowedBy coverage is per type and overlaps: one unpaired reference can be followed by several types, so the coverages need not add up to unpaired.";
+    }
   }
   out.examples = pairs.slice(0, 3).map(p => llmEntrySummary(node ? node.id : fileId, p));
   out.tip = preview
@@ -56074,28 +56144,41 @@ function llmPercentile(sorted, p) {
   return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo);
 }
 function llmToolGetValueStats(args) {
-  const { node, error } = llmNode(args.nodeId);
-  if (error) return { error };
-  const ex = llmExtractRows(node);
-  if (!ex) return { error: "This node has no extraction pattern (and inherits none). Create one with placeholders such as [*:float]." };
+  const id = args.nodeId;
+  let node = null, ex;
+  if (llmIsPatternId(id)) {
+    const t = llmResolveEntries(id);
+    if (t.error) return { error: t.error };
+    ex = llmPatternExtractRows(id);
+    if (!ex) return { error: "Pattern \"" + id + "\" has no placeholders, so it has no value columns. Use create_filter with patternId and a pattern with placeholders such as [*:float], then use the new node id." };
+  } else {
+    const r = llmNode(id);
+    if (r.error) return { error: r.error };
+    node = r.node;
+    ex = llmExtractRows(node);
+    if (!ex) return { error: "This node has no extraction pattern (and inherits none). Create one with placeholders such as [*:float]." + (isLinkNode(node) ? " A link node has none of its own: create an extraction filter under the link (create_filter with parentId = the link node) and use that node id." : "") };
+  }
+  const cols = llmExtractColumns(ex);
   const want = args.column == null ? 1 : args.column;
-  const col = ex.columns.find(c => String(c.index) === String(want) || c.name.toLowerCase() === String(want).toLowerCase());
-  if (!col) return { error: "Unknown column \"" + want + "\".", columns: ex.columns };
+  const col = llmFindExtractColumn(cols, want);
+  if (!col) return { error: "Unknown column \"" + want + "\". Columns: " + llmColumnLabels(cols).join(", ") + ".", columns: cols.map(llmPublicColumn) };
+  const outId = node ? node.id : String(id);
+  const colOut = llmPublicColumn(col);
   const vals = [];
-  for (const r of ex.rows) {
-    const v = parseValueForPlot(r.values[col.index - 1], col.type);
+  for (let i = 0; i < ex.rows.length; i++) {
+    const v = parseValueForPlot(col.valueAt(i), col.type);
     if (Number.isFinite(v)) vals.push(v);
   }
   if (!vals.length) {
     const d = { values: new Map() };
-    ex.rows.forEach(r => llmDistStep(d, r.values[col.index - 1]));
-    return { nodeId: node.id, column: col, rows: ex.rows.length, numeric: false, distribution: llmDistResult(d) };
+    for (let i = 0; i < ex.rows.length; i++) llmDistStep(d, col.valueAt(i));
+    return { nodeId: outId, column: colOut, rows: ex.rows.length, numeric: false, distribution: llmDistResult(d) };
   }
   const sorted = vals.slice().sort((x, y) => x - y);
   const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
   const round = v => (v == null ? v : +v.toPrecision(6));
   return {
-    nodeId: node.id, column: col, rows: ex.rows.length, n: vals.length,
+    nodeId: outId, column: colOut, rows: ex.rows.length, n: vals.length,
     min: round(sorted[0]), max: round(sorted[sorted.length - 1]), mean: round(mean),
     p10: round(llmPercentile(sorted, 0.1)), median: round(llmPercentile(sorted, 0.5)), p90: round(llmPercentile(sorted, 0.9)),
   };
@@ -56184,7 +56267,7 @@ function llmToolWhatChanged(args) {
     durationB = b.windowMs;
     bLabel = b.label;
   }
-  const wc = analysisWhatChanged(a.entries, entriesB, { durationAMs: a.windowMs, durationBMs: durationB });
+  const wc = analysisWhatChanged(a.entries, entriesB, { durationAMs: a.windowMs, durationBMs: durationB, keepSevere: true });
   const round1 = v => (v == null ? null : Math.round(v * 10) / 10);
   const row = (r, limit) => r.slice(0, limit).map(x => ({
     patternId: llmPatternIdFor(fileId, x.key, x.floatMask), type: patternDisplayText(x.key),
@@ -56193,7 +56276,7 @@ function llmToolWhatChanged(args) {
   const side = (s, label) => ({ what: label, entries: s.entries, seconds: Math.round(s.durationMs / 100) / 10 });
   const out = { a: side(wc.a, a.label), b: side(wc.b, bLabel) };
   for (const k of ["new", "more", "rarer", "gone"]) out[k] = row(wc[k], 8);
-  if (!wc.new.length && !wc.more.length && !wc.rarer.length && !wc.gone.length) out.note = "No pattern differs clearly (needs ≥ 3 occurrences and a factor ≥ 2).";
+  if (!wc.new.length && !wc.more.length && !wc.rarer.length && !wc.gone.length) out.note = "No pattern differs clearly (needs ≥ 3 occurrences and a factor ≥ 2; a new ERROR/FATAL type counts from 1).";
   return out;
 }
 
@@ -56236,19 +56319,22 @@ function llmToolGroupBy(args) {
   let col = cols.find(c => c.key.toLowerCase() === want || c.label.toLowerCase() === want);
   let valueOf = null;
   if (col) valueOf = col.value;
-  else if (target.node) {
-    const ex = llmExtractRows(target.node);
-    const ec = ex && ex.columns.find(c => String(c.index) === want || c.name.toLowerCase() === want);
+  else {
+    const isPattern = llmIsPatternId(nodeId);
+    const ex = target.node ? llmExtractRows(target.node) : isPattern ? llmPatternExtractRows(nodeId) : null;
+    const xcols = ex ? llmExtractColumns(ex) : [];
+    const ec = ex && llmFindExtractColumn(xcols, want);
     if (ec) {
-      const byEntry = new Map(ex.rows.map(r => [r.entry, r.values[ec.index - 1]]));
+      const byEntry = new Map(ex.rows.map((r, i) => [r.entry, ec.valueAt(i)]));
       col = { key: ec.name };
       valueOf = e => byEntry.get(e) || "";
+    } else {
+      const names = cols.map(c => c.key).concat(llmColumnLabels(xcols));
+      let fix = "";
+      if (isPattern) fix = " Placeholder columns need an extraction: create_filter with patternId, then use the new node id.";
+      else if (target.node && isLinkNode(target.node)) fix = " A link node has no extraction columns: create an extraction filter under the link (create_filter with parentId = the link node) and group that.";
+      return { error: "Unknown column \"" + args.column + "\". Columns: " + names.join(", ") + "." + fix };
     }
-  }
-  if (!col) {
-    const names = cols.map(c => c.key);
-    if (target.node) { const ex = llmExtractRows(target.node); if (ex) ex.columns.forEach(c => names.push(c.name)); }
-    return { error: "Unknown column \"" + args.column + "\". Columns: " + names.join(", ") + "." };
   }
   const link = !!target.node && isLinkNode(target.node);
   // The reference side, as the Facets panel does (linkStartEntry): on a "before" link the
@@ -56411,26 +56497,91 @@ function llmToolAnnotate(args) {
   if (ids.length > 50) return { error: "At most 50 entries per call." };
   const unknown = ids.filter(id => !entryIndex[id]);
   if (unknown.length) return { error: "Unknown entry id(s): " + unknown.slice(0, 5).join(", ") + ". Use the ids from get_entries/find_message_types." };
-  const note = typeof args.note === "string" ? args.note.trim() : "";
-  const bookmark = args.bookmark === true;
-  if (!note && !bookmark) return { error: "Nothing to do: give a note and/or bookmark: true." };
-  let bookmarked = 0, noted = 0;
+  const hasNote = typeof args.note === "string";
+  const note = hasNote ? args.note.trim() : "";
+  const clearNote = hasNote && !note; // note: "" (explicitly present) removes the note
+  const bookmark = args.bookmark === true, unbookmark = args.bookmark === false;
+  if (!note && !clearNote && !bookmark && !unbookmark) return { error: "Nothing to do: give a note (note: \"\" clears it; replaceNote: true replaces an existing one instead of appending) and/or bookmark: true / false." };
+  let bookmarked = 0, unbookmarked = 0, noted = 0, cleared = 0;
   for (const id of ids) {
     if (bookmark && !state.bookmarks.has(id)) { toggleBookmark(id); bookmarked++; }
-    if (note) {
-      // Never overwrite a person's own note — the finding is appended.
+    if (unbookmark && state.bookmarks.has(id)) { toggleBookmark(id); unbookmarked++; }
+    if (clearNote) {
+      if (state.notes.has(id)) { setNoteAndRepaint(id, ""); cleared++; }
+    } else if (note) {
+      // Default: never overwrite a person's own note — the finding is appended.
       const old = state.notes.get(id);
-      if (old !== note) setNoteAndRepaint(id, old && !old.includes(note) ? old + "\n" + note : note);
+      const next = args.replaceNote === true || !old ? note : old.includes(note) ? old : old + "\n" + note;
+      if (old !== next) setNoteAndRepaint(id, next);
       noted++;
     }
   }
   schedulePersistMeta();
-  return { entries: ids.length, bookmarked, noted };
+  return { entries: ids.length, bookmarked, unbookmarked, noted, cleared };
 }
 
 function llmNoteCreated(node) {
   llmCreatedNodeIds.add(node.id);
   if (llmRoundCreated) llmRoundCreated.push(node.id);
+  if (llmRoundActions) llmRoundActions.push({ kind: "create", nodeId: node.id, parentId: node.parentId });
+}
+function llmRecordUndo(action) {
+  if (llmRoundActions) llmRoundActions.push(action);
+}
+// The recorded actions of a call/round, ready for pushUndo. A creation whose node
+// is gone again is dropped unless a delete of the round took it away (its undo
+// restores the node first, then this create-undo removes it again — reverse order).
+function llmRoundUndoActions(list) {
+  const deleted = new Set();
+  list.forEach(a => { if (a.kind === "delete") (a.removedIds || []).forEach(id => deleted.add(id)); });
+  const out = [];
+  list.forEach(a => {
+    if (a.kind !== "create") { out.push(a); return; }
+    const node = state.nodes[a.nodeId];
+    if (node) out.push({ kind: "create", nodeId: a.nodeId, parentId: node.parentId });
+    else if (deleted.has(a.nodeId)) out.push(a);
+  });
+  return out;
+}
+
+// The node of a node-correcting tool: only what the assistant itself created (the
+// ✦ set) may be changed — never a file, a node the person made, or a pattern id.
+function llmOwnNode(args) {
+  const r = llmNode(args.nodeId);
+  if (r.error) return r;
+  const node = r.node;
+  if (node.type === "file" || !llmCreatedNodeIds.has(node.id)) {
+    return { error: "Node \"" + node.id + "\" belongs to the person (" + (node.type === "file" ? "a file" : "not created by the assistant") + ") — you can only change nodes you created yourself." };
+  }
+  return { node };
+}
+function llmToolDeleteNode(args) {
+  const r = llmOwnNode(args);
+  if (r.error) return r;
+  const node = r.node;
+  if (node.locked) return { error: "Node \"" + node.id + "\" is managed by the app and cannot be deleted." };
+  const removedIds = [];
+  const collect = id => { removedIds.push(id); (state.nodes[id].children || []).forEach(collect); };
+  collect(node.id);
+  const parent = state.nodes[node.parentId];
+  const action = { kind: "delete", snapshot: snapshotSubtree(node.id), parentId: node.parentId, index: parent ? parent.children.indexOf(node.id) : -1, removedIds };
+  deleteNode(node.id);
+  llmRecordUndo(action);
+  if (state.activeId === node.id || !state.nodes[state.activeId]) state.activeId = parent ? parent.id : null;
+  return { deleted: node.id, removedNodes: removedIds.length };
+}
+function llmToolRenameNode(args) {
+  const name = typeof args.name === "string" ? args.name.trim() : "";
+  if (!name) return { error: "name is empty. Give the new name of the node." };
+  const r = llmOwnNode(args);
+  if (r.error) return r;
+  const node = r.node;
+  if (node.label !== name) {
+    const before = captureNodeFields(node);
+    node.label = name;
+    llmRecordUndo({ kind: "edit", nodeId: node.id, before, after: captureNodeFields(node) });
+  }
+  return { nodeId: node.id, name };
 }
 
 const LLM_TOOLS = [
@@ -56445,7 +56596,7 @@ const LLM_TOOLS = [
     description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with patternId, count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
     parameters: { type: "object", properties: {
       nodeId: { type: "string", description: "Node (or pattern id) to analyse; default: the whole file of the active node" },
-      query: { type: "string", description: "Only types whose text contains this (case-insensitive)" },
+      query: { type: "string", description: "Only types whose text contains this. Smart case: case-insensitive, but case-sensitive as soon as the query has an uppercase letter (\"GET\" matches only GET, \"get\" matches both)" },
       limit: { type: "integer", description: "Max. types to return (default 15, max 40)" },
     } },
     run: llmToolFindMessageTypes,
@@ -56466,7 +56617,7 @@ const LLM_TOOLS = [
   },
   {
     name: "create_link",
-    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread) or of a pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references (with examples and the message types that typically follow them) and Δt statistics. preview: true creates no node.",
+    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread) or of a pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references (with examples and the message types that typically follow them; unpairedFollowedBy coverages overlap — one reference can be followed by several types — so they need not sum to unpaired) and Δt statistics. preview: true creates no node.",
     parameters: { type: "object", properties: {
       refId: { type: "string" },
       targetId: { type: "string" },
@@ -56492,10 +56643,10 @@ const LLM_TOOLS = [
   },
   {
     name: "get_value_stats",
-    description: "min/max/mean/p10/median/p90 of one extraction column of a node (its own pattern or the one it inherits). column: 1-based placeholder number or column name.",
+    description: "min/max/mean/p10/median/p90 of one extraction column of a node or message type (pattern id; its placeholders). The node's own pattern or the nearest one it inherits provides the numbered columns; columns of extraction filters further up the chain can be addressed by NAME only (listed as \"name (from nX)\" in the Unknown-column error; the nearest wins a name clash). column: 1-based placeholder number (of the nearest extraction) or column name.",
     parameters: { type: "object", properties: {
-      nodeId: { type: "string" },
-      column: { type: "string", description: "1-based placeholder number or column name, default 1" },
+      nodeId: { type: "string", description: "Node or pattern id" },
+      column: { type: "string", description: "1-based placeholder number (nearest extraction) or column name (also those of extraction filters above), default 1" },
     }, required: ["nodeId"] },
     run: llmToolGetValueStats,
   },
@@ -56528,13 +56679,31 @@ const LLM_TOOLS = [
   },
   {
     name: "annotate",
-    description: "Bookmarks entries and/or attaches a note to them (the note carries your finding for the person; an existing note is kept and extended).",
+    description: "Bookmarks entries and/or attaches a note to them (the note carries your finding for the person; an existing note is kept and extended). To correct yourself: bookmark: false removes the bookmark, replaceNote: true replaces an existing note with `note` instead of extending it, note: \"\" removes the note. Not undoable with the person's Ctrl+Z.",
     parameters: { type: "object", properties: {
       entryIds: { type: "array", items: { type: "string" } },
-      note: { type: "string" },
-      bookmark: { type: "boolean" },
+      note: { type: "string", description: "The finding; \"\" clears the note" },
+      bookmark: { type: "boolean", description: "true adds the bookmark, false removes it" },
+      replaceNote: { type: "boolean", description: "true: replace an existing note instead of appending" },
     }, required: ["entryIds"] },
     run: llmToolAnnotate,
+  },
+  {
+    name: "delete_node",
+    description: "Deletes a node YOU created (with everything below it) — to take back a wrong filter, link or window. Only your own nodes (marked ✦ in the tree) can be deleted; files and the person's nodes are refused.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "A node you created" },
+    }, required: ["nodeId"] },
+    run: llmToolDeleteNode,
+  },
+  {
+    name: "rename_node",
+    description: "Gives a node YOU created a new display name. Only your own nodes (marked ✦ in the tree) can be renamed.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "A node you created" },
+      name: { type: "string", description: "The new name (not empty)" },
+    }, required: ["nodeId", "name"] },
+    run: llmToolRenameNode,
   },
   {
     name: "timeline",
@@ -56547,7 +56716,7 @@ const LLM_TOOLS = [
   },
   {
     name: "what_changed",
-    description: "Contrasts set A with set B on message-type level: types that are new in A, more or rarer than expected from B's rate, or gone. A = aNodeId (node or pattern id) and/or the time window aFrom..aTo of the file; B defaults to the rest of the same file, or give bNodeId / bFrom..bTo (another node, window or file). Only types with at least 3 occurrences count. Times as returned by timeline.",
+    description: "Contrasts set A with set B on message-type level: types that are new in A, more or rarer than expected from B's rate, or gone. A = aNodeId (node or pattern id) and/or the time window aFrom..aTo of the file; B defaults to the rest of the same file, or give bNodeId / bFrom..bTo (another node, window or file). Only types with at least 3 occurrences count (exception: a new type with ERROR/FATAL entries counts from a single one). Times as returned by timeline.",
     parameters: { type: "object", properties: {
       aNodeId: { type: "string", description: "Node or pattern id for A; default: the file of the active node when only aFrom/aTo are given" },
       aFrom: { type: "string" }, aTo: { type: "string" },
@@ -56571,10 +56740,10 @@ const LLM_TOOLS = [
   },
   {
     name: "group_by",
-    description: "Distribution of a node's entries over one column (thread, location, method, level, a format column or an extraction column): count and levels per value, at most 20 values. On a link node it groups the pairs by their START entry's value and adds, per value, entries without end (noEnd) and the Δt min/median/max.",
+    description: "Distribution of a node's entries over one column (thread, location, method, level, a format column or an extraction column — of the node's own/nearest extraction by number or name, of ancestor extractions by name, of a pattern id's placeholders): count and levels per value, at most 20 values. On a link node it groups the pairs by their START entry's value and adds, per value, entries without end (noEnd) and the Δt min/median/max.",
     parameters: { type: "object", properties: {
       nodeId: { type: "string", description: "Node or pattern id" },
-      column: { type: "string", description: "Column key/name, or an extraction column's number/name" },
+      column: { type: "string", description: "Column key/name, or an extraction column's number (nearest extraction) or name (also columns of extraction filters above; for a pattern id its placeholders)" },
     }, required: ["nodeId", "column"] },
     run: llmToolGroupBy,
   },
@@ -56648,9 +56817,10 @@ function mcpDrainQueue() {
 }
 function mcpRunCall(job) {
   let text = "", isError = true;
-  const created = [];
-  const prevRound = llmRoundCreated;
+  const created = [], recorded = [];
+  const prevRound = llmRoundCreated, prevActions = llmRoundActions;
   llmRoundCreated = created;
+  llmRoundActions = recorded;
   try {
     const r = runLlmTool(job.name, job.args || {});
     text = r.text; isError = !!r.error;
@@ -56658,9 +56828,10 @@ function mcpRunCall(job) {
     text = JSON.stringify({ error: "Tool failed: " + (e && e.message || e) });
   } finally {
     llmRoundCreated = prevRound;
+    llmRoundActions = prevActions;
     try {
       const label = "MCP: " + job.name;
-      const actions = created.filter(nid => state.nodes[nid]).map(nid => ({ kind: "create", nodeId: nid, parentId: state.nodes[nid].parentId }));
+      const actions = llmRoundUndoActions(recorded);
       if (actions.length === 1) pushUndo({ ...actions[0], label });
       else if (actions.length > 1) pushUndo({ kind: "batch", label, actions });
       render();
@@ -56681,7 +56852,7 @@ function mcpRunCall(job) {
    tool calls it makes are run (each one lands in the tree right away), the
    results go back, until it answers with text or the turn limit hits. A
    round ends done (text), stopped (Stop), limit, or error. Everything the
-   round created is ONE undo step ("batch" of "create" actions,
+   round did (create / delete_node / rename_node) is ONE undo step ("batch", from round.actions,
    llmPushRoundBatch), and "undo this round" (llmUndoRound) removes it later
    too, as its own undo step.
 
@@ -56721,7 +56892,7 @@ const LLM_SYSTEM_PROMPT = [
   "4. Show: show_view (table or plot) so the person sees the result — but only with the id of a node whose result said tablePlot: true. No such node yet? Create the extraction filter first (under a link: create_filter with parentId = the link node), then show_view on that new id. If there is nothing to extract, use view \"filtered\" instead. Plot types: line/bar/scatter/3d for values over time or against each other; radar (one row against selected ones) and parallel (every row across several axes, ranges highlight rows) for several columns with different units; heatmap/profile for an array column or same-unit columns.",
   "5. Diagnose (\"what is going on?\", \"why do these happen?\"): the analysis tools only read and create no nodes. Overview: get_overview, timeline (when are the bursts?). Find the unusual: find_message_types, what_changed (a burst or a run against the rest, or one file against another). Find causes: common_neighbors (what typically comes BEFORE the entries of a node, coverage n/refs and lift), group_by (which thread/axis/value), and create_link's unpairedFollowedBy (what follows references without an end). Prove it: get_entries with full: true (complete message, stack trace) or ids. Show it: create_window (a time window, or context around a node), create_filter, show_view, annotate.",
   "Pattern ids: find_message_types, timeline, what_changed, common_neighbors and create_link give message types an id like p7. Pass it wherever a nodeId is accepted by a reading tool (get_entries, timeline, group_by, common_neighbors, what_changed), or to create_filter as patternId to keep that type. create_filter and create_link accept preview: true to check the count without creating a node.",
-  "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something.",
+  "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something. If you made a mistake, correct it yourself: delete_node removes a node you created (a wrong filter), rename_node renames one; annotate with bookmark: false / replaceNote: true / note: \"\" undoes a bookmark or note of yours.",
 ].join("\n");
 
 const llm = {
@@ -56972,7 +57143,9 @@ function llmToolSummary(name, out) {
     case "common_neighbors": return "common_neighbors → " + (r.neighbors || []).length + " type(s) " + r.direction + " " + r.references + " reference(s)" + ((r.neighbors || [])[0] ? ", top: " + llmCut(r.neighbors[0].type, 50) + " " + r.neighbors[0].coverage : "");
     case "group_by": return "group_by → " + r.column + ": " + r.distinct + " value(s)";
     case "create_window": return "create_window → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies");
-    case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "");
+    case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.unbookmarked ? ", " + r.unbookmarked + " unbookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "") + (r.cleared ? ", " + r.cleared + " note(s) cleared" : "");
+    case "delete_node": return "delete_node → " + r.deleted + " (" + r.removedNodes + " node" + (r.removedNodes === 1 ? "" : "s") + ")";
+    case "rename_node": return "rename_node → " + r.nodeId + " " + llmCut(r.name, 60);
     default: return name;
   }
 }
@@ -57043,6 +57216,8 @@ async function llmSend(text) {
   if (!session) session = llmNewSession();
   if (!session.title) session.title = llmCut(text, 60);
   const round = { id: uid("round"), user: text, items: [], status: "running", error: null, created: [], refs: {}, startedAt: Date.now() };
+  // Not enumerable: undo snapshots must not end up in the saved session.
+  Object.defineProperty(round, "actions", { value: [], enumerable: false, writable: true });
   const roundIdx = session.rounds.length;
   session.rounds.push(round);
   session.history.push({ role: "user", content: text, round: roundIdx });
@@ -57050,6 +57225,7 @@ async function llmSend(text) {
   running.abort = new Promise(resolve => { running.onAbort = resolve; });
   llm.running = running;
   llmRoundCreated = round.created;
+  llmRoundActions = round.actions;
   llmTouch(session);
   llmNotify();
   const s = llmSettings();
@@ -57114,6 +57290,7 @@ async function llmSend(text) {
     llmHealHistory(session);
     llm.stream = null;
     llmRoundCreated = null;
+    llmRoundActions = null;
     llmPushRoundBatch(round);
     llm.running = null;
     mcpDrainQueue();
@@ -57145,7 +57322,7 @@ function llmHealHistory(session) {
 // One undo step for everything a round created (still existing, in
 // creation order — undo takes them back in reverse).
 function llmPushRoundBatch(round) {
-  const actions = round.created.filter(id => state.nodes[id]).map(id => ({ kind: "create", nodeId: id, parentId: state.nodes[id].parentId }));
+  const actions = llmRoundUndoActions(round.actions || []);
   if (!actions.length) return;
   pushUndo({ kind: "batch", llmRoundId: round.id, actions });
 }
@@ -57175,13 +57352,13 @@ function llmUndoRound(roundId, force) {
   const round = found.round;
   if (llm.running && llm.running.roundId === roundId) return { ok: false, reason: "running" };
   const alive = round.created.filter(id => state.nodes[id]);
-  if (!alive.length) return { ok: false, reason: "nothing left" };
   const top = undoStack[undoStack.length - 1];
   if (top && top.kind === "batch" && top.llmRoundId === round.id) {
     undo();
     llmNotify();
     return { ok: true, via: "undo" };
   }
+  if (!alive.length) return { ok: false, reason: "nothing left" };
   const own = new Set(round.created);
   const topLevel = alive.filter(id => {
     for (let p = state.nodes[id].parentId; p; p = state.nodes[p] && state.nodes[p].parentId) if (own.has(p) && state.nodes[p]) return false;
@@ -57216,6 +57393,8 @@ function llmThemeVars() {
 }
 function llmRoundUndoState(round) {
   if (llm.running && llm.running.roundId === round.id) return "none";
+  const top = undoStack[undoStack.length - 1];
+  if (top && top.kind === "batch" && top.llmRoundId === round.id) return "available";
   return round.created.some(id => state.nodes[id]) ? "available" : "none";
 }
 // The complete state of one session as the chat renders it — small, and

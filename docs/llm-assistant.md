@@ -35,17 +35,19 @@ owner `truncated: true`) until the result fits.
 | tool | returns |
 |---|---|
 | `get_overview` | files (count, time span, level counts), active node, current view, the whole tree (id, name, type, count, parent, depth; `extraction` = own placeholder pattern, `tablePlot` = Table/Plot available, i.e. `nodeIsExtractionView`) |
-| `find_message_types(nodeId?, query?, limit)` | the node's (or pattern id's; default: the active node's whole file) messages grouped by shape (`analysisPatternCounts`, as the Patterns tab), most frequent first: `patternId`, count, levels, first/last time, a typed extraction `pattern` (`patternFilterValue(…, true)`), and per placeholder a value distribution (≤ 10 distinct → value + count, else min/max or examples; `messagePatternValues` reads the values in placeholder order) |
+| `find_message_types(nodeId?, query?, limit)` | the node's (or pattern id's; default: the active node's whole file) messages grouped by shape (`analysisPatternCounts`, as the Patterns tab), most frequent first: `patternId`, count, levels, first/last time, a typed extraction `pattern` (`patternFilterValue(…, true)`), and per placeholder a value distribution (≤ 10 distinct → value + count, else min/max or examples; `messagePatternValues` reads the values in placeholder order). `query` uses smart case: case-insensitive unless it contains an uppercase letter |
 | `create_filter(parentId, pattern, mode, invert, patternId?, column?, preview?)` | (parent default: the active node's whole file, or the pattern id's file) a `text` filter (substring, or extraction when the pattern has placeholders) or regex filter via `createFilterNode`: node id, match count, examples, `tablePlot`, for an extraction its columns and sample values — or an error text (invalid regex/pattern, inverted extraction, unknown parent). `patternId` replaces `pattern` (the type's typed extraction pattern); `column` + `pattern` (= the value) builds the Facets panel's column filter (`facetFilterSpec` → `createFilterNodeFromSpec`; columns of `facetColumnsFor`, by key or label, level case-insensitive). `preview: true` → "Preview" below |
-| `create_link(refId, targetId, direction, key?, maxDtMs?/minDtMs?, preview?)` | `createLinkNode` (N = 1, not exclusive): pairs, references, `unpaired` (the link's references without an end, `node._linkUnmatched`), Δt min/median/max, examples, `tablePlot: false` and a tip to extract below the link; `key` is a column name or wildcard pattern (`linkKey`), the Δt bounds become `linkDt`. With unpaired references also `unpairedExamples` (≤ 3 entry ids) and `unpairedFollowedBy`: what typically follows them (`analysisNeighbors`, after, same thread, window = max(1 s, p90 of the pairs' Δt), lift ≥ 2, ≤ 5 rows `{type, patternId, coverage, medianDtMs}`). `preview: true` → "Preview" below |
+| `create_link(refId, targetId, direction, key?, maxDtMs?/minDtMs?, preview?)` | `createLinkNode` (N = 1, not exclusive): pairs, references, `unpaired` (the link's references without an end, `node._linkUnmatched`), Δt min/median/max, examples, `tablePlot: false` and a tip to extract below the link; `key` is a column name or wildcard pattern (`linkKey`), the Δt bounds become `linkDt`. With unpaired references also `unpairedExamples` (≤ 3 entry ids) and `unpairedFollowedBy`: what typically follows them (`analysisNeighbors`, after, same thread, window = max(1 s, p90 of the pairs' Δt), lift ≥ 2, ≤ 5 rows `{type, patternId, coverage, medianDtMs}`; the coverages overlap — one unpaired reference can be followed by several types — so they need not sum to `unpaired`, which a `note` next to the field says). `preview: true` → "Preview" below |
 | `get_entries(nodeId, from, max ≤ 20, ids?, full?)` | entries (of a node or pattern id) with id, time, level, message (first line, ≤ 200 chars). `ids` (≤ 20 entry ids) instead of nodeId/from/max; unknown ids are listed in `unknown`. `full: true`: every line (above 60 lines the first 15, `… N lines …`, the last 30 — a stack trace's innermost exception is at the end; a line is cut at 300 chars), `lines`, thread/location/method and the file name |
-| `get_value_stats(nodeId, column)` | min/max/mean/p10/median/p90 of one extraction column (own or inherited pattern, `llmExtractRows`); a non-numeric column gets its value distribution |
+| `get_value_stats(nodeId, column)` | min/max/mean/p10/median/p90 of one extraction column of a node or pattern id (pattern id: the typed pattern of the type, `llmPatternExtractRows`); a non-numeric column gets its value distribution. Columns: the nearest extraction's (own or inherited, `llmExtractRows`) by 1-based number or name; those of extraction filters further up the chain by NAME only (`llmExtractColumns`: applied to the node's entries, nearest wins a name clash, errors list them as `name (from nX)`). The Table still shows only the nearest extraction. A link node answers with "create an extraction filter under the link" |
 | `show_view(nodeId, view, plot?, unpaired?)` | activates the node and opens log/filtered/table/plot/patterns; `plot` = `{type, x, y, z, color, colorMap, columns, array, row, ranges}` for every chart type (line/bar/scatter/3d/heatmap/profile/radar/parallel), columns as `time`/`index`/`dt` or a column number/name, stored through `sanitizePlotConfig`. `columns` sets the value charts' column group (heatmap/profile then read it instead of an array), `array` an array column, `row` (1-based) the Profile/Radar row, `ranges` `{column: [min, max]}` (null = open end) the parallel-coordinates ranges (`plotParallelBrushes`, set after the render so a node switch doesn't reset them). Unknown type/colormap/column → error text with the valid list. Returns the effective plot (column names, row count, for Parallel the rows in range). table/plot on a node without `tablePlot` → error naming the concrete fix (`create_filter` with placeholders under that node id — for a link, under the link — then `show_view` on the new id, or view `filtered`)  `unpaired: "only"` (link node, view `filtered`) sets the link view's "N without end" chip to "only these" (`linkViewUnmatched = 2`) |
-| `annotate(entryIds, note?, bookmark?)` | sets bookmarks (never toggles one off) and notes (an existing note is kept, the finding appended) |
+| `annotate(entryIds, note?, bookmark?, replaceNote?)` | default: `bookmark: true` only adds bookmarks (never toggles one off), a note is appended to an existing one. Corrections: `bookmark: false` removes the bookmark (only where set), `replaceNote: true` replaces an existing note, `note: ""` clears it. Result `{entries, bookmarked, unbookmarked, noted, cleared}` |
+| `delete_node(nodeId)` | deletes a node **the assistant created** (`llmCreatedNodeIds`, the ✦ set) with its subtree: `{deleted, removedNodes}`. Files, the person's nodes, pattern ids and locked nodes → error ("belongs to the person"). The ids stay in `llmCreatedNodeIds`, so undo brings the ✦ back |
+| `rename_node(nodeId, name)` | sets `node.label` of an assistant-created node (same ownership rule; empty name → error): `{nodeId, name}` |
 | `timeline(nodeId?, buckets?)` | `analysisTimeline`: from/to, counts per time bucket (default 40, max 120), `usualPerSec` and the bursts (time window, count, factor, levels, ≤ 3 `topTypes` with `patternId`). A plain-text file has no time axis → no bursts, a note |
-| `what_changed(aNodeId?, aFrom?, aTo?, bNodeId?, bFrom?, bTo?)` | `analysisWhatChanged`: A = node/pattern id and/or a time window; B = the rest of A's file over the time that is left, or another node/window/file. Groups `new`, `more`, `rarer`, `gone` (≤ 8 rows each: patternId, type, countA, countB, expected, factor, example id) |
+| `what_changed(aNodeId?, aFrom?, aTo?, bNodeId?, bFrom?, bTo?)` | `analysisWhatChanged`: A = node/pattern id and/or a time window; B = the rest of A's file over the time that is left, or another node/window/file. Groups `new`, `more`, `rarer`, `gone` (≤ 8 rows each: patternId, type, countA, countB, expected, factor, example id). Runs with `keepSevere`: a `new` type with ERROR/FATAL entries is kept below 3 occurrences |
 | `common_neighbors(nodeId, direction?, windowMs?, sameThread?, minLift?, showAll?)` | `analysisNeighbors` over the node's (or pattern's) entries: ≤ 12 types `{patternId, type, coverage "n/refs", inWindows, lift, medianDistMs, maxLevel, example}`, only lift ≥ minLift unless `showAll` (then each row has `significant`); empty result → a hint, otherwise a tip naming `create_window` |
-| `group_by(nodeId, column)` | `analysisGroupBy`: count + levels per value of a format/facet column (`facetColumnsFor`, key or label) or an extraction column (number/name), ≤ 20 values + `others`. On a link node the pairs are grouped by the START entry's value with `noEnd` and Δt min/median/max per value |
+| `group_by(nodeId, column)` | `analysisGroupBy`: count + levels per value of a format/facet column (`facetColumnsFor`, key or label) or an extraction column (number/name; ancestor extractions' columns by name, a pattern id's placeholders — same rules as `get_value_stats`), ≤ 20 values + `others`. On a link node the pairs are grouped by the START entry's value with `noEnd` and Δt min/median/max per value |
 | `create_window(parentId?, from?, to?, aroundNodeId?, beforeMs?, afterMs?)` | from/to → a new `timerange` child (`createFilterNode`, never an in-place edit like `applyTimeWindow`'s time-node branch), times parsed by `llmParseTime` (`HH:MM:SS(.mmm)` on the file's first day, `YYYY-MM-DD HH:MM:SS(.mmm)` with space or T, `line N` in plain text — what `llmTime` prints); aroundNodeId (a filter node) + beforeMs/afterMs (default 1000 each) → `createContextNode`. Returns nodeId, name, entry count |
 
 Entries are referenced by their id (`e1234`); a link pair by its first real
@@ -72,7 +74,7 @@ resolver `llmResolveEntries(id)` returns `{ entries, node (null for a
 pattern), fileId, label }` — the node's entries, or the file's entries whose
 `normalizeMessagePattern` equals the key. `create_filter(patternId)` builds
 the filter from the stored key and float mask. Node-only tools (`show_view`,
-`get_value_stats`, parents, link sides) answer a pattern id with "is a
+parents, link sides) answer a pattern id with "is a
 pattern id, not a node"; an unknown one with "call find_message_types again".
 
 ### Preview
@@ -111,9 +113,9 @@ tools, link header), the Neighbors tab and Patterns Compare run it in time slice
   entry. Buckets are counted linearly (the filtered entries are not the
   minimap's root array, so `minimapBucketBounds` does not apply).
 - `analysisWhatChanged(entriesA, entriesB, { durationAMs, durationBMs, minCount = 3,
-  minFactor = 2 })` → `{ a, b: { entries, durationMs }, new, more, rarer, gone }`,
+  minFactor = 2, keepSevere = false })` → `{ a, b: { entries, durationMs }, new, more, rarer, gone }`,
   rows `{ key, floatMask, countA, countB, expected, factor, example }`;
-  Expected = countB × durationA ÷ durationB; `new` countB = 0 and countA ≥ 3;
+  Expected = countB × durationA ÷ durationB; `new` countB = 0 and countA ≥ 3 (with `keepSevere` also countA < 3 when the type has ERROR/FATAL entries; the LLM tool sets it, the Analyze UI does not);
   `more` countA ≥ 3 and ≥ 2 × expected; `rarer` expected ≥ 3 and countA ≤
   expected ÷ 2; `gone` countA = 0 and expected ≥ 3; ranked by |ln factor| × √count.
 - `analysisNeighbors(refEntries, fileEntries, { direction, windowMs, sameThread,
@@ -214,17 +216,26 @@ chat-completions format requires.
 **Undo.** Every node a tool creates is recorded (`llmRoundCreated` →
 `round.created`, and `llmCreatedNodeIds` for the tree marker); tool runs execute
 inside `withoutCreateUndo`, so the generic per-creation undo step of user
-creations never fires for them. When the round
-ends, `llmPushRoundBatch` pushes one `"batch"` of `"create"` actions — Ctrl+Z
-takes back the whole round. **"Undo this round"** (`llmUndoRound(roundId,
+creations never fires for them. Instead every undoable change of a tool is
+recorded as a ready undo action, in order, in `llmRoundActions` (same lifetime
+as `llmRoundCreated`; `round.actions` in the agent loop, a local list in
+`mcpRunCall`): `llmNoteCreated` adds a `"create"`, `delete_node` a `"delete"`
+(snapshot + `removedIds`) and `rename_node` an `"edit"` via `llmRecordUndo`.
+`llmRoundUndoActions` filters them (a creation whose node vanished is kept
+only when a recorded delete took it, so reverse-order undo of create → rename
+→ delete works). When the round ends, `llmPushRoundBatch` pushes one `"batch"`
+of them — Ctrl+Z takes back the whole round; an MCP call pushes its actions as
+one step the same way. **"Undo this round"** (`llmUndoRound(roundId,
 force)`): if that batch is still on top of the undo stack it is simply
 `undo()`; otherwise the round's remaining nodes (only the top-most ones —
 nested ones go with their parent) are deleted as a new `"batch"` of
 `"delete"` actions, itself undoable. If the person created filters below
 them, it returns `{needsConfirm, foreign}` and deletes nothing until called
 with `force`. Nothing left → `{reason: "nothing left"}`, and the round's
-button is disabled (`undo: "none"` in the snapshot). Bookmarks/notes set by
-`annotate` and view changes are not part of the undo step.
+button is disabled (`undo: "none"` in the snapshot). If the round's batch is on top, "Undo this round" also
+restores nodes the round deleted and renames; the delete fallback only removes
+created nodes. Bookmarks/notes set by `annotate` (the GUI has no undo for them
+either) and view changes are not part of the undo step.
 
 **Context budget.** Tool messages keep a one-line summary
 (`llmToolSummary`, e.g. `create_filter → n42 "…", 318 match(es)`); tool

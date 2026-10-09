@@ -1,0 +1,5 @@
+- **feat: the assistant / MCP agents can correct their own mistakes (2026-10-09, person-requested)**
+  - New tools `delete_node` and `rename_node`; they only work on nodes the assistant itself created (the ✦ set) and refuse files, the person's nodes and locked nodes.
+  - Their undo steps are recorded in order together with creations: one undo step per MCP call, part of the round batch for the in-app assistant ("Undo this round" restores them too).
+  - `annotate` gains `bookmark: false`, `replaceNote: true` and `note: ""` (clear); still not undoable, like the GUI's bookmarks/notes.
+  - **Tests**: GROUP llm-agent-corrections. Docs: docs/llm-assistant.md.

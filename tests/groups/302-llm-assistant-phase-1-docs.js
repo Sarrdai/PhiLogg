@@ -130,5 +130,5 @@ await withApp(async (w, d, T) => {
   const back = JSON.parse(txt);
   assert(txt.length <= 2000 && back.truncated === true && back.rows.length > 5 && back.rows.length < 500, "llmFitBudget halves the largest array and says so");
   assert(w.llmFitBudget({ s: "y".repeat(5000) }, 1000).length <= 1000, "a single huge value is cut as text");
-  assert(w.llmToolSpecs().length === 13 && w.llmToolSpecs().every(s => s.type === "function" && s.function.parameters.type === "object"), "thirteen tools in the OpenAI tools shape");
+  assert(w.llmToolSpecs().length === 15 && w.llmToolSpecs().every(s => s.type === "function" && s.function.parameters.type === "object"), "fifteen tools in the OpenAI tools shape");
 });

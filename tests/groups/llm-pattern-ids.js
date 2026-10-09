@@ -26,7 +26,7 @@ await withApp(async (w, d, T) => {
 
   const bad = llmRun(w, "get_entries", { nodeId: "p9999" });
   assert(bad.error && bad.error.includes("find_message_types again"), "unknown pattern id → error that says what to do, got " + bad.error);
-  const asNode = llmRun(w, "get_value_stats", { nodeId: reached.patternId });
+  const asNode = llmRun(w, "create_window", { aroundNodeId: reached.patternId });
   assert(asNode.error && asNode.error.includes("pattern id"), "a node-only tool explains that a pattern id is not a node, got " + asNode.error);
   assert(llmRun(w, "show_view", { nodeId: reached.patternId, view: "filtered" }).error.includes("pattern id"), "show_view needs a node");
 });
