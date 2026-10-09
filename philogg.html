@@ -3717,10 +3717,16 @@
   .link-chip:disabled{opacity:.4; cursor:default;}
   .link-hop-row.nested-forced .link-hop-field, .link-hop-row.nested-forced .link-hop-dir{opacity:.5;}
   /* "Same → wildcards": the mapping box under the chips, and the colours that tie a mapping to its values in the preview. */
-  .link-wc-box{margin:2px 0 0 48px; padding:8px 10px; border:1px solid var(--border); border-radius:9px; background:var(--bg-app); display:flex; flex-direction:column; gap:6px; min-width:0;}
+  .link-wc-box{margin:2px 0 0 0; padding:8px 10px; border:1px solid var(--border); border-radius:9px; background:var(--bg-app); display:flex; flex-direction:column; gap:6px; min-width:0;}
   .link-wc-box.hidden{display:none;}
   .link-wc-row{display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary);}
-  .link-wc-row select{flex:1 1 80px; min-width:0; max-width:100%; text-overflow:ellipsis;}
+  .link-wc-row{flex-wrap:nowrap;}
+  .link-wc-row select{flex:1 1 0; min-width:0; text-overflow:ellipsis; padding-left:5px; padding-right:2px; font-size:11.5px;}
+  .link-wc-cap{display:none; font-size:10.5px; color:var(--text-tertiary);}
+  body.layout-phone .link-wc-cap{display:block;}
+  body.layout-phone .link-wc-lab-word{display:none;}
+  .link-wc-eq{display:none;}
+  body.layout-phone .link-wc-eq{display:inline;}
   .link-wc-row .link-wc-lab{white-space:nowrap;}
   .link-wc-swatch{width:10px; height:10px; border-radius:3px; flex:0 0 auto;}
   .link-wc-add{align-self:flex-start;}
@@ -3731,7 +3737,8 @@
   .filter-sample-hit.link-kv-1{background:color-mix(in srgb, var(--level-custom-6) 22%, transparent); color:var(--level-custom-6);}
   .filter-sample-hit.link-kv-2{background:color-mix(in srgb, var(--level-custom-3) 22%, transparent); color:var(--level-custom-3);}
   body.layout-phone .link-wc-box{margin-left:0;}
-  body.layout-phone .link-wc-row select{min-height:40px; flex-basis:100%;}
+  body.layout-phone .link-wc-row select{min-height:40px; font-size:12px; padding-left:4px; padding-right:2px;}
+  body.layout-phone .link-wc-row{gap:4px;}
   body.layout-phone .link-pairing .link-seg{flex-wrap:wrap;}
   .link-more{margin:0 0 10px; font-size:11.5px; color:var(--text-secondary);}
   .link-more summary{cursor:pointer; margin-bottom:6px;}
@@ -5310,6 +5317,7 @@
   .filter-sample-row .col-bar{margin:2px 0; height:16px;}
   .filter-sample-time{color:var(--text-tertiary); white-space:nowrap;}
   .filter-sample-msg{color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .filter-sample-msg2{grid-column:-2; grid-row:2; color:var(--text-secondary);}
   .filter-sample-hit{background:var(--accent-soft); color:var(--accent-strong); border-radius:3px; padding:0 1px;}
   /* ---------- Filter popup: live pattern preview (real sample message, matched substrings highlighted in place) ---------- */
   #filterPatternPreview{
@@ -42725,7 +42733,19 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
     msg.title = e.message;
     // Optional, inert unless the caller passes it: [{ start, end, cls }] ranges of e.message to mark (the link dialog's key values).
     const ranges = opts.highlights ? opts.highlights(e) : null;
-    if (ranges && ranges.length) appendSampleRanges(msg, e.message, ranges);
+    // opts.splitPairs (inert by default): a pair's second entry goes on its own line, "⟶ " + message, so both
+    // marked texts stay visible behind their own ellipsis; the ranges (made for first + separator + second) are split with it.
+    let msg2 = null;
+    if (opts.splitPairs && ranges && ranges.length && e.isPair && !e.first.isPair && !e.second.isPair) {
+      const cut = e.first.message.length + PAIR_SEPARATOR.length;
+      msg.title = e.first.message;
+      appendSampleRanges(msg, e.first.message, ranges.filter(r => r.start < cut));
+      msg2 = document.createElement("span");
+      msg2.className = "filter-sample-msg filter-sample-msg2";
+      msg2.title = e.second.message;
+      msg2.append(PAIR_SEPARATOR.trim() + " ");
+      appendSampleRanges(msg2, e.second.message, ranges.filter(r => r.start >= cut).map(r => ({ start: r.start - cut, end: r.end - cut, cls: r.cls })));
+    } else if (ranges && ranges.length) appendSampleRanges(msg, e.message, ranges);
     else appendSampleMessage(msg, e.message, hitRe);
     if (opts.badge) {
       const badge = document.createElement("span");
@@ -42735,6 +42755,7 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
     } else {
       row.append(bar, time, msg);
     }
+    if (msg2) row.appendChild(msg2);
     target.samples.appendChild(row);
   });
 }
@@ -46631,9 +46652,9 @@ function renderLinkWildcardBox() {
   const wc = linkDlg.wc, maps = linkDlg.key.value;
   const opts = (n, vals, sel) => Array.from({ length: n }, (_, i) =>
     '<option value="' + i + '"' + (i === sel ? " selected" : "") + ">[*] #" + (i + 1) + (vals[i] ? " · " + escapeHtml(vals[i]) : "") + "</option>").join("");
-  let html = maps.map(([i, j], k) =>
-    '<div class="link-wc-row" data-map="' + k + '"><span class="link-wc-swatch link-kv-' + (k % 3) + '"></span><span class="link-wc-lab">Start</span>' +
-    '<select data-map-side="0" aria-label="Start wildcard">' + opts(wc.nStart, wc.startVals, i) + '</select><span class="link-wc-lab">= End</span>' +
+  let html = '<div class="link-wc-cap">Start = End</div>' + maps.map(([i, j], k) =>
+    '<div class="link-wc-row" data-map="' + k + '"><span class="link-wc-swatch link-kv-' + (k % 3) + '"></span><span class="link-wc-lab link-wc-lab-word">Start</span>' +
+    '<select data-map-side="0" aria-label="Start wildcard">' + opts(wc.nStart, wc.startVals, i) + '</select><span class="link-wc-lab"><span class="link-wc-lab-word">= End</span><span class="link-wc-eq">=</span></span>' +
     '<select data-map-side="1" aria-label="End wildcard">' + opts(wc.nEnd, wc.endVals, j) + "</select>" +
     (maps.length > 1 ? '<button type="button" class="link-side-btn" data-map-remove title="Remove this mapping" aria-label="Remove this mapping">✕</button>' : "") + "</div>").join("");
   if (maps.length < Math.min(wc.nStart, wc.nEnd)) html += '<button type="button" class="link-side-btn link-wc-add" data-map-add>+ another</button>';
@@ -46906,7 +46927,7 @@ function runLinkPreview() {
     samples: firstUnmatched ? slowest.slice(0, Math.max(0, FILTER_SAMPLE_ROWS - 1)).concat([firstUnmatched]) : slowest,
     badge: e => noEnd.has(e) ? "no end" : "Δt " + formatMs(e.dtMs),
     badgeWarn: e => noEnd.has(e),
-    highlights: linkDlg.key.type === "wildcards" ? linkKeyHighlights : null,
+    highlights: linkDlg.key.type === "wildcards" ? linkKeyHighlights : null, splitPairs: true,
   });
   if (max > 60000) {
     linkHint.textContent = "Longest pair " + formatMs(max) + ": probably paired across different events. Try " + (linkDlg.key.type === "none" ? "a" : "another") + " “Same” key.";
