@@ -1,0 +1,5 @@
+- **feat: filter tree labels, NOT badge, one-line time windows, right-click target (2026-10-09, person-decided after the desktop usability test)**
+  - Labels use the full width up to the count (the hover buttons overlay the row end), long ones are cut in the middle so the end stays visible; full text in the tooltip.
+  - Inverted nodes show a small red "NOT" badge instead of the tiny "¬"; time-window nodes are one line, "08:38:05–08:38:06 · 1.9s" (milliseconds only in the tooltip).
+  - A right-click outlines the target node while its menu is open and the menu header names it; the selection does not change.
+  - **Tests**: GROUP tree-labels-i4 (replaces time-label-wrap), log-table-readability section c made load-robust. Docs: docs/ui-and-views.md, docs/filters.md, PROJECT.md.

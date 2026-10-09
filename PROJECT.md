@@ -135,7 +135,7 @@ Two entry points toggle it: the **NOT checkbox** in the filter popup (Ctrl+Shift
 
 Toggling `inverted` is a **structural-equivalent change** for caching purposes even though it touches neither `parentId` nor `children`: it changes the node's own result, which every descendant's cached result transitively depends on. It goes through `invalidateNodeSubtreeCaches(nodeId)` (the node and all its descendants, see "Memoization"). `cloneSubtree()` carries `inverted` onto the clone like every other field, so copy/cut/paste and drag-and-drop preserve it.
 
-In the tree, an inverted node's label gets a `"¬ "` prefix and its type tag turns red (`.tree-row.inverted .tree-type-tag`) — visible without opening the node.
+In the tree, an inverted node gets a small red `NOT` badge (`.tree-not-badge`) before its label and its type tag turns red (`.tree-row.inverted .tree-type-tag`) — visible without opening the node. (Status line, phone title and Why panel still use the `"¬ "` text prefix.)
 
 **Mute interaction** (`muted: true`, see `docs/filters.md` → "Muting a filter node"): `getEntries` returns the parent's result for a muted node before any inversion/caching, so NOT is ignored (but kept) while muted.
 

@@ -944,19 +944,32 @@
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
   }
-  /* Time-filter labels: up to 2 lines, breaking only between .tl-seg segments. */
-  .tree-label.tree-label-wrap{
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
-    white-space:normal; line-height:1.3;
+  /* Time-filter labels stay on ONE line ("08:38:05–08:38:06 · 1.9s", no
+     milliseconds: those are in the tooltip): the bounds (.tl-range) shrink
+     with an ellipsis, the duration (.tl-dur) never does. */
+  .tree-label.tree-label-time{display:flex; align-items:baseline; gap:.3em;}
+  .tree-label-time .tl-range{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .tree-label-time .tl-dur{flex:none; white-space:nowrap;}
+  /* Long plain labels are cut in the MIDDLE: the head shrinks with an
+     ellipsis, the last few characters (.tl-tail) always stay visible, since
+     the end is what tells similar nodes apart. white-space:pre keeps the
+     blank at the split point. */
+  .tree-label.tree-label-mid{display:flex; white-space:pre;}
+  .tree-label-mid .tl-head{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:pre;}
+  .tree-label-mid .tl-tail{flex:none; white-space:pre;}
+  /* Inverted (NOT) nodes: small red badge before the label. */
+  .tree-not-badge{
+    flex:0 0 auto; font-family:var(--font-mono); font-size:8.5px; font-weight:700; letter-spacing:.04em;
+    line-height:1.2; padding:1px 4px; border-radius:3px; margin-right:-2px;
+    background:var(--level-error); color:var(--bg-app);
   }
-  .tree-label-wrap .tl-seg{white-space:nowrap;}
-  /* With a duration: flex row, bounds shrink (2-line clamp + ellipsis), the duration never does. */
-  .tree-label.tree-label-dur{display:flex; align-items:baseline; gap:.3em;}
-  .tree-label-dur .tl-range{
-    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
-    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2;
+  /* Target of the open tree context menu (the selection itself is unchanged). */
+  .tree-row.ctx-target{outline:1.5px solid var(--accent); outline-offset:-1.5px; border-radius:4px; background:var(--bg-elevated);}
+  #treeContextMenu .ctx-target-head{
+    color:var(--text-tertiary); font-family:var(--font-ui); font-size:11px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; padding:6px 10px 5px; border-bottom:1px solid var(--border);
   }
-  .tree-label-dur .tl-dur{flex:none; white-space:nowrap;}
+  #treeContextMenu .ctx-target-head b{color:var(--text-primary); font-weight:600;}
   [data-type="file"] > .tree-row .tree-label{font-weight:600; color:var(--text-primary);}
   .tree-rename-input{
     width:100%; min-width:0; font:inherit; font-size:12.3px; color:var(--text-primary);
@@ -969,9 +982,9 @@
     letter-spacing:.3px; color:var(--text-tertiary); background:var(--bg-elevated-2);
     border:1px solid var(--border-soft); border-radius:4px; padding:1px 4px;
   }
-  /* Inverted (NOT) filters get a red-tinted type tag and a "¬" prefix on
-     their label (added in renderNode) so the negation is visible at a glance
-     without having to open the node. */
+  /* Inverted (NOT) filters get a red-tinted type tag and a red "NOT" badge
+     before their label (added in renderNode) so the negation is visible at a
+     glance without having to open the node. */
   .tree-row.inverted .tree-type-tag{color:var(--level-error); border-color:var(--level-error);}
   .tree-llm-mark{flex:0 0 auto; font-size:10px; color:var(--accent); margin-left:4px; opacity:.85;}
   .tree-count{
@@ -1007,6 +1020,18 @@
   .tree-mute:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-mute .icon{width:12px; height:12px;}
   .tree-row.muted .tree-mute{opacity:1; color:var(--level-warn);}
+  /* Desktop: the hover buttons overlay the row's right end instead of reserving
+     ~40px next to the count, so a label uses the full width up to the count.
+     (A muted row's eye stays in flow: it is always visible. The compact and
+     phone layouts keep the buttons in flow, their touch targets are bigger.) */
+  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-del,
+  body:not(.layout-compact):not(.layout-phone) .tree-row:not(.muted) .tree-mute{
+    position:absolute; top:50%; transform:translateY(-50%); background:var(--bg-elevated); z-index:1;
+  }
+  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-del{right:6px;}
+  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-del:hover{background:color-mix(in srgb,var(--level-error) 18%,var(--bg-elevated));}
+  body:not(.layout-compact):not(.layout-phone) .tree-row:not(.muted) .tree-mute:hover{background:color-mix(in srgb,var(--accent) 22%,var(--bg-elevated));}
+  body:not(.layout-compact):not(.layout-phone) .tree-row:not(.muted) .tree-mute{right:26px;}
   .tree-row.muted .tree-label{text-decoration:line-through; text-decoration-color:var(--text-tertiary); color:var(--text-tertiary);}
   .tree-row.muted .tree-icon,.tree-row.muted .tree-swatch{opacity:.45;}
   .tree-row.muted .tree-count{font-style:italic;}
@@ -15253,12 +15278,12 @@ function timeRangeBoundLabel(nodeId, ts, withMs) {
   const sameDay = first && !isNaN(first) && first.getFullYear() === d.getFullYear() && first.getMonth() === d.getMonth() && first.getDate() === d.getDate();
   return sameDay ? text : `${p2(d.getMonth() + 1)}-${p2(d.getDate())} ${text}`;
 }
-function timeRangeFilterName(value, nodeId) {
+function timeRangeFilterName(value, nodeId, compact) {
   const from = value && value.from, to = value && value.to;
   const plain = nodeIsPlainText(nodeId);
-  const ms = from != null && to != null && Math.abs(to - from) < 10000 && !plain;
+  const ms = !compact && from != null && to != null && Math.abs(to - from) < 10000 && !plain;
   const f = ts => timeRangeBoundLabel(nodeId, ts, ms);
-  if (from != null && to != null) return `${f(from)} – ${f(to)}` + (plain ? "" : ` · ${formatMs(Math.abs(to - from))}`);
+  if (from != null && to != null) return `${f(from)}${compact ? "–" : " – "}${f(to)}` + (plain ? "" : ` · ${formatMs(Math.abs(to - from))}`);
   if (from != null) return `from ${f(from)}`;
   if (to != null) return `until ${f(to)}`;
   return "any time";
@@ -22969,6 +22994,16 @@ function startRenameNode(nodeId) {
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
 // default, etc.) still reads it directly.
+// Middle-ellipsis labels (see .tree-label-mid): only labels longer than the
+// minimum are split, the tail is the part that always stays visible.
+const TREE_LABEL_MID_MIN = 24, TREE_LABEL_TAIL = 10;
+// Node id whose context menu is open (outlined via .ctx-target); null otherwise.
+let treeCtxTargetId = null;
+function setTreeCtxTarget(id) {
+  treeCtxTargetId = id;
+  document.querySelectorAll("#tree .tree-row.ctx-target").forEach(r => r.classList.remove("ctx-target"));
+  if (id) { const r = document.querySelector('#tree .tree-row[data-node-id="' + id + '"]'); if (r) r.classList.add("ctx-target"); }
+}
 function nodeDisplayName(node) {
   if (node.type === "filter" && node.label) return node.label;
   return node.name;
@@ -23089,7 +23124,7 @@ function renderNode(id, depth, opts) {
   const kbLoadId = kbLoadNavIdOf(node); // being loaded from the keyboard: the cursor's row while it loads
   row.className = "tree-row" + (id === state.activeId ? " active" : "") + (kbLoadId && treeCursorId() === kbLoadId ? " tree-cursor" : "") + clipClass + multiClass + invertClass + muteClass +
     (node.type === "filter" && (node.filterType === "and" || node.filterType === "or") ? " filter-" + node.filterType : "") +
-    (treeSelectMode ? " select-mode" : "");
+    (treeSelectMode ? " select-mode" : "") + (id === treeCtxTargetId ? " ctx-target" : "");
   // Base/step tuned (person-reported) so a file's own icon doesn't waste
   // left-edge space, and a child filter's swatch/chevron/icon clearly sit
   // to the RIGHT of its file's icon column instead of visually overlapping
@@ -23225,45 +23260,47 @@ function renderNode(id, depth, opts) {
     // opts.labelText: a ZIP entry nested under its subfolder rows shows
     // just its basename (renderZipSection); the title keeps the full path.
     const displayName = (opts && opts.labelText) || nodeDisplayName(node);
-    const shownName = node.inverted ? "¬ " + displayName : displayName;
-    if (!(opts && opts.labelText) && !node.label && node.type === "filter" &&
-        (node.filterType === "timerange" || node.filterType === "after" || node.filterType === "before")) {
-      // Time-filter labels wrap onto at most 2 lines, breaking only after the
-      // " – " / " · " separators: each segment is a nowrap span, the single
-      // spaces between them are the only break opportunities. textContent
-      // stays identical to the plain name.
-      // A timerange label with a duration ("… · 4.2s") keeps the duration in
-      // its own non-shrinking .tl-dur: when space runs out the bounds
-      // (.tl-range) get clamped/ellipsized, never the duration.
-      label.classList.add("tree-label-wrap");
-      const durAt = node.filterType === "timerange" ? shownName.lastIndexOf(" · ") : -1;
-      let rangeHost = label;
+    const isTimeNode = !(opts && opts.labelText) && !node.label && node.type === "filter" &&
+      (node.filterType === "timerange" || node.filterType === "after" || node.filterType === "before");
+    if (isTimeNode) {
+      // One line, no milliseconds (the tooltip has them): a timerange label
+      // "08:38:05–08:38:06 · 1.9s" keeps the duration in its own non-shrinking
+      // .tl-dur, the bounds (.tl-range) get the ellipsis when space runs out.
+      const name = node.filterType === "timerange" ? timeRangeFilterName(node.value, node.parentId, true) : displayName;
+      const durAt = node.filterType === "timerange" ? name.lastIndexOf(" · ") : -1;
       if (durAt > 0) {
-        label.classList.add("tree-label-dur");
-        rangeHost = document.createElement("span");
-        rangeHost.className = "tl-range";
-        label.appendChild(rangeHost);
-      }
-      const rangeText = durAt > 0 ? shownName.slice(0, durAt + 2) : shownName;
-      rangeText.split(/(?<=[–·]) /).forEach((seg, i) => {
-        if (i) rangeHost.appendChild(document.createTextNode(" "));
-        const sp = document.createElement("span");
-        sp.className = "tl-seg";
-        sp.textContent = seg;
-        rangeHost.appendChild(sp);
-      });
-      if (durAt > 0) {
+        label.classList.add("tree-label-time");
+        const range = document.createElement("span");
+        range.className = "tl-range";
+        range.textContent = name.slice(0, durAt + 2);
+        label.appendChild(range);
         label.appendChild(document.createTextNode(" "));
         const dur = document.createElement("span");
         dur.className = "tl-dur";
-        dur.textContent = shownName.slice(durAt + 3);
+        dur.textContent = name.slice(durAt + 3);
         label.appendChild(dur);
-      }
-    } else label.textContent = shownName;
+      } else label.textContent = name;
+    } else if (displayName.length > TREE_LABEL_MID_MIN) {
+      // Middle ellipsis: head shrinks, the last TREE_LABEL_TAIL characters stay.
+      label.classList.add("tree-label-mid");
+      const head = document.createElement("span");
+      head.className = "tl-head";
+      head.textContent = displayName.slice(0, -TREE_LABEL_TAIL);
+      const tail = document.createElement("span");
+      tail.className = "tl-tail";
+      tail.textContent = displayName.slice(-TREE_LABEL_TAIL);
+      label.append(head, tail);
+    } else label.textContent = displayName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
     (node.label ? "  [" + node.name + "]" : "") +
     (node.type === "filter" && node.filterType === "timerange" ? "\n" + timeRangeFullTitle(node.value, node.parentId) : "");
+  if (node.inverted) {
+    const badge = document.createElement("span");
+    badge.className = "tree-not-badge";
+    badge.textContent = "NOT";
+    row.appendChild(badge);
+  }
   row.appendChild(label);
   // Created by the LLM assistant in this run (llmCreatedNodeIds — an
   // in-memory set, not a node field).
@@ -40703,6 +40740,7 @@ function buildInactiveFileRow(folder, rec, text) {
 let folderCtxTarget = null; // { folderId, name } while this menu is open
 function openFolderFileContextMenu(ev, folder, rec) {
   treeCtxId = null;
+  setTreeCtxTarget(null);
   folderCtxTarget = { folderId: folder.id, name: rec.name };
   const html = '<div class="ctx-meta">' + escapeHtml(rec.name) + '</div><div class="ctx-sep"></div>' +
     ctxGroupsHtml([{ head: "File", items: ['<div class="ctx-item" data-action="loadFolderFile">' + ICON_LOAD + ' Load file</div>'] }]);
@@ -44928,7 +44966,7 @@ const treeCtxInfoMenu = el("#treeCtxInfoMenu");
 
 function closeTreeCtxInfoMenu() { treeCtxInfoMenu.classList.add("hidden"); }
 
-function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); closeTreeCtxInfoMenu(); }
+function closeTreeContextMenu() { treeContextMenu.classList.add("hidden"); closeTreeCtxInfoMenu(); setTreeCtxTarget(null); }
 
 // Hover/click submenu for the tree context menu's "Info" trigger (see
 // openTreeContextMenu) — same #addToSelectionMenu shape (position next to
@@ -45572,7 +45610,12 @@ function openTreeContextMenu(ev, clickedId) {
       "<div class=\"ctx-sep\"></div>" + sectionsHtml;
   }
 
+  // The menu names its target and the row gets an outline while it is open
+  // (the selection itself does not change on a right-click).
+  const targetName = (node.inverted ? "NOT " : "") + nodeDisplayName(node);
+  html = '<div class="ctx-target-head" title="' + escapeHtml(targetName) + '">Menu for <b>' + escapeHtml(targetName) + "</b></div>" + html;
   treeContextMenu.innerHTML = html;
+  setTreeCtxTarget(clickedId);
   treeContextMenu.style.left = Math.min(ev.clientX, window.innerWidth - 260) + "px";
   treeContextMenu.classList.remove("hidden");
   treeContextMenu.style.top = ctxMenuTop(treeContextMenu, ev.clientY, 250);
