@@ -31,17 +31,19 @@ await withApp(async (w, d, T) => {
   assert(req.matches > 20 && done.matches > 20, "sim produced moves");
   const viaPattern = llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "job=J-[*:int]" });
   assert(!viaPattern.error && viaPattern.result.pairs > 0 && viaPattern.result.key === undefined, "pattern key: no derived key reported");
+  const viaWord = llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "job=[*:word]", preview: true }).result;
   const viaName = llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "JOB" });
-  assert(!viaName.error && viaName.result.key === "job=J-[*:int]", "column name (case-insensitive) reported as derived pattern, got " + JSON.stringify(viaName.error || viaName.result.key));
+  assert(!viaName.error && viaName.result.key === "job=[*:word]", "column name (case-insensitive) reported as the dialog's suggested pattern, got " + JSON.stringify(viaName.error || viaName.result.key));
+  assert(viaName.result.pairs === viaWord.pairs && viaName.result.key === llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "nonsense" }).error.match(/job=\[\*:word\]/)[0], "key equals the suggestion of the unknown-key error; pairs equal the explicit-pattern link");
   assert(viaName.result.pairs === viaPattern.result.pairs && viaName.result.unpaired === viaPattern.result.unpaired, "pairs equal the key-pattern link");
-  assert(T.state.nodes[viaName.result.nodeId].linkKey.pattern === "job=J-[*:int]" && !T.state.nodes[viaName.result.nodeId].linkKey.column, "stored as an ordinary pattern key");
+  assert(T.state.nodes[viaName.result.nodeId].linkKey.pattern === "job=[*:word]" && !T.state.nodes[viaName.result.nodeId].linkKey.column, "stored as an ordinary pattern key");
   const manualPairs = new Set(w.getEntries(req.nodeId).map(e => /job=(J-\d+)/.exec(e.message)[1]));
   const doneJobs = new Set(w.getEntries(done.nodeId).map(e => /job=(J-\d+)/.exec(e.message)[1]));
   assert(viaName.result.pairs === [...manualPairs].filter(j => doneJobs.has(j)).length, "pair count equals the jobs present on both sides");
   const byNumber = llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "3", preview: true });
-  assert(!byNumber.error && byNumber.result.key === "job=J-[*:int]" && byNumber.result.pairs === viaName.result.pairs, "1-based column number works too");
+  assert(!byNumber.error && byNumber.result.key === "job=[*:word]" && byNumber.result.pairs === viaName.result.pairs, "1-based column number works too");
   const byAxis = llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "axis", preview: true });
-  assert(!byAxis.error && byAxis.result.key === "axis=[*:int]", "axis -> axis=[*:int], got " + JSON.stringify(byAxis.error || byAxis.result.key));
+  assert(!byAxis.error && byAxis.result.key === "axis=[*:word]", "axis -> axis=[*:int], got " + JSON.stringify(byAxis.error || byAxis.result.key));
   const facet = llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "thread", preview: true });
   assert(!facet.error && facet.result.key === undefined, "a facet column stays a facet key");
   const unknown = llmRun(w, "create_link", { refId: req.nodeId, targetId: done.nodeId, key: "nonsense" });
@@ -212,4 +214,24 @@ await withApp(async (w, d, T) => {
   const anc = llmRun(w, "create_filter", { parentId: low.nodeId, column: "completed", pattern: msVal });
   const ancManual = w.getEntries(low.nodeId).filter(e => new RegExp("completed in " + msVal + "ms ").test(e.message)).length;
   assert(!anc.error && anc.result.matches === ancManual && T.state.nodes[anc.result.nodeId].value === "Request GET [*] completed in [*:int==" + msVal + "]ms status=[*:int]", "ancestor column by name builds from the ancestor's pattern, got " + JSON.stringify(anc.error || T.state.nodes[anc.result.nodeId].value));
+});
+
+await withApp(async (w, d, T) => {
+  section("llm-mcp-friction e. find_message_types columns, create_filter without matches");
+  const f = await llmSimFile(w, ["motion", "timing"], 3000, 9);
+  const mt = llmRun(w, "find_message_types", { query: "Move requested" }).result.types[0];
+  assert(Array.isArray(mt.columns) && mt.columns.join() === w.compileExtractPattern(mt.pattern).columns.map(c => c.name).join(), "types carry the column names of their pattern, got " + mt.columns);
+  const cf = llmRun(w, "create_filter", { parentId: f.id, pattern: mt.pattern }).result;
+  assert(cf.columns.map(c => c.name).join() === mt.columns.join(), "names equal those create_filter reports");
+  const n0 = Object.keys(T.state.nodes).length;
+  for (const args of [{ pattern: "no such text anywhere" }, { pattern: "no(such)", mode: "regex" }, { pattern: "Move requested axis=[*:int==999]" }, { column: "thread", pattern: "nonexistent-thread" }]) {
+    const r = llmRun(w, "create_filter", Object.assign({ parentId: f.id }, args));
+    assert(!r.error || args.column, "no match: " + JSON.stringify(args) + " -> " + JSON.stringify(r).slice(0, 120));
+    if (!args.column) assert(r.result.created === false && r.result.matches === 0 && r.result.parentId === f.id && r.result.hint.includes("nothing was created") && r.result.hint.includes("preview: true"), "0 matches: hint, no node, got " + JSON.stringify(r.result));
+  }
+  assert(Object.keys(T.state.nodes).length === n0, "node count unchanged");
+  const ok = llmRun(w, "create_filter", { parentId: f.id, pattern: "Move requested" }).result;
+  assert(ok.nodeId && ok.matches > 0 && Object.keys(T.state.nodes).length === n0 + 1, "a matching pattern still creates");
+  const none = llmRun(w, "create_filter", { parentId: ok.nodeId, column: "axis", pattern: "9999" });
+  assert(Object.keys(T.state.nodes).length === n0 + 1, "extraction column without that value creates nothing");
 });

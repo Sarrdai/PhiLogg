@@ -69,7 +69,7 @@ await withApp(async (w, d, T) => {
   const list = [];
   w.__arr = list;
   w.eval("llmRoundActions = window.__arr; llmRoundCreated = []");
-  const x = llmRun(w, "create_filter", { parentId: f.id, pattern: "Sensor" }).result.nodeId;
+  const x = llmRun(w, "create_filter", { parentId: f.id, pattern: "Position reached" }).result.nodeId;
   llmRun(w, "rename_node", { nodeId: x, name: "X" });
   llmRun(w, "delete_node", { nodeId: x });
   w.eval("llmRoundActions = null; llmRoundCreated = null");
@@ -85,7 +85,7 @@ await withApp(async (w, d, T) => {
   w.undo();
   assert(!T.state.nodes[x], "and again");
   // A creation of a node removed by something else (not a recorded delete) is dropped.
-  const y = llmRun(w, "create_filter", { parentId: f.id, pattern: "Sensor" }).result.nodeId;
+  const y = llmRun(w, "create_filter", { parentId: f.id, pattern: "Position reached" }).result.nodeId;
   w.deleteNode(y);
   assert(w.llmRoundUndoActions([{ kind: "create", nodeId: y, parentId: f.id }]).length === 0, "an unrelated vanished creation is dropped");
 }, { philogg: llmDesktopStub(), beforeParse: llmOn });
@@ -95,7 +95,7 @@ await withApp(async (w, d, T) => {
   const f = await llmSimFile(w, ["motion"], 500, 3);
   T.resetUndoRedo();
   const fake = llmFakeModel([
-    { calls: [["create_filter", { parentId: f.id, pattern: "Move requested" }], ["create_filter", { parentId: f.id, pattern: "Sensor" }]] },
+    { calls: [["create_filter", { parentId: f.id, pattern: "Move requested" }], ["create_filter", { parentId: f.id, pattern: "Position reached" }]] },
     (req, res) => ({ calls: [
       ["rename_node", { nodeId: res.create_filter[0].nodeId, name: "Moves" }],
       ["delete_node", { nodeId: res.create_filter[1].nodeId }],

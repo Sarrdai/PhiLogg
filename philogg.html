@@ -56006,6 +56006,7 @@ function llmToolFindMessageTypes(args) {
       levels: g.levels,
       type: patternDisplayText(g.key),
       pattern: patternFilterValue(g.key, g.floatMask, true),
+      columns: (spec => (spec ? spec.columns.map(c => c.name) : []))(compileExtractPattern(patternFilterValue(g.key, g.floatMask, true))),
       placeholders: dists.map(llmDistResult),
       first: llmTime(target.fileId, g.first),
       last: llmTime(target.fileId, g.last),
@@ -56097,8 +56098,11 @@ function llmToolCreateFilter(args) {
     spec = { filterType: "text", value: pattern, inverted: invert, isRegex: mode === "regex" };
   }
   let node = null, entries;
-  if (preview) entries = evaluateFilterCondition(spec, getEntries(parent.id), getRootFileId(parent.id), null);
-  else {
+  entries = evaluateFilterCondition(spec, getEntries(parent.id), getRootFileId(parent.id), null);
+  if (!preview && !entries.length) {
+    return { created: false, matches: 0, parentId: parent.id, hint: "No match — nothing was created. Check the exact text with find_message_types (case, spacing) or loosen the pattern; use preview: true to try a pattern first." };
+  }
+  if (!preview) {
     node = createFilterNodeFromSpec(parent.id, spec);
     if (!node) return { error: "Could not create the filter." };
     llmNoteCreated(node);
@@ -56152,7 +56156,13 @@ function llmToolCreateLink(args) {
         const sug = suggestLinkKeys(refEntries, targetEntries).map(x => x.pattern);
         return { error: "Unknown key \"" + k + "\". key is a column (" + facetColumnsFor(fileId).map(c => c.key).join(", ") + "), an extraction column of refId/targetId" + (names.size ? " (" + [...names].join(", ") + ")" : "") + " or a wildcard pattern such as \"axis=[*:int]\"." + (sug.length ? " Suggested key patterns for these two nodes: " + sug.join(", ") + "." : "") };
       }
-      const derived = llmColumnKeyPattern(col);
+      // Same field as the link dialog's suggestion (suggestLinkKeys) when it keys both sides.
+      const sugKey = suggestLinkKeys(refEntries, targetEntries).find(x => {
+        if (x.field.toLowerCase() !== col.name.toLowerCase()) return false;
+        const f = compileLinkKey({ pattern: x.pattern });
+        return refEntries.some(e => f(e) !== null) && targetEntries.some(e => f(e) !== null);
+      });
+      const derived = sugKey ? sugKey.pattern : llmColumnKeyPattern(col);
       const keyOf = derived && isExtractPattern(derived) && compileExtractPattern(derived) ? compileLinkKey({ pattern: derived }) : null;
       const keyed = list => (keyOf ? list.filter(e => keyOf(e) !== null).length : 0);
       const nRef = keyed(refEntries), nTarget = keyed(targetEntries);
@@ -56790,7 +56800,7 @@ const LLM_TOOLS = [
   },
   {
     name: "find_message_types",
-    description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with patternId, count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
+    description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with patternId, count, level, first/last time, a ready-made extraction pattern (with `columns`: the column names that pattern gets as an extraction filter — the names create_filter, get_value_stats, groupBy and sources use) and the value distribution of every placeholder.",
     parameters: { type: "object", properties: {
       nodeId: { type: "string", description: "Node (or pattern id) to analyse; default: the whole file of the active node" },
       query: { type: "string", description: "Only types whose text contains this. Smart case: case-insensitive, but case-sensitive as soon as the query has an uppercase letter (\"GET\" matches only GET, \"get\" matches both)" },
@@ -56800,7 +56810,7 @@ const LLM_TOOLS = [
   },
   {
     name: "create_filter",
-    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further; [*:float@en] / [*:float@de] fix the thousands/decimal separators (1,234.5 vs 1.234,5). mode \"regex\": JavaScript regex. Alternatives to pattern: patternId (a type from find_message_types) or column + pattern (exact column value; column is a facet column such as thread/level or an extraction column of the parent — by name or number, ancestors' by name — which creates an extraction filter with that placeholder fixed to the value, not invertible). preview: true creates nothing and only reports matches. Returns the new nodeId, match count and examples, or an error to correct.",
+    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further; [*:float@en] / [*:float@de] fix the thousands/decimal separators (1,234.5 vs 1.234,5). mode \"regex\": JavaScript regex. Alternatives to pattern: patternId (a type from find_message_types) or column + pattern (exact column value; column is a facet column such as thread/level or an extraction column of the parent — by name or number, ancestors' by name — which creates an extraction filter with that placeholder fixed to the value, not invertible). preview: true creates nothing and only reports matches — use it to try an uncertain pattern first; a pattern without matches creates no node (created: false, with a hint). Returns the new nodeId, match count and examples, or an error to correct.",
     parameters: { type: "object", properties: {
       parentId: { type: "string", description: "Node to filter (a file or filter id); default: the whole file of the active node" },
       pattern: { type: "string", description: "The text to match; with column: the value that column must have" },
@@ -56844,7 +56854,7 @@ const LLM_TOOLS = [
     parameters: { type: "object", properties: {
       nodeId: { type: "string", description: "Node or pattern id (not with sources)" },
       column: { type: "string", description: "1-based placeholder number (nearest extraction) or column name (also those of extraction filters above), default 1" },
-      groupBy: { type: "string", description: "Also compute the statistic per value of this column: a facet column (thread, level, location, method, ...) or an extraction column (number/name, same resolution as column)" },
+      groupBy: { type: "string", description: "Also compute the statistic per value of this column (a range of values, e.g. all non-200 statuses, is a value-condition filter first — create_filter \"status=[*:int>200]\" — then stats on that node): a facet column (thread, level, location, method, ...) or an extraction column (number/name, same resolution as column)" },
       sources: { type: "array", minItems: 2, maxItems: 8, description: "Instead of nodeId/column: 2-8 sources whose values are combined into one statistic (each column/groupBy is named in its own source, since names differ per format)", items: { type: "object", properties: {
         nodeId: { type: "string", description: "Node or pattern id" },
         column: { type: "string", description: "Extraction column of this source (number or name), default 1" },
