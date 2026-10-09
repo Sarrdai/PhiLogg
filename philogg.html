@@ -55692,8 +55692,9 @@ function llmToolGroupBy(args) {
     return { error: "Unknown column \"" + args.column + "\". Columns: " + names.join(", ") + "." };
   }
   const link = !!target.node && isLinkNode(target.node);
-  const first = e => getTupleEntries(e)[0];
-  const g = analysisGroupBy(target.entries, link ? e => valueOf(first(e)) : valueOf, link ? { dtOf: e => e.dtMs, unpaired: (target.node._linkUnmatched || []).map(first) } : {});
+  // The reference side, as the Facets panel does (linkStartEntry): on a "before" link the
+  // chronologically first entry of a pair is the match, not the reference.
+  const g = analysisGroupBy(target.entries, link ? e => valueOf(linkStartEntry(e)) : valueOf, link ? { dtOf: e => e.dtMs, unpaired: (target.node._linkUnmatched || []).map(linkStartEntry) } : {});
   const out = { nodeId: target.node ? target.node.id : String(nodeId), column: col.key, total: g.total, distinct: g.distinct, values: g.values.map(v => ({ ...v, value: v.value === "" ? "(empty)" : v.value })) };
   if (link) { out.byStartEntry = true; out.noEnd = (target.node._linkUnmatched || []).length; }
   if (g.others) out.others = g.others;

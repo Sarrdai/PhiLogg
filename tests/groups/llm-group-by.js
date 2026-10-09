@@ -71,6 +71,17 @@ await withApp(async (w, d, T) => {
 });
 
 await withApp(async (w, d, T) => {
+  section("llm-group-by c2. \"before\" link: grouped by the reference, not the earlier match");
+  const f = await llmSimFile(w, ["all", "-text", "-gaps"], 6000, 7);
+  const done = llmRun(w, "create_filter", { parentId: f.id, pattern: "Position reached" }).result;
+  const req = llmRun(w, "create_filter", { parentId: f.id, pattern: "Move requested" }).result;
+  const l = llmRun(w, "create_link", { refId: done.nodeId, targetId: req.nodeId, direction: "before", key: "job=[*]" }).result;
+  assert(l.pairs > 0, "before link pairs each Position reached with its Move requested");
+  const r = llmRun(w, "group_by", { nodeId: l.nodeId, column: "method" }).result;
+  assert(r.values.length === 1 && r.values[0].value === "OnPositionReached" && r.values[0].count === l.pairs, "method of the reference (OnPositionReached), not of the earlier match (MoveTo), got " + JSON.stringify(r.values.map(v => v.value)));
+});
+
+await withApp(async (w, d, T) => {
   section("llm-group-by d. analysisGroupBy engine");
   const f = await llmSimFile(w, ["motion", "basic"], 1500, 6);
   const g = w.analysisGroupBy(f.entries, e => e.thread, { max: 2 });
