@@ -1,4 +1,4 @@
 - **feat: uniform look for a log-row multi-selection (2026-10-09, person-decided)**
-  - All Ctrl/Shift-selected rows get the same full-width accent fill (`--multi-select-fill`) over any level tint; no per-row border, the last-clicked row is not singled out.
+  - All Ctrl/Shift-selected rows get the same full-width accent fill (`--multi-select-fill`, opaque so the level tint does not show through); no per-row border, the last-clicked row is not singled out.
   - Shift/Ctrl/Cmd+click on a row no longer creates a native text selection.
   - **Tests**: GROUP multi-select-look. Docs: docs/ui-and-views.md.

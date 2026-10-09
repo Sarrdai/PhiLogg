@@ -6,11 +6,13 @@
    that substring (Ctrl+C and right-click)
    Origin: 2026-10-09 (person-requested). Ctrl+C on a row used to always copy
    the whole raw line, right-click in the Entry Detail panel showed nothing.
-   Rule: non-empty selection inside one .log-row/.pair-row (and < 2 rows
-   multi-selected) -> Ctrl+C is left to the native copy, the row menu gets
+   Rule: non-empty selection inside one .log-row/.pair-row -> Ctrl+C is left
+   to the native copy (a selection wins over a row multi-selection since the
+   table-text-selection round), the row menu gets
    "Copy selected text" (#ctxCopySelection); inside Detail/Why/editor the
-   right-click opens #textCopyMenu. Multi-selection / selection spanning rows
-   still copies whole rows.
+   right-click opens #textCopyMenu. A selection spanning rows still copies
+   whole rows. (Filter/Context rows now use their own selection model, see
+   GROUP table-text-selection; this native path serves link-view pair rows.)
    ============================================================ */
 group("copy-selected-text");
 await withApp(async (w, d, T) => {
@@ -60,13 +62,13 @@ await withApp(async (w, d, T) => {
   ev = ctrlC();
   assert(ev.defaultPrevented && copied === f.entries[2].raw, "selection spanning two rows: raw line copy as before");
 
-  // 2+ multi-selection with a selection inside one of the rows: rows win
+  // 2+ multi-selection with a selection inside one of the rows: the selection wins (native copy)
   clickWith(rowAt(2), {});
   clickWith(rowAt(5), { ctrlKey: true });
   select(textNodeOf(rowAt(5)), 0, textNodeOf(rowAt(5)), 3);
   copied = null;
   ev = ctrlC();
-  assert(ev.defaultPrevented && copied === [2, 5].map(i => f.entries[i].raw).join("\n"), "multi-selection wins over a text selection in one row");
+  assert(!ev.defaultPrevented && copied === null, "a text selection in one row wins over the row multi-selection (native copy)");
 
   // --- Row context menu ---
   clickWith(rowAt(2), {});
@@ -100,7 +102,7 @@ await withApp(async (w, d, T) => {
   clickWith(rowAt(5), { ctrlKey: true });
   select(textNodeOf(rowAt(5)), 0, textNodeOf(rowAt(5)), 4);
   ctxMenu(rowAt(5));
-  assert(!itemShown(), "multi-selection: item hidden");
+  assert(itemShown(), "multi-selection: the selection still wins, item shown");
   w.closeContextMenu();
 
   section("copy-selected-text b. Highlight view row");
