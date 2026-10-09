@@ -20,7 +20,7 @@ if (groupSelected()) {
     bar.style.marginLeft = bar.style.marginRight = "0px";
     const kids = [...bar.children];
     kids.forEach(c => def(c, { offsetWidth: 44 }));
-    const chipsW = kids.length * 44 + (kids.length - 1) * 6 + 8; // + count pill and "Add level filter" (stubbed 0 wide), each with its 4px gap
+    const chipsW = kids.length * 44 + (kids.length - 1) * 6 + 4; // + "Add level filter" (stubbed 0 wide) with its 4px gap
     const first = others[0];
     def(first, { offsetWidth: 500 });
     const vcs = w.getComputedStyle(viewBar);

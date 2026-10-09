@@ -4,7 +4,8 @@
 /* ============================================================
    GROUP log-table-readability — Round I, package I2a
    Origin: 2026-10-09 (desktop usability test, person-decided mockup I2 A).
-   Location truncates in the middle (file name stays visible), the selected
+   Location truncates at the START (the end of the path with file name and
+   line stays visible, marks included, at every filter depth), the selected
    row and the current find hit get strong styles, rows taller than one line
    align their other cells to the first message line, the default column
    widths leave more room to Message. Word-boundary wrap was NOT adopted:
@@ -15,24 +16,33 @@ group("log-table-readability");
 const [LTR_SIM] = LOGSIM.generateToStrings({ entries: 300, seed: 7 });
 
 await withApp(async (w, d, T) => {
-  section("log-table-readability a. Location cell: head shrinks, tail (file name + line) stays");
+  section("log-table-readability a. Location cell: start truncation, same markup everywhere");
   const f = await w.addFile("a.log", LTR_SIM.text, () => {});
   T.state.activeId = f.id;
   w.render();
   const cells = [...d.querySelectorAll("#tableRows .log-row .col-location")];
   assert(cells.length > 5, "rows with a location rendered");
-  const split = cells.filter(c => c.classList.contains("loc-split"));
-  assert(split.length === cells.length, "every path-like location is split, got " + split.length + "/" + cells.length);
-  const c0 = split[0], val = c0.getAttribute("title");
-  assert(c0.querySelector(".loc-head") && c0.querySelector(".loc-tail"), "head and tail spans exist");
+  assert(cells.every(c => c.querySelector(":scope > .loc-text")), "every location cell wraps its content in .loc-text");
+  const c0 = cells[0], val = c0.getAttribute("title");
   assert(c0.textContent === val, "text content is the unchanged value (copy/selection), got " + c0.textContent);
-  assert(/^[^\\/]*$/.test(c0.querySelector(".loc-tail").textContent), "tail holds no path separator (it starts at the file name)");
-  assert(/[\\/]$/.test(c0.querySelector(".loc-head").textContent), "head ends at the last separator");
-  assert(/\.cs/.test(c0.querySelector(".loc-tail").textContent), "the file name is in the tail");
-  assert(/\.loc-split\{display:flex/.test(PAGE_CSS) && /\.loc-head\{[^}]*text-overflow:ellipsis/.test(PAGE_CSS), "CSS gives the head the ellipsis, the tail none");
-  assert(w.middleCellHtml("location", "Repository", "Repository").indexOf("loc-split") === -1, "a value without a separator stays a plain cell");
-  assert(w.middleCellHtml("location", "a\\b", "a<mark>\\</mark>b").indexOf("loc-split") === -1, "a marked cell (html has tags) stays plain");
-  assert(w.middleCellHtml("thread", "x\\y", "x\\y").indexOf("loc-split") === -1, "other columns are untouched");
+  assert(/\.col-location\{[^}]*direction:rtl/.test(PAGE_CSS) && /\.col-location\{[^}]*text-overflow:ellipsis/.test(PAGE_CSS), "CSS: rtl box with the ellipsis (it lands on the left)");
+  assert(/\.col-location \.loc-text\{[^}]*direction:ltr/.test(PAGE_CSS), "CSS: .loc-text restores the character order");
+  assert(!/loc-split|loc-head|loc-tail/.test(PAGE_CSS), "the middle-truncation CSS is gone");
+  assert(w.middleCellHtml("location", "Repository", "Repository").indexOf("loc-text") !== -1, "a value without a separator uses the same cell");
+  assert(w.middleCellHtml("location", "a\\b", "a<mark>\\</mark>b").indexOf('<span class="loc-text">a<mark>') !== -1, "a marked cell keeps its marks inside the wrapper");
+  assert(w.middleCellHtml("thread", "x\\y", "x\\y").indexOf("loc-text") === -1, "other columns are untouched");
+
+  section("log-table-readability a2. depth 2+ and marked cells use the same markup");
+  const n1 = w.createFilterNode(f.id, "text", "Order");
+  const n2 = w.createFilterNode(n1.id, "text", "Order");
+  T.state.activeId = n2.id; T.state.multiSelect = new Set([n2.id]);
+  w.render();
+  const rows = [...d.querySelectorAll("#tableRows .log-row .col-location")];
+  assert(rows.length > 3, "depth-2 rows rendered");
+  const marked = rows.filter(c => c.querySelector("mark"));
+  assert(marked.length > 0, "the depth-2 view has location cells with marks, got " + marked.length);
+  assert(rows.every(c => c.querySelector(":scope > .loc-text")) && marked.every(c => c.querySelector(".loc-text mark")), "unmarked and marked cells are wrapped alike, marks inside");
+  assert(marked[0].textContent === marked[0].getAttribute("title"), "a marked cell's text is unchanged");
 });
 
 await withApp(async (w, d, T) => {
@@ -113,4 +123,71 @@ await (async () => {
   assert(tot.n >= 0.85 * 3 * 300, "enough rows measured (>= 765 of 900), got " + tot.n);
   assert(tot.under === 0, "no row is ever allocated fewer lines than the browser renders (text would be clipped), got " + tot.under);
   assert(tot.exact / tot.n >= 0.95, "predicted == real for at least 95% of rows (the rest are one spare line), got " + (100 * tot.exact / tot.n).toFixed(2) + "%");
+})();
+
+
+// ---- d. Real Chromium: the START of a long path is clipped, the end (with its
+// marks) stays visible, at filter depth 1 and 2.
+section("log-table-readability d. Start truncation in Chromium at filter depth 1 and 2 (skipped without Playwright)");
+await (async () => {
+  let chromium = null;
+  try { chromium = require("playwright").chromium; } catch (e) {
+    try { chromium = require(require("child_process").execSync("npm root -g", { encoding: "utf8" }).trim() + "/playwright").chromium; } catch (e2) { /* none */ }
+  }
+  let browser = null;
+  if (chromium) {
+    for (const opts of [{}, { executablePath: "/opt/pw-browsers/chromium" }]) { try { browser = await chromium.launch(opts); break; } catch (e) { /* try next */ } }
+  }
+  if (!browser) { console.log("  (skipped: no Playwright/Chromium)"); return; }
+  const file = path.join(require("os").tmpdir(), "philogg-ltr-d-" + process.pid + ".log");
+  fs.writeFileSync(file, LTR_SIM.text);
+  try {
+    const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+    await page.addInitScript(() => { try { localStorage.setItem("philogg-where-is-what-seen", "1"); } catch (e) {} });
+    await page.goto("file://" + HTML_PATH);
+    await page.waitForFunction(() => state.logFormats.length > 0);
+    await page.setInputFiles("#fileInput", file);
+    await page.waitForFunction(() => state.rootIds.length && state.nodes[state.rootIds[0]].loadFraction === undefined && state.nodes[state.rootIds[0]].entries.length);
+    const probe = () => page.evaluate(async () => {
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const out = { cells: 0, clipped: 0, tailVisible: 0, ellipsisLeft: 0, markedClipped: 0, markedTailVisible: 0 };
+      for (const cell of tableRows.querySelectorAll(".col-location")) {
+        const t = cell.querySelector(".loc-text"), cr = cell.getBoundingClientRect();
+        if (!t || cr.width < 20) continue;
+        out.cells++;
+        const rg = document.createRange(); rg.selectNodeContents(t);
+        const all = rg.getBoundingClientRect();
+        const clipped = all.width > cr.width + 1;
+        if (!clipped) continue;
+        out.clipped++;
+        const last = document.createRange(), lt = (function lastText(n) { while (n.lastChild) n = n.lastChild; return n; })(t);
+        last.setStart(lt, Math.max(0, lt.textContent.length - 1)); last.setEnd(lt, lt.textContent.length);
+        const lr = last.getBoundingClientRect();
+        const first = document.createRange(), ft = (function firstText(n) { while (n.firstChild) n = n.firstChild; return n; })(t);
+        first.setStart(ft, 0); first.setEnd(ft, 1);
+        const fr = first.getBoundingClientRect();
+        const tailOk = lr.right <= cr.right + 1 && lr.left >= cr.left;
+        if (tailOk) out.tailVisible++;
+        if (fr.left < cr.left) out.ellipsisLeft++;
+        if (t.querySelector("mark")) { out.markedClipped++; if (tailOk) out.markedTailVisible++; }
+      }
+      return out;
+    });
+    for (const depth of [1, 2]) {
+      await page.evaluate(d => {
+        const f = state.nodes[state.rootIds[0]];
+        let n = createFilterNode(f.id, "text", "Order");
+        if (d === 2) n = createFilterNode(n.id, "text", "Order");
+        state.activeId = n.id; state.multiSelect = new Set([n.id]);
+        render();
+      }, depth);
+      await page.waitForFunction(() => tableRows.querySelector(".col-location .loc-text"));
+      const r = await probe();
+      assert(r.clipped > 0, "depth " + depth + ": some locations are wider than the column (" + JSON.stringify(r) + ")");
+      assert(r.tailVisible === r.clipped, "depth " + depth + ": the end of every clipped path is visible (" + JSON.stringify(r) + ")");
+      assert(r.ellipsisLeft === r.clipped, "depth " + depth + ": it is the START that is clipped (" + JSON.stringify(r) + ")");
+      assert(r.markedClipped > 0 && r.markedTailVisible === r.markedClipped, "depth " + depth + ": clipped cells that carry marks truncate the same way (" + JSON.stringify(r) + ")");
+    }
+    await page.close();
+  } finally { await browser.close(); fs.unlinkSync(file); }
 })();

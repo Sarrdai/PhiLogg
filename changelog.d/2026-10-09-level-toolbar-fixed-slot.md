@@ -1,4 +1,4 @@
 - **feat: level toolbar without layout shift, visible match count (2026-10-09, person-requested)**
   - "Add level filter" now always has its slot after the level chips (greyed out while no chip is active), so Before/After/Time range/Message/Extract no longer jump ~32 px when a chip is toggled (a misclick hit "Extract" instead of "Message" in the usability test).
-  - A count pill ("504 / 2.500") right after the chips shows the entries the chips leave; its width is reserved, so nothing moves. The header reads "504 of 2.500 entries shown" while chips are active.
+  - The header reads "504 of 2.500 entries shown" while chips are active (the counts inside the chips are enough; a separate count pill was tried and removed after review).
   - **Tests**: GROUP level-toolbar-fixed-slot (new), level-bar-view-filter and level-icon-dots updated. Docs: docs/ui-and-views.md.

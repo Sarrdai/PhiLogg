@@ -1022,18 +1022,36 @@
   .tree-mute:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .tree-mute .icon{width:12px; height:12px;}
   .tree-row.muted .tree-mute{opacity:1; color:var(--level-warn);}
-  /* Desktop: the hover buttons overlay the row's right end instead of reserving
-     ~40px next to the count, so a label uses the full width up to the count.
-     (A muted row's eye stays in flow: it is always visible. The compact and
-     phone layouts keep the buttons in flow, their touch targets are bigger.) */
-  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-del,
-  body:not(.layout-compact):not(.layout-phone) .tree-row:not(.muted) .tree-mute{
-    position:absolute; top:50%; transform:translateY(-50%); background:var(--bg-elevated); z-index:1;
+  /* Hover buttons (desktop): ONE group, .tree-actions [NOT][mute][delete], overlays the row's
+     right end instead of reserving ~60px next to the count, so a label uses the full width up to
+     the count. It has an opaque background that matches the row (a soft left edge fades the label
+     out, so the icons never sit on top of text): the row's tint (--tree-row-tint: hover, selected,
+     right-click target; translucent for the selection) is layered over the sidebar's panel
+     colour. A muted row's un-mute button is in the same group (it used to sit in flow under the
+     absolutely positioned delete button, so hover never showed it). The compact and phone layouts
+     keep the buttons in flow (display:contents), their touch targets are bigger. */
+  .tree-actions{display:contents;}
+  .tree-row{--tree-row-tint:transparent;}
+  .tree-row:hover, .tree-row.ctx-target{--tree-row-tint:var(--bg-elevated);}
+  .tree-row.active, .tree-row.multi-selected, .tree-row.drag-over{--tree-row-tint:var(--accent-soft);}
+  .tree-row.select-mode.active:not(.multi-selected){--tree-row-tint:transparent;}
+  body:not(.layout-compact):not(.layout-phone) .tree-actions{
+    display:flex; align-items:center; gap:2px; position:absolute; right:0; top:0; bottom:0; z-index:1;
+    padding:0 6px 0 18px; opacity:0; pointer-events:none;
+    background-image:linear-gradient(90deg, transparent, var(--tree-row-tint) 14px), linear-gradient(90deg, transparent, var(--bg-panel) 14px);
   }
-  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-del{right:6px;}
-  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-del:hover{background:color-mix(in srgb,var(--level-error) 18%,var(--bg-elevated));}
-  body:not(.layout-compact):not(.layout-phone) .tree-row:not(.muted) .tree-mute:hover{background:color-mix(in srgb,var(--accent) 22%,var(--bg-elevated));}
-  body:not(.layout-compact):not(.layout-phone) .tree-row:not(.muted) .tree-mute{right:26px;}
+  body:not(.layout-compact):not(.layout-phone) .tree-row:hover .tree-actions,
+  body:not(.layout-compact):not(.layout-phone) .tree-row .tree-actions:focus-within{opacity:1; pointer-events:auto;}
+  body:not(.layout-compact):not(.layout-phone) .tree-actions > button{opacity:1;}
+  .tree-invert{
+    flex:0 0 auto; background:none; border:none; cursor:pointer;
+    color:var(--text-tertiary); display:flex; padding:3px; border-radius:4px;
+  }
+  .tree-invert .icon{width:12px; height:12px;}
+  .tree-invert:hover{color:var(--accent-strong); background:var(--accent-soft);}
+  .tree-row.inverted .tree-invert{color:var(--level-error);}
+  .tree-row.inverted .tree-invert:hover{background:var(--level-error-soft);}
+  body.layout-compact .tree-invert, body.layout-phone .tree-invert{display:none;}
   .tree-row.muted .tree-label{text-decoration:line-through; text-decoration-color:var(--text-tertiary); color:var(--text-tertiary);}
   .tree-row.muted .tree-icon,.tree-row.muted .tree-swatch{opacity:.45;}
   .tree-row.muted .tree-count{font-style:italic;}
@@ -1186,16 +1204,6 @@
      in this row (person-requested, this session: one consistent divider
      rhythm instead of #levelBar's own special-cased blank gap). */
   #btnApplyLevelToTree{float:left; margin:0;}
-  /* Entries left by the active chips ("405 / 2.500"), right after #levelBar. The slot keeps its
-     width (inline min-width from updateLevelCountPill) while no chip is active (.idle = invisible),
-     so toggling a chip never moves the buttons to its right. */
-  #levelCountPill{
-    flex:0 0 auto; box-sizing:content-box; padding:4px 8px; border-radius:11px; text-align:center; white-space:nowrap;
-    font:600 11px/14px var(--font-mono); background:var(--accent-soft); color:var(--accent-strong);
-  }
-  #levelCountPill[hidden]{display:none;}
-  #levelCountPill.idle{visibility:hidden;}
-  body.layout-phone #levelCountPill{display:none;}
   /* Shared "add badge": a small accent disc with a plus on the bottom-right
      edge of an object icon. It marks buttons whose main job is creating
      something new and whose icon (a funnel, a file, a book, the level dots)
@@ -2512,15 +2520,12 @@
     padding:2px 6px; border-radius:4px; white-space:nowrap;
   }
   .col-thread{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-location{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  /* Middle truncation (middleCellHtml): a long path keeps its file name
-     visible, "C:\src\Shop\Da…Repository.cs:263". Only the head (everything
-     up to the last path separator) shrinks and gets the ellipsis; the tail
-     (file name and line) never does, and is clipped by the cell only when it
-     alone is wider than the column. */
-  .col-location.loc-split{display:flex;}
-  .col-location .loc-head{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
-  .col-location .loc-tail{flex:0 0 auto; white-space:nowrap;}
+  /* Start truncation (middleCellHtml): a long path keeps its end visible,
+     "…rc\Shop\Data\Repository.cs line 263". direction:rtl puts the clipped
+     part and the ellipsis on the LEFT; .loc-text restores the character order
+     (an isolate, so marks inside it stay ordinary inline children). */
+  .col-location{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; direction:rtl; text-align:left;}
+  .col-location .loc-text{direction:ltr; unicode-bidi:isolate;}
   .col-method{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* Custom columns (Custom Columns feature): every user-defined column
      shares one style, same as col-location/col-method above — the actual
@@ -6548,7 +6553,6 @@
           <span class="group-caption" aria-hidden="true">Level</span>
           <div class="vb-group-row">
             <div id="levelBar"></div>
-            <span id="levelCountPill" aria-live="polite" hidden></span>
             <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn level-apply" title="Add level filter"></button>
           </div>
         </div>
@@ -11058,7 +11062,6 @@ document.getElementById("settingsTreeIndicatorMode").addEventListener("change", 
 function updateApplyLevelToTreeButtonVisibility() {
   const on = state.levelFilter.size > 0;
   btnApplyLevelToTree.disabled = !on;
-  updateLevelCountPill();
 }
 /* Entries left by the active level chips for the active node: { shown, total },
    or null without a node. Sums the node's cached per-level counts (getLevelCounts),
@@ -11069,22 +11072,6 @@ function levelFilterCounts() {
   let shown = 0, total = 0;
   for (const lvl in counts) { total += counts[lvl]; if (state.levelFilter.has(lvl)) shown += counts[lvl]; }
   return { shown, total };
-}
-/* The count pill right after the chips ("405 / 2.500"). Its slot is reserved at
-   the width of "<total> / <total>" (monospace, so in ch) whether or not a chip is
-   active; with no chip active it stays invisible, so the buttons to its right
-   never move when a chip is toggled. */
-function updateLevelCountPill() {
-  const pill = document.getElementById("levelCountPill");
-  const c = levelFilterCounts();
-  if (!c || !c.total) { pill.hidden = true; pill.textContent = ""; return; }
-  const totalText = c.total.toLocaleString("de-DE");
-  const on = state.levelFilter.size > 0;
-  pill.hidden = false;
-  pill.classList.toggle("idle", !on);
-  pill.textContent = (on ? c.shown.toLocaleString("de-DE") : totalText) + " / " + totalText;
-  pill.style.minWidth = (totalText.length * 2 + 3) + "ch";
-  pill.title = on ? c.shown.toLocaleString("de-DE") + " of " + totalText + " entries shown" : "";
 }
 
 /* ===================== "On open, scroll log to" setting (Settings ->
@@ -11889,22 +11876,17 @@ function entryColumnValue(e, key) {
 const BUILTIN_FIELD_KEYS = new Set(["time", "delta", "level", "thread", "location", "method", "message"]);
 function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? key : "custom"); }
 
-// A log row's middle cell (Thread/Location/Method/custom). Location is split
-// at its last path separator into a shrinking head and a fixed tail so the
-// ellipsis lands in the MIDDLE of a long path and the file name stays visible
-// (CSS: .loc-split). A cell that carries marks (`html` has tags) or a value
-// without a separator stays a plain cell, so mark segmenting is untouched.
+// A log row's middle cell (Thread/Location/Method/custom). Location is
+// truncated at the START, so the end of a long path stays visible
+// ("…/MyProject/ThisLocation.cs line 263"): the cell is a right-to-left box
+// (CSS: .col-location, the text-overflow ellipsis then sits on its left edge)
+// whose content is wrapped in one left-to-right isolate (.loc-text) so the
+// characters keep their order. The wrapper takes `html` as is, so marked cells
+// (filter/find/highlight marks) truncate the same way and keep their marks.
 // Text content is the same either way (copy, selection, the title).
 function middleCellHtml(key, val, html) {
-  let cls = columnCssClass(key), inner = html;
-  if (key === "location" && html === escapeHtml(val)) {
-    const cut = Math.max(val.lastIndexOf("/"), val.lastIndexOf("\\")) + 1;
-    if (cut > 0 && cut < val.length) {
-      cls += " loc-split";
-      inner = '<span class="loc-head">' + escapeHtml(val.slice(0, cut)) + '</span><span class="loc-tail">' + escapeHtml(val.slice(cut)) + '</span>';
-    }
-  }
-  return '<span class="' + cls + '" data-col="' + key + '" data-sel-col="' + key + '" title="' + escapeHtml(val) + '">' + inner + '</span>';
+  const inner = key === "location" ? '<span class="loc-text">' + html + '</span>' : html;
+  return '<span class="' + columnCssClass(key) + '" data-col="' + key + '" data-sel-col="' + key + '" title="' + escapeHtml(val) + '">' + inner + '</span>';
 }
 
 // Severity ordering used when the log table is sorted by the Level column,
@@ -18824,6 +18806,12 @@ function toggleInvertWithUndo(nodeId) {
 function isMutableNode(node) {
   return !!node && node.type === "filter" && !node.locked;
 }
+// Nodes the NOT toggle applies to: every unlocked filter but link/context/countContext
+// (their results have no parent-relative complement; same guard as the context menu).
+function isInvertibleNode(node) {
+  return !!node && node.type === "filter" && !node.locked &&
+    node.filterType !== "link" && node.filterType !== "context" && node.filterType !== "countContext";
+}
 function toggleMuteWithUndo(ids, forceMuted) {
   const nodes = (Array.isArray(ids) ? ids : [ids]).map(id => state.nodes[id]).filter(isMutableNode);
   if (!nodes.length) return;
@@ -22146,7 +22134,7 @@ function renderStatus() {
   if (fileCount === 0) { statusText.textContent = ""; return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
   // With level chips active the entry count becomes "<shown> of <total> entries shown"
-  // (the active node's figures, the same as the count pill next to the chips).
+  // (the active node's figures, from levelFilterCounts).
   const lc = state.levelFilter.size ? levelFilterCounts() : null;
   const entriesText = lc && lc.total ? `${lc.shown.toLocaleString("de-DE")} of ${lc.total.toLocaleString("de-DE")} entries shown`
     : `${total.toLocaleString("de-DE")} entries`;
@@ -23406,13 +23394,24 @@ function renderNode(id, depth, opts) {
   // when the same node is ALSO an ordinary top-level row elsewhere (the
   // bulk-merge case), where it keeps its own ✕ since opts.mergeSourceColor
   // isn't set for that call.
+  // The hover buttons live in ONE group (.tree-actions, see its CSS): NOT, mute/unmute, delete.
+  const actions = document.createElement("span");
+  actions.className = "tree-actions";
+  if (isInvertibleNode(node) && !(opts && opts.mergeSourceColor)) {
+    const inv = document.createElement("button");
+    inv.className = "tree-invert";
+    inv.innerHTML = ICON_INVERT;
+    inv.title = node.inverted ? "Remove NOT" : "Invert (NOT)";
+    inv.addEventListener("click", ev => { ev.stopPropagation(); toggleInvertWithUndo(id); render(); });
+    actions.appendChild(inv);
+  }
   if (isMutableNode(node) && !(opts && opts.mergeSourceColor)) {
     const mute = document.createElement("button");
     mute.className = "tree-mute";
     mute.innerHTML = node.muted ? ICON_EYE_OFF : ICON_EYE;
     mute.title = node.muted ? "Unmute (M)" : "Mute — pass entries through unchanged (M)";
     mute.addEventListener("click", ev => { ev.stopPropagation(); toggleMuteWithUndo([id]); render(); });
-    row.appendChild(mute);
+    actions.appendChild(mute);
   }
   if (!node.locked && !(opts && opts.mergeSourceColor)) {
     const del = document.createElement("button");
@@ -23428,8 +23427,9 @@ function renderNode(id, depth, opts) {
       render();
       offerUndoToast(prevTop);
     });
-    row.appendChild(del);
+    actions.appendChild(del);
   }
+  if (actions.childElementCount) row.appendChild(actions);
 
   // Progress fill along the row's bottom edge while this file is still
   // being read/parsed (see createFileNode/loadOneFileIntoTree) — the row
@@ -23859,9 +23859,7 @@ function updateLevelBarLayout() {
     const marginsOf = c => { const m = getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
     const levelGroup = levelBarEl.closest(".vb-group");
     const applyBtn = document.getElementById("btnApplyLevelToTree");
-    const countPill = document.getElementById("levelCountPill");
-    const applyW = (applyBtn && getComputedStyle(applyBtn).display !== "none" ? applyBtn.offsetWidth + 4 : 0) +
-      (countPill && !countPill.hidden ? countPill.offsetWidth + 4 : 0);
+    const applyW = applyBtn && getComputedStyle(applyBtn).display !== "none" ? applyBtn.offsetWidth + 4 : 0;
     const shown = [...viewBar.children].filter(c => getComputedStyle(c).display !== "none");
     const others = shown.filter(c => c !== levelGroup).reduce((a, c) => a + c.offsetWidth + marginsOf(c), 0) +
       (shown.includes(levelGroup) ? marginsOf(levelBarEl) + applyW : 0);

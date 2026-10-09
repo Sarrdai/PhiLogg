@@ -14,6 +14,10 @@
       the selection does not change.
    jsdom has no layout: structure, text and CSS are pinned here; the
    geometry was checked in the real app (screenshots).
+   5. (user review) Hover buttons are ONE group .tree-actions [NOT][mute][delete]
+      with an opaque row-matching background; a muted node offers Unmute in
+      the same slot (the in-flow eye used to hide under the absolute delete
+      button); the NOT button inverts like the context menu, undoable.
    ============================================================ */
 group("tree-labels-i4");
 const [TL4_SIM] = LOGSIM.generateToStrings({ entries: 200, seed: 7 });
@@ -36,7 +40,7 @@ await withApp(async (w, d, T) => {
   const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
   assert(/\.tree-label-mid \.tl-head\{[^}]*text-overflow:\s*ellipsis/.test(css) && /\.tree-label-mid \.tl-tail\{[^}]*flex:\s*none/.test(css), "CSS: head ellipsis, tail never shrinks");
   assert(/\.tree-label-mid \.tl-head\{[^}]*white-space:\s*pre/.test(css), "CSS: white-space:pre keeps the blank at the split point");
-  assert(/\.tree-del[^{]*\{[^}]*position:\s*absolute/.test(css), "CSS: the hover delete button overlays the row instead of reserving width");
+  assert(/\.tree-actions\{[^}]*position:\s*absolute/.test(css), "CSS: the hover button group overlays the row instead of reserving width");
 });
 
 await withApp(async (w, d, T) => {
@@ -110,4 +114,45 @@ await withApp(async (w, d, T) => {
   assert(menu.classList.contains("hidden") && !d.querySelector(".tree-row.ctx-target"), "an outside click closes the menu and removes the outline");
   const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
   assert(/\.tree-row\.ctx-target\{[^}]*outline:[^}]*var\(--accent\)/.test(css), "CSS: accent outline");
+});
+
+await withApp(async (w, d, T) => {
+  section("tree-labels-i4 e. Hover button group: NOT, mute/unmute, delete; opaque background");
+  const f = await w.addFile("a.log", TL4_SIM.text, () => {});
+  const n = w.createFilterNode(f.id, "text", "Heartbeat");
+  const ctx = w.createFilterNode(f.id, "context", { count: 2 });
+  w.render();
+  const row = node => d.querySelector(`.tree-row[data-node-id="${node.id}"]`);
+  const names = node => [...row(node).querySelectorAll(":scope > .tree-actions > button")].map(b => b.className);
+  assert(JSON.stringify(names(n)) === JSON.stringify(["tree-invert", "tree-mute", "tree-del"]), "filter row: one group with NOT, mute, delete in that order, got " + names(n));
+  assert(row(n).querySelector(".tree-invert").title === "Invert (NOT)" && row(n).querySelector(".tree-mute").title.startsWith("Mute"), "tooltips: Invert (NOT) / Mute");
+
+  fireClick(row(n).querySelector(".tree-invert"), w);
+  assert(n.inverted === true && row(n).querySelector(".tree-not-badge"), "NOT button inverts the node and the red badge shows");
+  assert(row(n).querySelector(".tree-invert").title === "Remove NOT", "tooltip flips to Remove NOT");
+  fireClick(row(n).querySelector(".tree-invert"), w);
+  assert(!n.inverted, "second click removes NOT");
+  w.undo();
+  assert(n.inverted === true, "the toggle is one undo step (undo restores NOT)");
+  w.undo();
+  assert(!n.inverted, "undo again: back to normal");
+
+  fireClick(row(n).querySelector(".tree-mute"), w);
+  assert(n.muted === true, "mute button mutes");
+  assert(JSON.stringify(names(n)) === JSON.stringify(["tree-invert", "tree-mute", "tree-del"]), "muted row: the same three buttons, got " + names(n));
+  assert(row(n).querySelector(".tree-mute").title === "Unmute (M)" && row(n).querySelector(".tree-mute").parentElement.classList.contains("tree-actions"), "muted row: the un-mute button is in the hover group");
+  fireClick(row(n).querySelector(".tree-mute"), w);
+  assert(!n.muted, "the same button un-mutes");
+
+  assert(!row(ctx).querySelector(".tree-invert"), "a context node cannot be inverted: no NOT button");
+  assert(row(ctx).querySelector(".tree-mute") && row(ctx).querySelector(".tree-del"), "it keeps mute and delete");
+  const fileRow = row(f);
+  assert(!fileRow.querySelector(".tree-invert") && !fileRow.querySelector(".tree-mute") && fileRow.querySelector(".tree-actions > .tree-del"), "a file row: only the delete button, in the group");
+  assert(w.isInvertibleNode(n) && !w.isInvertibleNode(ctx) && !w.isInvertibleNode(f), "isInvertibleNode: filters except link/context/countContext");
+
+  const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
+  assert(/\.tree-actions\{[^}]*background-image:[^;}]*var\(--tree-row-tint\)[^;}]*var\(--bg-panel\)/.test(css), "CSS: the group paints the row tint over the panel colour (opaque, same as the row)");
+  assert(/\.tree-row\.active, \.tree-row\.multi-selected[^{]*\{--tree-row-tint:var\(--accent-soft\)/.test(css) && /\.tree-row:hover, \.tree-row\.ctx-target\{--tree-row-tint:var\(--bg-elevated\)/.test(css), "CSS: tint per row state (hover, ctx-target, selected)");
+  assert(/\.tree-row:hover \.tree-actions/.test(css) && /\.tree-actions:focus-within/.test(css), "CSS: the group shows on hover and on keyboard focus");
+  assert(/\.tree-actions\{display:contents;\}/.test(css), "CSS: in the touch layouts the group is transparent to layout (buttons stay in flow)");
 });
