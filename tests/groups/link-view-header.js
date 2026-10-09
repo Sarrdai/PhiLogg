@@ -84,7 +84,7 @@ if (groupSelected()) {
   }, { indexedDB: new IDBFactory() });
 
   await withApp(async (w, d, T) => {
-    section("link-view-header d. unmatched blocks: dashed brace, 'no … found' line, exact heights");
+    section("link-view-header d. unmatched blocks: dashed rail, 'no … found' line, exact heights");
     await jobLink(w, d, T);
     fireClick(chip(d), w);
     fireClick(chip(d), w); // only unmatched
@@ -92,18 +92,18 @@ if (groupSelected()) {
     assert(blocks.length > 0 && blocks.every(b => b.classList.contains("pair-unmatched") && b.querySelector(".pair-missing")), "unmatched blocks carry the class and the missing line");
     assert(txt(blocks[0].querySelector(".pair-missing")) === "no “Position reached” found", "line: " + txt(blocks[0].querySelector(".pair-missing")));
     assert(blocks[0].querySelectorAll(".pair-row").length === 1 && blocks[0].querySelector(".pair-row").textContent.includes("Move requested"), "the block shows the real start entry");
-    // heights: offsets == what the block's children add up to (rows/deltas/missing line are fixed inline heights)
+    // heights: offsets == what the block's gutter cells add up to (every cell has a fixed inline height) + margin
     const css = [...d.querySelectorAll("style")].map(s => s.textContent).join("").replace(/\s+/g, "");
-    assert(css.includes(".pair-rows{flex:11auto;min-width:0;display:flex;flex-direction:column;gap:2px;}") && css.includes(".pair-block{display:flex;align-items:stretch;margin-bottom:8px;}"), "CSS gap 2px / margin 8px match the constants");
-    const domHeight = b => { const ch = [...b.querySelector(".pair-rows").children]; return ch.reduce((s, c) => s + parseInt(c.style.height, 10), 0) + (ch.length - 1) * 2 + 8; };
+    assert(css.includes(".pair-block{--pair-dt-w:calc(62px*var(--log-text-scale));--pair-ring:var(--bg-app);display:flex;align-items:stretch;margin-bottom:8px;border-radius:6px;}"), "CSS margin 8px matches the constant");
+    const domHeight = b => [...b.querySelector(".pair-gutter").children].reduce((s, c) => s + parseInt(c.style.height, 10), 0) + 8;
     const ok = T.linkPairsData.every((it, i) => i >= blocks.length || domHeight(blocks[i]) === T.linkBlockOffsets[i + 1] - T.linkBlockOffsets[i]);
-    assert(ok, "rendered block heights equal the offsets (unmatched: 26 + 2 + 18 + 8 = 54px)");
-    assert(T.linkBlockOffsets[1] === 54 && T.linkBlockOffsets[13] === 13 * 54, "13 unmatched blocks: 54px each");
-    assert(w.linkBlockHeight(2, false) === 80 && w.linkBlockHeight(2, true) === 100 && w.linkBlockHeight(1, true) === 54, "linkBlockHeight(n, unmatched)");
+    assert(ok, "rendered block heights equal the offsets (unmatched: 26 + 26 + 8 = 60px)");
+    assert(T.linkBlockOffsets[1] === 60 && T.linkBlockOffsets[13] === 13 * 60, "13 unmatched blocks: 60px each");
+    assert(w.linkBlockHeight(2, false) === 60 && w.linkBlockHeight(2, true) === 86 && w.linkBlockHeight(1, true) === 60, "linkBlockHeight(n, unmatched)");
     // inline: mixed offsets (only -> off -> inline)
     fireClick(chip(d), w); fireClick(chip(d), w);
     const exp = T.linkPairsData.reduce((s, it) => s + w.linkBlockHeight(it.realEntries.length, it.unmatched), 0);
-    assert(T.linkBlockOffsets[T.linkPairsData.length] === exp && exp === 192 * 80 + 13 * 54, "mixed total height = 192*80 + 13*54, got " + exp);
+    assert(T.linkBlockOffsets[T.linkPairsData.length] === exp && exp === 192 * 60 + 13 * 60, "mixed total height = 192*60 + 13*60, got " + exp);
   }, { indexedDB: new IDBFactory() });
 
   await withApp(async (w, d, T) => {
@@ -112,7 +112,7 @@ if (groupSelected()) {
     fireClick(chip(d), w);
     fireClick(chip(d), w); // only unmatched
     let blocks = blocksDom(d);
-    fireClick(blocks[0].querySelector(".pair-brace"), w);
+    fireClick(blocks[0].querySelector(".pair-gutter"), w);
     assert(T.linkSelectedPairIndex === 0 && blocks[0].classList.contains("pair-selected"), "an unmatched block can be selected");
     assert(w.minimapMarkedEntries().length === 1 && w.minimapMarkedEntries()[0].message.includes("Move requested"), "the minimap marks its start entry");
     w.moveLinkSelection(1);
