@@ -99,22 +99,22 @@ await withApp(async (w, d, T) => {
   w.render();
 
   assert(T.linkPairsData.length === 50, "sanity: all 50 pairs computed (the FULL result, regardless of what's rendered)");
-  // linkBlockHeight(2) = 2*26 (rows) + 1*16 (delta) + 2*2 (gaps) + 8 (margin) = 80px per pair.
-  assert(T.linkBlockOffsets.length === 51 && T.linkBlockOffsets[50] === 50 * 80,
-    "block offsets are a full prefix-sum array (51 entries), total height 50*80=4000px, got " + T.linkBlockOffsets[50]);
+  // linkBlockHeight(2) = 2*26 (rows) + 8 (margin) = 60px per pair (the Δt sits in the gutter, no line of its own).
+  assert(T.linkBlockOffsets.length === 51 && T.linkBlockOffsets[50] === 50 * 60,
+    "block offsets are a full prefix-sum array (51 entries), total height 50*60=3000px, got " + T.linkBlockOffsets[50]);
   let blocks = [...d.querySelectorAll("#linkBody .pair-block")];
   assert(blocks.length > 0 && blocks.length < 50, "only a windowed subset of pair-blocks is real DOM at scrollTop 0, got " + blocks.length + " of 50");
 
-  // Select pair 0's brace while it's on screen.
-  fireClick(blocks[0].querySelector(".pair-brace"), w);
-  assert(T.linkSelectedPairIndex === 0, "clicking pair 0's brace selects it by index, got " + T.linkSelectedPairIndex);
+  // Select pair 0's gutter while it's on screen.
+  fireClick(blocks[0].querySelector(".pair-gutter"), w);
+  assert(T.linkSelectedPairIndex === 0, "clicking pair 0's gutter selects it by index, got " + T.linkSelectedPairIndex);
   assert(d.querySelector('.pair-block[data-pair-index="0"]').classList.contains("pair-selected"), "pair 0's block gets .pair-selected");
 
   // Scroll far enough that pair 0's block is no longer in the rendered
   // window at all — this is exactly the scenario a DOM-class-only selection
   // (the pre-virtualization implementation) would silently lose.
   const linkScrollEl = d.querySelector("#linkScroll");
-  linkScrollEl.scrollTop = 3900; // near the very end of the 4000px-tall list
+  linkScrollEl.scrollTop = 2900; // near the very end of the 3000px-tall list
   w.renderLinkVisibleBlocks();
   assert(d.querySelector('.pair-block[data-pair-index="0"]') === null, "sanity: pair 0's block is no longer real DOM once scrolled far away");
   assert(d.querySelector(".pair-selected") === null, "no stale .pair-selected left behind on an unrelated rendered block");
@@ -123,13 +123,13 @@ await withApp(async (w, d, T) => {
   assert(marked.length === 2 && marked[0].message.includes("REF 0") && marked[1].message.includes("TARGET 1"),
     "minimapMarkedEntries still resolves pair 0's two real entries correctly while its block is off-screen, got " + JSON.stringify(marked.map(e => e.message)));
 
-  // Scroll to a specific deterministic offset (yStart = 1900-300 = 1600 =
-  // exactly block 20's own start, given every block is a uniform 80px) and
+  // Scroll to a specific deterministic offset (yStart = 1500-300 = 1200 =
+  // exactly block 20's own start, given every block is a uniform 60px) and
   // confirm the render window actually moved to meet it.
-  linkScrollEl.scrollTop = 1900;
+  linkScrollEl.scrollTop = 1500;
   w.renderLinkVisibleBlocks();
   blocks = [...d.querySelectorAll("#linkBody .pair-block")];
-  assert(blocks[0].dataset.pairIndex === "20", "scrolling moves the rendered window to start at block 20 (1600/80), got " + blocks[0].dataset.pairIndex);
+  assert(blocks[0].dataset.pairIndex === "20", "scrolling moves the rendered window to start at block 20 (1200/60), got " + blocks[0].dataset.pairIndex);
 
   // Scroll back: pair 0's block re-enters the DOM with .pair-selected
   // correctly re-applied (not just "not incorrectly applied elsewhere").

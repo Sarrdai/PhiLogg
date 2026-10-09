@@ -133,14 +133,14 @@ group(22);
     assert(ids.every(id => !!T.entryIndex[id]), "Bug3 fix: every flattened id resolves through entryIndex");
 
     // And at the UI layer: the Link view now renders one row per real
-    // entry (2 deltas for a 3-way tuple), each wired to revealInHighlightView
+    // entry (2 Δt values for a 3-way tuple), each wired to revealInHighlightView
     // with a REAL entry id, not a synthetic intermediate pair id.
     T.state.activeId = link2.id;
     w.render();
     const rows = d.querySelectorAll("#linkBody .pair-row");
-    const deltas = d.querySelectorAll("#linkBody .pair-delta");
+    const deltas = [...d.querySelectorAll("#linkBody .pair-dt")].filter(el => el.textContent.startsWith("+"));
     assert(rows.length === 3, "Bug3 fix (UI): Link view renders 3 rows for the 3-way tuple, got " + rows.length);
-    assert(deltas.length === 2, "Bug3 fix (UI): 2 delta labels between 3 rows, got " + deltas.length);
+    assert(deltas.length === 2, "Bug3 fix (UI): 2 Δt labels (rows 2 and 3 of the gutter), got " + deltas.length);
   });
 
   // --- Opt-in: exclusive matches (scoped globally per link node, default off) ---

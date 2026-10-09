@@ -1,0 +1,5 @@
+- **feat: Link view pairs as a timeline (2026-10-09, person-requested)**
+  - A pair block is now `[Δt | rail | rows]`: one thin rail line with a level-coloured dot per row replaces the grey brace, the per-row level bar and the per-row selection frame; the Δt between rows is a `+385ms` cell in the left column instead of a line of its own (pair 60px instead of 80px, 3-chain 86px).
+  - Hover tints the block, selection fills it with the accent and colours the rail. "Without end" blocks get one more line: `—`, a dashed warn rail to a hollow dot and the "no … found" text.
+  - The Δt + rail gutter (`.pair-gutter`, formerly `.pair-brace`) keeps the combined-entry context menu and long-press.
+  - **Tests**: GROUP link-view-timeline (new); 22, 34, 45, link-view-header adapted. Docs: docs/ui-and-views.md, docs/filters.md, docs/extraction-and-plotting.md, README screenshot.

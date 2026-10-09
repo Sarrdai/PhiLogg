@@ -3532,9 +3532,8 @@
   .link-un-why-row .link-un-why-m{color:var(--text-tertiary); font-size:11.5px; white-space:nowrap;}
   body.layout-phone .link-un-why-btn, body.layout-phone .link-un-why-row{min-height:36px;}
   #linkToolbar .link-hint{flex:1 1 100%; font-size:10.8px; color:var(--text-tertiary); text-align:left;}
-  .pair-block.pair-unmatched .pair-brace{border-left-style:dashed; border-left-color:var(--warn);}
   .pair-missing{
-    box-sizing:border-box; height:18px; line-height:18px; padding:0 8px; font-size:11px; color:var(--warn);
+    box-sizing:border-box; padding:0 8px 0 4px; font-size:calc(11px * var(--log-text-scale)); color:var(--warn);
     overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
   }
   body.layout-phone .link-un-chip, body.layout-phone #linkSortSeg button{min-height:36px;}
@@ -3546,39 +3545,66 @@
   #linkSpacer{position:relative;}
   #linkBody{position:absolute; top:0; left:0; right:0;}
 
-  .pair-block{display:flex; align-items:stretch; margin-bottom:8px;}
-  .pair-brace{
-    width:10px; flex:0 0 auto; margin-right:10px; cursor:pointer;
-    border-left:2px solid var(--border); border-radius:6px 0 0 6px; transition:border-color .12s;
+  /* Timeline block: [Δt column | rail column | rows]. One 2px rail line
+     (.pair-gutter::before) runs from the first to the last row's dot centre;
+     every row has an 8px level-coloured dot on it. Heights are exact
+     (--pair-h = LINK_PAIR_ROW_HEIGHT, inline per block) — see linkBlockHeight. */
+  .pair-block{
+    --pair-dt-w:calc(62px * var(--log-text-scale)); --pair-ring:var(--bg-app);
+    display:flex; align-items:stretch; margin-bottom:8px; border-radius:6px;
   }
-  .pair-brace:hover{border-color:var(--accent);}
-  .pair-block.pair-selected .pair-brace{border-color:var(--accent); border-left-width:3px;}
-  .pair-block.pair-selected .pair-row{box-shadow:inset 0 0 0 1px var(--accent);}
-  .pair-rows{flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:2px;}
+  .pair-block:hover{background:color-mix(in srgb, var(--bg-elevated) 45%, transparent);}
+  .pair-block.pair-selected{background:var(--accent-soft); --pair-ring:color-mix(in srgb, var(--accent) 14%, var(--bg-app));}
+  .pair-gutter{
+    position:relative; flex:0 0 auto; width:calc(var(--pair-dt-w) + 18px); cursor:pointer;
+    display:flex; flex-direction:column;
+  }
+  .pair-gutter::before{
+    content:""; position:absolute; z-index:0; left:calc(var(--pair-dt-w) + 8px); width:2px;
+    top:calc(var(--pair-h) / 2); bottom:calc(var(--pair-h) / 2);
+    background:color-mix(in srgb, var(--border) 60%, transparent);
+  }
+  .pair-block.pair-unmatched .pair-gutter::before{bottom:calc(var(--pair-h) * 1.5);}
+  .pair-block.pair-selected .pair-gutter::before{background:var(--accent);}
+  .pair-g-cell{display:flex; flex:0 0 auto; align-items:stretch;}
+  .pair-dt{
+    box-sizing:border-box; flex:0 0 auto; width:var(--pair-dt-w); padding-right:6px; display:flex; align-items:center; justify-content:flex-end;
+    font-family:var(--font-log); font-size:calc(10.5px * var(--log-text-scale)); color:var(--text-secondary);
+    font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .pair-rail{position:relative; flex:0 0 18px; width:18px;}
+  .pair-dot{
+    position:absolute; z-index:1; left:5px; top:calc(var(--pair-h) / 2 - 4px); width:8px; height:8px; border-radius:50%;
+    box-shadow:0 0 0 2px var(--pair-ring);
+  }
+  .pair-g-missing .pair-dt{color:var(--warn);}
+  .pair-g-missing .pair-rail::before{
+    content:""; position:absolute; left:8px; top:0; height:calc(var(--pair-h) / 2); width:0; border-left:2px dashed var(--warn);
+  }
+  .pair-g-missing .pair-dot{
+    box-sizing:content-box; width:4px; height:4px; border:2px solid var(--warn); background:var(--pair-ring); box-shadow:none;
+    left:5px; top:calc(var(--pair-h) / 2 - 4px);
+  }
+  .pair-rows{flex:1 1 auto; min-width:0; display:flex; flex-direction:column;}
   .pair-row{
-    display:flex; align-items:center; gap:8px; padding:5px 8px; border-radius:5px; cursor:default;
+    display:flex; align-items:center; gap:8px; padding:0 8px 0 4px; border-radius:5px; cursor:default;
   }
   .pair-row:hover{background:var(--bg-elevated);}
-  .pair-row-bar{width:3px; align-self:stretch; border-radius:2px; flex:0 0 auto;}
-  .lvl-error .pair-row-bar{background:var(--level-error);}
-  .lvl-warn .pair-row-bar{background:var(--level-warn);}
-  .lvl-info .pair-row-bar{background:var(--level-info);}
-  .lvl-debug .pair-row-bar{background:var(--level-debug);}
-  .lvl-fatal .pair-row-bar{background:var(--level-fatal);}
-  .lvl-trace .pair-row-bar{background:var(--level-trace);}
-  .lvl-custom-1 .pair-row-bar{background:var(--level-custom-1);}
-  .lvl-custom-2 .pair-row-bar{background:var(--level-custom-2);}
-  .lvl-custom-3 .pair-row-bar{background:var(--level-custom-3);}
-  .lvl-custom-4 .pair-row-bar{background:var(--level-custom-4);}
-  .lvl-custom-5 .pair-row-bar{background:var(--level-custom-5);}
-  .lvl-custom-6 .pair-row-bar{background:var(--level-custom-6);}
-  .lvl-other .pair-row-bar{background:var(--text-tertiary);}
+  .lvl-error .pair-dot{background:var(--level-error);}
+  .lvl-warn .pair-dot{background:var(--level-warn);}
+  .lvl-info .pair-dot{background:var(--level-info);}
+  .lvl-debug .pair-dot{background:var(--level-debug);}
+  .lvl-fatal .pair-dot{background:var(--level-fatal);}
+  .lvl-trace .pair-dot{background:var(--level-trace);}
+  .lvl-custom-1 .pair-dot{background:var(--level-custom-1);}
+  .lvl-custom-2 .pair-dot{background:var(--level-custom-2);}
+  .lvl-custom-3 .pair-dot{background:var(--level-custom-3);}
+  .lvl-custom-4 .pair-dot{background:var(--level-custom-4);}
+  .lvl-custom-5 .pair-dot{background:var(--level-custom-5);}
+  .lvl-custom-6 .pair-dot{background:var(--level-custom-6);}
+  .lvl-other .pair-dot{background:var(--text-tertiary);}
   .pair-row-time{font-family:var(--font-log); font-size:calc(10.8px * var(--log-text-scale)); color:var(--text-secondary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
   .pair-row-msg{font-family:var(--font-log); font-size:calc(11.6px * var(--log-text-scale)); color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto; min-width:0;}
-  .pair-delta{
-    font-family:var(--font-mono); font-size:10px; color:var(--text-tertiary);
-    padding:0 8px 0 15px; letter-spacing:.2px; display:flex; align-items:center;
-  }
 
   /* ---------- Link dialog ---------- */
   #linkDialog, #gapDialog, #andOrDialog{
@@ -22073,7 +22099,7 @@ function renderMainView() {
     linkWrap.style.display = "flex";
     // Pair entries duck-type as normal entries (ts/level — see "Link
     // filter" in PROJECT.md), so the minimap works here unchanged; shown
-    // now so a brace selection's markers (see renderLinkView) have
+    // now so a pair selection's markers (see renderLinkView) have
     // somewhere to actually appear.
     timelineMinimapEl.classList.remove("hidden");
     renderLinkView(activeNode);
@@ -25016,18 +25042,16 @@ let linkBlockOffsets = []; // prefix sums: linkBlockOffsets[i] = cumulative heig
 // node (see applyLinkSelectionClasses/minimapMarkedEntries).
 let linkSelectedPairIndex = null;
 
-// Fixed per-row/delta height (enforced via inline style, same reasoning as
+// Fixed per-row height (enforced via inline style, same reasoning as
 // EXTRACT_ROW_HEIGHT above) so a block's total height is exactly computable
-// from its tuple size alone, with no DOM measurement needed. Matches
-// .pair-rows' own `gap:2px` (LINK_ROWS_GAP, between every adjacent row/
-// delta child) and .pair-block's `margin-bottom:8px` (LINK_BLOCK_MARGIN).
+// from its tuple size alone, with no DOM measurement needed: n rows (+ one
+// more line for an unmatched block's "no … found" row) + .pair-block's
+// `margin-bottom:8px` (LINK_BLOCK_MARGIN). The Δt values live in the
+// gutter's left column, so they cost no height of their own.
 // `let`, not `const` — same reasoning/rescaling as EXTRACT_ROW_HEIGHT above.
 let LINK_PAIR_ROW_HEIGHT = 26;
 const LINK_PAIR_ROW_HEIGHT_BASE = 26;
-const LINK_DELTA_HEIGHT = 16;
-const LINK_ROWS_GAP = 2;
 const LINK_BLOCK_MARGIN = 8;
-const LINK_MISSING_HEIGHT = 18; // the "no … found" line of an unmatched block (.pair-missing)
 const LINK_BUFFER_PX = 300; // pixels of slack rendered above/below the viewport, since blocks vary in height
 
 // A pair's row count follows getTupleEntries(pair) — 2 rows/1 delta for a
@@ -25164,14 +25188,10 @@ linkUnWhyDetails.addEventListener("click", ev => {
   finishAnalysisFilter(f, null);
 });
 
-// height(n real entries) = n rows + (n-1) deltas + gaps between every
-// adjacent child (2n-2 of them, .pair-rows' flex `gap`) + the block's own
-// bottom margin.
-// An unmatched block carries one more child, the "no … found" line (+ its flex gap).
+// height(n real entries) = n rows + the block's own bottom margin; an
+// unmatched block carries one more row-height line (the "no … found" row).
 function linkBlockHeight(n, unmatched) {
-  const rows = n * LINK_PAIR_ROW_HEIGHT + Math.max(0, n - 1) * LINK_DELTA_HEIGHT;
-  const gaps = Math.max(0, 2 * n - 2) * LINK_ROWS_GAP;
-  return rows + gaps + LINK_BLOCK_MARGIN + (unmatched ? LINK_ROWS_GAP + LINK_MISSING_HEIGHT : 0);
+  return (n + (unmatched ? 1 : 0)) * LINK_PAIR_ROW_HEIGHT + LINK_BLOCK_MARGIN;
 }
 function computeLinkBlockOffsets() {
   const offsets = new Array(linkPairsData.length + 1);
@@ -25292,21 +25312,26 @@ function buildPairBlock(entryData, index) {
   const block = document.createElement("div");
   block.className = "pair-block" + (entryData.unmatched ? " pair-unmatched" : "");
   block.dataset.pairIndex = index;
+  block.style.setProperty("--pair-h", LINK_PAIR_ROW_HEIGHT + "px");
 
-  const brace = document.createElement("div");
-  brace.className = "pair-brace";
-  brace.title = "Click to select the pair · right-click to filter/extract on the combined entry";
+  // The gutter (Δt column + rail column) is the block's handle: it carries
+  // the title, the combined pair entry's context menu and the entry ids the
+  // minimap marks. One cell per row (one more for an unmatched block); the
+  // rail line itself is the gutter's ::before, each cell holds its dot.
+  const gutter = document.createElement("div");
+  gutter.className = "pair-gutter";
+  gutter.title = "Click to select the pair · right-click to filter/extract on the combined entry";
   // Read back by minimapMarkedEntries() when this pair is the selected one,
   // so a click here marks every real entry the pair/tuple is made of on the
   // minimap — not just a single point.
-  brace.dataset.entryIds = realEntries.map(e => e.id).join(",");
-  brace.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(null); openContextMenu(ev, pair); });
+  gutter.dataset.entryIds = realEntries.map(e => e.id).join(",");
+  gutter.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(null); openContextMenu(ev, pair); });
 
-  // Selecting the block: a click anywhere on the block (brace or any row)
-  // selects the whole pair/tuple, same as clicking the brace itself — a row
-  // click no longer just falls through to nothing. dblclick/contextmenu on
-  // a row (buildPairRow) still target that single real entry, since click
-  // and dblclick are independent DOM events.
+  // Selecting the block: a click anywhere on the block (gutter or any row)
+  // selects the whole pair/tuple — a row click no longer just falls through
+  // to nothing. dblclick/contextmenu on a row (buildPairRow) still target
+  // that single real entry, since click and dblclick are independent DOM
+  // events.
   block.addEventListener("click", () => {
     linkSelectedPairIndex = linkSelectedPairIndex === index ? null : index;
     applyLinkSelectionClasses();
@@ -25316,25 +25341,41 @@ function buildPairBlock(entryData, index) {
   const rowsWrap = document.createElement("div");
   rowsWrap.className = "pair-rows";
   realEntries.forEach((entry, i) => {
+    const cell = document.createElement("div");
+    cell.className = "pair-g-cell " + levelClass(entry.level, entry.formatId);
+    cell.style.height = LINK_PAIR_ROW_HEIGHT + "px";
+    const dt = document.createElement("span");
+    dt.className = "pair-dt";
     if (i > 0) {
-      const delta = document.createElement("div");
-      delta.className = "pair-delta";
-      delta.style.height = LINK_DELTA_HEIGHT + "px";
-      delta.textContent = "Δ " + formatDuration(entry.ts - realEntries[i - 1].ts);
-      rowsWrap.appendChild(delta);
+      dt.textContent = "+" + formatDuration(entry.ts - realEntries[i - 1].ts);
+      dt.title = dt.textContent;
     }
+    const rail = document.createElement("span");
+    rail.className = "pair-rail";
+    const dot = document.createElement("span");
+    dot.className = "pair-dot";
+    rail.appendChild(dot);
+    cell.appendChild(dt);
+    cell.appendChild(rail);
+    gutter.appendChild(cell);
     rowsWrap.appendChild(buildPairRow(entry));
   });
   if (entryData.unmatched) {
+    const cell = document.createElement("div");
+    cell.className = "pair-g-cell pair-g-missing";
+    cell.style.height = LINK_PAIR_ROW_HEIGHT + "px";
+    cell.innerHTML = '<span class="pair-dt">\u2014</span><span class="pair-rail"><span class="pair-dot"></span></span>';
+    gutter.appendChild(cell);
     const missing = document.createElement("div");
     missing.className = "pair-missing";
-    missing.style.height = LINK_MISSING_HEIGHT + "px";
+    missing.style.height = LINK_PAIR_ROW_HEIGHT + "px";
+    missing.style.lineHeight = LINK_PAIR_ROW_HEIGHT + "px";
     missing.textContent = linkMissingText;
     missing.title = linkMissingText;
     rowsWrap.appendChild(missing);
   }
 
-  block.appendChild(brace);
+  block.appendChild(gutter);
   block.appendChild(rowsWrap);
   return block;
 }
@@ -25345,7 +25386,6 @@ function buildPairRow(entry) {
   row._pickEntry = entry; // read by the pick-mode click interceptor (pickedEntryOfRow)
   row.style.height = LINK_PAIR_ROW_HEIGHT + "px";
   row.innerHTML =
-    '<span class="pair-row-bar"></span>' +
     '<span class="pair-row-time">' + escapeHtml(entryTimeText(entry)) + '</span>' +
     levelBadgeHtml(entry) +
     '<span class="pair-row-msg">' + escapeHtml(entry.message) + '</span>';
@@ -33708,7 +33748,7 @@ function updateMinimapRenderedRange() {
 
 // Resolves which real entries should get a position marker on the minimap
 // right now. Two sources, checked in order:
-//  1. A Link view pair currently selected via its brace (see renderLinkView)
+//  1. A Link view pair currently selected via its gutter (see renderLinkView)
 //     — every REAL entry the pair/tuple is made of, read directly off
 //     linkPairsData[linkSelectedPairIndex] (not the DOM — a virtualized
 //     block can be scrolled out of existence between the click and this
@@ -33756,7 +33796,7 @@ function minimapMarkedEntries() {
 // Redraws the selected-entry marker(s) — a thin vertical line plus a small
 // flag at the top, one per entry from minimapMarkedEntries() — without
 // touching anything else in the minimap. Cheap enough to call on every
-// selection change (see applySelection and the Link view's brace click
+// selection change (see applySelection and the Link view's gutter click
 // handler). Not gated on minimapInteractive/column-sort like the range
 // rectangles and click-to-jump are: "where is this entry in time" stays
 // meaningful regardless of what order the table itself is currently sorted
@@ -34997,9 +35037,9 @@ function applySelection(entryId) {
     state.tailFollow = false;
     updateTailJumpBtn();
   }
-  // A plain row selection always supersedes any Link-view pair-brace marker
+  // A plain row selection always supersedes any Link-view pair-gutter marker
   // (see minimapMarkedEntries' priority order) — clear it here so a stale
-  // "Klammer" doesn't keep overriding a fresh single-row selection made
+  // pair selection doesn't keep overriding a fresh single-row selection made
   // elsewhere. Cheap no-op when nothing's marked.
   linkSelectedPairIndex = null;
   applyLinkSelectionClasses();
@@ -43481,7 +43521,7 @@ function openContextMenu(ev, entry) {
   // Hidden on phone: the extraction node only feeds Table/Plot, which phone does not show.
   ctxExtractMessage.style.display =
     currentLayoutTier !== "phone" && buildNumericExtractPattern(entryColumnValue(entry, "message")) !== null ? "" : "none";
-  // "Pair with…": a real row only (never a link-view pair brace), and only where timestamps exist.
+  // "Pair with…": a real row only (never a link-view pair gutter), and only where timestamps exist.
   ctxPairWith.style.display = !entry.isPair && bookmarkable && !isPlainTextFormat(entry.formatId) ? "" : "none";
   // "Why is this row here?": a real row only (the explanation is per log entry, never a link-view pair).
   ctxWhyRow.style.display = !entry.isPair && entryIndex[entry.id] ? "" : "none";
@@ -44110,7 +44150,7 @@ function singleMessageActionEntry() {
   if (fhActiveTab === "table" || fhActiveTab === "plot") return null;
   if (state.logMultiSelect.size >= 2) return null;
   // Link view: target the selected pair/tuple as a whole — same object the
-  // brace's own right-click -> "Filter for this message" and Alt+Enter
+  // gutter's own right-click -> "Filter for this message" and Alt+Enter
   // already pass into openFilterForEntryColumn (see that keydown handler),
   // not whichever single real entry state.selectedId happens to still hold
   // from an earlier row dblclick. Person-reported: the toolbar's "Message"/
@@ -53485,7 +53525,7 @@ document.addEventListener("keydown", ev => {
   if (ev.key === "Enter" && ev.altKey && state.focusRegion === "entries") {
     const messageColumn = { key: "message", label: "Message" };
     // Link view: target the selected pair/tuple as a whole (same object the
-    // brace's own right-click → "Filter for this message" passes in), not
+    // gutter's own right-click → "Filter for this message" passes in), not
     // whichever single real entry state.selectedId happens to still hold
     // from an earlier row dblclick — see moveLinkSelection/buildPairBlock.
     if (state.entriesView === "filter" && linkWrap.style.display !== "none" &&

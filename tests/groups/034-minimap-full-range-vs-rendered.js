@@ -57,7 +57,7 @@ await withApp(async (w, d, T) => {
   w.updateMinimapSelectionMarkers();
   assert(d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line").length === 0, "clearing the selection clears the marker");
 
-  // --- Part C: Link view — minimap now visible, brace selection marks BOTH real entries ---
+  // --- Part C: Link view — minimap now visible, gutter selection marks BOTH real entries ---
   const linkLines = [];
   for (let i = 0; i < 10; i++) {
     const label = i % 2 === 0 ? "REF" : "TARGET";
@@ -76,27 +76,27 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#minimapRenderedRangeRect").classList.contains("hidden"),
     "rendered-subset rect stays hidden in the Link view (no virtualization to distinguish a subset from)");
 
-  const firstBrace = d.querySelector(".pair-brace");
-  assert(firstBrace, "sanity: at least one pair rendered in the Link view");
-  fireClick(firstBrace, w);
-  assert(firstBrace.closest(".pair-block").classList.contains("pair-selected"), "clicking a brace selects its pair");
+  const firstGutter = d.querySelector(".pair-gutter");
+  assert(firstGutter, "sanity: at least one pair rendered in the Link view");
+  fireClick(firstGutter, w);
+  assert(firstGutter.closest(".pair-block").classList.contains("pair-selected"), "clicking the gutter selects its pair");
   let pairMarkers = [...d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line")];
-  assert(pairMarkers.length === 2, "selecting a pair's brace marks BOTH of its real entries, got " + pairMarkers.length);
+  assert(pairMarkers.length === 2, "selecting a pair's gutter marks BOTH of its real entries, got " + pairMarkers.length);
   const expectedXs = [w.minimapTsToX(fB.entries[0].ts), w.minimapTsToX(fB.entries[1].ts)].sort((a, b) => a - b); // REF 0 -> TARGET 1
   const actualXs = pairMarkers.map(m => parseFloat(m.getAttribute("x")) + 1).sort((a, b) => a - b);
   assert(Math.abs(actualXs[0] - expectedXs[0]) < 0.2 && Math.abs(actualXs[1] - expectedXs[1]) < 0.2,
     "the two markers sit at the pair's two real entries' own timestamps");
 
-  fireClick(firstBrace, w); // click again: deselect
-  assert(!firstBrace.closest(".pair-block").classList.contains("pair-selected"), "clicking the same brace again deselects the pair");
+  fireClick(firstGutter, w); // click again: deselect
+  assert(!firstGutter.closest(".pair-block").classList.contains("pair-selected"), "clicking the same gutter again deselects the pair");
   assert(d.querySelectorAll("#minimapSelectionMarkers .minimap-marker-line").length === 0, "deselecting the pair clears its markers (no other selection underneath)");
 
-  // Re-select the brace, then navigate away — a stale .pair-selected left
+  // Re-select the gutter, then navigate away — a stale .pair-selected left
   // behind in the now-hidden Link view must NOT keep marking its old
   // entries once a different (non-link) node is active.
-  fireClick(firstBrace, w);
-  assert(firstBrace.closest(".pair-block").classList.contains("pair-selected"), "sanity: brace re-selected");
+  fireClick(firstGutter, w);
+  assert(firstGutter.closest(".pair-block").classList.contains("pair-selected"), "sanity: gutter re-selected");
   T.state.activeId = refNode.id;
   w.render();
-  assert(w.minimapMarkedEntries().length === 0, "a stale Link-view brace selection is ignored once a different, non-link node is active");
+  assert(w.minimapMarkedEntries().length === 0, "a stale Link-view pair selection is ignored once a different, non-link node is active");
 });
