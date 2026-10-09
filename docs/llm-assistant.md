@@ -41,7 +41,9 @@ owner `truncated: true`) until the result fits.
 | `get_entries(nodeId, from, max ≤ 20, ids?, full?)` | entries (of a node or pattern id) with id, time, level, message (first line, ≤ 200 chars). `ids` (≤ 20 entry ids) instead of nodeId/from/max; unknown ids are listed in `unknown`. `full: true`: every line (above 60 lines the first 15, `… N lines …`, the last 30 — a stack trace's innermost exception is at the end; a line is cut at 300 chars), `lines`, thread/location/method and the file name |
 | `get_value_stats(nodeId, column)` | min/max/mean/p10/median/p90 of one extraction column (own or inherited pattern, `llmExtractRows`); a non-numeric column gets its value distribution |
 | `show_view(nodeId, view, plot?, unpaired?)` | activates the node and opens log/filtered/table/plot/patterns; `plot` = `{type, x, y, z, color, colorMap, columns, array, row, ranges}` for every chart type (line/bar/scatter/3d/heatmap/profile/radar/parallel), columns as `time`/`index`/`dt` or a column number/name, stored through `sanitizePlotConfig`. `columns` sets the value charts' column group (heatmap/profile then read it instead of an array), `array` an array column, `row` (1-based) the Profile/Radar row, `ranges` `{column: [min, max]}` (null = open end) the parallel-coordinates ranges (`plotParallelBrushes`, set after the render so a node switch doesn't reset them). Unknown type/colormap/column → error text with the valid list. Returns the effective plot (column names, row count, for Parallel the rows in range). table/plot on a node without `tablePlot` → error naming the concrete fix (`create_filter` with placeholders under that node id — for a link, under the link — then `show_view` on the new id, or view `filtered`)  `unpaired: "only"` (link node, view `filtered`) sets the link view's "N without end" chip to "only these" (`linkViewUnmatched = 2`) |
-| `annotate(entryIds, note?, bookmark?)` | sets bookmarks (never toggles one off) and notes (an existing note is kept, the finding appended) |
+| `annotate(entryIds, note?, bookmark?, replaceNote?)` | default: `bookmark: true` only adds bookmarks (never toggles one off), a note is appended to an existing one. Corrections: `bookmark: false` removes the bookmark (only where set), `replaceNote: true` replaces an existing note, `note: ""` clears it. Result `{entries, bookmarked, unbookmarked, noted, cleared}` |
+| `delete_node(nodeId)` | deletes a node **the assistant created** (`llmCreatedNodeIds`, the ✦ set) with its subtree: `{deleted, removedNodes}`. Files, the person's nodes, pattern ids and locked nodes → error ("belongs to the person"). The ids stay in `llmCreatedNodeIds`, so undo brings the ✦ back |
+| `rename_node(nodeId, name)` | sets `node.label` of an assistant-created node (same ownership rule; empty name → error): `{nodeId, name}` |
 | `timeline(nodeId?, buckets?)` | `analysisTimeline`: from/to, counts per time bucket (default 40, max 120), `usualPerSec` and the bursts (time window, count, factor, levels, ≤ 3 `topTypes` with `patternId`). A plain-text file has no time axis → no bursts, a note |
 | `what_changed(aNodeId?, aFrom?, aTo?, bNodeId?, bFrom?, bTo?)` | `analysisWhatChanged`: A = node/pattern id and/or a time window; B = the rest of A's file over the time that is left, or another node/window/file. Groups `new`, `more`, `rarer`, `gone` (≤ 8 rows each: patternId, type, countA, countB, expected, factor, example id) |
 | `common_neighbors(nodeId, direction?, windowMs?, sameThread?, minLift?, showAll?)` | `analysisNeighbors` over the node's (or pattern's) entries: ≤ 12 types `{patternId, type, coverage "n/refs", inWindows, lift, medianDistMs, maxLevel, example}`, only lift ≥ minLift unless `showAll` (then each row has `significant`); empty result → a hint, otherwise a tip naming `create_window` |
@@ -214,17 +216,26 @@ chat-completions format requires.
 **Undo.** Every node a tool creates is recorded (`llmRoundCreated` →
 `round.created`, and `llmCreatedNodeIds` for the tree marker); tool runs execute
 inside `withoutCreateUndo`, so the generic per-creation undo step of user
-creations never fires for them. When the round
-ends, `llmPushRoundBatch` pushes one `"batch"` of `"create"` actions — Ctrl+Z
-takes back the whole round. **"Undo this round"** (`llmUndoRound(roundId,
+creations never fires for them. Instead every undoable change of a tool is
+recorded as a ready undo action, in order, in `llmRoundActions` (same lifetime
+as `llmRoundCreated`; `round.actions` in the agent loop, a local list in
+`mcpRunCall`): `llmNoteCreated` adds a `"create"`, `delete_node` a `"delete"`
+(snapshot + `removedIds`) and `rename_node` an `"edit"` via `llmRecordUndo`.
+`llmRoundUndoActions` filters them (a creation whose node vanished is kept
+only when a recorded delete took it, so reverse-order undo of create → rename
+→ delete works). When the round ends, `llmPushRoundBatch` pushes one `"batch"`
+of them — Ctrl+Z takes back the whole round; an MCP call pushes its actions as
+one step the same way. **"Undo this round"** (`llmUndoRound(roundId,
 force)`): if that batch is still on top of the undo stack it is simply
 `undo()`; otherwise the round's remaining nodes (only the top-most ones —
 nested ones go with their parent) are deleted as a new `"batch"` of
 `"delete"` actions, itself undoable. If the person created filters below
 them, it returns `{needsConfirm, foreign}` and deletes nothing until called
 with `force`. Nothing left → `{reason: "nothing left"}`, and the round's
-button is disabled (`undo: "none"` in the snapshot). Bookmarks/notes set by
-`annotate` and view changes are not part of the undo step.
+button is disabled (`undo: "none"` in the snapshot). If the round's batch is on top, "Undo this round" also
+restores nodes the round deleted and renames; the delete fallback only removes
+created nodes. Bookmarks/notes set by `annotate` (the GUI has no undo for them
+either) and view changes are not part of the undo step.
 
 **Context budget.** Tool messages keep a one-line summary
 (`llmToolSummary`, e.g. `create_filter → n42 "…", 318 match(es)`); tool

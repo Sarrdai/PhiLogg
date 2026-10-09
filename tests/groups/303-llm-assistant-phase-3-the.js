@@ -40,7 +40,7 @@ await withApp(async (w, d, T) => {
   const r1 = await w.llmSend("Mich interessiert der Temperaturwert nach jeder Positionierung.");
   const req1 = fake.requests[0];
   assert(req1.messages[0].role === "system" && req1.messages[0].content.includes("[*:float]") && req1.messages[1].content.startsWith("Mich interessiert"), "request: system prompt, then the person's message");
-  assert(req1.tools.length === 13 && req1.stream === true && req1.temperature === 0.2 && !("model" in req1), "request: 13 tools, streaming, default temperature, no model when none is chosen");
+  assert(req1.tools.length === 15 && req1.stream === true && req1.temperature === 0.2 && !("model" in req1), "request: 15 tools, streaming, default temperature, no model when none is chosen");
   assert(fake.endpoint === "http://localhost:1234/v1", "default endpoint");
   assert(r1.status === "done" && r1.created.length === 2, "round 1 done, two filters created (streamed tool-call deltas assembled), got " + r1.status + "/" + r1.error);
   assert(r1.items.filter(i => i.kind === "tool").length === 4 && r1.items[r1.items.length - 1].text.startsWith("Welche Achse"), "round 1: four tool steps, then the question");

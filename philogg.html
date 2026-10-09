@@ -55263,6 +55263,11 @@ const llmCreatedNodeIds = new Set();
 // Set by the agent loop while a round runs: every node a tool creates is
 // recorded there too (the round's own undo batch and "undo this round").
 let llmRoundCreated = null;
+// Same lifetime as llmRoundCreated: every undoable change a tool makes, as ready
+// undo actions in chronological order (creations via llmNoteCreated, delete_node /
+// rename_node via llmRecordUndo). One MCP call / one agent round becomes one undo
+// step from it (llmRoundUndoActions).
+let llmRoundActions = null;
 
 function llmCut(s, n) {
   s = String(s == null ? "" : s);
@@ -56411,26 +56416,91 @@ function llmToolAnnotate(args) {
   if (ids.length > 50) return { error: "At most 50 entries per call." };
   const unknown = ids.filter(id => !entryIndex[id]);
   if (unknown.length) return { error: "Unknown entry id(s): " + unknown.slice(0, 5).join(", ") + ". Use the ids from get_entries/find_message_types." };
-  const note = typeof args.note === "string" ? args.note.trim() : "";
-  const bookmark = args.bookmark === true;
-  if (!note && !bookmark) return { error: "Nothing to do: give a note and/or bookmark: true." };
-  let bookmarked = 0, noted = 0;
+  const hasNote = typeof args.note === "string";
+  const note = hasNote ? args.note.trim() : "";
+  const clearNote = hasNote && !note; // note: "" (explicitly present) removes the note
+  const bookmark = args.bookmark === true, unbookmark = args.bookmark === false;
+  if (!note && !clearNote && !bookmark && !unbookmark) return { error: "Nothing to do: give a note (note: \"\" clears it; replaceNote: true replaces an existing one instead of appending) and/or bookmark: true / false." };
+  let bookmarked = 0, unbookmarked = 0, noted = 0, cleared = 0;
   for (const id of ids) {
     if (bookmark && !state.bookmarks.has(id)) { toggleBookmark(id); bookmarked++; }
-    if (note) {
-      // Never overwrite a person's own note — the finding is appended.
+    if (unbookmark && state.bookmarks.has(id)) { toggleBookmark(id); unbookmarked++; }
+    if (clearNote) {
+      if (state.notes.has(id)) { setNoteAndRepaint(id, ""); cleared++; }
+    } else if (note) {
+      // Default: never overwrite a person's own note — the finding is appended.
       const old = state.notes.get(id);
-      if (old !== note) setNoteAndRepaint(id, old && !old.includes(note) ? old + "\n" + note : note);
+      const next = args.replaceNote === true || !old ? note : old.includes(note) ? old : old + "\n" + note;
+      if (old !== next) setNoteAndRepaint(id, next);
       noted++;
     }
   }
   schedulePersistMeta();
-  return { entries: ids.length, bookmarked, noted };
+  return { entries: ids.length, bookmarked, unbookmarked, noted, cleared };
 }
 
 function llmNoteCreated(node) {
   llmCreatedNodeIds.add(node.id);
   if (llmRoundCreated) llmRoundCreated.push(node.id);
+  if (llmRoundActions) llmRoundActions.push({ kind: "create", nodeId: node.id, parentId: node.parentId });
+}
+function llmRecordUndo(action) {
+  if (llmRoundActions) llmRoundActions.push(action);
+}
+// The recorded actions of a call/round, ready for pushUndo. A creation whose node
+// is gone again is dropped unless a delete of the round took it away (its undo
+// restores the node first, then this create-undo removes it again — reverse order).
+function llmRoundUndoActions(list) {
+  const deleted = new Set();
+  list.forEach(a => { if (a.kind === "delete") (a.removedIds || []).forEach(id => deleted.add(id)); });
+  const out = [];
+  list.forEach(a => {
+    if (a.kind !== "create") { out.push(a); return; }
+    const node = state.nodes[a.nodeId];
+    if (node) out.push({ kind: "create", nodeId: a.nodeId, parentId: node.parentId });
+    else if (deleted.has(a.nodeId)) out.push(a);
+  });
+  return out;
+}
+
+// The node of a node-correcting tool: only what the assistant itself created (the
+// ✦ set) may be changed — never a file, a node the person made, or a pattern id.
+function llmOwnNode(args) {
+  const r = llmNode(args.nodeId);
+  if (r.error) return r;
+  const node = r.node;
+  if (node.type === "file" || !llmCreatedNodeIds.has(node.id)) {
+    return { error: "Node \"" + node.id + "\" belongs to the person (" + (node.type === "file" ? "a file" : "not created by the assistant") + ") — you can only change nodes you created yourself." };
+  }
+  return { node };
+}
+function llmToolDeleteNode(args) {
+  const r = llmOwnNode(args);
+  if (r.error) return r;
+  const node = r.node;
+  if (node.locked) return { error: "Node \"" + node.id + "\" is managed by the app and cannot be deleted." };
+  const removedIds = [];
+  const collect = id => { removedIds.push(id); (state.nodes[id].children || []).forEach(collect); };
+  collect(node.id);
+  const parent = state.nodes[node.parentId];
+  const action = { kind: "delete", snapshot: snapshotSubtree(node.id), parentId: node.parentId, index: parent ? parent.children.indexOf(node.id) : -1, removedIds };
+  deleteNode(node.id);
+  llmRecordUndo(action);
+  if (state.activeId === node.id || !state.nodes[state.activeId]) state.activeId = parent ? parent.id : null;
+  return { deleted: node.id, removedNodes: removedIds.length };
+}
+function llmToolRenameNode(args) {
+  const name = typeof args.name === "string" ? args.name.trim() : "";
+  if (!name) return { error: "name is empty. Give the new name of the node." };
+  const r = llmOwnNode(args);
+  if (r.error) return r;
+  const node = r.node;
+  if (node.label !== name) {
+    const before = captureNodeFields(node);
+    node.label = name;
+    llmRecordUndo({ kind: "edit", nodeId: node.id, before, after: captureNodeFields(node) });
+  }
+  return { nodeId: node.id, name };
 }
 
 const LLM_TOOLS = [
@@ -56528,13 +56598,31 @@ const LLM_TOOLS = [
   },
   {
     name: "annotate",
-    description: "Bookmarks entries and/or attaches a note to them (the note carries your finding for the person; an existing note is kept and extended).",
+    description: "Bookmarks entries and/or attaches a note to them (the note carries your finding for the person; an existing note is kept and extended). To correct yourself: bookmark: false removes the bookmark, replaceNote: true replaces an existing note with `note` instead of extending it, note: \"\" removes the note. Not undoable with the person's Ctrl+Z.",
     parameters: { type: "object", properties: {
       entryIds: { type: "array", items: { type: "string" } },
-      note: { type: "string" },
-      bookmark: { type: "boolean" },
+      note: { type: "string", description: "The finding; \"\" clears the note" },
+      bookmark: { type: "boolean", description: "true adds the bookmark, false removes it" },
+      replaceNote: { type: "boolean", description: "true: replace an existing note instead of appending" },
     }, required: ["entryIds"] },
     run: llmToolAnnotate,
+  },
+  {
+    name: "delete_node",
+    description: "Deletes a node YOU created (with everything below it) — to take back a wrong filter, link or window. Only your own nodes (marked ✦ in the tree) can be deleted; files and the person's nodes are refused.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "A node you created" },
+    }, required: ["nodeId"] },
+    run: llmToolDeleteNode,
+  },
+  {
+    name: "rename_node",
+    description: "Gives a node YOU created a new display name. Only your own nodes (marked ✦ in the tree) can be renamed.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "A node you created" },
+      name: { type: "string", description: "The new name (not empty)" },
+    }, required: ["nodeId", "name"] },
+    run: llmToolRenameNode,
   },
   {
     name: "timeline",
@@ -56648,9 +56736,10 @@ function mcpDrainQueue() {
 }
 function mcpRunCall(job) {
   let text = "", isError = true;
-  const created = [];
-  const prevRound = llmRoundCreated;
+  const created = [], recorded = [];
+  const prevRound = llmRoundCreated, prevActions = llmRoundActions;
   llmRoundCreated = created;
+  llmRoundActions = recorded;
   try {
     const r = runLlmTool(job.name, job.args || {});
     text = r.text; isError = !!r.error;
@@ -56658,9 +56747,10 @@ function mcpRunCall(job) {
     text = JSON.stringify({ error: "Tool failed: " + (e && e.message || e) });
   } finally {
     llmRoundCreated = prevRound;
+    llmRoundActions = prevActions;
     try {
       const label = "MCP: " + job.name;
-      const actions = created.filter(nid => state.nodes[nid]).map(nid => ({ kind: "create", nodeId: nid, parentId: state.nodes[nid].parentId }));
+      const actions = llmRoundUndoActions(recorded);
       if (actions.length === 1) pushUndo({ ...actions[0], label });
       else if (actions.length > 1) pushUndo({ kind: "batch", label, actions });
       render();
@@ -56681,7 +56771,7 @@ function mcpRunCall(job) {
    tool calls it makes are run (each one lands in the tree right away), the
    results go back, until it answers with text or the turn limit hits. A
    round ends done (text), stopped (Stop), limit, or error. Everything the
-   round created is ONE undo step ("batch" of "create" actions,
+   round did (create / delete_node / rename_node) is ONE undo step ("batch", from round.actions,
    llmPushRoundBatch), and "undo this round" (llmUndoRound) removes it later
    too, as its own undo step.
 
@@ -56721,7 +56811,7 @@ const LLM_SYSTEM_PROMPT = [
   "4. Show: show_view (table or plot) so the person sees the result — but only with the id of a node whose result said tablePlot: true. No such node yet? Create the extraction filter first (under a link: create_filter with parentId = the link node), then show_view on that new id. If there is nothing to extract, use view \"filtered\" instead. Plot types: line/bar/scatter/3d for values over time or against each other; radar (one row against selected ones) and parallel (every row across several axes, ranges highlight rows) for several columns with different units; heatmap/profile for an array column or same-unit columns.",
   "5. Diagnose (\"what is going on?\", \"why do these happen?\"): the analysis tools only read and create no nodes. Overview: get_overview, timeline (when are the bursts?). Find the unusual: find_message_types, what_changed (a burst or a run against the rest, or one file against another). Find causes: common_neighbors (what typically comes BEFORE the entries of a node, coverage n/refs and lift), group_by (which thread/axis/value), and create_link's unpairedFollowedBy (what follows references without an end). Prove it: get_entries with full: true (complete message, stack trace) or ids. Show it: create_window (a time window, or context around a node), create_filter, show_view, annotate.",
   "Pattern ids: find_message_types, timeline, what_changed, common_neighbors and create_link give message types an id like p7. Pass it wherever a nodeId is accepted by a reading tool (get_entries, timeline, group_by, common_neighbors, what_changed), or to create_filter as patternId to keep that type. create_filter and create_link accept preview: true to check the count without creating a node.",
-  "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something.",
+  "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something. If you made a mistake, correct it yourself: delete_node removes a node you created (a wrong filter), rename_node renames one; annotate with bookmark: false / replaceNote: true / note: \"\" undoes a bookmark or note of yours.",
 ].join("\n");
 
 const llm = {
@@ -56972,7 +57062,9 @@ function llmToolSummary(name, out) {
     case "common_neighbors": return "common_neighbors → " + (r.neighbors || []).length + " type(s) " + r.direction + " " + r.references + " reference(s)" + ((r.neighbors || [])[0] ? ", top: " + llmCut(r.neighbors[0].type, 50) + " " + r.neighbors[0].coverage : "");
     case "group_by": return "group_by → " + r.column + ": " + r.distinct + " value(s)";
     case "create_window": return "create_window → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies");
-    case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "");
+    case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.unbookmarked ? ", " + r.unbookmarked + " unbookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "") + (r.cleared ? ", " + r.cleared + " note(s) cleared" : "");
+    case "delete_node": return "delete_node → " + r.deleted + " (" + r.removedNodes + " node" + (r.removedNodes === 1 ? "" : "s") + ")";
+    case "rename_node": return "rename_node → " + r.nodeId + " " + llmCut(r.name, 60);
     default: return name;
   }
 }
@@ -57043,6 +57135,8 @@ async function llmSend(text) {
   if (!session) session = llmNewSession();
   if (!session.title) session.title = llmCut(text, 60);
   const round = { id: uid("round"), user: text, items: [], status: "running", error: null, created: [], refs: {}, startedAt: Date.now() };
+  // Not enumerable: undo snapshots must not end up in the saved session.
+  Object.defineProperty(round, "actions", { value: [], enumerable: false, writable: true });
   const roundIdx = session.rounds.length;
   session.rounds.push(round);
   session.history.push({ role: "user", content: text, round: roundIdx });
@@ -57050,6 +57144,7 @@ async function llmSend(text) {
   running.abort = new Promise(resolve => { running.onAbort = resolve; });
   llm.running = running;
   llmRoundCreated = round.created;
+  llmRoundActions = round.actions;
   llmTouch(session);
   llmNotify();
   const s = llmSettings();
@@ -57114,6 +57209,7 @@ async function llmSend(text) {
     llmHealHistory(session);
     llm.stream = null;
     llmRoundCreated = null;
+    llmRoundActions = null;
     llmPushRoundBatch(round);
     llm.running = null;
     mcpDrainQueue();
@@ -57145,7 +57241,7 @@ function llmHealHistory(session) {
 // One undo step for everything a round created (still existing, in
 // creation order — undo takes them back in reverse).
 function llmPushRoundBatch(round) {
-  const actions = round.created.filter(id => state.nodes[id]).map(id => ({ kind: "create", nodeId: id, parentId: state.nodes[id].parentId }));
+  const actions = llmRoundUndoActions(round.actions || []);
   if (!actions.length) return;
   pushUndo({ kind: "batch", llmRoundId: round.id, actions });
 }
@@ -57175,13 +57271,13 @@ function llmUndoRound(roundId, force) {
   const round = found.round;
   if (llm.running && llm.running.roundId === roundId) return { ok: false, reason: "running" };
   const alive = round.created.filter(id => state.nodes[id]);
-  if (!alive.length) return { ok: false, reason: "nothing left" };
   const top = undoStack[undoStack.length - 1];
   if (top && top.kind === "batch" && top.llmRoundId === round.id) {
     undo();
     llmNotify();
     return { ok: true, via: "undo" };
   }
+  if (!alive.length) return { ok: false, reason: "nothing left" };
   const own = new Set(round.created);
   const topLevel = alive.filter(id => {
     for (let p = state.nodes[id].parentId; p; p = state.nodes[p] && state.nodes[p].parentId) if (own.has(p) && state.nodes[p]) return false;
@@ -57216,6 +57312,8 @@ function llmThemeVars() {
 }
 function llmRoundUndoState(round) {
   if (llm.running && llm.running.roundId === round.id) return "none";
+  const top = undoStack[undoStack.length - 1];
+  if (top && top.kind === "batch" && top.llmRoundId === round.id) return "available";
   return round.created.some(id => state.nodes[id]) ? "available" : "none";
 }
 // The complete state of one session as the chat renders it — small, and
