@@ -19,6 +19,7 @@
     --accent:#4fc7c3;
     --accent-soft:rgba(79,199,195,.14);
     --accent-strong:#7fe0dc;
+    --multi-select-fill:color-mix(in srgb, var(--accent) 24%, var(--bg-app));
     --level-error:#f16565;
     --level-error-soft:rgba(241,101,101,.14);
     --level-warn:#e8a94a;
@@ -430,6 +431,11 @@
   }
   button{font-family:inherit;}
   ::selection{background:var(--selection-bg); color:var(--text-primary);}
+  /* Filter/Context rows run their own text selection (tableTextSel): the cells
+     are not natively selectable and the model is painted via the Custom
+     Highlight API. Phone cards keep native behaviour. */
+  body:not(.layout-phone) .log-row [data-sel-col]{user-select:none; -webkit-user-select:none;}
+  ::highlight(philogg-table-sel){background-color:color-mix(in srgb, var(--accent) 38%, transparent); color:inherit;}
 
   /* thin scrollbars */
   ::-webkit-scrollbar{width:10px; height:10px;}
@@ -2222,22 +2228,14 @@
   }
   .log-row:hover{background:var(--bg-elevated);}
   .log-row.selected{box-shadow:inset 0 0 0 1px var(--accent);}
-  /* Ctrl/Shift-click multi-select (see handleLogRowClick) — box-shadow, NOT
-     background: a plain background tint here would silently lose to the
-     .lvl-error/warn/etc. row tinting below (same specificity, and those
-     rules come later in the cascade, so they'd always win outright — the
-     exact fight .pinned-row's own box-shadow approach, right below, was
-     already written to avoid; box-shadow doesn't touch background-color at
-     all, so it composes over ANY level tint). Deliberately a different inset
-     geometry from .selected's 1px full border AND .pinned-row's 3px LEFT
-     edge, so all three can be told apart; the explicit
-     .selected.row-multi-selected rule below combines both shadows for a row
-     that's simultaneously the multi-select's "focused" row and part of the
-     set, since box-shadow doesn't stack across separate class rules on its
-     own (only one wins, whichever the cascade picks) — needs both listed in
-     one value to actually show both. */
-  .log-row.row-multi-selected{box-shadow:inset 0 0 0 2px var(--accent-strong);}
-  .log-row.selected.row-multi-selected{box-shadow:inset 0 0 0 1px var(--accent), inset 0 0 0 3px var(--accent-strong);}
+  /* Ctrl/Shift-click multi-select (see handleLogRowClick): every member row
+     gets the SAME full-width fill (--multi-select-fill, painted as a
+     background-image gradient further down, after the level tints), no
+     per-row border, and the clicked ("focused") row looks like the rest. So
+     the 1px .selected border is dropped here; a pinned-only row keeps its
+     3px left edge. */
+  .log-row.selected.row-multi-selected{box-shadow:none;}
+  .log-row.pinned-row.selected.row-multi-selected{box-shadow:inset 3px 0 0 var(--accent-strong);}
 
   /* ---------- Time context filter: bracket drawn per-row in the left
      gutter of #tableRows (see its 14px left padding). Adjacent rows in the
@@ -3615,6 +3613,13 @@
   body.pair-picking .log-row:hover, body.pair-picking .pair-row:hover{box-shadow:inset 3px 0 0 var(--pair-pick);}
   .log-row.pair-start, .pair-row.pair-start{box-shadow:inset 3px 0 0 var(--accent); background:var(--accent-soft);}
   .log-row.pair-end, .pair-row.pair-end{box-shadow:inset 3px 0 0 var(--pair-pick); background:color-mix(in srgb, var(--pair-pick) 14%, transparent);}
+  /* Multi-select fill. background-image, NOT background-color: the level
+     tints above/below use the `background` shorthand (which would reset an
+     image set earlier) and a colour here would lose to them; an image layer
+     composes over ANY tint. Keep this block AFTER every .log-row background
+     shorthand (level tints and their :hover, pair-start/end). */
+  .log-row.row-multi-selected, .log-row.row-multi-selected:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill));}
+  .log-row.row-multi-selected.row-zero, .log-row.row-multi-selected.row-zero:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill)), linear-gradient(var(--accent-soft), var(--accent-soft));}
 
   /* ---------- Time context dialog ---------- */
   #contextDialog{
@@ -12535,7 +12540,7 @@ function msgColClass(e) {
 // still paints its padding + background as a small block (and would spill
 // out of the Level track, which is collapsed to 0px for plain text).
 function levelCellHtml(e, innerHtml) {
-  return '<span class="col-level" data-col="level">' +
+  return '<span class="col-level" data-col="level" data-sel-col="level">' +
     (isPlainTextFormat(e.formatId) ? "" : '<span class="level-badge">' + innerHtml + '</span>') + '</span>';
 }
 function levelBadgeHtml(e) {
@@ -29420,8 +29425,7 @@ function renderVisibleRows(reuseRows) {
   // own measured gap (per group, against the parent's result — see
   // computeGapEntries), or, under a column sort, the chronological Δt
   // renderTable captured before sorting (buildViewDeltaMap).
-  const gapMs = activeNode && activeNode.filterType === "gap" && !activeNode.inverted ? activeNode._gapMs : null;
-  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, textMode: filteredTextMode, zero: filteredTextMode ? null : timeZeroContext(), deltaMap: gapMs || (state.sortColumn ? viewDeltaMs : null), prunedMarks: prunedRowMarks(activeNode) };
+  const rc = { total, ctxNode, mm, columnDefs, messageVisible, syntax, textMode: filteredTextMode, zero: filteredTextMode ? null : timeZeroContext(), deltaMap: filterViewDeltaMap(), prunedMarks: prunedRowMarks(activeNode) };
   let groups;
   if (reuse) {
     for (let i = w.start; i < start; i++) w.groups[i - w.start].forEach(el => el.remove());
@@ -29449,6 +29453,7 @@ function renderVisibleRows(reuseRows) {
   tableRowsWindow = { entries: currentViewEntries, total, start, end, groups, first: tableRows.firstElementChild };
   verifyVisibleFpCandidates(tableRows);
   syncTableHeaderWidth();
+  paintTableTextSel();
 }
 
 // Builds currentViewEntries[i]'s row (plus its note row, if any) into `frag`
@@ -29476,6 +29481,27 @@ function prunedRowMarks(node) {
   }
   return marks;
 }
+// Δt shown on the Filtered view's row i (entry e): from `deltaMap` when given
+// (a gap filter's own measured gap, or under a column sort the chronological Δt
+// renderTable captured — adjacent rows aren't temporally adjacent then), else
+// from the row above. After a folded repeat run it is measured from the run's
+// LAST member, not its head. Shared by appendLogRow and the table text selection.
+function filterRowDeltaMs(i, e, deltaMap) {
+  let prevE = i > 0 ? currentViewEntries[i - 1] : null;
+  if (prevE && repeatRunByEntry.size) {
+    const pr = repeatRunByEntry.get(prevE.id);
+    if (pr && pr.head === prevE && !repeatExpanded.has(prevE.id)) prevE = pr.members[pr.members.length - 1];
+  }
+  return deltaMap ? (deltaMap.has(e.id) ? deltaMap.get(e.id) : null)
+    : (prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
+}
+// The Filtered view's Δt map (null = neighbour-based), see filterRowDeltaMs.
+function filterViewDeltaMap() {
+  const activeNode = state.nodes[state.activeId];
+  const gapMs = activeNode && activeNode.filterType === "gap" && !activeNode.inverted ? activeNode._gapMs : null;
+  return gapMs || (state.sortColumn ? viewDeltaMs : null);
+}
+
 function appendLogRow(frag, i, rc) {
   const e = currentViewEntries[i];
   const row = document.createElement("div");
@@ -29516,17 +29542,7 @@ function appendLogRow(frag, i, rc) {
       if (rc.ctxNode._anchorIds.has(e.id)) bracketHtml += '<span class="ctx-anchor-dot" title="Reference entry"></span>';
     }
   }
-  // Under a column sort adjacent rows aren't temporally adjacent, so the
-  // Δt comes from rc.deltaMap (captured in chronological order) instead of
-  // the row above.
-  let prevE = i > 0 ? currentViewEntries[i - 1] : null;
-  // After a folded run the Δt is measured from the run's LAST member, not its head.
-  if (prevE && repeatRunByEntry.size) {
-    const pr = repeatRunByEntry.get(prevE.id);
-    if (pr && pr.head === prevE && !repeatExpanded.has(prevE.id)) prevE = pr.members[pr.members.length - 1];
-  }
-  const deltaMs = rc.deltaMap ? (rc.deltaMap.has(e.id) ? rc.deltaMap.get(e.id) : null)
-    : (prevE && !isPlainTextFormat(e.formatId)) ? (e.ts - prevE.ts) : null;
+  const deltaMs = filterRowDeltaMs(i, e, rc.deltaMap);
 
   // markFieldHtml short-circuits to a plain escapeHtml before any range
   // search when nothing can contribute a mark (feature/row-toggle off and
@@ -29548,7 +29564,7 @@ function appendLogRow(frag, i, rc) {
   for (const col of rc.columnDefs) {
     const val = entryColumnValue(e, col.key);
     const html = markFieldHtml(rc.mm, val, col.key);
-    middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+    middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" data-sel-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
   }
   const syntaxRanges = plainTextSyntaxRanges(e, rc.syntax);
   const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message",
@@ -29559,22 +29575,23 @@ function appendLogRow(frag, i, rc) {
   row.className = cls;
   row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode()) + "px";
   row.dataset.entryId = e.id;
+  row.dataset.viewIdx = String(i); // table text selection: this row's index in currentViewEntries
   // Text mode: no level stripe/Δt/Level/columns — line number, the (empty)
   // fold slot, the message. A text file has no other columns.
   row.innerHTML = rc.textMode ?
     bracketHtml +
     (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
-    '<span class="col-time' + timeCls + '" data-col="time"' + timeAttrs + '>' + timeHtml + '</span>' +
+    '<span class="col-time' + timeCls + '" data-col="time" data-sel-col="time"' + timeAttrs + '>' + timeHtml + '</span>' +
     '<span class="col-fold"></span>' +
-    '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' :
+    '<span class="' + msgColClass(e) + '" data-col="message" data-sel-col="message">' + msgHtml + '</span>' :
     bracketHtml +
     (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
     '<span class="col-bar"></span>' +
-    '<span class="col-time' + timeCls + '" data-col="time"' + timeAttrs + '>' + timeHtml + '</span>' +
-    '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
+    '<span class="col-time' + timeCls + '" data-col="time" data-sel-col="time"' + timeAttrs + '>' + timeHtml + '</span>' +
+    '<span class="col-delta' + deltaClass(deltaMs) + '" data-sel-col="delta">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
     levelCellHtml(e, levelHtml) +
     middleHtml +
-    (rc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + msgHtml + '</span>' : "");
+    (rc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message" data-sel-col="message">' + msgHtml + '</span>' : "");
   if (!rc.textMode && cardMode()) {
     const msgEl = row.querySelector(":scope > .col-msg");
     if (msgEl) msgEl.style.webkitLineClamp = String(cardLinesForEntry(e, tableWrapCols));
@@ -31468,6 +31485,10 @@ function renderHighlightView(colorMapIsFresh) {
   updateMinimapRenderedRange();
 }
 
+function highlightRowDeltaMs(i, e) {
+  const prevE = i > 0 ? currentHighlightViewEntries[i - 1] : null;
+  return prevE && !isPlainTextFormat(e.formatId) ? (e.ts - prevE.ts) : null;
+}
 function renderHighlightVisibleRows() {
   if (textEditorShown()) { editorRender(false); return; } // the editor has its own window — see editorRender
   const total = currentHighlightViewEntries.length;
@@ -31538,12 +31559,12 @@ function renderHighlightVisibleRows() {
         run = contextRunAt(i);
       }
     }
-    const prevE = i > 0 ? currentHighlightViewEntries[i - 1] : null;
-    const deltaMs = prevE && !isPlainTextFormat(e.formatId) ? (e.ts - prevE.ts) : null;
+    const deltaMs = highlightRowDeltaMs(i, e);
 
     row.className = cls;
     row.style.height = baseRowHeightForEntry(e, highlightWrapCols) + "px";
     row.dataset.entryId = e.id;
+    row.dataset.viewIdx = String(i); // table text selection: this row's index in currentHighlightViewEntries
     // markFieldHtml short-circuits to a plain escapeHtml before any range
     // search when nothing can contribute a mark (no coloured rules, or the
     // rule-marking toggle off), so this stays a plain escapeHtml call in the
@@ -31561,17 +31582,17 @@ function renderHighlightVisibleRows() {
     for (const col of columnDefs) {
       const val = entryColumnValue(e, col.key);
       const html = markFieldHtml(mm, val, col.key);
-      middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+      middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" data-sel-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
     }
     row.innerHTML =
       markerHtml +
       (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
       '<span class="col-bar"></span>' +
-      '<span class="col-time' + timeCls + '" data-col="time"' + timeAttrs + '>' + markFieldHtml(mm, timeText, "time") + '</span>' +
-      '<span class="col-delta' + deltaClass(deltaMs) + '">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
+      '<span class="col-time' + timeCls + '" data-col="time" data-sel-col="time"' + timeAttrs + '>' + markFieldHtml(mm, timeText, "time") + '</span>' +
+      '<span class="col-delta' + deltaClass(deltaMs) + '" data-sel-col="delta">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
       levelCellHtml(e, markFieldHtml(mm, e.level, "level")) +
       middleHtml +
-      (messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message">' + hlMsgHtml + '</span>' : "");
+      (messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message" data-sel-col="message">' + hlMsgHtml + '</span>' : "");
     // A PLAIN click is a jump to that match and gets the expansion treatment
     // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
     // gesture and must leave the row list alone, or the range the person is
@@ -31594,6 +31615,7 @@ function renderHighlightVisibleRows() {
   highlightRows.appendChild(frag);
   verifyVisibleFpCandidates(highlightRows);
   syncHighlightHeaderWidth();
+  paintTableTextSel();
 }
 
 // One revealed row's slice of its run's connecting line: a full-row-height
@@ -34236,20 +34258,354 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
   selectFn(entryId);
 }
 
+/* ===================== Table text selection (Filter + Context rows) =====================
+   Native selection can't span virtual-scrolled rows (rows outside the window
+   don't exist), so these two views run their own model:
+   tableTextSel = { view: "filter"|"highlight", mode: "flow"|"block",
+                    anchor, focus }  with  point = { entryId, col, offset, idx }
+   `col` is a column key (tableSelCols, display order), `offset` a character
+   offset into that cell's VALUE text (tableCellText — no badges/chips/icons),
+   `idx` a cached index into the view's entry array. Bound to entries, not DOM
+   rows, so it survives re-renders and scrolling; painted with the CSS Custom
+   Highlight API (no row innerHTML changes). flow = like text (rest of the
+   anchor row, whole rows between, start of the focus row); block = whole
+   cells, rows x columns between anchor and focus. Copy: cells joined by \t,
+   rows by \n. Cells carry data-sel-col, rows data-view-idx (both renderers). */
+const TABLE_SEL_HL = "philogg-table-sel";
+const SEL_DECOR = ".repeat-badge, .not-in-filter-chip, [data-nosel]";
+let tableTextSel = null;
+
+// Column keys of a view's rows in display order (text mode: line number + message).
+function tableSelCols(textMode) {
+  if (textMode) return ["time", "message"];
+  const cols = ["time"];
+  if (!rowGridTrackHidden("delta", true, false)) cols.push("delta");
+  if (!rowGridTrackHidden("level", false, false)) cols.push("level");
+  activeColumnDefs().forEach(d => { if (!rowGridTrackHidden(d.key, true, true)) cols.push(d.key); });
+  if (activeMessageVisible()) cols.push("message");
+  return cols;
+}
+// Everything the selection needs to know about one view.
+function tableSelView(view) {
+  if (view === "highlight") {
+    return { view, entries: currentHighlightViewEntries, rows: highlightRows, body: highlightBody,
+      cols: tableSelCols(false), zero: timeZeroContext(), deltaAt: highlightRowDeltaMs };
+  }
+  const deltaMap = filterViewDeltaMap();
+  return { view, entries: currentViewEntries, rows: tableRows, body: tableBody, cols: tableSelCols(filteredTextMode),
+    zero: filteredTextMode ? null : timeZeroContext(), deltaAt: (i, e) => filterRowDeltaMs(i, e, deltaMap) };
+}
+// The text of one cell as displayed, without decorations (repeat badge, "not in
+// this filter" chip, bookmark icon, highlight markers). The single source for copy.
+function tableCellText(e, col, vc, i) {
+  switch (col) {
+    case "time": return displayTimeText(e, vc.zero);
+    case "delta": { const d = vc.deltaAt(i, e); return d == null ? "—" : formatDelta(d); }
+    case "level": return isPlainTextFormat(e.formatId) ? "" : String(e.level == null ? "" : e.level);
+    case "message": return String(e.message == null ? "" : e.message);
+    default: { const v = entryColumnValue(e, col); return v == null ? "" : String(v); }
+  }
+}
+function tableSelViewShown(view) {
+  if (fhSplit.style.display === "none" || state.inlineViewer || state.folderView) return false;
+  if (view === "filter" && linkWrap.style.display !== "none") return false;
+  if (fhLayout === "tabs") return (fhActiveTab === "highlight") === (view === "highlight");
+  return true;
+}
+function clearTableTextSel() {
+  tableTextSel = null;
+  if (typeof CSS !== "undefined" && CSS.highlights) CSS.highlights.delete(TABLE_SEL_HL);
+}
+function tableSelIndexOf(vc, pt) {
+  const a = vc.entries;
+  if (pt.idx != null && a[pt.idx] && a[pt.idx].id === pt.entryId) return pt.idx;
+  pt.idx = a.findIndex(en => en.id === pt.entryId);
+  return pt.idx;
+}
+// The model resolved against the current view (indexes, column positions,
+// start/end order), or null — and the model dropped — when it no longer fits:
+// view not shown, an endpoint entry left the view, a column is gone.
+function tableTextSelResolve() {
+  const sel = tableTextSel;
+  if (!sel) return null;
+  if (!tableSelViewShown(sel.view)) { clearTableTextSel(); return null; }
+  const vc = tableSelView(sel.view);
+  const pos = pt => ({ i: tableSelIndexOf(vc, pt), c: vc.cols.indexOf(pt.col), o: pt.offset });
+  const a = pos(sel.anchor), f = pos(sel.focus);
+  if (a.i < 0 || f.i < 0 || a.c < 0 || f.c < 0) { clearTableTextSel(); return null; }
+  const before = (x, y) => x.i !== y.i ? x.i < y.i : x.c !== y.c ? x.c < y.c : x.o <= y.o;
+  const [s, e] = before(a, f) ? [a, f] : [f, a];
+  return { sel, vc, a, f, s, e };
+}
+// The selected text ("" when none): cells of a row joined by \t, rows by \n.
+function tableTextSelText() {
+  const r = tableTextSelResolve();
+  if (!r) return "";
+  const { vc, sel } = r;
+  const rows = [];
+  if (sel.mode === "block") {
+    const c0 = Math.min(r.a.c, r.f.c), c1 = Math.max(r.a.c, r.f.c);
+    for (let i = r.s.i; i <= r.e.i; i++) {
+      const parts = [];
+      for (let c = c0; c <= c1; c++) parts.push(tableCellText(vc.entries[i], vc.cols[c], vc, i));
+      rows.push(parts.join("\t"));
+    }
+  } else {
+    for (let i = r.s.i; i <= r.e.i; i++) {
+      const c0 = i === r.s.i ? r.s.c : 0, c1 = i === r.e.i ? r.e.c : vc.cols.length - 1;
+      const parts = [];
+      for (let c = c0; c <= c1; c++) {
+        const t = tableCellText(vc.entries[i], vc.cols[c], vc, i);
+        parts.push(t.slice(i === r.s.i && c === r.s.c ? r.s.o : 0, i === r.e.i && c === r.e.c ? r.e.o : t.length));
+      }
+      rows.push(parts.join("\t"));
+    }
+  }
+  const text = rows.join("\n");
+  return sel.mode === "block" || text.replace(/[\t\n]/g, "").length ? text : "";
+}
+// Programmatic entry (tests, future callers): points are { entryId, col, offset }.
+function setTableTextSelection(view, mode, anchor, focus) {
+  tableTextSel = { view, mode, anchor: { ...anchor }, focus: { ...focus } };
+  paintTableTextSel();
+}
+// Is the row one of the selected rows (right-click offers "Copy selected text" only there)?
+function tableTextSelCoversRow(rowEl) {
+  if (!tableTextSel || !rowEl || !rowEl.dataset || rowEl.dataset.viewIdx == null) return false;
+  const r = tableTextSelResolve();
+  if (!r || rowEl.parentElement !== r.vc.rows) return false;
+  const i = +rowEl.dataset.viewIdx;
+  return i >= r.s.i && i <= r.e.i && !!tableTextSelText();
+}
+
+// Text nodes of a cell that count towards its value text (decorations skipped).
+function selCellTextNodes(cell) {
+  const out = [];
+  const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+  let n;
+  while ((n = walker.nextNode())) {
+    const d = n.parentElement && n.parentElement.closest(SEL_DECOR);
+    if (d && d !== cell && cell.contains(d)) continue;
+    out.push(n);
+  }
+  return out;
+}
+// DOM boundary (node, offset) -> character offset into the cell's value text.
+function selDomToValueOffset(cell, node, off) {
+  const nodes = selCellTextNodes(cell);
+  let acc = 0;
+  if (node.nodeType === 3) {
+    for (const tn of nodes) { if (tn === node) return acc + off; acc += tn.length; }
+    return acc;
+  }
+  const target = node.childNodes[off] || null;
+  for (const tn of nodes) {
+    const before = target ? !!(target.compareDocumentPosition(tn) & Node.DOCUMENT_POSITION_PRECEDING)
+      : (node.contains(tn) || !!(node.compareDocumentPosition(tn) & Node.DOCUMENT_POSITION_PRECEDING));
+    if (!before) break;
+    acc += tn.length;
+  }
+  return acc;
+}
+// A DOM Range over characters [from, to) of the cell's value text, or null.
+function selValueRange(cell, from, to) {
+  const nodes = selCellTextNodes(cell);
+  if (!nodes.length || to <= from) return null;
+  let acc = 0, sn = null, so = 0, en = null, eo = 0;
+  for (const tn of nodes) {
+    const end = acc + tn.length;
+    if (!sn && from < end) { sn = tn; so = from - acc; }
+    if (!en && to <= end) { en = tn; eo = to - acc; }
+    acc = end;
+  }
+  if (!sn) return null;
+  if (!en) { en = nodes[nodes.length - 1]; eo = en.length; }
+  const range = document.createRange();
+  range.setStart(sn, so);
+  range.setEnd(en, eo);
+  return range;
+}
+function tableSelCellValueLength(cell) { return selCellTextNodes(cell).reduce((n, tn) => n + tn.length, 0); }
+
+// Paint the selection onto the rows currently in the DOM. Called after every
+// render of either view's visible rows and on every drag move.
+function paintTableTextSel() {
+  const r = tableTextSelResolve();
+  const canPaint = typeof Highlight !== "undefined" && typeof CSS !== "undefined" && CSS.highlights;
+  if (!canPaint) return;
+  CSS.highlights.delete(TABLE_SEL_HL);
+  if (!r) return;
+  const { vc, sel } = r;
+  const c0 = Math.min(r.a.c, r.f.c), c1 = Math.max(r.a.c, r.f.c);
+  const ranges = [];
+  vc.rows.querySelectorAll(":scope > .log-row[data-view-idx]").forEach(row => {
+    const i = +row.dataset.viewIdx;
+    if (i < r.s.i || i > r.e.i) return;
+    row.querySelectorAll(":scope > [data-sel-col]").forEach(cell => {
+      const c = vc.cols.indexOf(cell.dataset.selCol);
+      if (c < 0) return;
+      let from = 0, to = tableSelCellValueLength(cell);
+      if (sel.mode === "block") {
+        if (c < c0 || c > c1) return;
+      } else {
+        if ((i === r.s.i && c < r.s.c) || (i === r.e.i && c > r.e.c)) return;
+        if (i === r.s.i && c === r.s.c) from = r.s.o;
+        if (i === r.e.i && c === r.e.c) to = Math.min(to, r.e.o);
+      }
+      const range = selValueRange(cell, from, to);
+      if (range) ranges.push(range);
+    });
+  });
+  if (ranges.length) CSS.highlights.set(TABLE_SEL_HL, new Highlight(...ranges));
+}
+
+/* ---- gestures ---- */
+let tableSelDrag = null;          // { view, mode, x0, y0, x, y, anchor, dragging, raf, vc }
+let tableSelSwallowClick = false; // a real drag must not change the row selection
+let tableSelAltDragged = false;   // swallow the Alt keyup after an Alt-drag (no menu focus on Windows)
+
+function tableSelCaretAt(x, y) {
+  if (document.caretPositionFromPoint) {
+    const p = document.caretPositionFromPoint(x, y);
+    return p ? { node: p.offsetNode, off: p.offset } : null;
+  }
+  if (document.caretRangeFromPoint) {
+    const r = document.caretRangeFromPoint(x, y);
+    return r ? { node: r.startContainer, off: r.startOffset } : null;
+  }
+  return null;
+}
+// The row under (or nearest to) a pointer position within the view's rows.
+function tableSelRowAt(vc, target, y) {
+  let row = target && target.closest ? target.closest(".log-row[data-view-idx]") : null;
+  if (row && row.parentElement === vc.rows) return row;
+  let best = null, bestD = Infinity;
+  vc.rows.querySelectorAll(":scope > .log-row[data-view-idx]").forEach(el => {
+    const b = el.getBoundingClientRect();
+    const d = y < b.top ? b.top - y : y > b.bottom ? y - b.bottom : 0;
+    if (d < bestD) { bestD = d; best = el; }
+  });
+  return best;
+}
+// The selection point (cell + character offset) under a pointer position, or null.
+function tableSelPointAt(vc, target, x, y, flow) {
+  const br = vc.body.getBoundingClientRect();
+  if (br.height > 0) y = Math.max(br.top + 1, Math.min(br.bottom - 1, y));
+  const row = tableSelRowAt(vc, target, y);
+  if (!row) return null;
+  const cells = Array.from(row.querySelectorAll(":scope > [data-sel-col]")).filter(c => vc.cols.includes(c.dataset.selCol));
+  if (!cells.length) return null;
+  let cell = target && target.closest ? target.closest("[data-sel-col]") : null;
+  if (!cell || cell.parentElement !== row || !cells.includes(cell)) {
+    let bestD = Infinity;
+    cells.forEach(c => {
+      const b = c.getBoundingClientRect();
+      const d = x < b.left ? b.left - x : x > b.right ? x - b.right : 0;
+      if (d < bestD) { bestD = d; cell = c; }
+    });
+  }
+  const entry = vc.entries[+row.dataset.viewIdx];
+  if (!entry) return null;
+  let offset = 0;
+  if (flow) {
+    const len = tableSelCellValueLength(cell);
+    const caret = tableSelCaretAt(x, y);
+    if (caret && caret.node && cell.contains(caret.node)) offset = selDomToValueOffset(cell, caret.node, caret.off);
+    else {
+      const b = cell.getBoundingClientRect();
+      offset = x < b.left + b.width / 2 ? 0 : len;
+    }
+    offset = Math.max(0, Math.min(len, offset));
+  }
+  return { entryId: entry.id, col: cell.dataset.selCol, offset, idx: +row.dataset.viewIdx };
+}
+function tableSelUpdateFocus(target) {
+  const d = tableSelDrag;
+  if (!d) return;
+  const pt = tableSelPointAt(d.vc, target, d.x, d.y, d.mode === "flow");
+  if (!pt) return;
+  tableTextSel = { view: d.view, mode: d.mode, anchor: d.anchor, focus: pt };
+  paintTableTextSel();
+}
+function tableSelAutoScroll() {
+  const d = tableSelDrag;
+  if (!d || !d.dragging) return;
+  const br = d.vc.body.getBoundingClientRect();
+  const edge = 40;
+  let dy = 0;
+  if (d.y < br.top + edge) dy = -Math.ceil((br.top + edge - d.y) / 4);
+  else if (d.y > br.bottom - edge) dy = Math.ceil((d.y - (br.bottom - edge)) / 4);
+  if (dy && br.height > 0) {
+    d.vc.body.scrollTop += dy;
+    tableSelUpdateFocus(document.elementFromPoint ? document.elementFromPoint(d.x, d.y) : null);
+  }
+  d.raf = requestAnimationFrame(tableSelAutoScroll);
+}
+function tableSelMouseMove(ev) {
+  const d = tableSelDrag;
+  if (!d) return;
+  d.x = ev.clientX; d.y = ev.clientY;
+  if (!d.dragging) {
+    if (Math.hypot(d.x - d.x0, d.y - d.y0) < 3) return;
+    d.dragging = true;
+    const sel = window.getSelection && window.getSelection();
+    if (sel && sel.rangeCount) sel.removeAllRanges();
+    if (d.mode === "block") tableSelAltDragged = true;
+    d.raf = requestAnimationFrame(tableSelAutoScroll);
+  }
+  tableSelUpdateFocus(ev.target);
+}
+function tableSelMouseUp() {
+  const d = tableSelDrag;
+  tableSelDrag = null;
+  document.removeEventListener("mousemove", tableSelMouseMove, true);
+  document.removeEventListener("mouseup", tableSelMouseUp, true);
+  if (!d) return;
+  if (d.raf) cancelAnimationFrame(d.raf);
+  if (d.dragging) {
+    tableSelSwallowClick = true;
+    setTimeout(() => { tableSelSwallowClick = false; }, 250);
+  }
+}
+function tableSelMouseDown(view, ev) {
+  if (ev.button !== 0 || currentLayoutTier === "phone") return;
+  if (tableTextSel) clearTableTextSel(); // a plain click (or a new drag) ends the old selection
+  if (ev.target.closest && ev.target.closest("button, input, textarea, select, .ctx-run-line, .repeat-badge")) return;
+  const alt = ev.altKey;
+  if (!alt && (ev.shiftKey || ev.ctrlKey || ev.metaKey)) return; // row multi-selection gestures
+  const vc = tableSelView(view);
+  const mode = alt ? "block" : "flow";
+  const anchor = tableSelPointAt(vc, ev.target, ev.clientX, ev.clientY, mode === "flow");
+  if (!anchor) return;
+  tableSelDrag = { view, mode, vc, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, y: ev.clientY, anchor, dragging: false, raf: 0 };
+  document.addEventListener("mousemove", tableSelMouseMove, true);
+  document.addEventListener("mouseup", tableSelMouseUp, true);
+}
+tableRows.addEventListener("mousedown", ev => tableSelMouseDown("filter", ev));
+highlightRows.addEventListener("mousedown", ev => tableSelMouseDown("highlight", ev));
+document.addEventListener("click", ev => {
+  if (!tableSelSwallowClick) return;
+  tableSelSwallowClick = false;
+  ev.stopPropagation(); ev.preventDefault();
+}, true);
+document.addEventListener("keyup", ev => {
+  if (ev.key === "Alt" && tableSelAltDragged) { tableSelAltDragged = false; ev.preventDefault(); }
+});
+
 // "Text-selection copy": the text the person marked with the mouse inside ONE
 // entry — `container` is that entry's row (.log-row / .pair-row), or a
 // region such as the Entry Detail body, the Why panel or the text editor.
-// Returns the selected string, or null when there is none, when it reaches
-// outside `container` (anchor and focus must both lie inside), or — for a
-// row — when 2+ rows are multi-selected (a multi-selection always copies
-// whole rows; a Shift-click range also leaves a native selection across rows).
+// Returns the selected string, or null when there is none or when it reaches
+// outside `container` (anchor and focus must both lie inside). A selection
+// wins over a row multi-selection (the Filter/Context rows use the own
+// tableTextSel model; this native path serves link-view pair rows, Detail,
+// Why and the editor).
 // Shared by Ctrl+C, the row menu's "Copy selected text" and #textCopyMenu.
 function copyableTextSelection(container) {
   if (!container) return null;
   const sel = window.getSelection();
   if (!sel || sel.isCollapsed || !sel.anchorNode || !sel.focusNode) return null;
   if (!container.contains(sel.anchorNode) || !container.contains(sel.focusNode)) return null;
-  if (container.matches(".log-row, .pair-row") && state.logMultiSelect.size >= 2) return null;
   const text = sel.toString();
   return text.length ? text : null;
 }
@@ -34262,7 +34618,7 @@ function selectionRowOf(node) {
 // arrives — before selectRowForContextMenu may re-render, and never at click
 // time (clicking a menu item can collapse it).
 let ctxSelectionText = null, ctxMenuSelectionText = null; // captured at contextmenu / shown in the open menu
-function captureCtxSelection(rowEl) { ctxSelectionText = copyableTextSelection(rowEl); }
+function captureCtxSelection(rowEl) { ctxSelectionText = tableTextSelCoversRow(rowEl) ? tableTextSelText() : copyableTextSelection(rowEl); }
 
 // Right-click on a log row (Explorer convention): a row outside the current
 // multi-selection becomes the single selection BEFORE the context menu opens,
@@ -35592,6 +35948,15 @@ function collectColumnResizeHandles() {
   return map;
 }
 
+// Whether a --row-grid track is collapsed to 0px: hidden by the layout tier,
+// by the person (state.columnVisible, hideable tracks only), or meaningless for
+// plain text. Shared by applyRowGrid and the table text selection (tableSelCols),
+// so a selection never copies a column the person cannot see.
+function rowGridTrackHidden(key, hideable, middle, tier = layoutTier(), plainText = allRootsPlainText()) {
+  const tierHidden = tier !== "desktop" && (key === "delta" || (middle && (tier === "phone" || key !== "thread")));
+  return tierHidden || (hideable && !columnVisibleFor(key)) || (plainText && (key === "delta" || key === "level"));
+}
+
 // Recomputes --row-grid from state.columnWidths/columnVisible (plus the
 // viewport-width override above) and repositions the header's resize
 // handles to match (see the handles' own CSS comment for why they're
@@ -35606,8 +35971,7 @@ function applyRowGrid() {
   // its own width key ("line") and Δt/Level, meaningless there, collapse.
   const plainText = allRootsPlainText();
   const pushTrack = (key, hideable, middle) => {
-    const tierHidden = tier !== "desktop" && (key === "delta" || (middle && (tier === "phone" || key !== "thread")));
-    const hidden = tierHidden || (hideable && !columnVisibleFor(key)) || (plainText && (key === "delta" || key === "level"));
+    const hidden = rowGridTrackHidden(key, hideable, middle, tier, plainText);
     const w = hidden ? 0 : columnWidthFor(key);
     parts.push(w + "px");
     x += COLUMN_GRID_GAP + w;
@@ -52556,6 +52920,7 @@ document.addEventListener("keydown", ev => {
       if (!inInput && (state.multiSelect.size > 1 || (state.multiSelect.size === 1 && !state.multiSelect.has(state.activeId)))) { state.multiSelect = new Set(); needsRender = true; }
     } else {
       if (state.tableSelection) { state.tableSelection = null; applyExtractSelectionClasses(); updateTableAssertButton(); }
+      if (tableTextSel) clearTableTextSel();
       if (state.logMultiSelect.size) { state.logMultiSelect = new Set(); updateLogMultiSelectClasses(); updateRowActionButtons(); }
     }
     if (needsRender) render();
@@ -52925,6 +53290,16 @@ document.addEventListener("keydown", ev => {
       // not win over an actual text selection made there — this handler fires
       // on keydown and pre-empts the native `copy` event), let the browser's
       // native copy handle that selection instead.
+      // A text selection made in the Filter/Context rows wins over rows, even with a multi-selection.
+      if (logKeysActive() && tableTextSel) {
+        const text = tableTextSelText();
+        if (text) {
+          ev.preventDefault();
+          copyTextToClipboard(text);
+          showCopyToast("Text copied");
+          return;
+        }
+      }
       if (logKeysActive() && state.selectedId) {
         const sel = window.getSelection();
         if (sel && sel.toString().length &&
@@ -52973,6 +53348,18 @@ document.addEventListener("mousedown", ev => {
   if (!t || !t.closest) return;
   if (t.closest("#sidebar")) state.focusRegion = "tree";
   else if (t.closest("#content")) state.focusRegion = "entries";
+}, true);
+
+// Shift/Ctrl/Cmd+click on a log row is a row multi-selection gesture, never a
+// native text selection: cancel the default of the mousedown (the click still
+// fires; focus handling above is unaffected) and drop any selection left over.
+document.addEventListener("mousedown", ev => {
+  if (ev.button !== 0 || !(ev.shiftKey || ev.ctrlKey || ev.metaKey)) return;
+  const t = ev.target;
+  if (!t || !t.closest || !t.closest(".log-row")) return;
+  ev.preventDefault();
+  const sel = window.getSelection && window.getSelection();
+  if (sel && sel.rangeCount && !sel.isCollapsed) sel.removeAllRanges();
 }, true);
 
 // True while log-view shortcuts (bookmark, note, row copy, ...) may act: the

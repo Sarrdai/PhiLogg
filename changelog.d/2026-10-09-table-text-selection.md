@@ -1,0 +1,4 @@
+- **feat: text selection across table rows, Alt+drag block of cells (2026-10-09, person-requested)**
+  - Filter and Context rows have their own selection model (flow: drag like text; block: Alt or Ctrl+Alt drag over whole cells), bound to entries so it survives scrolling, with edge auto-scroll; painted with the CSS Custom Highlight API.
+  - A text selection now wins over a row multi-selection for Ctrl+C and the row menu's "Copy selected text"; copies are tab-separated cells, newline-separated rows.
+  - **Tests**: GROUP table-text-selection (new), copy-selected-text updated. Docs: docs/ui-and-views.md, README.

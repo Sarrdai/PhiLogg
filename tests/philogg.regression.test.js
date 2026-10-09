@@ -447,6 +447,11 @@ async function withApp(run, opts = {}) {
       get filterToolbarLabels() { return filterToolbarLabels; },
       get viewToolbarLabels() { return viewToolbarLabels; },
       resetUndoRedo() { undoStack = []; redoStack = []; },
+      // Table text selection (GROUP table-text-selection).
+      get tableTextSel() { return tableTextSel; },
+      setTableTextSelection(view, mode, anchor, focus) { setTableTextSelection(view, mode, anchor, focus); },
+      tableTextSelText() { return tableTextSelText(); },
+      clearTableTextSel() { clearTableTextSel(); },
       // Folder-watch minimap selection state (GROUP 204) — tests set these
       // directly instead of simulating real SVG mouse drags (jsdom has no
       // layout, see that group's own comment).
