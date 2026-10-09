@@ -3076,7 +3076,34 @@
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
-  .patterns-grid{display:grid; grid-template-columns:78px 48px 124px minmax(0,1fr) 112px 112px 64px; align-items:center;}
+  #patternsCompareBtn{flex:0 0 auto; padding:0 10px; height:24px; white-space:nowrap;}
+  body.layout-phone #patternsCompareBtn{display:none;}
+  #patternsCmpBar, #patternsCmpBody{display:none;}
+  #patternsWrap.cmp-on #patternsCmpBar{display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:7px 16px; background:var(--accent-soft); border-bottom:1px solid var(--border); font-size:12.5px; color:var(--text-primary);}
+  #patternsWrap.cmp-on #patternsCmpBody{display:block; flex:1 1 auto; min-height:0; overflow:auto; padding:0 16px 16px;}
+  #patternsWrap.cmp-on #patternsHead, #patternsWrap.cmp-on #patternsScroll{display:none;}
+  .cmp-side{display:inline-flex; align-items:center; gap:6px; min-width:0;}
+  .cmp-side > b{font-weight:700; color:var(--accent-strong);}
+  .cmp-vs, .cmp-meta{color:var(--text-tertiary);}
+  #patternsCmpBar select{background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border-soft); border-radius:5px; font:inherit; font-size:12.5px; padding:2px 6px; max-width:260px;}
+  #patternsCmpBar [hidden]{display:none;}
+  .cmp-chip{display:inline-flex; align-items:center; gap:4px; padding:1px 4px 1px 8px; border:1px solid var(--accent); border-radius:10px; color:var(--accent-strong); background:var(--bg-panel);}
+  .cmp-chip button{border:0; background:none; color:inherit; cursor:pointer; font:inherit; padding:0 4px; line-height:1;}
+  .cmp-grid{display:grid; grid-template-columns:72px 72px 76px 72px 124px minmax(0,1fr) 64px; align-items:center; column-gap:10px; padding:0 8px;}
+  .cmp-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel); height:26px; font-size:11px; font-weight:650; color:var(--text-secondary); border-bottom:1px solid var(--border);}
+  .cmp-grp{height:30px; padding-top:10px; box-sizing:border-box; font-size:11px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary);}
+  .cmp-row{height:28px; box-sizing:border-box; border-bottom:1px solid var(--border-soft); cursor:pointer; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); color:var(--text-primary);}
+  .cmp-row:hover{background:var(--bg-elevated);}
+  .cmp-row.gone{cursor:default;}
+  .cmp-row > span, .cmp-hrow > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+  .cmp-row:hover .pattern-actions{visibility:visible;}
+  .cmp-muted{color:var(--text-tertiary);}
+  .cmp-factor{font-weight:650; font-variant-numeric:tabular-nums;}
+  .cmp-factor.up{color:var(--level-warn);}
+  .cmp-factor.down{color:var(--level-info);}
+  .cmp-more{padding:6px 8px; font-size:11.5px; color:var(--text-tertiary);}
+  .cmp-empty{padding:24px 8px; color:var(--text-tertiary); font-size:12px;}
+    .patterns-grid{display:grid; grid-template-columns:78px 48px 124px minmax(0,1fr) 112px 112px 64px; align-items:center;}
   #patternsHead{
     flex:0 0 auto; padding:0 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
     color:var(--text-secondary); font-size:11px; font-weight:650; letter-spacing:.2px; user-select:none;
@@ -6858,7 +6885,19 @@
       <div id="patternsWrap">
         <div id="patternsToolbar">
           <span id="patternsInfo" class="toolbar-filter-info"></span>
+          <button type="button" id="patternsCompareBtn" class="assert-mode-btn" aria-pressed="false" title="Compare the active node (A) with the rest of the file or another node (B): which patterns are new, more or less frequent">Compare</button>
         </div>
+        <!-- Compare mode (renderPatternsCompare): A = active node, B = rest of the file / another node / another file. -->
+        <div id="patternsCmpBar">
+          <span class="cmp-side"><b>A</b><span id="cmpAText"></span><span id="cmpAChip"></span></span>
+          <span class="cmp-vs">vs</span>
+          <span class="cmp-side"><b class="cmp-b">B</b>
+            <select id="cmpBMode" aria-label="Compare with"><option value="rest">Rest of file</option><option value="node">Another node…</option><option value="file">Another file…</option></select>
+            <select id="cmpBTarget" aria-label="Compare with this" hidden></select>
+          </span>
+          <span id="cmpBMeta" class="cmp-meta"></span>
+        </div>
+        <div id="patternsCmpBody"></div>
         <div id="patternsHead" class="patterns-grid"></div>
         <div id="patternsScroll">
           <div id="patternsSpacer">
@@ -19248,7 +19287,14 @@ function patternsComparator(key, dir) {
   }
 }
 
+// Compare mode of the Patterns tab (see "Patterns tab: Compare" below). Plain per-session UI state, not persisted.
+const cmpState = { on: false, nodeId: null, bMode: "rest", bNodeId: null, override: null };
+const patternsCompareBtn = el("#patternsCompareBtn");
 function renderPatternsView() {
+  patternsWrap.classList.toggle("cmp-on", cmpState.on);
+  patternsCompareBtn.setAttribute("aria-pressed", cmpState.on ? "true" : "false");
+  patternsCompareBtn.classList.toggle("active", cmpState.on);
+  if (cmpState.on) { renderPatternsCompare(); return; }
   renderPatternsHead();
   const c = patternsAnalysis(state.activeId);
   patternsTotal = c.total;
@@ -19565,6 +19611,7 @@ function applyLowerPanel() {
   renderFacetPanel();
   renderWhyPanel();
   renderNeighborsPanel();
+  cmpSyncNode();
   renderPhonePatterns();
 }
 
@@ -19793,6 +19840,247 @@ nbPanelBody.addEventListener("change", ev => {
 });
 lowerTabNeighbors.addEventListener("mousedown", ev => ev.preventDefault());
 lowerTabNeighbors.addEventListener("click", ev => { ev.stopPropagation(); if (currentLayoutTier !== "phone") setLowerTab("neighbors"); });
+
+/* ---------- Patterns tab: Compare (what changed between A and B) ----------
+   The UI of analysisWhatChanged (the engine behind the LLM tool what_changed). A = the active node's entries
+   (level quick-filter applied) or, after the burst popover's "Compare with rest", only the burst window
+   (cmpState.override, dropped when the active node changes). B = the rest of A's file (entries not in A over
+   the time left; a window's time is only taken out for a burst / time-range node), another node or another file (its own first-to-last span). Rows come grouped New in A /
+   More frequent in A / Rarer in A / Gone in the engine's order; a click does what a Patterns row does
+   (filter under A; with a burst override a time-range filter around the burst first, one undo step), Gone
+   rows (not in A) only offer NOT. Cached per (A, B, level filter) in cmpCache; above NB_SYNC_MAX_ENTRIES
+   entries the run happens in a deferred step behind a "Comparing..." line. */
+const CMP_GROUPS = [["new", "New in A"], ["more", "More frequent in A"], ["rarer", "Rarer in A"], ["gone", "Gone"]];
+const CMP_GROUP_CAP = 200;
+const cmpCache = new Map(); // sig -> { aBase, bBase, aN, bN, result }
+const CMP_CACHE_MAX = 16;
+let cmpPendingSig = null;
+let cmpShown = []; // rows drawn into #patternsCmpBody (row click index -> engine row + group)
+const cmpAText = el("#cmpAText"), cmpAChip = el("#cmpAChip"), cmpBMode = el("#cmpBMode"), cmpBTarget = el("#cmpBTarget"), cmpBMeta = el("#cmpBMeta"), patternsCmpBody = el("#patternsCmpBody");
+// Another active node: B back to the rest of the file, a burst override dropped.
+function cmpSyncNode() {
+  if (cmpState.nodeId === state.activeId) return;
+  cmpState.nodeId = state.activeId; cmpState.override = null; cmpState.bMode = "rest"; cmpState.bNodeId = null;
+}
+function cmpSpan(list) { return list.length ? Math.max(list[list.length - 1].ts - list[0].ts, 1000) : 1000; }
+// Other nodes / files B can be: filter nodes (not links) of any file except the active one; root files other than A's own.
+function cmpCandidates() {
+  const nodes = [], files = [];
+  const activeRoot = state.activeId ? getRootFileId(state.activeId) : null;
+  const multi = state.rootIds.length > 1;
+  const walk = (id, root) => {
+    const n = state.nodes[id];
+    if (!n) return;
+    if (n.type === "filter" && id !== state.activeId && !isLinkNode(n) && n.filterType !== "link") nodes.push({ id, label: (multi ? root.name + " › " : "") + nodeDisplayName(n) });
+    for (const c of n.children || []) walk(c, root);
+  };
+  for (const rid of state.rootIds) {
+    const r = state.nodes[rid];
+    if (!r) continue;
+    if (rid !== activeRoot) files.push({ id: rid, label: r.name });
+    for (const c of r.children || []) walk(c, r);
+  }
+  return { nodes, files };
+}
+// Everything one comparison needs, or { error }.
+function cmpInputs() {
+  const node = state.nodes[state.activeId];
+  if (!node) return { error: "Select a node to compare." };
+  if (isLinkNode(node)) return { error: "Not available for a link filter." };
+  if (nodeIsPlainText(node.id)) return { error: "Compare needs timestamps; a plain-text file has none." };
+  const fileId = getRootFileId(node.id), fileNode = state.nodes[fileId];
+  const o = cmpState.override;
+  const aBase = o ? o.entries : getEntries(node.id);
+  const a = o ? o.entries : applyLevelFilter(aBase);
+  let aWin = o ? o.windowMs : null;
+  if (!o && node.filterType === "timerange" && node.value && Number.isFinite(node.value.from) && Number.isFinite(node.value.to) && node.value.to > node.value.from) aWin = node.value.to - node.value.from;
+  const aDur = aWin > 0 ? Math.max(aWin, 1000) : cmpSpan(a);
+  const fileBase = getEntries(fileId);
+  let mode = cmpState.bMode, target = mode === "rest" ? null : state.nodes[cmpState.bNodeId];
+  if (mode !== "rest" && (!target || target.id === node.id)) { mode = "rest"; target = null; }
+  let bBase, b, bDur, bLabel;
+  if (mode === "rest") {
+    const inA = new Set();
+    for (const e of a) inA.add(e.id);
+    bBase = fileBase;
+    b = applyLevelFilter(fileBase).filter(e => !inA.has(e.id));
+    const r = fileEntryTimeRange(fileBase);
+    // Only a real window (burst / time-range node) takes its time out of B's duration: a scattered node
+    // (all errors) spans the whole file, subtracting that would leave B one second long.
+    bDur = r ? Math.max((r.max - r.min) - (aWin > 0 ? aWin : 0), 1000) : 1000;
+    bLabel = "Rest of " + (fileNode ? fileNode.name : "file");
+  } else {
+    bBase = getEntries(target.id);
+    b = applyLevelFilter(bBase);
+    bDur = cmpSpan(b);
+    bLabel = nodeDisplayName(target);
+  }
+  const sig = [node.id, o ? "o" + o.ts : "n", mode, mode === "rest" ? "" : target.id, [...state.levelFilter].sort().join(",")].join("|");
+  return { node, fileId, a, b, aBase, bBase, aDur, bDur, mode, target, bLabel, sig };
+}
+function cmpRender(html) { patternsCmpBody.innerHTML = html; }
+function cmpFactorHtml(r) {
+  if (r.factor == null) return '<span class="cmp-factor up" title="Not in B at all">new</span>';
+  const f = r.factor;
+  const t = f >= 100 ? String(Math.round(f)) : f >= 0.1 || f === 0 ? f.toFixed(1) : f.toFixed(2);
+  return '<span class="cmp-factor ' + (f >= 1 ? "up" : "down") + '">×' + t + "</span>";
+}
+function renderCompareBar(inp) {
+  const o = cmpState.override;
+  const nA = inp.a.length, nB = inp.b.length;
+  cmpAText.textContent = (o ? "" : " " + nodeDisplayName(inp.node)) + " · " + nA.toLocaleString("de-DE") + (nA === 1 ? " entry" : " entries") + " · " + formatMs(inp.aDur);
+  cmpAChip.textContent = "";
+  if (o) {
+    const chip = document.createElement("span");
+    chip.className = "cmp-chip";
+    chip.appendChild(document.createTextNode(o.label));
+    const x = document.createElement("button");
+    x.type = "button"; x.id = "cmpOverrideClear"; x.title = "Back to the entries of the active node"; x.setAttribute("aria-label", "Back to the entries of the active node"); x.textContent = "×";
+    chip.appendChild(x);
+    cmpAChip.appendChild(chip);
+  }
+  const cand = cmpCandidates();
+  const fileNode = state.nodes[inp.fileId];
+  cmpBMode.options[0].textContent = "Rest of " + (fileNode ? fileNode.name : "file");
+  cmpBMode.options[1].disabled = !cand.nodes.length;
+  cmpBMode.options[2].disabled = !cand.files.length;
+  cmpBMode.value = inp.mode;
+  const list = inp.mode === "node" ? cand.nodes : inp.mode === "file" ? cand.files : [];
+  cmpBTarget.hidden = inp.mode === "rest";
+  if (inp.mode !== "rest") {
+    cmpBTarget.innerHTML = list.map(c => '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.label) + "</option>").join("");
+    cmpBTarget.value = inp.target.id;
+  }
+  cmpBMeta.textContent = nB.toLocaleString("de-DE") + (nB === 1 ? " entry" : " entries") + " · " + formatMs(inp.bDur);
+}
+function renderPatternsCompare() {
+  cmpSyncNode();
+  cmpShown = [];
+  const inp = cmpInputs();
+  if (inp.error) {
+    patternsInfo.textContent = "";
+    cmpAText.textContent = ""; cmpAChip.textContent = ""; cmpBMeta.textContent = ""; cmpBTarget.hidden = true;
+    cmpRender('<div class="cmp-empty">' + escapeHtml(inp.error) + "</div>");
+    return;
+  }
+  renderCompareBar(inp);
+  if (!inp.a.length) { patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">A has no entries.</div>'); return; }
+  if (!inp.b.length) { patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">B has no entries; nothing to compare with.</div>'); return; }
+  let result = null;
+  const c = cmpCache.get(inp.sig);
+  if (c && c.aBase === inp.aBase && c.bBase === inp.bBase && c.aN === inp.aBase.length && c.bN === inp.bBase.length) result = c.result;
+  const run = () => analysisWhatChanged(inp.a, inp.b, { durationAMs: inp.aDur, durationBMs: inp.bDur });
+  const put = res => {
+    if (cmpCache.size >= CMP_CACHE_MAX) cmpCache.delete(cmpCache.keys().next().value);
+    cmpCache.set(inp.sig, { aBase: inp.aBase, bBase: inp.bBase, aN: inp.aBase.length, bN: inp.bBase.length, result: res });
+  };
+  if (!result) {
+    if (inp.a.length + inp.b.length <= NB_SYNC_MAX_ENTRIES) { result = run(); put(result); }
+    else {
+      patternsInfo.textContent = "";
+      cmpRender('<div class="cmp-empty">Comparing…</div>');
+      if (cmpPendingSig !== inp.sig) {
+        cmpPendingSig = inp.sig;
+        setTimeout(() => {
+          if (cmpPendingSig !== inp.sig) return;
+          cmpPendingSig = null;
+          if (!cmpState.on || fhActiveTab !== "patterns") return;
+          put(run());
+          renderPatternsCompare();
+        }, 0);
+      }
+      return;
+    }
+  }
+  const total = CMP_GROUPS.reduce((n, g) => n + result[g[0]].length, 0);
+  patternsInfo.textContent = total ? total.toLocaleString("de-DE") + (total === 1 ? " pattern differs" : " patterns differ") : "";
+  if (!total) {
+    cmpRender('<div class="cmp-empty">No pattern differs clearly (needs ≥ 3 occurrences and a factor ≥ 2).</div>');
+    return;
+  }
+  const bucketOf = makeLevelBucketer();
+  let html = '<div class="cmp-grid cmp-hrow"><span class="patterns-num">Count A</span><span class="patterns-num">Count B</span><span class="patterns-num" title="How often A would contain it at B\'s rate">Expected</span><span class="patterns-num">Factor</span>' +
+    '<span title="Level of an example entry">Level</span><span>Pattern</span><span></span></div>';
+  for (const [gk, gl] of CMP_GROUPS) {
+    const rows = result[gk];
+    if (!rows.length) continue;
+    html += '<div class="cmp-grp">' + gl + " · " + rows.length.toLocaleString("de-DE") + "</div>";
+    rows.slice(0, CMP_GROUP_CAP).forEach(r => {
+      const gone = gk === "gone";
+      const i = cmpShown.push({ r, gone }) - 1;
+      const ex = r.example;
+      const lvl = ex ? bucketOf(ex.level, ex.formatId) : "";
+      const lvlCls = lvl ? levelClass(lvl, ex.formatId) : "";
+      html += '<div class="cmp-grid cmp-row' + (gone ? " gone" : "") + " " + lvlCls + '" data-idx="' + i + '" data-grp="' + gk + '" title="' +
+        (gone ? "Not in A: nothing to show. Alt+click or ⊘ hides it." : "Click: show only this pattern — Alt+click: hide it") + '">' +
+        '<span class="patterns-num">' + r.countA.toLocaleString("de-DE") + "</span>" +
+        '<span class="patterns-num cmp-muted">' + r.countB.toLocaleString("de-DE") + "</span>" +
+        '<span class="patterns-num cmp-muted">' + r.expected.toFixed(1) + "</span>" +
+        '<span class="patterns-num">' + cmpFactorHtml(r) + "</span>" +
+        "<span>" + (lvl && lvl !== "OTHER" ? '<span class="level-badge">' + escapeHtml(lvl) + "</span>" : "") + "</span>" +
+        '<span class="pattern-text" title="' + escapeHtml(patternDisplayText(r.key)) + '">' + patternKeyHtml(r.key) + "</span>" +
+        '<span class="pattern-actions">' +
+          '<span class="pattern-act pattern-act-hide" data-act="hide" title="Hide this pattern (NOT filter) — Alt+click">' + PATTERN_ACTION_ICONS.hide + "</span>" +
+          (gone ? "" : '<span class="pattern-act" data-act="extract" title="Extract its values (Table/Plot)">' + PATTERN_ACTION_ICONS.extract + "</span>" +
+            '<span class="pattern-act" data-act="jump" title="Jump to its first entry">' + PATTERN_ACTION_ICONS.jump + "</span>") +
+        "</span></div>";
+    });
+    if (rows.length > CMP_GROUP_CAP) html += '<div class="cmp-more">… ' + (rows.length - CMP_GROUP_CAP).toLocaleString("de-DE") + " more</div>";
+  }
+  cmpRender(html);
+}
+// A row action: the Patterns tab's own (applyPatternAction) under the active node; with a burst override a
+// time-range filter around the burst comes first (same undo step), so the filter shows the burst's entries only.
+function applyCompareRow(item, action) {
+  if (!item || !state.nodes[state.activeId]) return;
+  const r = item.r;
+  if (item.gone && action !== "hide") return;
+  const group = { key: r.key, floatMask: r.floatMask, first: r.example };
+  const o = cmpState.override;
+  if (!o || action === "jump") { applyPatternAction(group, action); return; }
+  withCreateUndo("compare pattern", () => {
+    if (!createFilterNode(state.activeId, "timerange", { from: o.from, to: o.to })) return;
+    applyPatternAction(group, action);
+  });
+}
+// Burst popover "Compare with rest": A = the burst window of the active node's entries only, B = the rest of the file.
+function openCompareWithBurst(b) {
+  if (currentLayoutTier === "phone" || !state.activeId) return;
+  const rootId = minimapLastRootId;
+  const src = minimapLastViewEntries && minimapLastViewEntries.length ? minimapLastViewEntries : getEntries(state.activeId);
+  const entries = src.filter(e => e.ts >= b.from && e.ts <= b.to);
+  if (!entries.length) return;
+  cmpState.on = true;
+  cmpState.nodeId = state.activeId;
+  cmpState.bMode = "rest"; cmpState.bNodeId = null;
+  cmpState.override = { entries, from: b.from, to: b.to, windowMs: Math.max(b.to - b.from, 1000), label: "Burst " + timeRangeBoundLabel(rootId, b.from, true), ts: b.from };
+  applyFhView("patterns");
+}
+patternsCompareBtn.addEventListener("mousedown", ev => ev.preventDefault());
+patternsCompareBtn.addEventListener("click", ev => { ev.stopPropagation(); cmpState.on = !cmpState.on; renderPatternsView(); });
+cmpBMode.addEventListener("change", () => {
+  cmpState.bMode = cmpBMode.value;
+  const cand = cmpCandidates();
+  const list = cmpState.bMode === "node" ? cand.nodes : cmpState.bMode === "file" ? cand.files : [];
+  cmpState.bNodeId = list.length ? list[0].id : null;
+  if (cmpState.bMode !== "rest" && !list.length) cmpState.bMode = "rest";
+  renderPatternsView();
+});
+cmpBTarget.addEventListener("change", () => { cmpState.bNodeId = cmpBTarget.value; renderPatternsView(); });
+cmpAChip.addEventListener("click", ev => {
+  if (!ev.target.closest("#cmpOverrideClear")) return;
+  ev.stopPropagation();
+  cmpState.override = null;
+  renderPatternsView();
+});
+patternsCmpBody.addEventListener("mousedown", ev => ev.preventDefault());
+patternsCmpBody.addEventListener("click", ev => {
+  const row = ev.target.closest(".cmp-row");
+  if (!row) return;
+  ev.stopPropagation();
+  const act = ev.target.closest("[data-act]");
+  applyCompareRow(cmpShown[+row.dataset.idx], act ? act.dataset.act : (ev.altKey ? "hide" : "filter"));
+});
 
 // (Re)fills the Facets tab body; nothing to do while another tab shows.
 function renderFacetPanel() {
@@ -32797,6 +33085,10 @@ function burstActions(b) {
       closeBurstPopover();
       if (!first) return;
       openNeighborsWithOverride([first], "Burst " + timeRangeBoundLabel(rootId, b.from, true), rootId, first.ts);
+    } }]),
+    ...(currentLayoutTier === "phone" ? [] : [{ id: "compare", label: "Compare with rest", title: "Compare the burst with the rest of the file: which patterns are new or more frequent (Patterns tab, Compare)", run: () => {
+      closeBurstPopover();
+      openCompareWithBurst(b);
     } }]),
     { id: "window", label: "Time window", primary: true, title: "Filter the active node to the burst's time range", run: () => {
       closeBurstPopover();

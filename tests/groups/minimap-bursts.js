@@ -164,8 +164,8 @@ if (groupSelected()) {
       assert(+p.querySelector(".burst-pop-pat-n").textContent.replace(/\./g, "") === b.topPatterns[k].count, "pattern " + k + " count");
     });
     const acts = [...d.querySelectorAll("#burstPopActions button")];
-    assert(acts.map(x => x.textContent).join() === "Zoom,What came before,Time window" && acts[2].classList.contains("btn-mini") && !acts[0].classList.contains("btn-mini"), "actions: Zoom, What came before, then the primary Time window");
-    assert(w.burstActions(b).map(a => a.id).join() === "zoom,before,window", "burstActions(b) is the hook for further actions");
+    assert(acts.map(x => x.textContent).join() === "Zoom,What came before,Compare with rest,Time window" && acts[3].classList.contains("btn-mini") && !acts[0].classList.contains("btn-mini"), "actions: Zoom, What came before, Compare with rest, then the primary Time window");
+    assert(w.burstActions(b).map(a => a.id).join() === "zoom,before,compare,window", "burstActions(b) is the hook for further actions");
     // toggling: a second click on the flag closes
     fireClick(flag(), w);
     assert(pop.classList.contains("hidden") && !flag().classList.contains("sel"), "second click closes");

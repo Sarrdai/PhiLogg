@@ -1,0 +1,5 @@
+- **feat: Compare mode in the Patterns tab and `Compare with rest` in the burst popover (2026-10-09, person-requested, backlog #120 part 2b)**
+  - New `Compare` chip in the Patterns toolbar: A = the active node, B = `Rest of <file>` (default), another node or another file. Table grouped `New in A` / `More frequent in A` / `Rarer in A` / `Gone` with Count A, Count B, Expected, Factor, Level and Pattern (>= 3 occurrences, factor >= 2).
+  - Row click/Alt/⊘/Extract/jump do what Patterns rows do, under A (`Gone` rows only offer ⊘). The burst popover's `Compare with rest` opens it with A = the burst window only (chip with `x`, dropped on a node switch) and B = the rest of the file.
+  - Cached per (A, B); big files compute in a deferred step behind "Comparing…". Desktop/tablet only. With Compare off the tab is unchanged.
+  - **Tests**: GROUP patterns-compare (new). Docs: docs/ui-and-views.md, docs/filters.md, README.
