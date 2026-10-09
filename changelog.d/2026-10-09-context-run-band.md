@@ -1,0 +1,4 @@
+- **feat: Context view runs are drawn as a continuous rounded band with grips (2026-10-09, person-requested)**
+  - The connecting line of a revealed context run was drawn per row and showed a gap at every row border; it is now one seamless 14px band with a caret grip at each end (a single-row run gets one centred "collapse" grip).
+  - Hover or keyboard focus highlights the whole band; the tooltip names the line count and time range. The gutter lane is 6px wider so the band is not clipped.
+  - **Tests**: GROUP context-run-band (355), 138, 163. Docs: docs/ui-and-views.md.

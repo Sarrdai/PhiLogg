@@ -925,7 +925,7 @@
      are tinted by kind (an active row's accent still wins). */
   .icon{width:var(--icon-md); height:var(--icon-md); flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
   .icon.icon-xs{width:10px; height:10px;}
-  .tree-icon, .ctx-item, .ctx-run-cap, .ctx-gap-icon{--icon-md:var(--icon-sm);}
+  .tree-icon, .ctx-item, .ctx-gap-icon{--icon-md:var(--icon-sm);}
   .tree-row.filter-and:not(.active):not(.multi-selected) .tree-icon{color:var(--level-info);}
   .tree-row.filter-or:not(.active):not(.multi-selected) .tree-icon{color:var(--level-warn);}
   /* Settings -> Behavior "Tree row type indicator" = "Type abbreviation":
@@ -1864,7 +1864,7 @@
     padding:0 16px 0 calc(26px + (var(--color-mark-w) - 3px));
   }
   #highlightHeader.ctx-active{
-    padding-left: calc(38px + (var(--color-mark-w) - 3px));
+    padding-left: calc(44px + (var(--color-mark-w) - 3px));
   }
   #tableHeader .row-grid, #highlightHeader .row-grid{padding:9px 0;}
   /* Horizontal scrollbar in the Filter view, Filter
@@ -2333,9 +2333,9 @@
      left padding by the same rule, so nothing clips into col-bar. */
   #highlightRows.ctx-active{
     --ctx-lane-x: calc(-9px - (var(--color-mark-w) - 3px) - 26px);
-    --rows-pad-left: calc(38px + (var(--color-mark-w) - 3px));
+    --rows-pad-left: calc(44px + (var(--color-mark-w) - 3px));
   }
-  /* -1.5px centres the 5px dot on the 2px line the runs draw at --ctx-lane-x. */
+  /* -1.5px centres a 5px dot on the lane axis (--ctx-lane-x + 1px), where the run band is centred. */
   #highlightRows.ctx-active .ctx-anchor-dot{ left: calc(var(--ctx-lane-x) - 1.5px); }
   /* Match rows stand out from the revealed context rows (I3): accent tint, a
      bigger 10px dot (centred on the same lane axis: 2px line + 4px each side
@@ -2353,46 +2353,46 @@
   .ctx-legend{display:inline-flex; align-items:center; gap:5px; margin-left:6px; font-size:11px; color:var(--text-tertiary); white-space:nowrap;}
   .ctx-legend-dot{width:10px; height:10px; border-radius:50%; background:var(--accent); flex:0 0 auto;}
 
-  /* One revealed context row's slice of its run's connecting line: a plain
-     border-left spanning the row's full height, so stacking the rows of a run
-     draws one continuous line from its first row to its last, capped by a
-     caret at either end (.ctx-run-cap, pointing "into" the fold). The whole
-     slice is a button — clicking ANYWHERE on the line collapses the entire
-     run (person-requested), not just the row it was clicked on;
-     stopPropagation in its own click handler (see JS) keeps that from also
-     selecting the row underneath. Revealed rows carry no indent any more:
-     the line lives in the gutter lane above, left of the row content, so
-     opening a run never shifts a single character of log text sideways.
-     top/bottom are inset on a capped end so the line stops where its caret
-     starts instead of running through the glyph. */
+  /* One revealed context row's slice of its run's connecting line. Stacked,
+     the slices of a run draw ONE continuous rounded band with grips: 14px
+     wide, centred on the lane axis (--ctx-lane-x + 1px, the same axis the
+     10px I3 match dot is centred on), a faint --text-tertiary fill and a 1px
+     contour on the left/right of every slice. The run's first slice adds the
+     top contour and a 7px rounded top, inset 3px from the row top; the last
+     slice the bottom contour and rounded bottom, inset 3px from the row
+     bottom. Every slice that is not the run's last row reaches over the
+     row's 1px border-bottom (bottom:-1px), so the band has no gap at row
+     borders. The contour is real borders, not an inset box-shadow (which
+     would draw a horizontal line at every slice joint). The first/last
+     slice carries a 10px caret grip pointing "into" the fold; a single-row
+     run (first AND last) one centred "two chevrons toward each other" grip.
+     The whole slice is a button: clicking ANYWHERE on the band collapses the
+     entire run (person-requested); stopPropagation in its own click handler
+     (see JS) keeps that from also selecting the row underneath. Revealed
+     rows carry no indent: the band lives in the gutter lane left of the row
+     content, so opening a run never shifts log text sideways. */
   .ctx-run-line{
-    position:absolute; left:var(--ctx-lane-x, -9px); top:0; bottom:0; width:14px; padding:0; z-index:1;
-    background:none; border:none; border-left:2px solid var(--text-tertiary); border-radius:0;
-    color:var(--text-tertiary); cursor:pointer;
+    --ctx-band-fill:color-mix(in srgb, var(--text-tertiary) 16%, transparent);
+    --ctx-band-edge:color-mix(in srgb, var(--text-tertiary) 30%, transparent);
+    --ctx-band-grip:var(--text-tertiary);
+    position:absolute; left:calc(var(--ctx-lane-x, -9px) - 6px); top:0; bottom:-1px; width:14px; padding:2px 0; z-index:1;
+    box-sizing:border-box; cursor:pointer;
+    background:var(--ctx-band-fill); border:none; border-left:1px solid var(--ctx-band-edge); border-right:1px solid var(--ctx-band-edge);
+    border-radius:0; color:var(--ctx-band-grip);
+    display:flex; flex-direction:column; align-items:center; justify-content:flex-start;
   }
+  .ctx-run-line.ctx-run-top{ top:3px; border-top:1px solid var(--ctx-band-edge); border-radius:7px 7px 0 0; }
+  .ctx-run-line.ctx-run-bottom{ bottom:3px; justify-content:flex-end; border-bottom:1px solid var(--ctx-band-edge); border-radius:0 0 7px 7px; }
+  .ctx-run-line.ctx-run-top.ctx-run-bottom{ justify-content:center; }
   /* .ctx-run-hover (JS-toggled across every slice sharing a data-run-id, see
-     makeContextRunHandle) makes the WHOLE run highlight together on hover,
-     not just the one row segment the pointer happens to be over — plain
-     :hover can't do that on its own since each slice is a separate button. */
-  .ctx-run-line:hover, .ctx-run-line.ctx-run-hover{ border-left-color:var(--accent); color:var(--accent); }
-  /* The caret box is exactly the glyph's own 12x12, offset so the chevron's
-     apex sits on the line's axis. An absolutely positioned child is placed
-     against its parent's PADDING box, which here starts INSIDE the 2px
-     border-left — so the offset that centres a 12px box on that border's own
-     axis is -7px, not -5px (which is what left the arrows sitting 2px to the
-     right of the line, person-reported). The inset on a capped
-     end is 8px rather than the box's full height because the chevron's ink
-     only reaches ~8.25px down its own box — at 13px the line visibly stopped
-     short of the arrow (person-reported), at 8px the two just touch. */
-  .ctx-run-line.ctx-run-top{ top:8px; }
-  .ctx-run-line.ctx-run-bottom{ bottom:8px; }
-  .ctx-run-cap{
-    position:absolute; left:-7px; width:12px; height:12px;
-    display:flex; align-items:center; justify-content:center;
+     makeContextRunHandle; also set by keyboard focus) makes the WHOLE run
+     highlight together, not just the one row slice the pointer is over —
+     plain :hover can't do that since each slice is a separate button. */
+  .ctx-run-line:hover, .ctx-run-line.ctx-run-hover, .ctx-run-line:focus-visible{
+    --ctx-band-fill:var(--accent-soft); --ctx-band-edge:var(--accent); --ctx-band-grip:var(--accent-strong);
   }
-  .ctx-run-cap svg{ display:block; }
-  .ctx-run-line.ctx-run-top .ctx-run-cap{ top:-8px; }
-  .ctx-run-line.ctx-run-bottom .ctx-run-cap{ bottom:-8px; }
+  .ctx-run-line:focus-visible{ outline:none; }
+  .ctx-run-line .icon{ width:10px; height:10px; display:block; }
 
   /* The two filler rows a partially/fully hidden run puts between the log
      rows (see appendContextFillers): the "... N lines" stand-in for everything
@@ -6243,6 +6243,7 @@
     <symbol id="i-caret-down" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4"/></symbol>
     <symbol id="i-expand-around" viewBox="0 0 16 16"><path d="M2.25 8h11.5M5 4.5l3-3 3 3M5 11.5l3 3 3-3"/></symbol>
     <symbol id="i-expand-all" viewBox="0 0 16 16"><path d="M2.25 1.75h11.5M2.25 14.25h11.5M5 6.5l3-3 3 3M5 9.5l3 3 3-3"/></symbol>
+    <symbol id="i-collapse-in" viewBox="0 0 16 16"><path d="M4 3l4 3 4-3M4 13l4-3 4 3"/></symbol><!-- new: single-row context run grip -->
     <symbol id="i-collapse-all" viewBox="0 0 16 16"><path d="M2.25 1.75h11.5M2.25 14.25h11.5M5 3.5l3 3 3-3M5 12.5l3-3 3 3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
 </svg>
@@ -31887,37 +31888,46 @@ function renderHighlightVisibleRows() {
   paintTableTextSel();
 }
 
-// One revealed row's slice of its run's connecting line: a full-row-height
-// bar in the gutter lane whose border-left, stacked across the run's rows,
-// draws one continuous line (see .ctx-run-line). Clicking ANYWHERE on it
-// collapses the whole run (person-requested), which is why the line itself is
-// the button and not just its end caps. The first/last row of the run also
-// gets a caret cap pointing "into" the fold; a single-row run gets exactly
-// one cap, not two overlapping ones.
+// One revealed row's slice of its run's connecting band: a full-row-height
+// button in the gutter lane which, stacked across the run's rows, draws one
+// continuous rounded band (see .ctx-run-line). Clicking ANYWHERE on it
+// collapses the whole run (person-requested), which is why the band itself is
+// the button and not just its grips. The first row gets a caret grip pointing
+// down, the last one pointing up ("into" the fold); a single-row run is both
+// first and last and gets exactly one centred ICON_COLLAPSE_IN grip.
 //
-// Hover highlights the WHOLE run (person-requested), not just the one row
-// segment under the pointer — since each row's slice is its own separate DOM
+// Hover and keyboard focus highlight the WHOLE run (person-requested), not
+// just the one row slice — since each row's slice is its own separate DOM
 // button, plain CSS :hover can't do that on its own. `run.firstRow` is a
 // stable-for-this-render key shared by every slice of the same run
-// (data-run-id), so mouseenter/mouseleave toggle a .ctx-run-hover class
-// across ALL of them at once, including the end caps' carets.
+// (data-run-id), so mouseenter/mouseleave and focus/blur toggle a
+// .ctx-run-hover class across ALL of them at once.
+// Tooltip times are the Time column's text for those rows (displayTimeText,
+// so relative-time display is honoured) without the leading date.
 function makeContextRunHandle(run, isTop, isBottom) {
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "ctx-run-line" + (isTop ? " ctx-run-top" : isBottom ? " ctx-run-bottom" : "");
-  btn.title = "Collapse these lines again";
+  btn.className = "ctx-run-line" + (isTop ? " ctx-run-top" : "") + (isBottom ? " ctx-run-bottom" : "");
+  const n = run.lastRow - run.firstRow + 1;
+  let tip = "Collapse " + n + (n === 1 ? " line" : " lines");
+  if (n > 1) {
+    const zero = timeZeroContext();
+    const first = currentHighlightViewEntries[run.firstRow], last = currentHighlightViewEntries[run.lastRow];
+    // Time-of-day part only: the Time column's text minus a leading date.
+    const tod = e => displayTimeText(e, zero).replace(/^\d{4}-\d\d-\d\d[ T]/, "");
+    if (first && last) tip += " (" + tod(first) + " \u2013 " + tod(last) + ")";
+  }
+  btn.title = tip;
   btn.dataset.runId = String(run.firstRow);
-  // Caps point INWARD, toward each other — the direction the run will
-  // shrink to on click — rather than outward (which used to read like an
-  // "expand more" affordance instead of "collapse this").
-  btn.innerHTML = isTop ? '<span class="ctx-run-cap">' + ICON_CARET_DOWN + '</span>'
-    : isBottom ? '<span class="ctx-run-cap">' + ICON_CARET_UP + '</span>' : "";
+  btn.innerHTML = isTop && isBottom ? ICON_COLLAPSE_IN : isTop ? ICON_CARET_DOWN : isBottom ? ICON_CARET_UP : "";
   const setRunHover = hovered => {
     highlightRows.querySelectorAll('.ctx-run-line[data-run-id="' + run.firstRow + '"]')
       .forEach(el => el.classList.toggle("ctx-run-hover", hovered));
   };
   btn.addEventListener("mouseenter", () => setRunHover(true));
   btn.addEventListener("mouseleave", () => setRunHover(false));
+  btn.addEventListener("focus", () => setRunHover(true));
+  btn.addEventListener("blur", () => setRunHover(false));
   btn.addEventListener("click", ev => { ev.stopPropagation(); collapseContextRun(run); });
   return btn;
 }
@@ -32237,6 +32247,8 @@ const ICON_CARET_DOWN = icon("caret-down");
 const ICON_EXPAND_AROUND = icon("expand-around");
 const ICON_EXPAND_ALL = icon("expand-all");
 const ICON_COLLAPSE_ALL = icon("collapse-all");
+// Grip of a single-row context run band: two chevrons pointing toward each other.
+const ICON_COLLAPSE_IN = icon("collapse-in");
 // The "Show more (+n)" filler row's own glyph — a plain plus, deliberately
 // different from the ellipsis the "… N lines" row next to it carries.
 const ICON_PLUS_SMALL = icon("plus");
