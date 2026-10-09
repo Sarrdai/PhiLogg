@@ -283,7 +283,7 @@ if (groupSelected()) {
     fireClick(chip(d), w);
     assert(f.entries.length > 50000, "above the sync limit: " + f.entries.length);
     assert(/Comparing…/.test(txt(d.querySelector("#patternsCmpBody"))), "Comparing… shown first: " + txt(d.querySelector("#patternsCmpBody")));
-    await waitFor(() => cmpRows(d).length > 0, 20000);
+    await waitFor(() => cmpRows(d).length > 0, { timeout: 20000 });
     assert(cmpRows(d).length > 0 && !/Comparing…/.test(txt(d.querySelector("#patternsCmpBody"))), "result drawn after the deferred step");
   }, { indexedDB: new IDBFactory() });
 }

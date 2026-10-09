@@ -19677,6 +19677,13 @@ const nbCache = new Map(); // sig -> { src, file, fileN, result } (src/file: ide
 const NB_CACHE_MAX = 24;
 function nbCachePut(sig, c) { if (nbCache.size >= NB_CACHE_MAX) nbCache.delete(nbCache.keys().next().value); nbCache.set(sig, c); }
 let nbPendingSig = null;
+let nbJob = null; // the running time-sliced computation (analysisRunSliced job) for nbPendingSig
+let nbProgress = 0;
+// Cancels the running computation unless it is the one for `sig`.
+function nbCancelUnless(sig) {
+  if (nbJob && nbPendingSig !== sig) { nbJob.cancelled = true; nbJob = null; nbPendingSig = null; }
+}
+function nbComputingText() { return "Computing… " + Math.floor(nbProgress * 100) + "%"; }
 let nbShown = []; // rows drawn into #nbTable (row click index -> engine row)
 let nbCtx = null; // reference context of the last drawing: { refs, fileId, node, mode }
 function nbDirection() { return nbState.dirUser || (nbState.refMode === "noend" && !nbState.override ? "after" : "before"); }
@@ -19731,7 +19738,7 @@ function renderNeighborsPanel() {
   const head = nbPanelBody.querySelector("#nbHead");
   nbShown = [];
   nbCtx = null;
-  if (ref.kind === "none") { head.textContent = ""; nbEmpty("Select a filter node — the entries of a whole file are too broad a reference."); return; }
+  if (ref.kind === "none") { nbCancelUnless(null); head.textContent = ""; nbEmpty("Select a filter node — the entries of a whole file are too broad a reference."); return; }
   const fileEntries = getEntries(ref.fileId);
   const winS = nbState.winMs / 1000;
   const o = nbState.override;
@@ -19749,29 +19756,35 @@ function renderNeighborsPanel() {
     }
     head.appendChild(document.createTextNode(sumText(n)));
   };
-  if (!ref.refs.length) { setHead(0); nbEmpty("The node has no entries."); return; }
+  if (!ref.refs.length) { nbCancelUnless(null); setHead(0); nbEmpty("The node has no entries."); return; }
   const sig = [state.activeId, o ? "o" + o.ts : nbState.refMode, dir, nbState.winMs, nbState.sameThread ? 1 : 0, [...state.levelFilter].sort().join(",")].join("|");
   let result = null;
   const c = nbCache.get(sig);
   if (c && c.src === ref.src && c.file === fileEntries && c.fileN === fileEntries.length) result = c.result;
-  const run = () => analysisNeighbors(ref.refs, fileEntries, { direction: dir, windowMs: nbState.winMs, sameThread: nbState.sameThread, minLift: 2 });
+  const nbOpts = { direction: dir, windowMs: nbState.winMs, sameThread: nbState.sameThread, minLift: 2 };
+  nbCancelUnless(result ? null : sig);
   if (!result) {
     if (fileEntries.length <= NB_SYNC_MAX_ENTRIES) {
-      result = run();
+      result = analysisNeighbors(ref.refs, fileEntries, nbOpts);
       nbCachePut(sig, { src: ref.src, file: fileEntries, fileN: fileEntries.length, result });
     } else {
       setHead(ref.refs.length);
-      nbEmpty("Computing…");
       if (nbPendingSig !== sig) {
         nbPendingSig = sig;
-        setTimeout(() => {
-          if (nbPendingSig !== sig) return;
-          nbPendingSig = null;
-          if (!neighborsActive()) return;
-          nbCachePut(sig, { src: ref.src, file: fileEntries, fileN: fileEntries.length, result: run() });
-          renderNeighborsPanel();
-        }, 0);
+        nbProgress = 0;
+        const job = nbJob = analysisRunSliced(analysisNeighborsSteps(ref.refs, fileEntries, nbOpts), f => {
+          if (nbJob !== job) return;
+          nbProgress = f;
+          const ph = nbPanelBody.querySelector("#nbTable .nb-empty");
+          if (ph && neighborsActive()) ph.textContent = nbComputingText();
+        }, res => {
+          if (nbJob !== job) return;
+          nbJob = null; nbPendingSig = null;
+          nbCachePut(sig, { src: ref.src, file: fileEntries, fileN: fileEntries.length, result: res });
+          if (neighborsActive()) renderNeighborsPanel();
+        });
       }
+      nbEmpty(nbComputingText());
       return;
     }
   }
@@ -19855,6 +19868,12 @@ const CMP_GROUP_CAP = 200;
 const cmpCache = new Map(); // sig -> { aBase, bBase, aN, bN, result }
 const CMP_CACHE_MAX = 16;
 let cmpPendingSig = null;
+let cmpJob = null;
+let cmpProgress = 0;
+function cmpCancelUnless(sig) {
+  if (cmpJob && cmpPendingSig !== sig) { cmpJob.cancelled = true; cmpJob = null; cmpPendingSig = null; }
+}
+function cmpComparingHtml() { return '<div class="cmp-empty">Comparing… ' + Math.floor(cmpProgress * 100) + "%</div>"; }
 let cmpShown = []; // rows drawn into #patternsCmpBody (row click index -> engine row + group)
 const cmpAText = el("#cmpAText"), cmpAChip = el("#cmpAChip"), cmpBMode = el("#cmpBMode"), cmpBTarget = el("#cmpBTarget"), cmpBMeta = el("#cmpBMeta"), patternsCmpBody = el("#patternsCmpBody");
 // Another active node: B back to the rest of the file, a burst override dropped.
@@ -19958,37 +19977,44 @@ function renderPatternsCompare() {
   cmpShown = [];
   const inp = cmpInputs();
   if (inp.error) {
+    cmpCancelUnless(null);
     patternsInfo.textContent = "";
     cmpAText.textContent = ""; cmpAChip.textContent = ""; cmpBMeta.textContent = ""; cmpBTarget.hidden = true;
     cmpRender('<div class="cmp-empty">' + escapeHtml(inp.error) + "</div>");
     return;
   }
   renderCompareBar(inp);
-  if (!inp.a.length) { patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">A has no entries.</div>'); return; }
-  if (!inp.b.length) { patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">B has no entries; nothing to compare with.</div>'); return; }
+  if (!inp.a.length) { cmpCancelUnless(null); patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">A has no entries.</div>'); return; }
+  if (!inp.b.length) { cmpCancelUnless(null); patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">B has no entries; nothing to compare with.</div>'); return; }
   let result = null;
   const c = cmpCache.get(inp.sig);
   if (c && c.aBase === inp.aBase && c.bBase === inp.bBase && c.aN === inp.aBase.length && c.bN === inp.bBase.length) result = c.result;
-  const run = () => analysisWhatChanged(inp.a, inp.b, { durationAMs: inp.aDur, durationBMs: inp.bDur });
+  const cmpOpts = { durationAMs: inp.aDur, durationBMs: inp.bDur };
+  cmpCancelUnless(result ? null : inp.sig);
   const put = res => {
     if (cmpCache.size >= CMP_CACHE_MAX) cmpCache.delete(cmpCache.keys().next().value);
     cmpCache.set(inp.sig, { aBase: inp.aBase, bBase: inp.bBase, aN: inp.aBase.length, bN: inp.bBase.length, result: res });
   };
   if (!result) {
-    if (inp.a.length + inp.b.length <= NB_SYNC_MAX_ENTRIES) { result = run(); put(result); }
+    if (inp.a.length + inp.b.length <= NB_SYNC_MAX_ENTRIES) { result = analysisWhatChanged(inp.a, inp.b, cmpOpts); put(result); }
     else {
       patternsInfo.textContent = "";
-      cmpRender('<div class="cmp-empty">Comparing…</div>');
       if (cmpPendingSig !== inp.sig) {
         cmpPendingSig = inp.sig;
-        setTimeout(() => {
-          if (cmpPendingSig !== inp.sig) return;
-          cmpPendingSig = null;
-          if (!cmpState.on || fhActiveTab !== "patterns") return;
-          put(run());
-          renderPatternsCompare();
-        }, 0);
+        cmpProgress = 0;
+        const job = cmpJob = analysisRunSliced(analysisWhatChangedSteps(inp.a, inp.b, cmpOpts), f => {
+          if (cmpJob !== job) return;
+          cmpProgress = f;
+          const ph = patternsCmpBody.querySelector(".cmp-empty");
+          if (ph && cmpState.on && fhActiveTab === "patterns") ph.textContent = "Comparing… " + Math.floor(f * 100) + "%";
+        }, res => {
+          if (cmpJob !== job) return;
+          cmpJob = null; cmpPendingSig = null;
+          put(res);
+          if (cmpState.on && fhActiveTab === "patterns") renderPatternsCompare();
+        });
       }
+      cmpRender(cmpComparingHtml());
       return;
     }
   }
@@ -54914,17 +54940,70 @@ function messagePatternValues(message) {
    budgeting. The LLM tools below wrap them (resolve ids, format times,
    budget the result), and the Analyze UI calls them directly. */
 
+// Time-slicing support for the engines below. Each heavy engine has a generator form
+// (analysisXxxSteps) that yields a progress fraction (0..1) every ANALYSIS_STEP_ITEMS
+// items and returns the result; the plain function drains it synchronously (LLM tools,
+// link header, MCP). analysisRunSliced runs a generator in ANALYSIS_SLICE_MS slices.
+const ANALYSIS_STEP_ITEMS = 2000;
+function analysisDrain(gen) {
+  let r;
+  while (!(r = gen.next()).done);
+  return r.value;
+}
+// Runs `gen` in ~ANALYSIS_SLICE_MS slices through queueTask; onProgress(fraction) after
+// every slice, onDone(result) at the end. job.cancelled = true stops it silently.
+function analysisRunSliced(gen, onProgress, onDone) {
+  const job = { cancelled: false };
+  const tick = () => {
+    if (job.cancelled) return;
+    const t0 = performance.now();
+    let r;
+    do { r = gen.next(); } while (!r.done && performance.now() - t0 < ANALYSIS_SLICE_MS);
+    if (job.cancelled) return;
+    if (r.done) onDone(r.value);
+    else { onProgress(r.value); queueTask(tick); }
+  };
+  queueTask(tick);
+  return job;
+}
+// k-th smallest (0-based) of the numbers in `a`, found in place by quickselect — the same
+// value a full sort would put at index k, in O(n) (the distance lists of a hot pattern get huge).
+function analysisSelect(a, k) {
+  let lo = 0, hi = a.length - 1;
+  while (lo < hi) {
+    const pivot = a[(lo + hi) >> 1];
+    let i = lo, j = hi;
+    while (i <= j) {
+      while (a[i] < pivot) i++;
+      while (a[j] > pivot) j--;
+      if (i <= j) { const t = a[i]; a[i] = a[j]; a[j] = t; i++; j--; }
+    }
+    if (k <= j) hi = j; else if (k >= i) lo = i; else break;
+  }
+  return a[k];
+}
+// Runs a sub-generator whose progress maps onto [lo, hi] of the caller's.
+function* analysisScaled(gen, lo, hi) {
+  let r;
+  while (!(r = gen.next()).done) yield lo + (hi - lo) * r.value;
+  return r.value;
+}
+
 // Groups `entries` by message pattern (normalizeMessagePattern). Returns an
 // array sorted by count (most frequent first, ties in first-seen order):
 //   { key, count, floatMask, levels: {bucket: n}, first, last (ts), example (entry),
 //     entries? (only with opts.keepEntries) }
 // `key` is the pattern key (patternDisplayText(key) is its readable form,
 // patternFilterValue(key, floatMask, true) its filter pattern).
-function analysisPatternCounts(entries, opts) {
+function analysisPatternCounts(entries, opts) { return analysisDrain(analysisPatternCountsSteps(entries, opts)); }
+// Resumable form: yields the progress fraction every ANALYSIS_STEP_ITEMS entries, returns the result.
+function* analysisPatternCountsSteps(entries, opts) {
   const keep = !!(opts && opts.keepEntries);
   const groups = new Map();
   const bucketOf = makeLevelBucketer();
+  let n = 0;
   for (const e of entries) {
+    if (++n % ANALYSIS_STEP_ITEMS === 0) yield n / entries.length;
     const key = normalizeMessagePattern(e.message);
     let g = groups.get(key);
     if (!g) {
@@ -54962,7 +55041,8 @@ function analysisPatternCounts(entries, opts) {
 // windows gets a large but finite lift); medianDistMs = median |Δt| to
 // the reference; significant = lift ≥ minLift. rows (all patterns seen in a
 // window) are sorted by covered, then lift; the caller filters on `significant`.
-function analysisNeighbors(refEntries, fileEntries, opts) {
+function analysisNeighbors(refEntries, fileEntries, opts) { return analysisDrain(analysisNeighborsSteps(refEntries, fileEntries, opts)); }
+function* analysisNeighborsSteps(refEntries, fileEntries, opts) {
   opts = opts || {};
   const direction = opts.direction === "after" ? "after" : "before";
   const windowMs = Math.max(1, +opts.windowMs || 5000);
@@ -54989,10 +55069,14 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
   const bucketOf = makeLevelBucketer();
   const rows = new Map();
   const seenByGroup = new Map(); // group -> Set of entry ids already inside some window
-  refs.forEach((ref, refIdx) => {
+  let work = 0;
+  for (let refIdx = 0; refIdx < refs.length; refIdx++) {
+    const ref = refs[refIdx];
+    if (work >= ANALYSIS_STEP_ITEMS) { work = 0; yield 0.7 * refIdx / refs.length; }
     const from = direction === "before" ? bound(ref.ts - windowMs, false) : bound(ref.ts, true);
     const to = direction === "before" ? bound(ref.ts, false) : bound(ref.ts + windowMs, true);
     const group = groupOf(ref);
+    work += 1 + (to - from);
     for (let i = from; i < to; i++) {
       const e = fileEntries[i];
       if (refIds.has(e.id)) continue;
@@ -55014,11 +55098,13 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
       const rank = levelSortRank(b, e.formatId);
       if (rank < row.rank) { row.rank = rank; row.maxLevel = b; }
     }
-  });
+  }
   if (!rows.size) return out;
 
   // Base rate: how often each pattern occurs per reference group over the file.
+  let seenN = 0;
   for (const e of fileEntries) {
+    if (++seenN % ANALYSIS_STEP_ITEMS === 0) yield 0.7 + 0.25 * seenN / fileEntries.length;
     if (refIds.has(e.id)) continue;
     const group = groupOf(e);
     if (!refsPerGroup.has(group)) continue;
@@ -55043,18 +55129,20 @@ function analysisNeighbors(refEntries, fileEntries, opts) {
     }
     coveredByGroup.set(g, total + (curE === null ? 0 : curE - curS));
   }
+  let sortWork = 0;
   for (const row of rows.values()) {
+    sortWork += 1 + row.dists.length;
+    if (sortWork >= ANALYSIS_STEP_ITEMS * 8) { sortWork = 0; yield 0.97; }
     let expected = 0;
     for (const [group, nRefs] of refsPerGroup) {
       const restCount = Math.max((row.baseByGroup.get(group) || 0) - (row.inByGroup.get(group) || 0), 0);
       expected += nRefs * windowMs * (restCount + 0.5) / Math.max(span - coveredByGroup.get(group), windowMs);
     }
     const lift = row.inWindows / expected;
-    row.dists.sort((a, b) => a - b);
     out.rows.push({
       patternKey: row.patternKey, floatMask: row.floatMask,
       covered: row.covered, coverage: row.covered + "/" + refs.length,
-      inWindows: row.inWindows, lift, medianDistMs: row.dists[Math.floor(row.dists.length / 2)],
+      inWindows: row.inWindows, lift, medianDistMs: analysisSelect(row.dists, Math.floor(row.dists.length / 2)),
       maxLevel: row.maxLevel, example: row.example, significant: lift >= minLift,
     });
   }
@@ -55127,7 +55215,8 @@ function analysisTimeline(entries, opts) {
 // row = { key, floatMask, countA, countB, expected, factor (countA ÷ expected,
 // null when expected is 0), example (entry: from A, for `gone` from B) }.
 // Each group is ranked by |ln((countA+.5)/(expected+.5))| × √max(countA, expected).
-function analysisWhatChanged(entriesA, entriesB, opts) {
+function analysisWhatChanged(entriesA, entriesB, opts) { return analysisDrain(analysisWhatChangedSteps(entriesA, entriesB, opts)); }
+function* analysisWhatChangedSteps(entriesA, entriesB, opts) {
   opts = opts || {};
   const minCount = opts.minCount == null ? 3 : +opts.minCount;
   const minFactor = opts.minFactor == null ? 2 : +opts.minFactor;
@@ -55136,8 +55225,9 @@ function analysisWhatChanged(entriesA, entriesB, opts) {
   const durB = +opts.durationBMs > 0 ? +opts.durationBMs : span(entriesB);
   const out = { a: { entries: entriesA.length, durationMs: durA }, b: { entries: entriesB.length, durationMs: durB }, new: [], more: [], rarer: [], gone: [] };
   const rows = new Map();
-  for (const g of analysisPatternCounts(entriesA)) rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: g.count, countB: 0, example: g.example });
-  for (const g of analysisPatternCounts(entriesB)) {
+  const wA = entriesA.length / Math.max(entriesA.length + entriesB.length, 1);
+  for (const g of yield* analysisScaled(analysisPatternCountsSteps(entriesA), 0, wA)) rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: g.count, countB: 0, example: g.example });
+  for (const g of yield* analysisScaled(analysisPatternCountsSteps(entriesB), wA, 1)) {
     const r = rows.get(g.key);
     if (r) r.countB = g.count;
     else rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: 0, countB: g.count, example: g.example });

@@ -94,6 +94,12 @@ data in and out, no node creation, no DOM, no time formatting, no budgeting.
 The tools above wrap them (ids, `llmTime`, `patternDisplayText`, pattern ids,
 row limits); the Analyze UI calls the engines directly.
 
+`analysisPatternCounts`, `analysisNeighbors` and `analysisWhatChanged` also exist as
+generators (`analysisXxxSteps`, yielding a progress fraction every ~2000 entries and
+returning the result); the plain function drains the generator synchronously (LLM
+tools, link header), the Neighbors tab and Patterns Compare run it in time slices
+(`analysisRunSliced`, `docs/ui-and-views.md`).
+
 - `analysisPatternCounts(entries, opts?)` → array sorted by count of
   `{ key, count, floatMask, levels, first, last, example, entries? }`
   (`opts.keepEntries` adds the members).

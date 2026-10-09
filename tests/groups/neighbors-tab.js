@@ -279,10 +279,10 @@ if (groupSelected()) {
     T.state.activeId = err.id; w.render();
     w.setLowerTab("neighbors");
     assert(f.entries.length > 50000, "file above the synchronous limit: " + f.entries.length);
-    assert(txt(d.querySelector("#nbTable .nb-empty")) === "Computing…" && !rowsOf(d).length, "first draw: Computing…, got " + txt(d.querySelector("#nbTable")));
+    assert(txt(d.querySelector("#nbTable .nb-empty")).startsWith("Computing…") && !rowsOf(d).length, "first draw: Computing…, got " + txt(d.querySelector("#nbTable")));
     w.render();
-    assert(txt(d.querySelector("#nbTable .nb-empty")) === "Computing…", "a re-render while pending stays on Computing…");
-    await waitFor(() => rowsOf(d).length > 0, 20000);
+    assert(txt(d.querySelector("#nbTable .nb-empty")).startsWith("Computing…"), "a re-render while pending stays on Computing…");
+    await waitFor(() => rowsOf(d).length > 0, { timeout: 20000 });
     assert(poolRow(d), "rows arrive: the pool pattern is there");
     let calls = 0;
     const orig = w.analysisNeighbors;
