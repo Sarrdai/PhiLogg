@@ -1,4 +1,4 @@
-// GROUP llm-timeline — LLM analysis tools, phase 2 (docs/concept-llm-analysis-tools.md
+// GROUP llm-timeline — LLM analysis tools, phase 2 (docs/archive/concept-llm-analysis-tools.md
 // → 2.1): the analysisTimeline engine (buckets, per-second bursts merged and
 // trimmed to the real first/last entry) and the timeline tool on top of it.
 // Origin: 2026-10-08 (person-requested, backlog #119).

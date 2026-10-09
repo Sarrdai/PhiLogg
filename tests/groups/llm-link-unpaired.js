@@ -1,4 +1,4 @@
-// GROUP llm-link-unpaired — LLM analysis tools, phase 1 (docs/concept-llm-analysis-tools.md
+// GROUP llm-link-unpaired — LLM analysis tools, phase 1 (docs/archive/concept-llm-analysis-tools.md
 // → 1.4): create_link explains the references without an end (unpaired,
 // unpairedExamples, unpairedFollowedBy from the analysisNeighbors engine),
 // show_view unpaired: "only" flips the link view's switch, and the

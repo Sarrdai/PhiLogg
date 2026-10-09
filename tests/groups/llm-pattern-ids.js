@@ -1,4 +1,4 @@
-// GROUP llm-pattern-ids — LLM analysis tools, phase 1 (docs/concept-llm-analysis-tools.md
+// GROUP llm-pattern-ids — LLM analysis tools, phase 1 (docs/archive/concept-llm-analysis-tools.md
 // → 1.1): pattern ids "p<n>" from find_message_types act as virtual nodes
 // for the reading tools, create_filter takes patternId / column, and the
 // analysisPatternCounts engine behind find_message_types.

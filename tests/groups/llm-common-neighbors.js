@@ -1,4 +1,4 @@
-// GROUP llm-common-neighbors — LLM analysis tools, phase 2 (docs/concept-llm-analysis-tools.md
+// GROUP llm-common-neighbors — LLM analysis tools, phase 2 (docs/archive/concept-llm-analysis-tools.md
 // → 2.3): the common_neighbors tool over analysisNeighbors — what stands
 // before/after the entries of a node, ranked by coverage then lift, only
 // lift ≥ minLift unless showAll, at most 12 rows.

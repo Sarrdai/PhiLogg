@@ -1,4 +1,4 @@
-// GROUP llm-preview — LLM analysis tools, phase 1 (docs/concept-llm-analysis-tools.md
+// GROUP llm-preview — LLM analysis tools, phase 1 (docs/archive/concept-llm-analysis-tools.md
 // → 1.2): create_filter / create_link with preview: true evaluate the
 // condition as plain data (evaluateFilterCondition) and leave the tree, the
 // active node, the assistant marker set and the undo stack untouched; the

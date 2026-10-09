@@ -25,7 +25,7 @@
 - [Bewusst nicht geplant](#bewusst-nicht-geplant)
 <!-- /toc -->
 
-**Status:** Konzept, in Umsetzung — `FEATURE_BACKLOG.md` #119 und #120, siehe „Entscheidungen“.
+**Status:** umgesetzt (2026-10-09) — `FEATURE_BACKLOG.md` #119 und #120; der Benchmark (Phase 0) wurde nicht gebaut, siehe Backlog #121.
 Grundlage: `docs/llm-assistant.md` (heutiger Stand der Tool-Registry) und
 `docs/llm-assistant-plan.md` (ursprünglicher Plan). Dieses Dokument wandert
 nach `docs/archive/`, sobald es umgesetzt ist.

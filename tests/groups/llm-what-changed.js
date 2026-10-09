@@ -1,4 +1,4 @@
-// GROUP llm-what-changed — LLM analysis tools, phase 2 (docs/concept-llm-analysis-tools.md
+// GROUP llm-what-changed — LLM analysis tools, phase 2 (docs/archive/concept-llm-analysis-tools.md
 // → 2.2): the analysisWhatChanged engine (new / more / rarer / gone with
 // Expected = countB × durationA ÷ durationB, ≥ 3 occurrences) and the
 // what_changed tool (A = node, pattern id or time window; B = rest of the

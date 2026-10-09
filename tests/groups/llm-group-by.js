@@ -1,4 +1,4 @@
-// GROUP llm-group-by — LLM analysis tools, phase 2 (docs/concept-llm-analysis-tools.md
+// GROUP llm-group-by — LLM analysis tools, phase 2 (docs/archive/concept-llm-analysis-tools.md
 // → 2.4): the analysisGroupBy engine and the group_by tool — distribution over
 // a format/facet column or an extraction column, on a link node grouped by
 // the START entry with noEnd and Δt min/median/max per value.

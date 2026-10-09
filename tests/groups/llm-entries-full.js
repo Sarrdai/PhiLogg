@@ -1,4 +1,4 @@
-// GROUP llm-entries-full — LLM analysis tools, phase 1 (docs/concept-llm-analysis-tools.md
+// GROUP llm-entries-full — LLM analysis tools, phase 1 (docs/archive/concept-llm-analysis-tools.md
 // → 1.3): get_entries with ids: [...] (≤ 20) and full: true — every line of
 // a message (a very long one keeps its head and tail), plus thread/location/
 // method and the file. Without full nothing changed.

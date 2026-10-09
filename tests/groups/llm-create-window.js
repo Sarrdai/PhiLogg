@@ -1,4 +1,4 @@
-// GROUP llm-create-window — LLM analysis tools, phase 2 (docs/concept-llm-analysis-tools.md
+// GROUP llm-create-window — LLM analysis tools, phase 2 (docs/archive/concept-llm-analysis-tools.md
 // → 2.5): create_window builds a timerange node (from/to, parsed like the
 // times the tools return) or a context node (aroundNodeId + beforeMs/afterMs).
 // Origin: 2026-10-08 (person-requested, backlog #119).
