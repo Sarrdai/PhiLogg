@@ -20,6 +20,7 @@
     --accent-soft:rgba(79,199,195,.14);
     --accent-strong:#7fe0dc;
     --multi-select-fill:color-mix(in srgb, var(--accent) 24%, var(--bg-app));
+    --selected-row-tint:color-mix(in srgb, var(--accent) 16%, transparent);
     --level-error:#f16565;
     --level-error-soft:rgba(241,101,101,.14);
     --level-warn:#e8a94a;
@@ -114,7 +115,7 @@
        link-pair rows — independently of --ui-scale's whole-interface zoom.
        Driven by the "Log text size" setting, see applyLogTextScale(). */
     --log-text-scale:1;
-    --row-grid:5px 178px 72px 66px 92px 158px 168px 1fr;
+    --row-grid:5px 178px 56px 66px 92px 190px 110px 1fr;
     /* Color-mark gutter (see updateColorMarkGutter): width of the .hl-markers
        lane, sized for the true max number of simultaneous colored-filter
        matches any one row reaches across the whole file, so N marks always
@@ -2230,18 +2231,21 @@
   mark.text-match-mark.mm-start{--sl:1px; border-top-left-radius:2px; border-bottom-left-radius:2px;}
   mark.text-match-mark.mm-end{--sr:1px; border-top-right-radius:2px; border-bottom-right-radius:2px;}
   mark.text-match-mark.mm-stripe{--sb:0px;}
-  /* Find-bar hits (FEATURE_BACKLOG.md #3, see markCombinedHtml's findRanges):
-     accent-tinted rather than the filter mark's --warn so "what I'm
-     searching for right now" and "what the active filter matched" stay
-     distinguishable when both mark the same row; the selected row (which is
-     the current hit after every find step) gets a stronger fill. Must stay
-     AFTER mark.mark-seg — a segmented find mark keeps square corners too. */
+  /* Find-bar hits (FEATURE_BACKLOG.md #3, see markCombinedHtml's findRanges).
+     Three looks that stay apart on a row that carries all of them: a filter
+     match is a warm (--warn) tint inside a thin full outline; any other find
+     hit is a cool (--accent) tint with a 2px UNDERLINE instead of the outline
+     (different hue AND shape); the CURRENT hit — the row the bar last stepped
+     to is the selected row — is a solid --accent block with --accent-on text,
+     the only mark that is not a tint. Must stay AFTER mark.mark-seg — a
+     segmented find mark keeps square corners too. */
   mark.find-match-mark{
-    background:color-mix(in srgb, var(--accent) 38%, transparent); color:inherit;
-    border-radius:2px; padding:0; box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 60%, transparent);
+    background:color-mix(in srgb, var(--accent) 24%, transparent); color:inherit;
+    border-radius:0; padding:0; box-shadow:inset 0 -2px 0 var(--accent);
   }
-  mark.find-match-mark.mark-seg{border-radius:0;}
-  .log-row.selected mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
+  .log-row.selected mark.find-match-mark{
+    background:var(--accent); color:var(--accent-on); border-radius:2px; box-shadow:none;
+  }
 
   .log-row{
     height:28px; box-sizing:border-box; position:relative;
@@ -2249,7 +2253,11 @@
     cursor:default;
   }
   .log-row:hover{background:var(--bg-elevated);}
-  .log-row.selected{box-shadow:inset 0 0 0 1px var(--accent);}
+  /* The selected row (state.selectedId): a 3px accent bar on the left edge
+     plus a light accent tint (the tint is painted as a background-image
+     further down, after the level tints, so it also shows on an ERROR/WARN
+     row where a 1px outline was invisible). */
+  .log-row.selected{box-shadow:inset 3px 0 0 var(--accent);}
   /* Ctrl/Shift-click multi-select (see handleLogRowClick): every member row
      gets the SAME full-width fill (--multi-select-fill, painted as a
      background-image gradient further down, after the level tints), no
@@ -2449,12 +2457,28 @@
   .col-delta.delta-warn{color:var(--level-warn);}
   .col-delta.delta-error{color:var(--level-error); font-weight:650;}
   .col-level{align-self:center;}
+  /* A row taller than one line (multiline messages, word wrap — the message
+     cell grows, see baseRowHeightForEntry): the other cells align to the FIRST
+     message line instead of floating in the middle of the block. They sit at
+     the top in a one-line-high box (ROW_HEIGHT minus the 1px bottom border), so
+     their text lands exactly where a one-line row centers it. */
+  .log-row.row-tall > .col-time, .log-row.row-tall > .col-delta, .log-row.row-tall > .col-thread,
+  .log-row.row-tall > .col-location, .log-row.row-tall > .col-method, .log-row.row-tall > .col-custom{align-self:start; line-height:27px;}
+  .log-row.row-tall > .col-level{align-self:start; height:27px; display:flex; align-items:center;}
   .level-badge{
     font-family:var(--font-log); font-size:calc(10px * var(--log-text-scale)); font-weight:700; letter-spacing:.3px;
     padding:2px 6px; border-radius:4px; white-space:nowrap;
   }
   .col-thread{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .col-location{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  /* Middle truncation (middleCellHtml): a long path keeps its file name
+     visible, "C:\src\Shop\Da…Repository.cs:263". Only the head (everything
+     up to the last path separator) shrinks and gets the ellipsis; the tail
+     (file name and line) never does, and is clipped by the cell only when it
+     alone is wider than the column. */
+  .col-location.loc-split{display:flex;}
+  .col-location .loc-head{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .col-location .loc-tail{flex:0 0 auto; white-space:nowrap;}
   .col-method{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-secondary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* Custom columns (Custom Columns feature): every user-defined column
      shares one style, same as col-location/col-method above — the actual
@@ -2523,7 +2547,7 @@
      line then soft-wraps. Applied via a body-level class so it reaches both
      #tableRows and #highlightRows, exactly like .multiline-messages. */
   .wrap-messages:not(.multiline-messages) .col-msg{white-space:normal; word-break:break-all; text-overflow:clip; line-height:15px;}
-  .wrap-messages.multiline-messages .col-msg{white-space:pre-wrap; word-break:break-all; text-overflow:clip; line-height:15px;}
+  .wrap-messages.multiline-messages .col-msg{white-space:pre-wrap; word-break:break-all; tab-size:4; text-overflow:clip; line-height:15px;}
   /* A plain-text file's line (see msgColClass): leading spaces/tabs are its
      indentation, so whitespace is preserved rather than collapsed. */
   .col-msg.plaintext{white-space:pre; tab-size:4; text-overflow:clip;}
@@ -2729,7 +2753,8 @@
      (green strings, orange numbers) are unreadable on the mark fill. */
   .itv-line mark.find-match-mark, .itv-line mark.find-match-mark *,
   .itv-line mark.text-match-mark, .itv-line mark.text-match-mark *{color:var(--text-primary);}
-  .itv-line.find-cur mark.find-match-mark{background:color-mix(in srgb, var(--accent) 70%, transparent);}
+  .itv-line.find-cur mark.find-match-mark{background:var(--accent); border-radius:2px; box-shadow:none;}
+  .itv-line.find-cur mark.find-match-mark, .itv-line.find-cur mark.find-match-mark *{color:var(--accent-on);}
   .itv-line.flash{background:var(--accent-soft); box-shadow:inset 2px 0 0 var(--accent);}
   .itv-fold-toggle{
     position:absolute; left:var(--text-num-w); top:0; width:var(--text-fold-w); text-align:center;
@@ -3640,6 +3665,7 @@
      image set earlier) and a colour here would lose to them; an image layer
      composes over ANY tint. Keep this block AFTER every .log-row background
      shorthand (level tints and their :hover, pair-start/end). */
+  .log-row.selected, .log-row.selected:hover{background-image:linear-gradient(var(--selected-row-tint), var(--selected-row-tint));}
   .log-row.row-multi-selected, .log-row.row-multi-selected:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill));}
   .log-row.row-multi-selected.row-zero, .log-row.row-multi-selected.row-zero:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill)), linear-gradient(var(--accent-soft), var(--accent-soft));}
 
@@ -11368,7 +11394,7 @@ const state = {
   // columnWidthFor below, which fall back to sane defaults when absent —
   // so this object never needs an entry pre-created for every possible key.
   columnVisible: { delta: true, thread: true, location: true, method: true, message: true },
-  columnWidths: { time: 178, delta: 72, level: 66, thread: 92, location: 158, method: 168 },
+  columnWidths: { time: 178, delta: 56, level: 66, thread: 92, location: 190, method: 110 },
 
   // Watched folders (FEATURE_BACKLOG.md "Folder watch + lazy loading"), see
   // "Folder watch (lazy loading)" section near the Tailing code. Each entry:
@@ -11805,6 +11831,24 @@ function entryColumnValue(e, key) {
 // .col-custom CSS rule.
 const BUILTIN_FIELD_KEYS = new Set(["time", "delta", "level", "thread", "location", "method", "message"]);
 function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? key : "custom"); }
+
+// A log row's middle cell (Thread/Location/Method/custom). Location is split
+// at its last path separator into a shrinking head and a fixed tail so the
+// ellipsis lands in the MIDDLE of a long path and the file name stays visible
+// (CSS: .loc-split). A cell that carries marks (`html` has tags) or a value
+// without a separator stays a plain cell, so mark segmenting is untouched.
+// Text content is the same either way (copy, selection, the title).
+function middleCellHtml(key, val, html) {
+  let cls = columnCssClass(key), inner = html;
+  if (key === "location" && html === escapeHtml(val)) {
+    const cut = Math.max(val.lastIndexOf("/"), val.lastIndexOf("\\")) + 1;
+    if (cut > 0 && cut < val.length) {
+      cls += " loc-split";
+      inner = '<span class="loc-head">' + escapeHtml(val.slice(0, cut)) + '</span><span class="loc-tail">' + escapeHtml(val.slice(cut)) + '</span>';
+    }
+  }
+  return '<span class="' + cls + '" data-col="' + key + '" data-sel-col="' + key + '" title="' + escapeHtml(val) + '">' + inner + '</span>';
+}
 
 // Severity ordering used when the log table is sorted by the Level column,
 // and as the minimap's "most severe bucket" index. Custom level names sit
@@ -28737,13 +28781,14 @@ function textWrapLines(message, cols) {
 // the .wrap-messages CSS (break-all packs each line to `cols` chars). Honors
 // multiline: with it on, literal "\n"s split first and each part wraps; with
 // it off, runs of whitespace collapse to single spaces exactly as
-// white-space:normal renders them.
+// white-space:normal renders them. Tabs (multiline) count 4 columns, matching
+// the rule's tab-size:4 (textWrapLines).
 function messageWrapLines(message, cols) {
   if (cols < 1) return 1;
   if (state.multilineMessages) {
     let total = 0;
     const parts = message ? message.split("\n") : [""];
-    for (const p of parts) total += Math.max(1, Math.ceil(p.length / cols));
+    for (const p of parts) total += textWrapLines(p, cols);
     return total;
   }
   const collapsed = message ? message.replace(/\s+/g, " ").trim() : "";
@@ -29630,7 +29675,7 @@ function appendLogRow(frag, i, rc) {
   for (const col of rc.columnDefs) {
     const val = entryColumnValue(e, col.key);
     const html = markFieldHtml(rc.mm, val, col.key);
-    middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" data-sel-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+    middleHtml += middleCellHtml(col.key, val, html);
   }
   const syntaxRanges = plainTextSyntaxRanges(e, rc.syntax);
   const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message",
@@ -29638,8 +29683,10 @@ function appendLogRow(frag, i, rc) {
   const msgHtml = (repeatHead ? repeatBadgeHtml(repeatRun, rc.zero) : "") + (e._tempAnchor ? '<span class="not-in-filter-chip">not in this filter</span>' : "") +
     (filePathLinksEnabled ? linkifyPaths(msgHtmlBase) : msgHtmlBase);
 
+  const rowH = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode());
+  if (rowH > ROW_HEIGHT && !rc.textMode && !cardMode()) cls += " row-tall";
   row.className = cls;
-  row.style.height = baseRowHeightForEntry(e, tableWrapCols, rc.textMode, cardMode()) + "px";
+  row.style.height = rowH + "px";
   row.dataset.entryId = e.id;
   row.dataset.viewIdx = String(i); // table text selection: this row's index in currentViewEntries
   // Text mode: no level stripe/Δt/Level/columns — line number, the (empty)
@@ -31627,8 +31674,10 @@ function renderHighlightVisibleRows() {
     }
     const deltaMs = highlightRowDeltaMs(i, e);
 
+    const rowH = baseRowHeightForEntry(e, highlightWrapCols);
+    if (rowH > ROW_HEIGHT) cls += " row-tall";
     row.className = cls;
-    row.style.height = baseRowHeightForEntry(e, highlightWrapCols) + "px";
+    row.style.height = rowH + "px";
     row.dataset.entryId = e.id;
     row.dataset.viewIdx = String(i); // table text selection: this row's index in currentHighlightViewEntries
     // markFieldHtml short-circuits to a plain escapeHtml before any range
@@ -31648,7 +31697,7 @@ function renderHighlightVisibleRows() {
     for (const col of columnDefs) {
       const val = entryColumnValue(e, col.key);
       const html = markFieldHtml(mm, val, col.key);
-      middleHtml += '<span class="' + columnCssClass(col.key) + '" data-col="' + col.key + '" data-sel-col="' + col.key + '" title="' + escapeHtml(val) + '">' + html + '</span>';
+      middleHtml += middleCellHtml(col.key, val, html);
     }
     row.innerHTML =
       markerHtml +
@@ -35965,7 +36014,7 @@ btnFilePathLinks.forEach(b => b.addEventListener("click", () => {
    define that key, not reset every time the active file changes. */
 // `line`: the Time track's own width key while only plain-text files are
 // loaded (line numbers need far less room — see applyRowGrid).
-const FIXED_COLUMN_WIDTHS = { time: 178, line: 64, delta: 72, level: 66, thread: 92, location: 158, method: 168 };
+const FIXED_COLUMN_WIDTHS = { time: 178, line: 64, delta: 56, level: 66, thread: 92, location: 190, method: 110 };
 const DEFAULT_CUSTOM_COLUMN_WIDTH = 120; // initial width for a column this dictionary has no entry for yet
 const COLUMN_MIN_WIDTH = 40;
 const COLUMN_GRID_GAP = 12; // must match .row-grid's column-gap

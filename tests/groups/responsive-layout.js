@@ -60,14 +60,14 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   setWidth(w, 1440);
-  assert(rowGrid(d) === "5px 178px 72px 66px 92px 158px 168px 1fr", "desktop: every column, got " + rowGrid(d));
+  assert(rowGrid(d) === "5px 178px 56px 66px 92px 190px 110px 1fr", "desktop: every column, got " + rowGrid(d));
   setWidth(w, 820);
   assert(rowGrid(d) === "5px 178px 0px 66px 92px 0px 0px 1fr", "compact: Δt/Location/Method 0px, Thread kept, got " + rowGrid(d));
   setWidth(w, 390);
   assert(rowGrid(d) === "5px 178px 0px 66px 0px 0px 0px 1fr", "phone: Δt and all middle columns 0px, got " + rowGrid(d));
   assert(T.state.columnVisible.thread === true && T.state.columnVisible.delta !== false, "stored column visibility untouched");
   setWidth(w, 1440);
-  assert(rowGrid(d) === "5px 178px 72px 66px 92px 158px 168px 1fr", "back to desktop restores every track");
+  assert(rowGrid(d) === "5px 178px 56px 66px 92px 190px 110px 1fr", "back to desktop restores every track");
 });
 
 await withApp(async (w, d, T) => {
