@@ -236,3 +236,94 @@ await withApp(async (w, d, T) => {
   const snap = w.snapshotSubtree(win.id);
   assert(snap.linkPairing === "window" && w.restoreSubtree(snap).linkPairing === "window", "undo/redo snapshot keeps it");
 });
+
+/* ---------- dialog (step 2) ---------- */
+{
+  const txt = el => el.textContent.replace(/\s+/g, " ").trim();
+  const sideInput = (d, i) => d.querySelectorAll("#linkSides .link-side")[i].querySelector("input.link-side-input");
+  const seg = (d, m) => d.querySelector('#linkPairingSeg [data-pairing="' + m + '"]');
+  const on = el => el.getAttribute("aria-pressed") === "true";
+  const exclusive = d => d.querySelector("#linkExclusiveInput");
+  const pill = el => el.getAttribute("aria-checked") === "true";
+  const DESC = {
+    nearest: "Each start takes the nearest end, even if another start comes first.",
+    window: "A start only looks for its end up to its own next occurrence. Starts without an end there are skipped, not counted as “without end”.",
+    nested: "Starts and ends close like brackets: each end closes the most recent open start with the same key.",
+  };
+
+  await withApp(async (w, d, T) => {
+    section("link-pairing f. dialog: the Pairing control, its description, the forced 'Don't reuse', the preview count");
+    const [sim] = LOGSIM.generateToStrings({ scenarios: ["axes"], entries: 800, seed: 7 });
+    const f = await w.addFile(sim.name, sim.text, () => {});
+    w.openLinkDialog({ rootId: f.id, start: { text: "Move axes requested" }, hops: [{ text: "Axis Y moved" }] });
+    assert(on(seg(d, "nearest")) && !on(seg(d, "window")) && !on(seg(d, "nested")), "Nearest is pressed by default");
+    assert(txt(d.querySelector("#linkPairingDesc")) === DESC.nearest, "Nearest description");
+    assert(!d.querySelector("#linkMore").open, "More options stays closed for Nearest");
+    await waitFor(() => /pairs/.test(d.querySelector("#linkLiveMatch").textContent));
+    assert(!/skipped/.test(d.querySelector("#linkLiveMatch").textContent), "no 'skipped' in Nearest mode");
+    fireClick(d.querySelector("#linkExclusiveInput"), w);
+    assert(pill(exclusive(d)) && !exclusive(d).disabled, "the person ticks 'Don't reuse'");
+    fireClick(seg(d, "window"), w);
+    assert(on(seg(d, "window")) && txt(d.querySelector("#linkPairingDesc")) === DESC.window, "Before the next start: pressed, description");
+    assert(pill(exclusive(d)) && exclusive(d).disabled, "'Don't reuse' shows checked and disabled in a pairing mode");
+    await waitFor(() => / skipped$/.test(txt(d.querySelector("#linkLiveMatch"))) || / skipped · /.test(txt(d.querySelector("#linkLiveMatch"))));
+    const head = txt(d.querySelector("#linkLiveMatch"));
+    assert(/ without end( · \d+ skipped)/.test(head) || /\d+ skipped/.test(head), "window preview: '… without end · N skipped' (" + head + ")");
+    fireClick(seg(d, "nearest"), w);
+    assert(pill(exclusive(d)) && !exclusive(d).disabled, "back to Nearest: the person's own choice (on) is back and enabled");
+    fireClick(d.querySelector("#linkExclusiveInput"), w);
+    fireClick(seg(d, "window"), w);
+    fireClick(seg(d, "nearest"), w);
+    assert(!pill(exclusive(d)) && !exclusive(d).disabled, "a person's own 'off' comes back, too");
+    // Create in window mode: the node stores the pairing and the person's own exclusive choice (off).
+    fireClick(seg(d, "window"), w);
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(node.filterType === "link" && node.linkPairing === "window" && !node.linkExclusive && node.name.endsWith("(before next start)"), "Create builds a window link (" + node.name + ")");
+    // Edit link… restores the mode, opens More options, and Save keeps it in one undo step.
+    w.openLinkDialog(w.linkSpecFromNode(node));
+    assert(on(seg(d, "window")) && d.querySelector("#linkMore").open && txt(d.querySelector("#linkDialogTitle")) === "Edit link", "Edit: window pressed and More options open");
+    assert(pill(exclusive(d)) && exclusive(d).disabled, "Edit: 'Don't reuse' forced display");
+    const undoLen = T.undoStack.length;
+    fireClick(seg(d, "nearest"), w);
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    assert(node.linkPairing === undefined && T.undoStack.length === undoLen + 1, "Save with Nearest removes the pairing in ONE undo step");
+    w.undo();
+    assert(T.state.nodes[node.id].linkPairing === "window", "undo brings the window mode back");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("link-pairing g. dialog: Nested forces 1st / next, hides '+ Add step', is unavailable for 2+ steps");
+    const [sim] = LOGSIM.generateToStrings({ scenarios: ["flows"], entries: 1500, seed: 7 });
+    const f = await w.addFile(sim.name, sim.text, () => {});
+    w.openLinkDialog({ rootId: f.id, start: { text: "started run=" }, hops: [{ text: "ended result=", direction: "before", n: 2 }] });
+    const hop = () => d.querySelector("#linkSides .link-hop-row");
+    assert(hop().querySelector(".link-hop-n").value === "2" && on(hop().querySelector('[data-dir="before"]')), "precondition: 2nd previous end");
+    assert(isVisible(d.querySelector("#linkAddStep"), w), "'+ Add step' is visible");
+    fireClick(seg(d, "nested"), w);
+    assert(txt(d.querySelector("#linkPairingDesc")) === DESC.nested && pill(exclusive(d)) && exclusive(d).disabled, "Nested: description, forced exclusive");
+    assert(hop().querySelector(".link-hop-n").value === "1" && hop().querySelector(".link-hop-n").disabled && on(hop().querySelector('[data-dir="after"]')) &&
+      [...hop().querySelectorAll(".link-hop-dir button")].every(b => b.disabled), "Nested: the field shows 1st / next and is disabled");
+    assert(!isVisible(d.querySelector("#linkAddStep"), w), "Nested hides '+ Add step'");
+    fireClick(seg(d, "window"), w);
+    assert(hop().querySelector(".link-hop-n").value === "2" && on(hop().querySelector('[data-dir="before"]')) && !hop().querySelector(".link-hop-n").disabled, "leaving Nested restores the person's step settings");
+    assert(isVisible(d.querySelector("#linkAddStep"), w), "'+ Add step' is back");
+    // With a second step Nested cannot be chosen.
+    fireClick(d.querySelector("#linkAddStep"), w);
+    assert(seg(d, "nested").disabled && /single step/.test(seg(d, "nested").title), "2+ steps: Nested is disabled with a title");
+    fireClick(seg(d, "nested"), w);
+    assert(on(seg(d, "window")), "clicking the disabled Nested does nothing");
+    // Create nested on one step.
+    fireClick([...d.querySelectorAll("#linkSides [data-side-remove]")].pop(), w);
+    fireClick(seg(d, "nested"), w);
+    await waitFor(() => /pairs/.test(d.querySelector("#linkLiveMatch").textContent));
+    assert(!/skipped/.test(d.querySelector("#linkLiveMatch").textContent), "Nested never shows 'skipped'");
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(node.linkPairing === "nested" && node.linkDirection === "after" && node.linkN === 1 && !node.linkExclusive && node.name.endsWith("(nested)"), "Create: a nested link, 1st next, own exclusive off (" + node.name + ")");
+    // A nested spec with several hops is opened as Nearest (single-step only).
+    w.openLinkDialog({ rootId: f.id, start: { text: "a" }, hops: [{ text: "b" }, { text: "c" }], pairing: "nested" });
+    assert(on(seg(d, "nearest")) && seg(d, "nested").disabled, "a nested spec with 2 hops opens as Nearest");
+    w.closeLinkDialog();
+  }, { indexedDB: new IDBFactory() });
+}

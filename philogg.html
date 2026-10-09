@@ -3709,6 +3709,30 @@
   }
   .link-chip small{color:var(--text-tertiary); font-size:10.5px;}
   .link-chip[aria-pressed="true"]{background:var(--accent-soft); border-color:var(--accent); color:var(--accent);}
+  #linkAddStep.hidden{display:none;}
+  .link-pairing{margin-bottom:10px;}
+  .link-pairing .link-toggle-row{flex-wrap:wrap; margin-bottom:4px;}
+  .link-pairing-desc{font-size:11.5px; line-height:1.45; color:var(--text-tertiary);}
+  .link-seg button:disabled{opacity:.4; cursor:default;}
+  .link-chip:disabled{opacity:.4; cursor:default;}
+  .link-hop-row.nested-forced .link-hop-field, .link-hop-row.nested-forced .link-hop-dir{opacity:.5;}
+  /* "Same → wildcards": the mapping box under the chips, and the colours that tie a mapping to its values in the preview. */
+  .link-wc-box{margin:2px 0 0 48px; padding:8px 10px; border:1px solid var(--border); border-radius:9px; background:var(--bg-app); display:flex; flex-direction:column; gap:6px; min-width:0;}
+  .link-wc-box.hidden{display:none;}
+  .link-wc-row{display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary);}
+  .link-wc-row select{flex:1 1 80px; min-width:0; max-width:100%; text-overflow:ellipsis;}
+  .link-wc-row .link-wc-lab{white-space:nowrap;}
+  .link-wc-swatch{width:10px; height:10px; border-radius:3px; flex:0 0 auto;}
+  .link-wc-add{align-self:flex-start;}
+  .link-wc-swatch.link-kv-0{background:var(--level-custom-1);}
+  .link-wc-swatch.link-kv-1{background:var(--level-custom-6);}
+  .link-wc-swatch.link-kv-2{background:var(--level-custom-3);}
+  .filter-sample-hit.link-kv-0{background:color-mix(in srgb, var(--level-custom-1) 22%, transparent); color:var(--level-custom-1);}
+  .filter-sample-hit.link-kv-1{background:color-mix(in srgb, var(--level-custom-6) 22%, transparent); color:var(--level-custom-6);}
+  .filter-sample-hit.link-kv-2{background:color-mix(in srgb, var(--level-custom-3) 22%, transparent); color:var(--level-custom-3);}
+  body.layout-phone .link-wc-box{margin-left:0;}
+  body.layout-phone .link-wc-row select{min-height:40px; flex-basis:100%;}
+  body.layout-phone .link-pairing .link-seg{flex-wrap:wrap;}
   .link-more{margin:0 0 10px; font-size:11.5px; color:var(--text-secondary);}
   .link-more summary{cursor:pointer; margin-bottom:6px;}
   .link-hint{font-size:11.5px; color:var(--text-tertiary); margin:0 0 6px;}
@@ -7362,6 +7386,8 @@
         <div class="link-fieldrow hidden" id="linkKeyPatternRow">
           <input type="text" id="linkKeyPattern" placeholder="captured value, e.g. job=[*:word]" spellcheck="false" autocomplete="off">
         </div>
+        <!-- "Same → wildcards": which wildcard of the Start pattern must equal which wildcard of the End pattern (renderLinkWildcardBox). -->
+        <div class="link-wc-box hidden" id="linkWildcardBox"></div>
       </div>
       <!-- Δt is a pure post-filter: it hides finished pairs, never changes the pairing. -->
       <div class="link-field">
@@ -7377,6 +7403,15 @@
       </div>
       <details class="link-more" id="linkMore">
         <summary>More options</summary>
+        <div class="link-pairing">
+          <div class="link-toggle-row">
+            <span class="link-toggle-label">Pairing</span>
+            <span class="link-seg" id="linkPairingSeg" role="group" aria-label="Pairing">
+              <button type="button" data-pairing="nearest" aria-pressed="true">Nearest</button><button type="button" data-pairing="window" aria-pressed="false">Before the next start</button><button type="button" data-pairing="nested" aria-pressed="false">Nested</button>
+            </span>
+          </div>
+          <div class="link-pairing-desc" id="linkPairingDesc"></div>
+        </div>
         <div class="link-toggle-row">
           <label class="link-toggle-label" for="linkExclusiveInput">Don't reuse an end event once it's paired</label>
           <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="linkExclusiveInput"></button>
@@ -42688,7 +42723,10 @@ function renderLiveResults(hits, baseEntries, hitRe, inverted, captures, target 
     const msg = document.createElement("span");
     msg.className = "filter-sample-msg";
     msg.title = e.message;
-    appendSampleMessage(msg, e.message, hitRe);
+    // Optional, inert unless the caller passes it: [{ start, end, cls }] ranges of e.message to mark (the link dialog's key values).
+    const ranges = opts.highlights ? opts.highlights(e) : null;
+    if (ranges && ranges.length) appendSampleRanges(msg, e.message, ranges);
+    else appendSampleMessage(msg, e.message, hitRe);
     if (opts.badge) {
       const badge = document.createElement("span");
       badge.className = "filter-sample-badge" + (opts.badgeWarn && opts.badgeWarn(e) ? " warn" : "");
@@ -42715,6 +42753,22 @@ function appendSampleMessage(target, message, hitRe) {
   mark.className = "filter-sample-hit";
   mark.textContent = m[0];
   target.append((start ? "…" : "") + message.slice(start, m.index), mark, message.slice(m.index + m[0].length));
+}
+
+// Writes `message` into `target` with each { start, end, cls } range wrapped in a <mark>
+// (ranges sorted here; an overlapping one is skipped).
+function appendSampleRanges(target, message, ranges) {
+  let pos = 0;
+  for (const r of ranges.slice().sort((a, b) => a.start - b.start)) {
+    if (r.start < pos || r.end <= r.start) continue;
+    if (r.start > pos) target.append(message.slice(pos, r.start));
+    const mark = document.createElement("mark");
+    mark.className = "filter-sample-hit" + (r.cls ? " " + r.cls : "");
+    mark.textContent = message.slice(r.start, r.end);
+    target.append(mark);
+    pos = r.end;
+  }
+  if (pos < message.length) target.append(message.slice(pos));
 }
 
 // Histogram of the hits over the base rows' time span, FILTER_MINIMAP_BUCKETS
@@ -46292,7 +46346,8 @@ sidebarToolbarEl.addEventListener("click", ev => {
    exclusive, orderEnforced, editNodeId } where a side (start, each hop) is
    { text } | { nodeId } | { baked }, a hop may carry its own { direction, n }
    and `direction` ("after" default) is the fallback; `key` is { column } |
-   { pattern } | "none" (omitted: the recommended suggestion is preselected).
+   { pattern } | { wildcards: [[startIdx, endIdx], ...] } | "none" (omitted: the recommended
+   suggestion is preselected); `pairing` is "window" | "nested" (omitted: nearest).
    An array of node ids (the multi-select "Link…") is adapted to a spec. */
 
 const linkDialog = el("#linkDialog");
@@ -46307,6 +46362,10 @@ const linkExclusiveInput = el("#linkExclusiveInput");
 const linkMore = el("#linkMore");
 const linkKeyPatternRow = el("#linkKeyPatternRow");
 const linkKeyPattern = el("#linkKeyPattern");
+const linkWildcardBox = el("#linkWildcardBox");
+const linkPairingSeg = el("#linkPairingSeg");
+const linkPairingDesc = el("#linkPairingDesc");
+const linkAddStepBtn = el("#linkAddStep");
 const linkDtInput = el("#linkDtInput");
 const linkDtOp = el("#linkDtOp");
 const linkDtValue = el("#linkDtValue");
@@ -46316,7 +46375,10 @@ const linkSideMenu = el("#linkSideMenu");
 const linkResultsTarget = { root: el("#linkResults"), match: el("#linkLiveMatch"), minimap: el("#linkResultsMinimap"), samples: el("#linkResultsSamples") };
 let linkPreviewTimer = null;
 // null while closed, else { rootId, editNodeId, sides: [side], hops: [{direction, n}] (hops[i] belongs
-// to sides[i + 1]), key: {type: "none"|"suggest"|"column"|"pattern", value}, keyTouched, suggestions }
+// to sides[i + 1]), key: {type: "none"|"suggest"|"column"|"pattern"|"wildcards", value} (wildcards: [[i, j], ...]),
+// keyTouched, suggestions, pairing: "nearest"|"window"|"nested", ownExclusive (the person's own "Don't reuse"
+// choice, kept while a pairing mode forces it on), hopBackup (the step's direction/n while Nested forces 1st/next),
+// wc (wildcard-key info of the two sides, see linkWildcardInfo) }
 // with side = {kind: "text", text} | {kind: "node", nodeId, label} | {kind: "baked", baked, label}.
 let linkDlg = null;
 
@@ -46365,7 +46427,7 @@ function linkSpecFromNode(node) {
   return {
     rootId: getRootFileId(node.id), editNodeId: node.id, start: { baked: c.start },
     hops: c.hops.map(h => ({ baked: h.baked, direction: h.direction, n: h.n })),
-    key: c.key || "none", dt: c.dt, exclusive: c.exclusive, orderEnforced: c.orderEnforced,
+    key: c.key || "none", dt: c.dt, exclusive: c.exclusive, orderEnforced: c.orderEnforced, pairing: c.pairing,
   };
 }
 
@@ -46379,17 +46441,22 @@ function openLinkDialog(spec) {
     sides: [linkSideFromSpec(spec.start)].concat(hopSpecs.map(linkSideFromSpec)),
     hops: hopSpecs.map(h => ({ direction: dirOf(h) === "before" ? "before" : "after", n: Math.max(1, parseInt(h && h.n, 10) || 1) })),
     key: { type: "none", value: null }, keyTouched: false, suggestions: [],
+    pairing: sanitizeLinkPairing(spec.pairing) || "nearest", ownExclusive: !!spec.exclusive, hopBackup: null, wc: null,
   };
+  if (linkDlg.pairing === "nested" && linkDlg.hops.length > 1) linkDlg.pairing = "nearest"; // Nested is single-step
+  if (linkDlg.pairing === "nested") { linkDlg.hopBackup = { direction: linkDlg.hops[0].direction, n: linkDlg.hops[0].n }; linkDlg.hops[0].direction = "after"; linkDlg.hops[0].n = 1; }
   const key = spec.key === "none" ? { type: "none" } : sanitizeLinkKey(spec.key);
   if (key) {
     linkDlg.keyTouched = true;
-    linkDlg.key = key.type ? { type: "none", value: null } : key.column ? { type: "column", value: key.column } : { type: "pattern", value: key.pattern };
+    linkDlg.key = key.type ? { type: "none", value: null } : key.column ? { type: "column", value: key.column }
+      : key.wildcards ? { type: "wildcards", value: key.wildcards } : { type: "pattern", value: key.pattern };
   }
   linkDialogTitle.textContent = linkDlg.editNodeId ? "Edit link" : "Link events";
   linkDialogCreateBtn.textContent = linkDlg.editNodeId ? "Save" : "Create";
   pillSet(linkOrderEnforceInput, !!spec.orderEnforced);
   pillSet(linkExclusiveInput, !!spec.exclusive);
-  linkMore.open = !!(spec.exclusive || spec.orderEnforced);
+  linkExclusiveInput.disabled = false;
+  linkMore.open = !!(spec.exclusive || spec.orderEnforced || linkDlg.pairing !== "nearest");
   pillSet(linkDtInput, !!spec.dt);
   const dtMs = spec.dt ? spec.dt.ms : 500;
   const unit = spec.dt ? ([...GAP_UNITS].reverse().find(u => dtMs >= u.ms && dtMs % u.ms === 0) || GAP_UNITS[0]) : GAP_UNITS[0];
@@ -46435,7 +46502,10 @@ function groupColumnOptions(rootId) {
 function readLinkDialogOptions() {
   let key = null, dt = null;
   const k = linkDlg ? linkDlg.key : { type: "none" };
-  if (k.type === "suggest" || k.type === "pattern") {
+  if (k.type === "wildcards") {
+    if (!(linkDlg.wc && linkDlg.wc.ok)) return { error: "“Same → wildcards” needs a single step with a wildcard pattern like [*] on both Start and End" };
+    key = { wildcards: k.value.map(p => p.slice()) };
+  } else if (k.type === "suggest" || k.type === "pattern") {
     const pattern = k.type === "pattern" ? linkKeyPattern.value.trim() : k.value;
     if (!isExtractPattern(pattern) || !compileExtractPattern(pattern)) return { error: "Invalid key pattern — needs a capture like [*:word]" };
     key = { pattern };
@@ -46448,7 +46518,7 @@ function readLinkDialogOptions() {
     if (!Number.isFinite(amount) || amount < 0) return { error: "Invalid Δt value" };
     dt = { op: linkDtOp.value === "<" ? "<" : ">", ms: Math.round(amount * unit.ms) }; // log timestamps are whole ms
   }
-  return { key, dt, error: null };
+  return { key, dt, error: null, pairing: linkDlg && linkDlg.pairing !== "nearest" ? linkDlg.pairing : null };
 }
 
 // Greys out Δt's controls while its switch is off, shows the pattern input for the "pattern…" chip.
@@ -46465,8 +46535,9 @@ function buildLinkDialogChain(opts, withDt) {
   const baked = linkDlg.sides.map(linkSideBaked);
   if (baked.some(b => !b)) return null;
   return hopsToLinkChain(baked[0], linkDlg.hops.map((h, i) => ({ baked: baked[i + 1], direction: h.direction, n: h.n })), {
-    key: opts.key, dt: withDt ? opts.dt : null,
-    exclusive: pillGet(linkExclusiveInput), orderEnforced: pillGet(linkOrderEnforceInput),
+    key: opts.key, dt: withDt ? opts.dt : null, pairing: opts.pairing,
+    // the person's own choice, not the checked-and-disabled display a pairing mode forces
+    exclusive: linkDlg.pairing !== "nearest" ? linkDlg.ownExclusive : pillGet(linkExclusiveInput), orderEnforced: pillGet(linkOrderEnforceInput),
   });
 }
 
@@ -46475,14 +46546,21 @@ function buildLinkDialogChain(opts, withDt) {
 function refreshLinkSuggestions() {
   if (!linkDlg) return;
   const a = linkSideBaked(linkDlg.sides[0]), b = linkSideBaked(linkDlg.sides[1]);
-  let sug = [];
+  let sug = [], aEntries = [], bEntries = [];
   if (a && b) {
     try {
       const pool = getEntries(linkDlg.rootId);
-      sug = suggestLinkKeys(getEntriesFromBaked(a, pool, linkDlg.rootId), getEntriesFromBaked(b, pool, linkDlg.rootId));
+      aEntries = getEntriesFromBaked(a, pool, linkDlg.rootId);
+      bEntries = getEntriesFromBaked(b, pool, linkDlg.rootId);
+      sug = suggestLinkKeys(aEntries, bEntries);
     } catch (e) { sug = []; }
   }
   linkDlg.suggestions = sug;
+  linkDlg.wc = linkWildcardInfo(a, b, aEntries, bEntries);
+  if (linkDlg.key.type === "wildcards" && linkDlg.wc.ok) { // keep the mappings inside the patterns' wildcard counts
+    const ok = linkDlg.key.value.filter(([i, j]) => i < linkDlg.wc.nStart && j < linkDlg.wc.nEnd);
+    linkDlg.key.value = ok.length ? ok : [[0, 0]];
+  }
   if (!linkDlg.keyTouched) {
     const rec = sug.find(s => s.recommended);
     linkDlg.key = rec ? { type: "suggest", value: rec.pattern } : { type: "none", value: null };
@@ -46510,17 +46588,89 @@ function renderLinkKeyChips() {
     (note ? " <small>" + escapeHtml(phone ? "★" : note) + "</small>" : "") + "</button>";
   let html = linkDlg.suggestions.map(sg => chip("s:" + sg.pattern, sg.field, sg.recommended ? "recommended · unique per start" : "", k.type === "suggest" && k.value === sg.pattern)).join("");
   html += cols.map(c => chip("c:" + c.key, c.label, "", k.type === "column" && k.value === c.key)).join("");
+  const wc = linkDlg.wc;
+  const wcOff = !(wc && wc.ok);
+  html += '<button type="button" class="link-chip" data-key-chip="wildcards" aria-pressed="' + (k.type === "wildcards") + '"' + (wcOff ? " disabled" : "") +
+    ' title="' + escapeHtml(wcOff ? linkWildcardWhyNot() : "Start and End pair when chosen wildcards of their own patterns carry the same value") + '">wildcards</button>';
   html += chip("none", "none", "", k.type === "none") + chip("pattern", "pattern…", "", k.type === "pattern");
   linkKeyChips.innerHTML = html;
+  renderLinkWildcardBox();
   updateLinkOptionControls();
 }
+
+// Wildcard-key info of the two (first) sides: both baked conditions must be plain text conditions with a
+// wildcard pattern, and the link a single step. { ok, nStart, nEnd, startVals, endVals, startSpec, endSpec }
+// where *Vals[i] is wildcard i's capture in the first matching entry of that side ("" when none).
+function linkWildcardInfo(a, b, aEntries, bEntries) {
+  const specOf = baked => {
+    if (!baked || baked.filterType !== "text" || baked.isRegex || typeof baked.value !== "string" || !isExtractPattern(baked.value)) return null;
+    return compileExtractPattern(baked.value);
+  };
+  const startSpec = specOf(a), endSpec = specOf(b);
+  if (!startSpec || !endSpec || linkDlg.sides.length !== 2) return { ok: false };
+  const firstCaps = (spec, entries) => {
+    for (const e of entries) { const m = wildcardMatch(spec.regex, spec.columns, e.message); if (m) return m.slice(1, spec.columns.length + 1); }
+    return [];
+  };
+  const sc = firstCaps(startSpec, aEntries), ec = firstCaps(endSpec, bEntries);
+  return {
+    ok: true, nStart: startSpec.columns.length, nEnd: endSpec.columns.length,
+    startVals: startSpec.columns.map((_, i) => sc[i] || ""), endVals: endSpec.columns.map((_, i) => ec[i] || ""),
+    startSpec, endSpec, startRe: regexWithFlags(startSpec.regex, "isd"), endRe: regexWithFlags(endSpec.regex, "isd"),
+  };
+}
+function linkWildcardWhyNot() {
+  if (linkDlg && linkDlg.sides.length !== 2) return "Needs a single step (one Start and one End)";
+  return "Needs a text pattern with a wildcard like [*] on both Start and End";
+}
+// The mapping box of the "wildcards" key: one row per mapping "Start [*] #i · value = End [*] #j · value".
+function renderLinkWildcardBox() {
+  const on = linkDlg && linkDlg.key.type === "wildcards" && linkDlg.wc && linkDlg.wc.ok;
+  linkWildcardBox.classList.toggle("hidden", !on);
+  if (!on) { linkWildcardBox.innerHTML = ""; return; }
+  const wc = linkDlg.wc, maps = linkDlg.key.value;
+  const opts = (n, vals, sel) => Array.from({ length: n }, (_, i) =>
+    '<option value="' + i + '"' + (i === sel ? " selected" : "") + ">[*] #" + (i + 1) + (vals[i] ? " · " + escapeHtml(vals[i]) : "") + "</option>").join("");
+  let html = maps.map(([i, j], k) =>
+    '<div class="link-wc-row" data-map="' + k + '"><span class="link-wc-swatch link-kv-' + (k % 3) + '"></span><span class="link-wc-lab">Start</span>' +
+    '<select data-map-side="0" aria-label="Start wildcard">' + opts(wc.nStart, wc.startVals, i) + '</select><span class="link-wc-lab">= End</span>' +
+    '<select data-map-side="1" aria-label="End wildcard">' + opts(wc.nEnd, wc.endVals, j) + "</select>" +
+    (maps.length > 1 ? '<button type="button" class="link-side-btn" data-map-remove title="Remove this mapping" aria-label="Remove this mapping">✕</button>' : "") + "</div>").join("");
+  if (maps.length < Math.min(wc.nStart, wc.nEnd)) html += '<button type="button" class="link-side-btn link-wc-add" data-map-add>+ another</button>';
+  linkWildcardBox.innerHTML = html;
+}
+linkWildcardBox.addEventListener("change", ev => {
+  const sel = ev.target.closest("select[data-map-side]");
+  if (!sel || !linkDlg) return;
+  const row = sel.closest("[data-map]");
+  const pair = linkDlg.key.value[+row.dataset.map];
+  pair[+sel.dataset.mapSide] = +sel.value;
+  linkDlg.key.value = linkDlg.key.value.filter((p, k, arr) => arr.findIndex(q => q[0] === p[0] && q[1] === p[1]) === k); // a duplicate mapping collapses
+  renderLinkWildcardBox();
+});
+linkWildcardBox.addEventListener("click", ev => {
+  if (!linkDlg) return;
+  const add = ev.target.closest("[data-map-add]"), rm = ev.target.closest("[data-map-remove]");
+  if (!add && !rm) return;
+  ev.stopPropagation();
+  const maps = linkDlg.key.value;
+  if (rm) maps.splice(+rm.closest("[data-map]").dataset.map, 1);
+  else {
+    const wc = linkDlg.wc;
+    const free = (n, side) => { for (let x = 0; x < n; x++) if (!maps.some(p => p[side] === x)) return x; return 0; };
+    maps.push([free(wc.nStart, 0), free(wc.nEnd, 1)]);
+  }
+  renderLinkWildcardBox();
+  updateLinkPreview();
+});
 linkKeyChips.addEventListener("click", ev => {
   const btn = ev.target.closest("[data-key-chip]");
-  if (!btn || !linkDlg) return;
+  if (!btn || !linkDlg || btn.disabled) return;
   ev.stopPropagation();
   const id = btn.dataset.keyChip;
   linkDlg.keyTouched = true;
   if (id === "none") linkDlg.key = { type: "none", value: null };
+  else if (id === "wildcards") linkDlg.key = { type: "wildcards", value: [[0, 0]] };
   else if (id === "pattern") linkDlg.key = { type: "pattern", value: null };
   else if (id.startsWith("s:")) linkDlg.key = { type: "suggest", value: id.slice(2) };
   else linkDlg.key = { type: "column", value: id.slice(2) };
@@ -46532,13 +46682,14 @@ linkKeyChips.addEventListener("click", ev => {
 // Start / End rows plus the "for each start, find the Nth next/previous end" sentence above each End.
 function renderLinkSides() {
   if (!linkDlg) return;
-  const dirBtn = (i, v, label) => '<button type="button" data-dir="' + v + '" aria-pressed="' + (linkDlg.hops[i].direction === v) + '">' + label + "</button>";
+  const forced = linkDlg.pairing === "nested" ? " disabled" : ""; // Nested: always the 1st next end
+  const dirBtn = (i, v, label) => '<button type="button" data-dir="' + v + '" aria-pressed="' + (linkDlg.hops[i].direction === v) + '"' + forced + ">" + label + "</button>";
   let html = "";
   linkDlg.sides.forEach((side, i) => {
     if (i >= 1) {
       const h = linkDlg.hops[i - 1];
-      html += '<div class="link-sentence link-hop-row" data-hop="' + (i - 1) + '">' + (i === 1 ? "for each start, find the" : "then, from that end, find the") +
-        ' <span class="link-hop-field"><input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span></span> " +
+      html += '<div class="link-sentence link-hop-row' + (linkDlg.pairing === "nested" ? " nested-forced" : "") + '" data-hop="' + (i - 1) + '">' + (i === 1 ? "for each start, find the" : "then, from that end, find the") +
+        ' <span class="link-hop-field"><input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"' + forced + '><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span></span> " +
         '<span class="link-seg link-hop-dir" role="group" aria-label="Direction">' + dirBtn(i - 1, "after", "next") + dirBtn(i - 1, "before", "previous") + "</span> end</div>";
     }
     html += '<div class="link-side" data-side="' + i + '"><span class="link-side-lab">' + (i === 0 ? "Start" : "End") + "</span>";
@@ -46552,7 +46703,59 @@ function renderLinkSides() {
     html += "</div>";
   });
   linkSidesEl.innerHTML = html;
+  updateLinkPairingControls();
 }
+
+const LINK_PAIRING_DESC = {
+  nearest: "Each start takes the nearest end, even if another start comes first.",
+  window: "A start only looks for its end up to its own next occurrence. Starts without an end there are skipped, not counted as “without end”.",
+  nested: "Starts and ends close like brackets: each end closes the most recent open start with the same key.",
+};
+// Pairing segmented control, its description, and what a mode forces: "Don't reuse an end" checked and
+// disabled (the person's own choice is kept in linkDlg.ownExclusive and comes back with Nearest), Nested
+// disables the N field and the next/previous control (renderLinkSides) and hides "+ Add step"; Nested is
+// itself disabled for a link with 2+ steps.
+function updateLinkPairingControls() {
+  if (!linkDlg) return;
+  const multi = linkDlg.sides.length > 2;
+  linkPairingSeg.querySelectorAll("button").forEach(b => {
+    const m = b.dataset.pairing;
+    b.setAttribute("aria-pressed", String(linkDlg.pairing === m));
+    b.disabled = m === "nested" && multi;
+    b.title = b.disabled ? "Nested works on a single step (one Start and one End)" : "";
+  });
+  linkPairingDesc.textContent = LINK_PAIRING_DESC[linkDlg.pairing];
+  linkAddStepBtn.classList.toggle("hidden", linkDlg.pairing === "nested");
+  if (linkDlg.pairing !== "nearest") {
+    if (!linkExclusiveInput.disabled) linkDlg.ownExclusive = pillGet(linkExclusiveInput);
+    pillSet(linkExclusiveInput, true);
+    linkExclusiveInput.disabled = true;
+    linkExclusiveInput.title = "Implied by this pairing mode";
+  } else if (linkExclusiveInput.disabled) {
+    linkExclusiveInput.disabled = false;
+    linkExclusiveInput.title = "";
+    pillSet(linkExclusiveInput, linkDlg.ownExclusive);
+  }
+}
+linkPairingSeg.addEventListener("click", ev => {
+  const btn = ev.target.closest("button[data-pairing]");
+  if (!btn || !linkDlg || btn.disabled) return;
+  ev.stopPropagation();
+  const next = btn.dataset.pairing;
+  if (next === linkDlg.pairing) return;
+  const h = linkDlg.hops[0];
+  if (next === "nested") { // single step, 1st / next
+    linkDlg.hopBackup = { direction: h.direction, n: h.n };
+    h.direction = "after"; h.n = 1;
+  } else if (linkDlg.pairing === "nested" && linkDlg.hopBackup) {
+    h.direction = linkDlg.hopBackup.direction; h.n = linkDlg.hopBackup.n;
+    linkDlg.hopBackup = null;
+  }
+  linkDlg.pairing = next;
+  renderLinkSides();
+  updateLinkOrderEnforceAvailability();
+  updateLinkPreview();
+});
 
 linkSidesEl.addEventListener("input", ev => {
   if (!linkDlg) return;
@@ -46595,6 +46798,7 @@ linkSidesEl.addEventListener("click", ev => {
     linkDlg.sides.splice(i, 1);
     linkDlg.hops.splice(i - 1, 1);
     renderLinkSides();
+    renderLinkKeyChips();
     updateLinkOrderEnforceAvailability();
     updateLinkPreview();
   }
@@ -46602,6 +46806,8 @@ linkSidesEl.addEventListener("click", ev => {
 el("#linkAddStep").addEventListener("click", ev => {
   if (!linkDlg) return;
   ev.stopPropagation();
+  if (linkDlg.pairing === "nested") return;
+  if (linkDlg.key.type === "wildcards") linkDlg.key = { type: "none", value: null }; // single-step only
   const last = linkDlg.hops[linkDlg.hops.length - 1];
   linkDlg.sides.push({ kind: "text", text: "" });
   linkDlg.hops.push({ direction: last ? last.direction : "after", n: 1 });
@@ -46683,11 +46889,13 @@ function runLinkPreview() {
   const all = evaluateFilterCondition(buildLinkDialogChain(opts, false), pool, rootId, meta);
   const hits = opts.dt ? getEntriesFromBaked(model.chain, pool, rootId) : all;
   const unmatched = meta.linkUnmatched || [];
+  const skipped = meta.linkSkipped || [];
   const fmt = n => n.toLocaleString("de-DE");
   const dts = hits.map(e => e.dtMs).sort((x, y) => x - y);
   const median = dts.length ? dts[dts.length >> 1] : 0, max = dts.length ? dts[dts.length - 1] : 0;
   let metaText = opts.dt ? "of " + fmt(all.length) + " pairs" : (all.length === 1 ? "pair" : "pairs");
   if (unmatched.length) metaText += " · " + fmt(unmatched.length) + " without end";
+  if (linkDlg.pairing === "window" && skipped.length) metaText += " · " + fmt(skipped.length) + " skipped";
   if (hits.length) metaText += " · median " + formatMs(median) + " · max " + formatMs(max);
   const slowest = hits.slice().sort((x, y) => y.dtMs - x.dtMs).slice(0, FILTER_SAMPLE_ROWS);
   const noEnd = new Set();
@@ -46698,12 +46906,33 @@ function runLinkPreview() {
     samples: firstUnmatched ? slowest.slice(0, Math.max(0, FILTER_SAMPLE_ROWS - 1)).concat([firstUnmatched]) : slowest,
     badge: e => noEnd.has(e) ? "no end" : "Δt " + formatMs(e.dtMs),
     badgeWarn: e => noEnd.has(e),
+    highlights: linkDlg.key.type === "wildcards" ? linkKeyHighlights : null,
   });
   if (max > 60000) {
     linkHint.textContent = "Longest pair " + formatMs(max) + ": probably paired across different events. Try " + (linkDlg.key.type === "none" ? "a" : "another") + " “Same” key.";
     linkHint.classList.remove("hidden");
     linkHint.classList.add("warn");
   }
+}
+// Ranges of the key values in a preview sample (a pair's "start ⟶ end" text, or a lone start), one
+// colour per mapping of the "wildcards" key — the opts.highlights hook of renderLiveResults.
+function linkKeyHighlights(e) {
+  const wc = linkDlg && linkDlg.wc;
+  if (!wc || !wc.ok || linkDlg.key.type !== "wildcards") return null;
+  const maps = linkDlg.key.value, out = [];
+  const mark = (msg, re, side, offset) => {
+    const m = re.exec(msg);
+    if (!m || !m.indices) return;
+    maps.forEach((p, k) => { const r = m.indices[1 + p[side]]; if (r && r[1] > r[0]) out.push({ start: offset + r[0], end: offset + r[1], cls: "link-kv-" + (k % 3) }); });
+  };
+  if (e.isPair) {
+    if (e.first.isPair || e.second.isPair) return null;
+    const startIsFirst = e.matchEntry !== e.first;
+    const sec = e.first.message.length + PAIR_SEPARATOR.length;
+    mark(e.first.message, startIsFirst ? wc.startRe : wc.endRe, startIsFirst ? 0 : 1, 0);
+    mark(e.second.message, startIsFirst ? wc.endRe : wc.startRe, startIsFirst ? 1 : 0, sec);
+  } else mark(e.message, wc.startRe, 0, 0);
+  return out;
 }
 // Any option change — a switch (pillSet fires a bubbling "change"), a select, a typed value, a
 // direction — refreshes the controls' state and the preview.
@@ -46745,7 +46974,7 @@ function commitLinkDialog() {
   } else {
     // ONE node holds the whole chain (no intermediate hop nodes).
     ok = !!createLinkNodeFromBaked(rootId, chain.bakedA, chain.bakedB, chain.linkDirection, chain.linkN,
-      { orderEnforced: !!chain.linkOrderEnforced, exclusive: !!chain.linkExclusive, key: chain.linkKey || null, dt: chain.linkDt || null });
+      { orderEnforced: !!chain.linkOrderEnforced, exclusive: !!chain.linkExclusive, key: chain.linkKey || null, dt: chain.linkDt || null, pairing: chain.linkPairing || null });
   }
   if (ok) revealFilteredView();
   closeLinkDialog();

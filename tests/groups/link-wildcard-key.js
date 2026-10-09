@@ -127,3 +127,103 @@ await withApp(async (w, d, T) => {
   assert(JSON.stringify(S.nodes[link.id].linkKey) === '{"wildcards":[[0,0],[1,2]]}', "undo restores the previous key");
   assert(JSON.stringify(w.restoreSubtree(w.snapshotSubtree(link.id)).linkKey) === '{"wildcards":[[0,0],[1,2]]}', "undo/redo snapshot");
 });
+
+/* ---------- dialog (step 2) ---------- */
+{
+  const txt = el => el.textContent.replace(/\s+/g, " ").trim();
+  const chip = (d, id) => d.querySelector('#linkKeyChips [data-key-chip="' + id + '"]');
+  const on = el => el.getAttribute("aria-pressed") === "true";
+  const rows = d => [...d.querySelectorAll("#linkWildcardBox .link-wc-row")];
+  const sel = (row, side) => row.querySelector('select[data-map-side="' + side + '"]');
+  const START = "Flow [*] started run=[*]", END = "Flow [*] ended result=[*]";
+
+  await withApp(async (w, d, T) => {
+    section("link-wildcard-key e. dialog: chip availability, default #1=#1, + another / x, option labels, Create");
+    const [sim] = LOGSIM.generateToStrings({ scenarios: ["flows"], entries: 1500, seed: 7 });
+    const f = await w.addFile(sim.name, sim.text, () => {});
+    const all = w.getEntries(f.id);
+    const firstStart = all.find(e => / started run=/.test(e.message)), firstEnd = all.find(e => / ended result=/.test(e.message));
+    w.openLinkDialog({ rootId: f.id, start: { text: START }, hops: [{ text: END }] });
+    await waitFor(() => /pairs/.test(d.querySelector("#linkLiveMatch").textContent));
+    assert(chip(d, "wildcards") && !chip(d, "wildcards").disabled, "the wildcards chip is offered and enabled for two wildcard patterns");
+    const ids = [...d.querySelectorAll("#linkKeyChips [data-key-chip]")].map(c => c.dataset.keyChip);
+    assert(ids.indexOf("wildcards") === ids.indexOf("none") - 1 && ids.indexOf("wildcards") > ids.findIndex(i => i.startsWith("c:")), "it sits between the column chips and none");
+    assert(!isVisible(d.querySelector("#linkWildcardBox"), w), "no mapping box while the chip is off");
+    fireClick(chip(d, "wildcards"), w);
+    assert(on(chip(d, "wildcards")) && isVisible(d.querySelector("#linkWildcardBox"), w) && rows(d).length === 1, "turning it on shows one mapping");
+    assert(sel(rows(d)[0], 0).value === "0" && sel(rows(d)[0], 1).value === "0", "it starts with #1 = #1");
+    const startName = /^Flow (\S+) started run=(\S+)$/.exec(firstStart.message), endName = /^Flow (\S+) ended result=(\S+)$/.exec(firstEnd.message);
+    const labels = [...sel(rows(d)[0], 0).options].map(o => o.textContent);
+    assert(labels[0] === "[*] #1 · " + startName[1] && labels[1] === "[*] #2 · " + startName[2], "start option labels carry the first match's values: " + labels.join(" | "));
+    assert([...sel(rows(d)[0], 1).options].map(o => o.textContent).join() === "[*] #1 · " + endName[1] + ",[*] #2 · " + endName[2], "end option labels likewise");
+    assert(!d.querySelector("#linkWildcardBox [data-map-remove]"), "the only mapping has no ×");
+    // + another adds a mapping (up to min(#start, #end) = 2), the button disappears at the limit.
+    fireClick(d.querySelector("#linkWildcardBox [data-map-add]"), w);
+    assert(rows(d).length === 2 && sel(rows(d)[1], 0).value === "1" && sel(rows(d)[1], 1).value === "1" && !d.querySelector("#linkWildcardBox [data-map-add]"), "+ another adds #2 = #2 and is gone at the limit");
+    assert(d.querySelectorAll("#linkWildcardBox [data-map-remove]").length === 2, "with two mappings each has a ×");
+    await waitFor(() => /0 pairs|^0/.test(txt(d.querySelector("#linkLiveMatch"))));
+    fireClick(rows(d)[1].querySelector("[data-map-remove]"), w);
+    assert(rows(d).length === 1 && sel(rows(d)[0], 0).value === "0", "× removes that mapping");
+    // The preview marks the key values in start and end text.
+    await waitFor(() => d.querySelectorAll("#linkResultsSamples mark.link-kv-0").length >= 2);
+    const marks = [...d.querySelectorAll("#linkResultsSamples .filter-sample-row")].map(r => [...r.querySelectorAll("mark.link-kv-0")].map(m => m.textContent));
+    assert(marks.some(m => m.length === 2 && m[0] === m[1]), "start and end text mark the same key value in mapping colour 0 (" + JSON.stringify(marks) + ")");
+    // Changing a select changes the key.
+    sel(rows(d)[0], 0).value = "1";
+    sel(rows(d)[0], 0).dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => /^0 /.test(txt(d.querySelector("#linkLiveMatch"))));
+    assert(rows(d).length === 1 && sel(rows(d)[0], 0).value === "1", "start #2 = end #1 (run id vs name) pairs nothing");
+    sel(rows(d)[0], 0).value = "0";
+    sel(rows(d)[0], 0).dispatchEvent(new w.Event("change", { bubbles: true }));
+    await waitFor(() => /pairs/.test(txt(d.querySelector("#linkLiveMatch"))) && !/^0 /.test(txt(d.querySelector("#linkLiveMatch"))));
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(JSON.stringify(node.linkKey) === '{"wildcards":[[0,0]]}' && node.name.includes("[same #1=#1]") && w.getEntries(node.id).length > 10, "Create stores the wildcards key and pairs");
+    // Edit restores the mappings.
+    const two = w.createLinkNodeFromBaked(f.id, w.bakedTextCondition(START), w.bakedTextCondition(END), "after", 1, { key: { wildcards: [[1, 1], [0, 0]] } });
+    w.openLinkDialog(w.linkSpecFromNode(two));
+    await waitFor(() => rows(d).length === 2);
+    assert(on(chip(d, "wildcards")) && sel(rows(d)[0], 0).value === "1" && sel(rows(d)[0], 1).value === "1" && sel(rows(d)[1], 0).value === "0", "Edit link… restores the chip and both mappings in order");
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    assert(JSON.stringify(two.linkKey) === '{"wildcards":[[1,1],[0,0]]}', "Save keeps them");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("link-wildcard-key f. dialog: the chip is disabled with a reason for plain sides and for 2+ steps; Nested + wildcards");
+    const [sim] = LOGSIM.generateToStrings({ scenarios: ["flows"], entries: 1500, seed: 7 });
+    const f = await w.addFile(sim.name, sim.text, () => {});
+    w.openLinkDialog({ rootId: f.id, start: { text: "started run=" }, hops: [{ text: END }] });
+    await waitFor(() => chip(d, "wildcards"));
+    assert(chip(d, "wildcards").disabled && /wildcard/.test(chip(d, "wildcards").title), "a plain-text Start: disabled, title explains (" + chip(d, "wildcards").title + ")");
+    fireClick(chip(d, "wildcards"), w);
+    assert(!on(chip(d, "wildcards")), "a disabled chip cannot be turned on");
+    const input = i => d.querySelectorAll("#linkSides .link-side")[i].querySelector("input.link-side-input");
+    linkDlgType(w, d, input(0), START);
+    await waitFor(() => !chip(d, "wildcards").disabled);
+    assert(!chip(d, "wildcards").disabled, "typing a wildcard Start enables it");
+    // a picked text filter with a wildcard pattern counts, too
+    const startNode = w.createFilterNode(f.id, "text", START);
+    w.openLinkDialog({ rootId: f.id, start: { nodeId: startNode.id }, hops: [{ text: END }] });
+    await waitFor(() => chip(d, "wildcards") && !chip(d, "wildcards").disabled);
+    assert(!chip(d, "wildcards").disabled, "a picked filter whose baked condition is a wildcard text condition keeps it enabled");
+    // 2+ steps: disabled with a title, and adding a step turns the key off
+    fireClick(chip(d, "wildcards"), w);
+    assert(on(chip(d, "wildcards")), "on");
+    fireClick(d.querySelector("#linkAddStep"), w);
+    await waitFor(() => chip(d, "wildcards").disabled);
+    assert(!on(chip(d, "wildcards")) && /single step/.test(chip(d, "wildcards").title), "a second step switches the key off and disables the chip (" + chip(d, "wildcards").title + ")");
+    w.closeLinkDialog();
+    // Nested + wildcards, created from the dialog
+    w.openLinkDialog({ rootId: f.id, start: { text: START }, hops: [{ text: END }] });
+    await waitFor(() => chip(d, "wildcards") && !chip(d, "wildcards").disabled);
+    fireClick(chip(d, "wildcards"), w);
+    fireClick(d.querySelector('#linkPairingSeg [data-pairing="nested"]'), w);
+    await waitFor(() => /pairs/.test(txt(d.querySelector("#linkLiveMatch"))));
+    fireClick(d.querySelector("#linkDialogCreate"), w);
+    const node = T.state.nodes[T.state.activeId];
+    assert(node.linkPairing === "nested" && JSON.stringify(node.linkKey) === '{"wildcards":[[0,0]]}' && w.getEntries(node.id).length > 10, "Create: nested with the wildcards key");
+    w.openLinkDialog(w.linkSpecFromNode(node));
+    await waitFor(() => rows(d).length === 1);
+    assert(on(d.querySelector('#linkPairingSeg [data-pairing="nested"]')) && on(chip(d, "wildcards")) && rows(d).length === 1, "Edit: Nested pressed, wildcards chip on with its mapping");
+  }, { indexedDB: new IDBFactory() });
+}
