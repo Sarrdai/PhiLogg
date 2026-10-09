@@ -46,7 +46,7 @@ await withApp(async (w, d, T) => {
   const menuChildren = [...d.querySelector("#contextMenu").children];
   assert(menuChildren[0].id === "ctxMeta", "sanity: the timestamp meta row is still the menu's first child");
   const tokens = menuChildren.map(c => c.id || (c.classList.contains("ctx-sep") ? "sep" : c.classList.contains("ctx-head") ? "head:" + c.textContent : "?"));
-  const expectedOrder = ["ctxMeta", "sep", "head:Filter", "ctxFilterForColumn", "ctxExtractMessage",
+  const expectedOrder = ["ctxMeta", "sep", "ctxCopySelection", "sep", "head:Filter", "ctxFilterForColumn", "ctxExtractMessage",
     "sep", "head:Time filter", "ctxBefore", "ctxAfter", "ctxTimeRangeFromSelection",
     "sep", "head:Analyze", "ctxWhyRow", "ctxPairWith", "ctxTimeZero",
     "sep", "head:Mark", "ctxBookmark", "ctxNote", "ctxAddToSelection",
