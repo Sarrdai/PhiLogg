@@ -8,8 +8,9 @@
    (analysisGroupBy with dtOf/unpaired): per value the pair count, the starts without an
    end and a Δt stroke (min—max, median tick) on one scale per section; header line
    “A” → “B” · N pairs · M without end; sort Count | Median Δt | Without end. A click on a
-   Level/Thread/Location/Method value adds the filter under the link node (Alt = NOT);
-   custom columns and Source can't be filtered on a pair, so those values are not clickable.
+   value adds the filter under the link node (Alt = NOT);
+   custom columns and Source values are clickable too (backlog #123: a pair carries its start's
+   fields/sourceId), creating a child filter whose entry count equals the facet count.
    Normal nodes keep their facets. Sample data: tools/log-sim (motion, basic, sensors, custom format).
    ============================================================ */
 group("link-facets-dt");
@@ -164,7 +165,7 @@ if (groupSelected()) {
   }, { indexedDB: new IDBFactory() });
 
   await withApp(async (w, d, T) => {
-    section("link-facets-dt d. custom columns: values shown but not clickable (open point), level quick filter narrows the counts");
+    section("link-facets-dt d. custom columns and Source: values clickable (#123), LLM create_filter on a custom column, level quick filter narrows the counts");
     await logsimRegister(w, T, "custom", "fmt-custom-dt");
     const [file] = LOGSIM.generateToStrings({ format: "custom", scenarios: ["motion", "basic"], entries: 3000, seed: 4 });
     const f = await w.addFile(file.name, file.text, () => {});
@@ -176,11 +177,22 @@ if (groupSelected()) {
     const custom = keys.filter(k => !["thread", "location", "method", "level"].includes(k));
     assert(custom.length >= 1, "the custom format adds columns: " + keys.join());
     const cs = section_(d, custom[0]);
-    assert(rowsOf(cs).length >= 1 && rowsOf(cs).every(r => r.classList.contains("facet-value-static")), "custom column values are static");
+    assert(rowsOf(cs).length >= 1 && rowsOf(cs).every(r => !r.classList.contains("facet-value-static")), "custom column values are clickable");
+    // click a custom-column value: child filter under the link with as many entries as the facet count
+    const crow = rowsOf(cs)[0];
+    const cval = crow.querySelector(".facet-value-name").textContent;
+    const ccount = +crow.querySelector(".facet-count").textContent.replace(/\D/g, "");
+    assert(ccount > 0, "custom value has pairs: " + ccount);
     const n0 = Object.keys(T.state.nodes).length;
-    fireClick(rowsOf(cs)[0], w);
-    rowsOf(cs)[0].dispatchEvent(new w.MouseEvent("contextmenu", { bubbles: true, cancelable: true }));
-    assert(Object.keys(T.state.nodes).length === n0 && T.state.activeId === link.id, "clicking a custom value creates nothing");
+    fireClick(crow, w);
+    const cchild = T.state.nodes[T.state.activeId];
+    assert(Object.keys(T.state.nodes).length === n0 + 1 && cchild.parentId === link.id, "custom value click creates a child filter under the link");
+    assert(w.getEntries(cchild.id).length === ccount, "custom child filter count " + w.getEntries(cchild.id).length + " = facet count " + ccount);
+    // LLM create_filter with a custom column on the link node
+    const llm = llmRun(w, "create_filter", { parentId: link.id, column: custom[0], pattern: cval });
+    assert(llm.result && llm.result.matches === ccount && llm.result.parentId === link.id, "LLM create_filter(column=" + custom[0] + ") on the link: " + JSON.stringify(llm.result || llm.error));
+    T.state.activeId = link.id; w.render();
+    await waitFor(() => body.querySelector(".facet-link-head"), 3000);
     // Level quick filter: INFO only → fewer pairs, header follows
     const all = w.getEntries(link.id).length;
     T.state.levelFilter = new Set(["INFO"]);
@@ -188,6 +200,26 @@ if (groupSelected()) {
     await waitFor(() => /pairs/.test(txt(body.querySelector(".facet-link-sum"))) && txt(body.querySelector(".facet-link-sum")).includes(" " + w.applyLevelFilter(w.getEntries(link.id)).length + " pairs"), 3000);
     assert(w.applyLevelFilter(w.getEntries(link.id)).length <= all, "level filter applied to the pairs for the facets");
     T.state.levelFilter = new Set(); w.render();
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("link-facets-dt d2. Source facet on a link over a merge: idset child with the facet's pair count");
+    const [fa] = LOGSIM.generateToStrings({ scenarios: ["motion", "basic"], entries: 1500, seed: 3 });
+    const [fb] = LOGSIM.generateToStrings({ scenarios: ["motion", "basic"], entries: 1500, seed: 4 });
+    const a = await w.addFile("src-a.log", fa.text, () => {});
+    const b = await w.addFile("src-b.log", fb.text, () => {});
+    const merged = await w.mergeFiles([a.id, b.id]);
+    const link = w.createLinkNodeFromBaked(merged.id, w.bakedTextCondition("Move requested"), w.bakedTextCondition("Position reached"), "after", 1, { key: { pattern: "job=[*:word]" } });
+    T.state.activeId = link.id; T.state.entriesView = "filter"; w.setFacetsOpen(true); w.render();
+    const body = d.querySelector("#facetPanelBody");
+    await waitFor(() => body.querySelector(".facet-link-head") && section_(d, "__source"), 3000);
+    const srows = rowsOf(section_(d, "__source"));
+    assert(srows.length === 2, "two sources: " + srows.length);
+    const srow = srows[0];
+    const scount = +srow.querySelector(".facet-count").textContent.replace(/\D/g, "");
+    fireClick(srow, w);
+    const schild = T.state.nodes[T.state.activeId];
+    assert(scount > 0 && schild.parentId === link.id && schild.filterType === "idset" && w.getEntries(schild.id).length === scount, "Source click: idset child with " + scount + " pairs, got " + w.getEntries(schild.id).length);
   }, { indexedDB: new IDBFactory() });
 
   await withApp(async (w, d, T) => {

@@ -1,0 +1,4 @@
+- **feat: every Facets value on a link node is clickable (2026-10-09, backlog #123)**
+  - Link pairs now carry their start entry's custom-column `fields` and `sourceId` (`buildPairEntry`), so custom-column and Source values in a link node's Facets create a working child filter whose count equals the facet count; the LLM tool `create_filter` with `column` works for those columns on a link node too.
+  - Removed the static-value special case (`LINK_FACET_PAIR_KEYS`, `.facet-value-static`).
+  - **Tests**: GROUP link-facets-dt. Docs: docs/ui-and-views.md.

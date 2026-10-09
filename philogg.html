@@ -3356,8 +3356,6 @@
   }
   .facet-link-sum{flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
   .facet-value-link{grid-template-columns:minmax(0,1fr) 42px 40px 120px; --facet-bar-r:228px;}
-  .facet-value-link.facet-value-static{cursor:default;}
-  .facet-value-link.facet-value-static:hover{background:transparent; color:var(--text-secondary);}
   .facet-value-link.facet-link-colhead{cursor:default; font-size:10px; font-weight:650; color:var(--text-tertiary); white-space:nowrap;}
   .facet-value-link.facet-link-colhead > span{overflow:hidden; text-overflow:ellipsis;}
   body.layout-phone .facet-value-link.facet-link-colhead{min-height:0; font-size:10px;}
@@ -14992,24 +14990,33 @@ function wildcardMatch(regex, columns, text) {
 }
 
 // Base name for an extraction column: the word right before its placeholder
-// ("temperature=[*:float]" -> "temperature"), skipping stop words; no usable
-// word -> "value". Case is preserved.
+// ("temperature=[*:float]" -> "temperature"), skipping stop words and ALL-CAPS
+// words (GET, POST, OK: values, not names — unless glued to "="/":", then it is
+// a key: "HTTP=[*]" -> "HTTP"); no usable word -> `fallback` ("value", or the
+// placeholder's unit, see compileExtractPattern). Case is preserved.
 const EXTRACT_NAME_STOP_WORDS = new Set(["in", "at", "of", "after", "to", "for", "by", "from", "with", "is", "was", "the", "a", "an", "on"]);
 // Short English words that follow a placeholder but are not units ("v=[*:float] and more").
 const EXTRACT_UNIT_STOP_WORDS = new Set(["and", "or", "in", "at", "to", "of", "on", "for", "is", "was", "the", "a", "an", "by", "if", "not", "per", "via", "but"]);
-function deriveExtractColumnBase(before) {
+function deriveExtractColumnBase(before, fallback = "value") {
+  const keyed = /[=:]$/.test(before.trimEnd()); // the last word is a "key=" / "key:" name
   const t = before.trimEnd().replace(/[=:]$/, "").trimEnd();
-  if (!/[A-Za-z_][\w.-]*$/.test(t)) return "value";
+  if (!/[A-Za-z_][\w.-]*$/.test(t)) return fallback;
   const ws = t.split(/\s+/).filter(Boolean);
-  let j = ws.length - 1;
-  while (j >= 0 && EXTRACT_NAME_STOP_WORDS.has(ws[j].toLowerCase())) j--;
-  if (j < 0) return "value";
+  const lastIdx = ws.length - 1;
+  const skippable = (word, idx) => {
+    if (EXTRACT_NAME_STOP_WORDS.has(word.toLowerCase())) return true;
+    const tail = word.match(/[A-Za-z_][\w.-]*$/);
+    return !!tail && /^[A-Z]{2,}$/.test(tail[0]) && !(keyed && idx === lastIdx);
+  };
+  let j = lastIdx;
+  while (j >= 0 && skippable(ws[j], j)) j--;
+  if (j < 0) return fallback;
   // "job=J-[*:int]": a short literal prefix glued to the placeholder after
   // "key=" / "key:" names the column after the key ("job"), not the prefix ("J-").
   const kp = /^([A-Za-z_][\w.-]*)[=:]([A-Za-z][\w.-]{0,5})$/.exec(ws[j]);
   if (kp && /\S$/.test(before) && !EXTRACT_NAME_STOP_WORDS.has(kp[1].toLowerCase())) return kp[1];
   const w = ws[j].match(/[A-Za-z_][\w.-]*$/);
-  return w && !EXTRACT_NAME_STOP_WORDS.has(w[0].toLowerCase()) ? w[0] : "value";
+  return w && !EXTRACT_NAME_STOP_WORDS.has(w[0].toLowerCase()) ? w[0] : fallback;
 }
 // Unit word right after a placeholder ("C", "mm", "%", "m/s"): 1-4 chars, must
 // start with a letter/°/%/µ (so a "/" separator is never a unit), not an
@@ -15153,7 +15160,10 @@ function compileExtractPattern(pattern) {
     if ((m[2] || m[3]) && !VALUE_CONDITION_TYPES.has(type)) return null; // formats/conditions only make sense on float/int
     const conditions = parseValueConditions(m[3]);
     const tinfo = tuple[columns.length];
-    const base = tinfo ? tinfo.name : deriveExtractColumnBase(pattern.slice(lastIndex, m.index));
+    // No usable word before a numeric placeholder that has a unit: the unit names the column.
+    const numericType = type === "float" || type === "int" || type === "hex";
+    const ownUnit = numericType ? extractUnitAfter(pattern.slice(EXTRACT_TOKEN_RE.lastIndex, scanned[columns.length + 1] ? scanned[columns.length + 1].start : pattern.length)) : undefined;
+    const base = tinfo ? tinfo.name : deriveExtractColumnBase(pattern.slice(lastIndex, m.index), ownUnit || "value");
     nameCounts[base] = (nameCounts[base] || 0) + 1;
     const name = nameCounts[base] > 1 ? base + " " + nameCounts[base] : base;
     const col = { name, type };
@@ -16681,6 +16691,11 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
     thread: refEntry.thread,
     location: refEntry.location,
     method: refEntry.method,
+    // Custom-column values and the source of the reference entry, so a text filter on a
+    // custom column / the Source idset also works on pairs (a chained link's reference is a
+    // pair that already carries its own start's values).
+    fields: refEntry.fields,
+    sourceId: refEntry.sourceId,
     message: first.message + PAIR_SEPARATOR + second.message,
     raw: first.raw + PAIR_SEPARATOR + second.raw,
   };
@@ -19678,25 +19693,19 @@ function facetColumnsKey(nodeId) { return (isLinkNode(state.nodes[nodeId]) ? "li
 
 /* On a LINK node the facets break down the PAIRS by the columns of their START entry (the reference
    side of the link): per value the pair count, how many starts stayed without an end, and the Δt
-   span (analysisGroupBy with dtOf/unpaired — the engine behind the LLM tool group_by). Level,
-   Thread, Location and Method are read off the pair itself (a pair carries its start's values, so
-   the value a click filters on is exactly what a child filter of the link sees); custom columns and
-   Source come from the real start entry and can't be filtered on a pair, so those values are not
-   clickable (linkFacetFilterable). */
-const LINK_FACET_PAIR_KEYS = new Set(["level", "thread", "location", "method"]);
-function linkFacetFilterable(key) { return LINK_FACET_PAIR_KEYS.has(key); }
+   span (analysisGroupBy with dtOf/unpaired — the engine behind the LLM tool group_by). A pair
+   carries its start's level/thread/location/method, custom-column `fields` and `sourceId`
+   (buildPairEntry), so every column's values are read straight off the pair and a click filters
+   on exactly what a child filter of the link sees — all link facet columns are clickable. */
 // The real log entry a pair (or a reference without an end) starts from: for a chained link the
 // reference side is itself a pair, so follow the reference side down.
 function linkStartEntry(e) {
   while (e && e.isPair) e = e.first === e.matchEntry ? e.second : e.first;
   return e;
 }
-function linkFacetColumnsFor(nodeId) {
-  return facetColumnsFor(nodeId).map(c => LINK_FACET_PAIR_KEYS.has(c.key) ? c : { ...c, value: e => c.value(linkStartEntry(e)) });
-}
 function createLinkFacetAcc(nodeId) {
   const node = state.nodes[nodeId];
-  const cols = linkFacetColumnsFor(nodeId);
+  const cols = facetColumnsFor(nodeId);
   const pairs = [];
   return {
     step(e) { pairs.push(e); },
@@ -19713,7 +19722,7 @@ function createLinkFacetAcc(nodeId) {
             for (const b of Object.keys(v.levels)) { const r = levelSortRank(b, null); if (r < rank) { rank = r; cls = levelClass(b, null); } }
             return [v.value, v.count, cls, { noEnd: v.noEnd || 0, dtMs: v.dtMs || null }];
           });
-          return { key: col.key, label: col.label, values, dtMax, filterable: linkFacetFilterable(col.key) };
+          return { key: col.key, label: col.label, values, dtMax };
         }),
       };
     },
@@ -20410,8 +20419,8 @@ function renderLinkFacetPanel(result) {
             '<span class="facet-dt-rng" style="left:' + (dt.min / scale * 100).toFixed(2) + "%;width:" + Math.max(0, (dt.max - dt.min) / scale * 100).toFixed(2) + '%"></span>' +
             '<span class="facet-dt-med" style="left:' + (dt.median / scale * 100).toFixed(2) + '%"></span></span>'
           : '<span class="facet-dt"></span>';
-        html += '<div class="facet-value facet-value-link' + (col.filterable ? "" : " facet-value-static") + '" data-idx="' + i + '" title="' +
-          escapeHtml((value || "(empty)") + (col.filterable ? " — click: filter · Alt+click / right-click: exclude" : "")) + '">' +
+        html += '<div class="facet-value facet-value-link" data-idx="' + i + '" title="' +
+          escapeHtml((value || "(empty)") + " — click: filter · Alt+click / right-click: exclude") + '">' +
           '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(count ? 1 : 0, Math.round(count / max * 100)) + '%"></i></span>' +
           '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
@@ -20621,7 +20630,7 @@ facetPanelBody.addEventListener("click", ev => {
     return;
   }
   const row = ev.target.closest(".facet-value");
-  if (!row || row.classList.contains("facet-link-colhead") || col.filterable === false) return;
+  if (!row || row.classList.contains("facet-link-colhead")) return;
   const entry = col.values[+row.dataset.idx];
   if (entry) createFacetFilter(col, entry[0], ev.altKey);
 });
@@ -20633,7 +20642,7 @@ facetPanelBody.addEventListener("contextmenu", ev => {
   ev.preventDefault();
   ev.stopPropagation();
   const col = result.columns.find(c => c.key === section.dataset.col);
-  const entry = col && col.filterable !== false && !row.classList.contains("facet-link-colhead") && col.values[+row.dataset.idx];
+  const entry = col && !row.classList.contains("facet-link-colhead") && col.values[+row.dataset.idx];
   if (!entry) return;
   // A touch long-press (synthesized by the global helper above, it sets
   // longPressFired first) opens a menu instead of silently excluding.
@@ -24127,8 +24136,12 @@ function findExtractColumn(colIndex) {
 }
 // Plot axis / color-bar title: the column name plus its compiled unit
 // ("temperature [C]"); a rename changes the name only, the unit stays.
+// A column named after its own unit ("ms" for "([*:int] ms)") shows no bracket.
+function columnUnitSuffix(col) {
+  return col.unit && col.unit !== col.name ? " [" + col.unit + "]" : "";
+}
 function columnAxisLabel(col) {
-  return col.name + (col.unit ? " [" + col.unit + "]" : "");
+  return col.name + columnUnitSuffix(col);
 }
 /* ===================== Array columns in the extraction table =====================
    A pattern column whose every non-empty value is a JSON array (typically
@@ -28339,7 +28352,7 @@ function renderExtractTable(node) {
     // extractHead.innerHTML below).
     const nameHtml = renamingColIndex === i
       ? '<input type="text" class="extract-col-rename-input" data-col="' + i + '" value="' + escapeHtml(c.name) + '">'
-      : escapeHtml(c.name) + '<span class="extract-col-type">' + escapeHtml(c.type + (condLabel ? " " + condLabel : "")) + '</span>';
+      : escapeHtml(columnAxisLabel(c)) + '<span class="extract-col-type">' + escapeHtml(c.type + (condLabel ? " " + condLabel : "")) + '</span>';
     // An array column's view toggle sits on the first column of its group
     // (the joined/exploded column itself, or [0] / .len).
     const arrayBtn = c.arrayBase != null && extractColumns.find(x => x.arrayBase === c.arrayBase) === c

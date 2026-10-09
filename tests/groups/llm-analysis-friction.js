@@ -24,7 +24,7 @@ await withApp(async (w, d, T) => {
   const own = llmRun(w, "get_value_stats", { nodeId: child.nodeId, column: "1" }).result;
   assert(own.column.name === "status" && own.column.index === 1 && own.min >= 400, "number 1 still means the nearest extraction's first column");
   const no2 = llmRun(w, "get_value_stats", { nodeId: child.nodeId, column: "2" });
-  assert(no2.error && no2.error.includes("completed (from " + parent.nodeId + ")") && no2.error.includes("GET (from " + parent.nodeId + ")"), "number 2 is not an ancestor column; the error lists names with their origin, got " + no2.error);
+  assert(no2.error && no2.error.includes("completed (from " + parent.nodeId + ")") && no2.error.includes("Request (from " + parent.nodeId + ")"), "number 2 is not an ancestor column; the error lists names with their origin, got " + no2.error);
   const clash = llmRun(w, "get_value_stats", { nodeId: child.nodeId, column: "status" }).result;
   assert(clash.column.index === 1 && clash.min >= 400 && !clash.column.from, "name clash: the nearest extraction wins");
   const g = llmRun(w, "group_by", { nodeId: child.nodeId, column: "completed" });
