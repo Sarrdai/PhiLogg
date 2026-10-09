@@ -1957,6 +1957,48 @@
   .minimap-full-range.hidden{display:none;}
   .minimap-rendered-range{fill:var(--accent); opacity:.3; stroke:var(--accent-strong); stroke-width:1;}
   .minimap-rendered-range.hidden{display:none;}
+  /* Burst flags: an overlay on top of the strip (JS sets its top/height to the <svg>'s box). Only the flags
+     take pointer events (>= 24px wide); band and stem are decoration, so click-to-jump and drag-select
+     keep the rest of the strip. */
+  #minimapBursts{position:absolute; left:0; right:0; top:0; height:0; pointer-events:none; z-index:3;}
+  .minimap-burst-band{position:absolute; top:0; bottom:0; background:var(--level-error-soft); border-left:1px solid var(--level-error); border-right:1px solid var(--level-error); box-sizing:border-box; pointer-events:none;}
+  .minimap-burst-stem{position:absolute; top:16px; bottom:0; width:1px; margin-left:-0.5px; background:var(--level-error); opacity:.5; pointer-events:none;}
+  .minimap-burst{
+    position:absolute; top:1px; height:16px; min-width:24px; padding:0 3px; transform:translateX(-50%); box-sizing:border-box;
+    display:flex; align-items:center; justify-content:center; background:none; border:0; cursor:pointer; pointer-events:auto;
+  }
+  .minimap-burst-flag{
+    font:700 10px/14px var(--font-mono); font-variant-numeric:tabular-nums; background:var(--level-error); color:var(--bg-app);
+    border-radius:3px; padding:0 4px; white-space:nowrap;
+  }
+  .minimap-burst:hover .minimap-burst-flag{filter:brightness(1.15);}
+  .minimap-burst:focus-visible{outline:2px solid var(--accent); outline-offset:1px; border-radius:3px;}
+  .minimap-burst.sel .minimap-burst-flag{outline:2px solid var(--text-primary); outline-offset:0;}
+  .minimap-burst-chip{
+    position:absolute; top:3px; right:8px; z-index:4; font:inherit; font-size:10.3px; font-family:var(--font-mono); line-height:13px;
+    padding:0 7px; border:1px solid var(--border); border-radius:999px; background:var(--bg-panel); color:var(--text-tertiary); cursor:pointer;
+  }
+  .minimap-burst-chip:hover{border-color:var(--accent); color:var(--text-secondary);}
+  .minimap-burst-chip[aria-pressed="true"]{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
+  .minimap-burst-chip.hidden{display:none;}
+  #timelineMinimap.has-burst-chip #timelineMinimapMeta{padding-right:74px;}
+  body.layout-phone .minimap-burst-chip{display:none;}
+  body.layout-phone .minimap-burst{min-width:24px; height:18px; top:0;}
+  #burstPopover{
+    position:fixed; z-index:60; box-sizing:border-box; width:min(380px, calc(100vw - 16px)); padding:10px 12px;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; box-shadow:0 12px 30px rgba(0,0,0,.5);
+    font-size:12.3px; color:var(--text-primary);
+  }
+  #burstPopover.hidden{display:none;}
+  .burst-pop-title{font-size:13px; font-weight:650; margin-bottom:4px; font-variant-numeric:tabular-nums;}
+  .burst-pop-row{display:flex; justify-content:space-between; gap:10px; padding:2px 0; color:var(--text-secondary);}
+  .burst-pop-factor{color:var(--level-error); font-weight:650; white-space:nowrap;}
+  .burst-pop-levels{display:flex; flex-wrap:wrap; gap:2px 10px; padding:2px 0 4px; font-size:11.5px; font-weight:650; font-variant-numeric:tabular-nums;}
+  .burst-pop-pat{display:flex; justify-content:space-between; gap:10px; padding:2px 0; font-size:11.5px;}
+  .burst-pop-pat-text{font-family:var(--font-mono); min-width:0; overflow-wrap:anywhere;}
+  .burst-pop-pat-n{color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .burst-pop-actions{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-top:10px;}
+  body.layout-phone .burst-pop-actions button{min-height:40px;}
   .minimap-marker-line{fill:var(--text-primary); opacity:.9; pointer-events:none;}
   .minimap-marker-flag{fill:var(--text-primary); pointer-events:none;}
   #timelineMinimapTooltip{
@@ -3144,6 +3186,27 @@
   .facet-value > :not(.facet-bar){position:relative;}
   .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
   .facet-pct{color:var(--text-tertiary);}
+  /* Link node: values with pairs / no end / a Δt stroke; the sections need more room than the plain ones. */
+  #facetPanelBody.facet-link{grid-template-columns:repeat(auto-fill, minmax(400px, 1fr));}
+  #facetPanelBody > .facet-link-head{
+    grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:2px 12px 6px;
+    font-size:11.5px; color:var(--text-secondary);
+  }
+  .facet-link-sum{flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
+  .facet-value-link{grid-template-columns:minmax(0,1fr) 42px 40px 120px;}
+  .facet-value-link.facet-value-static{cursor:default;}
+  .facet-value-link.facet-value-static:hover{background:transparent; color:var(--text-secondary);}
+  .facet-value-link.facet-link-colhead{cursor:default; font-size:10px; font-weight:650; color:var(--text-tertiary); white-space:nowrap;}
+  .facet-value-link.facet-link-colhead > span{overflow:hidden; text-overflow:ellipsis;}
+  body.layout-phone .facet-value-link.facet-link-colhead{min-height:0; font-size:10px;}
+  .facet-value-link.facet-link-colhead:hover{background:transparent; color:var(--text-tertiary);}
+  .facet-value-link.facet-link-colhead > span:nth-child(2), .facet-value-link.facet-link-colhead > span:nth-child(3){text-align:right;}
+  .facet-noend{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px; color:var(--warn);}
+  .facet-dt{position:relative; height:14px; min-width:0;}
+  .facet-dt-rng{position:absolute; top:6px; height:2px; min-width:2px; background:var(--text-tertiary); border-radius:1px;}
+  .facet-dt-med{position:absolute; top:2px; width:2px; height:10px; margin-left:-1px; background:var(--accent); border-radius:1px;}
+  body.layout-phone #facetPanelBody.facet-link{grid-template-columns:minmax(0,1fr);}
+  body.layout-phone .facet-value-link{grid-template-columns:minmax(0,1fr) 38px 38px 100px;}
   .facet-more{padding:2px 12px 4px 28px; font-size:11px; color:var(--accent-strong); cursor:pointer;}
   .facet-more:hover{text-decoration:underline;}
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
@@ -3287,6 +3350,27 @@
   }
   .link-un-chip[aria-pressed="true"]{background:color-mix(in srgb, var(--warn) 18%, transparent);}
   .link-un-chip.hidden{display:none;}
+  .link-un-why{font-size:11.5px; color:var(--warn); min-width:0;}
+  .link-un-why b{font-weight:650;}
+  .link-un-why.hidden, .link-un-why-btn.hidden, .link-un-why-details.hidden{display:none;}
+  .link-un-why-btn{
+    font:inherit; font-size:11.5px; color:var(--text-secondary); background:transparent;
+    border:1px solid var(--border); border-radius:6px; padding:1px 8px; cursor:pointer;
+  }
+  .link-un-why-btn:hover, .link-un-why-btn[aria-expanded="true"]{border-color:var(--accent); color:var(--accent-strong);}
+  .link-un-why-details{
+    flex:1 1 100%; display:grid; gap:2px; padding:6px 8px; border:1px solid var(--warn); border-radius:6px;
+    background:color-mix(in srgb, var(--warn) 8%, transparent); font-size:12px;
+  }
+  .link-un-why-row{
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; align-items:baseline; text-align:left;
+    font:inherit; color:var(--text-primary); background:transparent; border:0; border-radius:4px; padding:2px 4px; cursor:pointer;
+  }
+  .link-un-why-row:hover{background:var(--bg-elevated);}
+  .link-un-why-row .link-un-why-n{font-variant-numeric:tabular-nums; font-family:var(--font-mono); color:var(--text-secondary);}
+  .link-un-why-row .link-un-why-p{font-family:var(--font-mono); font-size:11.5px; overflow-wrap:anywhere;}
+  .link-un-why-row .link-un-why-m{color:var(--text-tertiary); font-size:11.5px; white-space:nowrap;}
+  body.layout-phone .link-un-why-btn, body.layout-phone .link-un-why-row{min-height:36px;}
   #linkToolbar .link-hint{flex:1 1 100%; font-size:10.8px; color:var(--text-tertiary); text-align:left;}
   .pair-block.pair-unmatched .pair-brace{border-left-style:dashed; border-left-color:var(--warn);}
   .pair-missing{
@@ -6216,6 +6300,9 @@
         <div id="timelineMinimapMeta"></div>
         <div id="timelineMinimapOverview" aria-hidden="true"><div id="timelineMinimapOverviewBox"></div></div>
         <svg id="timelineMinimapSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        <!-- Burst flags (renderMinimapBursts): HTML siblings of the <svg>, so its click/drag handlers never see them. -->
+        <div id="minimapBursts"></div>
+        <button type="button" id="minimapBurstChip" class="minimap-burst-chip hidden" aria-pressed="true" title="Mark bursts on the minimap">Bursts</button>
         <div id="timelineMinimapEdgeL" class="minimap-edge minimap-edge-l" aria-hidden="true">&lsaquo;</div>
         <div id="timelineMinimapEdgeR" class="minimap-edge minimap-edge-r" aria-hidden="true">&rsaquo;</div>
         <div id="timelineMinimapTooltip" class="hidden"></div>
@@ -6532,6 +6619,10 @@
               <!-- Pairs' references without an end (node._linkUnmatched): off -> inline -> only these. View only. -->
               <button type="button" id="linkUnChip" class="link-un-chip hidden" aria-pressed="false"></button>
               <span id="linkStats"></span>
+              <!-- Why the pairs' references have no end: what typically follows them (analysisNeighbors, see renderLinkUnpairedWhy). -->
+              <span id="linkUnWhy" class="link-un-why hidden"></span>
+              <button type="button" id="linkUnWhyBtn" class="link-un-why-btn hidden" aria-expanded="false" aria-controls="linkUnWhyDetails">Details</button>
+              <div id="linkUnWhyDetails" class="link-un-why-details hidden"></div>
               <span class="link-toolbar-sp"></span>
               <span class="link-sort-lab">Sort</span>
               <span class="link-seg" id="linkSortSeg" role="group" aria-label="Sort">
@@ -6854,6 +6945,15 @@
     <div class="ctx-sep"></div>
     <div class="ctx-head">Copy</div>
     <div class="ctx-item" data-act="copy">Copy value</div>
+  </div>
+
+  <!-- Burst details (click on a minimap burst flag, see openBurstPopover): range, counts, top patterns and the actions. -->
+  <div id="burstPopover" class="hidden" role="dialog" aria-label="Burst details">
+    <div class="burst-pop-title" id="burstPopTitle"></div>
+    <div class="burst-pop-row"><span id="burstPopCount"></span><span class="burst-pop-factor" id="burstPopFactor"></span></div>
+    <div class="burst-pop-levels" id="burstPopLevels"></div>
+    <div class="burst-pop-patterns" id="burstPopPatterns"></div>
+    <div class="burst-pop-actions" id="burstPopActions"></div>
   </div>
 
   <!-- Touch long-press menu on a phone Patterns card (see openPatternMenu). No Extract on the phone. -->
@@ -7891,6 +7991,15 @@
               </div>
               <div class="settings-row-control">
                 <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsHideMinimapFullRangeInFullView"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsMinimapBursts">Burst flags</label>
+                <div class="settings-row-hint">Marks the active node's bursts with a count flag.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="true" class="pill-toggle on" id="settingsMinimapBursts"></button>
               </div>
             </div>
             <div class="settings-row">
@@ -10437,6 +10546,10 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
 // that's the single place the box's visibility is ever decided.
 const HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY = "philogg-hide-minimap-full-range-in-full-view";
 let hideMinimapFullRangeInFullView = false;
+// Burst flags on the minimap (renderMinimapBursts). On by default, so the key is read as "not an explicit 0";
+// the Settings switch and the "Bursts" chip in the minimap are two views of this one state (setMinimapBursts).
+const MINIMAP_BURSTS_KEY = "philogg-minimap-bursts";
+let showMinimapBursts = true;
 
 // Whether the tree's "Sources" node (see createMergeShell/renderNode) shows
 // at all — a pure display toggle, default ON (unlike most settings here,
@@ -10511,6 +10624,11 @@ function initMinimapFullRangeSetting() {
   if (cb) pillSet(cb, hideMinimapFullRangeInFullView);
 }
 
+function initMinimapBurstsSetting() {
+  try { showMinimapBursts = localStorage.getItem(MINIMAP_BURSTS_KEY) !== "0"; } catch { showMinimapBursts = true; }
+  pillSet(document.getElementById("settingsMinimapBursts"), showMinimapBursts);
+}
+
 // Default true, so this checks for the ABSENCE of an explicit "0" rather
 // than the presence of "1" (opposite polarity from most toggles here,
 // which default off) — a never-set key must still read as "on".
@@ -10583,6 +10701,8 @@ document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListen
   // the next unrelated render/scroll happened to call updateMinimapFullRange.
   updateMinimapFullRange();
 });
+
+document.getElementById("settingsMinimapBursts").addEventListener("change", ev => setMinimapBursts(pillGet(ev.target)));
 
 document.getElementById("settingsShowSources").addEventListener("change", ev => {
   showSourcesSetting = pillGet(ev.target);
@@ -19256,9 +19376,53 @@ function facetColumnsFor(nodeId) {
   }
   return cols;
 }
-function facetColumnsKey(nodeId) { return facetColumnsFor(nodeId).map(c => c.key).join(","); }
+function facetColumnsKey(nodeId) { return (isLinkNode(state.nodes[nodeId]) ? "link:" : "") + facetColumnsFor(nodeId).map(c => c.key).join(","); }
 
+/* On a LINK node the facets break down the PAIRS by the columns of their START entry (the reference
+   side of the link): per value the pair count, how many starts stayed without an end, and the Δt
+   span (analysisGroupBy with dtOf/unpaired — the engine behind the LLM tool group_by). Level,
+   Thread, Location and Method are read off the pair itself (a pair carries its start's values, so
+   the value a click filters on is exactly what a child filter of the link sees); custom columns and
+   Source come from the real start entry and can't be filtered on a pair, so those values are not
+   clickable (linkFacetFilterable). */
+const LINK_FACET_PAIR_KEYS = new Set(["level", "thread", "location", "method"]);
+function linkFacetFilterable(key) { return LINK_FACET_PAIR_KEYS.has(key); }
+// The real log entry a pair (or a reference without an end) starts from: for a chained link the
+// reference side is itself a pair, so follow the reference side down.
+function linkStartEntry(e) {
+  while (e && e.isPair) e = e.first === e.matchEntry ? e.second : e.first;
+  return e;
+}
+function linkFacetColumnsFor(nodeId) {
+  return facetColumnsFor(nodeId).map(c => LINK_FACET_PAIR_KEYS.has(c.key) ? c : { ...c, value: e => c.value(linkStartEntry(e)) });
+}
+function createLinkFacetAcc(nodeId) {
+  const node = state.nodes[nodeId];
+  const cols = linkFacetColumnsFor(nodeId);
+  const pairs = [];
+  return {
+    step(e) { pairs.push(e); },
+    finish() {
+      const unpaired = applyLevelFilter(node._linkUnmatched || []);
+      return {
+        link: true, pairs: pairs.length, noEnd: unpaired.length,
+        columns: cols.map(col => {
+          const g = analysisGroupBy(pairs, col.value, { max: Infinity, dtOf: e => e.dtMs, unpaired });
+          let dtMax = 0;
+          const values = g.values.map(v => {
+            if (v.dtMs && v.dtMs.max > dtMax) dtMax = v.dtMs.max;
+            let rank = Infinity, cls = "";
+            for (const b of Object.keys(v.levels)) { const r = levelSortRank(b, null); if (r < rank) { rank = r; cls = levelClass(b, null); } }
+            return [v.value, v.count, cls, { noEnd: v.noEnd || 0, dtMs: v.dtMs || null }];
+          });
+          return { key: col.key, label: col.label, values, dtMax, filterable: linkFacetFilterable(col.key) };
+        }),
+      };
+    },
+  };
+}
 function createFacetAcc(nodeId) {
+  if (isLinkNode(state.nodes[nodeId])) return createLinkFacetAcc(nodeId);
   const cols = facetColumnsFor(nodeId);
   // value -> { count, rank, level, formatId }: rank/level track the most
   // severe level among the value's entries (same ranking as the Patterns
@@ -19296,8 +19460,7 @@ const facetsAnalysis = makeEntryAnalysis(createFacetAcc, facetColumnsKey, c => {
 });
 
 function facetsAvailable() {
-  const node = state.nodes[state.activeId];
-  return !!node && !isLinkNode(node);
+  return !!state.nodes[state.activeId];
 }
 
 // The Facets tab is selected AND can show. Desktop/tablet: the persisted lowerTab. Phone: exactly
@@ -19404,11 +19567,14 @@ function renderFacetPanel() {
     return;
   }
   const c = facetsAnalysis(state.activeId);
-  facetPanelCount.textContent = c.total.toLocaleString("de-DE") + " entries";
+  const linkMode = isLinkNode(state.nodes[state.activeId]);
+  facetPanelBody.classList.toggle("facet-link", linkMode);
+  facetPanelCount.textContent = c.total.toLocaleString("de-DE") + (linkMode ? " pairs" : " entries");
   if (!c.done) {
     facetPanelBody.innerHTML = '<div class="facet-pending">Counting… ' + Math.round(c.progress * 100) + "%</div>";
     return;
   }
+  if (linkMode) { renderLinkFacetPanel(c.result); return; }
   const total = c.total || 1;
   let html = "";
   if (!c.result.columns.length) html = '<div class="facet-pending">This format has no columns to break down.</div>';
@@ -19443,6 +19609,77 @@ function renderFacetPanel() {
   facetApplyColumns();
   fitFacetPathNames();
 }
+
+// Sort of the value rows on a link node: "count" | "med" (median Δt) | "unp" (without end). Session state.
+let facetLinkSort = "count";
+const FACET_LINK_SORTS = [["count", "Count"], ["med", "Median Δt"], ["unp", "Without end"]];
+function sortLinkFacetValues(values, mode) {
+  const med = v => (v[3].dtMs ? v[3].dtMs.median : -1);
+  const cmp = mode === "med" ? (a, b) => med(b) - med(a) || b[1] - a[1]
+    : mode === "unp" ? (a, b) => b[3].noEnd - a[3].noEnd || b[1] - a[1]
+    : (a, b) => b[1] - a[1] || b[3].noEnd - a[3].noEnd;
+  return values.slice().sort((a, b) => cmp(a, b) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+}
+// The Facets tab on a link node: header line (names, pairs, without end, sort), then per column the
+// values with pairs / no end / a Δt stroke (min—max line, median tick) on one scale per section.
+function renderLinkFacetPanel(result) {
+  const node = state.nodes[state.activeId];
+  const hops = linkChainToHops(node);
+  // bakedConditionName already carries the quotes of a text side (“A”).
+  const names = hops ? bakedConditionName(hops.start) + " \u2192 " + bakedConditionName(hops.hops[hops.hops.length - 1].baked) : node.name || "";
+  const fmt = n => n.toLocaleString("de-DE");
+  const sorted = { ...result, columns: result.columns.map(col => ({ ...col, values: sortLinkFacetValues(col.values, facetLinkSort) })) };
+  let html = '<div class="facet-link-head"><span class="facet-link-sum">' + escapeHtml(names) + " \u00b7 " + fmt(result.pairs) + " pair" + (result.pairs === 1 ? "" : "s") +
+    " \u00b7 " + fmt(result.noEnd) + ' without end</span><span class="link-seg facet-link-sort" role="group" aria-label="Sort values">' +
+    FACET_LINK_SORTS.map(([k, label]) => '<button type="button" data-facet-sort="' + k + '" aria-pressed="' + (facetLinkSort === k ? "true" : "false") + '">' + label + "</button>").join("") + "</span></div>";
+  if (!sorted.columns.length) html += '<div class="facet-pending">This format has no columns to break down.</div>';
+  const pairsTotal = result.pairs || 1;
+  sorted.columns.forEach(col => {
+    const collapsed = facetsCollapsed.has(col.key);
+    html += '<div class="facet-section" data-col="' + escapeHtml(col.key) + '">' +
+      '<div class="facet-section-head" data-toggle="1"><span class="facet-caret">' + (collapsed ? "▸" : "▾") + "</span>" +
+      escapeHtml(col.label) + ' <span class="facet-section-note">' + col.values.length.toLocaleString("de-DE") + " value" + (col.values.length === 1 ? "" : "s") + "</span></div>";
+    if (!collapsed) {
+      const shown = Math.min(col.values.length, FACET_TOP_N + (facetsShown.get(col.key) || 0));
+      const max = col.values.reduce((m, v) => Math.max(m, v[1]), 1);
+      html += '<div class="facet-value facet-value-link facet-link-colhead"><span>Value</span><span>Pairs</span><span title="Starts without an end">No end</span><span title="Shared scale per section">\u0394t min \u00b7 median \u00b7 max</span></div>';
+      for (let i = 0; i < shown; i++) {
+        const [value, count, lvlCls, extra] = col.values[i];
+        const dt = extra.dtMs;
+        const scale = col.dtMax || 1;
+        const dtHtml = dt
+          ? '<span class="facet-dt" title="' + escapeHtml([dt.min, dt.median, dt.max].map(formatMs).join(" \u00b7 ")) + '">' +
+            '<span class="facet-dt-rng" style="left:' + (dt.min / scale * 100).toFixed(2) + "%;width:" + Math.max(0, (dt.max - dt.min) / scale * 100).toFixed(2) + '%"></span>' +
+            '<span class="facet-dt-med" style="left:' + (dt.median / scale * 100).toFixed(2) + '%"></span></span>'
+          : '<span class="facet-dt"></span>';
+        html += '<div class="facet-value facet-value-link' + (col.filterable ? "" : " facet-value-static") + '" data-idx="' + i + '" title="' +
+          escapeHtml((value || "(empty)") + (col.filterable ? " — click: filter · Alt+click / right-click: exclude" : "")) + '">' +
+          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
+          '<span class="facet-bar"><i style="width:' + Math.max(count ? 1 : 0, Math.round(count / max * 100)) + '%"></i></span>' +
+          '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
+          '<span class="facet-noend">' + (extra.noEnd ? extra.noEnd.toLocaleString("de-DE") : "") + "</span>" + dtHtml + "</div>";
+      }
+      if (shown < col.values.length) {
+        let rest = 0;
+        for (let i = shown; i < col.values.length; i++) rest += col.values[i][1];
+        html += '<div class="facet-more" data-more="1">(+' + (col.values.length - shown).toLocaleString("de-DE") + " more \u00b7 " + rest.toLocaleString("de-DE") + " pairs)</div>";
+      }
+    }
+    html += "</div>";
+  });
+  facetPanelBody.innerHTML = html;
+  facetPanelBody._facetResult = sorted;
+  facetPanelBody._facetNeeds = null;
+  facetApplyColumns();
+  fitFacetPathNames();
+}
+facetPanelBody.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-facet-sort]");
+  if (!b) return;
+  ev.stopPropagation();
+  facetLinkSort = b.dataset.facetSort;
+  renderFacetPanel();
+});
 
 // Facet columns get their width from their content. Fixed per-row overhead
 // besides the value name: padding 28 + 8, count 42, pct 30, two 6px gaps, and
@@ -19626,7 +19863,7 @@ facetPanelBody.addEventListener("click", ev => {
     return;
   }
   const row = ev.target.closest(".facet-value");
-  if (!row) return;
+  if (!row || row.classList.contains("facet-link-colhead") || col.filterable === false) return;
   const entry = col.values[+row.dataset.idx];
   if (entry) createFacetFilter(col, entry[0], ev.altKey);
 });
@@ -19638,7 +19875,7 @@ facetPanelBody.addEventListener("contextmenu", ev => {
   ev.preventDefault();
   ev.stopPropagation();
   const col = result.columns.find(c => c.key === section.dataset.col);
-  const entry = col && col.values[+row.dataset.idx];
+  const entry = col && col.filterable !== false && !row.classList.contains("facet-link-colhead") && col.values[+row.dataset.idx];
   if (!entry) return;
   // A touch long-press (synthesized by the global helper above, it sets
   // longPressFired first) opens a menu instead of silently excluding.
@@ -19824,6 +20061,9 @@ const linkWrap = el("#linkWrap");
 const linkInfo = el("#linkInfo");
 const linkUnChip = el("#linkUnChip");
 const linkStats = el("#linkStats");
+const linkUnWhy = el("#linkUnWhy");
+const linkUnWhyBtn = el("#linkUnWhyBtn");
+const linkUnWhyDetails = el("#linkUnWhyDetails");
 const linkSortSeg = el("#linkSortSeg");
 const linkHintText = el("#linkHintText");
 const linkScroll = el("#linkScroll");
@@ -19853,6 +20093,9 @@ const tailJumpBtn = el("#tailJumpBtn");
 const tailJumpBtnHighlight = el("#tailJumpBtnHighlight");
 const timelineMinimapEl = el("#timelineMinimap");
 const timelineMinimapMetaEl = el("#timelineMinimapMeta");
+const minimapBurstsEl = el("#minimapBursts");
+const minimapBurstChip = el("#minimapBurstChip");
+const burstPopover = el("#burstPopover");
 const timelineMinimapSvg = el("#timelineMinimapSvg");
 const timelineMinimapTooltip = el("#timelineMinimapTooltip");
 const timelineMinimapDragRect = el("#timelineMinimapDragRect");
@@ -23945,6 +24188,7 @@ const LINK_BUFFER_PX = 300; // pixels of slack rendered above/below the viewport
 // the "N without end" chip (0 off, 1 inline in time order, 2 only these) and the sort ("time" | "dt").
 let linkViewUnmatched = 0;
 let linkViewSort = "time";
+let linkViewWhyOpen = false; // the "Details" list of the unpaired explanation line
 let linkMissingText = ""; // the "no “…” found" line of the current node's unmatched blocks
 function renderLinkView(node) {
   if (linkNodeId !== node.id) {
@@ -23952,6 +24196,7 @@ function renderLinkView(node) {
     linkSelectedPairIndex = null;
     linkViewUnmatched = 0;
     linkViewSort = "time";
+    linkViewWhyOpen = false;
     linkScroll.scrollTop = 0;
   }
   const pairs = applyLevelFilter(getEntries(node.id));
@@ -23970,6 +24215,7 @@ function renderLinkView(node) {
   linkUnChip.textContent = linkViewUnmatched === 2 ? "only " + fmt(unmatched.length) + " without end"
     : fmt(unmatched.length) + " without end" + (linkViewUnmatched === 1 ? " · inline" : "");
   linkSortSeg.querySelectorAll("[data-link-sort]").forEach(b => b.setAttribute("aria-pressed", b.dataset.linkSort === linkViewSort ? "true" : "false"));
+  renderLinkUnpairedWhy(node, unmatched);
   linkHintText.textContent = isCoarsePointer()
     ? "Tap a pair to select · long-press for actions · double-tap a row to jump to it"
     : "Click a pair to select · right-click for actions · double-click a row to jump to it";
@@ -23999,6 +24245,72 @@ function renderLinkView(node) {
   // view's own (differently-shaped) virtualization.
   renderTimelineMinimap(getRootFileId(node.id), allRealEntries);
 }
+
+/* ---------- Link view: why are some references unpaired? ----------
+   Next to the "N without end" chip: what typically follows those references
+   (analysisNeighbors, direction "after", same thread, window = the pairs'
+   p90 Δt but at least 1 s — the same computation as create_link's
+   unpairedFollowedBy), as one summary line plus a "Details" list (coverage,
+   pattern, median distance). A row click creates the message-pattern filter
+   under the ROOT FILE (the followers are file entries, not pairs). Computed
+   once per (pairs result, unmatched list, file entries, level quick-filter)
+   and kept on the node: renderLinkView runs on every render(), the scroll
+   renderer (renderLinkVisibleBlocks) never reaches it. */
+const LINK_WHY_MAX_ROWS = 5;
+function patternKeyHtml(key) {
+  return key.split(PATTERN_PH_SPLIT_RE).map(part =>
+    part.length === 1 && PATTERN_PH_LABELS[part] ? '<span class="pattern-ph">' + escapeHtml(PATTERN_PH_LABELS[part]) + "</span>" : escapeHtml(part)
+  ).join("");
+}
+function linkUnpairedWhy(node, unmatched) {
+  const fileId = getRootFileId(node.id);
+  const pairsAll = getEntries(node.id);
+  const fileEntries = getEntries(fileId);
+  const key = [...state.levelFilter].sort().join(",");
+  const c = node._unpairedWhy;
+  if (c && c.pairs === pairsAll && c.unmatchedAll === node._linkUnmatched && c.fileEntries === fileEntries && c.fileN === fileEntries.length && c.key === key) return c.rows;
+  let rows = [];
+  if (unmatched.length) {
+    const dts = pairsAll.map(p => p.dtMs).filter(Number.isFinite).sort((a, b) => a - b);
+    const windowMs = Math.max(1000, Math.ceil(llmPercentile(dts, 0.9) || 0));
+    const nb = analysisNeighbors(unmatched, fileEntries, { direction: "after", windowMs, sameThread: true, minLift: 2 });
+    rows = nb.rows.filter(r => r.significant).slice(0, LINK_WHY_MAX_ROWS);
+  }
+  node._unpairedWhy = { pairs: pairsAll, unmatchedAll: node._linkUnmatched, fileEntries, fileN: fileEntries.length, key, rows };
+  return rows;
+}
+function renderLinkUnpairedWhy(node, unmatched) {
+  const rows = unmatched.length ? linkUnpairedWhy(node, unmatched) : [];
+  const none = !rows.length;
+  linkUnWhy.classList.toggle("hidden", none);
+  linkUnWhyBtn.classList.toggle("hidden", none);
+  const open = !none && linkViewWhyOpen;
+  linkUnWhyDetails.classList.toggle("hidden", !open);
+  linkUnWhyBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (none) { linkUnWhy.innerHTML = ""; linkUnWhyDetails.innerHTML = ""; return; }
+  linkUnWhy.innerHTML = "\u2192 typically followed by <b>" + patternKeyHtml(rows[0].patternKey) + "</b> on the same thread" +
+    (rows.length > 1 ? " (+" + (rows.length - 1) + " more)" : "");
+  linkUnWhyDetails.innerHTML = rows.map((r, i) =>
+    '<button type="button" class="link-un-why-row" data-idx="' + i + '" title="Show only this pattern (' + escapeHtml(patternDisplayText(r.patternKey)) + ')">' +
+    '<span class="link-un-why-n">' + escapeHtml(r.coverage) + "</span>" +
+    '<span class="link-un-why-p">' + patternKeyHtml(r.patternKey) + "</span>" +
+    '<span class="link-un-why-m">median ' + escapeHtml(formatMs(r.medianDistMs)) + "</span></button>").join("");
+}
+linkUnWhyBtn.addEventListener("click", () => {
+  linkViewWhyOpen = !linkViewWhyOpen;
+  linkUnWhyDetails.classList.toggle("hidden", !linkViewWhyOpen);
+  linkUnWhyBtn.setAttribute("aria-expanded", linkViewWhyOpen ? "true" : "false");
+});
+linkUnWhyDetails.addEventListener("click", ev => {
+  const rowEl = ev.target.closest(".link-un-why-row");
+  const node = state.nodes[linkNodeId];
+  if (!rowEl || !node || !node._unpairedWhy) return;
+  const r = node._unpairedWhy.rows[+rowEl.dataset.idx];
+  if (!r) return;
+  ev.stopPropagation();
+  const f = createFilterNode(getRootFileId(node.id), "text", patternFilterValue(r.patternKey, r.floatMask, false), false, [], false, ["message"], false, false);
+  finishAnalysisFilter(f, null);
+});
 
 // height(n real entries) = n rows + (n-1) deltas + gaps between every
 // adjacent child (2n-2 of them, .pair-rows' flex `gap`) + the block's own
@@ -31415,6 +31727,7 @@ function closeEscapeOverlays() {
   closeExtractContextMenu();
   closeFacetValueMenu();
   closePatternMenu();
+  closeBurstPopover();
   closeCsvExportDialog();
   closeExportDialog();
   closeLinkDialog();
@@ -31448,7 +31761,7 @@ function anyEscapeOverlayOpen() {
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog", "pruneDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "libraryMenu", "helpMenu", "themeEditorDialog", "columnsPanel", "repeatMenu", "colorPickerPopup", "contextMenu",
-    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner", "burstPopover",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
     const e = document.getElementById(overlayIds[i]);
@@ -31882,6 +32195,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
     timelineMinimapMetaEl.textContent = "";
     timelineMinimapTooltip.classList.add("hidden");
     minimapInteractive = false;
+    renderMinimapBursts(rootId, viewEntries); // clears the flags and hides the chip
     return;
   }
 
@@ -32140,7 +32454,165 @@ function renderTimelineMinimap(rootId, viewEntries) {
   updateMinimapFullRange();
   updateMinimapSelectionMarkers();
   renderMinimapDraft();
+  renderMinimapBursts(rootId, viewEntries);
 }
+
+/* ---------- Burst flags ----------
+   Bursts of the ACTIVE node's entries (analysisTimeline(...).bursts: a second with >= 5 entries and
+   >= 4x the median of the non-empty seconds, adjacent ones merged), drawn as a flag with the entry
+   count on the minimap's own axis (minimapTsToX, so zoom and both binning modes just work), at most
+   the 12 strongest of the drawn range. Time files only: a plain-text file's ts are line numbers.
+   Cost: the analysis runs once per result (minimapBurstAnalysis keeps the last one, keyed on the
+   active node's cached result array, the level quick-filter and the view list's size/ends), never on
+   a scroll render. The flags are HTML buttons in #minimapBursts (siblings of the <svg>), a click opens
+   #burstPopover (openBurstPopover). One state for the Settings switch and the "Bursts" chip: setMinimapBursts. */
+const MINIMAP_BURSTS_MAX = 12;
+const MINIMAP_BURSTS_STALE_MS = 2000;
+let minimapBurstCache = null;
+let burstPopoverBurst = null; // the burst the popover shows ({from, to, ...} of the analysis), null = closed
+
+function minimapBurstAnalysis(rootId, viewEntries) {
+  const nodeEntries = state.activeId && state.nodes[state.activeId] ? getEntries(state.activeId) : null;
+  const lvl = [...state.levelFilter].sort().join(",");
+  const first = viewEntries[0], last = viewEntries[viewEntries.length - 1];
+  const c = minimapBurstCache;
+  if (c && c.rootId === rootId && c.activeId === state.activeId && c.nodeEntries === nodeEntries && c.lvl === lvl &&
+      c.len === viewEntries.length && c.first === first && c.last === last) return c.bursts;
+  // A tailed file only grows: its minimap re-renders on every tick, so within MINIMAP_BURSTS_STALE_MS the
+  // flags of the last analysis stay (a big file's analysis costs ~0.5 us/entry, too much for every tick).
+  if (c && c.rootId === rootId && c.activeId === state.activeId && c.lvl === lvl && c.first === first &&
+      viewEntries.length > c.len && performance.now() - c.at < MINIMAP_BURSTS_STALE_MS) return c.bursts;
+  // analysisTimeline wants entries sorted by ts; a Link view's flattened pair entries are not.
+  let list = viewEntries;
+  for (let i = 1; i < list.length; i++) {
+    if (list[i].ts < list[i - 1].ts) { list = viewEntries.slice().sort((a, b) => a.ts - b.ts); break; }
+  }
+  const bursts = analysisTimeline(list).bursts;
+  minimapBurstCache = { rootId, activeId: state.activeId, nodeEntries, lvl, len: viewEntries.length, first, last, bursts, at: performance.now() };
+  return bursts;
+}
+
+function renderMinimapBursts(rootId, viewEntries) {
+  const timeFile = !!rootId && !nodeIsPlainText(rootId) && minimapRootEntries.length >= 2;
+  minimapBurstChip.classList.toggle("hidden", !timeFile);
+  timelineMinimapEl.classList.toggle("has-burst-chip", timeFile);
+  minimapBurstChip.setAttribute("aria-pressed", showMinimapBursts ? "true" : "false");
+  if (!timeFile || !showMinimapBursts || !viewEntries || !viewEntries.length) {
+    minimapBurstsEl.innerHTML = "";
+    minimapBurstChip.title = "Mark bursts on the minimap";
+    closeBurstPopover();
+    return;
+  }
+  const all = minimapBurstAnalysis(rootId, viewEntries);
+  const inRange = all.filter(b => !minimapRangeOutOfView(b.from, b.to));
+  const shown = (inRange.length > MINIMAP_BURSTS_MAX
+    ? inRange.slice().sort((a, b) => b.count - a.count || a.from - b.from).slice(0, MINIMAP_BURSTS_MAX).sort((a, b) => a.from - b.from)
+    : inRange);
+  minimapBurstChip.title = all.length
+    ? "Bursts: " + all.length + " in this view" + (inRange.length > shown.length ? " \u00b7 the " + shown.length + " strongest shown" : "") + " \u00b7 click to hide"
+    : "No bursts in this view \u00b7 click to hide";
+  // The overlay covers exactly the <svg>'s box (the meta line and the zoom overview sit above it).
+  const sr = timelineMinimapSvg.getBoundingClientRect(), cr = timelineMinimapEl.getBoundingClientRect();
+  const top = Math.round(sr.top - cr.top), h = Math.round(sr.height);
+  minimapBurstsEl.style.top = top + "px";
+  minimapBurstsEl.style.height = h + "px";
+  const W = minimapWidth;
+  const clampX = x => Math.min(W, Math.max(0, x));
+  let html = "";
+  shown.forEach((b, i) => {
+    const xa = clampX(minimapTsToX(b.from)), xb = clampX(minimapTsToX(b.to));
+    const x = (xa + xb) / 2;
+    const label = timeRangeBoundLabel(rootId, b.from, true) + " \u2013 " + timeRangeBoundLabel(rootId, b.to, true);
+    html += '<div class="minimap-burst-band" style="left:' + xa.toFixed(1) + "px;width:" + Math.max(3, xb - xa).toFixed(1) + 'px"></div>' +
+      '<div class="minimap-burst-stem" style="left:' + x.toFixed(1) + 'px"></div>' +
+      '<button type="button" class="minimap-burst' + (burstPopoverBurst && burstPopoverBurst.from === b.from && burstPopoverBurst.to === b.to ? " sel" : "") +
+      '" data-burst="' + i + '" style="left:' + x.toFixed(1) + 'px" title="' + escapeHtml(label + " \u00b7 " + b.count + " entries") + '" aria-label="' +
+      escapeHtml("Burst " + label + ", " + b.count + " entries") + '"><span class="minimap-burst-flag">' + b.count.toLocaleString("de-DE") + "</span></button>";
+  });
+  minimapBurstsEl.innerHTML = html;
+  minimapBurstsEl._bursts = shown;
+  if (burstPopoverBurst && !shown.some(b => b.from === burstPopoverBurst.from && b.to === burstPopoverBurst.to)) closeBurstPopover();
+}
+
+// The one place the burst switch changes: Settings switch, minimap chip, storage and the minimap itself.
+function setMinimapBursts(on) {
+  showMinimapBursts = !!on;
+  try { localStorage.setItem(MINIMAP_BURSTS_KEY, showMinimapBursts ? "1" : "0"); } catch {}
+  pillSet(document.getElementById("settingsMinimapBursts"), showMinimapBursts);
+  minimapBurstChip.setAttribute("aria-pressed", showMinimapBursts ? "true" : "false");
+  if (!showMinimapBursts) closeBurstPopover();
+  if (!timelineMinimapEl.classList.contains("hidden") && minimapLastRootId) renderMinimapBursts(minimapLastRootId, minimapLastViewEntries);
+}
+minimapBurstChip.addEventListener("click", ev => { ev.stopPropagation(); setMinimapBursts(!showMinimapBursts); });
+minimapBurstChip.addEventListener("pointerdown", ev => ev.stopPropagation());
+
+// The actions of the burst popover. Step 2 of the analysis tools (Patterns compare, Neighbors tab) appends
+// "Compare with rest" and "What came before" HERE (each { id, label, run(burst) }, only when its target
+// exists). The one primary action is rendered last, the others in array order before it.
+function burstActions(b) {
+  return [
+    { id: "zoom", label: "Zoom", title: "Zoom the minimap to the burst \u00b1 10 s", run: () => {
+      closeBurstPopover();
+      setMinimapView(b.from - 10000, b.to + 10000);
+    } },
+    { id: "window", label: "Time window", primary: true, title: "Filter the active node to the burst's time range", run: () => {
+      closeBurstPopover();
+      createTimeRangeFilterFromDrag(b.from, b.to);
+    } },
+  ];
+}
+function closeBurstPopover() {
+  if (burstPopoverBurst === null && burstPopover.classList.contains("hidden")) return;
+  burstPopoverBurst = null;
+  burstPopover.classList.add("hidden");
+  minimapBurstsEl.querySelectorAll(".minimap-burst.sel").forEach(f => f.classList.remove("sel"));
+}
+function openBurstPopover(b, flagEl) {
+  closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFacetValueMenu(); closePatternMenu();
+  burstPopoverBurst = b;
+  minimapBurstsEl.querySelectorAll(".minimap-burst.sel").forEach(f => f.classList.remove("sel"));
+  if (flagEl) flagEl.classList.add("sel");
+  const rootId = minimapLastRootId;
+  el("#burstPopTitle").textContent = "Burst " + timeRangeBoundLabel(rootId, b.from, true) + " \u2013 " + timeRangeBoundLabel(rootId, b.to, true);
+  el("#burstPopCount").textContent = b.count.toLocaleString("de-DE") + " entries in " + formatMs(Math.max(b.to - b.from, 0));
+  el("#burstPopFactor").textContent = "\u00d7" + b.factor + " vs usual";
+  el("#burstPopLevels").innerHTML = activeLevelOrder().filter(l => b.levels[l]).map(l =>
+    '<span style="color:' + (levelColorVar(l) || "var(--text-secondary)") + '">' + escapeHtml(l === "OTHER" ? "Other" : l.charAt(0)) + " " + b.levels[l].toLocaleString("de-DE") + "</span>").join("");
+  el("#burstPopPatterns").innerHTML = b.topPatterns.map(t =>
+    '<div class="burst-pop-pat"><span class="burst-pop-pat-text" title="' + escapeHtml(patternDisplayText(t.key)) + '">' + patternKeyHtml(t.key) + '</span><span class="burst-pop-pat-n">' + t.count.toLocaleString("de-DE") + "</span></div>").join("");
+  const acts = burstActions(b);
+  const ordered = acts.filter(a => !a.primary).concat(acts.filter(a => a.primary));
+  const actionsEl = el("#burstPopActions");
+  actionsEl.innerHTML = ordered.map(a =>
+    '<button type="button" class="' + (a.primary ? "btn-mini" : "btn-mini-secondary") + '" data-burst-act="' + escapeHtml(a.id) + '" title="' + escapeHtml(a.title || "") + '">' + escapeHtml(a.label) + "</button>").join("");
+  burstPopover._actions = acts;
+  burstPopover.classList.remove("hidden");
+  // Under the flag, clamped into the window (phone: fitPopupToViewport keeps it on screen).
+  const fr = flagEl ? flagEl.getBoundingClientRect() : { left: 8, bottom: 8 };
+  const r = burstPopover.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  burstPopover.style.left = Math.max(8, Math.min(fr.left, vw - (r.width || 380) - 8)) + "px";
+  burstPopover.style.top = Math.max(8, Math.min(fr.bottom + 4, vh - (r.height || 200) - 8)) + "px";
+  fitPopupToViewport(burstPopover);
+}
+minimapBurstsEl.addEventListener("click", ev => {
+  const flag = ev.target.closest(".minimap-burst");
+  if (!flag) return;
+  ev.stopPropagation(); // a popup opener: the document's click-outside handler must not see it
+  const b = minimapBurstsEl._bursts && minimapBurstsEl._bursts[+flag.dataset.burst];
+  if (!b) return;
+  if (burstPopoverBurst && burstPopoverBurst.from === b.from && burstPopoverBurst.to === b.to) closeBurstPopover();
+  else openBurstPopover(b, flag);
+});
+minimapBurstsEl.addEventListener("pointerdown", ev => ev.stopPropagation());
+burstPopover.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const btn = ev.target.closest("[data-burst-act]");
+  const b = burstPopoverBurst;
+  if (!btn || !b) return;
+  const act = (burstPopover._actions || []).find(a => a.id === btn.dataset.burstAct);
+  if (act) act.run(b);
+});
 
 // Repositions the "whole Filtered-view result" rectangle to span from the
 // earliest to the latest entry in minimapLastViewEntries — i.e. everything
@@ -51007,7 +51479,7 @@ function clickDismissedPopupHit(target) {
     || (open(colorPickerPopup) && !colorPickerPopup.contains(target));
 }
 function anyPointerMenuOpen() {
-  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu, patternMenu]
+  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu, patternMenu, burstPopover]
     .some(m => !m.classList.contains("hidden"));
 }
 document.addEventListener("pointerdown", ev => {
@@ -51021,6 +51493,7 @@ document.addEventListener("pointerdown", ev => {
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
   if (!patternMenu.contains(ev.target)) closePatternMenu();
+  if (!burstPopover.contains(ev.target) && !ev.target.closest(".minimap-burst")) closeBurstPopover(); // a flag's own click toggles
   if ((wasOpen && !anyPointerMenuOpen()) || clickPopupHit) dismissTapPending = true;
 }, true);
 document.addEventListener("click", ev => {
@@ -56119,6 +56592,7 @@ initContextExpandStepUnitSetting();
 initContextExpandStepMsSetting();
 initContextToolbar();
 initMinimapFullRangeSetting();
+initMinimapBurstsSetting();
 initShowSourcesSetting();
 initMinimapBinningModeSetting();
 initTextMatchHighlightSettings();

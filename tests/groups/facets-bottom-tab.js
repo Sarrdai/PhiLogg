@@ -112,13 +112,13 @@ await withApp(async (w, d, T) => {
   w.setFacetsOpen(false);
   T.state.activeId = f.id; w.applyFhView("filter"); w.render();
 
-  section("facets-bottom-tab h. link filter node: not available");
+  section("facets-bottom-tab h. link filter node: facets of the pairs (details: link-facets-dt)");
   w.setFacetsOpen(true);
   const first = w.createFilterNode(f.id, "text", "message 1");
   const second = w.createFilterNode(f.id, "text", "message 2");
   const link = w.createLinkNode(first.id, second.id, "after", 1);
   T.state.activeId = link.id; w.render();
-  assert(/Not available for a link filter/.test(body.textContent), "link node: placeholder text");
+  assert(!/Not available for a link filter/.test(body.textContent) && body.querySelector(".facet-link-head") && /pairs? · \d+ without end/.test(body.querySelector(".facet-link-head").textContent), "link node: the pairs header line instead of the placeholder, got " + body.textContent.slice(0, 80));
   w.setFacetsOpen(false);
 });
 
