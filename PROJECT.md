@@ -17,7 +17,6 @@
   - [docs/ui-and-views.md](#docsui-and-viewsmd)
   - [docs/ui-sketches.md](#docsui-sketchesmd)
   - [docs/llm-assistant-plan.md](#docsllm-assistant-planmd)
-  - [docs/concept-llm-analysis-tools.md](#docsconcept-llm-analysis-toolsmd)
   - [docs/llm-assistant.md](#docsllm-assistantmd)
   - [docs/extraction-and-plotting.md](#docsextraction-and-plottingmd)
   - [docs/persistence-and-sync.md](#docspersistence-and-syncmd)
@@ -38,7 +37,7 @@
 
 PhiLogg is a **local, single-file, offline-capable log viewer** built to replace LogViewPlus for a specific pipe-delimited log format. It's one self-contained `.html` file — no build step, no external dependencies, no CDN calls, no server. Opening the file in a browser is the entire deployment story. That constraint is deliberate and has shaped almost every architectural choice below — keep it intact unless the person explicitly asks to relax it.
 
-- **File**: `philogg.html` (~53,800 lines, the one place this number is kept: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
+- **File**: `philogg.html` (~57,000 lines, the one place this number is kept: inline `<style>`, inline `<script>`, vanilla JS, no framework, no build tooling)
 - **Runs from**: `file://` directly, or any static host — must keep working both ways
 - **Dependencies**: none. Not React, not a charting library, not a font CDN. Custom SVG charting was built from scratch specifically to avoid a dependency.
 
@@ -232,9 +231,6 @@ pull-snapshot view — avoiding the popout's sync bugs), the chat window
 (owned/always-on-top, hide into the app, dock, multiple sessions), one
 undo step per LLM turn, and a phased rollout. Refines backlog #70.
 
-### `docs/concept-llm-analysis-tools.md`
-Concept (German, not implemented, backlog #119): analysis tools that give the LLM assistant a real edge over an LLM working the raw file with grep — a benchmark first (shell vs. tools-only vs. local model, simulator ground truth), then pattern ids as virtual nodes, previews, full entry text, explained unpaired link references, the read-only tools `timeline`/`what_changed`/`common_neighbors`/`group_by`/`create_window`, and a loopback MCP endpoint for external agents.
-
 ### `docs/llm-assistant.md`
 The LLM assistant as built (desktop only): the tool registry the model
 operates PhiLogg through (`LLM_TOOLS`/`runLlmTool`, result budget, value
@@ -272,7 +268,7 @@ Manual checks for a person with real devices — what the cloud container cannot
 The dated history: what shipped, in what order, and why — one file per change, `changelog.d/YYYY-MM-DD-<slug>.md` (format and rules in `changelog.d/README.md`). `node scripts/changelog.js` prints it as one newest-first list; `grep -rl <term> changelog.d` answers "why/when did X change".
 
 ### `docs/archive/`
-Finished concepts and implementation plans (German), kept for the reasoning behind decisions: `ui-concept-text-files.md` (text files as one node, editor as Context view), `ui-concept-unified-extraction.md` + `ui-concept-mockup-brief.md` + `ui-implementation-plan.md` (Table/Plot as tabs of the main view). They describe a past target, not the current state; the current state is in the feature docs above. A concept or plan moves here once it is implemented.
+Finished concepts and implementation plans (German), kept for the reasoning behind decisions: `concept-llm-analysis-tools.md` (analysis tools for people, the LLM assistant and external agents; implemented as backlog 119/120), `ui-concept-text-files.md` (text files as one node, editor as Context view), `ui-concept-unified-extraction.md` + `ui-concept-mockup-brief.md` + `ui-implementation-plan.md` (Table/Plot as tabs of the main view). They describe a past target, not the current state; the current state is in the feature docs above. A concept or plan moves here once it is implemented.
 
 ## Known gotchas — check before touching related code
 

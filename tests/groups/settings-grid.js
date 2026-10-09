@@ -204,7 +204,7 @@ await withApp(async (w, d, T) => {
   assert(labels("settingsSectionBehavior").includes("Type indicator") && labels("settingsSectionBehavior").includes("Anchor fade time") && labels("settingsSectionBehavior").includes("Decimal separator"), "new labels are in place");
   // One desc line per section, texts from the approved mock.
   const descs = { settingsSectionAppearance: "Theme, fonts and size of the interface.", settingsSectionBehavior: "How views, panels and the filter tree react.",
-    settingsSectionIde: "Open a log entry's source line in a running IDE.", settingsSectionLlm: "A local LLM builds filters, links and plots. Localhost only.",
+    settingsSectionIde: "Open a log entry's source line in a running IDE.", settingsSectionLlm: "Language models build filters, links and plots: a local model in the chat, or an external agent over MCP.",
     settingsSectionFormats: "How lines are parsed, and which file uses which format.", settingsSectionShortcuts: "Click a key combination to change it." };
   for (const [id, text] of Object.entries(descs)) {
     const ds = d.querySelectorAll("#" + id + " .settings-section-desc");

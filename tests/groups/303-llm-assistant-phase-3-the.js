@@ -40,7 +40,7 @@ await withApp(async (w, d, T) => {
   const r1 = await w.llmSend("Mich interessiert der Temperaturwert nach jeder Positionierung.");
   const req1 = fake.requests[0];
   assert(req1.messages[0].role === "system" && req1.messages[0].content.includes("[*:float]") && req1.messages[1].content.startsWith("Mich interessiert"), "request: system prompt, then the person's message");
-  assert(req1.tools.length === 8 && req1.stream === true && req1.temperature === 0.2 && !("model" in req1), "request: 8 tools, streaming, default temperature, no model when none is chosen");
+  assert(req1.tools.length === 13 && req1.stream === true && req1.temperature === 0.2 && !("model" in req1), "request: 13 tools, streaming, default temperature, no model when none is chosen");
   assert(fake.endpoint === "http://localhost:1234/v1", "default endpoint");
   assert(r1.status === "done" && r1.created.length === 2, "round 1 done, two filters created (streamed tool-call deltas assembled), got " + r1.status + "/" + r1.error);
   assert(r1.items.filter(i => i.kind === "tool").length === 4 && r1.items[r1.items.length - 1].text.startsWith("Welche Achse"), "round 1: four tool steps, then the question");
@@ -212,3 +212,32 @@ group(303);
     assert(w.llmSnapshot().session.refs[saved.roundId + ":" + saved.entryToken].state === "text", "a different log doesn't make it clickable");
   }, { indexedDB: factory });
 }
+
+await withApp(async (w, d, T) => {
+  section("303z. Diagnosis run: timeline → common_neighbors → create_window → show_view");
+  const f = await llmSimFile(w, ["causechain", "basic"], 4000, 3);
+  T.resetUndoRedo();
+  const fake = llmFakeModel([
+    { calls: [["get_overview", {}], ["timeline", { nodeId: f.id }]] },
+    (req, res) => ({ calls: [["find_message_types", { query: "Order processing failed" }]] }),
+    (req, res) => ({ calls: [["create_filter", { patternId: llmLast(res, "find_message_types").types[0].patternId }]] }),
+    (req, res) => ({ calls: [["common_neighbors", { nodeId: llmLast(res, "create_filter").nodeId, direction: "before" }]] }),
+    (req, res) => ({ calls: [["create_window", { aroundNodeId: llmLast(res, "create_filter").nodeId, beforeMs: 2000 }]] }),
+    (req, res) => ({ calls: [["show_view", { nodeId: llmLast(res, "create_window").nodeId, view: "filtered" }]] }),
+    (req, res) => ({ content: "Vor " + llmLast(res, "common_neighbors").references + " Fehlern steht " + llmLast(res, "common_neighbors").neighbors[0].coverage + " Mal '" + llmLast(res, "common_neighbors").neighbors[0].type + "'; Kontext: " + llmLast(res, "create_window").nodeId }),
+  ]);
+  T.llmTransportOverride = fake;
+  const round = await w.llmSend("Was passiert vor den Bestellfehlern?");
+  assert(round.status === "done", "the diagnosis round finishes, got " + round.status + " " + round.error);
+  const summaries = round.items.filter(i => i.kind === "tool").map(i => i.summary || i.text || "");
+  assert(summaries.some(s => /^timeline/.test(s)) && summaries.some(s => /^common_neighbors → 1 type/.test(s)) && summaries.some(s => /^create_window → n\d+/.test(s)) && summaries.some(s => /^show_view/.test(s)), "the one-line summaries name each analysis step, got " + JSON.stringify(summaries));
+  assert(round.created.length === 2, "only the filter and the window became nodes (the analyses create none), got " + round.created.length);
+  const win = T.state.nodes[round.created[1]];
+  assert(win.filterType === "context" && win.parentId === round.created[0] && T.state.activeId === win.id, "the window node is the shown one");
+  assert(T.undoStack.length === 1 && T.undoStack[0].actions.length === 2, "one undo step for the round");
+  const sys = fake.requests[0].messages[0].content;
+  assert(sys.includes("common_neighbors") && sys.includes("timeline") && sys.includes("Pattern ids") && sys.includes("preview: true"), "the system prompt carries the diagnosis flow and pattern ids");
+  assert(fake.requests.every(r => r.messages[0].content === sys), "…and stays identical across requests (prompt cache)");
+  const names = fake.requests[0].tools.map(t => t.function.name);
+  assert(["timeline", "what_changed", "common_neighbors", "group_by", "create_window"].every(n => names.includes(n)), "the five analysis tools are offered");
+});

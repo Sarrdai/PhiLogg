@@ -346,7 +346,7 @@ deployments possible:
   sheet opened by tapping a card (drag its handle to resize or close it; the header's Analyze button opens the same sheet on Facets or Patterns, to drill into a value or hide a noisy message pattern with one tap; read-only: no editing; Settings is a full-screen page), and touch devices get larger hit targets and
   long-press for the context menu.
 - **Relative time** — right-click a row, "Set as time zero": the Time column shows offsets (`+0:01.234`) from that row; a `T0 ×` chip in the header toggles back to absolute time.
-- **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with zoom and drag-to-select time windows.**
+- **Bookmarks** (surfaced as an auto-managed filter node per file) **and free-text notes** on any log line, **undo/redo, timeline minimap with zoom, drag-to-select time windows and burst flags; a Neighbors tab shows which messages typically come before or after an entry (also from a burst); Compare in the Patterns tab shows which messages are new or more frequent in a node or burst than in the rest of the file; link nodes explain unpaired events and show Δt per value in Facets.**
 - **Prune a file to a filter's result** — a filter's context menu offers
   "Prune file to this result…": after a confirmation the file keeps only
   that result in memory and drops the rest (not undoable; reopen the file to
@@ -512,6 +512,17 @@ deployments possible:
   or docked as a side panel; several chats are kept. A bar above the input
   shows how full the model's context window is (hover for the token
   details). Needs a model with tool-calling support.
+- **MCP server: let Claude Code operate PhiLogg** (desktop app, off by
+  default — Settings → Assistant → External agents (MCP)) — external MCP
+  clients use the same tools as the assistant while you watch the filter
+  tree; what they create is marked ✦ and every call is one undo step. The
+  server listens on `127.0.0.1` only (default port 7337) and needs the
+  access token shown in Settings. To connect Claude Code, run once in a
+  terminal (Settings has the ready command with your port and token, with a
+  Copy button):
+  `claude mcp add --transport http philogg http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"`.
+  Calls wait while the in-app assistant is answering. The token is kept in
+  plain text in PhiLogg's settings file.
 
 See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
 actually works internally.

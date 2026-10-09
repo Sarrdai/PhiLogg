@@ -44,7 +44,7 @@ await withApp(async (w, d, T) => {
   assert(!isVisible(tabP, w), "compact: no Patterns lower tab");
   ppSetWidth(w, 390);
   assert(isVisible(tabP, w) && tabP.textContent === "Patterns", "phone: Patterns tab shown");
-  assert([...d.querySelectorAll("#lowerTabs .lower-tab")].map(t => t.id).join() === "lowerTabDetail,lowerTabWhy,lowerTabStats,lowerTabFacets,lowerTabPatterns" && d.querySelector("#lowerTabStats").hidden, "order Entry | Why | (Statistics, never offered on the phone) | Facets | Patterns");
+  assert([...d.querySelectorAll("#lowerTabs .lower-tab")].map(t => t.id).join() === "lowerTabDetail,lowerTabWhy,lowerTabStats,lowerTabFacets,lowerTabNeighbors,lowerTabPatterns" && d.querySelector("#lowerTabStats").hidden && d.querySelector("#lowerTabNeighbors").hidden, "order Entry | Why | (Statistics, Neighbors: never offered on the phone) | Facets | Patterns");
   assert(btn.title === "Facets and patterns (Ctrl+I)", "Analyze tooltip");
 
   section("phone-patterns-sheet b. Switching to Patterns: header text, cards, constant height, clamp");

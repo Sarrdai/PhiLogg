@@ -110,14 +110,14 @@ await withApp(async (w, d, T) => {
   assert(T.state.activeId !== child && T.state.nodes[T.state.activeId].parentId === child && T.state.nodes[T.state.activeId].inverted, "menu Exclude creates an inverted child");
   assert(open() && panel.classList.contains("lower-facets"), "sheet still open after Exclude");
 
-  section("phone-analyze-sheet g. Active-node switch keeps the Analyze sheet open; link node text");
+  section("phone-analyze-sheet g. Active-node switch keeps the Analyze sheet open; link node shows pair facets");
   T.state.activeId = f.id; w.render();
   assert(open() && panel.classList.contains("lower-facets"), "switching the active node keeps the sheet");
   await waitFor(() => sections() > 0, 3000);
   const second = w.createFilterNode(f.id, "text", "Connection");
   const link = w.createLinkNode(f.id, second.id, "after", 1);
   T.state.activeId = link.id; w.render();
-  assert(open() && /Not available for a link filter/.test(body.textContent), "link node: the existing placeholder text");
+  assert(open() && !/Not available for a link filter/.test(body.textContent) && body.querySelector(".facet-link-head"), "link node: the pair facets render in the sheet too");
   T.state.activeId = f.id; w.render();
 
   section("phone-analyze-sheet h. Ctrl+I opens/closes the sheet and leaves philogg-lower-tab alone");

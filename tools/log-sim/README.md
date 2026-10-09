@@ -116,6 +116,12 @@ For the entry detail's Pretty view (`-s pytrace`).
 and `Batch imported 12,345 records` (en integer, ambiguous without
 `[*:int@en]`). For extraction number formats (`-s grouped`).
 
+`causechain` is opt-in too: an ERROR `Order processing failed: unhandled
+exception, order O-xxxxx` on one thread; in about 80 % of cases 1-3 WARN
+`Connection pool exhausted (active=a, max=50)` lines on the **same thread**
+precede it by 0.5-2 s (the rest have no cause). For the neighbors analysis
+(`-s causechain,basic`).
+
 `tuples` is opt-in as well: messages that list names first and values after —
 `Probe offset (xo, yo, zo): (1.4 , 7.98, 9.76)`, `=(1.4mm , ...)`,
 `[cx; cy] -> [12px; 40px]`, `{a/b}={3/4}`, `xs, ys: 1.2mu, 3.4mu`,

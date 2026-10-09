@@ -1,0 +1,5 @@
+- **feat: burst flags on the minimap, "why unpaired" line in the Link view, Δt per value in link Facets (2026-10-09, person-requested, backlog #120 part 1)**
+  - The timeline minimap flags the active node's bursts with their entry count (12 strongest, on by default; Settings switch and `Bursts` chip). A flag opens details with `Zoom` and `Time window`.
+  - The Link view header says what typically follows the references without an end, with a `Details` list (click a pattern to filter).
+  - Facets on a link node group the pairs by their start entry's columns, with no-end counts, a Δt stroke and a sort control.
+  - **Tests**: GROUP minimap-bursts, link-unpaired-line, link-facets-dt. Docs: docs/ui-and-views.md, docs/filters.md, README.

@@ -1957,6 +1957,48 @@
   .minimap-full-range.hidden{display:none;}
   .minimap-rendered-range{fill:var(--accent); opacity:.3; stroke:var(--accent-strong); stroke-width:1;}
   .minimap-rendered-range.hidden{display:none;}
+  /* Burst flags: an overlay on top of the strip (JS sets its top/height to the <svg>'s box). Only the flags
+     take pointer events (>= 24px wide); band and stem are decoration, so click-to-jump and drag-select
+     keep the rest of the strip. */
+  #minimapBursts{position:absolute; left:0; right:0; top:0; height:0; pointer-events:none; z-index:3;}
+  .minimap-burst-band{position:absolute; top:0; bottom:0; background:var(--level-error-soft); border-left:1px solid var(--level-error); border-right:1px solid var(--level-error); box-sizing:border-box; pointer-events:none;}
+  .minimap-burst-stem{position:absolute; top:16px; bottom:0; width:1px; margin-left:-0.5px; background:var(--level-error); opacity:.5; pointer-events:none;}
+  .minimap-burst{
+    position:absolute; top:1px; height:16px; min-width:24px; padding:0 3px; transform:translateX(-50%); box-sizing:border-box;
+    display:flex; align-items:center; justify-content:center; background:none; border:0; cursor:pointer; pointer-events:auto;
+  }
+  .minimap-burst-flag{
+    font:700 10px/14px var(--font-mono); font-variant-numeric:tabular-nums; background:var(--level-error); color:var(--bg-app);
+    border-radius:3px; padding:0 4px; white-space:nowrap;
+  }
+  .minimap-burst:hover .minimap-burst-flag{filter:brightness(1.15);}
+  .minimap-burst:focus-visible{outline:2px solid var(--accent); outline-offset:1px; border-radius:3px;}
+  .minimap-burst.sel .minimap-burst-flag{outline:2px solid var(--text-primary); outline-offset:0;}
+  .minimap-burst-chip{
+    position:absolute; top:3px; right:8px; z-index:4; font:inherit; font-size:10.3px; font-family:var(--font-mono); line-height:13px;
+    padding:0 7px; border:1px solid var(--border); border-radius:999px; background:var(--bg-panel); color:var(--text-tertiary); cursor:pointer;
+  }
+  .minimap-burst-chip:hover{border-color:var(--accent); color:var(--text-secondary);}
+  .minimap-burst-chip[aria-pressed="true"]{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
+  .minimap-burst-chip.hidden{display:none;}
+  #timelineMinimap.has-burst-chip #timelineMinimapMeta{padding-right:74px;}
+  body.layout-phone .minimap-burst-chip{display:none;}
+  body.layout-phone .minimap-burst{min-width:24px; height:18px; top:0;}
+  #burstPopover{
+    position:fixed; z-index:60; box-sizing:border-box; width:min(380px, calc(100vw - 16px)); padding:10px 12px;
+    background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; box-shadow:0 12px 30px rgba(0,0,0,.5);
+    font-size:12.3px; color:var(--text-primary);
+  }
+  #burstPopover.hidden{display:none;}
+  .burst-pop-title{font-size:13px; font-weight:650; margin-bottom:4px; font-variant-numeric:tabular-nums;}
+  .burst-pop-row{display:flex; justify-content:space-between; gap:10px; padding:2px 0; color:var(--text-secondary);}
+  .burst-pop-factor{color:var(--level-error); font-weight:650; white-space:nowrap;}
+  .burst-pop-levels{display:flex; flex-wrap:wrap; gap:2px 10px; padding:2px 0 4px; font-size:11.5px; font-weight:650; font-variant-numeric:tabular-nums;}
+  .burst-pop-pat{display:flex; justify-content:space-between; gap:10px; padding:2px 0; font-size:11.5px;}
+  .burst-pop-pat-text{font-family:var(--font-mono); min-width:0; overflow-wrap:anywhere;}
+  .burst-pop-pat-n{color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;}
+  .burst-pop-actions{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:6px; margin-top:10px;}
+  body.layout-phone .burst-pop-actions button{min-height:40px;}
   .minimap-marker-line{fill:var(--text-primary); opacity:.9; pointer-events:none;}
   .minimap-marker-flag{fill:var(--text-primary); pointer-events:none;}
   #timelineMinimapTooltip{
@@ -2923,7 +2965,7 @@
   .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
   /* Patterns with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
   #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
-  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody, #whyPanelBody){display:none !important;}
+  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody, #whyPanelBody, #nbPanelBody){display:none !important;}
   #detailMeta{
     flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
   }
@@ -3034,7 +3076,34 @@
     display:flex; align-items:center; gap:10px;
     padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
   }
-  .patterns-grid{display:grid; grid-template-columns:78px 48px 124px minmax(0,1fr) 112px 112px 64px; align-items:center;}
+  #patternsCompareBtn{flex:0 0 auto; padding:0 10px; height:24px; white-space:nowrap;}
+  body.layout-phone #patternsCompareBtn{display:none;}
+  #patternsCmpBar, #patternsCmpBody{display:none;}
+  #patternsWrap.cmp-on #patternsCmpBar{display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:7px 16px; background:var(--accent-soft); border-bottom:1px solid var(--border); font-size:12.5px; color:var(--text-primary);}
+  #patternsWrap.cmp-on #patternsCmpBody{display:block; flex:1 1 auto; min-height:0; overflow:auto; padding:0 16px 16px;}
+  #patternsWrap.cmp-on #patternsHead, #patternsWrap.cmp-on #patternsScroll{display:none;}
+  .cmp-side{display:inline-flex; align-items:center; gap:6px; min-width:0;}
+  .cmp-side > b{font-weight:700; color:var(--accent-strong);}
+  .cmp-vs, .cmp-meta{color:var(--text-tertiary);}
+  #patternsCmpBar select{background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border-soft); border-radius:5px; font:inherit; font-size:12.5px; padding:2px 6px; max-width:260px;}
+  #patternsCmpBar [hidden]{display:none;}
+  .cmp-chip{display:inline-flex; align-items:center; gap:4px; padding:1px 4px 1px 8px; border:1px solid var(--accent); border-radius:10px; color:var(--accent-strong); background:var(--bg-panel);}
+  .cmp-chip button{border:0; background:none; color:inherit; cursor:pointer; font:inherit; padding:0 4px; line-height:1;}
+  .cmp-grid{display:grid; grid-template-columns:72px 72px 76px 72px 124px minmax(0,1fr) 64px; align-items:center; column-gap:10px; padding:0 8px;}
+  .cmp-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel); height:26px; font-size:11px; font-weight:650; color:var(--text-secondary); border-bottom:1px solid var(--border);}
+  .cmp-grp{height:30px; padding-top:10px; box-sizing:border-box; font-size:11px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary);}
+  .cmp-row{height:28px; box-sizing:border-box; border-bottom:1px solid var(--border-soft); cursor:pointer; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); color:var(--text-primary);}
+  .cmp-row:hover{background:var(--bg-elevated);}
+  .cmp-row.gone{cursor:default;}
+  .cmp-row > span, .cmp-hrow > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+  .cmp-row:hover .pattern-actions{visibility:visible;}
+  .cmp-muted{color:var(--text-tertiary);}
+  .cmp-factor{font-weight:650; font-variant-numeric:tabular-nums;}
+  .cmp-factor.up{color:var(--level-warn);}
+  .cmp-factor.down{color:var(--level-info);}
+  .cmp-more{padding:6px 8px; font-size:11.5px; color:var(--text-tertiary);}
+  .cmp-empty{padding:24px 8px; color:var(--text-tertiary); font-size:12px;}
+    .patterns-grid{display:grid; grid-template-columns:78px 48px 124px minmax(0,1fr) 112px 112px 64px; align-items:center;}
   #patternsHead{
     flex:0 0 auto; padding:0 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
     color:var(--text-secondary); font-size:11px; font-weight:650; letter-spacing:.2px; user-select:none;
@@ -3067,6 +3136,38 @@
   #patternsEmpty{padding:24px 16px; color:var(--text-tertiary); font-size:12px;}
 
   /* ---------- Why tab (bottom panel): which filter node keeps / rejects the selected entry ---------- */
+  /* ---------- Neighbors tab (bottom panel): patterns before / after the active node's entries ---------- */
+  #nbPanelBody{display:none; flex:1 1 auto; min-height:0; flex-direction:column; overflow:hidden; user-select:none;}
+  #detailPanel.lower-neighbors #nbPanelBody{display:flex;}
+  #detailPanel.lower-neighbors.collapsed:not(.peeking) #nbPanelBody{display:none;}
+  #detailPanel.lower-neighbors :is(#detailBody, #detailMeta, #detailViewTabs){display:none;}
+  #nbCtl{flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:6px 16px;}
+  .nb-ctl-label{font-size:11.5px; color:var(--text-tertiary);}
+  .nb-seg{display:inline-flex; gap:4px;}
+  #nbCtl [hidden]{display:none;}
+  .nb-seg .assert-mode-btn{flex:0 0 auto; padding:0 10px; height:24px; white-space:nowrap;}
+  .nb-seg .assert-mode-btn:disabled{opacity:.45; cursor:default;}
+  .nb-check{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
+  #nbHead{flex:0 0 auto; padding:0 16px 4px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); display:flex; align-items:center; gap:8px; min-height:16px;}
+  #nbHead .nb-override{display:inline-flex; align-items:center; gap:4px; padding:1px 4px 1px 8px; border:1px solid var(--accent); border-radius:10px; color:var(--accent-strong); background:var(--accent-soft);}
+  #nbHead .nb-override button{border:0; background:none; color:inherit; cursor:pointer; font:inherit; padding:0 4px; line-height:1;}
+  #nbTable{flex:1 1 auto; min-height:0; overflow:auto; padding:0 0 10px;}
+  .nb-empty{padding:14px 16px; color:var(--text-tertiary); font-size:12px;}
+  .nb-empty button{margin-left:6px;}
+  .nb-grid{display:grid; grid-template-columns:minmax(120px,170px) 56px 108px 80px minmax(0,1fr); align-items:center; column-gap:10px; padding:0 16px;}
+  .nb-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel, var(--bg-app)); height:24px; font-size:10.5px; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary); border-bottom:1px solid var(--border-soft);}
+  .nb-row{height:28px; font-size:12px; border-bottom:1px solid var(--border-soft); cursor:pointer;}
+  .nb-row:hover{background:var(--bg-elevated);}
+  .nb-row.dim{opacity:.45;}
+  .nb-row > span, .nb-hrow > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+  .nb-cov{display:inline-flex; align-items:center; gap:6px; font-variant-numeric:tabular-nums;}
+  .nb-cov i{display:inline-block; width:56px; height:6px; border-radius:3px; background:var(--bg-elevated-2); overflow:hidden; flex:0 0 auto;}
+  .nb-cov u{display:block; height:100%; background:var(--accent); text-decoration:none;}
+  .nb-num{font-variant-numeric:tabular-nums; text-align:right;}
+  .nb-muted{color:var(--text-tertiary);}
+  .nb-text{font-family:var(--font-log);}
+  body.layout-phone #lowerTabNeighbors{display:none;}
+
   #whyPanelBody{display:none; flex:1 1 auto; min-height:0; overflow-y:auto; padding:8px 16px 12px; user-select:text;}
   #detailPanel.lower-why #whyPanelBody{display:block;}
   #detailPanel.lower-why.collapsed:not(.peeking) #whyPanelBody{display:none;}
@@ -3144,6 +3245,27 @@
   .facet-value > :not(.facet-bar){position:relative;}
   .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
   .facet-pct{color:var(--text-tertiary);}
+  /* Link node: values with pairs / no end / a Δt stroke; the sections need more room than the plain ones. */
+  #facetPanelBody.facet-link{grid-template-columns:repeat(auto-fill, minmax(400px, 1fr));}
+  #facetPanelBody > .facet-link-head{
+    grid-column:1 / -1; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:2px 12px 6px;
+    font-size:11.5px; color:var(--text-secondary);
+  }
+  .facet-link-sum{flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
+  .facet-value-link{grid-template-columns:minmax(0,1fr) 42px 40px 120px;}
+  .facet-value-link.facet-value-static{cursor:default;}
+  .facet-value-link.facet-value-static:hover{background:transparent; color:var(--text-secondary);}
+  .facet-value-link.facet-link-colhead{cursor:default; font-size:10px; font-weight:650; color:var(--text-tertiary); white-space:nowrap;}
+  .facet-value-link.facet-link-colhead > span{overflow:hidden; text-overflow:ellipsis;}
+  body.layout-phone .facet-value-link.facet-link-colhead{min-height:0; font-size:10px;}
+  .facet-value-link.facet-link-colhead:hover{background:transparent; color:var(--text-tertiary);}
+  .facet-value-link.facet-link-colhead > span:nth-child(2), .facet-value-link.facet-link-colhead > span:nth-child(3){text-align:right;}
+  .facet-noend{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px; color:var(--warn);}
+  .facet-dt{position:relative; height:14px; min-width:0;}
+  .facet-dt-rng{position:absolute; top:6px; height:2px; min-width:2px; background:var(--text-tertiary); border-radius:1px;}
+  .facet-dt-med{position:absolute; top:2px; width:2px; height:10px; margin-left:-1px; background:var(--accent); border-radius:1px;}
+  body.layout-phone #facetPanelBody.facet-link{grid-template-columns:minmax(0,1fr);}
+  body.layout-phone .facet-value-link{grid-template-columns:minmax(0,1fr) 38px 38px 100px;}
   .facet-more{padding:2px 12px 4px 28px; font-size:11px; color:var(--accent-strong); cursor:pointer;}
   .facet-more:hover{text-decoration:underline;}
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
@@ -3287,6 +3409,27 @@
   }
   .link-un-chip[aria-pressed="true"]{background:color-mix(in srgb, var(--warn) 18%, transparent);}
   .link-un-chip.hidden{display:none;}
+  .link-un-why{font-size:11.5px; color:var(--warn); min-width:0;}
+  .link-un-why b{font-weight:650;}
+  .link-un-why.hidden, .link-un-why-btn.hidden, .link-un-why-details.hidden{display:none;}
+  .link-un-why-btn{
+    font:inherit; font-size:11.5px; color:var(--text-secondary); background:transparent;
+    border:1px solid var(--border); border-radius:6px; padding:1px 8px; cursor:pointer;
+  }
+  .link-un-why-btn:hover, .link-un-why-btn[aria-expanded="true"]{border-color:var(--accent); color:var(--accent-strong);}
+  .link-un-why-details{
+    flex:1 1 100%; display:grid; gap:2px; padding:6px 8px; border:1px solid var(--warn); border-radius:6px;
+    background:color-mix(in srgb, var(--warn) 8%, transparent); font-size:12px;
+  }
+  .link-un-why-row{
+    display:grid; grid-template-columns:auto minmax(0,1fr) auto; gap:10px; align-items:baseline; text-align:left;
+    font:inherit; color:var(--text-primary); background:transparent; border:0; border-radius:4px; padding:2px 4px; cursor:pointer;
+  }
+  .link-un-why-row:hover{background:var(--bg-elevated);}
+  .link-un-why-row .link-un-why-n{font-variant-numeric:tabular-nums; font-family:var(--font-mono); color:var(--text-secondary);}
+  .link-un-why-row .link-un-why-p{font-family:var(--font-mono); font-size:11.5px; overflow-wrap:anywhere;}
+  .link-un-why-row .link-un-why-m{color:var(--text-tertiary); font-size:11.5px; white-space:nowrap;}
+  body.layout-phone .link-un-why-btn, body.layout-phone .link-un-why-row{min-height:36px;}
   #linkToolbar .link-hint{flex:1 1 100%; font-size:10.8px; color:var(--text-tertiary); text-align:left;}
   .pair-block.pair-unmatched .pair-brace{border-left-style:dashed; border-left-color:var(--warn);}
   .pair-missing{
@@ -3963,6 +4106,20 @@
      initLlmAssistantUi): toolbar button with an activity dot while a round
      runs, and the Settings → Assistant section. */
   #btnAssistant.hidden, #settingsNavItemLlm.hidden, #settingsSectionLlm.hidden{display:none;}
+  /* Settings → Assistant → External agents (MCP): desktop build only (initMcpUi). */
+  #settingsLlmGroupTitle.hidden, #settingsMcpGroupTitle.hidden, #settingsMcpCard.hidden{display:none;}
+  #settingsDialog .settings-mcp-token{flex:1 1 auto; min-width:0; box-sizing:border-box; height:30px; display:flex; align-items:center; padding:0 10px; background:var(--bg-app); border:1px solid var(--border); border-radius:6px; color:var(--text-primary); font-family:var(--font-mono, monospace); font-size:11.5px; overflow:hidden; white-space:nowrap; text-overflow:ellipsis;}
+  #settingsDialog .settings-mcp-ib{width:30px; height:30px; padding:0; display:inline-flex; align-items:center; justify-content:center; flex:0 0 30px;}
+  #settingsDialog .settings-row.settings-mcp-full{grid-template-columns:minmax(0,1fr); gap:10px;}
+  .settings-mcp-cmd{display:flex; gap:10px; align-items:flex-start; background:var(--bg-app); border:1px solid var(--border); border-radius:8px; padding:10px 12px;}
+  .settings-mcp-cmd code{flex:1 1 auto; min-width:0; color:var(--text-primary); font-family:var(--font-mono, monospace); font-size:11.5px; line-height:1.6; word-break:break-all; white-space:pre-wrap;}
+  .settings-mcp-cmd-side{display:flex; flex-direction:column; align-items:flex-end; gap:4px;}
+  .settings-mcp-toast{font-size:11.5px; color:var(--accent-strong); min-height:1em;}
+  .settings-mcp-status{display:flex; align-items:center; gap:8px; font-variant-numeric:tabular-nums;}
+  .settings-mcp-status .ide-status-dot.ok{background:var(--status-ok);}
+  .settings-mcp-status .ide-status-dot.wait{background:var(--warn, #e8a94a);}
+  .settings-mcp-status .ide-status-dot.err{background:var(--danger);}
+  .settings-mcp-status.err{color:var(--danger);}
   #btnAssistant{position:relative;}
   #llmDockPanel{flex:0 0 380px; width:380px; min-width:0; display:flex; border-left:1px solid var(--border); background:var(--bg-panel);}
   #llmDockPanel.hidden, html.pip-mode #llmDockPanel{display:none;}
@@ -6202,6 +6359,9 @@
         <div id="timelineMinimapMeta"></div>
         <div id="timelineMinimapOverview" aria-hidden="true"><div id="timelineMinimapOverviewBox"></div></div>
         <svg id="timelineMinimapSvg" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none"></svg>
+        <!-- Burst flags (renderMinimapBursts): HTML siblings of the <svg>, so its click/drag handlers never see them. -->
+        <div id="minimapBursts"></div>
+        <button type="button" id="minimapBurstChip" class="minimap-burst-chip hidden" aria-pressed="true" title="Mark bursts on the minimap">Bursts</button>
         <div id="timelineMinimapEdgeL" class="minimap-edge minimap-edge-l" aria-hidden="true">&lsaquo;</div>
         <div id="timelineMinimapEdgeR" class="minimap-edge minimap-edge-r" aria-hidden="true">&rsaquo;</div>
         <div id="timelineMinimapTooltip" class="hidden"></div>
@@ -6518,6 +6678,10 @@
               <!-- Pairs' references without an end (node._linkUnmatched): off -> inline -> only these. View only. -->
               <button type="button" id="linkUnChip" class="link-un-chip hidden" aria-pressed="false"></button>
               <span id="linkStats"></span>
+              <!-- Why the pairs' references have no end: what typically follows them (analysisNeighbors, see renderLinkUnpairedWhy). -->
+              <span id="linkUnWhy" class="link-un-why hidden"></span>
+              <button type="button" id="linkUnWhyBtn" class="link-un-why-btn hidden" aria-expanded="false" aria-controls="linkUnWhyDetails">Details</button>
+              <div id="linkUnWhyDetails" class="link-un-why-details hidden"></div>
               <span class="link-toolbar-sp"></span>
               <span class="link-sort-lab">Sort</span>
               <span class="link-seg" id="linkSortSeg" role="group" aria-label="Sort">
@@ -6721,7 +6885,19 @@
       <div id="patternsWrap">
         <div id="patternsToolbar">
           <span id="patternsInfo" class="toolbar-filter-info"></span>
+          <button type="button" id="patternsCompareBtn" class="assert-mode-btn" aria-pressed="false" title="Compare the active node (A) with the rest of the file or another node (B): which patterns are new, more or less frequent">Compare</button>
         </div>
+        <!-- Compare mode (renderPatternsCompare): A = active node, B = rest of the file / another node / another file. -->
+        <div id="patternsCmpBar">
+          <span class="cmp-side"><b>A</b><span id="cmpAText"></span><span id="cmpAChip"></span></span>
+          <span class="cmp-vs">vs</span>
+          <span class="cmp-side"><b class="cmp-b">B</b>
+            <select id="cmpBMode" aria-label="Compare with"><option value="rest">Rest of file</option><option value="node">Another node…</option><option value="file">Another file…</option></select>
+            <select id="cmpBTarget" aria-label="Compare with this" hidden></select>
+          </span>
+          <span id="cmpBMeta" class="cmp-meta"></span>
+        </div>
+        <div id="patternsCmpBody"></div>
         <div id="patternsHead" class="patterns-grid"></div>
         <div id="patternsScroll">
           <div id="patternsSpacer">
@@ -6774,6 +6950,7 @@
               <button type="button" class="lower-tab" id="lowerTabWhy" role="tab" aria-selected="false" title="Why is this row here? — which filter node keeps or rejects the selected entry">Why</button>
               <button type="button" class="lower-tab" id="lowerTabStats" role="tab" aria-selected="false" title="Statistics — min / max / mean / σ of the numeric columns (Table and Plot)" hidden>Statistics</button>
               <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
+              <button type="button" class="lower-tab" id="lowerTabNeighbors" role="tab" aria-selected="false" title="Neighbors — which message patterns stand before / after these entries more often than elsewhere">Neighbors</button>
               <button type="button" class="lower-tab" id="lowerTabPatterns" role="tab" aria-selected="false" title="Patterns — message shapes of this view">Patterns</button>
             </div>
             <span id="facetPanelCount"></span>
@@ -6804,6 +6981,19 @@
           <div id="facetPanelBody"></div>
           <!-- Why tab body: which nodes of the active filter chain keep or reject the selected entry (renderWhyPanel). -->
           <div id="whyPanelBody"></div>
+          <!-- Neighbors tab body: patterns that stand before / after the active node's entries more often than elsewhere (renderNeighborsPanel). -->
+          <div id="nbPanelBody">
+            <div id="nbCtl">
+              <span class="nb-ctl-label" id="nbRefLabel">Reference</span>
+              <span class="nb-seg" id="nbRefSeg" role="group" aria-label="Reference"><button type="button" class="assert-mode-btn" data-nb-ref="pairs">pairs</button><button type="button" class="assert-mode-btn" data-nb-ref="noend">without end</button></span>
+              <span class="nb-seg" id="nbDirSeg" role="group" aria-label="Direction"><button type="button" class="assert-mode-btn" data-nb-dir="before">Before</button><button type="button" class="assert-mode-btn" data-nb-dir="after">After</button></span>
+              <span class="nb-seg" id="nbWinSeg" role="group" aria-label="Window"><button type="button" class="assert-mode-btn" data-nb-win="1000">1 s</button><button type="button" class="assert-mode-btn" data-nb-win="5000">5 s</button><button type="button" class="assert-mode-btn" data-nb-win="30000">30 s</button></span>
+              <label class="nb-check"><input type="checkbox" id="nbSameThread"> Same thread</label>
+              <label class="nb-check"><input type="checkbox" id="nbShowAll"> Show all</label>
+            </div>
+            <div id="nbHead"></div>
+            <div id="nbTable"></div>
+          </div>
           <!-- Statistics tab body (offered while Table or Plot is on screen): the
                column stats chips of the extraction (renderStatsBar). -->
           <div id="statsPanelBody">
@@ -6840,6 +7030,15 @@
     <div class="ctx-sep"></div>
     <div class="ctx-head">Copy</div>
     <div class="ctx-item" data-act="copy">Copy value</div>
+  </div>
+
+  <!-- Burst details (click on a minimap burst flag, see openBurstPopover): range, counts, top patterns and the actions. -->
+  <div id="burstPopover" class="hidden" role="dialog" aria-label="Burst details">
+    <div class="burst-pop-title" id="burstPopTitle"></div>
+    <div class="burst-pop-row"><span id="burstPopCount"></span><span class="burst-pop-factor" id="burstPopFactor"></span></div>
+    <div class="burst-pop-levels" id="burstPopLevels"></div>
+    <div class="burst-pop-patterns" id="burstPopPatterns"></div>
+    <div class="burst-pop-actions" id="burstPopActions"></div>
   </div>
 
   <!-- Touch long-press menu on a phone Patterns card (see openPatternMenu). No Extract on the phone. -->
@@ -7881,6 +8080,15 @@
             </div>
             <div class="settings-row">
               <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsMinimapBursts">Burst flags</label>
+                <div class="settings-row-hint">Marks the active node's bursts with a count flag.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="true" class="pill-toggle on" id="settingsMinimapBursts"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
                 <div class="settings-row-label">Binning</div>
                 <div class="settings-row-hint">Time keeps real gaps; Entries spreads bursts out evenly.</div>
               </div>
@@ -8093,8 +8301,9 @@
 
         <section class="settings-section hidden" id="settingsSectionLlm">
           <div class="settings-section-title">Assistant</div>
-          <div class="settings-section-desc">A local LLM builds filters, links and plots. Localhost only.</div>
-          <div class="settings-card">
+          <div class="settings-section-desc">Language models build filters, links and plots: a local model in the chat, or an external agent over MCP.</div>
+          <div class="settings-subsection-title hidden" id="settingsLlmGroupTitle"><span>Local model</span></div>
+          <div class="settings-card" id="settingsLlmCard">
             <div class="settings-row">
               <div class="settings-row-text">
                 <label class="settings-row-label" for="settingsLlmEnabled">Enable assistant</label>
@@ -8149,6 +8358,56 @@
               <div class="settings-row-control">
                 <button type="button" class="btn-mini-outline" id="settingsLlmTest">Test connection</button>
               </div>
+            </div>
+          </div>
+
+          <div class="settings-subsection-title hidden" id="settingsMcpGroupTitle"><span>External agents (MCP)</span></div>
+          <div class="settings-card hidden" id="settingsMcpCard">
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsMcpEnabled">Enable MCP server</label>
+                <div class="settings-row-hint">Lets Claude Code and other MCP clients use PhiLogg's tools.</div>
+              </div>
+              <div class="settings-row-control">
+                <button type="button" role="switch" aria-checked="false" class="pill-toggle" id="settingsMcpEnabled"></button>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label" for="settingsMcpPort">Port</label>
+                <div class="settings-row-hint">Listens on 127.0.0.1 only. Changing it restarts the server.</div>
+              </div>
+              <div class="settings-row-control">
+                <input type="number" class="llm-num" id="settingsMcpPort" min="1024" max="65535" step="1">
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label">Access token</label>
+                <div class="settings-row-hint">Sent as a bearer token. Regenerating disconnects clients.</div>
+              </div>
+              <div class="settings-row-control">
+                <span class="settings-mcp-token" id="settingsMcpToken"></span>
+                <button type="button" class="btn-mini-outline settings-mcp-ib" id="settingsMcpTokenShow" title="Show" aria-label="Show token"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/></svg></button>
+                <button type="button" class="btn-mini-outline settings-mcp-ib" id="settingsMcpTokenRegen" title="Regenerate" aria-label="Regenerate token"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M13 8a5 5 0 1 1-1.5-3.6"/><path d="M13 2.5v2.8h-2.8"/></svg></button>
+              </div>
+            </div>
+            <div class="settings-row settings-mcp-full">
+              <div class="settings-row-text">
+                <label class="settings-row-label">Connect Claude Code</label>
+                <div class="settings-row-hint">Run once in a terminal. Other clients: same URL and header.</div>
+              </div>
+              <div class="settings-mcp-cmd">
+                <code id="settingsMcpCommand"></code>
+                <div class="settings-mcp-cmd-side"><button type="button" class="btn-mini-outline" id="settingsMcpCopy">Copy</button><span class="settings-mcp-toast" id="settingsMcpToast" aria-live="polite"></span></div>
+              </div>
+            </div>
+            <div class="settings-row">
+              <div class="settings-row-text">
+                <label class="settings-row-label">Status</label>
+                <div class="settings-row-hint settings-mcp-status" id="settingsMcpStatus"><span class="ide-status-dot" id="settingsMcpDot"></span><span id="settingsMcpStatusText">Off</span></div>
+              </div>
+              <div class="settings-row-control"></div>
             </div>
           </div>
         </section>
@@ -10372,6 +10631,10 @@ document.getElementById("settingsHoverExpandDetail").addEventListener("change", 
 // that's the single place the box's visibility is ever decided.
 const HIDE_MINIMAP_FULL_RANGE_IN_FULL_VIEW_KEY = "philogg-hide-minimap-full-range-in-full-view";
 let hideMinimapFullRangeInFullView = false;
+// Burst flags on the minimap (renderMinimapBursts). On by default, so the key is read as "not an explicit 0";
+// the Settings switch and the "Bursts" chip in the minimap are two views of this one state (setMinimapBursts).
+const MINIMAP_BURSTS_KEY = "philogg-minimap-bursts";
+let showMinimapBursts = true;
 
 // Whether the tree's "Sources" node (see createMergeShell/renderNode) shows
 // at all — a pure display toggle, default ON (unlike most settings here,
@@ -10446,6 +10709,11 @@ function initMinimapFullRangeSetting() {
   if (cb) pillSet(cb, hideMinimapFullRangeInFullView);
 }
 
+function initMinimapBurstsSetting() {
+  try { showMinimapBursts = localStorage.getItem(MINIMAP_BURSTS_KEY) !== "0"; } catch { showMinimapBursts = true; }
+  pillSet(document.getElementById("settingsMinimapBursts"), showMinimapBursts);
+}
+
 // Default true, so this checks for the ABSENCE of an explicit "0" rather
 // than the presence of "1" (opposite polarity from most toggles here,
 // which default off) — a never-set key must still read as "on".
@@ -10518,6 +10786,8 @@ document.getElementById("settingsHideMinimapFullRangeInFullView").addEventListen
   // the next unrelated render/scroll happened to call updateMinimapFullRange.
   updateMinimapFullRange();
 });
+
+document.getElementById("settingsMinimapBursts").addEventListener("change", ev => setMinimapBursts(pillGet(ev.target)));
 
 document.getElementById("settingsShowSources").addEventListener("change", ev => {
   showSourcesSetting = pillGet(ev.target);
@@ -15408,6 +15678,11 @@ async function mergeFiles(fileIds) {
 
 /* ===================== Link filter: nearest-match pairing ===================== */
 
+// A link side must carry a condition to bake (a combiner with nothing baked has none).
+function linkSideBakeable(n) {
+  return (n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n);
+}
+
 // Creates a link filter: for every entry in the reference filter, finds the
 // Nth entry of the target filter before/after it in time and pairs them up
 // (references with no match are dropped). Self-contained like AND/OR — a
@@ -15431,9 +15706,7 @@ function createLinkNode(refId, targetId, direction, n, opts) {
   if (!ref || !target) return null;
   // Unlike AND/OR, a `link` side IS allowed here (that's how a multi-hop
   // tuple is chained) — only a combiner with nothing baked to copy is not.
-  const bakeable = n =>
-    (n.filterType !== "and" && n.filterType !== "or" && n.filterType !== "link") || hasBakedSides(n);
-  if (!bakeable(ref) || !bakeable(target)) return null;
+  if (!linkSideBakeable(ref) || !linkSideBakeable(target)) return null;
   const arrow = direction === "before" ? " ←" : " →";
   const nSuffix = n > 1 ? n : "";
   return createLinkNodeFromBaked(getRootFileId(refId), bakeNodeCondition(ref), bakeNodeCondition(target),
@@ -18666,6 +18939,8 @@ const lowerTabStats = el("#lowerTabStats");
 const lowerTabFacets = el("#lowerTabFacets");
 const lowerTabPatterns = el("#lowerTabPatterns");
 const lowerTabWhy = el("#lowerTabWhy");
+const lowerTabNeighbors = el("#lowerTabNeighbors");
+const nbPanelBody = el("#nbPanelBody");
 const whyPanelBody = el("#whyPanelBody");
 
 // Tabs that replace #fhSplit with a content component of their own —
@@ -19012,7 +19287,14 @@ function patternsComparator(key, dir) {
   }
 }
 
+// Compare mode of the Patterns tab (see "Patterns tab: Compare" below). Plain per-session UI state, not persisted.
+const cmpState = { on: false, nodeId: null, bMode: "rest", bNodeId: null, override: null };
+const patternsCompareBtn = el("#patternsCompareBtn");
 function renderPatternsView() {
+  patternsWrap.classList.toggle("cmp-on", cmpState.on);
+  patternsCompareBtn.setAttribute("aria-pressed", cmpState.on ? "true" : "false");
+  patternsCompareBtn.classList.toggle("active", cmpState.on);
+  if (cmpState.on) { renderPatternsCompare(); return; }
   renderPatternsHead();
   const c = patternsAnalysis(state.activeId);
   patternsTotal = c.total;
@@ -19151,7 +19433,7 @@ const LOWER_TAB_KEY = "philogg-lower-tab";
 const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
 const FACET_MORE_STEP = 25;
-// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" | "why" (persisted). "stats"
+// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" | "why" | "neighbors" (persisted). "stats"
 // only shows while Table/Plot is on screen (statsActive), elsewhere the panel shows Entry detail
 // again without forgetting the choice.
 let lowerTab = "detail";
@@ -19170,7 +19452,7 @@ let phonePatternsTotal = 0;
 let phonePatternsNode = null; // active node the list was last drawn for (scroll resets on a change)
 const PHONE_PATTERN_ROW_H = 64;
 let phonePanelSig = ""; // syncPhoneSheetPanel's last applied signature
-try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" || t === "why" ? t : "detail"; } catch { lowerTab = "detail"; }
+try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" || t === "why" || t === "neighbors" ? t : "detail"; } catch { lowerTab = "detail"; }
 let facetsCollapsed = new Set();
 try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
 const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
@@ -19188,9 +19470,53 @@ function facetColumnsFor(nodeId) {
   }
   return cols;
 }
-function facetColumnsKey(nodeId) { return facetColumnsFor(nodeId).map(c => c.key).join(","); }
+function facetColumnsKey(nodeId) { return (isLinkNode(state.nodes[nodeId]) ? "link:" : "") + facetColumnsFor(nodeId).map(c => c.key).join(","); }
 
+/* On a LINK node the facets break down the PAIRS by the columns of their START entry (the reference
+   side of the link): per value the pair count, how many starts stayed without an end, and the Δt
+   span (analysisGroupBy with dtOf/unpaired — the engine behind the LLM tool group_by). Level,
+   Thread, Location and Method are read off the pair itself (a pair carries its start's values, so
+   the value a click filters on is exactly what a child filter of the link sees); custom columns and
+   Source come from the real start entry and can't be filtered on a pair, so those values are not
+   clickable (linkFacetFilterable). */
+const LINK_FACET_PAIR_KEYS = new Set(["level", "thread", "location", "method"]);
+function linkFacetFilterable(key) { return LINK_FACET_PAIR_KEYS.has(key); }
+// The real log entry a pair (or a reference without an end) starts from: for a chained link the
+// reference side is itself a pair, so follow the reference side down.
+function linkStartEntry(e) {
+  while (e && e.isPair) e = e.first === e.matchEntry ? e.second : e.first;
+  return e;
+}
+function linkFacetColumnsFor(nodeId) {
+  return facetColumnsFor(nodeId).map(c => LINK_FACET_PAIR_KEYS.has(c.key) ? c : { ...c, value: e => c.value(linkStartEntry(e)) });
+}
+function createLinkFacetAcc(nodeId) {
+  const node = state.nodes[nodeId];
+  const cols = linkFacetColumnsFor(nodeId);
+  const pairs = [];
+  return {
+    step(e) { pairs.push(e); },
+    finish() {
+      const unpaired = applyLevelFilter(node._linkUnmatched || []);
+      return {
+        link: true, pairs: pairs.length, noEnd: unpaired.length,
+        columns: cols.map(col => {
+          const g = analysisGroupBy(pairs, col.value, { max: Infinity, dtOf: e => e.dtMs, unpaired });
+          let dtMax = 0;
+          const values = g.values.map(v => {
+            if (v.dtMs && v.dtMs.max > dtMax) dtMax = v.dtMs.max;
+            let rank = Infinity, cls = "";
+            for (const b of Object.keys(v.levels)) { const r = levelSortRank(b, null); if (r < rank) { rank = r; cls = levelClass(b, null); } }
+            return [v.value, v.count, cls, { noEnd: v.noEnd || 0, dtMs: v.dtMs || null }];
+          });
+          return { key: col.key, label: col.label, values, dtMax, filterable: linkFacetFilterable(col.key) };
+        }),
+      };
+    },
+  };
+}
 function createFacetAcc(nodeId) {
+  if (isLinkNode(state.nodes[nodeId])) return createLinkFacetAcc(nodeId);
   const cols = facetColumnsFor(nodeId);
   // value -> { count, rank, level, formatId }: rank/level track the most
   // severe level among the value's entries (same ranking as the Patterns
@@ -19228,8 +19554,7 @@ const facetsAnalysis = makeEntryAnalysis(createFacetAcc, facetColumnsKey, c => {
 });
 
 function facetsAvailable() {
-  const node = state.nodes[state.activeId];
-  return !!node && !isLinkNode(node);
+  return !!state.nodes[state.activeId];
 }
 
 // The Facets tab is selected AND can show. Desktop/tablet: the persisted lowerTab. Phone: exactly
@@ -19246,6 +19571,9 @@ function whyActive() {
   return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "why") : lowerTab === "why";
 }
 
+// The Neighbors tab is selected. Desktop/tablet only (the phone sheet does not offer it): the persisted lowerTab.
+function neighborsActive() { return currentLayoutTier !== "phone" && lowerTab === "neighbors"; }
+
 function lowerTabDetailTitle(patterns) {
   return patterns
     ? "Entry detail is shown in Context, Filtered, Table and Plot"
@@ -19260,25 +19588,30 @@ function lowerTabDetailTitle(patterns) {
 // collapsed state or the remembered height. Statistics is offered on
 // Table/Plot only (statsOffered).
 function applyLowerPanel() {
-  const facets = facetsActive(), patterns = phonePatternsActive(), why = !facets && !patterns && whyActive(), stats = !facets && !why && statsActive();
+  const facets = facetsActive(), patterns = phonePatternsActive(), why = !facets && !patterns && whyActive(), nb = !facets && !patterns && !why && neighborsActive(), stats = !facets && !why && !nb && statsActive();
   const onPatternsTab = fhActiveTab === "patterns";
   detailPanel.classList.toggle("lower-facets", facets);
   detailPanel.classList.toggle("lower-stats", stats);
   detailPanel.classList.toggle("lower-why", why);
+  detailPanel.classList.toggle("lower-neighbors", nb);
   detailPanel.classList.toggle("lower-patterns", patterns);
-  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns && !why);
-  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats || why ? "false" : "true");
+  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns && !why && !nb);
+  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats || why || nb ? "false" : "true");
   lowerTabWhy.setAttribute("aria-selected", why ? "true" : "false");
   lowerTabWhy.disabled = currentLayoutTier === "phone" && !selectedEntry(); // phone: like Entry, needs a selection
   lowerTabStats.hidden = !statsOffered();
   lowerTabStats.setAttribute("aria-selected", stats ? "true" : "false");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
+  lowerTabNeighbors.hidden = currentLayoutTier === "phone";
+  lowerTabNeighbors.setAttribute("aria-selected", nb ? "true" : "false");
   lowerTabPatterns.setAttribute("aria-selected", patterns ? "true" : "false");
   lowerTabDetail.disabled = onPatternsTab || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
   lowerTabDetail.title = lowerTabDetailTitle(onPatternsTab);
   updateDetailResizerVisibility();
   renderFacetPanel();
   renderWhyPanel();
+  renderNeighborsPanel();
+  cmpSyncNode();
   renderPhonePatterns();
 }
 
@@ -19327,6 +19660,454 @@ whyPanelBody.addEventListener("click", ev => {
   render();
 });
 
+/* ---------- Neighbors tab: which patterns stand before / after the reference entries ----------
+   The UI of analysisNeighbors (the engine behind the LLM tool common_neighbors). Reference = the active
+   filter node's entries (level quick-filter applied); on a link node the selector switches between its
+   pairs and the references WITHOUT an end (node._linkUnmatched); a burst popover can hand over ONE entry
+   as an explicit override (nbState.override, dropped on an active-node change). A file node is no
+   reference (a whole file says nothing). Only rows with lift >= 2 unless "Show all" (the rest dimmed).
+   A row click is ONE undo step: a context node around the reference (window on the selected side) + the
+   pattern filter under it; override / without-end references have no node to put a context around, so
+   they get a time-range filter (override) or just the pattern filter under the root file (without end).
+   Results are cached per (node, reference, direction, window, same thread, level filter); a big file is
+   computed in a deferred step behind a "Computing..." line. Plain UI state, not persisted. */
+const NB_SYNC_MAX_ENTRIES = 50000; // above this many file entries the engine runs in a deferred step
+const nbState = { nodeId: null, refMode: "pairs", dirUser: null, winMs: 5000, sameThread: true, showAll: false, override: null };
+const nbCache = new Map(); // sig -> { src, file, fileN, result } (src/file: identity of what it was computed from)
+const NB_CACHE_MAX = 24;
+function nbCachePut(sig, c) { if (nbCache.size >= NB_CACHE_MAX) nbCache.delete(nbCache.keys().next().value); nbCache.set(sig, c); }
+let nbPendingSig = null;
+let nbJob = null; // the running time-sliced computation (analysisRunSliced job) for nbPendingSig
+let nbProgress = 0;
+// Cancels the running computation unless it is the one for `sig`.
+function nbCancelUnless(sig) {
+  if (nbJob && nbPendingSig !== sig) { nbJob.cancelled = true; nbJob = null; nbPendingSig = null; }
+}
+function nbComputingText() { return "Computing… " + Math.floor(nbProgress * 100) + "%"; }
+let nbShown = []; // rows drawn into #nbTable (row click index -> engine row)
+let nbCtx = null; // reference context of the last drawing: { refs, fileId, node, mode }
+function nbDirection() { return nbState.dirUser || (nbState.refMode === "noend" && !nbState.override ? "after" : "before"); }
+// Hands one entry over as the reference (burst popover "What came before"): direction Before, window 5 s.
+function openNeighborsWithOverride(entries, label, fileId, ts) {
+  nbState.override = { entries, label, fileId, ts };
+  nbState.nodeId = state.activeId;
+  nbState.dirUser = "before";
+  nbState.winMs = 5000;
+  if (currentLayoutTier === "phone") return;
+  setLowerTab("neighbors");
+}
+function nbReference() {
+  const o = nbState.override;
+  if (o) return { kind: "override", refs: o.entries, src: o.entries, fileId: o.fileId, node: null };
+  const node = state.nodes[state.activeId];
+  if (!node || node.type !== "filter") return { kind: "none" };
+  const fileId = getRootFileId(node.id);
+  let src;
+  if (isLinkNode(node) && nbState.refMode === "noend") src = node._linkUnmatched || [];
+  else src = getEntries(node.id);
+  return { kind: "node", refs: applyLevelFilter(src), src, fileId, node };
+}
+function nbEmpty(html) { nbPanelBody.querySelector("#nbTable").innerHTML = '<div class="nb-empty">' + html + "</div>"; }
+function nbLiftText(l) { return "×" + (l >= 1000 ? "999+" : l >= 100 ? String(Math.round(l)) : l.toFixed(1)); }
+function renderNeighborsPanel() {
+  if (!neighborsActive()) return;
+  if (nbState.nodeId !== state.activeId) { // another node: back to its own defaults (a burst override is dropped)
+    nbState.nodeId = state.activeId; nbState.refMode = "pairs"; nbState.dirUser = null; nbState.override = null;
+  }
+  const ref = nbReference();
+  const node = ref.node;
+  const link = !!node && isLinkNode(node);
+  if (link && nbState.refMode === "noend" && !(node._linkUnmatched || []).length) nbState.refMode = "pairs";
+  const dir = nbDirection();
+  // control strip
+  nbPanelBody.querySelector("#nbRefLabel").hidden = !link;
+  const refSeg = nbPanelBody.querySelector("#nbRefSeg");
+  refSeg.hidden = !link;
+  refSeg.querySelectorAll("[data-nb-ref]").forEach(b => {
+    const on = b.dataset.nbRef === nbState.refMode;
+    b.classList.toggle("active", on); b.setAttribute("aria-pressed", on ? "true" : "false");
+    if (b.dataset.nbRef === "noend") {
+      const n = link ? applyLevelFilter(node._linkUnmatched || []).length : 0;
+      b.disabled = !n; b.title = n ? n.toLocaleString("de-DE") + " references without an end" : "Every reference has an end";
+    } else if (link) b.title = getEntries(node.id).length.toLocaleString("de-DE") + " pairs";
+  });
+  nbPanelBody.querySelectorAll("[data-nb-dir]").forEach(b => { const on = b.dataset.nbDir === dir; b.classList.toggle("active", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
+  nbPanelBody.querySelectorAll("[data-nb-win]").forEach(b => { const on = +b.dataset.nbWin === nbState.winMs; b.classList.toggle("active", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
+  nbPanelBody.querySelector("#nbSameThread").checked = nbState.sameThread;
+  nbPanelBody.querySelector("#nbShowAll").checked = nbState.showAll;
+  const head = nbPanelBody.querySelector("#nbHead");
+  nbShown = [];
+  nbCtx = null;
+  if (ref.kind === "none") { nbCancelUnless(null); head.textContent = ""; nbEmpty("Select a filter node — the entries of a whole file are too broad a reference."); return; }
+  const fileEntries = getEntries(ref.fileId);
+  const winS = nbState.winMs / 1000;
+  const o = nbState.override;
+  const sumText = (n) => n.toLocaleString("de-DE") + (n === 1 ? " reference" : " references") + " · " + winS + " s " + dir + (nbState.sameThread ? " · same thread" : "");
+  const setHead = n => {
+    head.textContent = "";
+    if (o) {
+      const chip = document.createElement("span");
+      chip.className = "nb-override";
+      chip.appendChild(document.createTextNode(o.label));
+      const x = document.createElement("button");
+      x.type = "button"; x.id = "nbOverrideClear"; x.title = "Back to the entries of the active node"; x.setAttribute("aria-label", "Back to the entries of the active node"); x.textContent = "×";
+      chip.appendChild(x);
+      head.appendChild(chip);
+    }
+    head.appendChild(document.createTextNode(sumText(n)));
+  };
+  if (!ref.refs.length) { nbCancelUnless(null); setHead(0); nbEmpty("The node has no entries."); return; }
+  const sig = [state.activeId, o ? "o" + o.ts : nbState.refMode, dir, nbState.winMs, nbState.sameThread ? 1 : 0, [...state.levelFilter].sort().join(",")].join("|");
+  let result = null;
+  const c = nbCache.get(sig);
+  if (c && c.src === ref.src && c.file === fileEntries && c.fileN === fileEntries.length) result = c.result;
+  const nbOpts = { direction: dir, windowMs: nbState.winMs, sameThread: nbState.sameThread, minLift: 2 };
+  nbCancelUnless(result ? null : sig);
+  if (!result) {
+    if (fileEntries.length <= NB_SYNC_MAX_ENTRIES) {
+      result = analysisNeighbors(ref.refs, fileEntries, nbOpts);
+      nbCachePut(sig, { src: ref.src, file: fileEntries, fileN: fileEntries.length, result });
+    } else {
+      setHead(ref.refs.length);
+      if (nbPendingSig !== sig) {
+        nbPendingSig = sig;
+        nbProgress = 0;
+        const job = nbJob = analysisRunSliced(analysisNeighborsSteps(ref.refs, fileEntries, nbOpts), f => {
+          if (nbJob !== job) return;
+          nbProgress = f;
+          const ph = nbPanelBody.querySelector("#nbTable .nb-empty");
+          if (ph && neighborsActive()) ph.textContent = nbComputingText();
+        }, res => {
+          if (nbJob !== job) return;
+          nbJob = null; nbPendingSig = null;
+          nbCachePut(sig, { src: ref.src, file: fileEntries, fileN: fileEntries.length, result: res });
+          if (neighborsActive()) renderNeighborsPanel();
+        });
+      }
+      nbEmpty(nbComputingText());
+      return;
+    }
+  }
+  setHead(result.references);
+  nbCtx = ref;
+  const all = result.rows;
+  const rows = nbState.showAll ? all : all.filter(r => r.significant);
+  if (!rows.length) {
+    const n = result.references;
+    nbEmpty("No pattern is noticeably more frequent " + dir + (n === 1 ? " this entry" : " these " + n.toLocaleString("de-DE") + " entries") + " (lift ≥ " + result.minLift + ") within " + winS + " s" +
+      (nbState.sameThread ? " on the same thread" : "") + "." + (all.length ? ' <button type="button" class="btn-mini-secondary" id="nbEmptyShowAll">Show all</button>' : ""));
+    return;
+  }
+  nbShown = rows;
+  const medLabel = dir === "after" ? "Median after" : "Median before";
+  let html = '<div class="nb-grid nb-hrow"><span>Coverage</span><span class="nb-num">Lift</span><span class="nb-num">' + medLabel + '</span><span>Max level</span><span>Pattern</span></div>';
+  rows.forEach((r, i) => {
+    const m = /^(\d+)\/(\d+)$/.exec(r.coverage) || [0, 0, 1];
+    const pct = Math.min(100, (+m[1]) / Math.max(+m[2], 1) * 100);
+    const lvlCls = r.maxLevel ? levelClass(r.maxLevel, r.example && r.example.formatId) : "";
+    html += '<div class="nb-grid nb-row' + (r.significant ? "" : " dim") + " " + lvlCls + '" data-idx="' + i + '" title="Click: context node + pattern filter">' +
+      '<span class="nb-cov"><i><u style="width:' + pct.toFixed(0) + '%"></u></i>' + escapeHtml(r.coverage) + "</span>" +
+      '<span class="nb-num">' + nbLiftText(r.lift) + "</span>" +
+      '<span class="nb-num nb-muted">' + escapeHtml(formatMs(r.medianDistMs)) + "</span>" +
+      "<span>" + (r.maxLevel && r.maxLevel !== "OTHER" ? '<span class="level-badge">' + escapeHtml(r.maxLevel) + "</span>" : "") + "</span>" +
+      '<span class="nb-text" title="' + escapeHtml(patternDisplayText(r.patternKey)) + '">' + patternKeyHtml(r.patternKey) + "</span></div>";
+  });
+  nbPanelBody.querySelector("#nbTable").innerHTML = html;
+}
+// One undo step: [context node around the reference | time-range filter] + the pattern filter under it.
+function applyNeighborRow(r) {
+  if (!r || !nbCtx || !state.nodes[state.activeId]) return;
+  const dir = nbDirection(), w = nbState.winMs, o = nbState.override;
+  withCreateUndo("neighbors pattern", () => {
+    let parentId;
+    if (nbCtx.kind === "override") {
+      const p = createFilterNode(state.activeId, "timerange", dir === "before" ? { from: o.ts - w, to: o.ts } : { from: o.ts, to: o.ts + w });
+      parentId = p && p.id;
+    } else if (isLinkNode(nbCtx.node) && nbState.refMode === "noend") {
+      parentId = nbCtx.fileId; // the references have no node: the followers are file entries (like the Link view's line)
+    } else {
+      const p = createContextNode(nbCtx.node.id, dir === "before" ? w : 0, dir === "after" ? w : 0);
+      parentId = p && p.id;
+    }
+    if (!parentId) return;
+    finishAnalysisFilter(createFilterNode(parentId, "text", patternFilterValue(r.patternKey, r.floatMask, false), false, [], false, ["message"], false, false), null);
+  });
+}
+nbPanelBody.addEventListener("mousedown", ev => { if (!ev.target.closest("input")) ev.preventDefault(); }); // never takes keyboard focus from the log view
+nbPanelBody.addEventListener("click", ev => {
+  const t = ev.target;
+  const refB = t.closest("[data-nb-ref]"), dirB = t.closest("[data-nb-dir]"), winB = t.closest("[data-nb-win]");
+  if (refB || dirB || winB || t.closest("#nbOverrideClear") || t.closest("#nbEmptyShowAll") || t.closest(".nb-row")) ev.stopPropagation();
+  if (refB) { if (refB.disabled) return; nbState.refMode = refB.dataset.nbRef; nbState.dirUser = null; renderNeighborsPanel(); }
+  else if (dirB) { nbState.dirUser = dirB.dataset.nbDir; renderNeighborsPanel(); }
+  else if (winB) { nbState.winMs = +winB.dataset.nbWin; renderNeighborsPanel(); }
+  else if (t.closest("#nbOverrideClear")) { nbState.override = null; nbState.dirUser = null; renderNeighborsPanel(); }
+  else if (t.closest("#nbEmptyShowAll")) { nbState.showAll = true; renderNeighborsPanel(); }
+  else if (t.closest(".nb-row")) applyNeighborRow(nbShown[+t.closest(".nb-row").dataset.idx]);
+});
+nbPanelBody.addEventListener("change", ev => {
+  if (ev.target.id === "nbSameThread") nbState.sameThread = ev.target.checked;
+  else if (ev.target.id === "nbShowAll") nbState.showAll = ev.target.checked;
+  else return;
+  renderNeighborsPanel();
+});
+lowerTabNeighbors.addEventListener("mousedown", ev => ev.preventDefault());
+lowerTabNeighbors.addEventListener("click", ev => { ev.stopPropagation(); if (currentLayoutTier !== "phone") setLowerTab("neighbors"); });
+
+/* ---------- Patterns tab: Compare (what changed between A and B) ----------
+   The UI of analysisWhatChanged (the engine behind the LLM tool what_changed). A = the active node's entries
+   (level quick-filter applied) or, after the burst popover's "Compare with rest", only the burst window
+   (cmpState.override, dropped when the active node changes). B = the rest of A's file (entries not in A over
+   the time left; a window's time is only taken out for a burst / time-range node), another node or another file (its own first-to-last span). Rows come grouped New in A /
+   More frequent in A / Rarer in A / Gone in the engine's order; a click does what a Patterns row does
+   (filter under A; with a burst override a time-range filter around the burst first, one undo step), Gone
+   rows (not in A) only offer NOT. Cached per (A, B, level filter) in cmpCache; above NB_SYNC_MAX_ENTRIES
+   entries the run happens in a deferred step behind a "Comparing..." line. */
+const CMP_GROUPS = [["new", "New in A"], ["more", "More frequent in A"], ["rarer", "Rarer in A"], ["gone", "Gone"]];
+const CMP_GROUP_CAP = 200;
+const cmpCache = new Map(); // sig -> { aBase, bBase, aN, bN, result }
+const CMP_CACHE_MAX = 16;
+let cmpPendingSig = null;
+let cmpJob = null;
+let cmpProgress = 0;
+function cmpCancelUnless(sig) {
+  if (cmpJob && cmpPendingSig !== sig) { cmpJob.cancelled = true; cmpJob = null; cmpPendingSig = null; }
+}
+function cmpComparingHtml() { return '<div class="cmp-empty">Comparing… ' + Math.floor(cmpProgress * 100) + "%</div>"; }
+let cmpShown = []; // rows drawn into #patternsCmpBody (row click index -> engine row + group)
+const cmpAText = el("#cmpAText"), cmpAChip = el("#cmpAChip"), cmpBMode = el("#cmpBMode"), cmpBTarget = el("#cmpBTarget"), cmpBMeta = el("#cmpBMeta"), patternsCmpBody = el("#patternsCmpBody");
+// Another active node: B back to the rest of the file, a burst override dropped.
+function cmpSyncNode() {
+  if (cmpState.nodeId === state.activeId) return;
+  cmpState.nodeId = state.activeId; cmpState.override = null; cmpState.bMode = "rest"; cmpState.bNodeId = null;
+}
+function cmpSpan(list) { return list.length ? Math.max(list[list.length - 1].ts - list[0].ts, 1000) : 1000; }
+// Other nodes / files B can be: filter nodes (not links) of any file except the active one; root files other than A's own.
+function cmpCandidates() {
+  const nodes = [], files = [];
+  const activeRoot = state.activeId ? getRootFileId(state.activeId) : null;
+  const multi = state.rootIds.length > 1;
+  const walk = (id, root) => {
+    const n = state.nodes[id];
+    if (!n) return;
+    if (n.type === "filter" && id !== state.activeId && !isLinkNode(n) && n.filterType !== "link") nodes.push({ id, label: (multi ? root.name + " › " : "") + nodeDisplayName(n) });
+    for (const c of n.children || []) walk(c, root);
+  };
+  for (const rid of state.rootIds) {
+    const r = state.nodes[rid];
+    if (!r) continue;
+    if (rid !== activeRoot) files.push({ id: rid, label: r.name });
+    for (const c of r.children || []) walk(c, r);
+  }
+  return { nodes, files };
+}
+// Everything one comparison needs, or { error }.
+function cmpInputs() {
+  const node = state.nodes[state.activeId];
+  if (!node) return { error: "Select a node to compare." };
+  if (isLinkNode(node)) return { error: "Not available for a link filter." };
+  if (nodeIsPlainText(node.id)) return { error: "Compare needs timestamps; a plain-text file has none." };
+  const fileId = getRootFileId(node.id), fileNode = state.nodes[fileId];
+  const o = cmpState.override;
+  const aBase = o ? o.entries : getEntries(node.id);
+  const a = o ? o.entries : applyLevelFilter(aBase);
+  let aWin = o ? o.windowMs : null;
+  if (!o && node.filterType === "timerange" && node.value && Number.isFinite(node.value.from) && Number.isFinite(node.value.to) && node.value.to > node.value.from) aWin = node.value.to - node.value.from;
+  const aDur = aWin > 0 ? Math.max(aWin, 1000) : cmpSpan(a);
+  const fileBase = getEntries(fileId);
+  let mode = cmpState.bMode, target = mode === "rest" ? null : state.nodes[cmpState.bNodeId];
+  if (mode !== "rest" && (!target || target.id === node.id)) { mode = "rest"; target = null; }
+  let bBase, b, bDur, bLabel;
+  if (mode === "rest") {
+    const inA = new Set();
+    for (const e of a) inA.add(e.id);
+    bBase = fileBase;
+    b = applyLevelFilter(fileBase).filter(e => !inA.has(e.id));
+    const r = fileEntryTimeRange(fileBase);
+    // Only a real window (burst / time-range node) takes its time out of B's duration: a scattered node
+    // (all errors) spans the whole file, subtracting that would leave B one second long.
+    bDur = r ? Math.max((r.max - r.min) - (aWin > 0 ? aWin : 0), 1000) : 1000;
+    bLabel = "Rest of " + (fileNode ? fileNode.name : "file");
+  } else {
+    bBase = getEntries(target.id);
+    b = applyLevelFilter(bBase);
+    bDur = cmpSpan(b);
+    bLabel = nodeDisplayName(target);
+  }
+  const sig = [node.id, o ? "o" + o.ts : "n", mode, mode === "rest" ? "" : target.id, [...state.levelFilter].sort().join(",")].join("|");
+  return { node, fileId, a, b, aBase, bBase, aDur, bDur, mode, target, bLabel, sig };
+}
+function cmpRender(html) { patternsCmpBody.innerHTML = html; }
+function cmpFactorHtml(r) {
+  if (r.factor == null) return '<span class="cmp-factor up" title="Not in B at all">new</span>';
+  const f = r.factor;
+  const t = f >= 100 ? String(Math.round(f)) : f >= 0.1 || f === 0 ? f.toFixed(1) : f.toFixed(2);
+  return '<span class="cmp-factor ' + (f >= 1 ? "up" : "down") + '">×' + t + "</span>";
+}
+function renderCompareBar(inp) {
+  const o = cmpState.override;
+  const nA = inp.a.length, nB = inp.b.length;
+  cmpAText.textContent = (o ? "" : " " + nodeDisplayName(inp.node)) + " · " + nA.toLocaleString("de-DE") + (nA === 1 ? " entry" : " entries") + " · " + formatMs(inp.aDur);
+  cmpAChip.textContent = "";
+  if (o) {
+    const chip = document.createElement("span");
+    chip.className = "cmp-chip";
+    chip.appendChild(document.createTextNode(o.label));
+    const x = document.createElement("button");
+    x.type = "button"; x.id = "cmpOverrideClear"; x.title = "Back to the entries of the active node"; x.setAttribute("aria-label", "Back to the entries of the active node"); x.textContent = "×";
+    chip.appendChild(x);
+    cmpAChip.appendChild(chip);
+  }
+  const cand = cmpCandidates();
+  const fileNode = state.nodes[inp.fileId];
+  cmpBMode.options[0].textContent = "Rest of " + (fileNode ? fileNode.name : "file");
+  cmpBMode.options[1].disabled = !cand.nodes.length;
+  cmpBMode.options[2].disabled = !cand.files.length;
+  cmpBMode.value = inp.mode;
+  const list = inp.mode === "node" ? cand.nodes : inp.mode === "file" ? cand.files : [];
+  cmpBTarget.hidden = inp.mode === "rest";
+  if (inp.mode !== "rest") {
+    cmpBTarget.innerHTML = list.map(c => '<option value="' + escapeHtml(c.id) + '">' + escapeHtml(c.label) + "</option>").join("");
+    cmpBTarget.value = inp.target.id;
+  }
+  cmpBMeta.textContent = nB.toLocaleString("de-DE") + (nB === 1 ? " entry" : " entries") + " · " + formatMs(inp.bDur);
+}
+function renderPatternsCompare() {
+  cmpSyncNode();
+  cmpShown = [];
+  const inp = cmpInputs();
+  if (inp.error) {
+    cmpCancelUnless(null);
+    patternsInfo.textContent = "";
+    cmpAText.textContent = ""; cmpAChip.textContent = ""; cmpBMeta.textContent = ""; cmpBTarget.hidden = true;
+    cmpRender('<div class="cmp-empty">' + escapeHtml(inp.error) + "</div>");
+    return;
+  }
+  renderCompareBar(inp);
+  if (!inp.a.length) { cmpCancelUnless(null); patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">A has no entries.</div>'); return; }
+  if (!inp.b.length) { cmpCancelUnless(null); patternsInfo.textContent = ""; cmpRender('<div class="cmp-empty">B has no entries; nothing to compare with.</div>'); return; }
+  let result = null;
+  const c = cmpCache.get(inp.sig);
+  if (c && c.aBase === inp.aBase && c.bBase === inp.bBase && c.aN === inp.aBase.length && c.bN === inp.bBase.length) result = c.result;
+  const cmpOpts = { durationAMs: inp.aDur, durationBMs: inp.bDur };
+  cmpCancelUnless(result ? null : inp.sig);
+  const put = res => {
+    if (cmpCache.size >= CMP_CACHE_MAX) cmpCache.delete(cmpCache.keys().next().value);
+    cmpCache.set(inp.sig, { aBase: inp.aBase, bBase: inp.bBase, aN: inp.aBase.length, bN: inp.bBase.length, result: res });
+  };
+  if (!result) {
+    if (inp.a.length + inp.b.length <= NB_SYNC_MAX_ENTRIES) { result = analysisWhatChanged(inp.a, inp.b, cmpOpts); put(result); }
+    else {
+      patternsInfo.textContent = "";
+      if (cmpPendingSig !== inp.sig) {
+        cmpPendingSig = inp.sig;
+        cmpProgress = 0;
+        const job = cmpJob = analysisRunSliced(analysisWhatChangedSteps(inp.a, inp.b, cmpOpts), f => {
+          if (cmpJob !== job) return;
+          cmpProgress = f;
+          const ph = patternsCmpBody.querySelector(".cmp-empty");
+          if (ph && cmpState.on && fhActiveTab === "patterns") ph.textContent = "Comparing… " + Math.floor(f * 100) + "%";
+        }, res => {
+          if (cmpJob !== job) return;
+          cmpJob = null; cmpPendingSig = null;
+          put(res);
+          if (cmpState.on && fhActiveTab === "patterns") renderPatternsCompare();
+        });
+      }
+      cmpRender(cmpComparingHtml());
+      return;
+    }
+  }
+  const total = CMP_GROUPS.reduce((n, g) => n + result[g[0]].length, 0);
+  patternsInfo.textContent = total ? total.toLocaleString("de-DE") + (total === 1 ? " pattern differs" : " patterns differ") : "";
+  if (!total) {
+    cmpRender('<div class="cmp-empty">No pattern differs clearly (needs ≥ 3 occurrences and a factor ≥ 2).</div>');
+    return;
+  }
+  const bucketOf = makeLevelBucketer();
+  let html = '<div class="cmp-grid cmp-hrow"><span class="patterns-num">Count A</span><span class="patterns-num">Count B</span><span class="patterns-num" title="How often A would contain it at B\'s rate">Expected</span><span class="patterns-num">Factor</span>' +
+    '<span title="Level of an example entry">Level</span><span>Pattern</span><span></span></div>';
+  for (const [gk, gl] of CMP_GROUPS) {
+    const rows = result[gk];
+    if (!rows.length) continue;
+    html += '<div class="cmp-grp">' + gl + " · " + rows.length.toLocaleString("de-DE") + "</div>";
+    rows.slice(0, CMP_GROUP_CAP).forEach(r => {
+      const gone = gk === "gone";
+      const i = cmpShown.push({ r, gone }) - 1;
+      const ex = r.example;
+      const lvl = ex ? bucketOf(ex.level, ex.formatId) : "";
+      const lvlCls = lvl ? levelClass(lvl, ex.formatId) : "";
+      html += '<div class="cmp-grid cmp-row' + (gone ? " gone" : "") + " " + lvlCls + '" data-idx="' + i + '" data-grp="' + gk + '" title="' +
+        (gone ? "Not in A: nothing to show. Alt+click or ⊘ hides it." : "Click: show only this pattern — Alt+click: hide it") + '">' +
+        '<span class="patterns-num">' + r.countA.toLocaleString("de-DE") + "</span>" +
+        '<span class="patterns-num cmp-muted">' + r.countB.toLocaleString("de-DE") + "</span>" +
+        '<span class="patterns-num cmp-muted">' + r.expected.toFixed(1) + "</span>" +
+        '<span class="patterns-num">' + cmpFactorHtml(r) + "</span>" +
+        "<span>" + (lvl && lvl !== "OTHER" ? '<span class="level-badge">' + escapeHtml(lvl) + "</span>" : "") + "</span>" +
+        '<span class="pattern-text" title="' + escapeHtml(patternDisplayText(r.key)) + '">' + patternKeyHtml(r.key) + "</span>" +
+        '<span class="pattern-actions">' +
+          '<span class="pattern-act pattern-act-hide" data-act="hide" title="Hide this pattern (NOT filter) — Alt+click">' + PATTERN_ACTION_ICONS.hide + "</span>" +
+          (gone ? "" : '<span class="pattern-act" data-act="extract" title="Extract its values (Table/Plot)">' + PATTERN_ACTION_ICONS.extract + "</span>" +
+            '<span class="pattern-act" data-act="jump" title="Jump to its first entry">' + PATTERN_ACTION_ICONS.jump + "</span>") +
+        "</span></div>";
+    });
+    if (rows.length > CMP_GROUP_CAP) html += '<div class="cmp-more">… ' + (rows.length - CMP_GROUP_CAP).toLocaleString("de-DE") + " more</div>";
+  }
+  cmpRender(html);
+}
+// A row action: the Patterns tab's own (applyPatternAction) under the active node; with a burst override a
+// time-range filter around the burst comes first (same undo step), so the filter shows the burst's entries only.
+function applyCompareRow(item, action) {
+  if (!item || !state.nodes[state.activeId]) return;
+  const r = item.r;
+  if (item.gone && action !== "hide") return;
+  const group = { key: r.key, floatMask: r.floatMask, first: r.example };
+  const o = cmpState.override;
+  if (!o || action === "jump") { applyPatternAction(group, action); return; }
+  withCreateUndo("compare pattern", () => {
+    if (!createFilterNode(state.activeId, "timerange", { from: o.from, to: o.to })) return;
+    applyPatternAction(group, action);
+  });
+}
+// Burst popover "Compare with rest": A = the burst window of the active node's entries only, B = the rest of the file.
+function openCompareWithBurst(b) {
+  if (currentLayoutTier === "phone" || !state.activeId) return;
+  const rootId = minimapLastRootId;
+  const src = minimapLastViewEntries && minimapLastViewEntries.length ? minimapLastViewEntries : getEntries(state.activeId);
+  const entries = src.filter(e => e.ts >= b.from && e.ts <= b.to);
+  if (!entries.length) return;
+  cmpState.on = true;
+  cmpState.nodeId = state.activeId;
+  cmpState.bMode = "rest"; cmpState.bNodeId = null;
+  cmpState.override = { entries, from: b.from, to: b.to, windowMs: Math.max(b.to - b.from, 1000), label: "Burst " + timeRangeBoundLabel(rootId, b.from, true), ts: b.from };
+  applyFhView("patterns");
+}
+patternsCompareBtn.addEventListener("mousedown", ev => ev.preventDefault());
+patternsCompareBtn.addEventListener("click", ev => { ev.stopPropagation(); cmpState.on = !cmpState.on; renderPatternsView(); });
+cmpBMode.addEventListener("change", () => {
+  cmpState.bMode = cmpBMode.value;
+  const cand = cmpCandidates();
+  const list = cmpState.bMode === "node" ? cand.nodes : cmpState.bMode === "file" ? cand.files : [];
+  cmpState.bNodeId = list.length ? list[0].id : null;
+  if (cmpState.bMode !== "rest" && !list.length) cmpState.bMode = "rest";
+  renderPatternsView();
+});
+cmpBTarget.addEventListener("change", () => { cmpState.bNodeId = cmpBTarget.value; renderPatternsView(); });
+cmpAChip.addEventListener("click", ev => {
+  if (!ev.target.closest("#cmpOverrideClear")) return;
+  ev.stopPropagation();
+  cmpState.override = null;
+  renderPatternsView();
+});
+patternsCmpBody.addEventListener("mousedown", ev => ev.preventDefault());
+patternsCmpBody.addEventListener("click", ev => {
+  const row = ev.target.closest(".cmp-row");
+  if (!row) return;
+  ev.stopPropagation();
+  const act = ev.target.closest("[data-act]");
+  applyCompareRow(cmpShown[+row.dataset.idx], act ? act.dataset.act : (ev.altKey ? "hide" : "filter"));
+});
+
 // (Re)fills the Facets tab body; nothing to do while another tab shows.
 function renderFacetPanel() {
   if (!facetsActive()) return;
@@ -19336,11 +20117,14 @@ function renderFacetPanel() {
     return;
   }
   const c = facetsAnalysis(state.activeId);
-  facetPanelCount.textContent = c.total.toLocaleString("de-DE") + " entries";
+  const linkMode = isLinkNode(state.nodes[state.activeId]);
+  facetPanelBody.classList.toggle("facet-link", linkMode);
+  facetPanelCount.textContent = c.total.toLocaleString("de-DE") + (linkMode ? " pairs" : " entries");
   if (!c.done) {
     facetPanelBody.innerHTML = '<div class="facet-pending">Counting… ' + Math.round(c.progress * 100) + "%</div>";
     return;
   }
+  if (linkMode) { renderLinkFacetPanel(c.result); return; }
   const total = c.total || 1;
   let html = "";
   if (!c.result.columns.length) html = '<div class="facet-pending">This format has no columns to break down.</div>';
@@ -19375,6 +20159,77 @@ function renderFacetPanel() {
   facetApplyColumns();
   fitFacetPathNames();
 }
+
+// Sort of the value rows on a link node: "count" | "med" (median Δt) | "unp" (without end). Session state.
+let facetLinkSort = "count";
+const FACET_LINK_SORTS = [["count", "Count"], ["med", "Median Δt"], ["unp", "Without end"]];
+function sortLinkFacetValues(values, mode) {
+  const med = v => (v[3].dtMs ? v[3].dtMs.median : -1);
+  const cmp = mode === "med" ? (a, b) => med(b) - med(a) || b[1] - a[1]
+    : mode === "unp" ? (a, b) => b[3].noEnd - a[3].noEnd || b[1] - a[1]
+    : (a, b) => b[1] - a[1] || b[3].noEnd - a[3].noEnd;
+  return values.slice().sort((a, b) => cmp(a, b) || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+}
+// The Facets tab on a link node: header line (names, pairs, without end, sort), then per column the
+// values with pairs / no end / a Δt stroke (min—max line, median tick) on one scale per section.
+function renderLinkFacetPanel(result) {
+  const node = state.nodes[state.activeId];
+  const hops = linkChainToHops(node);
+  // bakedConditionName already carries the quotes of a text side (“A”).
+  const names = hops ? bakedConditionName(hops.start) + " \u2192 " + bakedConditionName(hops.hops[hops.hops.length - 1].baked) : node.name || "";
+  const fmt = n => n.toLocaleString("de-DE");
+  const sorted = { ...result, columns: result.columns.map(col => ({ ...col, values: sortLinkFacetValues(col.values, facetLinkSort) })) };
+  let html = '<div class="facet-link-head"><span class="facet-link-sum">' + escapeHtml(names) + " \u00b7 " + fmt(result.pairs) + " pair" + (result.pairs === 1 ? "" : "s") +
+    " \u00b7 " + fmt(result.noEnd) + ' without end</span><span class="link-seg facet-link-sort" role="group" aria-label="Sort values">' +
+    FACET_LINK_SORTS.map(([k, label]) => '<button type="button" data-facet-sort="' + k + '" aria-pressed="' + (facetLinkSort === k ? "true" : "false") + '">' + label + "</button>").join("") + "</span></div>";
+  if (!sorted.columns.length) html += '<div class="facet-pending">This format has no columns to break down.</div>';
+  const pairsTotal = result.pairs || 1;
+  sorted.columns.forEach(col => {
+    const collapsed = facetsCollapsed.has(col.key);
+    html += '<div class="facet-section" data-col="' + escapeHtml(col.key) + '">' +
+      '<div class="facet-section-head" data-toggle="1"><span class="facet-caret">' + (collapsed ? "▸" : "▾") + "</span>" +
+      escapeHtml(col.label) + ' <span class="facet-section-note">' + col.values.length.toLocaleString("de-DE") + " value" + (col.values.length === 1 ? "" : "s") + "</span></div>";
+    if (!collapsed) {
+      const shown = Math.min(col.values.length, FACET_TOP_N + (facetsShown.get(col.key) || 0));
+      const max = col.values.reduce((m, v) => Math.max(m, v[1]), 1);
+      html += '<div class="facet-value facet-value-link facet-link-colhead"><span>Value</span><span>Pairs</span><span title="Starts without an end">No end</span><span title="Shared scale per section">\u0394t min \u00b7 median \u00b7 max</span></div>';
+      for (let i = 0; i < shown; i++) {
+        const [value, count, lvlCls, extra] = col.values[i];
+        const dt = extra.dtMs;
+        const scale = col.dtMax || 1;
+        const dtHtml = dt
+          ? '<span class="facet-dt" title="' + escapeHtml([dt.min, dt.median, dt.max].map(formatMs).join(" \u00b7 ")) + '">' +
+            '<span class="facet-dt-rng" style="left:' + (dt.min / scale * 100).toFixed(2) + "%;width:" + Math.max(0, (dt.max - dt.min) / scale * 100).toFixed(2) + '%"></span>' +
+            '<span class="facet-dt-med" style="left:' + (dt.median / scale * 100).toFixed(2) + '%"></span></span>'
+          : '<span class="facet-dt"></span>';
+        html += '<div class="facet-value facet-value-link' + (col.filterable ? "" : " facet-value-static") + '" data-idx="' + i + '" title="' +
+          escapeHtml((value || "(empty)") + (col.filterable ? " — click: filter · Alt+click / right-click: exclude" : "")) + '">' +
+          '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
+          '<span class="facet-bar"><i style="width:' + Math.max(count ? 1 : 0, Math.round(count / max * 100)) + '%"></i></span>' +
+          '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
+          '<span class="facet-noend">' + (extra.noEnd ? extra.noEnd.toLocaleString("de-DE") : "") + "</span>" + dtHtml + "</div>";
+      }
+      if (shown < col.values.length) {
+        let rest = 0;
+        for (let i = shown; i < col.values.length; i++) rest += col.values[i][1];
+        html += '<div class="facet-more" data-more="1">(+' + (col.values.length - shown).toLocaleString("de-DE") + " more \u00b7 " + rest.toLocaleString("de-DE") + " pairs)</div>";
+      }
+    }
+    html += "</div>";
+  });
+  facetPanelBody.innerHTML = html;
+  facetPanelBody._facetResult = sorted;
+  facetPanelBody._facetNeeds = null;
+  facetApplyColumns();
+  fitFacetPathNames();
+}
+facetPanelBody.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-facet-sort]");
+  if (!b) return;
+  ev.stopPropagation();
+  facetLinkSort = b.dataset.facetSort;
+  renderFacetPanel();
+});
 
 // Facet columns get their width from their content. Fixed per-row overhead
 // besides the value name: padding 28 + 8, count 42, pct 30, two 6px gaps, and
@@ -19466,29 +20321,40 @@ if (typeof ResizeObserver === "function") {
 function createFacetFilter(column, value, inverted) {
   const parentId = state.activeId;
   if (!parentId || !state.nodes[parentId]) return;
-  let node;
-  if (column.key === "level") {
-    node = createFilterNode(parentId, "level", [value], inverted);
-  } else if (column.key === "__source") {
+  finishAnalysisFilter(createFacetFilterNode(parentId, column, value, inverted), fhActiveTab === "patterns" ? "patterns" : null);
+}
+// The filter condition createFacetFilter builds for one facet value, as plain
+// data: { filterType, value, inverted, [ignoredColumns, caseSensitive, columns,
+// isRegex], name } — the shape evaluateFilterCondition reads, so the LLM
+// tools' preview can evaluate it without a node. null: no such Source.
+function facetFilterSpec(parentId, column, value, inverted) {
+  if (column.key === "level") return { filterType: "level", value: [value], inverted: !!inverted };
+  if (column.key === "__source") {
     const root = state.nodes[getRootFileId(parentId)];
     const src = root && root.sources && root.sources.find(s => s.name === value);
-    if (!src) return;
+    if (!src) return null;
     const ids = getEntries(parentId).filter(e => e.sourceId === src.id).map(e => e.id);
-    node = createFilterNode(parentId, "idset", ids, inverted);
-    if (node) node.name = "Source = " + value;
-  } else {
-    node = createFilterNode(parentId, "text", "^" + escapeRegExp(value) + "$", inverted, [], true, [column.key], true, false);
-    if (node) node.name = column.label + " = " + (value || "(empty)");
+    return { filterType: "idset", value: ids, inverted: !!inverted, name: "Source = " + value };
   }
-  finishAnalysisFilter(node, fhActiveTab === "patterns" ? "patterns" : null);
+  return { filterType: "text", value: "^" + escapeRegExp(value) + "$", inverted: !!inverted, ignoredColumns: [], caseSensitive: true, columns: [column.key], isRegex: true, name: column.label + " = " + (value || "(empty)") };
+}
+function createFilterNodeFromSpec(parentId, spec) {
+  const node = createFilterNode(parentId, spec.filterType, spec.value, !!spec.inverted, spec.ignoredColumns || null, !!spec.caseSensitive, spec.columns || null, !!spec.isRegex, !!spec.wholeWord);
+  if (node && spec.name) node.name = spec.name;
+  return node;
+}
+function createFacetFilterNode(parentId, column, value, inverted) {
+  if (!parentId || !state.nodes[parentId]) return null;
+  const spec = facetFilterSpec(parentId, column, value, inverted);
+  return spec ? createFilterNodeFromSpec(parentId, spec) : null;
 }
 
-// Selects a bottom-panel tab ("detail" | "stats" | "facets" | "why"; desktop/tablet — the phone
+// Selects a bottom-panel tab ("detail" | "stats" | "facets" | "why" | "neighbors"; desktop/tablet — the phone
 // sheet has its own, see setFacetsOpen). Selecting Statistics or Facets expands a collapsed
 // panel. The panel height/visibility can change, hence the full renderMainView (it
 // re-measures the log like any layout change).
 function setLowerTab(tab) {
-  lowerTab = tab === "stats" || tab === "facets" || tab === "why" ? tab : "detail";
+  lowerTab = tab === "stats" || tab === "facets" || tab === "why" || tab === "neighbors" ? tab : "detail";
   try { localStorage.setItem(LOWER_TAB_KEY, lowerTab); } catch {}
   if (lowerTab !== "detail" && isDetailCollapsed()) toggleDetailCollapsed(false);
   if (state.rootIds.length) renderMainView();
@@ -19547,7 +20413,7 @@ facetPanelBody.addEventListener("click", ev => {
     return;
   }
   const row = ev.target.closest(".facet-value");
-  if (!row) return;
+  if (!row || row.classList.contains("facet-link-colhead") || col.filterable === false) return;
   const entry = col.values[+row.dataset.idx];
   if (entry) createFacetFilter(col, entry[0], ev.altKey);
 });
@@ -19559,7 +20425,7 @@ facetPanelBody.addEventListener("contextmenu", ev => {
   ev.preventDefault();
   ev.stopPropagation();
   const col = result.columns.find(c => c.key === section.dataset.col);
-  const entry = col && col.values[+row.dataset.idx];
+  const entry = col && col.filterable !== false && !row.classList.contains("facet-link-colhead") && col.values[+row.dataset.idx];
   if (!entry) return;
   // A touch long-press (synthesized by the global helper above, it sets
   // longPressFired first) opens a menu instead of silently excluding.
@@ -19745,6 +20611,9 @@ const linkWrap = el("#linkWrap");
 const linkInfo = el("#linkInfo");
 const linkUnChip = el("#linkUnChip");
 const linkStats = el("#linkStats");
+const linkUnWhy = el("#linkUnWhy");
+const linkUnWhyBtn = el("#linkUnWhyBtn");
+const linkUnWhyDetails = el("#linkUnWhyDetails");
 const linkSortSeg = el("#linkSortSeg");
 const linkHintText = el("#linkHintText");
 const linkScroll = el("#linkScroll");
@@ -19774,6 +20643,9 @@ const tailJumpBtn = el("#tailJumpBtn");
 const tailJumpBtnHighlight = el("#tailJumpBtnHighlight");
 const timelineMinimapEl = el("#timelineMinimap");
 const timelineMinimapMetaEl = el("#timelineMinimapMeta");
+const minimapBurstsEl = el("#minimapBursts");
+const minimapBurstChip = el("#minimapBurstChip");
+const burstPopover = el("#burstPopover");
 const timelineMinimapSvg = el("#timelineMinimapSvg");
 const timelineMinimapTooltip = el("#timelineMinimapTooltip");
 const timelineMinimapDragRect = el("#timelineMinimapDragRect");
@@ -23866,6 +24738,7 @@ const LINK_BUFFER_PX = 300; // pixels of slack rendered above/below the viewport
 // the "N without end" chip (0 off, 1 inline in time order, 2 only these) and the sort ("time" | "dt").
 let linkViewUnmatched = 0;
 let linkViewSort = "time";
+let linkViewWhyOpen = false; // the "Details" list of the unpaired explanation line
 let linkMissingText = ""; // the "no “…” found" line of the current node's unmatched blocks
 function renderLinkView(node) {
   if (linkNodeId !== node.id) {
@@ -23873,6 +24746,7 @@ function renderLinkView(node) {
     linkSelectedPairIndex = null;
     linkViewUnmatched = 0;
     linkViewSort = "time";
+    linkViewWhyOpen = false;
     linkScroll.scrollTop = 0;
   }
   const pairs = applyLevelFilter(getEntries(node.id));
@@ -23891,6 +24765,7 @@ function renderLinkView(node) {
   linkUnChip.textContent = linkViewUnmatched === 2 ? "only " + fmt(unmatched.length) + " without end"
     : fmt(unmatched.length) + " without end" + (linkViewUnmatched === 1 ? " · inline" : "");
   linkSortSeg.querySelectorAll("[data-link-sort]").forEach(b => b.setAttribute("aria-pressed", b.dataset.linkSort === linkViewSort ? "true" : "false"));
+  renderLinkUnpairedWhy(node, unmatched);
   linkHintText.textContent = isCoarsePointer()
     ? "Tap a pair to select · long-press for actions · double-tap a row to jump to it"
     : "Click a pair to select · right-click for actions · double-click a row to jump to it";
@@ -23920,6 +24795,72 @@ function renderLinkView(node) {
   // view's own (differently-shaped) virtualization.
   renderTimelineMinimap(getRootFileId(node.id), allRealEntries);
 }
+
+/* ---------- Link view: why are some references unpaired? ----------
+   Next to the "N without end" chip: what typically follows those references
+   (analysisNeighbors, direction "after", same thread, window = the pairs'
+   p90 Δt but at least 1 s — the same computation as create_link's
+   unpairedFollowedBy), as one summary line plus a "Details" list (coverage,
+   pattern, median distance). A row click creates the message-pattern filter
+   under the ROOT FILE (the followers are file entries, not pairs). Computed
+   once per (pairs result, unmatched list, file entries, level quick-filter)
+   and kept on the node: renderLinkView runs on every render(), the scroll
+   renderer (renderLinkVisibleBlocks) never reaches it. */
+const LINK_WHY_MAX_ROWS = 5;
+function patternKeyHtml(key) {
+  return key.split(PATTERN_PH_SPLIT_RE).map(part =>
+    part.length === 1 && PATTERN_PH_LABELS[part] ? '<span class="pattern-ph">' + escapeHtml(PATTERN_PH_LABELS[part]) + "</span>" : escapeHtml(part)
+  ).join("");
+}
+function linkUnpairedWhy(node, unmatched) {
+  const fileId = getRootFileId(node.id);
+  const pairsAll = getEntries(node.id);
+  const fileEntries = getEntries(fileId);
+  const key = [...state.levelFilter].sort().join(",");
+  const c = node._unpairedWhy;
+  if (c && c.pairs === pairsAll && c.unmatchedAll === node._linkUnmatched && c.fileEntries === fileEntries && c.fileN === fileEntries.length && c.key === key) return c.rows;
+  let rows = [];
+  if (unmatched.length) {
+    const dts = pairsAll.map(p => p.dtMs).filter(Number.isFinite).sort((a, b) => a - b);
+    const windowMs = Math.max(1000, Math.ceil(llmPercentile(dts, 0.9) || 0));
+    const nb = analysisNeighbors(unmatched, fileEntries, { direction: "after", windowMs, sameThread: true, minLift: 2 });
+    rows = nb.rows.filter(r => r.significant).slice(0, LINK_WHY_MAX_ROWS);
+  }
+  node._unpairedWhy = { pairs: pairsAll, unmatchedAll: node._linkUnmatched, fileEntries, fileN: fileEntries.length, key, rows };
+  return rows;
+}
+function renderLinkUnpairedWhy(node, unmatched) {
+  const rows = unmatched.length ? linkUnpairedWhy(node, unmatched) : [];
+  const none = !rows.length;
+  linkUnWhy.classList.toggle("hidden", none);
+  linkUnWhyBtn.classList.toggle("hidden", none);
+  const open = !none && linkViewWhyOpen;
+  linkUnWhyDetails.classList.toggle("hidden", !open);
+  linkUnWhyBtn.setAttribute("aria-expanded", open ? "true" : "false");
+  if (none) { linkUnWhy.innerHTML = ""; linkUnWhyDetails.innerHTML = ""; return; }
+  linkUnWhy.innerHTML = "\u2192 typically followed by <b>" + patternKeyHtml(rows[0].patternKey) + "</b> on the same thread" +
+    (rows.length > 1 ? " (+" + (rows.length - 1) + " more)" : "");
+  linkUnWhyDetails.innerHTML = rows.map((r, i) =>
+    '<button type="button" class="link-un-why-row" data-idx="' + i + '" title="Show only this pattern (' + escapeHtml(patternDisplayText(r.patternKey)) + ')">' +
+    '<span class="link-un-why-n">' + escapeHtml(r.coverage) + "</span>" +
+    '<span class="link-un-why-p">' + patternKeyHtml(r.patternKey) + "</span>" +
+    '<span class="link-un-why-m">median ' + escapeHtml(formatMs(r.medianDistMs)) + "</span></button>").join("");
+}
+linkUnWhyBtn.addEventListener("click", () => {
+  linkViewWhyOpen = !linkViewWhyOpen;
+  linkUnWhyDetails.classList.toggle("hidden", !linkViewWhyOpen);
+  linkUnWhyBtn.setAttribute("aria-expanded", linkViewWhyOpen ? "true" : "false");
+});
+linkUnWhyDetails.addEventListener("click", ev => {
+  const rowEl = ev.target.closest(".link-un-why-row");
+  const node = state.nodes[linkNodeId];
+  if (!rowEl || !node || !node._unpairedWhy) return;
+  const r = node._unpairedWhy.rows[+rowEl.dataset.idx];
+  if (!r) return;
+  ev.stopPropagation();
+  const f = createFilterNode(getRootFileId(node.id), "text", patternFilterValue(r.patternKey, r.floatMask, false), false, [], false, ["message"], false, false);
+  finishAnalysisFilter(f, null);
+});
 
 // height(n real entries) = n rows + (n-1) deltas + gaps between every
 // adjacent child (2n-2 of them, .pair-rows' flex `gap`) + the block's own
@@ -31336,6 +32277,7 @@ function closeEscapeOverlays() {
   closeExtractContextMenu();
   closeFacetValueMenu();
   closePatternMenu();
+  closeBurstPopover();
   closeCsvExportDialog();
   closeExportDialog();
   closeLinkDialog();
@@ -31369,7 +32311,7 @@ function anyEscapeOverlayOpen() {
     "contextDialog", "timeRangeDialog", "assertDialog", "noteDialog", "pruneDialog",
     "csvExportDialog", "exportDialog", "sessionExportDialog", "filterLibrarySaveDialog",
     "filterLibraryDialog", "libraryMenu", "helpMenu", "themeEditorDialog", "columnsPanel", "repeatMenu", "colorPickerPopup", "contextMenu",
-    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner",
+    "treeContextMenu", "extractContextMenu", "plotFullscreenOverlay", "findBar", "pairPickBanner", "burstPopover",
   ];
   for (let i = 0; i < overlayIds.length; i++) {
     const e = document.getElementById(overlayIds[i]);
@@ -31803,6 +32745,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
     timelineMinimapMetaEl.textContent = "";
     timelineMinimapTooltip.classList.add("hidden");
     minimapInteractive = false;
+    renderMinimapBursts(rootId, viewEntries); // clears the flags and hides the chip
     return;
   }
 
@@ -32061,7 +33004,176 @@ function renderTimelineMinimap(rootId, viewEntries) {
   updateMinimapFullRange();
   updateMinimapSelectionMarkers();
   renderMinimapDraft();
+  renderMinimapBursts(rootId, viewEntries);
 }
+
+/* ---------- Burst flags ----------
+   Bursts of the ACTIVE node's entries (analysisTimeline(...).bursts: a second with >= 5 entries and
+   >= 4x the median of the non-empty seconds, adjacent ones merged), drawn as a flag with the entry
+   count on the minimap's own axis (minimapTsToX, so zoom and both binning modes just work), at most
+   the 12 strongest of the drawn range. Time files only: a plain-text file's ts are line numbers.
+   Cost: the analysis runs once per result (minimapBurstAnalysis keeps the last one, keyed on the
+   active node's cached result array, the level quick-filter and the view list's size/ends), never on
+   a scroll render. The flags are HTML buttons in #minimapBursts (siblings of the <svg>), a click opens
+   #burstPopover (openBurstPopover). One state for the Settings switch and the "Bursts" chip: setMinimapBursts. */
+const MINIMAP_BURSTS_MAX = 12;
+const MINIMAP_BURSTS_STALE_MS = 2000;
+let minimapBurstCache = null;
+let burstPopoverBurst = null; // the burst the popover shows ({from, to, ...} of the analysis), null = closed
+
+function minimapBurstAnalysis(rootId, viewEntries) {
+  const nodeEntries = state.activeId && state.nodes[state.activeId] ? getEntries(state.activeId) : null;
+  const lvl = [...state.levelFilter].sort().join(",");
+  const first = viewEntries[0], last = viewEntries[viewEntries.length - 1];
+  const c = minimapBurstCache;
+  if (c && c.rootId === rootId && c.activeId === state.activeId && c.nodeEntries === nodeEntries && c.lvl === lvl &&
+      c.len === viewEntries.length && c.first === first && c.last === last) return c.bursts;
+  // A tailed file only grows: its minimap re-renders on every tick, so within MINIMAP_BURSTS_STALE_MS the
+  // flags of the last analysis stay (a big file's analysis costs ~0.5 us/entry, too much for every tick).
+  if (c && c.rootId === rootId && c.activeId === state.activeId && c.lvl === lvl && c.first === first &&
+      viewEntries.length > c.len && performance.now() - c.at < MINIMAP_BURSTS_STALE_MS) return c.bursts;
+  // analysisTimeline wants entries sorted by ts; a Link view's flattened pair entries are not.
+  let list = viewEntries;
+  for (let i = 1; i < list.length; i++) {
+    if (list[i].ts < list[i - 1].ts) { list = viewEntries.slice().sort((a, b) => a.ts - b.ts); break; }
+  }
+  const bursts = analysisTimeline(list).bursts;
+  minimapBurstCache = { rootId, activeId: state.activeId, nodeEntries, lvl, len: viewEntries.length, first, last, bursts, at: performance.now() };
+  return bursts;
+}
+
+function renderMinimapBursts(rootId, viewEntries) {
+  const timeFile = !!rootId && !nodeIsPlainText(rootId) && minimapRootEntries.length >= 2;
+  minimapBurstChip.classList.toggle("hidden", !timeFile);
+  timelineMinimapEl.classList.toggle("has-burst-chip", timeFile);
+  minimapBurstChip.setAttribute("aria-pressed", showMinimapBursts ? "true" : "false");
+  if (!timeFile || !showMinimapBursts || !viewEntries || !viewEntries.length) {
+    minimapBurstsEl.innerHTML = "";
+    minimapBurstChip.title = "Mark bursts on the minimap";
+    closeBurstPopover();
+    return;
+  }
+  const all = minimapBurstAnalysis(rootId, viewEntries);
+  const inRange = all.filter(b => !minimapRangeOutOfView(b.from, b.to));
+  const shown = (inRange.length > MINIMAP_BURSTS_MAX
+    ? inRange.slice().sort((a, b) => b.count - a.count || a.from - b.from).slice(0, MINIMAP_BURSTS_MAX).sort((a, b) => a.from - b.from)
+    : inRange);
+  minimapBurstChip.title = all.length
+    ? "Bursts: " + all.length + " in this view" + (inRange.length > shown.length ? " \u00b7 the " + shown.length + " strongest shown" : "") + " \u00b7 click to hide"
+    : "No bursts in this view \u00b7 click to hide";
+  // The overlay covers exactly the <svg>'s box (the meta line and the zoom overview sit above it).
+  const sr = timelineMinimapSvg.getBoundingClientRect(), cr = timelineMinimapEl.getBoundingClientRect();
+  const top = Math.round(sr.top - cr.top), h = Math.round(sr.height);
+  minimapBurstsEl.style.top = top + "px";
+  minimapBurstsEl.style.height = h + "px";
+  const W = minimapWidth;
+  const clampX = x => Math.min(W, Math.max(0, x));
+  let html = "";
+  shown.forEach((b, i) => {
+    const xa = clampX(minimapTsToX(b.from)), xb = clampX(minimapTsToX(b.to));
+    const x = (xa + xb) / 2;
+    const label = timeRangeBoundLabel(rootId, b.from, true) + " \u2013 " + timeRangeBoundLabel(rootId, b.to, true);
+    html += '<div class="minimap-burst-band" style="left:' + xa.toFixed(1) + "px;width:" + Math.max(3, xb - xa).toFixed(1) + 'px"></div>' +
+      '<div class="minimap-burst-stem" style="left:' + x.toFixed(1) + 'px"></div>' +
+      '<button type="button" class="minimap-burst' + (burstPopoverBurst && burstPopoverBurst.from === b.from && burstPopoverBurst.to === b.to ? " sel" : "") +
+      '" data-burst="' + i + '" style="left:' + x.toFixed(1) + 'px" title="' + escapeHtml(label + " \u00b7 " + b.count + " entries") + '" aria-label="' +
+      escapeHtml("Burst " + label + ", " + b.count + " entries") + '"><span class="minimap-burst-flag">' + b.count.toLocaleString("de-DE") + "</span></button>";
+  });
+  minimapBurstsEl.innerHTML = html;
+  minimapBurstsEl._bursts = shown;
+  if (burstPopoverBurst && !shown.some(b => b.from === burstPopoverBurst.from && b.to === burstPopoverBurst.to)) closeBurstPopover();
+}
+
+// The one place the burst switch changes: Settings switch, minimap chip, storage and the minimap itself.
+function setMinimapBursts(on) {
+  showMinimapBursts = !!on;
+  try { localStorage.setItem(MINIMAP_BURSTS_KEY, showMinimapBursts ? "1" : "0"); } catch {}
+  pillSet(document.getElementById("settingsMinimapBursts"), showMinimapBursts);
+  minimapBurstChip.setAttribute("aria-pressed", showMinimapBursts ? "true" : "false");
+  if (!showMinimapBursts) closeBurstPopover();
+  if (!timelineMinimapEl.classList.contains("hidden") && minimapLastRootId) renderMinimapBursts(minimapLastRootId, minimapLastViewEntries);
+}
+minimapBurstChip.addEventListener("click", ev => { ev.stopPropagation(); setMinimapBursts(!showMinimapBursts); });
+minimapBurstChip.addEventListener("pointerdown", ev => ev.stopPropagation());
+
+// The actions of the burst popover. Step 2 of the analysis tools (Patterns compare, Neighbors tab) appends
+// "Compare with rest" and "What came before" HERE (each { id, label, run(burst) }, only when its target
+// exists). The one primary action is rendered last, the others in array order before it.
+function burstActions(b) {
+  return [
+    { id: "zoom", label: "Zoom", title: "Zoom the minimap to the burst \u00b1 10 s", run: () => {
+      closeBurstPopover();
+      setMinimapView(b.from - 10000, b.to + 10000);
+    } },
+    ...(currentLayoutTier === "phone" ? [] : [{ id: "before", label: "What came before", title: "Which patterns stand before the burst's first entry more often than elsewhere (Neighbors tab)", run: () => {
+      const rootId = minimapLastRootId, fileEntries = rootId ? getEntries(rootId) : [];
+      const first = (minimapLastViewEntries || []).find(e => e.ts === b.from) || fileEntries.find(e => e.ts === b.from);
+      closeBurstPopover();
+      if (!first) return;
+      openNeighborsWithOverride([first], "Burst " + timeRangeBoundLabel(rootId, b.from, true), rootId, first.ts);
+    } }]),
+    ...(currentLayoutTier === "phone" ? [] : [{ id: "compare", label: "Compare with rest", title: "Compare the burst with the rest of the file: which patterns are new or more frequent (Patterns tab, Compare)", run: () => {
+      closeBurstPopover();
+      openCompareWithBurst(b);
+    } }]),
+    { id: "window", label: "Time window", primary: true, title: "Filter the active node to the burst's time range", run: () => {
+      closeBurstPopover();
+      createTimeRangeFilterFromDrag(b.from, b.to);
+    } },
+  ];
+}
+function closeBurstPopover() {
+  if (burstPopoverBurst === null && burstPopover.classList.contains("hidden")) return;
+  burstPopoverBurst = null;
+  burstPopover.classList.add("hidden");
+  minimapBurstsEl.querySelectorAll(".minimap-burst.sel").forEach(f => f.classList.remove("sel"));
+}
+function openBurstPopover(b, flagEl) {
+  closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFacetValueMenu(); closePatternMenu();
+  burstPopoverBurst = b;
+  minimapBurstsEl.querySelectorAll(".minimap-burst.sel").forEach(f => f.classList.remove("sel"));
+  if (flagEl) flagEl.classList.add("sel");
+  const rootId = minimapLastRootId;
+  el("#burstPopTitle").textContent = "Burst " + timeRangeBoundLabel(rootId, b.from, true) + " \u2013 " + timeRangeBoundLabel(rootId, b.to, true);
+  el("#burstPopCount").textContent = b.count.toLocaleString("de-DE") + " entries in " + formatMs(Math.max(b.to - b.from, 0));
+  el("#burstPopFactor").textContent = "\u00d7" + b.factor + " vs usual";
+  el("#burstPopLevels").innerHTML = activeLevelOrder().filter(l => b.levels[l]).map(l =>
+    '<span style="color:' + (levelColorVar(l) || "var(--text-secondary)") + '">' + escapeHtml(l === "OTHER" ? "Other" : l.charAt(0)) + " " + b.levels[l].toLocaleString("de-DE") + "</span>").join("");
+  el("#burstPopPatterns").innerHTML = b.topPatterns.map(t =>
+    '<div class="burst-pop-pat"><span class="burst-pop-pat-text" title="' + escapeHtml(patternDisplayText(t.key)) + '">' + patternKeyHtml(t.key) + '</span><span class="burst-pop-pat-n">' + t.count.toLocaleString("de-DE") + "</span></div>").join("");
+  const acts = burstActions(b);
+  const ordered = acts.filter(a => !a.primary).concat(acts.filter(a => a.primary));
+  const actionsEl = el("#burstPopActions");
+  actionsEl.innerHTML = ordered.map(a =>
+    '<button type="button" class="' + (a.primary ? "btn-mini" : "btn-mini-secondary") + '" data-burst-act="' + escapeHtml(a.id) + '" title="' + escapeHtml(a.title || "") + '">' + escapeHtml(a.label) + "</button>").join("");
+  burstPopover._actions = acts;
+  burstPopover.classList.remove("hidden");
+  // Under the flag, clamped into the window (phone: fitPopupToViewport keeps it on screen).
+  const fr = flagEl ? flagEl.getBoundingClientRect() : { left: 8, bottom: 8 };
+  const r = burstPopover.getBoundingClientRect();
+  const vw = window.innerWidth, vh = window.innerHeight;
+  burstPopover.style.left = Math.max(8, Math.min(fr.left, vw - (r.width || 380) - 8)) + "px";
+  burstPopover.style.top = Math.max(8, Math.min(fr.bottom + 4, vh - (r.height || 200) - 8)) + "px";
+  fitPopupToViewport(burstPopover);
+}
+minimapBurstsEl.addEventListener("click", ev => {
+  const flag = ev.target.closest(".minimap-burst");
+  if (!flag) return;
+  ev.stopPropagation(); // a popup opener: the document's click-outside handler must not see it
+  const b = minimapBurstsEl._bursts && minimapBurstsEl._bursts[+flag.dataset.burst];
+  if (!b) return;
+  if (burstPopoverBurst && burstPopoverBurst.from === b.from && burstPopoverBurst.to === b.to) closeBurstPopover();
+  else openBurstPopover(b, flag);
+});
+minimapBurstsEl.addEventListener("pointerdown", ev => ev.stopPropagation());
+burstPopover.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const btn = ev.target.closest("[data-burst-act]");
+  const b = burstPopoverBurst;
+  if (!btn || !b) return;
+  const act = (burstPopover._actions || []).find(a => a.id === btn.dataset.burstAct);
+  if (act) act.run(b);
+});
 
 // Repositions the "whole Filtered-view result" rectangle to span from the
 // earliest to the latest entry in minimapLastViewEntries — i.e. everything
@@ -50928,7 +52040,7 @@ function clickDismissedPopupHit(target) {
     || (open(colorPickerPopup) && !colorPickerPopup.contains(target));
 }
 function anyPointerMenuOpen() {
-  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu, patternMenu]
+  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu, patternMenu, burstPopover]
     .some(m => !m.classList.contains("hidden"));
 }
 document.addEventListener("pointerdown", ev => {
@@ -50942,6 +52054,7 @@ document.addEventListener("pointerdown", ev => {
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
   if (!patternMenu.contains(ev.target)) closePatternMenu();
+  if (!burstPopover.contains(ev.target) && !ev.target.closest(".minimap-burst")) closeBurstPopover(); // a flag's own click toggles
   if ((wasOpen && !anyPointerMenuOpen()) || clickPopupHit) dismissTapPending = true;
 }, true);
 document.addEventListener("click", ev => {
@@ -53727,6 +54840,7 @@ function llmFitBudget(result, budget = LLM_TOOL_BUDGET_CHARS) {
 }
 
 function llmNode(id, what) {
+  if (llmIsPatternId(id)) return { error: "\"" + id + "\" is a pattern id, not a node. Build a node from it with create_filter (patternId)." };
   const node = state.nodes[String(id || "")];
   if (!node) return { error: "Unknown " + (what || "node") + " id \"" + id + "\". Call get_overview for the current ids." };
   return { node };
@@ -53820,6 +54934,393 @@ function messagePatternValues(message) {
   return out;
 }
 
+/* ---------- Analysis engines ----------
+   Pure functions over entry arrays (sorted by ts, from getEntries): plain
+   data in, plain data out — no node creation, no DOM, no formatting, no
+   budgeting. The LLM tools below wrap them (resolve ids, format times,
+   budget the result), and the Analyze UI calls them directly. */
+
+// Time-slicing support for the engines below. Each heavy engine has a generator form
+// (analysisXxxSteps) that yields a progress fraction (0..1) every ANALYSIS_STEP_ITEMS
+// items and returns the result; the plain function drains it synchronously (LLM tools,
+// link header, MCP). analysisRunSliced runs a generator in ANALYSIS_SLICE_MS slices.
+const ANALYSIS_STEP_ITEMS = 2000;
+function analysisDrain(gen) {
+  let r;
+  while (!(r = gen.next()).done);
+  return r.value;
+}
+// Runs `gen` in ~ANALYSIS_SLICE_MS slices through queueTask; onProgress(fraction) after
+// every slice, onDone(result) at the end. job.cancelled = true stops it silently.
+function analysisRunSliced(gen, onProgress, onDone) {
+  const job = { cancelled: false };
+  const tick = () => {
+    if (job.cancelled) return;
+    const t0 = performance.now();
+    let r;
+    do { r = gen.next(); } while (!r.done && performance.now() - t0 < ANALYSIS_SLICE_MS);
+    if (job.cancelled) return;
+    if (r.done) onDone(r.value);
+    else { onProgress(r.value); queueTask(tick); }
+  };
+  queueTask(tick);
+  return job;
+}
+// k-th smallest (0-based) of the numbers in `a`, found in place by quickselect — the same
+// value a full sort would put at index k, in O(n) (the distance lists of a hot pattern get huge).
+function analysisSelect(a, k) {
+  let lo = 0, hi = a.length - 1;
+  while (lo < hi) {
+    const pivot = a[(lo + hi) >> 1];
+    let i = lo, j = hi;
+    while (i <= j) {
+      while (a[i] < pivot) i++;
+      while (a[j] > pivot) j--;
+      if (i <= j) { const t = a[i]; a[i] = a[j]; a[j] = t; i++; j--; }
+    }
+    if (k <= j) hi = j; else if (k >= i) lo = i; else break;
+  }
+  return a[k];
+}
+// Runs a sub-generator whose progress maps onto [lo, hi] of the caller's.
+function* analysisScaled(gen, lo, hi) {
+  let r;
+  while (!(r = gen.next()).done) yield lo + (hi - lo) * r.value;
+  return r.value;
+}
+
+// Groups `entries` by message pattern (normalizeMessagePattern). Returns an
+// array sorted by count (most frequent first, ties in first-seen order):
+//   { key, count, floatMask, levels: {bucket: n}, first, last (ts), example (entry),
+//     entries? (only with opts.keepEntries) }
+// `key` is the pattern key (patternDisplayText(key) is its readable form,
+// patternFilterValue(key, floatMask, true) its filter pattern).
+function analysisPatternCounts(entries, opts) { return analysisDrain(analysisPatternCountsSteps(entries, opts)); }
+// Resumable form: yields the progress fraction every ANALYSIS_STEP_ITEMS entries, returns the result.
+function* analysisPatternCountsSteps(entries, opts) {
+  const keep = !!(opts && opts.keepEntries);
+  const groups = new Map();
+  const bucketOf = makeLevelBucketer();
+  let n = 0;
+  for (const e of entries) {
+    if (++n % ANALYSIS_STEP_ITEMS === 0) yield n / entries.length;
+    const key = normalizeMessagePattern(e.message);
+    let g = groups.get(key);
+    if (!g) {
+      g = { key, count: 0, floatMask: 0, levels: {}, first: e.ts, last: e.ts, example: e };
+      if (keep) g.entries = [];
+      groups.set(key, g);
+    }
+    g.count++;
+    g.floatMask |= patternFloatMask;
+    const lvl = bucketOf(e.level, e.formatId);
+    g.levels[lvl] = (g.levels[lvl] || 0) + 1;
+    if (e.ts < g.first) g.first = e.ts;
+    if (e.ts > g.last) g.last = e.ts;
+    if (keep) g.entries.push(e);
+  }
+  return [...groups.values()].sort((a, b) => b.count - a.count);
+}
+
+// Which message patterns stand before/after the reference entries more often
+// than elsewhere in the file. `refEntries`: the references (a link's
+// unmatched list, a node's entries); `fileEntries`: the whole file, sorted by
+// ts. opts: { direction: "before" | "after" (default "before"), windowMs
+// (default 5000), sameThread (default true), minLift (default 2) }.
+// Every reference gets its own window — before: [ts-w, ts), after: (ts, ts+w]
+// — and the references themselves never count as neighbours. With sameThread
+// both the windows and the base rate only count entries on the reference's
+// thread. Returns
+//   { direction, windowMs, sameThread, minLift, references,
+//     rows: [{ patternKey, floatMask, covered, coverage: "n/refs", inWindows,
+//              lift, medianDistMs, maxLevel, example (entry), significant }] }
+// covered = references with the pattern in their window; inWindows = its
+// occurrences over all windows; lift = rate in the windows ÷ rate in the rest
+// of the file (entries outside every window ÷ time outside every window; the
+// rest count is smoothed by +0.5 so a pattern that only ever occurs in the
+// windows gets a large but finite lift); medianDistMs = median |Δt| to
+// the reference; significant = lift ≥ minLift. rows (all patterns seen in a
+// window) are sorted by covered, then lift; the caller filters on `significant`.
+function analysisNeighbors(refEntries, fileEntries, opts) { return analysisDrain(analysisNeighborsSteps(refEntries, fileEntries, opts)); }
+function* analysisNeighborsSteps(refEntries, fileEntries, opts) {
+  opts = opts || {};
+  const direction = opts.direction === "after" ? "after" : "before";
+  const windowMs = Math.max(1, +opts.windowMs || 5000);
+  const sameThread = opts.sameThread !== false;
+  const minLift = opts.minLift == null || !Number.isFinite(+opts.minLift) ? 2 : +opts.minLift;
+  const refs = refEntries.filter(r => Number.isFinite(r.ts));
+  const out = { direction, windowMs, sameThread, minLift, references: refs.length, rows: [] };
+  if (!refs.length || !fileEntries.length) return out;
+  const refIds = new Set();
+  for (const r of refs) for (const x of getTupleEntries(r)) refIds.add(x.id);
+  const groupOf = e => (sameThread ? e.thread || "" : "");
+  const refsPerGroup = new Map();
+  for (const r of refs) refsPerGroup.set(groupOf(r), (refsPerGroup.get(groupOf(r)) || 0) + 1);
+
+  // first index with ts >= t (strict: false) / ts > t (strict: true)
+  const bound = (t, strict) => {
+    let lo = 0, hi = fileEntries.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (strict ? fileEntries[mid].ts <= t : fileEntries[mid].ts < t) lo = mid + 1; else hi = mid;
+    }
+    return lo;
+  };
+  const bucketOf = makeLevelBucketer();
+  const rows = new Map();
+  const seenByGroup = new Map(); // group -> Set of entry ids already inside some window
+  let work = 0;
+  for (let refIdx = 0; refIdx < refs.length; refIdx++) {
+    const ref = refs[refIdx];
+    if (work >= ANALYSIS_STEP_ITEMS) { work = 0; yield 0.7 * refIdx / refs.length; }
+    const from = direction === "before" ? bound(ref.ts - windowMs, false) : bound(ref.ts, true);
+    const to = direction === "before" ? bound(ref.ts, false) : bound(ref.ts + windowMs, true);
+    const group = groupOf(ref);
+    work += 1 + (to - from);
+    for (let i = from; i < to; i++) {
+      const e = fileEntries[i];
+      if (refIds.has(e.id)) continue;
+      if (sameThread && (e.thread || "") !== group) continue;
+      const key = normalizeMessagePattern(e.message);
+      let row = rows.get(key);
+      if (!row) {
+        row = { patternKey: key, floatMask: 0, covered: 0, lastRef: -1, inWindows: 0, dists: [], rank: Infinity, maxLevel: "", example: e, inByGroup: new Map(), baseByGroup: new Map() };
+        rows.set(key, row);
+      }
+      row.floatMask |= patternFloatMask;
+      if (row.lastRef !== refIdx) { row.lastRef = refIdx; row.covered++; }
+      row.inWindows++;
+      row.dists.push(Math.abs(e.ts - ref.ts));
+      let seen = seenByGroup.get(group);
+      if (!seen) seenByGroup.set(group, seen = new Set());
+      if (!seen.has(e.id)) { seen.add(e.id); row.inByGroup.set(group, (row.inByGroup.get(group) || 0) + 1); } // distinct entries: windows may overlap
+      const b = bucketOf(e.level, e.formatId);
+      const rank = levelSortRank(b, e.formatId);
+      if (rank < row.rank) { row.rank = rank; row.maxLevel = b; }
+    }
+  }
+  if (!rows.size) return out;
+
+  // Base rate: how often each pattern occurs per reference group over the file.
+  let seenN = 0;
+  for (const e of fileEntries) {
+    if (++seenN % ANALYSIS_STEP_ITEMS === 0) yield 0.7 + 0.25 * seenN / fileEntries.length;
+    if (refIds.has(e.id)) continue;
+    const group = groupOf(e);
+    if (!refsPerGroup.has(group)) continue;
+    const row = rows.get(normalizeMessagePattern(e.message));
+    if (row) row.baseByGroup.set(group, (row.baseByGroup.get(group) || 0) + 1);
+  }
+  const span = Math.max(fileEntries[fileEntries.length - 1].ts - fileEntries[0].ts, windowMs);
+  // Time covered by the windows of each group (overlapping windows counted once).
+  const coveredByGroup = new Map();
+  const rangesByGroup = new Map();
+  for (const r of refs) {
+    const g = groupOf(r);
+    if (!rangesByGroup.has(g)) rangesByGroup.set(g, []);
+    rangesByGroup.get(g).push(direction === "before" ? [r.ts - windowMs, r.ts] : [r.ts, r.ts + windowMs]);
+  }
+  for (const [g, list] of rangesByGroup) {
+    list.sort((a, b) => a[0] - b[0]);
+    let total = 0, curS = null, curE = null;
+    for (const [s0, e0] of list) {
+      if (curE === null || s0 > curE) { if (curE !== null) total += curE - curS; curS = s0; curE = e0; }
+      else if (e0 > curE) curE = e0;
+    }
+    coveredByGroup.set(g, total + (curE === null ? 0 : curE - curS));
+  }
+  let sortWork = 0;
+  for (const row of rows.values()) {
+    sortWork += 1 + row.dists.length;
+    if (sortWork >= ANALYSIS_STEP_ITEMS * 8) { sortWork = 0; yield 0.97; }
+    let expected = 0;
+    for (const [group, nRefs] of refsPerGroup) {
+      const restCount = Math.max((row.baseByGroup.get(group) || 0) - (row.inByGroup.get(group) || 0), 0);
+      expected += nRefs * windowMs * (restCount + 0.5) / Math.max(span - coveredByGroup.get(group), windowMs);
+    }
+    const lift = row.inWindows / expected;
+    out.rows.push({
+      patternKey: row.patternKey, floatMask: row.floatMask,
+      covered: row.covered, coverage: row.covered + "/" + refs.length,
+      inWindows: row.inWindows, lift, medianDistMs: analysisSelect(row.dists, Math.floor(row.dists.length / 2)),
+      maxLevel: row.maxLevel, example: row.example, significant: lift >= minLift,
+    });
+  }
+  out.rows.sort((a, b) => b.covered - a.covered || b.lift - a.lift);
+  return out;
+}
+
+// Rate over time and bursts. `entries` sorted by ts. opts: { buckets (default
+// 40, max 120) }. Returns
+//   { entries, from, to (ts of the first/last entry), buckets, bucketMs,
+//     counts: [n per bucket], usualPerSec,
+//     bursts: [{ from, to (ts of the burst's first/last entry), count, seconds,
+//                factor, levels: {bucket: n}, topPatterns: [{key, floatMask, count}] (≤ 3) }] }
+// Burst: a second with ≥ 5 entries and ≥ 4 × the median count of the non-empty
+// seconds (usualPerSec); adjacent burst seconds merge; the window is then
+// trimmed to the real first/last entry in it. factor = the burst's entries per
+// second ÷ usualPerSec (1 decimal). Seconds are wall-clock seconds of ts, so
+// callers skip bursts for plain-text files (ts = line number).
+function analysisTimeline(entries, opts) {
+  const buckets = Math.max(1, Math.min(120, Math.floor(+(opts && opts.buckets) || 40)));
+  const list = entries.filter(e => Number.isFinite(e.ts));
+  const out = { entries: list.length, from: null, to: null, buckets, bucketMs: 0, counts: [], usualPerSec: 0, bursts: [] };
+  if (!list.length) return out;
+  const from = list[0].ts, to = list[list.length - 1].ts;
+  out.from = from; out.to = to;
+  out.bucketMs = (to - from) / buckets;
+  out.counts = new Array(buckets).fill(0);
+  for (const e of list) out.counts[out.bucketMs > 0 ? Math.min(buckets - 1, Math.floor((e.ts - from) / out.bucketMs)) : 0]++;
+
+  // per-second runs: { sec, lo, hi } index ranges of `list`
+  const secs = [];
+  for (let i = 0; i < list.length; i++) {
+    const sec = Math.floor(list[i].ts / 1000);
+    const last = secs[secs.length - 1];
+    if (last && last.sec === sec) last.hi = i + 1; else secs.push({ sec, lo: i, hi: i + 1 });
+  }
+  const sorted = secs.map(s => s.hi - s.lo).sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  out.usualPerSec = median;
+  const isBurst = s => s.hi - s.lo >= 5 && s.hi - s.lo >= 4 * median;
+  const bucketOf = makeLevelBucketer();
+  for (let i = 0; i < secs.length; i++) {
+    if (!isBurst(secs[i])) continue;
+    let j = i;
+    while (j + 1 < secs.length && secs[j + 1].sec === secs[j].sec + 1 && isBurst(secs[j + 1])) j++;
+    const lo = secs[i].lo, hi = secs[j].hi;
+    const slice = list.slice(lo, hi);
+    const levels = {};
+    for (const e of slice) { const l = bucketOf(e.level, e.formatId); levels[l] = (levels[l] || 0) + 1; }
+    const seconds = secs[j].sec - secs[i].sec + 1;
+    out.bursts.push({
+      from: slice[0].ts, to: slice[slice.length - 1].ts, count: slice.length, seconds,
+      factor: Math.round(slice.length / seconds / median * 10) / 10, levels,
+      topPatterns: analysisPatternCounts(slice).slice(0, 3).map(g => ({ key: g.key, floatMask: g.floatMask, count: g.count })),
+    });
+    i = j;
+  }
+  return out;
+}
+
+// Contrast of two entry sets on pattern level. entriesA / entriesB sorted by
+// ts. opts: { durationAMs, durationBMs (default: the sets' own first-to-last
+// span, at least 1000), minCount (3), minFactor (2) }. Expected = countB ×
+// durationA ÷ durationB. Returns
+//   { a: {entries, durationMs}, b: {entries, durationMs},
+//     new:   [row] — countB = 0, countA ≥ minCount,
+//     more:  [row] — countA ≥ minCount, countA ≥ minFactor × expected,
+//     rarer: [row] — 0 < countA ≤ expected ÷ minFactor, expected ≥ minCount,
+//     gone:  [row] — countA = 0, expected ≥ minCount }
+// row = { key, floatMask, countA, countB, expected, factor (countA ÷ expected,
+// null when expected is 0), example (entry: from A, for `gone` from B) }.
+// Each group is ranked by |ln((countA+.5)/(expected+.5))| × √max(countA, expected).
+function analysisWhatChanged(entriesA, entriesB, opts) { return analysisDrain(analysisWhatChangedSteps(entriesA, entriesB, opts)); }
+function* analysisWhatChangedSteps(entriesA, entriesB, opts) {
+  opts = opts || {};
+  const minCount = opts.minCount == null ? 3 : +opts.minCount;
+  const minFactor = opts.minFactor == null ? 2 : +opts.minFactor;
+  const span = list => (list.length ? Math.max(list[list.length - 1].ts - list[0].ts, 1000) : 1000);
+  const durA = +opts.durationAMs > 0 ? +opts.durationAMs : span(entriesA);
+  const durB = +opts.durationBMs > 0 ? +opts.durationBMs : span(entriesB);
+  const out = { a: { entries: entriesA.length, durationMs: durA }, b: { entries: entriesB.length, durationMs: durB }, new: [], more: [], rarer: [], gone: [] };
+  const rows = new Map();
+  const wA = entriesA.length / Math.max(entriesA.length + entriesB.length, 1);
+  for (const g of yield* analysisScaled(analysisPatternCountsSteps(entriesA), 0, wA)) rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: g.count, countB: 0, example: g.example });
+  for (const g of yield* analysisScaled(analysisPatternCountsSteps(entriesB), wA, 1)) {
+    const r = rows.get(g.key);
+    if (r) r.countB = g.count;
+    else rows.set(g.key, { key: g.key, floatMask: g.floatMask, countA: 0, countB: g.count, example: g.example });
+  }
+  const score = r => Math.abs(Math.log((r.countA + 0.5) / (r.expected + 0.5))) * Math.sqrt(Math.max(r.countA, r.expected));
+  for (const r of rows.values()) {
+    r.expected = r.countB * durA / durB;
+    r.factor = r.expected > 0 ? r.countA / r.expected : null;
+    let group = null;
+    if (r.countA === 0) { if (r.expected >= minCount) group = "gone"; }
+    else if (r.countB === 0) { if (r.countA >= minCount) group = "new"; }
+    else if (r.countA >= minCount && r.countA >= minFactor * r.expected) group = "more";
+    else if (r.expected >= minCount && r.countA <= r.expected / minFactor) group = "rarer";
+    if (group) out[group].push(r);
+  }
+  for (const k of ["new", "more", "rarer", "gone"]) out[k].sort((x, y) => score(y) - score(x));
+  return out;
+}
+
+// Distribution of `entries` over a column. columnFn(entry) → the value (string).
+// opts: { max (default 20), dtOf(entry) → Δt ms (link pairs), unpaired:
+// [entries] (references without an end, counted as `noEnd`) }. Returns
+//   { total, distinct, values: [{ value, count, levels: {bucket: n}, noEnd?, dtMs?: {min, median, max} }],
+//     others: { values, count } | null }
+// values are sorted by count (then noEnd, then value); beyond `max` they
+// collapse into `others`. total = entries.length (the unpaired are not counted in it).
+function analysisGroupBy(entries, columnFn, opts) {
+  opts = opts || {};
+  const max = Math.max(1, +opts.max || 20);
+  const bucketOf = makeLevelBucketer();
+  const map = new Map();
+  const slot = v => {
+    let s = map.get(v);
+    if (!s) map.set(v, s = { value: v, count: 0, levels: {}, noEnd: 0, dts: [] });
+    return s;
+  };
+  for (const e of entries) {
+    const s = slot(columnFn(e));
+    s.count++;
+    const l = bucketOf(e.level, e.formatId);
+    s.levels[l] = (s.levels[l] || 0) + 1;
+    if (opts.dtOf) { const dt = opts.dtOf(e); if (Number.isFinite(dt)) s.dts.push(dt); }
+  }
+  for (const e of opts.unpaired || []) slot(columnFn(e)).noEnd++;
+  const all = [...map.values()].sort((a, b) => b.count - a.count || b.noEnd - a.noEnd || (a.value < b.value ? -1 : a.value > b.value ? 1 : 0));
+  const values = all.slice(0, max).map(s => {
+    const v = { value: s.value, count: s.count, levels: s.levels };
+    if (opts.unpaired) v.noEnd = s.noEnd;
+    if (s.dts.length) { s.dts.sort((x, y) => x - y); v.dtMs = { min: s.dts[0], median: s.dts[Math.floor(s.dts.length / 2)], max: s.dts[s.dts.length - 1] }; }
+    return v;
+  });
+  const rest = all.slice(max);
+  return {
+    total: entries.length, distinct: all.length, values,
+    others: rest.length ? { values: rest.length, count: rest.reduce((n, s) => n + s.count, 0) } : null,
+  };
+}
+
+/* ---------- Pattern ids (docs/concept-llm-analysis-tools.md → 1.1) ----------
+   find_message_types gives every type it returns an id "p<n>". Per app run,
+   in memory only (like llmCreatedNodeIds): a virtual node = the entries of
+   one file whose pattern key matches. */
+const llmPatternIds = new Map();  // fileId + "\0" + key -> "p<n>"
+const llmPatternInfo = new Map(); // "p<n>" -> { fileId, key, floatMask }
+function llmPatternIdFor(fileId, key, floatMask) {
+  const k = fileId + "\0" + key;
+  let id = llmPatternIds.get(k);
+  if (!id) {
+    id = "p" + (llmPatternIds.size + 1);
+    llmPatternIds.set(k, id);
+    llmPatternInfo.set(id, { fileId, key, floatMask: 0 });
+  }
+  llmPatternInfo.get(id).floatMask |= floatMask;
+  return id;
+}
+function llmIsPatternId(id) { return /^p\d+$/.test(String(id == null ? "" : id)); }
+function llmUnknownPatternError(id) {
+  return "Unknown pattern id \"" + id + "\". Call find_message_types again for the current pattern ids.";
+}
+// The one resolver of the reading tools: a node id or a pattern id →
+// { entries, node (null for a pattern), fileId, label } or { error }.
+function llmResolveEntries(id) {
+  if (llmIsPatternId(id)) {
+    const info = llmPatternInfo.get(String(id));
+    if (!info || !state.nodes[info.fileId]) return { error: llmUnknownPatternError(id) };
+    const entries = getEntries(info.fileId).filter(e => normalizeMessagePattern(e.message) === info.key);
+    return { entries, node: null, fileId: info.fileId, label: patternDisplayText(info.key) };
+  }
+  const { node, error } = llmNode(id);
+  if (error) return { error };
+  return { entries: getEntries(node.id), node, fileId: getRootFileId(node.id), label: nodeDisplayName(node) };
+}
+
 function llmToolGetOverview() {
   const files = state.rootIds.map(id => state.nodes[id]).filter(n => n && n.type === "file" && !n.mergeSourceHidden);
   const tree = [];
@@ -53850,86 +55351,123 @@ function llmToolGetOverview() {
 }
 
 function llmToolFindMessageTypes(args) {
-  const nodeId = args.nodeId || llmDefaultFileId();
-  if (!nodeId) return { error: "No log file is loaded." };
-  const { node, error } = llmNode(nodeId);
-  if (error) return { error };
+  let target;
+  if (args.nodeId) target = llmResolveEntries(args.nodeId);
+  else {
+    const fileId = llmDefaultFileId();
+    if (!fileId) return { error: "No log file is loaded." };
+    target = llmResolveEntries(fileId);
+  }
+  if (target.error) return { error: target.error };
   const limit = Math.max(1, Math.min(40, +args.limit || 15));
   const query = typeof args.query === "string" ? args.query.trim().toLowerCase() : "";
-  const groups = new Map();
-  const entries = getEntries(node.id);
-  const bucketOf = makeLevelBucketer();
-  for (const e of entries) {
-    const key = normalizeMessagePattern(e.message);
-    let g = groups.get(key);
-    if (!g) {
-      g = { key, count: 0, floatMask: 0, levels: {}, first: e.ts, last: e.ts, dists: null, sample: e };
-      groups.set(key, g);
-    }
-    g.count++;
-    g.floatMask |= patternFloatMask;
-    const lvl = bucketOf(e.level, e.formatId);
-    g.levels[lvl] = (g.levels[lvl] || 0) + 1;
-    if (e.ts < g.first) g.first = e.ts;
-    if (e.ts > g.last) g.last = e.ts;
-    g.pending = g.pending || [];
-    g.pending.push(e);
-  }
-  let list = [...groups.values()];
+  const entries = target.entries;
+  let list = analysisPatternCounts(entries, { keepEntries: true });
   if (query) list = list.filter(g => patternDisplayText(g.key).toLowerCase().includes(query));
-  list.sort((a, b) => b.count - a.count);
   const total = list.length;
   list = list.slice(0, limit);
   // Value distributions only for the groups actually returned.
   const types = list.map(g => {
     const dists = [];
-    for (const e of g.pending) {
+    for (const e of g.entries) {
       messagePatternValues(e.message).forEach((v, i) => {
         if (!dists[i]) dists[i] = { values: new Map() };
         llmDistStep(dists[i], v);
       });
     }
     return {
+      patternId: llmPatternIdFor(target.fileId, g.key, g.floatMask),
       count: g.count,
       levels: g.levels,
       type: patternDisplayText(g.key),
       pattern: patternFilterValue(g.key, g.floatMask, true),
       placeholders: dists.map(llmDistResult),
-      first: llmTime(node.id, g.first),
-      last: llmTime(node.id, g.last),
-      example: llmEntrySummary(node.id, g.sample),
+      first: llmTime(target.fileId, g.first),
+      last: llmTime(target.fileId, g.last),
+      example: llmEntrySummary(target.fileId, g.example),
     };
   });
-  return { nodeId: node.id, entries: entries.length, typesFound: total, types };
+  return { nodeId: target.node ? target.node.id : String(args.nodeId), entries: entries.length, typesFound: total, types };
 }
 
+// The first few rows of an extraction pattern over `entries`, without a node
+// (create_filter preview): the columns and up to 5 value rows.
+function llmExtractPreview(pattern, entries) {
+  const spec = compileExtractPattern(pattern);
+  if (!spec) return null;
+  return {
+    columns: spec.columns.map((c, i) => ({ index: i + 1, name: c.name, type: c.type })),
+    sampleValues: entries.slice(0, 5).map(e => {
+      const m = spec.regex.exec(e.message);
+      return spec.columns.map((c, i) => (m ? normalizeExtractedNumber(m[i + 1] ?? "", c) : ""));
+    }),
+  };
+}
+
+// create_filter: a text/regex filter, a pattern id's filter, or a column
+// filter (the Facets panel's "Thread = axis-2"). With preview: true nothing
+// is created — the condition is evaluated as plain data over the parent's
+// entries (evaluateFilterCondition, the same evaluator a node uses), so the
+// tree, the active node and the undo stack stay untouched.
 function llmToolCreateFilter(args) {
-  const parentId = args.parentId || llmDefaultFileId();
+  const patternRef = args.patternId != null && String(args.patternId).trim() ? String(args.patternId).trim() : null;
+  const info = patternRef ? llmPatternInfo.get(patternRef) : null;
+  if (patternRef && (!info || !state.nodes[info.fileId])) return { error: llmUnknownPatternError(patternRef) };
+  const parentId = args.parentId || (info ? info.fileId : llmDefaultFileId());
   if (!parentId) return { error: "No log file is loaded." };
   const { node: parent, error } = llmNode(parentId, "parent");
   if (error) return { error };
-  const pattern = typeof args.pattern === "string" ? args.pattern : "";
-  if (!pattern.trim()) return { error: "pattern is empty." };
-  const mode = args.mode === "regex" ? "regex" : "text";
+  const preview = args.preview === true;
   const invert = !!args.invert;
-  if (mode === "regex") {
-    try { new RegExp(pattern); } catch (e) { return { error: "Invalid regex: " + e.message }; }
-  } else if (isExtractPattern(pattern) && !compileExtractPattern(pattern)) {
-    return { error: "Invalid extraction pattern. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*]; value conditions and number formats (@en = 1,234.5, @de = 1.234,5) only on int/float, e.g. [*:float>85], [*:float@de]." };
+  let spec, pattern = "", extraction = false;
+  const columnArg = typeof args.column === "string" ? args.column.trim() : "";
+  if (columnArg) {
+    if (patternRef) return { error: "Give either column + pattern (the column's value) or patternId, not both." };
+    if (typeof args.pattern !== "string") return { error: "pattern is the value the column must have." };
+    const cols = facetColumnsFor(parent.id);
+    const col = cols.find(c => c.key.toLowerCase() === columnArg.toLowerCase() || c.label.toLowerCase() === columnArg.toLowerCase());
+    if (!col) return { error: "Unknown column \"" + columnArg + "\". Columns: " + cols.map(c => c.key).join(", ") + "." };
+    let value = args.pattern;
+    if (col.key === "level") {
+      const bucketOf = makeLevelBucketer();
+      const seen = new Set(getEntries(parent.id).map(e => bucketOf(e.level, e.formatId)));
+      value = [...seen].find(v => v.toLowerCase() === value.trim().toLowerCase()) || value.trim();
+    }
+    spec = facetFilterSpec(parent.id, col, value, invert);
+    if (!spec) return { error: "No such value \"" + value + "\" in column " + col.key + "." };
+  } else {
+    pattern = info ? patternFilterValue(info.key, info.floatMask, true) : typeof args.pattern === "string" ? args.pattern : "";
+    if (!pattern.trim()) return { error: "pattern is empty." };
+    const mode = !info && args.mode === "regex" ? "regex" : "text";
+    if (mode === "regex") {
+      try { new RegExp(pattern); } catch (e) { return { error: "Invalid regex: " + e.message }; }
+    } else if (isExtractPattern(pattern) && !compileExtractPattern(pattern)) {
+      return { error: "Invalid extraction pattern. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*]; value conditions and number formats (@en = 1,234.5, @de = 1.234,5) only on int/float, e.g. [*:float>85], [*:float@de]." };
+    }
+    extraction = mode === "text" && isExtractPattern(pattern);
+    if (extraction && invert) return { error: "An extraction pattern can't be inverted — drop invert or the placeholders." };
+    spec = { filterType: "text", value: pattern, inverted: invert, isRegex: mode === "regex" };
   }
-  const extraction = mode === "text" && isExtractPattern(pattern);
-  if (extraction && invert) return { error: "An extraction pattern can't be inverted — drop invert or the placeholders." };
-  const node = createFilterNode(parent.id, "text", pattern, invert, null, false, null, mode === "regex", false);
-  if (!node) return { error: "Could not create the filter." };
-  llmNoteCreated(node);
-  const entries = getEntries(node.id);
-  const out = { nodeId: node.id, name: node.name, parentId: parent.id, matches: entries.length, of: getEntries(parent.id).length, tablePlot: nodeIsExtractionView(node) };
+  let node = null, entries;
+  if (preview) entries = evaluateFilterCondition(spec, getEntries(parent.id), getRootFileId(parent.id), null);
+  else {
+    node = createFilterNodeFromSpec(parent.id, spec);
+    if (!node) return { error: "Could not create the filter." };
+    llmNoteCreated(node);
+    entries = getEntries(node.id);
+  }
+  const timeId = node ? node.id : parent.id;
+  const out = preview ? { preview: true } : { nodeId: node.id, name: node.name };
+  out.parentId = parent.id;
+  out.matches = entries.length;
+  out.of = getEntries(parent.id).length;
+  out.tablePlot = node ? nodeIsExtractionView(node) : extraction || nodeIsExtractionView(parent);
   if (extraction) {
-    const ex = llmExtractRows(node);
+    const ex = node ? llmExtractRows(node) : llmExtractPreview(pattern, entries);
     out.columns = ex.columns;
-    out.sampleValues = ex.rows.slice(0, 5).map(r => r.values);
+    out.sampleValues = node ? ex.rows.slice(0, 5).map(r => r.values) : ex.sampleValues;
   }
-  out.examples = entries.slice(0, 4).map(e => llmEntrySummary(node.id, e));
+  out.examples = entries.slice(0, 4).map(e => llmEntrySummary(timeId, e));
   if (!entries.length) out.hint = "No match. Check the exact text with find_message_types (case, spacing) or loosen the pattern.";
   return out;
 }
@@ -53941,7 +55479,8 @@ function llmToolCreateLink(args) {
   if (b.error) return { error: b.error };
   const ref = a.node, target = b.node;
   if (ref.type !== "filter" || target.type !== "filter") return { error: "Both sides of a link must be filter nodes (create_filter first)." };
-  if (getRootFileId(ref.id) !== getRootFileId(target.id)) return { error: "Both sides must belong to the same file." };
+  const fileId = getRootFileId(ref.id);
+  if (fileId !== getRootFileId(target.id)) return { error: "Both sides must belong to the same file." };
   const direction = args.direction === "before" ? "before" : "after";
   let key = null;
   if (typeof args.key === "string" && args.key.trim()) {
@@ -53957,28 +55496,106 @@ function llmToolCreateLink(args) {
     if (!Number.isFinite(ms) || ms < 0) return { error: "maxDtMs/minDtMs must be a non-negative number of milliseconds." };
     dt = { op: args.maxDtMs != null ? "<" : ">", ms };
   }
-  const node = createLinkNode(ref.id, target.id, direction, 1, { orderEnforced: false, exclusive: false, dt, key });
-  if (!node) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
-  llmNoteCreated(node);
-  const pairs = getEntries(node.id);
+  const preview = args.preview === true;
+  let node = null, pairs, unmatched;
+  if (preview) {
+    // No node: the link condition as plain data, evaluated over the file the
+    // way a real link node (a top-level child of the file) would be.
+    if (!linkSideBakeable(ref) || !linkSideBakeable(target)) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
+    const cond = {
+      filterType: "link", value: null, inverted: false,
+      bakedA: bakeNodeCondition(ref), bakedB: bakeNodeCondition(target),
+      linkDirection: direction, linkN: 1, linkOrderEnforced: false, linkExclusive: false,
+    };
+    copyLinkOptions({ linkDt: dt, linkKey: key }, cond);
+    const meta = {};
+    pairs = evaluateFilterCondition(cond, getEntries(fileId), fileId, meta);
+    unmatched = meta.linkUnmatched || [];
+  } else {
+    node = createLinkNode(ref.id, target.id, direction, 1, { orderEnforced: false, exclusive: false, dt, key });
+    if (!node) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
+    llmNoteCreated(node);
+    pairs = getEntries(node.id);
+    unmatched = node._linkUnmatched || [];
+  }
   const dts = pairs.map(p => p.dtMs).filter(Number.isFinite).sort((x, y) => x - y);
   const refCount = getEntries(ref.id).length;
-  const out = { nodeId: node.id, name: node.name, pairs: pairs.length, references: refCount, unpaired: Math.max(0, refCount - pairs.length), tablePlot: false };
+  const out = preview ? { preview: true } : { nodeId: node.id, name: node.name };
+  out.pairs = pairs.length;
+  out.references = refCount;
+  out.unpaired = unmatched.length;
+  out.tablePlot = false;
   if (dts.length) out.dtMs = { min: dts[0], median: dts[Math.floor(dts.length / 2)], max: dts[dts.length - 1] };
-  out.examples = pairs.slice(0, 3).map(p => llmEntrySummary(node.id, p));
-  out.tip = "This link has no table/plot itself. To get values from the paired lines, create_filter under this link with a pattern such as \"temperature=[*:float]\", then show_view table/plot on THAT new node.";
+  if (unmatched.length) {
+    out.unpairedExamples = unmatched.slice(0, 3).map(llmEntryId);
+    // What typically follows a reference without an end (same thread, within
+    // the pairs' own p90 Δt, at least 1 s): why the move never finished.
+    const windowMs = Math.max(1000, Math.ceil(llmPercentile(dts, 0.9) || 0));
+    const nb = analysisNeighbors(unmatched, getEntries(fileId), { direction: "after", windowMs, sameThread: true, minLift: 2 });
+    const rows = nb.rows.filter(r => r.significant).slice(0, 5).map(r => ({
+      type: patternDisplayText(r.patternKey),
+      patternId: llmPatternIdFor(fileId, r.patternKey, r.floatMask),
+      coverage: r.coverage,
+      medianDtMs: r.medianDistMs,
+    }));
+    if (rows.length) out.unpairedFollowedBy = rows;
+  }
+  out.examples = pairs.slice(0, 3).map(p => llmEntrySummary(node ? node.id : fileId, p));
+  out.tip = preview
+    ? "Preview only — no node was created. Call create_link again without preview to build it."
+    : "This link has no table/plot itself. To get values from the paired lines, create_filter under this link with a pattern such as \"temperature=[*:float]\", then show_view table/plot on THAT new node.";
+  return out;
+}
+
+const LLM_FULL_LINES_MAX = 60, LLM_FULL_LINES_HEAD = 15, LLM_FULL_LINES_TAIL = 30, LLM_FULL_LINE_CHARS = 300;
+// get_entries full: every line of the message (a long one keeps its head and
+// its tail — a stack trace's innermost exception is at the end), plus the
+// thread/location/method columns and the file.
+function llmFullEntry(timeNodeId, e) {
+  const lines = String(e.message == null ? "" : e.message).split("\n");
+  let shown = lines;
+  if (lines.length > LLM_FULL_LINES_MAX) {
+    shown = lines.slice(0, LLM_FULL_LINES_HEAD).concat("… " + (lines.length - LLM_FULL_LINES_HEAD - LLM_FULL_LINES_TAIL) + " lines …", lines.slice(-LLM_FULL_LINES_TAIL));
+  }
+  const out = { id: llmEntryId(e), time: llmTime(timeNodeId, e.ts), level: e.level || undefined, lines: lines.length };
+  out.message = shown.map(l => (l.length > LLM_FULL_LINE_CHARS ? l.slice(0, LLM_FULL_LINE_CHARS) + "…" : l)).join("\n");
+  if (e.thread) out.thread = e.thread;
+  if (e.location) out.location = e.location;
+  if (e.method) out.method = e.method;
+  const root = state.nodes[findRootIdForEntry(llmEntryId(e))];
+  if (root) {
+    const src = root.sources && root.sources.find(s => s.id === e.sourceId);
+    out.file = src ? src.name : root.name;
+  }
   return out;
 }
 
 function llmToolGetEntries(args) {
+  const full = args.full === true;
+  if (args.ids != null) {
+    const ids = (Array.isArray(args.ids) ? args.ids : [args.ids]).map(String);
+    if (!ids.length) return { error: "ids is empty." };
+    if (ids.length > 20) return { error: "At most 20 ids per call." };
+    const found = [], unknown = [];
+    for (const id of ids) (entryIndex[id] ? found : unknown).push(id);
+    if (!found.length) return { error: "Unknown entry id(s): " + unknown.slice(0, 5).join(", ") + ". Use the ids from get_entries/find_message_types." };
+    const out = { entries: found.map(id => {
+      const e = entryIndex[id];
+      const timeId = findRootIdForEntry(id) || llmDefaultNodeId();
+      return full ? llmFullEntry(timeId, e) : llmEntrySummary(timeId, e);
+    }) };
+    if (unknown.length) out.unknown = unknown;
+    return out;
+  }
   const nodeId = args.nodeId || llmDefaultNodeId();
   if (!nodeId) return { error: "No log file is loaded." };
-  const { node, error } = llmNode(nodeId);
-  if (error) return { error };
-  const entries = getEntries(node.id);
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const entries = target.entries;
+  const timeId = target.node ? target.node.id : target.fileId;
   const from = Math.max(0, Math.floor(+args.from || 0));
   const max = Math.max(1, Math.min(20, Math.floor(+args.max || 10)));
-  return { nodeId: node.id, total: entries.length, from, entries: entries.slice(from, from + max).map(e => llmEntrySummary(node.id, e)) };
+  return { nodeId: target.node ? target.node.id : String(nodeId), total: entries.length, from, entries: entries.slice(from, from + max).map(e => (full ? llmFullEntry(timeId, e) : llmEntrySummary(timeId, e))) };
 }
 
 function llmPercentile(sorted, p) {
@@ -54015,12 +55632,208 @@ function llmToolGetValueStats(args) {
   };
 }
 
+// "08:00:02.022", "2026-01-15 08:00:02.022" (or with T), "line 120" → ts for a
+// view over nodeId's file — the strings llmTime produces. NaN when unreadable.
+function llmParseTime(nodeId, text) {
+  const s = String(text == null ? "" : text).trim();
+  if (nodeIsPlainText(nodeId)) {
+    const m = /^(?:line\s*)?(\d+(?:\.\d+)?)$/i.exec(s);
+    return m ? +m[1] : NaN;
+  }
+  const ms = f => (f ? +(f + "00").slice(0, 3) : 0);
+  const clockOk = (h, mi, sec) => +h <= 23 && +mi <= 59 && +(sec || 0) <= 59;
+  let m = /^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?$/.exec(s);
+  if (m) return clockOk(m[4], m[5], m[6]) && +m[2] >= 1 && +m[2] <= 12 && +m[3] >= 1 && +m[3] <= 31 ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0), ms(m[7])).getTime() : NaN;
+  m = /^(\d{1,2}):(\d{2})(?::(\d{2})(?:[.,](\d{1,3}))?)?$/.exec(s);
+  if (m) {
+    if (!clockOk(m[1], m[2], m[3])) return NaN;
+    const first = getEntries(getRootFileId(nodeId))[0];
+    const base = new Date(first ? first.ts : 0);
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate(), +m[1], +m[2], +(m[3] || 0), ms(m[4])).getTime();
+  }
+  return NaN;
+}
+
+function llmToolTimeline(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const tl = analysisTimeline(target.entries, { buckets: args.buckets });
+  const out = { nodeId: target.node ? target.node.id : String(nodeId), entries: tl.entries };
+  if (!tl.entries) { out.note = "No entries."; return out; }
+  const plain = nodeIsPlainText(target.fileId);
+  out.from = llmTime(target.fileId, tl.from);
+  out.to = llmTime(target.fileId, tl.to);
+  out.bucketMs = Math.round(tl.bucketMs);
+  out.counts = tl.counts;
+  out.usualPerSec = tl.usualPerSec;
+  if (plain) { out.bursts = []; out.note = "Plain-text file: no time axis, so no bursts."; return out; }
+  out.bursts = tl.bursts.map(b => ({
+    from: llmTime(target.fileId, b.from), to: llmTime(target.fileId, b.to), count: b.count, factor: b.factor, levels: b.levels,
+    topTypes: b.topPatterns.map(p => ({ patternId: llmPatternIdFor(target.fileId, p.key, p.floatMask), type: patternDisplayText(p.key), count: p.count })),
+  }));
+  if (tl.bursts.length) out.tip = "create_window with from/to of a burst builds a time-window node; what_changed compares it with the rest; common_neighbors finds what precedes it.";
+  return out;
+}
+
+// One side of what_changed: a node / pattern id, optionally narrowed to a time
+// window, or only a window of the default file.
+function llmWhatSide(label, nodeArg, fromArg, toArg) {
+  const hasWindow = fromArg != null || toArg != null;
+  if (!nodeArg && !hasWindow) return { missing: true };
+  const base = llmResolveEntries(nodeArg || llmDefaultFileId());
+  if (base.error) return { error: base.error };
+  let from = null, to = null, entries = base.entries;
+  if (hasWindow) {
+    if (fromArg != null) { from = llmParseTime(base.fileId, fromArg); if (Number.isNaN(from)) return { error: label + "From \"" + fromArg + "\" is not a time. Use the format of the times the tools return." }; }
+    if (toArg != null) { to = llmParseTime(base.fileId, toArg); if (Number.isNaN(to)) return { error: label + "To \"" + toArg + "\" is not a time. Use the format of the times the tools return." }; }
+    entries = entries.filter(e => (from == null || e.ts >= from) && (to == null || e.ts <= to));
+  }
+  return { base, entries, windowMs: from != null && to != null ? Math.abs(to - from) : null, label: nodeArg ? String(nodeArg) : "file " + base.fileId };
+}
+
+function llmToolWhatChanged(args) {
+  const a = llmWhatSide("a", args.aNodeId, args.aFrom, args.aTo);
+  if (a.error) return { error: a.error };
+  if (a.missing) return { error: "Say what to examine: aNodeId (a node or pattern id) and/or aFrom/aTo (a time window of the file)." };
+  const fileId = a.base.fileId;
+  const b = llmWhatSide("b", args.bNodeId, args.bFrom, args.bTo);
+  if (b.error) return { error: b.error };
+  let entriesB, durationB = null, bLabel;
+  if (b.missing) {
+    // B = the rest of A's file: everything not in A, over the time left over.
+    const inA = new Set(a.entries.map(e => e.id));
+    const all = getEntries(fileId);
+    entriesB = all.filter(e => !inA.has(e.id));
+    const r = fileEntryTimeRange(all);
+    const spanA = a.entries.length ? a.entries[a.entries.length - 1].ts - a.entries[0].ts : 0;
+    durationB = r ? Math.max((r.max - r.min) - (a.windowMs != null ? a.windowMs : spanA), 1000) : 1000;
+    bLabel = "rest of file";
+  } else {
+    entriesB = b.entries;
+    durationB = b.windowMs;
+    bLabel = b.label;
+  }
+  const wc = analysisWhatChanged(a.entries, entriesB, { durationAMs: a.windowMs, durationBMs: durationB });
+  const round1 = v => (v == null ? null : Math.round(v * 10) / 10);
+  const row = (r, limit) => r.slice(0, limit).map(x => ({
+    patternId: llmPatternIdFor(fileId, x.key, x.floatMask), type: patternDisplayText(x.key),
+    countA: x.countA, countB: x.countB, expected: round1(x.expected), factor: round1(x.factor), example: llmEntryId(x.example),
+  }));
+  const side = (s, label) => ({ what: label, entries: s.entries, seconds: Math.round(s.durationMs / 100) / 10 });
+  const out = { a: side(wc.a, a.label), b: side(wc.b, bLabel) };
+  for (const k of ["new", "more", "rarer", "gone"]) out[k] = row(wc[k], 8);
+  if (!wc.new.length && !wc.more.length && !wc.rarer.length && !wc.gone.length) out.note = "No pattern differs clearly (needs ≥ 3 occurrences and a factor ≥ 2).";
+  return out;
+}
+
+function llmToolCommonNeighbors(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const direction = args.direction === "after" ? "after" : "before";
+  const windowMs = args.windowMs == null ? 5000 : +args.windowMs;
+  if (!(windowMs > 0)) return { error: "windowMs must be a positive number of milliseconds." };
+  const minLift = args.minLift == null ? 2 : +args.minLift;
+  if (!Number.isFinite(minLift)) return { error: "minLift must be a number." };
+  const showAll = args.showAll === true;
+  const nb = analysisNeighbors(target.entries, getEntries(target.fileId), { direction, windowMs, sameThread: args.sameThread !== false, minLift });
+  const rows = (showAll ? nb.rows : nb.rows.filter(r => r.significant)).slice(0, 12);
+  const out = { nodeId: target.node ? target.node.id : String(nodeId), references: nb.references, direction, windowMs, sameThread: nb.sameThread, minLift };
+  out.neighbors = rows.map(r => {
+    const n = {
+      patternId: llmPatternIdFor(target.fileId, r.patternKey, r.floatMask), type: patternDisplayText(r.patternKey),
+      coverage: r.coverage, inWindows: r.inWindows, lift: Math.round(r.lift * 10) / 10, medianDistMs: r.medianDistMs, maxLevel: r.maxLevel, example: llmEntryId(r.example),
+    };
+    if (showAll) n.significant = r.significant;
+    return n;
+  });
+  if (!nb.references) out.note = "The node has no entries.";
+  else if (!out.neighbors.length) out.hint = "Nothing stands out (lift < " + minLift + "). Try a longer windowMs, sameThread: false, or showAll: true.";
+  else out.tip = "create_window with aroundNodeId = this node and " + (direction === "before" ? "beforeMs" : "afterMs") + " = " + windowMs + " shows the context; create_filter with a patternId keeps one type.";
+  return out;
+}
+
+function llmToolGroupBy(args) {
+  const nodeId = args.nodeId || llmDefaultNodeId();
+  if (!nodeId) return { error: "No log file is loaded." };
+  const target = llmResolveEntries(nodeId);
+  if (target.error) return { error: target.error };
+  const want = String(args.column == null ? "" : args.column).trim().toLowerCase();
+  if (!want) return { error: "column is empty." };
+  const cols = facetColumnsFor(target.fileId);
+  let col = cols.find(c => c.key.toLowerCase() === want || c.label.toLowerCase() === want);
+  let valueOf = null;
+  if (col) valueOf = col.value;
+  else if (target.node) {
+    const ex = llmExtractRows(target.node);
+    const ec = ex && ex.columns.find(c => String(c.index) === want || c.name.toLowerCase() === want);
+    if (ec) {
+      const byEntry = new Map(ex.rows.map(r => [r.entry, r.values[ec.index - 1]]));
+      col = { key: ec.name };
+      valueOf = e => byEntry.get(e) || "";
+    }
+  }
+  if (!col) {
+    const names = cols.map(c => c.key);
+    if (target.node) { const ex = llmExtractRows(target.node); if (ex) ex.columns.forEach(c => names.push(c.name)); }
+    return { error: "Unknown column \"" + args.column + "\". Columns: " + names.join(", ") + "." };
+  }
+  const link = !!target.node && isLinkNode(target.node);
+  // The reference side, as the Facets panel does (linkStartEntry): on a "before" link the
+  // chronologically first entry of a pair is the match, not the reference.
+  const g = analysisGroupBy(target.entries, link ? e => valueOf(linkStartEntry(e)) : valueOf, link ? { dtOf: e => e.dtMs, unpaired: (target.node._linkUnmatched || []).map(linkStartEntry) } : {});
+  const out = { nodeId: target.node ? target.node.id : String(nodeId), column: col.key, total: g.total, distinct: g.distinct, values: g.values.map(v => ({ ...v, value: v.value === "" ? "(empty)" : v.value })) };
+  if (link) { out.byStartEntry = true; out.noEnd = (target.node._linkUnmatched || []).length; }
+  if (g.others) out.others = g.others;
+  return out;
+}
+
+function llmToolCreateWindow(args) {
+  const timed = args.from != null || args.to != null;
+  const around = args.aroundNodeId != null && args.aroundNodeId !== "";
+  if (timed === around) return { error: timed ? "Give either from/to or aroundNodeId, not both." : "Give from/to (a time window) or aroundNodeId with beforeMs/afterMs (the context around a node's entries)." };
+  let node;
+  if (around) {
+    const { node: ref, error } = llmNode(args.aroundNodeId, "reference node");
+    if (error) return { error };
+    if (ref.type !== "filter") return { error: "aroundNodeId must be a filter node (its entries are the references); create_filter first." };
+    let before = args.beforeMs == null ? null : +args.beforeMs, after = args.afterMs == null ? null : +args.afterMs;
+    if ((before != null && !(before >= 0)) || (after != null && !(after >= 0))) return { error: "beforeMs/afterMs must be non-negative numbers of milliseconds." };
+    if (before == null && after == null) { before = 1000; after = 1000; }
+    before = before || 0; after = after || 0;
+    if (before === 0 && after === 0) return { error: "beforeMs and afterMs are both 0." };
+    node = createContextNode(ref.id, before, after);
+    if (!node) return { error: "Could not create the window." };
+  } else {
+    const parentId = args.parentId || llmDefaultFileId();
+    if (!parentId) return { error: "No log file is loaded." };
+    const { node: parent, error } = llmNode(parentId, "parent");
+    if (error) return { error };
+    const from = args.from == null ? null : llmParseTime(parent.id, args.from);
+    const to = args.to == null ? null : llmParseTime(parent.id, args.to);
+    if (Number.isNaN(from)) return { error: "from \"" + args.from + "\" is not a time. Use the format of the times the tools return, e.g. \"" + llmTime(parent.id, getEntries(parent.id)[0] ? getEntries(parent.id)[0].ts : 0) + "\"." };
+    if (Number.isNaN(to)) return { error: "to \"" + args.to + "\" is not a time. Use the format of the times the tools return." };
+    node = createFilterNode(parent.id, "timerange", from != null && to != null && from > to ? { from: to, to: from } : { from, to });
+    if (!node) return { error: "Could not create the window." };
+  }
+  llmNoteCreated(node);
+  const out = { nodeId: node.id, name: node.name, parentId: node.parentId, entries: getEntries(node.id).length };
+  if (!around) out.of = getEntries(node.parentId).length;
+  return out;
+}
+
 const LLM_VIEWS = { log: "highlight", context: "highlight", filtered: "filter", table: "table", plot: "plot", patterns: "patterns" };
 function llmToolShowView(args) {
   const { node, error } = llmNode(args.nodeId);
   if (error) return { error };
   const view = LLM_VIEWS[args.view] ? args.view : "filtered";
   const tab = LLM_VIEWS[view];
+  const unpairedOnly = args.unpaired === "only";
+  if (args.unpaired != null && args.unpaired !== "" && !unpairedOnly) return { error: "unpaired must be \"only\" (or left out)." };
+  if (unpairedOnly && (!isLinkNode(node) || tab !== "filter")) return { error: "unpaired: \"only\" works on a link node with view \"filtered\" (node " + node.id + " is " + (isLinkNode(node) ? "a link, but the view is " + view : "not a link") + ")." };
   if ((tab === "table" || tab === "plot") && !nodeIsExtractionView(node)) {
     const fix = node.type === "filter" && node.filterType === "link"
       ? "create_filter under this link (parentId " + node.id + ") with placeholders such as \"temperature=[*:float]\""
@@ -54113,6 +55926,13 @@ function llmToolShowView(args) {
   }
   render();
   applyFhView(tab);
+  if (unpairedOnly) {
+    // The link view's "N without end" chip, set to its "only these" state.
+    if (linkNodeId !== node.id) renderLinkView(node);
+    linkViewUnmatched = 2;
+    relayoutLinkView();
+    out.unpaired = linkViewUnmatched === 2 ? "only" : "none (every reference has an end)";
+  }
   return out;
 }
 
@@ -54153,9 +55973,9 @@ const LLM_TOOLS = [
   },
   {
     name: "find_message_types",
-    description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
+    description: "Groups the messages of a node by their shape (numbers, ids, strings become placeholders) and returns the most frequent types with patternId, count, level, first/last time, a ready-made extraction pattern and the value distribution of every placeholder.",
     parameters: { type: "object", properties: {
-      nodeId: { type: "string", description: "Node to analyse; default: the whole file of the active node" },
+      nodeId: { type: "string", description: "Node (or pattern id) to analyse; default: the whole file of the active node" },
       query: { type: "string", description: "Only types whose text contains this (case-insensitive)" },
       limit: { type: "integer", description: "Max. types to return (default 15, max 40)" },
     } },
@@ -54163,18 +55983,21 @@ const LLM_TOOLS = [
   },
   {
     name: "create_filter",
-    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further; [*:float@en] / [*:float@de] fix the thousands/decimal separators (1,234.5 vs 1.234,5). mode \"regex\": JavaScript regex. Returns the new nodeId, match count and examples, or an error to correct.",
+    description: "Creates a filter node under parentId. mode \"text\": substring match — with placeholders such as [*:int], [*:float], [*:word], [*] it becomes an extraction filter whose values feed Table/Plot and get_value_stats; value conditions like [*:float>85] narrow further; [*:float@en] / [*:float@de] fix the thousands/decimal separators (1,234.5 vs 1.234,5). mode \"regex\": JavaScript regex. Alternatives to pattern: patternId (a type from find_message_types) or column + pattern (exact column value). preview: true creates nothing and only reports matches. Returns the new nodeId, match count and examples, or an error to correct.",
     parameters: { type: "object", properties: {
       parentId: { type: "string", description: "Node to filter (a file or filter id); default: the whole file of the active node" },
-      pattern: { type: "string" },
+      pattern: { type: "string", description: "The text to match; with column: the value that column must have" },
+      patternId: { type: "string", description: "A message type's id (p1, p2, ... from find_message_types) instead of pattern" },
+      column: { type: "string", description: "Filter on a column's exact value instead (thread, location, method, level, ...): pattern is the value" },
       mode: { type: "string", enum: ["text", "regex"] },
       invert: { type: "boolean", description: "Keep everything that does NOT match (not for extraction patterns)" },
-    }, required: ["pattern"] },
+      preview: { type: "boolean", description: "Only count the matches and show examples; creates no node" },
+    } },
     run: llmToolCreateFilter,
   },
   {
     name: "create_link",
-    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread) or of a pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references and Δt statistics.",
+    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread) or of a pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references (with examples and the message types that typically follow them) and Δt statistics. preview: true creates no node.",
     parameters: { type: "object", properties: {
       refId: { type: "string" },
       targetId: { type: "string" },
@@ -54182,14 +56005,17 @@ const LLM_TOOLS = [
       key: { type: "string", description: "Column name or wildcard pattern both sides must share" },
       maxDtMs: { type: "number", description: "Keep only pairs closer than this (ms)" },
       minDtMs: { type: "number", description: "Keep only pairs further apart than this (ms)" },
+      preview: { type: "boolean", description: "Only report the pairs and unpaired references; creates no node" },
     }, required: ["refId", "targetId"] },
     run: llmToolCreateLink,
   },
   {
     name: "get_entries",
-    description: "A few entries of a node (at most 20, messages shortened), with their entry ids for annotate.",
+    description: "A few entries of a node or message type (at most 20, messages shortened), with their entry ids for annotate. ids: look up specific entries instead. full: true returns every line of the message (long ones: first 15 + last 30 lines) plus thread, location, method and file.",
     parameters: { type: "object", properties: {
-      nodeId: { type: "string" },
+      nodeId: { type: "string", description: "A node id, or a pattern id (p1, ...) from find_message_types" },
+      ids: { type: "array", items: { type: "string" }, description: "Entry ids (at most 20) instead of nodeId/from/max" },
+      full: { type: "boolean", description: "Complete message lines and columns instead of the shortened first line" },
       from: { type: "integer", description: "Start index (default 0)" },
       max: { type: "integer", description: "Default 10, max 20" },
     } },
@@ -54215,6 +56041,7 @@ const LLM_TOOLS = [
     parameters: { type: "object", properties: {
       nodeId: { type: "string" },
       view: { type: "string", enum: ["log", "filtered", "table", "plot", "patterns"] },
+      unpaired: { type: "string", enum: ["only"], description: "On a link node with view filtered: show only the references without an end" },
       plot: { type: "object", properties: {
         type: { type: "string", enum: ["line", "bar", "scatter", "3d", "heatmap", "profile", "radar", "parallel"] },
         x: { type: "string" },
@@ -54239,6 +56066,59 @@ const LLM_TOOLS = [
       bookmark: { type: "boolean" },
     }, required: ["entryIds"] },
     run: llmToolAnnotate,
+  },
+  {
+    name: "timeline",
+    description: "How a node's (or message type's) entries are spread over time: counts per time bucket, the usual rate, and bursts (seconds with at least 4x the usual rate) with their time window, size, levels and top message types. Start here to find when something happened.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "Node or pattern id; default: the active node" },
+      buckets: { type: "integer", description: "Number of time buckets (default 40, max 120)" },
+    } },
+    run: llmToolTimeline,
+  },
+  {
+    name: "what_changed",
+    description: "Contrasts set A with set B on message-type level: types that are new in A, more or rarer than expected from B's rate, or gone. A = aNodeId (node or pattern id) and/or the time window aFrom..aTo of the file; B defaults to the rest of the same file, or give bNodeId / bFrom..bTo (another node, window or file). Only types with at least 3 occurrences count. Times as returned by timeline.",
+    parameters: { type: "object", properties: {
+      aNodeId: { type: "string", description: "Node or pattern id for A; default: the file of the active node when only aFrom/aTo are given" },
+      aFrom: { type: "string" }, aTo: { type: "string" },
+      bNodeId: { type: "string", description: "Node for B (default: the rest of A's file)" },
+      bFrom: { type: "string" }, bTo: { type: "string" },
+    } },
+    run: llmToolWhatChanged,
+  },
+  {
+    name: "common_neighbors",
+    description: "Which message types typically stand BEFORE (or AFTER) the entries of a node, more often than elsewhere in the file. Per reference entry a window of windowMs is looked at (references themselves excluded). coverage n/refs = in how many windows the type occurs; lift = its rate there / its rate elsewhere (default: only lift >= 2, up to 12 rows). Use it to find causes of errors.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "Node or pattern id whose entries are the references" },
+      direction: { type: "string", enum: ["before", "after"], description: "Default before" },
+      windowMs: { type: "number", description: "Window size per reference in ms (default 5000)" },
+      sameThread: { type: "boolean", description: "Only count entries of the reference's thread (default true)" },
+      minLift: { type: "number", description: "Minimum lift (default 2)" },
+      showAll: { type: "boolean", description: "Also list types below minLift" },
+    }, required: ["nodeId"] },
+    run: llmToolCommonNeighbors,
+  },
+  {
+    name: "group_by",
+    description: "Distribution of a node's entries over one column (thread, location, method, level, a format column or an extraction column): count and levels per value, at most 20 values. On a link node it groups the pairs by their START entry's value and adds, per value, entries without end (noEnd) and the Δt min/median/max.",
+    parameters: { type: "object", properties: {
+      nodeId: { type: "string", description: "Node or pattern id" },
+      column: { type: "string", description: "Column key/name, or an extraction column's number/name" },
+    }, required: ["nodeId", "column"] },
+    run: llmToolGroupBy,
+  },
+  {
+    name: "create_window",
+    description: "Creates a time-window node. Either from/to (times as returned by timeline, either may be left out) under parentId (default: the file), or aroundNodeId + beforeMs/afterMs: every entry of the file within that time of each entry of the node (default 1000 ms each side).",
+    parameters: { type: "object", properties: {
+      parentId: { type: "string", description: "With from/to: node to narrow; default: the whole file of the active node" },
+      from: { type: "string" }, to: { type: "string" },
+      aroundNodeId: { type: "string", description: "Filter node whose entries get context" },
+      beforeMs: { type: "number" }, afterMs: { type: "number" },
+    } },
+    run: llmToolCreateWindow,
   },
 ];
 const LLM_TOOL_MAP = new Map(LLM_TOOLS.map(t => [t.name, t]));
@@ -54267,6 +56147,58 @@ function runLlmTool(name, args) {
     }
   }
   return { result, text: llmFitBudget(result), error: result.error || null };
+}
+
+/* ===================== MCP bridge (external agents) =====================
+   The desktop app's MCP server (desktop/src-tauri/mcp) evaluates
+   window.philoggMcpCall(id, name, args) in this window for every tools/call
+   and expects exactly one window.philogg.mcpToolResult(id, text, isError)
+   back. Calls run FIFO, one at a time, and only while the in-app assistant
+   is not in a round (llm.running); the agent loop's finally drains the
+   queue. One call = one undo step; created nodes get the assistant mark. */
+const mcpQueue = [];
+function mcpAnswer(id, text, isError) {
+  try {
+    if (window.philogg && typeof window.philogg.mcpToolResult === "function") {
+      Promise.resolve(window.philogg.mcpToolResult(id, String(text), !!isError)).catch(() => {});
+    }
+  } catch (e) { /* bridge gone */ }
+}
+function philoggMcpCall(id, name, args) {
+  mcpQueue.push({ id, name, args });
+  mcpDrainQueue();
+  if (typeof mcpOnQueueChange === "function") mcpOnQueueChange();
+}
+window.philoggMcpCall = philoggMcpCall;
+function mcpDrainQueue() {
+  while (mcpQueue.length && !llm.running) {
+    const job = mcpQueue.shift();
+    mcpRunCall(job);
+  }
+  if (typeof mcpOnQueueChange === "function") mcpOnQueueChange();
+}
+function mcpRunCall(job) {
+  let text = "", isError = true;
+  const created = [];
+  const prevRound = llmRoundCreated;
+  llmRoundCreated = created;
+  try {
+    const r = runLlmTool(job.name, job.args || {});
+    text = r.text; isError = !!r.error;
+  } catch (e) {
+    text = JSON.stringify({ error: "Tool failed: " + (e && e.message || e) });
+  } finally {
+    llmRoundCreated = prevRound;
+    try {
+      const label = "MCP: " + job.name;
+      const actions = created.filter(nid => state.nodes[nid]).map(nid => ({ kind: "create", nodeId: nid, parentId: state.nodes[nid].parentId }));
+      if (actions.length === 1) pushUndo({ ...actions[0], label });
+      else if (actions.length > 1) pushUndo({ kind: "batch", label, actions });
+      render();
+      llmNotify();
+    } catch (e) { /* the answer below must still go out */ }
+    mcpAnswer(job.id, text, isError);
+  }
 }
 
 /* ===================== LLM assistant: agent loop and sessions =====================
@@ -54318,6 +56250,8 @@ const LLM_SYSTEM_PROMPT = [
   "2. If the request is ambiguous (which axis? which sensor? which event counts as 'done'?), ASK a short question instead of guessing — list the concrete options you found. Asking ends your turn; the person answers in the next message. When you ask, put each option on its own line starting with '- '.",
   "3. Build: create the filters/links; check the counts in each result and fix the pattern if it matched nothing or an error came back.",
   "4. Show: show_view (table or plot) so the person sees the result — but only with the id of a node whose result said tablePlot: true. No such node yet? Create the extraction filter first (under a link: create_filter with parentId = the link node), then show_view on that new id. If there is nothing to extract, use view \"filtered\" instead. Plot types: line/bar/scatter/3d for values over time or against each other; radar (one row against selected ones) and parallel (every row across several axes, ranges highlight rows) for several columns with different units; heatmap/profile for an array column or same-unit columns.",
+  "5. Diagnose (\"what is going on?\", \"why do these happen?\"): the analysis tools only read and create no nodes. Overview: get_overview, timeline (when are the bursts?). Find the unusual: find_message_types, what_changed (a burst or a run against the rest, or one file against another). Find causes: common_neighbors (what typically comes BEFORE the entries of a node, coverage n/refs and lift), group_by (which thread/axis/value), and create_link's unpairedFollowedBy (what follows references without an end). Prove it: get_entries with full: true (complete message, stack trace) or ids. Show it: create_window (a time window, or context around a node), create_filter, show_view, annotate.",
+  "Pattern ids: find_message_types, timeline, what_changed, common_neighbors and create_link give message types an id like p7. Pass it wherever a nodeId is accepted by a reading tool (get_entries, timeline, group_by, common_neighbors, what_changed), or to create_filter as patternId to keep that type. create_filter and create_link accept preview: true to check the count without creating a node.",
   "Rules: never invent ids, values or message texts — use only what the tools returned. Answer briefly, in the person's language. Mention the node ids you created (e.g. n42) and entry ids when relevant; they become links. Put findings on entries with annotate (a note) when the person asks you to mark something.",
 ].join("\n");
 
@@ -54559,11 +56493,16 @@ function llmToolSummary(name, out) {
   switch (name) {
     case "get_overview": return "get_overview → " + (r.files || []).length + " file(s), " + (r.tree || []).length + " node(s)";
     case "find_message_types": return "find_message_types → " + (r.types || []).length + " of " + r.typesFound + " type(s)" + ((r.types || [])[0] ? ", top: " + llmCut(r.types[0].type, 60) : "");
-    case "create_filter": return "create_filter → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.matches + " match(es)";
-    case "create_link": return "create_link → " + r.nodeId + ", " + r.pairs + " pair(s), " + r.unpaired + " unpaired";
-    case "get_entries": return "get_entries → " + (r.entries || []).length + " of " + r.total + " (" + r.nodeId + ")";
+    case "create_filter": return r.preview ? "create_filter (preview) → " + r.matches + " match(es) of " + r.of : "create_filter → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.matches + " match(es)";
+    case "create_link": return r.preview ? "create_link (preview) → " + r.pairs + " pair(s), " + r.unpaired + " unpaired" : "create_link → " + r.nodeId + ", " + r.pairs + " pair(s), " + r.unpaired + " unpaired";
+    case "get_entries": return "get_entries → " + (r.entries || []).length + (r.total != null ? " of " + r.total + " (" + r.nodeId + ")" : " by id");
     case "get_value_stats": return "get_value_stats → " + r.nodeId + (r.n != null ? " n=" + r.n + " min " + r.min + " median " + r.median + " max " + r.max : "");
     case "show_view": return "show_view → " + r.nodeId + " " + r.view;
+    case "timeline": return "timeline → " + (r.entries || 0) + " entries, " + (r.bursts || []).length + " burst(s)";
+    case "what_changed": return "what_changed → " + ["new", "more", "rarer", "gone"].map(k => (r[k] || []).length + " " + k).join(", ");
+    case "common_neighbors": return "common_neighbors → " + (r.neighbors || []).length + " type(s) " + r.direction + " " + r.references + " reference(s)" + ((r.neighbors || [])[0] ? ", top: " + llmCut(r.neighbors[0].type, 50) + " " + r.neighbors[0].coverage : "");
+    case "group_by": return "group_by → " + r.column + ": " + r.distinct + " value(s)";
+    case "create_window": return "create_window → " + r.nodeId + " " + llmCut(r.name, 60) + ", " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies");
     case "annotate": return "annotate → " + r.entries + " entr" + (r.entries === 1 ? "y" : "ies") + (r.bookmarked ? ", " + r.bookmarked + " bookmarked" : "") + (r.noted ? ", " + r.noted + " noted" : "");
     default: return name;
   }
@@ -54708,6 +56647,7 @@ async function llmSend(text) {
     llmRoundCreated = null;
     llmPushRoundBatch(round);
     llm.running = null;
+    mcpDrainQueue();
     llmTouch(session);
     llmSaveSession(session);
     render();
@@ -55096,6 +57036,136 @@ function initLlmAssistantUi() {
   document.getElementById("settingsLlmTest").addEventListener("click", refresh);
 }
 
+// Settings → Assistant → External agents (MCP), desktop build only.
+const MCP_KEYS = { enabled: "philogg-mcp-enabled", port: "philogg-mcp-port", token: "philogg-mcp-token" };
+const MCP_DEFAULT_PORT = 7337;
+const mcp = { status: null, showToken: false, timer: null, copyTimer: null };
+function mcpAvailable() {
+  return !!(window.philogg && typeof window.philogg.mcpConfigure === "function");
+}
+function mcpStore(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+function mcpStoreSet(key, v) { try { localStorage.setItem(key, v); } catch (e) { /* storage unavailable */ } }
+function mcpEnabled() { return mcpStore(MCP_KEYS.enabled) === "1"; }
+function mcpPort() {
+  const n = parseInt(mcpStore(MCP_KEYS.port), 10);
+  return Number.isFinite(n) && n >= 1024 && n <= 65535 ? n : MCP_DEFAULT_PORT;
+}
+function mcpNewToken() {
+  const a = new Uint8Array(32);
+  crypto.getRandomValues(a);
+  return Array.from(a, b => b.toString(16).padStart(2, "0")).join("");
+}
+function mcpToken() { return mcpStore(MCP_KEYS.token) || ""; }
+function mcpMaskToken(t) { return t ? t.slice(0, 4) + "•".repeat(20) : ""; }
+function mcpCommand(token) {
+  return 'claude mcp add --transport http philogg http://127.0.0.1:' + mcpPort() + '/mcp --header "Authorization: Bearer ' + token + '"';
+}
+// Pure: the status line for the settings row. `status` is the last
+// mcpStatus() answer (or null), `queued` the calls waiting for a round.
+function mcpStatusView(enabled, status, queued) {
+  if (!enabled) return { text: "Off", kind: "" };
+  if (status && status.error) return { text: status.error + (/in use/.test(status.error) ? " Pick another port." : ""), kind: "err" };
+  if (!status || !status.listening) return { text: "Starting…", kind: "wait" };
+  const pad = n => String(n).padStart(2, "0");
+  let text = "Listening on 127.0.0.1:" + status.port;
+  if (!status.calls) text += " · no calls yet";
+  else {
+    text += " · " + status.calls + (status.calls === 1 ? " call" : " calls");
+    if (status.lastCallAt) {
+      const t = new Date(status.lastCallAt);
+      text += " · last " + pad(t.getHours()) + ":" + pad(t.getMinutes()) + ":" + pad(t.getSeconds());
+      if (status.lastClient) text += " from " + status.lastClient;
+    }
+  }
+  if (queued) text += " · " + queued + (queued === 1 ? " call waits" : " calls wait") + " for the assistant's round";
+  return { text, kind: queued ? "wait" : "ok" };
+}
+function mcpRenderUi() {
+  const q = id => document.getElementById(id);
+  const token = mcpToken();
+  const shown = mcp.showToken ? token : mcpMaskToken(token);
+  q("settingsMcpToken").textContent = shown;
+  q("settingsMcpToken").title = mcp.showToken ? token : "";
+  const show = q("settingsMcpTokenShow");
+  show.title = mcp.showToken ? "Hide" : "Show";
+  show.setAttribute("aria-label", (mcp.showToken ? "Hide" : "Show") + " token");
+  q("settingsMcpCommand").textContent = mcpCommand(shown || "<token>");
+  const v = mcpStatusView(mcpEnabled(), mcp.status, mcpQueue.length);
+  q("settingsMcpStatusText").textContent = v.text;
+  q("settingsMcpDot").className = "ide-status-dot" + (v.kind && v.kind !== "err" ? " " + v.kind : v.kind ? " err" : "");
+  q("settingsMcpStatus").classList.toggle("err", v.kind === "err");
+}
+function mcpOnQueueChange() { if (mcpAvailable() && document.getElementById("settingsMcpCard")) mcpRenderUi(); }
+function mcpToolsList() {
+  return llmToolSpecs().map(s => ({ name: s.function.name, description: s.function.description, inputSchema: s.function.parameters }));
+}
+function mcpApply() {
+  const enabled = mcpEnabled();
+  if (enabled && !mcpToken()) mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+  mcp.status = null;
+  mcpRenderUi();
+  let p;
+  try {
+    p = Promise.resolve(window.philogg.mcpConfigure({ enabled, port: mcpPort(), token: mcpToken(), tools: mcpToolsList() }));
+  } catch (e) { p = Promise.reject(e); }
+  return p.then(st => { mcp.status = st || null; }, e => { mcp.status = { listening: false, error: String(e && e.message || e) }; })
+    .then(() => mcpRenderUi());
+}
+function mcpRefreshStatus() {
+  if (!mcpEnabled() || document.getElementById("settingsDialog").classList.contains("hidden")) return;
+  let p;
+  try { p = Promise.resolve(window.philogg.mcpStatus()); } catch (e) { return; }
+  p.then(st => { if (st) { mcp.status = st; mcpRenderUi(); } }, () => {});
+}
+function initMcpUi() {
+  if (!mcpAvailable()) return;
+  const q = id => document.getElementById(id);
+  ["settingsNavItemLlm", "settingsSectionLlm", "settingsMcpGroupTitle", "settingsMcpCard"].forEach(id => q(id).classList.remove("hidden"));
+  // "Local model" title only when the section holds both groups; without the
+  // chat bridge the local-model card has nothing to configure.
+  const llmThere = llmAvailable();
+  q("settingsLlmGroupTitle").classList.toggle("hidden", !llmThere);
+  q("settingsLlmCard").classList.toggle("hidden", !llmThere);
+  const toggle = q("settingsMcpEnabled");
+  const port = q("settingsMcpPort");
+  pillSet(toggle, mcpEnabled());
+  port.value = mcpPort();
+  toggle.addEventListener("change", () => {
+    mcpStoreSet(MCP_KEYS.enabled, pillGet(toggle) ? "1" : "0");
+    mcpApply();
+  });
+  port.addEventListener("change", () => {
+    const n = parseInt(port.value, 10);
+    mcpStoreSet(MCP_KEYS.port, String(Number.isFinite(n) ? Math.min(65535, Math.max(1024, n)) : MCP_DEFAULT_PORT));
+    port.value = mcpPort();
+    mcpApply();
+  });
+  q("settingsMcpTokenShow").addEventListener("click", () => {
+    if (!mcpToken()) mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+    mcp.showToken = !mcp.showToken;
+    mcpRenderUi();
+  });
+  q("settingsMcpTokenRegen").addEventListener("click", () => {
+    mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+    mcpToast("New token");
+    mcpApply();
+  });
+  q("settingsMcpCopy").addEventListener("click", () => {
+    if (!mcpToken()) mcpStoreSet(MCP_KEYS.token, mcpNewToken());
+    copyTextToClipboard(mcpCommand(mcpToken()));
+    mcpToast("Copied");
+  });
+  mcpRenderUi();
+  if (mcpEnabled()) mcpApply();
+  mcp.timer = setInterval(mcpRefreshStatus, 1000);
+}
+function mcpToast(text) {
+  const t = document.getElementById("settingsMcpToast");
+  t.textContent = text;
+  clearTimeout(mcp.copyTimer);
+  mcp.copyTimer = setTimeout(() => { t.textContent = ""; }, 1500);
+}
+
 /* ===================== Init ===================== */
 btnUndo.innerHTML = ICON_UNDO;
 btnRedo.innerHTML = ICON_REDO;
@@ -55148,6 +57218,7 @@ initContextExpandStepUnitSetting();
 initContextExpandStepMsSetting();
 initContextToolbar();
 initMinimapFullRangeSetting();
+initMinimapBurstsSetting();
 initShowSourcesSetting();
 initMinimapBinningModeSetting();
 initTextMatchHighlightSettings();
@@ -55243,6 +57314,7 @@ bootRestore.catch(() => {}).then(() => new URLSearchParams(bootSearch).has("url"
 // LLM assistant (desktop build only — window.philogg.llmChat): toolbar
 // button, Settings section, stored chat sessions. See "LLM assistant".
 initLlmAssistantUi();
+initMcpUi();
 </script>
 </body>
 </html>
