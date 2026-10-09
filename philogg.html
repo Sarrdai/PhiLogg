@@ -15930,7 +15930,7 @@ function createLinkNodeFromBaked(rootId, bakedA, bakedB, direction, n, opts, nam
     linkOrderEnforced: !!(opts && opts.orderEnforced),
     linkExclusive: !!(opts && opts.exclusive),
   };
-  copyLinkOptions({ linkDt: opts && opts.dt, linkKey: opts && opts.key }, node);
+  copyLinkOptions({ linkDt: opts && opts.dt, linkKey: opts && opts.key, linkPairing: opts && opts.pairing }, node);
   node.name = (name != null ? name : linkChainName(node)) + linkOptionsNameSuffix(node);
   state.nodes[node.id] = node;
   root.children.unshift(node.id);
@@ -15940,7 +15940,7 @@ function createLinkNodeFromBaked(rootId, bakedA, bakedB, direction, n, opts, nam
 // ---- Link chains <-> hops (the link dialog's model) ----
 // A (multi-hop) link is one nested baked condition: link(link(A, B1), B2)...
 // The dialog edits it as { start, hops: [{ baked, direction, n }], key, dt,
-// exclusive, orderEnforced } — the key (and the two flags) hold on every
+// exclusive, orderEnforced, pairing } — the key, pairing (and the two flags) hold on every
 // hop, the Δt condition on the last one only (the whole tuple's span).
 
 // The baked condition of a plain text side typed into the dialog.
@@ -15949,7 +15949,7 @@ function bakedTextCondition(pattern) {
 }
 
 // Builds the nested baked link for `start` + `hops`; opts: { key, dt,
-// exclusive, orderEnforced }. null for an empty hop list.
+// exclusive, orderEnforced, pairing }. null for an empty hop list.
 function hopsToLinkChain(start, hops, opts) {
   if (!start || !hops || !hops.length) return null;
   opts = opts || {};
@@ -15962,7 +15962,7 @@ function hopsToLinkChain(start, hops, opts) {
       linkN: Math.max(1, parseInt(hop.n, 10) || 1),
       linkOrderEnforced: !!opts.orderEnforced, linkExclusive: !!opts.exclusive,
     };
-    copyLinkOptions({ linkKey: opts.key, linkDt: i === hops.length - 1 ? opts.dt : null }, link);
+    copyLinkOptions({ linkKey: opts.key, linkPairing: opts.pairing, linkDt: i === hops.length - 1 ? opts.dt : null }, link);
     cur = link;
   });
   return cur;
@@ -15982,6 +15982,7 @@ function linkChainToHops(link) {
     start: cloneBaked(cur), hops,
     key: sanitizeLinkKey(link.linkKey), dt: sanitizeLinkDt(link.linkDt),
     exclusive: !!link.linkExclusive, orderEnforced: !!link.linkOrderEnforced,
+    pairing: sanitizeLinkPairing(link.linkPairing),
   };
 }
 
@@ -16091,10 +16092,13 @@ function suggestLinkKeys(startEntries, endEntries) {
 //   linkDt  = { op: ">" | "<", ms } — keep only tuples whose span (first to
 //             last real entry, the pair's dtMs, see buildPairEntry) is
 //             greater / less than ms.
-//   linkKey = { column } | { pattern } — a reference and a target are only
-//             paired when they carry the same value in that column (Thread,
-//             Source, a custom column, ... — entryGroupValue), or the same
-//             capture(s) of that wildcard pattern (e.g. "axis [*:int]").
+//   linkKey = { column } | { pattern } | { wildcards: [[i, j], ...] } — a
+//             reference and a target are only paired when they carry the same
+//             value in that column (Thread, Source, a custom column, ... —
+//             entryGroupValue), the same capture(s) of that wildcard pattern
+//             (e.g. "axis [*:int]"), or when wildcard #i of the start's own
+//             pattern equals wildcard #j of the end's own pattern.
+//   linkPairing = "window" | "nested" (absent = nearest), see computeLinkPairs.
 // Stored as their own node fields (a link's `value` is always null) and
 // copied as fresh objects by every carrier via copyLinkOptions.
 function sanitizeLinkDt(v) {
@@ -16106,9 +16110,27 @@ function sanitizeLinkKey(v) {
   if (!v) return null;
   if (typeof v.column === "string" && v.column) return { column: v.column };
   if (typeof v.pattern === "string" && v.pattern.trim()) return { pattern: v.pattern.trim() };
+  if (Array.isArray(v.wildcards)) {
+    // "Same -> wildcards": [startIdx, endIdx] pairs of 0-based wildcard indexes (start pattern, end pattern).
+    const seen = new Set(), pairs = [];
+    for (const p of v.wildcards) {
+      if (!Array.isArray(p) || p.length !== 2 || !Number.isInteger(p[0]) || !Number.isInteger(p[1]) || p[0] < 0 || p[1] < 0) continue;
+      const id = p[0] + "," + p[1];
+      if (seen.has(id)) continue;
+      seen.add(id);
+      pairs.push([p[0], p[1]]);
+    }
+    if (pairs.length) return { wildcards: pairs };
+  }
   return null;
 }
+// Pairing mode: "window" (before the next start) | "nested" (brackets); absent = nearest, never stored.
+function sanitizeLinkPairing(v) {
+  return v === "window" || v === "nested" ? v : null;
+}
 function copyLinkOptions(src, dst) {
+  const pairing = sanitizeLinkPairing(src.linkPairing);
+  if (pairing) dst.linkPairing = pairing; else delete dst.linkPairing;
   const dt = sanitizeLinkDt(src.linkDt);
   if (dt) dst.linkDt = dt; else delete dst.linkDt;
   const key = sanitizeLinkKey(src.linkKey);
@@ -16165,6 +16187,7 @@ const FILTER_NODE_FIELDS = [
   { key: "linkN", kind: "raw", type: "link" },
   { key: "linkOrderEnforced", kind: "bool", type: "link" },
   { key: "linkExclusive", kind: "bool", type: "link" },
+  { key: "linkPairing", kind: "sanitized", sanitize: sanitizeLinkPairing, type: "link" },
   { key: "linkDt", kind: "sanitized", sanitize: sanitizeLinkDt, type: "link" },
   { key: "linkKey", kind: "sanitized", sanitize: sanitizeLinkKey, type: "link" },
   { key: "contextBefore", kind: "raw", type: "context" },
@@ -16217,7 +16240,13 @@ function copyFilterNodeFields(src, dst, mode) {
 function linkDtPasses(dt, ms) { return dt.op === ">" ? ms > dt.ms : ms < dt.ms; }
 function linkOptionsNameSuffix(node) {
   let out = "";
-  if (node.linkKey) out += " [same " + (node.linkKey.column ? groupColumnLabel(node.linkKey.column) : node.linkKey.pattern) + "]";
+  if (node.linkKey) {
+    out += " [same " + (node.linkKey.column ? groupColumnLabel(node.linkKey.column)
+      : node.linkKey.wildcards ? node.linkKey.wildcards.map(([i, j]) => "#" + (i + 1) + "=#" + (j + 1)).join(", ")
+      : node.linkKey.pattern) + "]";
+  }
+  if (node.linkPairing === "window") out += " (before next start)";
+  else if (node.linkPairing === "nested") out += " (nested)";
   if (node.linkDt) out += " (Δt " + node.linkDt.op + " " + formatMs(node.linkDt.ms) + ")";
   return out;
 }
@@ -16236,6 +16265,33 @@ function compileLinkKey(linkKey) {
     const m = wildcardMatch(spec.regex, spec.columns, e.message);
     return m ? m.slice(1, spec.columns.length + 1).join("\u0001") : null;
   };
+}
+
+// The side-aware form computeLinkPairs uses: { ref, target } (two entry -> key
+// functions), null when the link has no key. column/pattern keys read both
+// sides the same way (compileLinkKey); the wildcards key reads the start's
+// captures with the START pattern (cfg.bakedA) and the end's with the END
+// pattern (cfg.bakedB) — each side must be a plain text condition with a
+// wildcard pattern, else that side keys nothing (single-step links only: a
+// chained hop's bakedA is a link, so the whole key is null-keyed there).
+function compileLinkKeys(cfg) {
+  const key = sanitizeLinkKey(cfg.linkKey);
+  if (!key) return null;
+  if (!key.wildcards) { const f = compileLinkKey(key); return { ref: f, target: f }; }
+  const side = (baked, idx) => {
+    const spec = baked && baked.filterType === "text" && !baked.isRegex && typeof baked.value === "string" && isExtractPattern(baked.value)
+      ? compileExtractPattern(baked.value) : null;
+    if (!spec) return () => null;
+    const n = spec.columns.length;
+    return e => {
+      const m = wildcardMatch(spec.regex, spec.columns, e.message);
+      if (!m) return null;
+      const parts = [];
+      for (const i of idx) { if (i >= n) return null; parts.push(m[1 + i]); }
+      return parts.join("\u0001");
+    };
+  };
+  return { ref: side(cfg.bakedA, key.wildcards.map(p => p[0])), target: side(cfg.bakedB, key.wildcards.map(p => p[1])) };
 }
 
 const PAIR_SEPARATOR = " ⟶ ";
@@ -16739,6 +16795,15 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
 // `unmatched` (optional array) collects the references that got no pair —
 // no key, no candidate, no match, order-enforce reject — in reference order;
 // NOT the ones the Δt post-filter dropped. Handed out as node._linkUnmatched.
+// `skipped` (optional array, "before the next start" only) collects the
+// references whose window held no end although a neighbouring same-key
+// reference exists: neither paired nor "without end". Handed out as
+// meta.linkSkipped.
+//
+// cfg.linkPairing: absent = nearest (the loop below as it always was);
+// "window" limits each reference's search to its neighbour reference of the
+// same key (exclusivity implied); "nested" pairs like brackets
+// (computeNestedLinkPairs).
 //
 // With a correlation key (linkKey), the targets are indexed by key ONCE
 // per recompute (a Map key -> that key's targets, each list still sorted
@@ -16746,32 +16811,67 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
 // key's list — the unchanged findNthOccurrence(Excluding) run over a
 // smaller array, so direction, N, the tie-break and exclusivity all keep
 // their exact meaning, just among same-key candidates.
-function computeLinkPairs(cfg, refEntries, targetEntries, fileId, unmatched) {
+function computeLinkPairs(cfg, refEntries, targetEntries, fileId, unmatched, skipped) {
   const result = [];
+  const pairing = sanitizeLinkPairing(cfg.linkPairing);
+  const isWindow = pairing === "window";
   // usedIds backs the opt-in "exclusive matches" option: once a target
   // entry has been matched for one reference entry, later reference
   // entries in this SAME node can't reuse it. Scoped globally across
   // every tuple this node produces (across the whole loop below), not
   // per-hop — see docs/filters.md "Link filter" for why that scope was
-  // chosen. Off by default, so behavior is unchanged unless opted in.
-  const usedIds = cfg.linkExclusive ? new Set() : null;
+  // chosen. Off by default, so behavior is unchanged unless opted in; the
+  // "before the next start" mode implies it.
+  const usedIds = cfg.linkExclusive || isWindow ? new Set() : null;
   // Backs the same-timestamp tie-break in findNthOccurrence — see
   // buildOrderIndexMap. Built once per recompute, not per reference entry.
   const orderIndexMap = buildOrderIndexMap(fileId);
   const dt = sanitizeLinkDt(cfg.linkDt);
-  const keyOf = compileLinkKey(cfg.linkKey);
+  const keyFns = compileLinkKeys(cfg);
+  const keyOf = keyFns && keyFns.ref;
+  // Nested pairing is single-step: a chained hop (references are pairs) is paired nearest.
+  if (pairing === "nested" && !(refEntries.length && refEntries[0].isPair)) {
+    return computeNestedLinkPairs(refEntries, targetEntries, keyFns, orderIndexMap, dt, unmatched);
+  }
   let targetsByKey = null;
-  if (keyOf) {
+  if (keyFns) {
     targetsByKey = new Map();
     for (const t of targetEntries) {
-      const k = keyOf(t);
+      const k = keyFns.target(t);
       if (k == null) continue;
       let list = targetsByKey.get(k);
       if (!list) targetsByKey.set(k, list = []);
       list.push(t);
     }
   }
-  for (const refEntry of refEntries) {
+  // "Before the next start": each reference's window ends at its neighbour
+  // reference of the same key (next one for "after", previous one for
+  // "before"), taken by (anchor ts, log order). limits[i] = that neighbour's
+  // anchor entry, or undefined for the outermost reference of its key.
+  let limits = null;
+  if (isWindow) {
+    limits = new Array(refEntries.length);
+    const groups = new Map();
+    refEntries.forEach((r, i) => {
+      const a = r.matchEntry || r;
+      const k = keyOf ? keyOf(a) : "";
+      if (k == null) return;
+      let g = groups.get(k);
+      if (!g) groups.set(k, g = []);
+      g.push(i);
+    });
+    const anchorOf = i => refEntries[i].matchEntry || refEntries[i];
+    const after = cfg.linkDirection !== "before";
+    for (const g of groups.values()) {
+      g.sort((x, y) => linkLogOrderCmp(anchorOf(x), anchorOf(y), orderIndexMap) || x - y);
+      for (let p = 0; p < g.length; p++) {
+        const nb = after ? g[p + 1] : g[p - 1];
+        if (nb !== undefined) limits[g[p]] = anchorOf(nb);
+      }
+    }
+  }
+  for (let ri = 0; ri < refEntries.length; ri++) {
+    const refEntry = refEntries[ri];
     // Anchor on the previous hop's matched entry (refEntry.matchTs /
     // .matchEntry) when refEntry is itself a chained link's pair result,
     // not its stale outer .ts — see buildPairEntry/getTupleEntries (Bug 1
@@ -16779,16 +16879,32 @@ function computeLinkPairs(cfg, refEntries, targetEntries, fileId, unmatched) {
     // refEntry itself. The correlation key is read off that same anchor.
     const anchorTs = refEntry.matchTs !== undefined ? refEntry.matchTs : refEntry.ts;
     const anchorEntry = refEntry.matchEntry || refEntry;
+    const limit = isWindow ? limits[ri] : undefined;
     let candidates = targetEntries;
     if (targetsByKey) {
       const k = keyOf(anchorEntry);
-      candidates = k == null ? null : targetsByKey.get(k);
-      if (!candidates) { if (unmatched) unmatched.push(refEntry); continue; }
+      if (k == null) { if (unmatched) unmatched.push(refEntry); continue; }
+      candidates = targetsByKey.get(k);
+      if (!candidates) {
+        // Window mode: a start that has a later/earlier same-key start but no end at all is skipped.
+        if (limit) { if (skipped) skipped.push(refEntry); } else if (unmatched) unmatched.push(refEntry);
+        continue;
+      }
     }
     const match = usedIds
       ? findNthOccurrenceExcluding(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, usedIds, orderIndexMap)
       : findNthOccurrence(candidates, anchorEntry, cfg.linkDirection, cfg.linkN, orderIndexMap);
-    if (!match) { if (unmatched) unmatched.push(refEntry); continue; }
+    if (!match) {
+      if (limit) { if (skipped) skipped.push(refEntry); } else if (unmatched) unmatched.push(refEntry);
+      continue;
+    }
+    // The match must lie before the limit (after: before the next start, in
+    // log order; before: after the previous start); an end exactly on the
+    // limit entry counts as beyond it.
+    if (limit) {
+      const c = linkLogOrderCmp(match, limit, orderIndexMap);
+      if (cfg.linkDirection === "before" ? c <= 0 : c >= 0) { if (skipped) skipped.push(refEntry); continue; }
+    }
     // Opt-in "enforce order": reject (drop, same as "no match") a hop
     // whose match lands strictly before the anchor it was searched from —
     // i.e. require the chain's timestamps to be non-decreasing hop over
@@ -16797,6 +16913,64 @@ function computeLinkPairs(cfg, refEntries, targetEntries, fileId, unmatched) {
     if (cfg.linkOrderEnforced && match.ts < anchorTs) { if (unmatched) unmatched.push(refEntry); continue; }
     const pair = buildPairEntry(refEntry, match, orderIndexMap);
     if (usedIds) usedIds.add(match.id);
+    if (dt && !linkDtPasses(dt, pair.dtMs)) continue;
+    result.push(pair);
+  }
+  return result;
+}
+
+// Log-order comparison of two real entries: by ts, equal timestamps by
+// position in the file (orderIndexMap); entries the map can't resolve tie.
+function linkLogOrderCmp(a, b, orderIndexMap) {
+  return (a.ts - b.ts) || ((orderIndexMap.get(a.id) - orderIndexMap.get(b.id)) || 0);
+}
+
+// "Nested" pairing: starts and ends are merged in log order (two-pointer
+// merge of the two ts-sorted lists) and close like brackets — per key a
+// stack; an end pops the most recent open start of its key, an end with
+// nothing open is ignored, starts still open at the end (and starts without
+// a key) are "without end". An entry that is BOTH a start and an end (it
+// matches both conditions) closes an open same-key start if there is one,
+// otherwise it opens a new one — it is never both at once. Direction and N
+// do not apply; every start is used at most once, so exclusivity is
+// implied. Pairs come out in reference order like every other mode.
+function computeNestedLinkPairs(refEntries, targetEntries, keyFns, orderIndexMap, dt, unmatched) {
+  const stacks = new Map();
+  const closedBy = new Map(); // start entry -> its end
+  const spent = new Set();    // entries that were both and acted as an end: not a start, so not 'without end'
+  const refKey = e => (keyFns ? keyFns.ref(e) : "");
+  const targetKey = e => (keyFns ? keyFns.target(e) : "");
+  let i = 0, j = 0;
+  while (i < refEntries.length || j < targetEntries.length) {
+    const r = refEntries[i], t = targetEntries[j];
+    let c;
+    if (r === undefined) c = 1;
+    else if (t === undefined) c = -1;
+    else c = r.id === t.id ? 0 : linkLogOrderCmp(r, t, orderIndexMap);
+    if (c < 0) { // a start
+      i++;
+      const k = refKey(r);
+      if (k == null) continue;
+      let st = stacks.get(k);
+      if (!st) stacks.set(k, st = []);
+      st.push(r);
+    } else { // an end, or an entry that is both
+      j++;
+      if (c === 0) i++;
+      const tk = targetKey(t);
+      const st = tk == null ? null : stacks.get(tk);
+      if (st && st.length) { closedBy.set(st.pop(), t); if (c === 0) spent.add(r); }
+      else if (c === 0) { // both: nothing to close, so it opens
+        const k = refKey(r);
+        if (k != null) { let s2 = stacks.get(k); if (!s2) stacks.set(k, s2 = []); s2.push(r); }
+      }
+    }
+  }
+  const result = [];
+  for (const r of refEntries) {
+    const t = closedBy.get(r);
+    if (!t) { if (unmatched && !spent.has(r)) unmatched.push(r); continue; }
+    const pair = buildPairEntry(r, t, orderIndexMap);
     if (dt && !linkDtPasses(dt, pair.dtMs)) continue;
     result.push(pair);
   }
@@ -17853,8 +18027,12 @@ function evaluateFilterCondition(cond, parentEntries, fileId, meta) {
     const refEntries = getEntriesFromBaked(cond.bakedA, parentEntries, fileId);
     const targetEntries = getEntriesFromBaked(cond.bakedB, parentEntries, fileId);
     const unmatched = meta ? [] : null;
-    result = computeLinkPairs(cond, refEntries, targetEntries, fileId, unmatched);
-    if (meta) meta.linkUnmatched = unmatched; // becomes node._linkUnmatched (runtime only, like _gapMs)
+    const skipped = meta ? [] : null;
+    result = computeLinkPairs(cond, refEntries, targetEntries, fileId, unmatched, skipped);
+    if (meta) {
+      meta.linkUnmatched = unmatched; // becomes node._linkUnmatched (runtime only, like _gapMs)
+      meta.linkSkipped = skipped;     // "before the next start" starts without an end in their window: preview only, no node field
+    }
   } else if (cond.filterType === "gap") {
     const gap = computeGapEntries(cond.value, parentEntries);
     result = gap.result;
