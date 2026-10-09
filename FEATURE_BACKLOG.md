@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 121
+LAST_ID: 123
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -47,3 +47,5 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 90 | Text query language for power users | A typed query (e.g. `level:ERROR thread:Worker* msg~"timeout"`) that compiles into regular filter nodes, as an alternative input path to the dialogs. The filter tree covers GUI users; power users would get a faster, keyboard-only way to build chains. Open question: syntax scope, and keeping it a front-end for nodes rather than a second evaluation engine. | mittel–groß |  |
 | 103 | Auto-detect the log format when the filename-resolved format matches no line | Try the stored formats on the file's first ~50 lines and pick the best match, instead of only offering the "No line matches the log format" empty state (2026-10-05) with its manual "Set up log format…" / "Open as plain text" buttons. Decided not to build now: a wrong silent guess is worse than the visible prompt. | mittel |  |
 | 121 | Benchmark for the LLM analysis tools: shell agent vs. tools-only vs. local model | Came from #119 (concept phase 0, dropped in the 2026-10-08 decision): measure whether the analysis tools beat a general shell agent on the same logs, and how a small local model fares with tools only. Ground truth from the log simulator (`--truth`), so answers are checkable. Not built: the tools shipped without it. | mittel |  |
+| 122 | Analysis entry points on the phone | The #120 analyses are desktop/tablet-only today: the phone has no Neighbors tab and no Patterns Compare, the burst flags open the plain pointer menu (no `What came before` / `Compare with rest`) and the minimap `Bursts` chip is hidden (the Settings switch works). Needs a phone design (mockup first): e.g. Neighbors and Compare as bottom-sheet tabs, burst actions as sheet content. Came from #120. | mittel |  |
+| 123 | Filter a link node on any column of the reference entry | Facets on a link node show custom columns and Source of the reference entry, but only Level/Thread/Location/Method are clickable: a child filter of a link node tests the pair, and a pair carries only those four fields of its reference. Alternative: let column filters (and Source) on a link node resolve the value through the pair's reference entry (`linkStartEntry`), so every facet value becomes a filter and `create_filter` with `column` works on link nodes too. Came from #120. | klein |  |
