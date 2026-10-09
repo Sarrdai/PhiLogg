@@ -98,7 +98,7 @@ await withApp(async (w, d, T) => {
   const distinctMs = new Set(w.getEntries(http.nodeId).map(e => /completed in (\d+)ms/.exec(e.message)[1])).size;
   assert(distinctMs > 20 && byMs.groups.length === 20 && byMs.others === distinctMs - 20, "20 groups + others, got " + byMs.groups.length + "/" + byMs.others + " of " + distinctMs);
   // a non-numeric value column: rows + value distribution per group
-  const nn = llmRun(w, "get_value_stats", { nodeId: http.nodeId, column: "GET", groupBy: "status" }).result;
+  const nn = llmRun(w, "get_value_stats", { nodeId: http.nodeId, column: "Request", groupBy: "status" }).result;
   assert(nn.numeric === false && nn.groups[0].rows > 0 && nn.groups[0].distribution && !("median" in nn.groups[0]), "non-numeric column: distribution per group, got " + JSON.stringify(nn.groups[0]));
   // pattern id as the node
   const mt = llmRun(w, "find_message_types", { query: "Sensor T" }).result.types[0];
@@ -184,7 +184,7 @@ await withApp(async (w, d, T) => {
   const unk = llmRun(w, "create_filter", { parentId: http.nodeId, column: "T" });
   assert(unk.error, "pattern is required with column");
   const unk2 = llmRun(w, "create_filter", { parentId: http.nodeId, column: "T", pattern: "1" });
-  assert(unk2.error && unk2.error.includes("thread") && unk2.error.includes("completed") && unk2.error.includes("status") && unk2.error.includes("GET"), "unknown column lists facet and extraction columns, got " + unk2.error);
+  assert(unk2.error && unk2.error.includes("thread") && unk2.error.includes("completed") && unk2.error.includes("status") && unk2.error.includes("Request"), "unknown column lists facet and extraction columns, got " + unk2.error);
   const both = llmRun(w, "create_filter", { patternId: "p1", column: "status", pattern: "500" });
   assert(both.error, "patternId + column stays an error");
   // facet columns are unchanged

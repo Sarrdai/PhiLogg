@@ -1,0 +1,5 @@
+- **feat: better automatic extraction column names (2026-10-09, backlog #126)**
+  - The extraction Table header shows the unit like the plot axis title (`completed [ms]`); the column name itself is unchanged.
+  - No usable word before a numeric placeholder with a unit: the unit names the column (`-> [*:int] ([*:int] ms)` → `value`, `ms`); a name equal to its unit shows no bracket.
+  - An ALL-CAPS word (`GET`, `POST`, `OK`) before a placeholder is a value and skipped (`Request GET [*] completed in [*:int]ms` → `Request`, `completed`); `HTTP=[*]` stays a key.
+  - **Tests**: GROUP extraction-column-names-126. Docs: docs/filters.md, docs/extraction-and-plotting.md.
