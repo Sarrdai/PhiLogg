@@ -60,8 +60,10 @@ that produced it — the Tauri bundler *requires* an icon set), and `src/`:
 | `fonts.rs` | system font enumeration |
 | `vs_integration.rs` | Visual Studio COM automation (Running Object Table) |
 
-Plus two workspace crates beside `src/`: `llm/` (`philogg-llm`, the LLM
-assistant's loopback-only HTTP/SSE client — see `docs/llm-assistant.md`) and
+Plus three workspace crates beside `src/`: `llm/` (`philogg-llm`, the LLM
+assistant's loopback-only HTTP/SSE client — see `docs/llm-assistant.md`),
+`mcp/` (`philogg-mcp`, the loopback-only MCP server for external agents — see
+"MCP server" in `docs/llm-assistant.md`) and
 `logparse/` (`philogg-logparse`), the
 native log parser — Tauri-free on purpose, so `cargo test -p philogg-logparse`
 runs without the webview toolchain. See "Native parsing" below.
@@ -540,7 +542,7 @@ and compares the result with the JS parser's entries. After a deliberate
 layout change: `UPDATE_NATIVE_BATCH=1 cargo test -p philogg-logparse`.
 
 CI runs these crate tests (`cargo test -p philogg-logparse -p philogg-llm
--p philogg-desktop`, which also covers `pathguard`) in
+-p philogg-mcp -p philogg-desktop`, which also covers `pathguard`) in
 `.github/workflows/rust-tests.yml` on every session-branch push and PR into
 `main` that touches `desktop/**`, `philogg.html` or `tests/fixtures/**`, so a
 parser change that drifts from the golden file fails there even if nobody ran

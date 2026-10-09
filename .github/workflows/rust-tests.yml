@@ -55,4 +55,4 @@ jobs:
 
       - name: cargo test
         working-directory: desktop/src-tauri
-        run: cargo test -p philogg-logparse -p philogg-llm -p philogg-desktop
+        run: cargo test -p philogg-logparse -p philogg-llm -p philogg-mcp -p philogg-desktop

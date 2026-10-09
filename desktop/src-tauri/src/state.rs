@@ -89,6 +89,23 @@ pub struct AppState {
     /// The LLM assistant's running chat requests, request id -> cancel flag
     /// (`commands::llm_chat`/`llm_cancel`).
     pub llm_requests: Mutex<HashMap<String, Arc<AtomicBool>>>,
+    /// The MCP endpoint (`philogg-mcp`, `commands::mcp_configure`).
+    pub mcp: Mutex<McpState>,
+    /// `tools/call`s waiting for the page's answer, call id -> reply sender
+    /// (`commands::mcp_tool_result` completes them).
+    pub mcp_pending: Mutex<HashMap<String, Sender<(String, bool)>>>,
+    pub mcp_next_id: AtomicU64,
+}
+
+/// The running MCP server plus the config it was started with, so
+/// `mcp_configure` can tell a restart from a plain tool-list swap.
+#[derive(Default)]
+pub struct McpState {
+    pub server: Option<philogg_mcp::Server>,
+    pub port: u16,
+    pub token: String,
+    /// Why the last start failed (shown in the settings status line).
+    pub error: Option<String>,
 }
 
 impl AppState {
@@ -114,6 +131,9 @@ impl AppState {
             settings_path,
             pending_local_load: Mutex::new(None),
             llm_requests: Mutex::new(HashMap::new()),
+            mcp: Mutex::new(McpState::default()),
+            mcp_pending: Mutex::new(HashMap::new()),
+            mcp_next_id: AtomicU64::new(1),
         }
     }
 

@@ -1,0 +1,5 @@
+- **feat: MCP server for external agents such as Claude Code (2026-10-08, person-requested)**
+  - Desktop app, off by default (Settings → Assistant → External agents (MCP)): Streamable HTTP on `127.0.0.1` (default port 7337) with a random bearer token, Host/Origin checks; clients use the assistant's tool registry. New Tauri-free crate `philogg-mcp`; page bridge `window.philoggMcpCall`.
+  - Nodes created over MCP carry the ✦ marking, each call is one undo step, and calls wait while the in-app assistant runs a round. Backlog #119.
+  - The token is stored as `philogg-mcp-token`, so it lands in `settings.json` in plain text.
+  - **Tests**: GROUP mcp-bridge; `cargo test -p philogg-mcp`. Docs: docs/llm-assistant.md ("MCP server"), docs/desktop.md, README.

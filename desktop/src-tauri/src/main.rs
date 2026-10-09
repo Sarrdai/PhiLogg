@@ -120,6 +120,9 @@ fn main() {
             commands::llm_chat_window,
             commands::llm_view_to_main,
             commands::llm_main_to_view,
+            commands::mcp_configure,
+            commands::mcp_status,
+            commands::mcp_tool_result,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

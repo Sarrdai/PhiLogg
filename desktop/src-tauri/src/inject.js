@@ -293,6 +293,22 @@ __PHILOGG_PROVIDED_FORMATS__
     llmViewNotify: function (msg) {
       return invoke("llm_main_to_view", { msg: msg }).catch(function () {});
     },
+    // MCP endpoint for external agents (docs/llm-assistant.md, philogg-mcp).
+    // mcpConfigure({ enabled, port, token, tools }) starts/restarts/stops the
+    // loopback server and resolves to the status below (a bind failure is
+    // `listening: false, error`, not a rejection). mcpStatus() resolves to
+    // { listening, port, calls, lastCallAt (epoch ms), lastClient, error }.
+    // For every tools/call Rust evals window.philoggMcpCall(id, name, args)
+    // in the main window; the page answers once per id via mcpToolResult.
+    mcpConfigure: function (config) {
+      return invoke("mcp_configure", { config: config });
+    },
+    mcpStatus: function () {
+      return invoke("mcp_status");
+    },
+    mcpToolResult: function (id, text, isError) {
+      return invoke("mcp_tool_result", { id: id, text: text, isError: !!isError });
+    },
   };
 
   // ------------------------------------------------------------ frameless

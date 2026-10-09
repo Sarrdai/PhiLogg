@@ -887,6 +887,11 @@ function llmDesktopStub(extra) {
     llmModels: url => (calls.push(["models", url]), url.includes("9999") ? Promise.reject("cannot reach localhost:9999 — is LM Studio's server running?") : Promise.resolve(["qwen2.5-7b-instruct", "llama-3.2-3b"])),
     llmChatWindow: (action, on) => { calls.push(["window", action, on]); return Promise.resolve(); },
     llmViewNotify: msg => { calls.push(["notify", msg.type]); return Promise.resolve(); },
+    // MCP bridge (window.philogg.mcp*): records its calls; `mcpState` is what mcpStatus answers.
+    mcpState: { listening: true, port: 7337, calls: 0, lastCallAt: null, lastClient: null, error: null },
+    mcpConfigure(config) { calls.push(["mcpConfigure", config]); return Promise.resolve(Object.assign({}, this.mcpState, { listening: !!config.enabled, port: config.port })); },
+    mcpStatus() { calls.push(["mcpStatus"]); return Promise.resolve(Object.assign({}, this.mcpState)); },
+    mcpToolResult(id, text, isError) { calls.push(["mcpToolResult", id, text, isError]); return Promise.resolve(); },
   }, extra || {});
   return stub;
 }
