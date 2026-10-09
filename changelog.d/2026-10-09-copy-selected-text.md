@@ -1,0 +1,4 @@
+- **feat: copy exactly the text marked inside one entry (2026-10-09, person-requested)**
+  - Text marked by mouse inside one row (Filter, Highlight, link-view pair row) or the Entry Detail panel copies as that substring with Ctrl+C; the row menu gets "Copy selected text".
+  - Right-click on marked text in Detail / Why / the text editor opens a small "Copy" menu (`#textCopyMenu`). A multi-selection or a selection spanning rows still copies whole rows.
+  - **Tests**: GROUP copy-selected-text. Docs: docs/ui-and-views.md, PROJECT.md, README.

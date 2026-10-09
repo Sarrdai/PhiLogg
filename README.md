@@ -465,7 +465,7 @@ deployments possible:
   every font actually installed on your machine, e.g. Fira Code or
   Iosevka), and independently scale the overall UI
   and the log/text content size. Resizable/toggleable columns, multiline
-  message display, multi-row select + copy, and a horizontal scrollbar in
+  message display, multi-row select + copy (mark text inside one entry and Ctrl+C or right-click copies just that text), and a horizontal scrollbar in
   the Filter view for reading long messages in full.
 - **Entry detail: Raw, Parsed or Pretty** — the detail panel below the log
   shows the selected entry in full: level, time, thread, the complete source

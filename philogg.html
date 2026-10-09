@@ -5177,7 +5177,7 @@
   .btn-icon:hover{color:var(--text-primary); background:var(--bg-elevated-2);}
 
   /* ---------- Context menu ---------- */
-  #contextMenu, #treeContextMenu, #openMenu, #saveMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu{
+  #contextMenu, #treeContextMenu, #openMenu, #saveMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu, #textCopyMenu{
     position:fixed; z-index:50; background:var(--bg-elevated);
     border:1px solid var(--border); border-radius:8px; padding:5px;
     box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
@@ -5187,7 +5187,8 @@
   #saveMenu .ctx-note{max-width:none;}
   #saveMenu .ctx-note.hidden{display:none;}
   #saveMenu .ctx-item.disabled:hover{background:none; color:var(--text-tertiary);}
-  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #saveMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden, #facetValueMenu.hidden{display:none;}
+  #contextMenu.hidden, #treeContextMenu.hidden, #openMenu.hidden, #saveMenu.hidden, #extractContextMenu.hidden, #plotRoleMenu.hidden, #facetValueMenu.hidden, #textCopyMenu.hidden{display:none;}
+  #textCopyMenu{min-width:120px;}
   /* Touch long-press menu on a facet value: the full value (wrapping, selectable) on top. */
   #facetValueMenu .ctx-meta{user-select:text; -webkit-user-select:text; font-size:11.5px; color:var(--text-primary);}
   #extractContextMenu .ctx-item.hidden{display:none;}
@@ -7056,8 +7057,21 @@
     <div class="ctx-item" data-act="copy">Copy pattern</div>
   </div>
 
+  <!-- Right-click on selected text in the Entry Detail / Why panel / text editor (the native menu never opens). -->
+  <div id="textCopyMenu" class="hidden">
+    <div class="ctx-item" id="textCopyItem">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>
+      Copy
+    </div>
+  </div>
+
   <div id="contextMenu" class="hidden">
     <div class="ctx-meta" id="ctxMeta"></div>
+    <div class="ctx-sep"></div>
+    <div class="ctx-item" id="ctxCopySelection">
+      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="5" width="8" height="9" rx="1"/><path d="M5 5V3a1 1 0 0 1 1-1h7a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-2"/></svg>
+      Copy selected text
+    </div>
     <div class="ctx-sep"></div>
     <div class="ctx-head">Filter</div>
     <div class="ctx-item" id="ctxFilterForColumn">
@@ -24998,7 +25012,7 @@ function buildPairBlock(entryData, index) {
   // so a click here marks every real entry the pair/tuple is made of on the
   // minimap — not just a single point.
   brace.dataset.entryIds = realEntries.map(e => e.id).join(",");
-  brace.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, pair); });
+  brace.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(null); openContextMenu(ev, pair); });
 
   // Selecting the block: a click anywhere on the block (brace or any row)
   // selects the whole pair/tuple, same as clicking the brace itself — a row
@@ -25049,7 +25063,7 @@ function buildPairRow(entry) {
     '<span class="pair-row-msg">' + escapeHtml(entry.message) + '</span>';
   row.title = entry.message;
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [entry, row, linkScroll]));
-  row.addEventListener("contextmenu", ev => { ev.preventDefault(); openContextMenu(ev, entry); });
+  row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); openContextMenu(ev, entry); });
   return row;
 }
 
@@ -29581,7 +29595,7 @@ function appendLogRow(frag, i, rc) {
     row.title = tips.join("\n");
   }
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
-  row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
+  row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
   if (repeatHead) {
     // The badge expands/collapses the run inline; it selects the head but must not reach the row's own click/dblclick.
@@ -31564,7 +31578,7 @@ function renderHighlightVisibleRows() {
     // building moves under them mid-gesture.
     row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
       (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
-    row.addEventListener("contextmenu", ev => { ev.preventDefault(); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
+    row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
     row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
     // Every revealed context row carries its slice of its run's connecting
     // line — appended as a real child AFTER innerHTML is set (a plain HTML
@@ -32276,6 +32290,7 @@ function closeEscapeOverlays() {
   closeTreeContextMenu();
   closeExtractContextMenu();
   closeFacetValueMenu();
+  closeTextCopyMenu();
   closePatternMenu();
   closeBurstPopover();
   closeCsvExportDialog();
@@ -34220,6 +34235,34 @@ function handleLogRowClick(ev, entryId, viewEntries, selectFn) {
   if (currentLayoutTier === "phone") { phoneSheetOpen = true; if (phoneSheetTab !== "why") phoneSheetTab = "entry"; }
   selectFn(entryId);
 }
+
+// "Text-selection copy": the text the person marked with the mouse inside ONE
+// entry — `container` is that entry's row (.log-row / .pair-row), or a
+// region such as the Entry Detail body, the Why panel or the text editor.
+// Returns the selected string, or null when there is none, when it reaches
+// outside `container` (anchor and focus must both lie inside), or — for a
+// row — when 2+ rows are multi-selected (a multi-selection always copies
+// whole rows; a Shift-click range also leaves a native selection across rows).
+// Shared by Ctrl+C, the row menu's "Copy selected text" and #textCopyMenu.
+function copyableTextSelection(container) {
+  if (!container) return null;
+  const sel = window.getSelection();
+  if (!sel || sel.isCollapsed || !sel.anchorNode || !sel.focusNode) return null;
+  if (!container.contains(sel.anchorNode) || !container.contains(sel.focusNode)) return null;
+  if (container.matches(".log-row, .pair-row") && state.logMultiSelect.size >= 2) return null;
+  const text = sel.toString();
+  return text.length ? text : null;
+}
+// The row (.log-row / .pair-row) a selection node sits in, or null.
+function selectionRowOf(node) {
+  const elNode = node && (node.nodeType === 1 ? node : node.parentElement);
+  return elNode ? elNode.closest(".log-row, .pair-row") : null;
+}
+// Row context menu: the selection is captured when the contextmenu event
+// arrives — before selectRowForContextMenu may re-render, and never at click
+// time (clicking a menu item can collapse it).
+let ctxSelectionText = null, ctxMenuSelectionText = null; // captured at contextmenu / shown in the open menu
+function captureCtxSelection(rowEl) { ctxSelectionText = copyableTextSelection(rowEl); }
 
 // Right-click on a log row (Explorer convention): a row outside the current
 // multi-selection becomes the single selection BEFORE the context menu opens,
@@ -38680,6 +38723,29 @@ document.addEventListener("contextmenu", ev => {
   const t = ev.target;
   if (t instanceof Element && t.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"])')) return;
   ev.preventDefault();
+  // Marked text in the Entry Detail / Why panel / text editor: our own "Copy" menu.
+  if (t instanceof Element) {
+    const region = [el("#detailBody"), el("#whyPanelBody"), textEditorEl].find(r => r.contains(t));
+    const text = region && copyableTextSelection(region);
+    if (text) openTextCopyMenu(text, ev.clientX, ev.clientY);
+  }
+});
+const textCopyMenu = el("#textCopyMenu");
+let textCopyMenuText = null;
+function closeTextCopyMenu() { textCopyMenu.classList.add("hidden"); textCopyMenuText = null; }
+function openTextCopyMenu(text, x, y) {
+  closeContextMenu(); closeTreeContextMenu(); closeExtractContextMenu(); closeFacetValueMenu(); closePatternMenu();
+  textCopyMenuText = text;
+  textCopyMenu.classList.remove("hidden");
+  const r = textCopyMenu.getBoundingClientRect();
+  textCopyMenu.style.left = Math.max(8, Math.min(x, window.innerWidth - (r.width || 140) - 8)) + "px";
+  textCopyMenu.style.top = Math.max(8, Math.min(y, window.innerHeight - (r.height || 40) - 8)) + "px";
+}
+textCopyMenu.addEventListener("click", ev => {
+  ev.stopPropagation();
+  const text = textCopyMenuText;
+  closeTextCopyMenu();
+  if (text) { copyTextToClipboard(text); showCopyToast("Text copied"); }
 });
 
 let dragCounter = 0;
@@ -42628,6 +42694,7 @@ el("#findCloseBtn").addEventListener("click", closeFindBar);
 
 const contextMenu = el("#contextMenu");
 const ctxMeta = el("#ctxMeta");
+const ctxCopySelection = el("#ctxCopySelection");
 const ctxBookmark = el("#ctxBookmark");
 const ctxBookmarkLabel = el("#ctxBookmarkLabel");
 const ctxNote = el("#ctxNote");
@@ -42722,6 +42789,10 @@ function openContextMenu(ev, entry) {
   ctxFilterColumn = resolveContextFilterColumn(ev);
   ctxFilterForColumnLabel.textContent = "Filter for this " + ctxFilterColumn.label;
   ctxMeta.textContent = isPlainTextFormat(entry.formatId) ? "Line " + entry.ts : formatTime(entry.ts);
+  // Consume the text captured by this right-click's listener (captureCtxSelection);
+  // a direct openContextMenu call without a capture shows no such item.
+  ctxMenuSelectionText = ctxSelectionText; ctxSelectionText = null;
+  ctxCopySelection.style.display = ctxMenuSelectionText ? "" : "none";
   // Bookmarks only make sense for real log entries (present in entryIndex) —
   // a link-view pair entry has a synthetic id that's never indexed there, so
   // toggling one would silently create a bookmark that can never be jumped
@@ -42834,6 +42905,13 @@ el("#ctxNote").addEventListener("click", () => {
 // nothing selected at all, is "act on just this row"). Both paths share
 // formatEntriesForClipboard so a single row and a full selection can never
 // format differently.
+ctxCopySelection.addEventListener("click", () => {
+  const text = ctxMenuSelectionText;
+  closeContextMenu();
+  if (!text) return;
+  copyTextToClipboard(text);
+  showCopyToast("Text copied");
+});
 el("#ctxCopy").addEventListener("click", () => {
   const entry = ctxEntry;
   closeContextMenu();
@@ -52040,7 +52118,7 @@ function clickDismissedPopupHit(target) {
     || (open(colorPickerPopup) && !colorPickerPopup.contains(target));
 }
 function anyPointerMenuOpen() {
-  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu, patternMenu, burstPopover]
+  return [contextMenu, addToSelectionMenu, treeContextMenu, treeCtxInfoMenu, extractContextMenu, facetValueMenu, textCopyMenu, patternMenu, burstPopover]
     .some(m => !m.classList.contains("hidden"));
 }
 document.addEventListener("pointerdown", ev => {
@@ -52053,6 +52131,7 @@ document.addEventListener("pointerdown", ev => {
   if (!treeContextMenu.contains(ev.target)) closeTreeContextMenu();
   if (!extractContextMenu.contains(ev.target)) closeExtractContextMenu();
   if (!facetValueMenu.contains(ev.target)) closeFacetValueMenu();
+  if (!textCopyMenu.contains(ev.target)) closeTextCopyMenu();
   if (!patternMenu.contains(ev.target)) closePatternMenu();
   if (!burstPopover.contains(ev.target) && !ev.target.closest(".minimap-burst")) closeBurstPopover(); // a flag's own click toggles
   if ((wasOpen && !anyPointerMenuOpen()) || clickPopupHit) dismissTapPending = true;
@@ -52849,7 +52928,10 @@ document.addEventListener("keydown", ev => {
       if (logKeysActive() && state.selectedId) {
         const sel = window.getSelection();
         if (sel && sel.toString().length &&
-            (detailPanel.contains(sel.anchorNode) || textEditorEl.contains(sel.anchorNode))) return; // native copy: the editor's text is free-selectable
+            (detailPanel.contains(sel.anchorNode) || textEditorEl.contains(sel.anchorNode) ||
+             el("#whyPanelBody").contains(sel.anchorNode))) return; // native copy: the editor's text is free-selectable
+        // Text marked inside ONE row (and no multi-selection): copy exactly that, natively.
+        if (copyableTextSelection(selectionRowOf(sel && sel.anchorNode))) return;
         ev.preventDefault();
         copyLogSelectionToClipboard();
       }
