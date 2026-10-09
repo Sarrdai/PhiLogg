@@ -56922,8 +56922,29 @@ function llmToolCreateLink(args) {
   const fileId = getRootFileId(ref.id);
   if (fileId !== getRootFileId(target.id)) return { error: "Both sides must belong to the same file." };
   const direction = args.direction === "before" ? "before" : "after";
+  let pairing = null;
+  if (args.pairing != null && args.pairing !== "nearest") {
+    pairing = args.pairing === "before_next_start" ? "window" : args.pairing === "nested" ? "nested" : undefined;
+    if (pairing === undefined) return { error: "pairing must be \"nearest\", \"before_next_start\" or \"nested\"." };
+  }
   let key = null, derivedKey = null;
-  if (typeof args.key === "string" && args.key.trim()) {
+  const hasKeyWildcards = Array.isArray(args.keyWildcards) && args.keyWildcards.length > 0;
+  if (hasKeyWildcards) {
+    if (typeof args.key === "string" && args.key.trim()) return { error: "Give either key or keyWildcards, not both." };
+    // 1-based placeholder numbers of refId's and targetId's OWN wildcard patterns -> linkKey {wildcards} (0-based).
+    const countOf = n => {
+      const b = bakeNodeCondition(n);
+      const spec = b.filterType === "text" && !b.isRegex && typeof b.value === "string" && isExtractPattern(b.value) ? compileExtractPattern(b.value) : null;
+      return spec ? spec.columns.length : 0;
+    };
+    const nRef = countOf(ref), nTarget = countOf(target);
+    if (!nRef || !nTarget) return { error: "keyWildcards needs a text pattern with wildcards like \"Flow [*] started\" on " + (!nRef && !nTarget ? "both refId and targetId" : !nRef ? "refId" : "targetId") + " (create_filter with such a pattern first); otherwise it would key nothing." };
+    const pairs = args.keyWildcards;
+    if (!pairs.every(pr => Array.isArray(pr) && pr.length === 2 && Number.isInteger(pr[0]) && Number.isInteger(pr[1]) && pr[0] >= 1 && pr[1] >= 1)) return { error: "keyWildcards is a list of [refWildcard, targetWildcard] pairs of 1-based placeholder numbers, e.g. [[1,1]]." };
+    const bad = pairs.find(pr => pr[0] > nRef || pr[1] > nTarget);
+    if (bad) return { error: "keyWildcards pair [" + bad + "] is out of range: refId's pattern has " + nRef + " wildcard(s), targetId's has " + nTarget + "." };
+    key = sanitizeLinkKey({ wildcards: pairs.map(pr => [pr[0] - 1, pr[1] - 1]) });
+  } else if (typeof args.key === "string" && args.key.trim()) {
     const k = args.key.trim();
     const colKey = activeColumnDefs().map(c => c.key).concat(["thread", "location", "method", "level"]).find(c => c.toLowerCase() === k.toLowerCase());
     if (colKey) key = { column: colKey };
@@ -56968,7 +56989,7 @@ function llmToolCreateLink(args) {
     dt = { op: args.maxDtMs != null ? "<" : ">", ms };
   }
   const preview = args.preview === true;
-  let node = null, pairs, unmatched;
+  let node = null, pairs, unmatched, skipped = [];
   if (preview) {
     // No node: the link condition as plain data, evaluated over the file the
     // way a real link node (a top-level child of the file) would be.
@@ -56978,16 +56999,22 @@ function llmToolCreateLink(args) {
       bakedA: bakeNodeCondition(ref), bakedB: bakeNodeCondition(target),
       linkDirection: direction, linkN: 1, linkOrderEnforced: false, linkExclusive: false,
     };
-    copyLinkOptions({ linkDt: dt, linkKey: key }, cond);
+    copyLinkOptions({ linkDt: dt, linkKey: key, linkPairing: pairing }, cond);
     const meta = {};
     pairs = evaluateFilterCondition(cond, getEntries(fileId), fileId, meta);
     unmatched = meta.linkUnmatched || [];
+    skipped = meta.linkSkipped || [];
   } else {
-    node = createLinkNode(ref.id, target.id, direction, 1, { orderEnforced: false, exclusive: false, dt, key });
+    node = createLinkNode(ref.id, target.id, direction, 1, { orderEnforced: false, exclusive: false, dt, key, pairing });
     if (!node) return { error: "Could not create the link (a combined AND/OR node can't be a link side)." };
     llmNoteCreated(node);
     pairs = getEntries(node.id);
     unmatched = node._linkUnmatched || [];
+    if (pairing === "window") { // skipped starts are not kept on the node: one more evaluation of the same condition
+      const meta = {};
+      evaluateFilterCondition(node, getEntries(fileId), fileId, meta);
+      skipped = meta.linkSkipped || [];
+    }
   }
   const dts = pairs.map(p => p.dtMs).filter(Number.isFinite).sort((x, y) => x - y);
   const refCount = getEntries(ref.id).length;
@@ -56996,6 +57023,8 @@ function llmToolCreateLink(args) {
   out.pairs = pairs.length;
   out.references = refCount;
   out.unpaired = unmatched.length;
+  if (pairing) out.pairing = args.pairing;
+  if (skipped.length) out.skipped = skipped.length;
   out.tablePlot = false;
   if (dts.length) out.dtMs = { min: dts[0], median: dts[Math.floor(dts.length / 2)], max: dts[dts.length - 1] };
   if (unmatched.length) {
@@ -57611,12 +57640,14 @@ const LLM_TOOLS = [
   },
   {
     name: "create_link",
-    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. Optional key: only pair entries with the same value in a column (e.g. thread), of an extraction column by name or number (as create_filter lists them, e.g. \"job\" — translated into a key pattern such as \"job=[*:word]\", reported as key) or of a wildcard pattern (e.g. \"axis=[*:int]\"). Returns pair count, unpaired references (with examples and the message types that typically follow them; unpairedFollowedBy coverages overlap — one reference can be followed by several types — so they need not sum to unpaired) and Δt statistics. preview: true creates no node.",
+    description: "Pairs each entry of refId with the nearest entry of targetId after (or before) it — e.g. each 'Position reached' with the next temperature reading. Both must be filter nodes of the same file. pairing: before_next_start = a reference only looks for its target up to its own next occurrence (references without one there are 'skipped', not unpaired); nested = references and targets close like brackets per key ('Flow X started' / 'Flow X ended' with sub-flows; direction ignored). Optional key: only pair entries with the same value in a column (e.g. thread), of an extraction column by name or number (as create_filter lists them, e.g. \"job\" — translated into a key pattern such as \"job=[*:word]\", reported as key) or of a wildcard pattern (e.g. \"axis=[*:int]\"); or keyWildcards to pair on wildcard values of the two nodes' own patterns. Returns pair count, unpaired references (with examples and the message types that typically follow them; unpairedFollowedBy coverages overlap — one reference can be followed by several types — so they need not sum to unpaired) and Δt statistics. preview: true creates no node.",
     parameters: { type: "object", properties: {
       refId: { type: "string" },
       targetId: { type: "string" },
       direction: { type: "string", enum: ["after", "before"] },
       key: { type: "string", description: "Facet column (thread, ...), extraction column name/number of refId or targetId (translated into a key pattern, reported in the result), or a wildcard pattern both sides must share" },
+      keyWildcards: { type: "array", items: { type: "array", items: { type: "integer" } }, description: "Instead of key: [refWildcard, targetWildcard] pairs of 1-based placeholder numbers of refId's and targetId's own text patterns that must carry equal values, e.g. [[1,1]] for \"Flow [*] started\" / \"Flow [*] ended\"" },
+      pairing: { type: "string", enum: ["nearest", "before_next_start", "nested"], description: "Default nearest" },
       maxDtMs: { type: "number", description: "Keep only pairs closer than this (ms)" },
       minDtMs: { type: "number", description: "Keep only pairs further apart than this (ms)" },
       preview: { type: "boolean", description: "Only report the pairs and unpaired references; creates no node" },
@@ -57876,7 +57907,7 @@ const LLM_SYSTEM_PROMPT = [
   "- Filter tree: every loaded file is a root node; filters nest, each one narrows its parent's entries. Nodes have ids like n12, entries ids like e345.",
   "- Text filter (create_filter mode \"text\"): substring match on the whole line.",
   "- Extraction filter: a text filter with placeholders pulls values out of the message into a table/plot. Placeholders: [*:int] [*:float] [*:time] [*:word] [*:hex] [*] (any text). Value conditions on int/float: [*:float>85], [*:int>=10,<20].",
-  "- Link filter (create_link): pairs each entry of a reference node with the nearest entry of a target node after (or before) it. To get values from the paired lines, create an extraction filter UNDER the link node.",
+  "- Link filter (create_link): pairs each entry of a reference node with the nearest entry of a target node after (or before) it (pairing: before_next_start or nested for optional ends and start/end brackets; keyWildcards pairs on wildcard values). To get values from the paired lines, create an extraction filter UNDER the link node.",
   "- Table/Plot condition: only a node with tablePlot: true (in get_overview and in the create_filter result) has a table/plot — an extraction filter itself, or a filter below one. Files, plain text/regex filters and link nodes NEVER have one; show_view table/plot on them fails.",
   "",
   "Pattern examples:",

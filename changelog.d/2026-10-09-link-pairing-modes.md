@@ -1,5 +1,5 @@
 - **feat: link pairing modes and the "Same → wildcards" key (2026-10-09, person-requested)**
   - Link dialog, More options → **Pairing**: Nearest, **Before the next start** (a start only looks for its end up to its own next start; starts without an end there are "skipped", not "without end") and **Nested** (brackets per key, single step). Both imply "Don't reuse an end".
   - New **Same → wildcards** key: wildcard #i of the start pattern must equal wildcard #j of the end pattern (`Flow [*] started` ↔ `Flow [*] ended`); the preview marks the key values.
-  - Opt-in simulator scenarios `axes` and `flows` feed both. `linkPairing`/`linkKey.wildcards` ride in every carrier.
-  - **Tests**: GROUP link-pairing, link-wildcard-key, sim-axes-flows, filter-node-carriers. Docs: docs/filters.md, tools/log-sim/README.md, README.
+  - The assistant's `create_link` takes `pairing` and `keyWildcards` (1-based) and reports `skipped`. Opt-in simulator scenarios `axes` and `flows` feed all of it; the new fields ride in every carrier.
+  - **Tests**: GROUP link-pairing, link-wildcard-key, llm-link-pairing, sim-axes-flows, filter-node-carriers. Docs: docs/filters.md, docs/llm-assistant.md, tools/log-sim/README.md, README.
