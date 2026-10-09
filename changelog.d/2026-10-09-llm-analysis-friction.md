@@ -1,0 +1,5 @@
+- **fix: LLM analysis tools: fewer dead ends (2026-10-09, person-requested)**
+  - `get_value_stats` / `group_by` also see the columns of extraction filters above the node (by name; numbers stay the nearest extraction's; the Table is unchanged) and accept a pattern id with its placeholder columns; link/pattern-id dead ends name the fix.
+  - `find_message_types` query is smart-case (case-sensitive once it has an uppercase letter).
+  - `what_changed` keeps a lone new ERROR/FATAL type below the 3-occurrence minimum (engine option `keepSevere`, tool only); `create_link` notes that `unpairedFollowedBy` coverages overlap.
+  - **Tests**: GROUP llm-analysis-friction. Docs: docs/llm-assistant.md.
