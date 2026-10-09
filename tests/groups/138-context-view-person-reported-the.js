@@ -166,8 +166,8 @@ await withApp(async (w, d, T) => {
     "…and every one of them carries its slice of the run's connecting line");
   assert(T.contextRuns.length === 1 && T.contextRuns[0].from === 1 && T.contextRuns[0].to === 30,
     "the model holds exactly one revealed run for that stretch");
-  assert(d.querySelector("#highlightRows .ctx-run-line.ctx-run-top .ctx-run-cap"),
-    "the run's first row caps the line with a caret");
+  assert(d.querySelector("#highlightRows .ctx-run-line.ctx-run-top use[href='#i-caret-down']"),
+    "the run's first row carries the down-caret grip");
   assert(heightsAgree(), "…and the offsets/spacer still agree afterwards");
   assert(fillerCount() === 1, "the revealed stretch costs no filler row any more — only the still-hidden one does");
 
