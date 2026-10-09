@@ -13,7 +13,7 @@ session; it implements nothing itself.
 ## 1. Collect the findings
 
 - Take the "Findings, most severe first" section of every report
-  (`usability-test` skill, step 5). Several modes (desktop, tablet, phone)
+  (`usability-test` skill, step 5). Several modes (desktop, tablet, phone, MCP)
   often report the same problem: merge those into one finding and keep
   every mode it shows up in.
 - Check each finding against the current `main` before planning it: a

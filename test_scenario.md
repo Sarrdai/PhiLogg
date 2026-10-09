@@ -1,14 +1,17 @@
 # PhiLogg demo — test scenarios
 
-Fifteen tasks that walk a first-time user through PhiLogg's most common and
+Twenty tasks that walk a first-time user through PhiLogg's most common and
 most useful features. They are invitations to explore, not challenges: each
 one names a goal, never the steps or the controls. Work them in order —
-later tasks may build on earlier ones.
+later tasks may build on earlier ones. Tasks 16–20 are analysis questions
+that suit both ways of working: by hand in the GUI, or by an external agent
+that operates PhiLogg over its MCP server while the person watches.
 
 **Data:** the homepage demo log, `tour/demo/app.log` (log simulator `-f tour`,
 2,500 entries of a fictional shop/machine backend). **Run by an agent:** the
 `usability-test` skill (`.claude/skills/usability-test/`) drives these tasks in
-desktop, tablet or phone mode and reports what worked and what didn't.
+desktop, tablet or phone mode, or as an external agent over MCP, and reports
+what worked and what didn't.
 
 1. **Get your bearings.** Open the demo log and find out how many entries it
    has, which time span it covers and how the entries split across log levels.
@@ -82,3 +85,36 @@ desktop, tablet or phone mode and reports what worked and what didn't.
     save or share your work so a colleague could open the same filters.
     *Done when:* the deleted filter is back, an earlier view was revisited via
     navigation, and a file or link with your filters exists.
+
+## Analysis questions (GUI or MCP)
+
+16. **What sets the burst apart?** Find the busiest burst in the log and
+    work out which kinds of messages show up only there, not in the rest of
+    the log.
+    *Done when:* you can name a message type that occurs only during the
+    burst and how often it occurs there.
+
+17. **Why do moves get stuck?** Some "Move requested" never get their
+    "Position reached". Find out how many, what typically happens to such a
+    move instead, and whether one axis is behind a particular cause.
+    *Done when:* you can state the number of unfinished moves, the most
+    common reason they end and the axis that has emergency stops.
+
+18. **Overheating check.** Find out which temperature sensors ever went
+    above 85 °C and how that compares with their usual temperature. Mark
+    every reading above 85 °C so a colleague finds them, with a short note
+    on what is wrong.
+    *Done when:* each reading above 85 °C is bookmarked with a note, and you
+    can name the sensor(s) and that sensor's typical (median) temperature.
+
+19. **How fast is the API?** Look at how long the GET requests take: the
+    typical and the slowest response time, and whether the requests that
+    failed (status other than 200) were slower than the rest.
+    *Done when:* you can state the median and the maximum duration and
+    answer the question about the failed requests with numbers.
+
+20. **Hand the incident over.** Prepare the burst from task 16 for a
+    colleague: a filter of its own that shows only the burst, and the first
+    entry that explains it marked with a note saying what happened.
+    *Done when:* a filter covering just the burst exists in the tree, and
+    one entry inside it is bookmarked with an explanatory note.

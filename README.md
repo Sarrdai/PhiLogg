@@ -625,7 +625,7 @@ docs/                                   per-topic current-state architecture ref
   archive/                              finished concepts and implementation plans
 changelog.d/                            dated changelog, one file per change
 FEATURE_BACKLOG.md                      unelaborated feature ideas
-test_scenario.md                        demo tasks for first-time users; the usability-test skill runs them in desktop/tablet/phone mode
+test_scenario.md                        demo tasks for first-time users; the usability-test skill runs them in desktop/tablet/phone/MCP mode
 CLAUDE.md                               instructions for AI coding sessions on this repo
 ```
 
