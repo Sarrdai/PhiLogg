@@ -1,0 +1,5 @@
+- **fix: MCP analysis tools: link keys by column name, groupBy, several sources, extraction columns in create_filter (2026-10-09, person-requested)**
+  - `create_link` `key` accepts extraction column names/numbers (translated into a key pattern, reported as `key`; unknown keys list columns and suggestions); `job=J-[*:int]` names its column `job`.
+  - `get_value_stats` gets `groupBy` (facet or extraction column) and `sources` (one statistic over several formats, entries counted once).
+  - `create_filter` `column` accepts extraction columns (a new extraction filter with that placeholder fixed). One column resolver shared with `group_by`.
+  - **Tests**: GROUP llm-mcp-friction. Docs: docs/llm-assistant.md.

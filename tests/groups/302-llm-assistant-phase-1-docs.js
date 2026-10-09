@@ -101,7 +101,7 @@ await withApp(async (w, d, T) => {
   llmRun(w, "show_view", { nodeId: reached.nodeId, view: "filtered" });
   assert(T.fhActiveTab === "filter" && T.state.activeId === reached.nodeId, "filtered view");
   assert(llmRun(w, "create_link", { refId: f.id, targetId: temp.nodeId }).error.includes("filter nodes"), "a file can't be a link side");
-  assert(llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, key: "no key here" }).error.startsWith("key must be"), "bad correlation key refused");
+  assert(llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, key: "no key here" }).error.startsWith("Unknown key"), "bad correlation key refused");
   const keyed = llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, key: "thread" }).result;
   assert(T.state.nodes[keyed.nodeId].linkKey.column === "thread", "key by column");
   const dt = llmRun(w, "create_link", { refId: reached.nodeId, targetId: temp.nodeId, maxDtMs: 200 }).result;
