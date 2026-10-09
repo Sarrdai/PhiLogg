@@ -2302,6 +2302,21 @@
   }
   /* -1.5px centres the 5px dot on the 2px line the runs draw at --ctx-lane-x. */
   #highlightRows.ctx-active .ctx-anchor-dot{ left: calc(var(--ctx-lane-x) - 1.5px); }
+  /* Match rows stand out from the revealed context rows (I3): accent tint, a
+     bigger 10px dot (centred on the same lane axis: 2px line + 4px each side
+     = -4px) and a bold time. background-image, not background-color, for the
+     same reason as the selected-row fill (level tints use the `background`
+     shorthand). Context rows are deliberately left untouched. */
+  #highlightRows.ctx-active .ctx-anchor-dot{ width:10px; height:10px; left: calc(var(--ctx-lane-x) - 4px); }
+  #highlightRows .log-row.ctx-match{background-image:linear-gradient(var(--accent-soft), var(--accent-soft));}
+  #highlightRows .log-row.ctx-match > .col-time{font-weight:700;}
+  /* Selected + match: both fills stack (selected is the stronger, plus its
+     3px bar), so a selected match stays distinguishable from a plain one. */
+  #highlightRows .log-row.ctx-match.selected, #highlightRows .log-row.ctx-match.selected:hover{
+    background-image:linear-gradient(var(--selected-row-tint), var(--selected-row-tint)), linear-gradient(var(--accent-soft), var(--accent-soft));
+  }
+  .ctx-legend{display:inline-flex; align-items:center; gap:5px; margin-left:6px; font-size:11px; color:var(--text-tertiary); white-space:nowrap;}
+  .ctx-legend-dot{width:10px; height:10px; border-radius:50%; background:var(--accent); flex:0 0 auto;}
 
   /* One revealed context row's slice of its run's connecting line: a plain
      border-left spanning the row's full height, so stacking the rows of a run
@@ -6620,6 +6635,7 @@
               <button type="button" id="ctxExpandAround" class="toolbar-icon-btn" title="Expand around matches"></button>
               <button type="button" id="ctxExpandAll" class="toolbar-icon-btn" title="Expand all"></button>
               <button type="button" id="ctxCollapseAll" class="toolbar-icon-btn" title="Collapse all"></button>
+              <span class="ctx-legend" id="ctxLegend" title="Rows matching the active filter; the other rows are context"><span class="ctx-legend-dot"></span>match</span>
               </div>
             </div>
             <span class="ctx-toolbar-sep" data-log-only></span>
