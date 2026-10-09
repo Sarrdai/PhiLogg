@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PhiLogg</title>
+<!-- Inline icon: the page is one self-contained file, so the browser makes no extra icon request (it used to get a 404) on load. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234fc7c3'/><stop offset='1' stop-color='%237fe0dc'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><path d='M11 8v16h11' fill='none' stroke='%2308201f' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/></svg>">
 <style>
   :root{
     --icon-md:14px; --icon-sm:12px;
@@ -3309,25 +3311,29 @@
     padding:2px 8px 2px 28px; cursor:pointer; font-size:11.5px; color:var(--text-secondary);
   }
   .facet-value:hover{background:var(--bg-elevated); color:var(--text-primary);}
-  .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .facet-value-name{font-family:var(--font-log); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; padding-left:7px;}
   .facet-value-name.facet-empty{font-style:italic; color:var(--text-tertiary);}
-  /* Value name in the colour of the most severe level among its entries. */
-  .facet-value-name.lvl-error{color:var(--level-error);}
-  .facet-value-name.lvl-warn{color:var(--level-warn);}
-  .facet-value-name.lvl-info{color:var(--level-info);}
-  .facet-value-name.lvl-debug{color:var(--level-debug);}
-  .facet-value-name.lvl-fatal{color:var(--level-fatal);}
-  .facet-value-name.lvl-trace{color:var(--level-trace);}
-  .facet-value-name.lvl-custom-1{color:var(--level-custom-1);}
-  .facet-value-name.lvl-custom-2{color:var(--level-custom-2);}
-  .facet-value-name.lvl-custom-3{color:var(--level-custom-3);}
-  .facet-value-name.lvl-custom-4{color:var(--level-custom-4);}
-  .facet-value-name.lvl-custom-5{color:var(--level-custom-5);}
-  .facet-value-name.lvl-custom-6{color:var(--level-custom-6);}
-  /* The share bar is drawn behind the value row (empty track transparent), not in a column of its own. */
-  .facet-bar{position:absolute; left:28px; right:8px; top:1px; bottom:1px; border-radius:3px; overflow:hidden; pointer-events:none;}
+  /* The most severe level among a value's entries is a 3px stripe at the left of the name (text stays in the normal colour). */
+  .facet-value-name.lvl-error{--lvl:var(--level-error);}
+  .facet-value-name.lvl-warn{--lvl:var(--level-warn);}
+  .facet-value-name.lvl-info{--lvl:var(--level-info);}
+  .facet-value-name.lvl-debug{--lvl:var(--level-debug);}
+  .facet-value-name.lvl-fatal{--lvl:var(--level-fatal);}
+  .facet-value-name.lvl-trace{--lvl:var(--level-trace);}
+  .facet-value-name.lvl-custom-1{--lvl:var(--level-custom-1);}
+  .facet-value-name.lvl-custom-2{--lvl:var(--level-custom-2);}
+  .facet-value-name.lvl-custom-3{--lvl:var(--level-custom-3);}
+  .facet-value-name.lvl-custom-4{--lvl:var(--level-custom-4);}
+  .facet-value-name.lvl-custom-5{--lvl:var(--level-custom-5);}
+  .facet-value-name.lvl-custom-6{--lvl:var(--level-custom-6);}
+  .facet-value-name[class*="lvl-"]{box-shadow:inset 3px 0 0 var(--lvl);}
+  /* The share bar is drawn behind the name cell only: it ends before the number columns (--facet-bar-r = their width). */
+  .facet-value{--facet-bar-r:92px;}
+  .facet-bar{position:absolute; left:28px; right:var(--facet-bar-r); top:1px; bottom:1px; border-radius:3px; overflow:hidden; pointer-events:none;}
   .facet-bar > i{display:block; height:100%; background:var(--accent-soft);}
   .facet-value > :not(.facet-bar){position:relative;}
+  /* Rank in the left gutter: equal counts share a rank (1, 1, 3). */
+  .facet-value > .facet-rank{position:absolute; left:6px; width:18px; text-align:right; font-size:10px; font-variant-numeric:tabular-nums; color:var(--text-tertiary);}
   .facet-count, .facet-pct{text-align:right; font-variant-numeric:tabular-nums; font-size:10.5px;}
   .facet-pct{color:var(--text-tertiary);}
   /* Link node: values with pairs / no end / a Δt stroke; the sections need more room than the plain ones. */
@@ -3337,7 +3343,7 @@
     font-size:11.5px; color:var(--text-secondary);
   }
   .facet-link-sum{flex:1 1 auto; min-width:0; overflow-wrap:anywhere;}
-  .facet-value-link{grid-template-columns:minmax(0,1fr) 42px 40px 120px;}
+  .facet-value-link{grid-template-columns:minmax(0,1fr) 42px 40px 120px; --facet-bar-r:228px;}
   .facet-value-link.facet-value-static{cursor:default;}
   .facet-value-link.facet-value-static:hover{background:transparent; color:var(--text-secondary);}
   .facet-value-link.facet-link-colhead{cursor:default; font-size:10px; font-weight:650; color:var(--text-tertiary); white-space:nowrap;}
@@ -3350,7 +3356,7 @@
   .facet-dt-rng{position:absolute; top:6px; height:2px; min-width:2px; background:var(--text-tertiary); border-radius:1px;}
   .facet-dt-med{position:absolute; top:2px; width:2px; height:10px; margin-left:-1px; background:var(--accent); border-radius:1px;}
   body.layout-phone #facetPanelBody.facet-link{grid-template-columns:minmax(0,1fr);}
-  body.layout-phone .facet-value-link{grid-template-columns:minmax(0,1fr) 38px 38px 100px;}
+  body.layout-phone .facet-value-link{grid-template-columns:minmax(0,1fr) 38px 38px 100px; --facet-bar-r:202px;}
   .facet-more{padding:2px 12px 4px 28px; font-size:11px; color:var(--accent-strong); cursor:pointer;}
   .facet-more:hover{text-decoration:underline;}
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
@@ -3622,6 +3628,9 @@
   /* Link dialog v2: Start / End side rows, the sentence between them, the
      "Same" key chips, the "▾" filter picker menu. */
   #linkDialog .link-dialog-card, #andOrDialog .link-dialog-card{position:relative; max-height:calc(100vh - 32px); overflow-y:auto; box-sizing:border-box;}
+  /* The link dialog grows as steps are added: it hangs from a fixed top edge instead of staying centred (which moved the top up). */
+  #linkDialog{align-items:flex-start; padding-top:max(16px, 10vh); box-sizing:border-box;}
+  #linkDialog .link-dialog-card{max-height:calc(100vh - max(16px, 10vh) - 16px);}
   .link-side{display:flex; align-items:center; gap:6px; margin-bottom:6px; position:relative;}
   .link-side-lab{flex:0 0 40px; font-size:10.5px; font-weight:650; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary);}
   .link-side input.link-side-input{flex:1 1 auto; min-width:0; width:auto;}
@@ -3640,7 +3649,13 @@
   .link-sentence{font-size:12px; color:var(--text-secondary); margin:2px 0 6px 46px; display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
   .link-sentence.link-hop-row{background:none; border:0; padding:0; line-height:1.4;}
   .link-sentence input[type="number"]{width:48px !important; margin:0;}
-  .link-sentence .link-hop-ord{margin-left:-4px;}
+  /* The ordinal suffix sits inside the number field's frame, so it reads "1st", not "1 st". */
+  .link-sentence .link-hop-field{display:inline-flex; align-items:baseline; background:var(--bg-app); border:1px solid var(--border); border-radius:6px; padding:0 8px 0 0; font-family:var(--font-mono); font-size:12px; color:var(--text-primary);}
+  .link-sentence .link-hop-field:focus-within{border-color:var(--accent);}
+  .link-sentence .link-hop-field input[type="number"]{width:34px !important; border:0; background:transparent; padding:6px 0 6px 6px; text-align:right; outline:none; -moz-appearance:textfield; appearance:textfield;}
+  .link-sentence .link-hop-field input[type="number"]::-webkit-inner-spin-button, .link-sentence .link-hop-field input[type="number"]::-webkit-outer-spin-button{-webkit-appearance:none; margin:0;}
+  .link-sentence .link-hop-ord{margin:0;}
+  body.layout-phone .link-sentence .link-hop-field input[type="number"]{width:40px !important;}
   .link-dialog-card .link-side input.link-side-input[type="text"]:not(.stepper-value){width:auto; flex:1 1 0;}
   #andOrDialog .link-sentence{margin-left:0; margin-bottom:10px;}
   #andOrDialog .link-addstep{margin-bottom:10px;}
@@ -5791,6 +5806,7 @@
   /* Link dialog v2 on the phone: a full-screen sheet (the sticky action row above stays
      pinned to its bottom), 40px controls, rows stacked under their labels. */
   body.layout-phone #linkDialog, body.layout-phone #andOrDialog{align-items:stretch; justify-content:stretch;}
+  body.layout-phone #linkDialog{padding-top:0;}
   body.layout-phone #linkDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
   body.layout-phone #andOrDialog .link-dialog-card{width:100%; max-height:none; height:100%; border-radius:0; border:0; box-shadow:none; padding:14px 14px 0;}
   body.layout-phone .link-side{flex-wrap:wrap;}
@@ -7730,12 +7746,12 @@
 
   <div id="sessionExportDialog" class="hidden">
     <div class="link-dialog-card">
-      <div class="link-dialog-title">Export session</div>
+      <div class="link-dialog-title">Save session</div>
       <div id="sessionExportRows"></div>
       <div class="session-dialog-note">Embedding the log text makes the export self-contained (the importer can re-create the file with one click), but it includes the raw log content and can make the export large.</div>
       <div class="link-dialog-actions">
         <button type="button" id="sessionExportCancel" class="btn-mini-secondary">Cancel</button>
-        <button type="button" id="sessionExportConfirm" class="btn-mini">Export</button>
+        <button type="button" id="sessionExportConfirm" class="btn-mini">Save</button>
       </div>
     </div>
   </div>
@@ -18707,7 +18723,7 @@ function remapColumnSettings(node, map, tally) {
     if (base >= oldCount) return null;
     const t = map[base];
     const to = t < 0 ? null : derived ? arrayDerivedColIndex(t, -idx % ARRAY_COL_BASE) : t;
-    if (to == null) tally.removed++; else if (to !== idx) tally.moved++;
+    if (to == null) { tally.removed++; tally.removedBases.add(base); } else if (to !== idx) { tally.moved++; tally.movedBases.add(base); }
     return to;
   };
   const list = arr => arr.map(one).filter(v => v != null);
@@ -18743,7 +18759,8 @@ function migrateExtractionColumns(node, map, ignoredAreNew, mutate) {
   });
   walk(node);
   const befores = targets.map(t => captureNodeFields(t, true));
-  const tally = { moved: 0, removed: 0 };
+  const tally = { moved: 0, removed: 0, movedBases: new Set(), removedBases: new Set() };
+  const oldSpec = compileExtractPattern(node.value);
   mutate();
   targets.forEach(t => {
     const keep = t === node && ignoredAreNew ? t.ignoredColumns : undefined;
@@ -18756,7 +18773,37 @@ function migrateExtractionColumns(node, map, ignoredAreNew, mutate) {
   }
   const entries = targets.map((t, i) => ({ kind: "edit", nodeId: t.id, before: befores[i], after: captureNodeFields(t, true) }));
   pushUndo(entries.length === 1 ? entries[0] : { kind: "batch", actions: entries, label: "edit" });
-  return changed ? tally : null;
+  if (!changed) return null;
+  // Column names for the toast: a moved column by its new name, a dropped one by its old name.
+  const newSpec = compileExtractPattern(node.value);
+  const nameOf = (spec, i) => spec && spec.columns[i] ? getColumnDisplayName(node, i, spec.columns[i].name) : "column " + (i + 1);
+  tally.movedNames = [...tally.movedBases].sort((a, b) => a - b).map(b => nameOf(newSpec, map[b]));
+  tally.removedNames = [...tally.removedBases].sort((a, b) => a - b).map(b => (oldSpec && oldSpec.columns[b] ? oldSpec.columns[b].name : "column " + (b + 1)));
+  return tally;
+}
+// "Pattern changed — settings kept for temperature, pressure · dropped for voltage" (names capped at 3 each).
+function patternChangedToastText(tally) {
+  const list = names => names.length > 3 ? names.slice(0, 3).join(", ") + " +" + (names.length - 3) + " more" : names.join(", ");
+  const parts = [];
+  if (tally.movedNames.length) parts.push("settings kept for " + list(tally.movedNames));
+  if (tally.removedNames.length) parts.push("dropped for " + list(tally.removedNames));
+  return "Pattern changed \u2014 " + parts.join(" \u00b7 ");
+}
+// Plot column chip "Keep only <value>": the placeholder of column `colIndex` becomes the literal `value`
+// (the pattern then matches only entries with that value), as one undoable edit that re-keys the other
+// columns' settings like any pattern edit. A pattern without another placeholder would stop being an
+// extraction, so that is refused.
+function keepOnlyColumnValue(node, colIndex, value) {
+  if (!node || !value || node.isRegex) return;
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  let m, i = 0, next = null;
+  while ((m = EXTRACT_TOKEN_RE.exec(node.value)) !== null) {
+    if (i++ === colIndex) { next = node.value.slice(0, m.index) + value + node.value.slice(m.index + m[0].length); break; }
+  }
+  if (next == null || !compileExtractPattern(next)) return;
+  const shifted = updateFilterNodeWithUndo(node.id, "text", next, node.inverted, undefined, node.caseSensitive, node.columns, false, false, false);
+  if (shifted) showCopyToast(patternChangedToastText(shifted));
+  render();
 }
 function updateTimeRangeFilterNodeWithUndo(nodeId, from, to) {
   withFieldEditUndo(nodeId, () => updateTimeRangeFilterNode(nodeId, from, to));
@@ -18870,12 +18917,11 @@ function undo() {
   showCopyToast((action.label || UNDO_KIND_LABELS[action.kind] || action.kind) + " undone");
 }
 
-// Phone has no visible Undo button and no keyboard, so a tree-menu removal would be
-// permanent: offer a toast with an Undo button. prevTop = undoStack's top before the
-// removal; nothing to offer when no new action was pushed (folder-watch file close).
+// A removal shows a toast with an Undo button on every layout (phone has no visible Undo button
+// and no keyboard; elsewhere the toast is the quick way back). prevTop = undoStack's top before
+// the removal; nothing to offer when no new action was pushed (folder-watch file close).
 // The button only undoes while that very action is still on top.
-function offerPhoneUndoToast(prevTop, text) {
-  if (currentLayoutTier !== "phone") return;
+function offerUndoToast(prevTop, text) {
   const action = undoStack[undoStack.length - 1];
   if (!action || action === prevTop) return;
   showCopyToast(text || (action.kind === "deleteFile" ? "File removed" : "Filter removed"), {
@@ -20294,14 +20340,18 @@ function renderFacetPanel() {
     const collapsed = facetsCollapsed.has(col.key);
     html += '<div class="facet-section" data-col="' + escapeHtml(col.key) + '">' +
       '<div class="facet-section-head" data-toggle="1"><span class="facet-caret">' + (collapsed ? "▸" : "▾") + "</span>" +
-      escapeHtml(col.label) + ' <span class="facet-section-note">' + col.values.length.toLocaleString("de-DE") + " value" + (col.values.length === 1 ? "" : "s") + "</span></div>";
+      escapeHtml(col.label) + ' <span class="facet-section-note">' + col.values.length.toLocaleString("de-DE") + " value" + (col.values.length === 1 ? "" : "s") +
+      (col.values.length > 1 && col.values[0][1] === col.values[1][1] ? " \u00b7 top tied" : "") + "</span></div>";
     if (!collapsed) {
       const shown = Math.min(col.values.length, FACET_TOP_N + (facetsShown.get(col.key) || 0));
       const max = col.values.length ? col.values[0][1] : 1;
+      let rank = 1;
       for (let i = 0; i < shown; i++) {
         const [value, count, lvlCls] = col.values[i];
+        if (i && count !== col.values[i - 1][1]) rank = i + 1;
         const pct = count / total * 100;
         html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
+          '<span class="facet-rank">' + rank + "</span>" +
           '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
           '<span class="facet-count">' + count.toLocaleString("de-DE") + "</span>" +
@@ -20686,7 +20736,7 @@ function phonePatternAction(group, action) {
   if (action === "hide") {
     const prevTop = undoStack[undoStack.length - 1];
     applyPatternAction(group, "hide");
-    offerPhoneUndoToast(prevTop, "Pattern hidden");
+    offerUndoToast(prevTop, "Pattern hidden");
   } else {
     closePhoneSheet();
     applyPatternAction(group, action);
@@ -23376,7 +23426,7 @@ function renderNode(id, depth, opts) {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(id);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     });
     row.appendChild(del);
   }
@@ -23481,7 +23531,7 @@ function renderNode(id, depth, opts) {
     const prevTop = undoStack[undoStack.length - 1];
     deleteFilterNodeWithUndo(id);
     render();
-    offerPhoneUndoToast(prevTop);
+    offerUndoToast(prevTop);
   });
 
   // Drag-and-drop reparenting (mouse-event based — see treeDrag's comment):
@@ -23955,9 +24005,45 @@ const COLUMN_PALETTE = ["#4fc7c3", "#c792ea", "#e8a94a", "#6fa8ff", "#f0708a", "
 // Modulo, not remainder — a naive `i % n` returns negative for the synthetic
 // columns' negative colIndex (e.g. -1 % 6 === -1 in JS), which would index
 // before the array. ((i % n) + n) % n normalizes that back into [0, n).
-function columnColor(i) {
+function columnColorByIndex(i) {
   const n = COLUMN_PALETTE.length;
   return COLUMN_PALETTE[((i % n) + n) % n];
+}
+// The colour of an extraction column of the active Table/Plot view stays with the COLUMN (its compiled
+// name), not with its position: editing the pattern so placeholders are inserted, removed or reordered
+// (extractColumnMigrationMap) moves the index but a "temperature" series keeps its colour. The first
+// request for a pattern owner claims a palette slot per column in index order (= the plain index
+// colours); a column that appears later takes its own slot if free, else the next free one.
+// In memory only (colours of a reloaded session start again by index); the owner is set by
+// renderExtractView. Synthetic columns (negative index) and an unknown owner use the index colour.
+let extractColorOwnerId = null;
+const columnColorMemory = new Map(); // pattern owner id -> { value, names: [compiled name per index], slots: Map(name -> slot) }
+function columnColor(i) {
+  const owner = extractColorOwnerId != null ? state.nodes[extractColorOwnerId] : null;
+  if (!owner || !(i >= 0)) return columnColorByIndex(i);
+  let mem = columnColorMemory.get(owner.id);
+  if (!mem) { mem = { value: null, names: [], slots: new Map() }; columnColorMemory.set(owner.id, mem); }
+  if (mem.value !== owner.value) {
+    // columnColor runs inside loops over EXTRACT_TOKEN_RE (the pattern chips): keep its lastIndex.
+    const savedIndex = EXTRACT_TOKEN_RE.lastIndex;
+    const spec = compileExtractPattern(owner.value);
+    EXTRACT_TOKEN_RE.lastIndex = savedIndex;
+    mem.value = owner.value;
+    mem.names = spec ? spec.columns.map(c => c.name) : [];
+  }
+  const name = mem.names[i];
+  if (name == null) return columnColorByIndex(i);
+  const n = COLUMN_PALETTE.length;
+  const claim = (nm, idx) => {
+    if (mem.slots.has(nm)) return;
+    const used = new Set(mem.slots.values());
+    let slot = idx % n;
+    for (let k = 0; used.has(slot) && k < n; k++) slot = (slot + 1) % n;
+    mem.slots.set(nm, slot);
+  };
+  if (!mem.slots.size) mem.names.forEach((nm, idx) => claim(nm, idx));
+  claim(name, i);
+  return COLUMN_PALETTE[mem.slots.get(name)];
 }
 
 /* ===================== Renamed extraction columns =====================
@@ -24789,6 +24875,21 @@ function plotRoleMenuItems(ci) {
     const col = lastPatternViewArgs[1][ci];
     if (items.length) items.push({ sep: true });
     items.push({ t: col && col.ignored ? "Include column" : "Ignore column", fn: () => lastPatternViewArgs[2].onToggle(ci) });
+    // A word/text column: "Keep only <value of the selected row>" turns its placeholder into that literal
+    // (the small step towards FEATURE_BACKLOG #127, a real split by value).
+    const keep = lastPatternViewArgs[2].onKeepOnly;
+    if (keep && col && (col.type === "word" || col.type === "text") && !col.ignored) {
+      const selRow = state.selectedId != null ? extractRowsData.find(r => r.entry && r.entry.id === state.selectedId) : null;
+      const val = selRow ? String(selRow.values[ci] == null ? "" : selRow.values[ci]) : "";
+      const lastToken = lastPatternViewArgs[1].length < 2;
+      const shown = val.length > 24 ? val.slice(0, 23) + "\u2026" : val;
+      items.push({
+        t: val ? "Keep only \u201c" + shown + "\u201d" : "Keep only the selected row\u2019s value",
+        dis: !val || lastToken,
+        note: !val ? "select a row" : lastToken ? "only column" : "",
+        fn: () => keep(ci, val),
+      });
+    }
   }
   return items;
 }
@@ -28096,6 +28197,7 @@ function renderExtractTable(node) {
   }
   const spec = compileExtractPattern(patternNode.value);
   extractNodeId = node.id;
+  extractColorOwnerId = patternNode.id;
   if (!spec) {
     extractColumns = [];
     extractRowsData = [];
@@ -28174,6 +28276,7 @@ function renderExtractTable(node) {
   const patternColumns = spec.columns.map((c, i) => ({ ...c, colIndex: i, ignored: ignoredSet.has(i), name: getColumnDisplayName(node, i, c.name) }));
   renderExtractPatternView(patternNode.value, patternColumns, {
     onToggle: colIndex => { setColumnIgnored(patternNode, colIndex, !isColumnIgnored(patternNode, colIndex)); renderExtractTable(node); },
+    onKeepOnly: (colIndex, value) => keepOnlyColumnValue(patternNode, colIndex, value),
   });
   renderStatsBar(node);
 
@@ -42462,7 +42565,7 @@ function updateFilterPatternPreview(val, baseEntries) {
     if (!range) return; // shouldn't happen — every placeholder here is a mandatory group
     const [start, end] = range;
     if (start > cursor) frag.appendChild(document.createTextNode(msg.slice(cursor, start)));
-    const color = columnColor(i);
+    const color = columnColorByIndex(i);
     const ignored = shownIgnored.has(i);
     const span = document.createElement("span");
     span.className = "preview-value-span" + (ignored ? " chip-ignored" : "");
@@ -42567,11 +42670,7 @@ function commitFilter() {
     // An untouched ignore set is still in the OLD pattern's indices (re-keyed with the other column settings).
     const shifted = updateFilterNodeWithUndo(editingFilterId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord, filterPopupIgnoredTouched);
     if (shifted) {
-      const noun = n => n + " column setting" + (n === 1 ? "" : "s");
-      const parts = [];
-      if (shifted.moved) parts.push(noun(shifted.moved) + " moved");
-      if (shifted.removed) parts.push(shifted.moved ? shifted.removed + " removed" : noun(shifted.removed) + " removed");
-      showCopyToast("Pattern changed: " + parts.join(", "));
+      showCopyToast(patternChangedToastText(shifted));
     }
   } else createFilterNode(filterPopupBaseId, "text", val, pillGet(filterInvertCheckbox), ignoredArr, caseSensitive, columns, isRegex, wholeWord);
   closeFilterPopup();
@@ -44616,6 +44715,25 @@ function setupHitExpandGroups(hitSelector) {
 }
 setupHitExpandGroups(".row-action-hit");
 
+// Tooltips close when a dialog (or the filter popup) opens: the pointer stays over the button that
+// opened it, so its floating label would otherwise hang over the dialog until the mouse moves
+// (person-reported: the "Edit filter…" card stayed over the logo). Dismisses the JS-driven hover
+// cards (.expanded, .labels-live), the focus-visible one of a still-focused toolbar button and the
+// chart/minimap tooltips; a later hover shows them again as usual.
+function dismissHoverTooltips() {
+  document.querySelectorAll(".row-action-btn.expanded, .toolbar-icon-btn.expanded").forEach(b => b.classList.remove("expanded"));
+  document.querySelectorAll(".labels-live").forEach(c => c.classList.remove("labels-live"));
+  const a = document.activeElement;
+  if (a && a !== document.body && a.matches && a.matches(".row-action-btn, .toolbar-icon-btn") && !a.closest("[id$='Dialog'], #filterPopup")) a.blur();
+  [plotTooltip, timelineMinimapTooltip, folderMinimapTooltip].forEach(t => { if (t) t.classList.add("hidden"); });
+}
+if (typeof MutationObserver === "function") {
+  const dialogObserver = new MutationObserver(records => {
+    if (records.some(r => r.target.classList && !r.target.classList.contains("hidden") && (r.oldValue || "").split(/\s+/).includes("hidden"))) dismissHoverTooltips();
+  });
+  document.querySelectorAll("[id$='Dialog'], #filterPopup").forEach(d => dialogObserver.observe(d, { attributes: true, attributeFilter: ["class"], attributeOldValue: true }));
+}
+
 // The row-action buttons' "current row" — state.selectedId, NOT ctxEntry
 // (that's only ever set while the right-click menu is open). Falls back to
 // null with no selection, same as ctxEntry defaults to when nothing was
@@ -45731,7 +45849,7 @@ treeContextMenu.addEventListener("click", ev => {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(treeCtxId);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     }
     return;
   }
@@ -46172,7 +46290,7 @@ function renderLinkSides() {
     if (i >= 1) {
       const h = linkDlg.hops[i - 1];
       html += '<div class="link-sentence link-hop-row" data-hop="' + (i - 1) + '">' + (i === 1 ? "for each start, find the" : "then, from that end, find the") +
-        ' <input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span> " +
+        ' <span class="link-hop-field"><input type="number" class="link-hop-n" min="1" value="' + h.n + '" aria-label="Which occurrence"><span class="link-hop-ord">' + ordinalSuffix(h.n) + "</span></span> " +
         '<span class="link-seg link-hop-dir" role="group" aria-label="Direction">' + dirBtn(i - 1, "after", "next") + dirBtn(i - 1, "before", "previous") + "</span> end</div>";
     }
     html += '<div class="link-side" data-side="' + i + '"><span class="link-side-lab">' + (i === 0 ? "Start" : "End") + "</span>";
@@ -52715,11 +52833,12 @@ const WHERE_IS_WHAT = [
   { sel: "#extractScroll",   label: "Extracted values", group: "rows", side: "in" },
   { sel: "#plotBody",        label: "Plot",            group: "rows", side: "in" },
   { sel: "#patternsScroll",  label: "Patterns",        group: "rows", side: "in" },
-  { sel: "#detailPanel",     label: "Entry detail panel", side: "in", note: "Detail, Why, Stats, Facets, Patterns" },
-  { sel: "#hdrHistory",      label: "Undo / redo",     side: "bottom" },
-  { sel: "#btnExport",       label: "Export / Share",  side: "bottom" },
-  { sel: "#btnFindPhone",    label: "Find in view",    side: "bottom" },
-  { sel: "#btnSettings",     label: "Settings",        side: "bottom" },
+  { sel: "#detailPanel",     label: "Entry detail panel", side: "in", note: "Detail, Why, Facets, Neighbors" },
+  // The four header buttons sit in a row: each callout starts on its own row below it (`row`), so they form a staircase.
+  { sel: "#hdrHistory",      label: "Undo / redo",     side: "bottom", row: 3 },
+  { sel: "#btnExport",       label: "Export / Share",  side: "bottom", row: 2 },
+  { sel: "#btnFindPhone",    label: "Find in view",    side: "bottom", row: 1 },
+  { sel: "#btnSettings",     label: "Settings",        side: "bottom", row: 0 },
 ];
 const WHERE_SEEN_KEY = "philogg-where-is-what-seen";
 let whereOpener = null;
@@ -52744,7 +52863,7 @@ function placeWhereCallouts(items, bounds, obstacles) {
     let box = null;
     outer: for (let si = 0; si < sides.length; si++) {
       const side = sides[si];
-      for (let d = 0; d <= 8; d++) {
+      for (let d = it.row || 0; d <= (it.row || 0) + 8; d++) {
         for (let a = 0; a <= 8; a++) {
           const slide = (a % 2 ? 1 : -1) * Math.ceil(a / 2) * ((side === "left" || side === "right" || side === "inr") ? h + M : w / 2 + M);
           const step = d * (h + M);
@@ -52865,7 +52984,7 @@ function renderWhereIsWhat() {
   foot.style.left = footBox.x / z + "px"; foot.style.top = footBox.y / z + "px";
   const items = regions.map((g, i) => {
     const s = sizeOf(pills[i], g);
-    return { rect: g.rect, w: s.w, h: s.h, side: g.entry.side };
+    return { rect: g.rect, w: s.w, h: s.h, side: g.entry.side, row: g.entry.row };
   });
   const boxes = placeWhereCallouts(items, { w: W, h: H }, [footBox]);
   boxes.forEach((b, i) => { pills[i].style.left = b.x / z + "px"; pills[i].style.top = b.y / z + "px"; });
@@ -53200,7 +53319,7 @@ document.addEventListener("keydown", ev => {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(state.activeId);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     }
     return;
   }
@@ -53366,7 +53485,7 @@ document.addEventListener("keydown", ev => {
       const prevTop = undoStack[undoStack.length - 1];
       deleteFilterNodeWithUndo(rootId);
       render();
-      offerPhoneUndoToast(prevTop);
+      offerUndoToast(prevTop);
     }
     return;
   }

@@ -531,3 +531,4 @@ Not mutable: file nodes and locked nodes (Bookmarks/Sources) — `isMutableNode`
 
 Regression-tested: **Group 173** — a timerange filter under an extraction-pattern node inherits `nodeIsExtractionView`/reachable Table tab, with `renderExtractTable` applying the ancestor's pattern to the child's own narrowed entries (fewer rows, same columns); a filter under a `"link"` node does not inherit even conceptually past it; a plain narrowing chain with no extraction-pattern ancestor anywhere stays non-extraction-view (regression baseline).
 
+**Layout (2026-10-09):** the ordinal suffix of "for each start, find the 1st next end" sits inside the number field's frame (`.link-hop-field`), and `#linkDialog` hangs from a fixed top edge (`padding-top:max(16px,10vh)`, phone excepted) so it grows downward instead of re-centring.
