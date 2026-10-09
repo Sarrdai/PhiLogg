@@ -26,7 +26,7 @@ await withApp(async (w, d, T) => {
   const applyBtn = d.querySelector("#btnApplyLevelToTree");
   const findLevelBtn = lvl => [...d.querySelectorAll("#levelBar .level-btn")].find(b => b.dataset.level === lvl);
 
-  assert(!isVisible(applyBtn, w), "#btnApplyLevelToTree is hidden while no chip is selected");
+  assert(isVisible(applyBtn, w) && applyBtn.disabled, "#btnApplyLevelToTree is disabled (in its fixed slot) while no chip is selected");
   fireClick(findLevelBtn("ERROR"), w);
   assert(f.children.length === 0, "a chip click does not touch the tree");
   assert(isVisible(applyBtn, w), "...but reveals #btnApplyLevelToTree");
@@ -47,7 +47,7 @@ await withApp(async (w, d, T) => {
   assert(row.querySelector(".tree-label").textContent === "ERROR", "tree row label shows the level list");
   assert(w.getEntries(levelNode.id).length === 4, "getEntries' \"level\" dispatch branch filters correctly, got " + w.getEntries(levelNode.id).length);
   assert(T.state.levelFilter.size === 0 && !findLevelBtn("ERROR").classList.contains("active"), "the chip selection is cleared after the node is created");
-  assert(!isVisible(applyBtn, w), "...and the button hides again");
+  assert(isVisible(applyBtn, w) && applyBtn.disabled, "...and the button is disabled again");
 
   // With the level node active, a new selection edits that node IN PLACE (undoably).
   fireClick(findLevelBtn("INFO"), w);

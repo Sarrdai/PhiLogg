@@ -20,7 +20,7 @@ await withApp(async (w, d, T) => {
   w.render();
 
   const rootStyle = d.documentElement.style;
-  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 92px 158px 168px 1fr",
+  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 56px 66px 92px 190px 110px 1fr",
     "default --row-grid matches the original hardcoded default, got " + rootStyle.getPropertyValue("--row-grid"));
 
   const btnColumns = d.querySelector(".toggle-columns");
@@ -34,7 +34,7 @@ await withApp(async (w, d, T) => {
   threadCb.checked = false;
   threadCb.dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(T.state.columnVisible.thread === false, "unchecking the Thread checkbox updates state.columnVisible.thread");
-  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 0px 158px 168px 1fr",
+  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 56px 66px 0px 190px 110px 1fr",
     "Thread's track collapses to 0px in --row-grid, got " + rootStyle.getPropertyValue("--row-grid"));
   const threadHandle = d.querySelector('.col-resize-handle[data-col="thread"]');
   assert(threadHandle.style.display === "none", "the hidden column's own resize handle is hidden too (nothing meaningful to drag)");
@@ -50,8 +50,8 @@ await withApp(async (w, d, T) => {
   T.state.columnWidths.method = 300; // simulate a prior resize
   w.applyRowGrid();
   fireClick(d.querySelector("#btnResetColumns"), w);
-  assert(T.state.columnWidths.method === 168, "Reset widths restores FIXED_COLUMN_WIDTHS");
-  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 72px 66px 92px 158px 168px 1fr",
+  assert(T.state.columnWidths.method === 110, "Reset widths restores FIXED_COLUMN_WIDTHS");
+  assert(rootStyle.getPropertyValue("--row-grid") === "5px 178px 56px 66px 92px 190px 110px 1fr",
     "…and --row-grid reflects the reset defaults");
 });
 
@@ -64,14 +64,14 @@ await withApp(async (w, d, T) => {
 
   const handle = d.querySelector('.col-resize-handle[data-col="location"]');
   assert(handle, "Location's resize handle exists in #tableHeader");
-  assert(handle.style.left === (5 + 12 + 178 + 12 + 72 + 12 + 66 + 12 + 92 + 12 + 158) + "px",
+  assert(handle.style.left === (5 + 12 + 178 + 12 + 56 + 12 + 66 + 12 + 92 + 12 + 190) + "px",
     "handle is positioned at the cumulative right edge of its own column, got " + handle.style.left);
 
   handle.dispatchEvent(new w.MouseEvent("mousedown", { bubbles: true, cancelable: true, clientX: 500 }));
   assert(handle.classList.contains("dragging"), "mousedown starts the drag (handle gets .dragging)");
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: 540 })); // +40px
-  assert(T.state.columnWidths.location === 198, "dragging 40px right grows Location's width by 40px (158 -> 198), got " + T.state.columnWidths.location);
-  assert(d.documentElement.style.getPropertyValue("--row-grid").includes("198px"), "--row-grid reflects the live drag width");
+  assert(T.state.columnWidths.location === 230, "dragging 40px right grows Location's width by 40px (190 -> 230), got " + T.state.columnWidths.location);
+  assert(d.documentElement.style.getPropertyValue("--row-grid").includes("230px"), "--row-grid reflects the live drag width");
 
   // Shrinking below COLUMN_MIN_WIDTH clamps rather than going negative/zero
   d.dispatchEvent(new w.MouseEvent("mousemove", { bubbles: true, cancelable: true, clientX: -900 }));

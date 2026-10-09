@@ -1,0 +1,4 @@
+- **feat: Context view marks the matches (2026-10-09, usability test round I3)**
+  - Match rows get an accent tint, a 10px dot on the bracket rail (was 5px) and a bold time; revealed context rows stay unchanged (not dimmed). A selected match stacks the selection tint on the match tint.
+  - The context toolbar shows a small "● match" legend. No gap separator: the reported gap was a real pause in the log.
+  - **Tests**: GROUP context-match-marks (new). Docs: docs/ui-and-views.md.

@@ -5,8 +5,8 @@
    GROUP phone-undo-toast-paths — every user delete path offers the Undo toast on phone
    Origin: 2026-10-04 (tablet retest). Besides the tree menu's Remove (GROUP phone-undo-toast),
    the tree row's ✕ button, middle-click, the Delete key and Ctrl+W now call
-   offerPhoneUndoToast too (a narrow mouse/keyboard window reaches them with no Undo button).
-   Desktop width: no toast.
+   offerUndoToast too (a narrow mouse/keyboard window reaches them with no Undo button).
+   Since 2026-10-09 (Round I, I6) the desktop width shows the toast as well.
    ============================================================ */
 group("phone-undo-toast-paths");
 
@@ -15,7 +15,7 @@ const putToast = d => d.querySelector("#copyToast");
 const putText = d => { const t = putToast(d); return t.firstChild && t.firstChild.nodeType === 3 ? t.firstChild.textContent : ""; };
 const putHasUndo = d => !!putToast(d).querySelector(".toast-action") && putToast(d).classList.contains("has-action");
 
-for (const [px, shown] of [[390, true], [1440, false]]) {
+for (const [px, shown] of [[390, true], [1440, true]]) {
   const tag = (shown ? "phone" : "desktop") + ": ";
   await withApp(async (w, d, T) => {
     section("phone-undo-toast-paths a. " + tag + "tree row ✕ button");

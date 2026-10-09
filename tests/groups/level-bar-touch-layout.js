@@ -76,7 +76,7 @@ await withApp(async (w, d, T) => {
   // The padding and every child's horizontal margins count against the available width.
   const mg = c => { const m = w.getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
   const margins = [...viewBar.children].reduce((a, c) => a + mg(c), 0) + mg(bar);
-  const chipsW = n * 44 + (n - 1) * 6 + pad + margins;
+  const chipsW = n * 44 + (n - 1) * 6 + pad + margins + 4; // + "Add level filter" (stubbed 0 wide) with its 4px row gap
   w.updateLevelBarLayout();
   assert(!viewBar.classList.contains("level-own-row"), "fits in one row: no own row");
   avail = others + chipsW - 1;

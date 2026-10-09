@@ -1,0 +1,5 @@
+- **feat: Round I small fixes: facets, tour, dialogs, toasts, plot colours (2026-10-09, person-requested)**
+  - Facets: level as 3px stripe, normal text colour, bars end before the numbers, ranks with "top tied". Tour: header callouts as a staircase, "Detail, Why, Facets, Neighbors".
+  - "Save session" dialog title/button; link dialog "1st" inside the field and a fixed top edge; tooltips close when a dialog opens; inline favicon.
+  - Pattern-change toast names the columns; a column keeps its colour by name; "Filter removed · Undo" on every layout; plot chip "Keep only <value>" (step towards #127).
+  - **Tests**: GROUP i6-facets, i6-tour-dialogs, i6-pattern-colour-keep, i6-tooltips-toast-favicon. Docs: docs/ui-and-views.md, extraction-and-plotting.md, filters.md.

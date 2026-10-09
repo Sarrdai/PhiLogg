@@ -21,6 +21,7 @@ function cmgTokens(menu, w) {
   const out = [];
   for (const c of menu.children) {
     if (w.getComputedStyle(c).display === "none") continue;
+    if (c.classList.contains("ctx-target-head")) continue; // "Menu for <node>" line above the groups (GROUP tree-labels-i4)
     out.push(c.classList.contains("ctx-sep") ? "sep"
       : c.classList.contains("ctx-head") ? "head:" + c.textContent
       : c.classList.contains("ctx-meta") ? "meta"
@@ -127,7 +128,7 @@ await withApp(async (w, d, T) => {
     "head:Clipboard", "copy", "cut", "saveFilter", "sep",
     "delete"].join(" | "), "text filter node: " + cmgJoin(t));
   assert(cmgWellFormed(t), "well formed");
-  assert(menu.children[0].dataset.action === "info" && !menu.children[0].previousElementSibling, "the Info/Select multiple group has no heading and comes first");
+  assert(menu.children[0].classList.contains("ctx-target-head") && menu.children[1].dataset.action === "info", "the Info/Select multiple group has no heading and comes first (right after the target line)");
   // Clicking a heading: no action, the menu stays.
   fireClick(menu.querySelector(".ctx-head"), w);
   assert(!menu.classList.contains("hidden"), "clicking a tree-menu heading keeps the menu open");
