@@ -19,6 +19,7 @@
     --accent:#4fc7c3;
     --accent-soft:rgba(79,199,195,.14);
     --accent-strong:#7fe0dc;
+    --multi-select-fill:color-mix(in srgb, var(--accent) 24%, var(--bg-app));
     --level-error:#f16565;
     --level-error-soft:rgba(241,101,101,.14);
     --level-warn:#e8a94a;
@@ -2222,22 +2223,14 @@
   }
   .log-row:hover{background:var(--bg-elevated);}
   .log-row.selected{box-shadow:inset 0 0 0 1px var(--accent);}
-  /* Ctrl/Shift-click multi-select (see handleLogRowClick) — box-shadow, NOT
-     background: a plain background tint here would silently lose to the
-     .lvl-error/warn/etc. row tinting below (same specificity, and those
-     rules come later in the cascade, so they'd always win outright — the
-     exact fight .pinned-row's own box-shadow approach, right below, was
-     already written to avoid; box-shadow doesn't touch background-color at
-     all, so it composes over ANY level tint). Deliberately a different inset
-     geometry from .selected's 1px full border AND .pinned-row's 3px LEFT
-     edge, so all three can be told apart; the explicit
-     .selected.row-multi-selected rule below combines both shadows for a row
-     that's simultaneously the multi-select's "focused" row and part of the
-     set, since box-shadow doesn't stack across separate class rules on its
-     own (only one wins, whichever the cascade picks) — needs both listed in
-     one value to actually show both. */
-  .log-row.row-multi-selected{box-shadow:inset 0 0 0 2px var(--accent-strong);}
-  .log-row.selected.row-multi-selected{box-shadow:inset 0 0 0 1px var(--accent), inset 0 0 0 3px var(--accent-strong);}
+  /* Ctrl/Shift-click multi-select (see handleLogRowClick): every member row
+     gets the SAME full-width fill (--multi-select-fill, painted as a
+     background-image gradient further down, after the level tints), no
+     per-row border, and the clicked ("focused") row looks like the rest. So
+     the 1px .selected border is dropped here; a pinned-only row keeps its
+     3px left edge. */
+  .log-row.selected.row-multi-selected{box-shadow:none;}
+  .log-row.pinned-row.selected.row-multi-selected{box-shadow:inset 3px 0 0 var(--accent-strong);}
 
   /* ---------- Time context filter: bracket drawn per-row in the left
      gutter of #tableRows (see its 14px left padding). Adjacent rows in the
@@ -3615,6 +3608,13 @@
   body.pair-picking .log-row:hover, body.pair-picking .pair-row:hover{box-shadow:inset 3px 0 0 var(--pair-pick);}
   .log-row.pair-start, .pair-row.pair-start{box-shadow:inset 3px 0 0 var(--accent); background:var(--accent-soft);}
   .log-row.pair-end, .pair-row.pair-end{box-shadow:inset 3px 0 0 var(--pair-pick); background:color-mix(in srgb, var(--pair-pick) 14%, transparent);}
+  /* Multi-select fill. background-image, NOT background-color: the level
+     tints above/below use the `background` shorthand (which would reset an
+     image set earlier) and a colour here would lose to them; an image layer
+     composes over ANY tint. Keep this block AFTER every .log-row background
+     shorthand (level tints and their :hover, pair-start/end). */
+  .log-row.row-multi-selected, .log-row.row-multi-selected:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill));}
+  .log-row.row-multi-selected.row-zero, .log-row.row-multi-selected.row-zero:hover{background-image:linear-gradient(var(--multi-select-fill), var(--multi-select-fill)), linear-gradient(var(--accent-soft), var(--accent-soft));}
 
   /* ---------- Time context dialog ---------- */
   #contextDialog{
@@ -52973,6 +52973,18 @@ document.addEventListener("mousedown", ev => {
   if (!t || !t.closest) return;
   if (t.closest("#sidebar")) state.focusRegion = "tree";
   else if (t.closest("#content")) state.focusRegion = "entries";
+}, true);
+
+// Shift/Ctrl/Cmd+click on a log row is a row multi-selection gesture, never a
+// native text selection: cancel the default of the mousedown (the click still
+// fires; focus handling above is unaffected) and drop any selection left over.
+document.addEventListener("mousedown", ev => {
+  if (ev.button !== 0 || !(ev.shiftKey || ev.ctrlKey || ev.metaKey)) return;
+  const t = ev.target;
+  if (!t || !t.closest || !t.closest(".log-row")) return;
+  ev.preventDefault();
+  const sel = window.getSelection && window.getSelection();
+  if (sel && sel.rangeCount && !sel.isCollapsed) sel.removeAllRanges();
 }, true);
 
 // True while log-view shortcuts (bookmark, note, row copy, ...) may act: the
