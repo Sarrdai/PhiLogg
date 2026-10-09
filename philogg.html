@@ -2167,24 +2167,26 @@
 
   /* Text-filter match highlighting (Settings -> Behavior) — unrelated to the
      highlight-RULE markers above (.hl-marker/.hl-markers, a per-node gutter
-     color) despite the naming proximity; this instead marks the actual
-     matched substring inline in a row/detail field, see markRangesHtml(). A
-     plain <mark>, restyled to use the theme's --warn token (tinted via
-     color-mix so it reads consistently across every theme without a
-     hardcoded color) instead of the browser default yellow.
-     padding:0, deliberately (person-reported 2026-08-30): this used to carry
-     `padding:0 1px` for a little visual breathing room, which is layout-
-     affecting on an inline element — unlike background/box-shadow, side
-     padding on <mark> actually widens the line, shifting every character
-     after it by 2px. That widening used to appear/disappear depending on
-     whether a coloured highlight rule ALSO happened to match the same field
-     (see markCombinedHtml: the mark-seg path zeroed padding, the plain
-     markRangesHtml fallback didn't), which is why toggling the unrelated
-     highlight-rule feature visibly reflowed text nowhere near a highlight
-     rule. Marking text must never change its layout — only what's painted
-     on top of it — so padding is 0 unconditionally now, on every path. */
+     color); this marks the actual matched substring inline, see
+     markRangesHtml(). A plain <mark> in the theme's --warn token: a soft 18%
+     tinted fill plus a 1px inset outline (70%), so the text stays readable on
+     every theme and the find-bar hit / rule stripes stay distinguishable.
+     padding:0, deliberately: side padding on an inline <mark> widens the line
+     and shifts every character after it, and it used to appear/disappear
+     depending on whether a highlight rule also matched the field. Marking
+     must never change layout, only what is painted — fill and outline are
+     background/box-shadow only.
+     Plain path (markRangesHtml): one mark per range, full outline, 2px radius.
+     Segmented path (markCombinedHtml, .mark-seg): a range cut into several
+     pieces must still read as ONE box. Every piece keeps the top edge;
+     .mm-start / .mm-end (piece starts / ends at the range's own start / end)
+     add the left / right edge and that side's radius; inner cuts get no
+     vertical line and square corners. Pieces under a highlight-rule stripe
+     carry .mm-stripe and drop the bottom edge — the 2px stripe is the bottom
+     edge there (the inset shadow would paint over it). */
   mark.text-match-mark{
-    background:color-mix(in srgb, var(--warn) 55%, transparent); color:inherit;
+    background:color-mix(in srgb, var(--warn) 18%, transparent); color:inherit;
+    box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--warn) 70%, transparent);
     border-radius:2px; padding:0;
   }
   /* Highlight-RULE match text (FEATURE_BACKLOG.md #20, see markCombinedHtml):
@@ -2218,6 +2220,16 @@
      too, harmlessly, so this rule doesn't silently depend on that.) Must
      stay AFTER mark.text-match-mark: same specificity, later wins. */
   mark.mark-seg{padding:0; border-radius:0;}
+  mark.text-match-mark.mark-seg{
+    --sl:0px; --sr:0px; --sb:1px;
+    box-shadow:inset 0 1px 0 color-mix(in srgb, var(--warn) 70%, transparent),
+      inset 0 calc(-1 * var(--sb)) 0 color-mix(in srgb, var(--warn) 70%, transparent),
+      inset var(--sl) 0 0 color-mix(in srgb, var(--warn) 70%, transparent),
+      inset calc(-1 * var(--sr)) 0 0 color-mix(in srgb, var(--warn) 70%, transparent);
+  }
+  mark.text-match-mark.mm-start{--sl:1px; border-top-left-radius:2px; border-bottom-left-radius:2px;}
+  mark.text-match-mark.mm-end{--sr:1px; border-top-right-radius:2px; border-bottom-right-radius:2px;}
+  mark.text-match-mark.mm-stripe{--sb:0px;}
   /* Find-bar hits (FEATURE_BACKLOG.md #3, see markCombinedHtml's findRanges):
      accent-tinted rather than the filter mark's --warn so "what I'm
      searching for right now" and "what the active filter matched" stay
@@ -17415,7 +17427,8 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
       const t = tokRanges[ti];
       if (t && t.start <= s && t.end >= e) slice = '<span class="' + t.cls + '"' + (t.title ? ' title="' + escapeHtml(t.title) + '"' : "") + '>' + slice + "</span>";
     }
-    const marked = ranges.some(r => r[0] <= s && r[1] >= e);
+    const mr = ranges.find(r => r[0] <= s && r[1] >= e);
+    const marked = !!mr;
     // Find-bar hit (FEATURE_BACKLOG.md #3): its own background class, which
     // takes precedence over the filter mark's for the same characters — the
     // search is what the person is looking at right now. Rule stripes still
@@ -17430,7 +17443,9 @@ function markCombinedHtml(text, ranges, hlRanges, tokRanges, findRanges) {
       ? ' style="background-image:' + hlStripeGradient(colors) +
         ';background-repeat:no-repeat;background-position:left bottom;background-size:100% ' + HL_MATCH_STRIPE_H + 'px"'
       : "";
-    out += '<mark class="' + (found ? "find-match-mark" : marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg"' + style + '>' + slice + '</mark>';
+    // Outline edges of a filter-mark piece (CSS: mark.text-match-mark.mm-*).
+    const mm = found || !marked ? "" : (mr[0] === s ? " mm-start" : "") + (mr[1] === e ? " mm-end" : "") + (colors.length ? " mm-stripe" : "");
+    out += '<mark class="' + (found ? "find-match-mark" : marked ? "text-match-mark" : "hl-match-mark") + ' mark-seg' + mm + '"' + style + '>' + slice + '</mark>';
   }
   return out;
 }

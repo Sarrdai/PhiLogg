@@ -76,7 +76,7 @@ await withApp(async (w, d, T) => {
   // --- Overlap: "alpha" is both the active filter's match AND ruleAlpha's.
   //     One <mark>, keeping the filter's background class and gaining the
   //     rule's stripe — neither wins, both apply ---
-  const overlap = filteredMsg().match(/<mark class="text-match-mark mark-seg"[^>]*>alpha<\/mark>/);
+  const overlap = filteredMsg().match(/<mark class="text-match-mark mark-seg mm-start mm-end mm-stripe"[^>]*>alpha<\/mark>/);
   assert(overlap && overlap[0].includes("linear-gradient(#00ff00,#00ff00)"),
     "a span matched by BOTH the active filter and a rule keeps the filter background and gains the rule stripe");
 

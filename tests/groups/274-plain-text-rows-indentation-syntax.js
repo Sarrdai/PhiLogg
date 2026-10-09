@@ -28,7 +28,7 @@ group(274);
     assert(w.tokenRangesHtml('<a b="c&d"/>', x).includes('<span class="tok-string">&quot;c&amp;d&quot;</span>'), "viewer output escapes inside the token");
     assert(w.tokenRangesHtml('{"a":1}', w.jsonTokenRanges('{"a":1}')) === '{<span class="tok-key">&quot;a&quot;:</span><span class="tok-number">1</span>}', "viewer JSON output unchanged");
     const html = w.markCombinedHtml('"a": 12', [[5, 6]], [], w.jsonTokenRanges('"a": 12'));
-    assert(html.includes('<mark class="text-match-mark mark-seg"><span class="tok-number">1</span></mark><span class="tok-number">2</span>'), "a match inside a token: the token span sits inside the mark, split at the mark's edge (" + html + ")");
+    assert(html.includes('<mark class="text-match-mark mark-seg mm-start mm-end"><span class="tok-number">1</span></mark><span class="tok-number">2</span>'), "a match inside a token: the token span sits inside the mark, split at the mark's edge (" + html + ")");
   });
 
   await withApp(async (w, d, T) => {
