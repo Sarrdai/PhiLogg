@@ -5,8 +5,8 @@
    GROUP level-bar-view-filter — the level chips are a pure view filter
    (Runde C / C2, step 2). A chip click only toggles state.levelFilter and
    narrows the Filtered view; it never creates or edits tree nodes. Counts
-   describe the active node. "Add to tree" (#btnApplyLevelToTree) shows only
-   while chips are selected, creates / edits (in place) a level node and then
+   describe the active node. "Add to tree" (#btnApplyLevelToTree) is enabled only
+   while chips are selected (always in its slot, disabled otherwise), creates / edits (in place) a level node and then
    clears the selection. No Settings control, nothing persisted.
    ============================================================ */
 group("level-bar-view-filter");
@@ -61,15 +61,15 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   const btn = d.querySelector("#btnApplyLevelToTree");
-  assert(!isVisible(btn, w), "hidden while nothing is selected");
+  assert(isVisible(btn, w) && btn.disabled, "disabled (but in its fixed slot) while nothing is selected");
   fireClick(lbvChip(d, "ERROR"), w);
-  assert(isVisible(btn, w) && !btn.disabled, "visible while a chip is selected");
+  assert(isVisible(btn, w) && !btn.disabled, "enabled while a chip is selected");
   fireClick(btn, w);
   assert(f.children.length === 1, "creates one level node");
   const node = T.state.nodes[f.children[0]];
   assert(node.filterType === "level" && node.value.join(",") === "ERROR" && T.state.activeId === node.id, "node = ERROR level node, active");
   assert(T.state.levelFilter.size === 0 && !lbvChip(d, "ERROR").classList.contains("active"), "the selection is cleared (the node does the filtering now)");
-  assert(!isVisible(btn, w), "the button hides again");
+  assert(isVisible(btn, w) && btn.disabled, "the button is disabled again");
   assert(T.currentViewEntries.length === 4, "Filtered view still shows the 4 ERROR entries (now via the node)");
 
   fireClick(lbvChip(d, "INFO"), w);

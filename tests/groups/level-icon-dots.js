@@ -41,9 +41,9 @@ await withApp(async (w, d, T) => {
   const bcs = w.getComputedStyle(badge);
   assert(bcs.position === "absolute" && bcs.width === "11px" && bcs.height === "11px" && bcs.right === "-3px" && bcs.bottom === "-3px",
     "badge is an 11px disc on the icon's bottom-right edge, got " + [bcs.position, bcs.width, bcs.height, bcs.right, bcs.bottom].join(" "));
-  assert(!isVisible(btn, w), "button still hidden while nothing is selected");
+  assert(isVisible(btn, w) && btn.disabled, "button stays in its slot, disabled, while nothing is selected");
   fireClick(d.querySelector('#levelBar .level-btn[data-level="ERROR"]'), w);
-  assert(isVisible(btn, w), "...and visible once a chip is selected");
+  assert(isVisible(btn, w) && !btn.disabled, "...and enabled once a chip is selected");
   // Re-render of the level bar must not duplicate the badge.
   fireClick(d.querySelector('#levelBar .level-btn[data-level="INFO"]'), w);
   assert(btn.querySelectorAll(".add-badge").length === 1 && btn.querySelectorAll("svg.icon").length === 1, "still one icon and one badge after more chip clicks");

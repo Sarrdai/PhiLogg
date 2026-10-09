@@ -1158,6 +1158,16 @@
      in this row (person-requested, this session: one consistent divider
      rhythm instead of #levelBar's own special-cased blank gap). */
   #btnApplyLevelToTree{float:left; margin:0;}
+  /* Entries left by the active chips ("405 / 2.500"), right after #levelBar. The slot keeps its
+     width (inline min-width from updateLevelCountPill) while no chip is active (.idle = invisible),
+     so toggling a chip never moves the buttons to its right. */
+  #levelCountPill{
+    flex:0 0 auto; box-sizing:content-box; padding:4px 8px; border-radius:11px; text-align:center; white-space:nowrap;
+    font:600 11px/14px var(--font-mono); background:var(--accent-soft); color:var(--accent-strong);
+  }
+  #levelCountPill[hidden]{display:none;}
+  #levelCountPill.idle{visibility:hidden;}
+  body.layout-phone #levelCountPill{display:none;}
   /* Shared "add badge": a small accent disc with a plus on the bottom-right
      edge of an object icon. It marks buttons whose main job is creating
      something new and whose icon (a funnel, a file, a book, the level dots)
@@ -6444,6 +6454,7 @@
           <span class="group-caption" aria-hidden="true">Level</span>
           <div class="vb-group-row">
             <div id="levelBar"></div>
+            <span id="levelCountPill" aria-live="polite" hidden></span>
             <button id="btnApplyLevelToTree" class="toolbar-icon-btn row-action-btn level-apply" title="Add level filter"></button>
           </div>
         </div>
@@ -10950,7 +10961,35 @@ document.getElementById("settingsTreeIndicatorMode").addEventListener("change", 
    a selection (state.levelFilter): the chips are a pure view filter, and this
    button turns the selection into a real level node. */
 function updateApplyLevelToTreeButtonVisibility() {
-  btnApplyLevelToTree.style.display = state.levelFilter.size ? "" : "none";
+  const on = state.levelFilter.size > 0;
+  btnApplyLevelToTree.disabled = !on;
+  updateLevelCountPill();
+}
+/* Entries left by the active level chips for the active node: { shown, total },
+   or null without a node. Sums the node's cached per-level counts (getLevelCounts),
+   so it costs nothing per render. */
+function levelFilterCounts() {
+  if (!state.activeId || !state.nodes[state.activeId]) return null;
+  const counts = getLevelCounts(state.activeId) || {};
+  let shown = 0, total = 0;
+  for (const lvl in counts) { total += counts[lvl]; if (state.levelFilter.has(lvl)) shown += counts[lvl]; }
+  return { shown, total };
+}
+/* The count pill right after the chips ("405 / 2.500"). Its slot is reserved at
+   the width of "<total> / <total>" (monospace, so in ch) whether or not a chip is
+   active; with no chip active it stays invisible, so the buttons to its right
+   never move when a chip is toggled. */
+function updateLevelCountPill() {
+  const pill = document.getElementById("levelCountPill");
+  const c = levelFilterCounts();
+  if (!c || !c.total) { pill.hidden = true; pill.textContent = ""; return; }
+  const totalText = c.total.toLocaleString("de-DE");
+  const on = state.levelFilter.size > 0;
+  pill.hidden = false;
+  pill.classList.toggle("idle", !on);
+  pill.textContent = (on ? c.shown.toLocaleString("de-DE") : totalText) + " / " + totalText;
+  pill.style.minWidth = (totalText.length * 2 + 3) + "ch";
+  pill.title = on ? c.shown.toLocaleString("de-DE") + " of " + totalText + " entries shown" : "";
 }
 
 /* ===================== "On open, scroll log to" setting (Settings ->
@@ -21956,7 +21995,12 @@ function renderStatus() {
   updatePhoneTitle();
   if (fileCount === 0) { statusText.textContent = ""; return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
-  const filesText = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${total.toLocaleString("de-DE")} entries`;
+  // With level chips active the entry count becomes "<shown> of <total> entries shown"
+  // (the active node's figures, the same as the count pill next to the chips).
+  const lc = state.levelFilter.size ? levelFilterCounts() : null;
+  const entriesText = lc && lc.total ? `${lc.shown.toLocaleString("de-DE")} of ${lc.total.toLocaleString("de-DE")} entries shown`
+    : `${total.toLocaleString("de-DE")} entries`;
+  const filesText = `${fileCount} file${fileCount > 1 ? "s" : ""} · ${entriesText}`;
   // Compact tier (tablet): the sidebar is a drawer, so the header names the
   // active filter and its result size ("<filter> · <count> / <total> entries");
   // tapping it opens the drawer. A root file (or nothing) active keeps the
@@ -23624,6 +23668,7 @@ function renderLevelBar() {
     levelBarEl.appendChild(btn);
   });
   updateApplyLevelToTreeButtonVisibility();
+  renderStatus(); // the header's "<n> of <total> entries shown" follows the chips
   updateLevelBarLayout();
 }
 
@@ -23652,7 +23697,9 @@ function updateLevelBarLayout() {
     const marginsOf = c => { const m = getComputedStyle(c); return (parseFloat(m.marginLeft) || 0) + (parseFloat(m.marginRight) || 0); };
     const levelGroup = levelBarEl.closest(".vb-group");
     const applyBtn = document.getElementById("btnApplyLevelToTree");
-    const applyW = applyBtn && getComputedStyle(applyBtn).display !== "none" ? applyBtn.offsetWidth + 4 : 0;
+    const countPill = document.getElementById("levelCountPill");
+    const applyW = (applyBtn && getComputedStyle(applyBtn).display !== "none" ? applyBtn.offsetWidth + 4 : 0) +
+      (countPill && !countPill.hidden ? countPill.offsetWidth + 4 : 0);
     const shown = [...viewBar.children].filter(c => getComputedStyle(c).display !== "none");
     const others = shown.filter(c => c !== levelGroup).reduce((a, c) => a + c.offsetWidth + marginsOf(c), 0) +
       (shown.includes(levelGroup) ? marginsOf(levelBarEl) + applyW : 0);
