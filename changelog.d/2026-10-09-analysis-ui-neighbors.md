@@ -1,0 +1,5 @@
+- **feat: Neighbors tab in the bottom panel and `What came before` in the burst popover (2026-10-09, person-requested, backlog #120 part 2a)**
+  - New tab `Neighbors` (next to Facets): which message patterns stand before / after the active node's entries more often than elsewhere, with coverage, lift and median distance. Controls: `Before`/`After`, `1 s`/`5 s`/`30 s`, `Same thread`, `Show all`; on a link node `pairs`/`without end`.
+  - A row click creates a context node plus the pattern filter as one undo step. The burst popover's `What came before` opens the tab with the burst's first entry as the reference.
+  - Large files compute in a deferred step behind a "Computing…" line. Desktop/tablet only; the phone sheet does not offer the tab yet.
+  - **Tests**: GROUP neighbors-tab (new), minimap-bursts (popover actions). Docs: docs/ui-and-views.md, README.

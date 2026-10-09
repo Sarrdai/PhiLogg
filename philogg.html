@@ -2965,7 +2965,7 @@
   .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
   /* Patterns with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
   #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
-  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody, #whyPanelBody){display:none !important;}
+  #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody, #whyPanelBody, #nbPanelBody){display:none !important;}
   #detailMeta{
     flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
   }
@@ -3109,6 +3109,38 @@
   #patternsEmpty{padding:24px 16px; color:var(--text-tertiary); font-size:12px;}
 
   /* ---------- Why tab (bottom panel): which filter node keeps / rejects the selected entry ---------- */
+  /* ---------- Neighbors tab (bottom panel): patterns before / after the active node's entries ---------- */
+  #nbPanelBody{display:none; flex:1 1 auto; min-height:0; flex-direction:column; overflow:hidden; user-select:none;}
+  #detailPanel.lower-neighbors #nbPanelBody{display:flex;}
+  #detailPanel.lower-neighbors.collapsed:not(.peeking) #nbPanelBody{display:none;}
+  #detailPanel.lower-neighbors :is(#detailBody, #detailMeta, #detailViewTabs){display:none;}
+  #nbCtl{flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center; gap:6px 12px; padding:6px 16px;}
+  .nb-ctl-label{font-size:11.5px; color:var(--text-tertiary);}
+  .nb-seg{display:inline-flex; gap:4px;}
+  #nbCtl [hidden]{display:none;}
+  .nb-seg .assert-mode-btn{flex:0 0 auto; padding:0 10px; height:24px; white-space:nowrap;}
+  .nb-seg .assert-mode-btn:disabled{opacity:.45; cursor:default;}
+  .nb-check{display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
+  #nbHead{flex:0 0 auto; padding:0 16px 4px; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); display:flex; align-items:center; gap:8px; min-height:16px;}
+  #nbHead .nb-override{display:inline-flex; align-items:center; gap:4px; padding:1px 4px 1px 8px; border:1px solid var(--accent); border-radius:10px; color:var(--accent-strong); background:var(--accent-soft);}
+  #nbHead .nb-override button{border:0; background:none; color:inherit; cursor:pointer; font:inherit; padding:0 4px; line-height:1;}
+  #nbTable{flex:1 1 auto; min-height:0; overflow:auto; padding:0 0 10px;}
+  .nb-empty{padding:14px 16px; color:var(--text-tertiary); font-size:12px;}
+  .nb-empty button{margin-left:6px;}
+  .nb-grid{display:grid; grid-template-columns:minmax(120px,170px) 56px 108px 80px minmax(0,1fr); align-items:center; column-gap:10px; padding:0 16px;}
+  .nb-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel, var(--bg-app)); height:24px; font-size:10.5px; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary); border-bottom:1px solid var(--border-soft);}
+  .nb-row{height:28px; font-size:12px; border-bottom:1px solid var(--border-soft); cursor:pointer;}
+  .nb-row:hover{background:var(--bg-elevated);}
+  .nb-row.dim{opacity:.45;}
+  .nb-row > span, .nb-hrow > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
+  .nb-cov{display:inline-flex; align-items:center; gap:6px; font-variant-numeric:tabular-nums;}
+  .nb-cov i{display:inline-block; width:56px; height:6px; border-radius:3px; background:var(--bg-elevated-2); overflow:hidden; flex:0 0 auto;}
+  .nb-cov u{display:block; height:100%; background:var(--accent); text-decoration:none;}
+  .nb-num{font-variant-numeric:tabular-nums; text-align:right;}
+  .nb-muted{color:var(--text-tertiary);}
+  .nb-text{font-family:var(--font-log);}
+  body.layout-phone #lowerTabNeighbors{display:none;}
+
   #whyPanelBody{display:none; flex:1 1 auto; min-height:0; overflow-y:auto; padding:8px 16px 12px; user-select:text;}
   #detailPanel.lower-why #whyPanelBody{display:block;}
   #detailPanel.lower-why.collapsed:not(.peeking) #whyPanelBody{display:none;}
@@ -6879,6 +6911,7 @@
               <button type="button" class="lower-tab" id="lowerTabWhy" role="tab" aria-selected="false" title="Why is this row here? — which filter node keeps or rejects the selected entry">Why</button>
               <button type="button" class="lower-tab" id="lowerTabStats" role="tab" aria-selected="false" title="Statistics — min / max / mean / σ of the numeric columns (Table and Plot)" hidden>Statistics</button>
               <button type="button" class="lower-tab" id="lowerTabFacets" role="tab" aria-selected="false" title="Facets — value distribution per column (Ctrl+I)" data-sc-title="Facets — value distribution per column ({toggleFacets})">Facets</button>
+              <button type="button" class="lower-tab" id="lowerTabNeighbors" role="tab" aria-selected="false" title="Neighbors — which message patterns stand before / after these entries more often than elsewhere">Neighbors</button>
               <button type="button" class="lower-tab" id="lowerTabPatterns" role="tab" aria-selected="false" title="Patterns — message shapes of this view">Patterns</button>
             </div>
             <span id="facetPanelCount"></span>
@@ -6909,6 +6942,19 @@
           <div id="facetPanelBody"></div>
           <!-- Why tab body: which nodes of the active filter chain keep or reject the selected entry (renderWhyPanel). -->
           <div id="whyPanelBody"></div>
+          <!-- Neighbors tab body: patterns that stand before / after the active node's entries more often than elsewhere (renderNeighborsPanel). -->
+          <div id="nbPanelBody">
+            <div id="nbCtl">
+              <span class="nb-ctl-label" id="nbRefLabel">Reference</span>
+              <span class="nb-seg" id="nbRefSeg" role="group" aria-label="Reference"><button type="button" class="assert-mode-btn" data-nb-ref="pairs">pairs</button><button type="button" class="assert-mode-btn" data-nb-ref="noend">without end</button></span>
+              <span class="nb-seg" id="nbDirSeg" role="group" aria-label="Direction"><button type="button" class="assert-mode-btn" data-nb-dir="before">Before</button><button type="button" class="assert-mode-btn" data-nb-dir="after">After</button></span>
+              <span class="nb-seg" id="nbWinSeg" role="group" aria-label="Window"><button type="button" class="assert-mode-btn" data-nb-win="1000">1 s</button><button type="button" class="assert-mode-btn" data-nb-win="5000">5 s</button><button type="button" class="assert-mode-btn" data-nb-win="30000">30 s</button></span>
+              <label class="nb-check"><input type="checkbox" id="nbSameThread"> Same thread</label>
+              <label class="nb-check"><input type="checkbox" id="nbShowAll"> Show all</label>
+            </div>
+            <div id="nbHead"></div>
+            <div id="nbTable"></div>
+          </div>
           <!-- Statistics tab body (offered while Table or Plot is on screen): the
                column stats chips of the extraction (renderStatsBar). -->
           <div id="statsPanelBody">
@@ -18854,6 +18900,8 @@ const lowerTabStats = el("#lowerTabStats");
 const lowerTabFacets = el("#lowerTabFacets");
 const lowerTabPatterns = el("#lowerTabPatterns");
 const lowerTabWhy = el("#lowerTabWhy");
+const lowerTabNeighbors = el("#lowerTabNeighbors");
+const nbPanelBody = el("#nbPanelBody");
 const whyPanelBody = el("#whyPanelBody");
 
 // Tabs that replace #fhSplit with a content component of their own —
@@ -19339,7 +19387,7 @@ const LOWER_TAB_KEY = "philogg-lower-tab";
 const FACETS_COLLAPSED_KEY = "philogg-facets-collapsed";
 const FACET_TOP_N = 8;
 const FACET_MORE_STEP = 25;
-// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" | "why" (persisted). "stats"
+// The selected bottom-panel tab on desktop/tablet: "detail" | "stats" | "facets" | "why" | "neighbors" (persisted). "stats"
 // only shows while Table/Plot is on screen (statsActive), elsewhere the panel shows Entry detail
 // again without forgetting the choice.
 let lowerTab = "detail";
@@ -19358,7 +19406,7 @@ let phonePatternsTotal = 0;
 let phonePatternsNode = null; // active node the list was last drawn for (scroll resets on a change)
 const PHONE_PATTERN_ROW_H = 64;
 let phonePanelSig = ""; // syncPhoneSheetPanel's last applied signature
-try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" || t === "why" ? t : "detail"; } catch { lowerTab = "detail"; }
+try { const t = localStorage.getItem(LOWER_TAB_KEY); lowerTab = t === "stats" || t === "facets" || t === "why" || t === "neighbors" ? t : "detail"; } catch { lowerTab = "detail"; }
 let facetsCollapsed = new Set();
 try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED_KEY) || "[]")); } catch { facetsCollapsed = new Set(); }
 const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
@@ -19477,6 +19525,9 @@ function whyActive() {
   return currentLayoutTier === "phone" ? (phoneSheetOpen && phoneSheetTab === "why") : lowerTab === "why";
 }
 
+// The Neighbors tab is selected. Desktop/tablet only (the phone sheet does not offer it): the persisted lowerTab.
+function neighborsActive() { return currentLayoutTier !== "phone" && lowerTab === "neighbors"; }
+
 function lowerTabDetailTitle(patterns) {
   return patterns
     ? "Entry detail is shown in Context, Filtered, Table and Plot"
@@ -19491,25 +19542,29 @@ function lowerTabDetailTitle(patterns) {
 // collapsed state or the remembered height. Statistics is offered on
 // Table/Plot only (statsOffered).
 function applyLowerPanel() {
-  const facets = facetsActive(), patterns = phonePatternsActive(), why = !facets && !patterns && whyActive(), stats = !facets && !why && statsActive();
+  const facets = facetsActive(), patterns = phonePatternsActive(), why = !facets && !patterns && whyActive(), nb = !facets && !patterns && !why && neighborsActive(), stats = !facets && !why && !nb && statsActive();
   const onPatternsTab = fhActiveTab === "patterns";
   detailPanel.classList.toggle("lower-facets", facets);
   detailPanel.classList.toggle("lower-stats", stats);
   detailPanel.classList.toggle("lower-why", why);
+  detailPanel.classList.toggle("lower-neighbors", nb);
   detailPanel.classList.toggle("lower-patterns", patterns);
-  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns && !why);
-  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats || why ? "false" : "true");
+  detailPanel.classList.toggle("detail-strip-only", onPatternsTab && !facets && !patterns && !why && !nb);
+  lowerTabDetail.setAttribute("aria-selected", facets || patterns || stats || why || nb ? "false" : "true");
   lowerTabWhy.setAttribute("aria-selected", why ? "true" : "false");
   lowerTabWhy.disabled = currentLayoutTier === "phone" && !selectedEntry(); // phone: like Entry, needs a selection
   lowerTabStats.hidden = !statsOffered();
   lowerTabStats.setAttribute("aria-selected", stats ? "true" : "false");
   lowerTabFacets.setAttribute("aria-selected", facets ? "true" : "false");
+  lowerTabNeighbors.hidden = currentLayoutTier === "phone";
+  lowerTabNeighbors.setAttribute("aria-selected", nb ? "true" : "false");
   lowerTabPatterns.setAttribute("aria-selected", patterns ? "true" : "false");
   lowerTabDetail.disabled = onPatternsTab || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
   lowerTabDetail.title = lowerTabDetailTitle(onPatternsTab);
   updateDetailResizerVisibility();
   renderFacetPanel();
   renderWhyPanel();
+  renderNeighborsPanel();
   renderPhonePatterns();
 }
 
@@ -19557,6 +19612,187 @@ whyPanelBody.addEventListener("click", ev => {
   revealFilteredView();
   render();
 });
+
+/* ---------- Neighbors tab: which patterns stand before / after the reference entries ----------
+   The UI of analysisNeighbors (the engine behind the LLM tool common_neighbors). Reference = the active
+   filter node's entries (level quick-filter applied); on a link node the selector switches between its
+   pairs and the references WITHOUT an end (node._linkUnmatched); a burst popover can hand over ONE entry
+   as an explicit override (nbState.override, dropped on an active-node change). A file node is no
+   reference (a whole file says nothing). Only rows with lift >= 2 unless "Show all" (the rest dimmed).
+   A row click is ONE undo step: a context node around the reference (window on the selected side) + the
+   pattern filter under it; override / without-end references have no node to put a context around, so
+   they get a time-range filter (override) or just the pattern filter under the root file (without end).
+   Results are cached per (node, reference, direction, window, same thread, level filter); a big file is
+   computed in a deferred step behind a "Computing..." line. Plain UI state, not persisted. */
+const NB_SYNC_MAX_ENTRIES = 50000; // above this many file entries the engine runs in a deferred step
+const nbState = { nodeId: null, refMode: "pairs", dirUser: null, winMs: 5000, sameThread: true, showAll: false, override: null };
+const nbCache = new Map(); // sig -> { src, file, fileN, result } (src/file: identity of what it was computed from)
+const NB_CACHE_MAX = 24;
+function nbCachePut(sig, c) { if (nbCache.size >= NB_CACHE_MAX) nbCache.delete(nbCache.keys().next().value); nbCache.set(sig, c); }
+let nbPendingSig = null;
+let nbShown = []; // rows drawn into #nbTable (row click index -> engine row)
+let nbCtx = null; // reference context of the last drawing: { refs, fileId, node, mode }
+function nbDirection() { return nbState.dirUser || (nbState.refMode === "noend" && !nbState.override ? "after" : "before"); }
+// Hands one entry over as the reference (burst popover "What came before"): direction Before, window 5 s.
+function openNeighborsWithOverride(entries, label, fileId, ts) {
+  nbState.override = { entries, label, fileId, ts };
+  nbState.nodeId = state.activeId;
+  nbState.dirUser = "before";
+  nbState.winMs = 5000;
+  if (currentLayoutTier === "phone") return;
+  setLowerTab("neighbors");
+}
+function nbReference() {
+  const o = nbState.override;
+  if (o) return { kind: "override", refs: o.entries, src: o.entries, fileId: o.fileId, node: null };
+  const node = state.nodes[state.activeId];
+  if (!node || node.type !== "filter") return { kind: "none" };
+  const fileId = getRootFileId(node.id);
+  let src;
+  if (isLinkNode(node) && nbState.refMode === "noend") src = node._linkUnmatched || [];
+  else src = getEntries(node.id);
+  return { kind: "node", refs: applyLevelFilter(src), src, fileId, node };
+}
+function nbEmpty(html) { nbPanelBody.querySelector("#nbTable").innerHTML = '<div class="nb-empty">' + html + "</div>"; }
+function nbLiftText(l) { return "×" + (l >= 1000 ? "999+" : l >= 100 ? String(Math.round(l)) : l.toFixed(1)); }
+function renderNeighborsPanel() {
+  if (!neighborsActive()) return;
+  if (nbState.nodeId !== state.activeId) { // another node: back to its own defaults (a burst override is dropped)
+    nbState.nodeId = state.activeId; nbState.refMode = "pairs"; nbState.dirUser = null; nbState.override = null;
+  }
+  const ref = nbReference();
+  const node = ref.node;
+  const link = !!node && isLinkNode(node);
+  if (link && nbState.refMode === "noend" && !(node._linkUnmatched || []).length) nbState.refMode = "pairs";
+  const dir = nbDirection();
+  // control strip
+  nbPanelBody.querySelector("#nbRefLabel").hidden = !link;
+  const refSeg = nbPanelBody.querySelector("#nbRefSeg");
+  refSeg.hidden = !link;
+  refSeg.querySelectorAll("[data-nb-ref]").forEach(b => {
+    const on = b.dataset.nbRef === nbState.refMode;
+    b.classList.toggle("active", on); b.setAttribute("aria-pressed", on ? "true" : "false");
+    if (b.dataset.nbRef === "noend") {
+      const n = link ? applyLevelFilter(node._linkUnmatched || []).length : 0;
+      b.disabled = !n; b.title = n ? n.toLocaleString("de-DE") + " references without an end" : "Every reference has an end";
+    } else if (link) b.title = getEntries(node.id).length.toLocaleString("de-DE") + " pairs";
+  });
+  nbPanelBody.querySelectorAll("[data-nb-dir]").forEach(b => { const on = b.dataset.nbDir === dir; b.classList.toggle("active", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
+  nbPanelBody.querySelectorAll("[data-nb-win]").forEach(b => { const on = +b.dataset.nbWin === nbState.winMs; b.classList.toggle("active", on); b.setAttribute("aria-pressed", on ? "true" : "false"); });
+  nbPanelBody.querySelector("#nbSameThread").checked = nbState.sameThread;
+  nbPanelBody.querySelector("#nbShowAll").checked = nbState.showAll;
+  const head = nbPanelBody.querySelector("#nbHead");
+  nbShown = [];
+  nbCtx = null;
+  if (ref.kind === "none") { head.textContent = ""; nbEmpty("Select a filter node — the entries of a whole file are too broad a reference."); return; }
+  const fileEntries = getEntries(ref.fileId);
+  const winS = nbState.winMs / 1000;
+  const o = nbState.override;
+  const sumText = (n) => n.toLocaleString("de-DE") + (n === 1 ? " reference" : " references") + " · " + winS + " s " + dir + (nbState.sameThread ? " · same thread" : "");
+  const setHead = n => {
+    head.textContent = "";
+    if (o) {
+      const chip = document.createElement("span");
+      chip.className = "nb-override";
+      chip.appendChild(document.createTextNode(o.label));
+      const x = document.createElement("button");
+      x.type = "button"; x.id = "nbOverrideClear"; x.title = "Back to the entries of the active node"; x.setAttribute("aria-label", "Back to the entries of the active node"); x.textContent = "×";
+      chip.appendChild(x);
+      head.appendChild(chip);
+    }
+    head.appendChild(document.createTextNode(sumText(n)));
+  };
+  if (!ref.refs.length) { setHead(0); nbEmpty("The node has no entries."); return; }
+  const sig = [state.activeId, o ? "o" + o.ts : nbState.refMode, dir, nbState.winMs, nbState.sameThread ? 1 : 0, [...state.levelFilter].sort().join(",")].join("|");
+  let result = null;
+  const c = nbCache.get(sig);
+  if (c && c.src === ref.src && c.file === fileEntries && c.fileN === fileEntries.length) result = c.result;
+  const run = () => analysisNeighbors(ref.refs, fileEntries, { direction: dir, windowMs: nbState.winMs, sameThread: nbState.sameThread, minLift: 2 });
+  if (!result) {
+    if (fileEntries.length <= NB_SYNC_MAX_ENTRIES) {
+      result = run();
+      nbCachePut(sig, { src: ref.src, file: fileEntries, fileN: fileEntries.length, result });
+    } else {
+      setHead(ref.refs.length);
+      nbEmpty("Computing…");
+      if (nbPendingSig !== sig) {
+        nbPendingSig = sig;
+        setTimeout(() => {
+          if (nbPendingSig !== sig) return;
+          nbPendingSig = null;
+          if (!neighborsActive()) return;
+          nbCachePut(sig, { src: ref.src, file: fileEntries, fileN: fileEntries.length, result: run() });
+          renderNeighborsPanel();
+        }, 0);
+      }
+      return;
+    }
+  }
+  setHead(result.references);
+  nbCtx = ref;
+  const all = result.rows;
+  const rows = nbState.showAll ? all : all.filter(r => r.significant);
+  if (!rows.length) {
+    const n = result.references;
+    nbEmpty("No pattern is noticeably more frequent " + dir + (n === 1 ? " this entry" : " these " + n.toLocaleString("de-DE") + " entries") + " (lift ≥ " + result.minLift + ") within " + winS + " s" +
+      (nbState.sameThread ? " on the same thread" : "") + "." + (all.length ? ' <button type="button" class="btn-mini-secondary" id="nbEmptyShowAll">Show all</button>' : ""));
+    return;
+  }
+  nbShown = rows;
+  const medLabel = dir === "after" ? "Median after" : "Median before";
+  let html = '<div class="nb-grid nb-hrow"><span>Coverage</span><span class="nb-num">Lift</span><span class="nb-num">' + medLabel + '</span><span>Max level</span><span>Pattern</span></div>';
+  rows.forEach((r, i) => {
+    const m = /^(\d+)\/(\d+)$/.exec(r.coverage) || [0, 0, 1];
+    const pct = Math.min(100, (+m[1]) / Math.max(+m[2], 1) * 100);
+    const lvlCls = r.maxLevel ? levelClass(r.maxLevel, r.example && r.example.formatId) : "";
+    html += '<div class="nb-grid nb-row' + (r.significant ? "" : " dim") + " " + lvlCls + '" data-idx="' + i + '" title="Click: context node + pattern filter">' +
+      '<span class="nb-cov"><i><u style="width:' + pct.toFixed(0) + '%"></u></i>' + escapeHtml(r.coverage) + "</span>" +
+      '<span class="nb-num">' + nbLiftText(r.lift) + "</span>" +
+      '<span class="nb-num nb-muted">' + escapeHtml(formatMs(r.medianDistMs)) + "</span>" +
+      "<span>" + (r.maxLevel && r.maxLevel !== "OTHER" ? '<span class="level-badge">' + escapeHtml(r.maxLevel) + "</span>" : "") + "</span>" +
+      '<span class="nb-text" title="' + escapeHtml(patternDisplayText(r.patternKey)) + '">' + patternKeyHtml(r.patternKey) + "</span></div>";
+  });
+  nbPanelBody.querySelector("#nbTable").innerHTML = html;
+}
+// One undo step: [context node around the reference | time-range filter] + the pattern filter under it.
+function applyNeighborRow(r) {
+  if (!r || !nbCtx || !state.nodes[state.activeId]) return;
+  const dir = nbDirection(), w = nbState.winMs, o = nbState.override;
+  withCreateUndo("neighbors pattern", () => {
+    let parentId;
+    if (nbCtx.kind === "override") {
+      const p = createFilterNode(state.activeId, "timerange", dir === "before" ? { from: o.ts - w, to: o.ts } : { from: o.ts, to: o.ts + w });
+      parentId = p && p.id;
+    } else if (isLinkNode(nbCtx.node) && nbState.refMode === "noend") {
+      parentId = nbCtx.fileId; // the references have no node: the followers are file entries (like the Link view's line)
+    } else {
+      const p = createContextNode(nbCtx.node.id, dir === "before" ? w : 0, dir === "after" ? w : 0);
+      parentId = p && p.id;
+    }
+    if (!parentId) return;
+    finishAnalysisFilter(createFilterNode(parentId, "text", patternFilterValue(r.patternKey, r.floatMask, false), false, [], false, ["message"], false, false), null);
+  });
+}
+nbPanelBody.addEventListener("mousedown", ev => { if (!ev.target.closest("input")) ev.preventDefault(); }); // never takes keyboard focus from the log view
+nbPanelBody.addEventListener("click", ev => {
+  const t = ev.target;
+  const refB = t.closest("[data-nb-ref]"), dirB = t.closest("[data-nb-dir]"), winB = t.closest("[data-nb-win]");
+  if (refB || dirB || winB || t.closest("#nbOverrideClear") || t.closest("#nbEmptyShowAll") || t.closest(".nb-row")) ev.stopPropagation();
+  if (refB) { if (refB.disabled) return; nbState.refMode = refB.dataset.nbRef; nbState.dirUser = null; renderNeighborsPanel(); }
+  else if (dirB) { nbState.dirUser = dirB.dataset.nbDir; renderNeighborsPanel(); }
+  else if (winB) { nbState.winMs = +winB.dataset.nbWin; renderNeighborsPanel(); }
+  else if (t.closest("#nbOverrideClear")) { nbState.override = null; nbState.dirUser = null; renderNeighborsPanel(); }
+  else if (t.closest("#nbEmptyShowAll")) { nbState.showAll = true; renderNeighborsPanel(); }
+  else if (t.closest(".nb-row")) applyNeighborRow(nbShown[+t.closest(".nb-row").dataset.idx]);
+});
+nbPanelBody.addEventListener("change", ev => {
+  if (ev.target.id === "nbSameThread") nbState.sameThread = ev.target.checked;
+  else if (ev.target.id === "nbShowAll") nbState.showAll = ev.target.checked;
+  else return;
+  renderNeighborsPanel();
+});
+lowerTabNeighbors.addEventListener("mousedown", ev => ev.preventDefault());
+lowerTabNeighbors.addEventListener("click", ev => { ev.stopPropagation(); if (currentLayoutTier !== "phone") setLowerTab("neighbors"); });
 
 // (Re)fills the Facets tab body; nothing to do while another tab shows.
 function renderFacetPanel() {
@@ -19799,12 +20035,12 @@ function createFacetFilterNode(parentId, column, value, inverted) {
   return spec ? createFilterNodeFromSpec(parentId, spec) : null;
 }
 
-// Selects a bottom-panel tab ("detail" | "stats" | "facets" | "why"; desktop/tablet — the phone
+// Selects a bottom-panel tab ("detail" | "stats" | "facets" | "why" | "neighbors"; desktop/tablet — the phone
 // sheet has its own, see setFacetsOpen). Selecting Statistics or Facets expands a collapsed
 // panel. The panel height/visibility can change, hence the full renderMainView (it
 // re-measures the log like any layout change).
 function setLowerTab(tab) {
-  lowerTab = tab === "stats" || tab === "facets" || tab === "why" ? tab : "detail";
+  lowerTab = tab === "stats" || tab === "facets" || tab === "why" || tab === "neighbors" ? tab : "detail";
   try { localStorage.setItem(LOWER_TAB_KEY, lowerTab); } catch {}
   if (lowerTab !== "detail" && isDetailCollapsed()) toggleDetailCollapsed(false);
   if (state.rootIds.length) renderMainView();
@@ -32555,6 +32791,13 @@ function burstActions(b) {
       closeBurstPopover();
       setMinimapView(b.from - 10000, b.to + 10000);
     } },
+    ...(currentLayoutTier === "phone" ? [] : [{ id: "before", label: "What came before", title: "Which patterns stand before the burst's first entry more often than elsewhere (Neighbors tab)", run: () => {
+      const rootId = minimapLastRootId, fileEntries = rootId ? getEntries(rootId) : [];
+      const first = (minimapLastViewEntries || []).find(e => e.ts === b.from) || fileEntries.find(e => e.ts === b.from);
+      closeBurstPopover();
+      if (!first) return;
+      openNeighborsWithOverride([first], "Burst " + timeRangeBoundLabel(rootId, b.from, true), rootId, first.ts);
+    } }]),
     { id: "window", label: "Time window", primary: true, title: "Filter the active node to the burst's time range", run: () => {
       closeBurstPopover();
       createTimeRangeFilterFromDrag(b.from, b.to);
