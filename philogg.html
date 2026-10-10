@@ -1610,30 +1610,30 @@
      disabled buttons in its hover hit-test) is unaffected either way. */
   .row-action-btn:disabled, .toolbar-icon-btn:has(.tb-hit):disabled{opacity:1;}
   .row-action-btn:disabled .row-action-hit, .toolbar-icon-btn:has(.tb-hit):disabled .tb-hit{opacity:.32;}
-  .level-btn.lvl-error{box-shadow:inset 0 0 0 2px var(--level-error);}
+  .level-btn.lvl-error{box-shadow:inset 0 0 0 1.5px var(--level-error);}
   .level-btn.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 18%, transparent);}
-  .level-btn.lvl-warn{box-shadow:inset 0 0 0 2px var(--level-warn);}
+  .level-btn.lvl-warn{box-shadow:inset 0 0 0 1.5px var(--level-warn);}
   .level-btn.lvl-warn:hover{background:color-mix(in srgb, var(--level-warn) 18%, transparent);}
-  .level-btn.lvl-info{box-shadow:inset 0 0 0 2px var(--level-info);}
+  .level-btn.lvl-info{box-shadow:inset 0 0 0 1.5px var(--level-info);}
   .level-btn.lvl-info:hover{background:color-mix(in srgb, var(--level-info) 18%, transparent);}
-  .level-btn.lvl-debug{box-shadow:inset 0 0 0 2px var(--level-debug);}
+  .level-btn.lvl-debug{box-shadow:inset 0 0 0 1.5px var(--level-debug);}
   .level-btn.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 18%, transparent);}
-  .level-btn.lvl-fatal{box-shadow:inset 0 0 0 2px var(--level-fatal);}
-  .level-btn.lvl-trace{box-shadow:inset 0 0 0 2px var(--level-trace);}
+  .level-btn.lvl-fatal{box-shadow:inset 0 0 0 1.5px var(--level-fatal);}
+  .level-btn.lvl-trace{box-shadow:inset 0 0 0 1.5px var(--level-trace);}
   .level-btn.lvl-fatal:hover{background:color-mix(in srgb, var(--level-fatal) 18%, transparent);}
   .level-btn.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 18%, transparent);}
   /* Custom level names (see --level-custom-* above). */
-  .level-btn.lvl-custom-1{box-shadow:inset 0 0 0 2px var(--level-custom-1);}
+  .level-btn.lvl-custom-1{box-shadow:inset 0 0 0 1.5px var(--level-custom-1);}
   .level-btn.lvl-custom-1:hover{background:color-mix(in srgb, var(--level-custom-1) 18%, transparent);}
-  .level-btn.lvl-custom-2{box-shadow:inset 0 0 0 2px var(--level-custom-2);}
+  .level-btn.lvl-custom-2{box-shadow:inset 0 0 0 1.5px var(--level-custom-2);}
   .level-btn.lvl-custom-2:hover{background:color-mix(in srgb, var(--level-custom-2) 18%, transparent);}
-  .level-btn.lvl-custom-3{box-shadow:inset 0 0 0 2px var(--level-custom-3);}
+  .level-btn.lvl-custom-3{box-shadow:inset 0 0 0 1.5px var(--level-custom-3);}
   .level-btn.lvl-custom-3:hover{background:color-mix(in srgb, var(--level-custom-3) 18%, transparent);}
-  .level-btn.lvl-custom-4{box-shadow:inset 0 0 0 2px var(--level-custom-4);}
+  .level-btn.lvl-custom-4{box-shadow:inset 0 0 0 1.5px var(--level-custom-4);}
   .level-btn.lvl-custom-4:hover{background:color-mix(in srgb, var(--level-custom-4) 18%, transparent);}
-  .level-btn.lvl-custom-5{box-shadow:inset 0 0 0 2px var(--level-custom-5);}
+  .level-btn.lvl-custom-5{box-shadow:inset 0 0 0 1.5px var(--level-custom-5);}
   .level-btn.lvl-custom-5:hover{background:color-mix(in srgb, var(--level-custom-5) 18%, transparent);}
-  .level-btn.lvl-custom-6{box-shadow:inset 0 0 0 2px var(--level-custom-6);}
+  .level-btn.lvl-custom-6{box-shadow:inset 0 0 0 1.5px var(--level-custom-6);}
   .level-btn.lvl-custom-6:hover{background:color-mix(in srgb, var(--level-custom-6) 18%, transparent);}
   /* The Other chip (no format lists these levels): neutral, like .minimap-lvl-other. */
   .level-btn.lvl-other{box-shadow:inset 0 0 0 2px var(--text-secondary);}
@@ -1692,10 +1692,14 @@
   .level-btn .level-count{display:none;}
   body:not(.layout-phone):not(.level-labels-inline) .level-btn .level-count{
     display:flex; position:absolute; inset:0; align-items:center; justify-content:center;
-    font:600 9.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing:-.3px; pointer-events:none;
+    font:650 10.5px/1 var(--font-ui); font-variant-numeric:tabular-nums; pointer-events:none;
   }
-  /* A 4-char short count ("1,3k") gets a notch smaller so it clears the 28px ring. */
-  body:not(.layout-phone):not(.level-labels-inline) .level-btn .level-count.level-count-long{font-size:8.5px;}
+  /* Optical centering: the inner span (a block-level flex item; text-box-trim does not apply to
+     the flex container itself) is trimmed to the digits' cap height, so flex centering centers the ink. */
+  .level-btn .level-count > span{text-box:trim-both cap alphabetic;}
+  @supports not (text-box: trim-both cap alphabetic){
+    .level-btn .level-count > span{transform:translateY(.06em);}
+  }
   .level-btn.lvl-error .level-count{color:var(--level-error);}
   .level-btn.active.lvl-error .level-count{color:var(--level-error-on);}
   .level-btn.lvl-warn .level-count{color:var(--level-warn);}
@@ -2531,8 +2535,9 @@
   .log-row.row-tall > .col-location, .log-row.row-tall > .col-method, .log-row.row-tall > .col-custom{align-self:start; line-height:27px;}
   .log-row.row-tall > .col-level{align-self:start; height:27px; display:flex; align-items:center;}
   .level-badge{
-    font-family:var(--font-log); font-size:calc(10px * var(--log-text-scale)); font-weight:700; letter-spacing:.3px;
-    padding:2px 6px; border-radius:4px; white-space:nowrap;
+    display:inline-flex; align-items:center; vertical-align:middle; box-sizing:border-box;
+    height:calc(17px * var(--log-text-scale)); padding:0 6px; border-radius:4px; white-space:nowrap;
+    font:650 calc(10px * var(--log-text-scale))/1 var(--font-ui); letter-spacing:.04em;
   }
   .col-thread{font-family:var(--font-log); font-size:calc(11.3px * var(--log-text-scale)); color:var(--text-tertiary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   /* Start truncation (middleCellHtml): a long path keeps its end visible,
@@ -2693,29 +2698,29 @@
   .wrap-messages #tableRows .col-msg, .wrap-messages #highlightRows .col-msg{min-width:0;}
 
   .lvl-error .col-bar{background:var(--level-error);}
-  .lvl-error .level-badge{color:var(--level-error); background:color-mix(in srgb, var(--level-error) 28%, transparent);}
+  .lvl-error .level-badge{color:var(--level-error); background:color-mix(in srgb, var(--level-error) 14%, transparent);}
   .lvl-warn .col-bar{background:var(--level-warn);}
-  .lvl-warn .level-badge{color:var(--level-warn); background:color-mix(in srgb, var(--level-warn) 28%, transparent);}
+  .lvl-warn .level-badge{color:var(--level-warn); background:color-mix(in srgb, var(--level-warn) 14%, transparent);}
   .lvl-info .col-bar{background:var(--level-info);}
-  .lvl-info .level-badge{color:var(--level-info); background:color-mix(in srgb, var(--level-info) 22%, transparent);}
+  .lvl-info .level-badge{color:var(--level-info); background:color-mix(in srgb, var(--level-info) 14%, transparent);}
   .lvl-debug .col-bar{background:var(--level-debug);}
-  .lvl-debug .level-badge{color:var(--level-debug); background:color-mix(in srgb, var(--level-debug) 22%, transparent);}
+  .lvl-debug .level-badge{color:var(--level-debug); background:color-mix(in srgb, var(--level-debug) 14%, transparent);}
   .lvl-fatal .col-bar{background:var(--level-fatal);}
   .lvl-trace .col-bar{background:var(--level-trace);}
-  .lvl-fatal .level-badge{color:var(--level-fatal); background:var(--level-fatal-soft);}
-  .lvl-trace .level-badge{color:var(--level-trace); background:var(--level-trace-soft);}
+  .lvl-fatal .level-badge{color:var(--level-fatal); background:color-mix(in srgb, var(--level-fatal) 14%, transparent);}
+  .lvl-trace .level-badge{color:color-mix(in srgb, var(--level-trace) 70%, var(--text-primary)); background:color-mix(in srgb, var(--level-trace) 14%, transparent);}
   .lvl-custom-1 .col-bar{background:var(--level-custom-1);}
-  .lvl-custom-1 .level-badge{color:var(--level-custom-1); background:color-mix(in srgb, var(--level-custom-1) 28%, transparent);}
+  .lvl-custom-1 .level-badge{color:var(--level-custom-1); background:color-mix(in srgb, var(--level-custom-1) 14%, transparent);}
   .lvl-custom-2 .col-bar{background:var(--level-custom-2);}
-  .lvl-custom-2 .level-badge{color:var(--level-custom-2); background:color-mix(in srgb, var(--level-custom-2) 28%, transparent);}
+  .lvl-custom-2 .level-badge{color:var(--level-custom-2); background:color-mix(in srgb, var(--level-custom-2) 14%, transparent);}
   .lvl-custom-3 .col-bar{background:var(--level-custom-3);}
-  .lvl-custom-3 .level-badge{color:var(--level-custom-3); background:color-mix(in srgb, var(--level-custom-3) 28%, transparent);}
+  .lvl-custom-3 .level-badge{color:var(--level-custom-3); background:color-mix(in srgb, var(--level-custom-3) 14%, transparent);}
   .lvl-custom-4 .col-bar{background:var(--level-custom-4);}
-  .lvl-custom-4 .level-badge{color:var(--level-custom-4); background:color-mix(in srgb, var(--level-custom-4) 28%, transparent);}
+  .lvl-custom-4 .level-badge{color:var(--level-custom-4); background:color-mix(in srgb, var(--level-custom-4) 14%, transparent);}
   .lvl-custom-5 .col-bar{background:var(--level-custom-5);}
-  .lvl-custom-5 .level-badge{color:var(--level-custom-5); background:color-mix(in srgb, var(--level-custom-5) 28%, transparent);}
+  .lvl-custom-5 .level-badge{color:var(--level-custom-5); background:color-mix(in srgb, var(--level-custom-5) 14%, transparent);}
   .lvl-custom-6 .col-bar{background:var(--level-custom-6);}
-  .lvl-custom-6 .level-badge{color:var(--level-custom-6); background:color-mix(in srgb, var(--level-custom-6) 28%, transparent);}
+  .lvl-custom-6 .level-badge{color:var(--level-custom-6); background:color-mix(in srgb, var(--level-custom-6) 14%, transparent);}
   .lvl-other .col-bar{background:var(--text-tertiary);}
   .lvl-other .level-badge{color:var(--text-secondary); background:var(--bg-elevated-2);}
 
@@ -24163,10 +24168,10 @@ function toggleLevelFromMinimap(rootId, level) {
 }
 
 // Count text inside a level-bar circle, at most 4 characters (exact count stays in the
-// title/hover label): 999 -> "999", 1327 -> "1,3k" (floored, German comma), 48211 -> "48k",
-// 1204551 -> "1,2M", 12e6 -> "12M".
+// title/hover label): 999 -> "999", 1327 -> "1,3k" (floored, German comma), 3058 -> "3k" (no ",0"),
+// 48211 -> "48k", 1204551 -> "1,2M", 12e6 -> "12M".
 function levelCountShort(n) {
-  const one = (tenths, unit) => Math.floor(tenths / 10) + "," + (tenths % 10) + unit; // integer math: no float flooring errors
+  const one = (tenths, unit) => Math.floor(tenths / 10) + (tenths % 10 ? "," + (tenths % 10) : "") + unit; // integer math: no float flooring errors; "3,0k" -> "3k"
   if (n < 1000) return String(n);
   if (n < 10000) return one(Math.floor(n / 100), "k");
   if (n < 1e6) return Math.floor(n / 1000) + "k";
@@ -24197,7 +24202,7 @@ function renderLevelBar() {
     // chip text with the exact count ("F 15", "Other 1.327"); each hidden on the other tiers.
     const countText = levelCountShort(n);
     const shortText = (lvl === "OTHER" ? "Other" : lvl.charAt(0)) + " " + n.toLocaleString("de-DE");
-    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count' + (countText.length > 3 ? " level-count-long" : "") + '">' + countText + '</span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
+    btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count' + (countText.length > 3 ? " level-count-long" : "") + '"><span>' + countText + '</span></span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => toggleLevelFilter(lvl));
     decorateHintLabel(btn);
     levelBarEl.appendChild(btn);
@@ -53219,7 +53224,7 @@ function renderFwzPreview() {
     badge.title = lv.color ? "Level " + lv.bucket + " — click to find it in the level list" : "Not a configured level (OTHER)";
     if (lv.color) {
       badge.style.color = lv.color;
-      badge.style.background = "color-mix(in srgb, " + lv.color + " 24%, transparent)";
+      badge.style.background = "color-mix(in srgb, " + lv.color + " 14%, transparent)";
     }
     lvl.appendChild(badge);
     middle.forEach(c => cell(entryColumnValue(e, c.key)));

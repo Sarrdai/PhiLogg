@@ -25,7 +25,7 @@ await withApp(async (w, d, T) => {
 
   let btn = d.querySelector('.level-btn[data-level="ERROR"]');
   assert(parseFloat(cs(btn).borderTopWidth) === 0, "unchecked level button has 0 border width, got " + cs(btn).borderTopWidth);
-  assert(rule(".level-btn.lvl-error").includes("box-shadow:inset 0 0 0 2px var(--level-error)"), "unchecked ERROR ring is an inset 2px box-shadow");
+  assert(rule(".level-btn.lvl-error").includes("box-shadow:inset 0 0 0 1.5px var(--level-error)"), "unchecked ERROR ring is an inset 1.5px box-shadow");
   assert(cs(btn).backgroundColor === "transparent" || cs(btn).backgroundColor === "rgba(0, 0, 0, 0)", "unchecked fill is transparent, got " + cs(btn).backgroundColor);
   fireClick(btn, w);
   btn = d.querySelector('.level-btn[data-level="ERROR"]');

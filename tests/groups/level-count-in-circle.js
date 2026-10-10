@@ -21,8 +21,8 @@ const lcCssRules = d => {
 await withApp(async (w, d, T) => {
   section("level-count-in-circle a. levelCountShort: exact below 1000, floored k/M above, never more than 4 chars");
   const s = w.levelCountShort;
-  const table = [[0, "0"], [7, "7"], [163, "163"], [999, "999"], [1000, "1,0k"], [1327, "1,3k"], [1999, "1,9k"], [9999, "9,9k"],
-    [10000, "10k"], [48211, "48k"], [99999, "99k"], [999999, "999k"], [1e6, "1,0M"], [1204551, "1,2M"], [9999999, "9,9M"], [1e7, "10M"], [12345678, "12M"], [999e6, "999M"]];
+  const table = [[0, "0"], [7, "7"], [163, "163"], [999, "999"], [1000, "1k"], [1327, "1,3k"], [1999, "1,9k"], [9999, "9,9k"], [2000, "2k"],
+    [10000, "10k"], [48211, "48k"], [99999, "99k"], [999999, "999k"], [1e6, "1M"], [3058, "3k"], [1738, "1,7k"], [1050000, "1M"], [1204551, "1,2M"], [9999999, "9,9M"], [1e7, "10M"], [12345678, "12M"], [999e6, "999M"]];
   table.forEach(([n, exp]) => assert(s(n) === exp, "levelCountShort(" + n + ") = " + exp + ", got " + s(n)));
   assert(table.every(([n]) => s(n).length <= 4), "every short count has at most 4 characters");
   assert(s(999999) !== "1000k", "999999 never rounds up to 1000k");
@@ -59,7 +59,7 @@ await withApp(async (w, d, T) => {
     stub({ ERROR: 7, WARN: 163, INFO: 1327, DEBUG: 48211 });
     const exp = { ERROR: "7", WARN: "163", INFO: "1,3k", DEBUG: "48k" };
     Object.keys(exp).forEach(l => assert(chip(l) && cnt(l).textContent === exp[l], "desktop " + l + ": circle text " + exp[l] + ", got " + (chip(l) && cnt(l).textContent)));
-    assert(cnt("INFO").classList.contains("level-count-long") && !cnt("WARN").classList.contains("level-count-long") && !cnt("DEBUG").classList.contains("level-count-long"), "only a 4-char count (1,3k) gets the smaller .level-count-long font, 3 chars (163, 48k) do not");
+    assert(cnt("INFO").classList.contains("level-count-long") && !cnt("WARN").classList.contains("level-count-long") && !cnt("DEBUG").classList.contains("level-count-long"), "only a 4-char count (1,3k) gets the .level-count-long class, 3 chars (163, 48k) do not");
     assert(chip("INFO").title.indexOf("INFO 1.327") === 0, "title/hover label keeps the exact count (INFO 1.327), got " + chip("INFO").title);
     assert(chip("INFO").querySelector(".row-action-label").textContent.indexOf("INFO 1.327") === 0, "hover label keeps the exact count");
 
@@ -86,16 +86,16 @@ await withApp(async (w, d, T) => {
 }, { toolbarLabels: "hover" });
 
 await withApp(async (w, d, T) => {
-  section("level-count-in-circle c. CSS: centered, 9.5px / 11px, level colours on desktop for every level, active in the -on colour");
+  section("level-count-in-circle c. CSS: centered, 10.5px / 11px, level colours on desktop for every level, active in the -on colour");
   const rules = lcCssRules(d);
   const find = sel => rules.find(r => r.selectorText === sel);
   const base = rules.find(r => /^body:not\(\.layout-phone\):not\(\.level-labels-inline\) \.level-btn \.level-count$/.test(r.selectorText));
   assert(base, "the in-circle count rule applies to every tier but the phone (and not in 'Inline' mode)");
   assert(base.style.position === "absolute" && base.style.display === "flex" && base.style.alignItems === "center" && base.style.justifyContent === "center",
     "the count is absolutely positioned and centered both ways");
-  assert(base.style.fontSize === "" ? /9\.5px/.test(base.style.font) : base.style.fontSize === "9.5px", "28px circles: 9.5px text");
+  assert(/10\.5px/.test(base.style.font) || base.style.fontSize === "10.5px", "28px circles: 10.5px text");
   assert(rules.some(r => /^body\.layout-compact \.level-btn\.row-action-btn \.level-count, body\.layout-compact \.level-btn\.row-action-btn \.level-count\.level-count-long$/.test(r.selectorText) && r.style.fontSize === "11px"), "44px (coarse pointer) circles: 11px text, 4-char counts included");
-  assert(rules.some(r => /\.level-count\.level-count-long$/.test(r.selectorText) && /^body:not/.test(r.selectorText) && r.style.fontSize === "8.5px"), "28px circles: a 4-char count is 8.5px so it clears the ring");
+  assert(!rules.some(r => /\.level-count\.level-count-long$/.test(r.selectorText) && /^body:not/.test(r.selectorText)), "28px circles: a 4-char count no longer shrinks (no .level-count-long rule)");
   const names = ["error", "warn", "info", "debug", "fatal", "trace", "custom-1", "custom-2", "custom-3", "custom-4", "custom-5", "custom-6", "other"];
   names.forEach(l => {
     const off = find(".level-btn.lvl-" + l + " .level-count");

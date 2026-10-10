@@ -1,4 +1,5 @@
 - **feat: design polish round, P1 quieter separators (2026-10-10, person-requested)**
   - New derived theme token `--hairline` (`--border-soft` mixed into `--bg-app`, 45% dark / 55% light) now colors every pure separator: row, panel, toolbar, table-cell, menu and tree-guide lines. `--border` stays for control outlines and dialog frames.
   - The log table's column-resize handles are invisible at rest; a centered 1px hairline appears, and hover/drag turns it into a 2px accent line.
-  - **Tests**: GROUP design-polish-p1. Docs: docs/ui-standard.md.
+  - P2: the level-bar counts use the UI font with optical centering and a thinner 1.5px ring (`3058` shows `3k`, not `3,0k`); the level badge is one shared, calmer 17px inline-flex badge with a 14% fill that sits on the row's center line.
+  - **Tests**: GROUPs design-polish-p1, design-polish-p2. Docs: docs/ui-standard.md, docs/ui-and-views.md.

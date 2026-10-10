@@ -6,7 +6,7 @@
 // rules), skipping the import wizard.
 //
 //   node tools/log-sim/screenshot.js [--out shot.png] [--size 1440x900]
-//        [--theme <mode|theme id>] [--eval "<js run in the page before the shot>"]
+//        [--scale <n: deviceScaleFactor, e.g. 4 for pixel-alignment checks>] [--theme <mode|theme id>] [--eval "<js run in the page before the shot>"]
 //        [--wait <ms>] [--url <page url>] [--touch] <log files and *.logformat.json files...>
 //
 // --touch emulates a phone (touch events, pointer:coarse, isMobile, 3x DPR);
@@ -33,10 +33,10 @@ const { chromium } = require("playwright");
 
 async function main() {
   const args = process.argv.slice(2);
-  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500, url: null, touch: false };
+  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500, url: null, touch: false, scale: null };
   const files = [];
   for (let i = 0; i < args.length; i++) {
-    const m = /^--(out|size|theme|eval|wait|url)$/.exec(args[i]);
+    const m = /^--(out|size|theme|eval|wait|url|scale)$/.exec(args[i]);
     if (m) opt[m[1]] = args[++i];
     else if (args[i] === "--touch") opt.touch = true;
     else files.push(path.resolve(args[i]));
@@ -53,7 +53,8 @@ async function main() {
   try {
     // --touch emulates a phone: touch events, pointer:coarse, 3x pixel density.
     const page = await browser.newPage(Object.assign({ viewport: { width, height } },
-      opt.touch ? { hasTouch: true, isMobile: true, deviceScaleFactor: 3 } : {}));
+      opt.touch ? { hasTouch: true, isMobile: true, deviceScaleFactor: 3 } : {},
+      opt.scale ? { deviceScaleFactor: +opt.scale } : {}));
     page.on("pageerror", e => errors.push(e.message));
     // The first-start "Where is what" hint would sit in every picture: mark it
     // seen, unless the shot is about the hint (SHOW_WHERE_HINT=1).

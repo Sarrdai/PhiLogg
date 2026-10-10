@@ -32,7 +32,7 @@ await withApp(async (w, d, T) => {
   // --- Unchecked = full-strength colored ring; checked = solid fill (person-requested follow-up) ---
   const css = d.querySelector("style").textContent;
   const ruleFor = sel => { const m = css.match(new RegExp(sel.replace(/[.:#()]/g, "\\$&") + "\\{[^}]*\\}")); return m && m[0]; };
-  assert((ruleFor(".level-btn.lvl-error") || "").includes("box-shadow:inset 0 0 0 2px var(--level-error)"),
+  assert((ruleFor(".level-btn.lvl-error") || "").includes("box-shadow:inset 0 0 0 1.5px var(--level-error)"),
     ".level-btn.lvl-error sets the ring color regardless of .active, got " + ruleFor(".level-btn.lvl-error"));
   assert(!/\.level-btn\.lvl-error\{[^}]*background/.test(css),
     "unchecked .level-btn.lvl-error has no background set (transparent ring, not a dimmed fill)");
