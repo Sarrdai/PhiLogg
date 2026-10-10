@@ -6,6 +6,7 @@
 - [Buttons](#buttons)
 - [Popovers and menus](#popovers-and-menus)
 - [Segmented (mode) selector — .assert-mode-btn](#segmented-mode-selector--assert-mode-btn)
+- [Native selects and checkboxes](#native-selects-and-checkboxes)
 - [Boolean toggle — .pill-toggle (the #69 replacement for checkboxes)](#boolean-toggle--pill-toggle-the-69-replacement-for-checkboxes)
 - [Layout & rows — .settings-row](#layout--rows--settings-row)
 - [Dialog shell & header](#dialog-shell--header)
@@ -97,6 +98,10 @@ button. A `<select>` stays only for open lists (themes, fonts, schemes,
 instances, models).
 
 **Connected look**: in dialogs the segmented control is one connected group: neighbouring `.assert-mode-btn`s share a border (no gap, `margin-left:-1px`), only the outer corners are rounded, the active segment is raised above its neighbours. Used by the export dialog's Lines and Format rows (`.export-seg`), `.settings-seg` and the Theme mode row.
+
+## Native selects and checkboxes
+
+Real `<select>` and `<input type="checkbox">` elements are styled globally (next to the `button` rule in `philogg.html`), never replaced. A select is `appearance:none`, 32px high (26px in the patterns compare bar), UI font, `--bg-popover` fill, 1px `--border-soft`, radius 6px; its chevron is two gradient strokes in `--text-secondary`, so it follows every theme. Rules that restyle a select must set `background-color`, never the `background` shorthand (that drops the chevron). A checkbox is a 16px box, 1px `--border`, radius 4px; checked = `--accent` fill with an `--accent-on` SVG-mask check mark; both have the `--accent-strong` focus ring and a disabled state. `<option>` text cannot be styled per span, so type suffixes like "(int)" in select options stay plain; list labels such as `.plot-y-unit` use `--text-tertiary`.
 
 ## Boolean toggle — `.pill-toggle` (the #69 replacement for checkboxes)
 

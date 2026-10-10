@@ -71,6 +71,7 @@ filter funnel, as drawn in the mockup's C2) instead of the "L".
   - Tokens added so far: `--hairline` (P1), `--btn-hover` and `--bg-popover` (P4); popover rule and `.ctx-danger` (P6).
   - Header separators are pseudo-elements on `#navHistoryGroup` / `#hdrHistory` (P5).
   - Tree guides: only vertical `.tree-guide.v` segments, `TREE_INDENT_STEP` 18, `TREE_CHEVRON_CENTER` 7, no middle-cut labels (P7).
+  - Global `select` / `input[type="checkbox"]` rules (P8): restyle a select with `background-color` only (the chevron is a `background-image`); a hidden checkbox (e.g. `.settings-switch input`) must set its own width/height. `<option>` text can't be styled per span.
   - The empty start screen can't be shot with `screenshot.js` today, because it requires a log file. P12 should add a way.
 
 ## Usage budget, pause and handover (binding)
@@ -301,7 +302,7 @@ packages use its tokens.
 | P5 | Header and brand mark | C2 | 6 % | done | 6ad1fdf | 0.70→0.74 |
 | P6 | Popover token, menus, segmented groups | D1, C4 | 8 % | done | 89d1343 | 0.74→0.78 |
 | P7 | Filter tree | B4 | 9 % | done | f348c52 | 0.00→0.07 |
-| P8 | Selects and checkboxes | C3 | 8 % | open | | |
+| P8 | Selects and checkboxes | C3 | 8 % | done | (this commit) | 0.07→0.13 |
 | P9 | Number formats, extraction table | A3, E2 | 8 % | open | | |
 | P10 | Plot axes and grid | E3 | 10 % | open | | |
 | P11 | Minimap and stat line | E1 | 10 % | open | | |
@@ -331,3 +332,4 @@ rules.
 | 2026-10-10T09:54Z | orchestrator (after P5) | 0.74 | 0.72 | 2026-10-10T10:50Z |
 | 2026-10-10T10:02Z | orchestrator (after P6; P7 doesn't fit → handover) | 0.78 | 0.73 | 2026-10-10T10:50Z |
 | 2026-10-10T11:19Z | continuation 1 (after P7) | 0.07 | 0.74 | 2026-10-10T15:50Z |
+| 2026-10-10T11:58Z | continuation 1 (after P8) | 0.13 | 0.75 | 2026-10-10T15:50Z |

@@ -445,6 +445,39 @@
     overflow:hidden;
   }
   button{font-family:inherit;}
+  /* Native controls (design polish C3): real <select> / <input type=checkbox>
+     with the app's own look. The chevron is drawn from two gradient strokes in
+     --text-secondary so it follows every theme (a data-URI SVG cannot use
+     tokens). Rules that restyle a select later must set background-color
+     only, never the background shorthand, or they drop the chevron. */
+  select{
+    appearance:none; -webkit-appearance:none; box-sizing:border-box; height:32px; max-width:100%;
+    padding:0 28px 0 10px; font-family:var(--font-ui); font-size:12.5px; line-height:1.2;
+    color:var(--text-primary); background-color:var(--bg-popover);
+    background-image:linear-gradient(to top right, transparent calc(50% - .75px), var(--text-secondary) calc(50% - .75px), var(--text-secondary) calc(50% + .75px), transparent calc(50% + .75px)), linear-gradient(to top left, transparent calc(50% - .75px), var(--text-secondary) calc(50% - .75px), var(--text-secondary) calc(50% + .75px), transparent calc(50% + .75px));
+    background-repeat:no-repeat; background-size:6px 6px, 6px 6px;
+    background-position:right 15px center, right 9px center;
+    border:1px solid var(--border-soft); border-radius:6px; cursor:pointer; text-overflow:ellipsis;
+  }
+  select:hover:not(:disabled){border-color:var(--border);}
+  select:focus-visible{outline:2px solid var(--accent-strong); outline-offset:1px;}
+  select:disabled{opacity:.5; cursor:default;}
+  select option, select optgroup{background:var(--bg-popover); color:var(--text-primary); font-family:var(--font-ui);}
+  input[type="checkbox"]{
+    appearance:none; -webkit-appearance:none; flex:0 0 auto; width:16px; height:16px; margin:0;
+    display:inline-grid; place-content:center; vertical-align:middle; cursor:pointer;
+    border:1px solid var(--border); border-radius:4px; background:transparent;
+  }
+  input[type="checkbox"]::after{
+    content:""; width:12px; height:12px; background:var(--accent-on); opacity:0;
+    -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+    mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.5 6.2l2.4 2.4 4.6-5' fill='none' stroke='%23000' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  }
+  input[type="checkbox"]:checked{background:var(--accent); border-color:var(--accent);}
+  input[type="checkbox"]:checked::after{opacity:1;}
+  input[type="checkbox"]:hover:not(:disabled):not(:checked){border-color:var(--text-secondary);}
+  input[type="checkbox"]:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
+  input[type="checkbox"]:disabled{opacity:.45; cursor:default;}
   ::selection{background:var(--selection-bg); color:var(--text-primary);}
   /* Filter/Context rows run their own text selection (tableTextSel): the cells
      are not natively selectable and the model is painted via the Custom
@@ -3144,7 +3177,7 @@
   .cmp-side{display:inline-flex; align-items:center; gap:6px; min-width:0;}
   .cmp-side > b{font-weight:700; color:var(--accent-strong);}
   .cmp-vs, .cmp-meta{color:var(--text-tertiary);}
-  #patternsCmpBar select{background:var(--bg-elevated); color:var(--text-primary); border:1px solid var(--border-soft); border-radius:5px; font:inherit; font-size:12.5px; padding:2px 6px; max-width:260px;}
+  #patternsCmpBar select{height:26px; font-size:12.5px; max-width:260px;}
   #patternsCmpBar [hidden]{display:none;}
   .cmp-chip{display:inline-flex; align-items:center; gap:4px; padding:1px 4px 1px 8px; border:1px solid var(--accent); border-radius:10px; color:var(--accent-strong); background:var(--bg-panel);}
   .cmp-chip button{border:0; background:none; color:inherit; cursor:pointer; font:inherit; padding:0 4px; line-height:1;}
@@ -3663,7 +3696,8 @@
      build on. */
   .link-field-row .stepper{flex:1 1 0; min-width:0;}
   .link-target-label{font-size:12px; color:var(--text-secondary); font-family:var(--font-mono); margin-left:2px;}
-  .link-dialog-card select, .link-dialog-card input[type="number"], .link-dialog-card input[type="datetime-local"], .link-dialog-card input[type="text"]:not(.stepper-value){
+  .link-dialog-card select{font-size:12px;}
+  .link-dialog-card input[type="number"], .link-dialog-card input[type="datetime-local"], .link-dialog-card input[type="text"]:not(.stepper-value){
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:12px;
   }
@@ -3758,7 +3792,7 @@
   .link-wc-box.hidden{display:none;}
   .link-wc-row{display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary);}
   .link-wc-row{flex-wrap:nowrap;}
-  .link-wc-row select{flex:1 1 0; min-width:0; text-overflow:ellipsis; padding-left:5px; padding-right:2px; font-size:11.5px;}
+  .link-wc-row select{flex:1 1 0; min-width:0; text-overflow:ellipsis; padding-left:6px; padding-right:22px; font-size:11.5px;}
   .link-wc-cap{display:none; font-size:10.5px; color:var(--text-tertiary);}
   body.layout-phone .link-wc-cap{display:block;}
   body.layout-phone .link-wc-lab-word{display:none;}
@@ -3774,7 +3808,7 @@
   .filter-sample-hit.link-kv-1{background:color-mix(in srgb, var(--level-custom-6) 22%, transparent); color:var(--level-custom-6);}
   .filter-sample-hit.link-kv-2{background:color-mix(in srgb, var(--level-custom-3) 22%, transparent); color:var(--level-custom-3);}
   body.layout-phone .link-wc-box{margin-left:0;}
-  body.layout-phone .link-wc-row select{min-height:40px; font-size:12px; padding-left:4px; padding-right:2px;}
+  body.layout-phone .link-wc-row select{min-height:40px; font-size:12px; padding-left:5px; padding-right:22px; background-position:right 12px center, right 6px center;}
   body.layout-phone .link-wc-row{gap:4px;}
   body.layout-phone .link-pairing .link-seg{flex-wrap:wrap;}
   .link-more{margin:0 0 10px; font-size:11.5px; color:var(--text-secondary);}
@@ -4298,10 +4332,7 @@
     margin-top:12px; background:var(--bg-panel); border:1px solid var(--border-soft); border-radius:10px;
   }
   .settings-card-footer{padding:12px 18px;}
-  .settings-row-control select{
-    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
-    border-radius:6px; padding:6px 10px; font-family:var(--font-ui); font-size:12.5px; cursor:pointer;
-  }
+  .settings-row-control select{font-size:12.5px;}
   /* One fixed control column for every row of the Settings dialog
      (--settings-ctl-w, see "Settings control column" below). */
   #settingsThemeLightSelect, #settingsThemeDarkSelect{min-width:0;}
@@ -4417,7 +4448,7 @@
   #settingsDialog{--settings-ctl-w:248px;}
   #settingsDialog .settings-row{grid-template-columns:minmax(0,1fr) var(--settings-ctl-w);}
   #settingsDialog .settings-row-control{display:flex; align-items:center; justify-content:flex-end; gap:8px; min-width:0;}
-  #settingsDialog .settings-row-control select{width:100%; min-width:0; box-sizing:border-box; height:30px;}
+  #settingsDialog .settings-row-control select{width:100%; min-width:0; box-sizing:border-box; height:32px;}
   #settingsDialog .settings-row-control.assert-mode-row, #settingsDialog .settings-seg{margin-bottom:0; width:100%; gap:0;}
   #settingsDialog .settings-seg{display:flex;}
   #settingsDialog .settings-row-control .assert-mode-btn{flex:1 1 0%; min-width:0; padding:0 4px; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
@@ -4522,7 +4553,7 @@
      the DOM and keeps working exactly as before (checked/change event); only
      its default appearance is replaced. */
   .settings-switch{position:relative; display:inline-flex; width:38px; height:22px; cursor:pointer; flex:0 0 auto;}
-  .settings-switch input{position:absolute; inset:0; margin:0; opacity:0; cursor:pointer;}
+  .settings-switch input{position:absolute; inset:0; width:100%; height:100%; margin:0; opacity:0; cursor:pointer;}
   .settings-switch-track{
     position:absolute; inset:0; border-radius:11px; background:var(--border);
     transition:background .15s;
@@ -4730,7 +4761,7 @@
   .fwz-col-req{font-size:10px; color:var(--text-tertiary);}
   #fwzDefaultAdd{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
   .fwz-json-map{display:grid; grid-template-columns:auto 1fr; gap:5px 8px; align-items:center; font-size:12px; margin-bottom:10px;}
-  .fwz-json-map select{min-width:0; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary); border-radius:6px; padding:3px 6px; font-size:12px;}
+  .fwz-json-map select{min-width:0; font-size:12px;}
   #fwzJsonKeys{display:flex; flex-direction:column; gap:2px;}
   .fwz-json-key{display:flex; align-items:center; gap:6px; padding:3px 6px; border-radius:6px; font-size:12px; cursor:pointer;}
   .fwz-json-key:hover{background:var(--bg-panel);}
@@ -4749,10 +4780,7 @@
   .fwz-toolbar{display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap;}
   .fwz-toolbar-actions{display:flex; gap:6px; flex-wrap:wrap; align-items:center;}
   .fwz-enc-label{font-size:12px; color:var(--text-secondary);}
-  .fwz-enc-select{
-    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
-    border-radius:6px; padding:4px 6px; font-size:12px; min-width:0; max-width:230px;
-  }
+  .fwz-enc-select{font-size:12px; min-width:0; max-width:230px;}
   .fwz-meta-enc{margin-bottom:12px;}
   #fwzSample{
     flex:1 1 45%; min-height:120px; overflow:auto; border:1px solid var(--border); border-radius:8px;
@@ -4773,10 +4801,11 @@
   .fwz-confirm button{white-space:nowrap; flex:0 0 auto;}
   /* The level-add field and meta-target select lost their styling with the
      old inline panel — same field look as the column-add input. */
-  #formatDialog #formatEditLevelAdd input, #formatDialog #formatEditMetaAdd select{
+  #formatDialog #formatEditLevelAdd input{
     background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
     border-radius:6px; padding:5px 8px; font-size:12px;
   }
+  #formatDialog #formatEditMetaAdd select{font-size:12px;}
   .fwz-confirm.hidden{display:none;}
   #fwzSample.fwz-drop-active{border-color:var(--accent); box-shadow:0 0 0 2px var(--accent-soft);}
   .fwz-empty{
@@ -4809,10 +4838,7 @@
   .fwz-result .fwz-ts-field{flex:0 0 240px;}
   .fwz-result .fwz-tz-field{flex:0 0 auto;}
   .fwz-tz-box{display:flex; gap:6px;}
-  .fwz-tz-box select{
-    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
-    border-radius:6px; padding:6px 8px; font-size:12px; min-width:0;
-  }
+  .fwz-tz-box select{font-size:12px; min-width:0;}
   .fwz-result .fwz-tz-box input{width:78px;}
   .fwz-result .fwz-tz-box input#fwzTzNamed{width:170px;}
   .fwz-result .fwz-tz-box input.hidden{display:none;}
@@ -4954,15 +4980,12 @@
   }
   .plot-type-btn:hover{color:var(--text-secondary);}
   .plot-type-btn.active{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
-  .plot-field select{
-    background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
-    border-radius:6px; padding:6px 8px; font-family:var(--font-mono); font-size:11.5px; width:100%;
-  }
+  .plot-field select{font-size:12px; width:100%;}
   .plot-y-list{display:flex; flex-direction:column; gap:4px;}
   .plot-y-item{display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
-  .plot-y-item input{accent-color:var(--accent); flex:0 0 auto;}
+  .plot-y-item input{flex:0 0 auto;}
   .plot-field label.plot-y-item{text-transform:none; letter-spacing:normal; font-weight:400; font-size:11.5px; color:var(--text-secondary);}
-  .plot-y-unit{opacity:.6; font-size:.9em;}
+  .plot-y-unit{color:var(--text-tertiary); font-size:.9em;}
   .plot-y-swatch{width:9px; height:9px; border-radius:2px; flex:0 0 auto;}
   .plot-col-item{display:flex; align-items:center; gap:4px;}
   .plot-col-item .plot-y-item{flex:1 1 auto; min-width:0;}
@@ -4991,7 +5014,6 @@
   .plot-range-row .stepper{flex:1 1 0; min-width:0;}
   .plot-range-row .stepper .stepper-value{font-family:var(--font-mono); font-size:11.5px;}
   .plot-checkbox-row{display:flex; align-items:center; gap:7px; font-size:11.5px; color:var(--text-secondary); cursor:pointer;}
-  .plot-checkbox-row input{accent-color:var(--accent);}
   .plot-checkbox-row label{cursor:pointer;}
   .plot-note{font-size:10.5px; color:var(--text-tertiary); line-height:1.5;}
   #plotChartArea{flex:1 1 auto; min-width:0; display:flex; align-items:stretch; justify-content:stretch; padding:14px; position:relative;}
