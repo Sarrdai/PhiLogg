@@ -18,6 +18,8 @@
      g  double-click End cell / row, right-click, Start/End cell texts
      h  List toggle, node switch resets view and collapsed set
      i  share-of-parent bar geometry
+     j  keyboard: -> / <- expand, collapse, first child, parent (also with Sort by Δt), scrolling, list mode untouched
+     k  narrow panel (<= 520px) and phone layout: no Start column, no share bar, tighter indentation
    ============================================================ */
 group("link-tree-view");
 
@@ -357,5 +359,92 @@ if (groupSelected()) {
     // colour comes from the end entry's level
     const lvl = rowOfRun(d, T, "R-00005").className;
     assert(/lvl-[a-z0-9-]+/.test(lvl), "the row carries the end entry's level class: " + lvl);
+  }, { indexedDB: new IDBFactory() });
+
+  const key = (w, d, k, o) => { const ev = new w.KeyboardEvent("keydown", Object.assign({ key: k, bubbles: true, cancelable: true }, o)); d.dispatchEvent(ev); return ev; };
+
+  await withApp(async (w, d, T) => {
+    section("link-tree-view j. keyboard: -> / <- in the tree");
+    await flowsLink(w, d, T);
+    const cur = () => runOf(sel(T));
+    fireClick(rowOfRun(d, T, "R-00005"), w);
+    assert(key(w, d, "ArrowRight").defaultPrevented && cur() === "R-00006", "-> on an expanded pair moves to its first child");
+    key(w, d, "ArrowRight");
+    assert(cur() === "R-00007", "-> again: its first child R-00007");
+    assert(key(w, d, "ArrowRight").defaultPrevented && cur() === "R-00007", "-> on a leaf does nothing (the key is still consumed)");
+    key(w, d, "ArrowLeft");
+    assert(cur() === "R-00006" && T.linkTreeCollapsed.size === 0, "<- on a leaf moves to its parent");
+    key(w, d, "ArrowLeft");
+    assert(cur() === "R-00006" && T.linkTreeCollapsed.size === 1 && sel(T).collapsed, "<- on an expanded pair collapses it, the selection stays");
+    assert(!T.linkPairsData.some(it => runOf(it) === "R-00007"), "its children are gone");
+    key(w, d, "ArrowLeft");
+    assert(cur() === "R-00005", "<- on a collapsed pair moves to its parent");
+    key(w, d, "ArrowRight"); // R-00006 (collapsed)
+    assert(cur() === "R-00006", "-> on R-00005 selects its first child");
+    key(w, d, "ArrowRight");
+    assert(cur() === "R-00006" && !sel(T).collapsed && T.linkPairsData.some(it => runOf(it) === "R-00007"), "-> on a collapsed pair expands it, the selection stays");
+    key(w, d, "ArrowRight");
+    assert(cur() === "R-00007", "-> then moves to the first child");
+    // a root: <- collapses, <- again does nothing, -> expands
+    fireClick(rowOfRun(d, T, "R-00004"), w);
+    key(w, d, "ArrowLeft");
+    assert(cur() === "R-00004" && sel(T).collapsed, "root: <- collapses");
+    key(w, d, "ArrowLeft");
+    assert(cur() === "R-00004" && sel(T).collapsed, "root: <- on a collapsed root does nothing");
+    key(w, d, "ArrowRight");
+    assert(cur() === "R-00004" && !sel(T).collapsed, "root: -> expands");
+    // modifiers keep their own meaning
+    const prevented = key(w, d, "ArrowRight", { shiftKey: true }).defaultPrevented;
+    assert(!prevented && cur() === "R-00004", "Shift+-> is not taken");
+    // the selected row is scrolled into view: parent above the viewport
+    fireClick(rowOfRun(d, T, "R-00007"), w);
+    const sc = d.querySelector("#linkScroll");
+    sc.scrollTop = T.linkBlockOffsets[1] * 100;
+    key(w, d, "ArrowLeft");
+    assert(cur() === "R-00006" && sc.scrollTop === T.linkBlockOffsets[T.linkSelectedPairIndex], "<- scrolls the parent into view (" + cur() + ", " + sc.scrollTop + " vs " + T.linkBlockOffsets[T.linkSelectedPairIndex] + ")");
+    sc.scrollTop = 0; w.renderLinkVisibleBlocks();
+    // with Sort by Δt the first child is the first one shown (the slowest)
+    fireClick(d.querySelector('#linkSortSeg [data-link-sort="dt"]'), w);
+    fireClick(rowOfRun(d, T, "R-00006"), w);
+    key(w, d, "ArrowRight");
+    assert(cur() === "R-00008", "Sort Δt: -> goes to the slowest child R-00008 (266ms before 141ms)");
+    // nothing selected: the keys do nothing
+    fireClick(d.querySelector('#linkSortSeg [data-link-sort="time"]'), w); // a relayout drops the selection
+    assert(T.linkSelectedPairIndex === null && key(w, d, "ArrowRight").defaultPrevented && T.linkSelectedPairIndex === null, "no selection: nothing moves");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("link-tree-view j2. -> / <- are not taken in List mode");
+    await flowsLink(w, d, T);
+    fireClick(d.querySelector('#linkViewSeg [data-link-view="list"]'), w);
+    fireClick(d.querySelector("#linkBody .pair-block"), w);
+    assert(T.linkSelectedPairIndex === 0, "sanity: a block is selected");
+    assert(!key(w, d, "ArrowRight").defaultPrevented && !key(w, d, "ArrowLeft").defaultPrevented, "List mode: the keys are left alone");
+  }, { indexedDB: new IDBFactory() });
+
+  await withApp(async (w, d, T) => {
+    section("link-tree-view k. narrow panel / phone layout: no Start column, no share bar, tighter indentation");
+    await flowsLink(w, d, T);
+    const wrap = d.querySelector("#linkWrap");
+    const widthOf = v => Object.defineProperty(wrap, "clientWidth", { configurable: true, get: () => v });
+    const hidden = sel2 => [...d.querySelectorAll(sel2)].length > 0 && [...d.querySelectorAll(sel2)].every(e => !isVisible(e, w));
+    const shown = sel2 => [...d.querySelectorAll(sel2)].length > 0 && [...d.querySelectorAll(sel2)].every(e => isVisible(e, w));
+    widthOf(900); w.updateLinkNarrow();
+    assert(!wrap.classList.contains("link-narrow") && shown("#linkBody .tr-c-start") && shown("#linkBody .tr-c-share") && shown("#linkTreeHead .tr-c-start"), "900px: Start column and share bar shown");
+    widthOf(520); w.updateLinkNarrow();
+    assert(wrap.classList.contains("link-narrow"), "520px counts as narrow");
+    assert(hidden("#linkBody .tr-c-start") && hidden("#linkBody .tr-c-share") && hidden("#linkTreeHead .tr-c-start") && hidden("#linkTreeHead .tr-c-share"), "narrow: Start and share are hidden in the rows and in the header");
+    assert(shown("#linkBody .tr-endt") && shown("#linkBody .tr-dt") && [...d.querySelectorAll("#linkTreeHead > span")].filter(e => isVisible(e, w)).length === 3, "narrow: Pair, End and Δt stay");
+    const css = [...d.querySelectorAll("style")].map(e => e.textContent).join("").replace(/\s+/g, "");
+    assert(css.includes("#linkWrap.link-narrow,body.layout-phone#linkWrap{--link-indent:12px;"), "narrow/phone CSS sets the indentation to 12px");
+    widthOf(521); w.updateLinkNarrow();
+    assert(!wrap.classList.contains("link-narrow") && shown("#linkBody .tr-c-share"), "521px: back to the full layout");
+    widthOf(0); w.updateLinkNarrow();
+    assert(!wrap.classList.contains("link-narrow"), "an unmeasured panel is not narrow");
+    // phone layout, whatever the width
+    d.body.classList.add("layout-phone");
+    assert(hidden("#linkBody .tr-c-start") && hidden("#linkBody .tr-c-share") && hidden("#linkTreeHead .tr-c-share"), "phone layout: Start and share hidden");
+    d.body.classList.remove("layout-phone");
+    assert(shown("#linkBody .tr-c-share"), "sanity: shown again");
   }, { indexedDB: new IDBFactory() });
 }

@@ -1,0 +1,4 @@
+- **feat: tree view for nested link pairs (2026-10-10, person-requested)**
+  - A nested link's Link view opens as a tree: one row per pair, nested by time containment, expandable/collapsible (chevron, `N nested` pill, Expand/Collapse all, ←/→), with Start, End, Δt and a share-of-parent bar; a List | Tree toggle brings back the pair blocks.
+  - Sort Δt ↓ orders siblings per parent; starts without end are leaves; the selection survives collapsing; narrow panels and the phone layout drop the Start column and the bar.
+  - **Tests**: GROUP link-tree-view. Docs: docs/ui-and-views.md, docs/filters.md, README.

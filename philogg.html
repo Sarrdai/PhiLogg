@@ -3564,6 +3564,13 @@
     font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-tertiary);
   }
   #linkTreeHead .r{text-align:right; text-transform:none;}
+  /* Narrow panel (<= 520px, #linkWrap.link-narrow, see updateLinkNarrow) or the phone layout: no Start column, no share bar, tighter indentation. */
+  #linkWrap.link-narrow, body.layout-phone #linkWrap{
+    --link-indent:12px;
+    --link-cols:minmax(0,1fr) calc(92px * var(--log-text-scale)) calc(62px * var(--log-text-scale));
+  }
+  #linkWrap.link-narrow .tr-c-start, #linkWrap.link-narrow .tr-c-share,
+  body.layout-phone #linkWrap .tr-c-start, body.layout-phone #linkWrap .tr-c-share{display:none;}
   #linkWrap.link-tree-mode #linkTreeHead{display:grid;}
   #linkWrap.link-tree-mode #linkScroll{padding:0 0 12px; overflow-y:scroll;}
   .link-trow{
@@ -6953,7 +6960,7 @@
             </div>
             <!-- Tree layout only: column header, same grid as .link-trow. -->
             <div id="linkTreeHead" aria-hidden="true">
-              <span>Pair</span><span>Start</span><span>End</span><span class="r">Δt</span><span>Share of parent</span>
+              <span>Pair</span><span class="tr-c-start">Start</span><span>End</span><span class="r">Δt</span><span class="tr-c-share">Share of parent</span>
             </div>
             <div id="linkScroll">
               <div id="linkSpacer">
@@ -25475,7 +25482,7 @@ function renderLinkView(node) {
   linkPairsData = items;
   computeLinkBlockOffsets();
   renderLinkVisibleBlocks();
-  updateLinkScrollbarGap();
+  updateLinkNarrow();
 
   // Flattened across every pair (the FULL set, not just the rendered
   // window — see renderLinkVisibleBlocks) — pairs themselves only carry the
@@ -25646,7 +25653,7 @@ linkScroll.addEventListener("scroll", () => {
   linkScrollTicking = true;
   requestAnimationFrame(() => { renderLinkVisibleBlocks(); linkScrollTicking = false; });
 });
-window.addEventListener("resize", () => { renderLinkVisibleBlocks(); updateLinkScrollbarGap(); });
+window.addEventListener("resize", () => { renderLinkVisibleBlocks(); updateLinkNarrow(); });
 
 // Re-applies the .pair-selected class to whichever currently-rendered block
 // matches linkSelectedPairIndex (see that variable's own comment) — call
@@ -25667,7 +25674,10 @@ function applyLinkSelectionClasses() {
 function moveLinkSelection(delta) {
   if (!linkPairsData.length) return;
   const cur = linkSelectedPairIndex == null ? (delta > 0 ? -1 : linkPairsData.length) : linkSelectedPairIndex;
-  const next = Math.max(0, Math.min(linkPairsData.length - 1, cur + delta));
+  setLinkSelectionIndex(Math.max(0, Math.min(linkPairsData.length - 1, cur + delta)));
+}
+// Selects row/block `next` and scrolls it into view.
+function setLinkSelectionIndex(next) {
   linkSelectedPairIndex = next;
   const top = linkBlockOffsets[next];
   const bottom = linkBlockOffsets[next + 1];
@@ -25675,6 +25685,27 @@ function moveLinkSelection(delta) {
   else if (bottom > linkScroll.scrollTop + linkScroll.clientHeight) linkScroll.scrollTop = bottom - linkScroll.clientHeight;
   renderLinkVisibleBlocks();
   updateMinimapSelectionMarkers();
+}
+
+// Tree mode, ←/→: → expands a collapsed pair, otherwise moves to its first child; ← collapses an expanded
+// pair, otherwise moves to its parent. Returns whether the key was used.
+function linkTreeKeyStep(key) {
+  const idx = linkSelectedPairIndex;
+  const cur = idx != null ? linkPairsData[idx] : null;
+  if (!cur) return false;
+  if (key === "ArrowRight") {
+    if (cur.collapsed) { toggleLinkTreeKey(cur.key); return true; }
+    const next = linkPairsData[idx + 1];
+    if (cur.hasKids && next && next.depth === cur.depth + 1) setLinkSelectionIndex(idx + 1);
+    return true;
+  }
+  if (cur.hasKids && !cur.collapsed) { toggleLinkTreeKey(cur.key); return true; }
+  if (cur.depth > 0) {
+    let i = idx - 1;
+    while (i >= 0 && linkPairsData[i].depth >= cur.depth) i--;
+    if (i >= 0) setLinkSelectionIndex(i);
+  }
+  return true;
 }
 
 function buildPairBlock(entryData, index) {
@@ -25858,11 +25889,11 @@ function buildPairTreeRow(it, index, zero) {
   row.innerHTML =
     '<div class="tr-tree">' + guides + '<span class="tree-chevron-slot">' + chevron + '</span><span class="tr-dot"></span>' +
       '<span class="tr-msg">' + msg + "</span>" + pill + "</div>" +
-    '<div class="tr-t tr-startt jump">' + escapeHtml(timeOfDayText(startE, zero)) + "</div>" +
+    '<div class="tr-t tr-startt tr-c-start jump">' + escapeHtml(timeOfDayText(startE, zero)) + "</div>" +
     (it.unmatched ? '<div class="tr-t tr-endt"><span class="miss">\u2014</span></div>'
       : '<div class="tr-t tr-endt jump">' + escapeHtml(timeOfDayText(endE, zero)) + "</div>") +
     '<div class="tr-dt' + (it.unmatched ? " miss" : "") + '">' + (it.unmatched ? "\u2014" : escapeHtml(formatMs(it.pair.dtMs))) + "</div>" +
-    "<div>" + linkTreeBarHtml(it) + "</div>";
+    '<div class="tr-c-share">' + linkTreeBarHtml(it) + "</div>";
   return row;
 }
 // Rebuilds the tree rows after a collapse/expand (selection by key, scroll position kept).
@@ -25884,6 +25915,14 @@ function setAllLinkTreeCollapsed(collapse) {
   }
   rerenderLinkTree();
 }
+// Narrow panel: <= 520px of #linkWrap's own width (the window is not the measure: the sidebar and the detail split change it).
+const LINK_NARROW_PX = 520;
+function updateLinkNarrow() {
+  const w = linkWrap.clientWidth;
+  linkWrap.classList.toggle("link-narrow", w > 0 && w <= LINK_NARROW_PX);
+  updateLinkScrollbarGap();
+}
+if (typeof ResizeObserver === "function") new ResizeObserver(updateLinkNarrow).observe(linkWrap);
 // The header row sits outside the scroller: leave room for its scrollbar so the columns line up.
 function updateLinkScrollbarGap() {
   const gap = linkTreeMode ? Math.max(0, linkScroll.offsetWidth - linkScroll.clientWidth) : 0;
@@ -54113,6 +54152,14 @@ document.addEventListener("keydown", ev => {
     ev.preventDefault();
     const delta = ev.key === "ArrowDown" ? 1 : -1;
     if (state.entriesView === "highlight") moveHighlightSelection(delta); else moveSelection(delta);
+    return;
+  }
+
+  // Link view, Tree layout: ←/→ expand/collapse and walk to the child/parent (linkTreeKeyStep).
+  if ((ev.key === "ArrowRight" || ev.key === "ArrowLeft") && !ev.ctrlKey && !ev.metaKey && !ev.shiftKey &&
+      state.entriesView === "filter" && linkWrap.style.display !== "none" && linkTreeMode) {
+    ev.preventDefault();
+    linkTreeKeyStep(ev.key);
     return;
   }
 
