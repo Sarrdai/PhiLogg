@@ -41,8 +41,8 @@ await withApp(async (w, d, T) => {
   assert(levels.length >= 3, "sanity: the simulator log produces level pills, got " + levels.length);
 
   section("inline-labels-toggle-level a. Hover mode: toggle bar 60% centered, level circle with hit slot + count, chevron label wired up");
-  assert(barRule(BASE_BAR).length === 1 && /width:\s*60%/.test(barRule(BASE_BAR)[0].cssText), "base bar rule: width 60%");
-  assert(/left:\s*50%/.test(barRule(BASE_BAR)[0].cssText) && /translateX\(-50%\)/.test(barRule(BASE_BAR)[0].cssText), "base bar rule: left 50% + translateX(-50%)");
+  assert(barRule(BASE_BAR).length === 0, "P4: the status bar under toggles is gone");
+
   assert(cs(toggle).paddingRight !== "12px" && cs(toggle).paddingLeft !== "5px", "hover: toggle padding is not the Inline pill padding");
   levels.forEach(l => {
     assert(cs(l).width === "28px", "hover: level pill is a 28px circle, got " + cs(l).width);
@@ -52,15 +52,15 @@ await withApp(async (w, d, T) => {
   assert(cs(chevron).width === "14px", "hover: chevron is 14px wide, got " + cs(chevron).width);
   assert(cs(chevron.querySelector(".tb-label")).display !== "none", "hover: the chevron keeps its (floating) label");
 
-  section("inline-labels-toggle-level b. Inline view labels: chevron stays icon-only, toggles are pills with a symmetric bar");
+  section("inline-labels-toggle-level b. Inline view labels: chevron stays icon-only, toggles are pills");
   d.body.classList.add("view-toolbar-labels-inline");
   assert(cs(chevron).width === "14px", "chevron still 14px, got " + cs(chevron).width);
   assert(cs(chevron).paddingRight !== "10px" && cs(chevron).paddingRight !== "12px", "chevron gets no pill padding, got " + cs(chevron).paddingRight);
   assert(cs(chevron.querySelector(".tb-label")).display === "none", "chevron label hidden");
   assert(chevron.title && chevron.title.length > 0, "chevron keeps its title tooltip");
-  assert(cs(toggle).paddingLeft === "5px" && cs(toggle).paddingRight === "12px", "toggles get the symmetric pill padding 5px / 12px, got " + cs(toggle).paddingLeft + " / " + cs(toggle).paddingRight);
+  assert(cs(toggle).paddingRight === "10px", "toggles get the generic inline pill padding (the symmetric-bar padding is gone with the bar), got " + cs(toggle).paddingRight);
   assert(cs(toggle.querySelector(".tb-label")).position === "static" && cs(toggle.querySelector(".tb-label")).display !== "none", "the toggle label sits inline");
-  assert(barRule(INLINE_BAR).length === 1 && /left:\s*12px/.test(barRule(INLINE_BAR)[0].cssText) && /right:\s*12px/.test(barRule(INLINE_BAR)[0].cssText), "the status bar spans the pill content (12px both sides)");
+  assert(barRule(INLINE_BAR).length === 0, "P4: no inline status-bar rule either");
   d.body.classList.remove("view-toolbar-labels-inline");
 
   section("inline-labels-toggle-level c. Inline level labels: level pills are text-only with equal padding");

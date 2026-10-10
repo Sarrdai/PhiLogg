@@ -34,7 +34,7 @@ await withApp(async (w, d, T) => {
   assert(btn.querySelectorAll(".add-badge").length === 1, "exactly one badge");
   const badge = btn.querySelector(".add-badge");
   assert(badge.querySelector("svg path") && badge.querySelector("svg").getAttribute("viewBox") === "0 0 8 8", "badge holds the 8x8 plus glyph");
-  assert(btn.classList.contains("row-action-btn") && w.getComputedStyle(btn).borderRadius === "50%", "button is a round row-action circle");
+  assert(btn.classList.contains("row-action-btn") && !btn.classList.contains("level-btn"), "button is a ghost row-action button, not a level circle (P4)");
   const lbl = btn.querySelector(".row-action-label");
   assert(lbl && lbl.querySelector(".hint-name").textContent === "Add level filter" && w.getComputedStyle(lbl).position === "absolute", "floating label 'Add level filter' is absolutely positioned");
   assert(btn.title === "Add level filter", "tooltip stays 'Add level filter'");

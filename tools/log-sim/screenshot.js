@@ -7,7 +7,7 @@
 //
 //   node tools/log-sim/screenshot.js [--out shot.png] [--size 1440x900]
 //        [--scale <n: deviceScaleFactor, e.g. 4 for pixel-alignment checks>] [--theme <mode|theme id>] [--eval "<js run in the page before the shot>"]
-//        [--wait <ms>] [--url <page url>] [--touch] <log files and *.logformat.json files...>
+//        [--wait <ms>] [--url <page url>] [--hover <css selector: real mouse hover before the shot>] [--touch] <log files and *.logformat.json files...>
 //
 // --touch emulates a phone (touch events, pointer:coarse, isMobile, 3x DPR);
 // combine with a phone --size such as 390x844.
@@ -33,10 +33,10 @@ const { chromium } = require("playwright");
 
 async function main() {
   const args = process.argv.slice(2);
-  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500, url: null, touch: false, scale: null };
+  const opt = { out: "philogg-shot.png", size: "1440x900", theme: null, eval: null, wait: 500, hover: null, url: null, touch: false, scale: null };
   const files = [];
   for (let i = 0; i < args.length; i++) {
-    const m = /^--(out|size|theme|eval|wait|url|scale)$/.exec(args[i]);
+    const m = /^--(out|size|theme|eval|wait|url|scale|hover)$/.exec(args[i]);
     if (m) opt[m[1]] = args[++i];
     else if (args[i] === "--touch") opt.touch = true;
     else files.push(path.resolve(args[i]));
@@ -86,6 +86,7 @@ async function main() {
       .filter(f => f.type === "file" && f.loadFraction === undefined && !f.queued && f.entries && f.entries.length).length >= n,
     opt.url ? 1 : logs.length, { timeout: 120000 });
     if (opt.eval) await page.evaluate(opt.eval);
+    if (opt.hover) await page.hover(opt.hover);
     await page.waitForTimeout(+opt.wait);
     await page.screenshot({ path: opt.out });
   } finally {

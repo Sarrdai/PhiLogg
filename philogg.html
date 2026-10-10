@@ -17,6 +17,9 @@
     --border-soft:#1e2330;
     /* Pure separator lines (row/panel/toolbar/table/menu dividers, tree guides). --border stays for control outlines and dialog frames. Derived, so custom themes inherit it from their own --border-soft/--bg-app. */
     --hairline:color-mix(in srgb, var(--border-soft) 45%, var(--bg-app));
+    /* Ghost-button hover fill (9% text color over whatever surface; light themes 8%) and the raised "popover" surface (active view tab; P6 menus): one step above the app background, derived so custom themes inherit it. */
+    --btn-hover:color-mix(in srgb, var(--text-primary) 9%, transparent);
+    --bg-popover:color-mix(in srgb, var(--text-primary) 9%, var(--bg-app));
     --text-primary:#e7eaf1;
     --text-secondary:#8a92a8;
     --text-tertiary:#565f75;
@@ -166,6 +169,8 @@
      near-black used against the brighter dark-mode swatches. */
   :root[data-theme="light"]{
     --hairline:color-mix(in srgb, var(--border-soft) 55%, var(--bg-app));
+    --btn-hover:color-mix(in srgb, var(--text-primary) 8%, transparent);
+    --bg-popover:color-mix(in srgb, #fff 55%, var(--bg-app));
     --where-dim:rgba(28,33,46,.46);
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
@@ -385,6 +390,8 @@
   }
   :root[data-theme="catppuccin-latte"]{
     --hairline:color-mix(in srgb, var(--border-soft) 55%, var(--bg-app));
+    --btn-hover:color-mix(in srgb, var(--text-primary) 8%, transparent);
+    --bg-popover:color-mix(in srgb, #fff 55%, var(--bg-app));
     --bg-app:#eff1f5;
     --bg-panel:#e6e9ef;
     --bg-elevated:#ccd0da;
@@ -495,40 +502,21 @@
   .toolbar-icon-btn{
     display:flex; align-items:center; justify-content:center; position:relative;
     width:28px; height:28px; flex:0 0 auto;
-    background:var(--bg-elevated); color:var(--text-secondary);
-    border:1px solid var(--border); border-radius:7px;
-    cursor:pointer; transition:background .12s, border-color .12s, color .12s;
+    background:transparent; color:var(--text-secondary);
+    border:0; border-radius:6px; padding:0;
+    cursor:pointer; transition:background .12s, color .12s;
   }
-  .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
-  .toolbar-icon-btn:disabled{opacity:.32; cursor:default; pointer-events:none;}
-  /* Toggled state for icon buttons that are persistent on/off switches
-     rather than popup triggers — reuses the accent colors already used for
-     the (since removed) filter-target chain pills. Superseded by .icon-toggle below for
-     the 17 buttons that are genuinely persistent toggles (person-reported:
-     this frame+fill treatment made them indistinguishable from plain action
-     buttons in their inactive state); this rule stays as the fallback for
-     any other .toolbar-icon-btn.active use (e.g. popup-trigger buttons that
-     stay visually "pressed" while their popup is open). */
-  .toolbar-icon-btn.active{background:var(--accent-soft); border-color:var(--accent-strong); color:var(--accent-strong);}
-  /* Persistent on/off toggles (Notes/Multiline/Wrap/Columns/TextMatch/
-     HighlightMatch/FilePaths/Pin in #contextToolbar+#filteredToolbar, plus
-     the Text-View's Wrap/Pretty-print) — person-requested, this session: no
-     visible button chrome in either state, only the icon's own color
-     (--accent-strong when active, matching every other "active foreground"
-     use in the app) plus a thin accent-colored bar under the icon acting as
-     an on/off "status light". The bar is a `::after` pseudo-element (taken
-     out of flex flow via position:absolute) specifically so it can sit
-     inside the existing 28x28 footprint without disturbing the icon's own
-     centering — .toolbar-icon-btn's flex-centering already centers on the
-     WHOLE 28x28 box once the bar no longer participates in that layout. */
-  .toolbar-icon-btn.icon-toggle{background:none; border:none; color:var(--text-secondary);}
-  .toolbar-icon-btn.icon-toggle:hover{background:var(--bg-elevated-2);}
-  .toolbar-icon-btn.icon-toggle.active{background:none; border-color:transparent; color:var(--accent-strong);}
-  .toolbar-icon-btn.icon-toggle::after{
-    content:""; position:absolute; left:50%; bottom:3px; transform:translateX(-50%);
-    width:60%; height:2px; border-radius:1px; background:transparent; transition:background .12s;
-  }
-  .toolbar-icon-btn.icon-toggle.active::after{background:var(--accent-strong);}
+  .toolbar-icon-btn:hover{background:var(--btn-hover); color:var(--text-primary);}
+  .toolbar-icon-btn:disabled{opacity:.38; cursor:default; pointer-events:none;}
+  .toolbar-icon-btn:disabled:hover{background:transparent; color:var(--text-secondary);}
+  /* The header's buttons (P5 restyles them) keep the framed look for now. */
+  #toolbar .toolbar-icon-btn{background:var(--bg-elevated); border:1px solid var(--border); border-radius:7px;}
+  #toolbar .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
+  #toolbar .toolbar-icon-btn:disabled{opacity:.32;}
+  #toolbar .toolbar-icon-btn:disabled:hover{background:var(--bg-elevated);}
+  /* Active/on state of an icon button (persistent toggles such as Notes/Wrap/Columns, or a popup trigger whose popup is open): accent-soft fill with the icon in --accent-strong. The old teal bar under toggle icons is gone. */
+  .toolbar-icon-btn.active, .toolbar-icon-btn.active:hover{background:var(--accent-soft); color:var(--accent-strong);}
+  #toolbar .toolbar-icon-btn.active{border-color:var(--accent-strong);}
   .toolbar-icon-btn.toggle-repeat:disabled, .toolbar-icon-btn.repeat-chevron:disabled{pointer-events:auto; cursor:default;} /* keep the tooltip that says why */
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
@@ -812,10 +800,6 @@
   #sidebarToolbar .row-action-separator{height:16px; align-self:center; margin:0 4px;}
   /* Flat icon buttons, like the per-view toolbars: no chrome at rest, a hover
      background, disabled = tertiary text at reduced opacity (never hidden). */
-  #sidebarToolbar .toolbar-icon-btn{
-    background:none; border-color:transparent; color:var(--text-secondary);
-  }
-  #sidebarToolbar .toolbar-icon-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   #sidebarToolbar .toolbar-icon-btn:disabled{color:var(--text-tertiary);}
   #sidebarToolbar .toolbar-icon-btn:disabled .row-action-hit{opacity:.45;}
   /* Phone-only under-icon labels (tab-bar style) — hidden on every other tier;
@@ -836,7 +820,7 @@
     border:0; border-radius:6px; background:none; color:var(--text-secondary);
     font:inherit; font-size:12px; font-weight:500; white-space:nowrap; cursor:pointer;
   }
-  #sidebarToolbar .stb-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
+  #sidebarToolbar .stb-btn:hover{background:var(--btn-hover); color:var(--text-primary);}
   #sidebarToolbar .stb-btn:focus-visible{outline:2px solid var(--accent-strong); outline-offset:-2px;}
   #sidebarToolbar .stb-btn .icon{width:14px; height:14px; flex:0 0 auto;}
   #sidebarToolbar .stb-btn.stb-and .icon{color:var(--info);}
@@ -1228,7 +1212,7 @@
   .add-badge-wrap{position:relative; display:inline-grid; place-items:center; flex:0 0 auto;}
   .add-badge{
     position:absolute; right:-3px; bottom:-3px; width:11px; height:11px; border-radius:50%;
-    background:var(--accent); color:var(--accent-on);
+    background:var(--accent); color:var(--accent-on); box-shadow:0 0 0 2px var(--bg-panel);
     display:grid; place-items:center; pointer-events:none; z-index:1;
   }
   .add-badge svg{width:8px; height:8px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;}
@@ -1351,7 +1335,7 @@
        (person-requested, earlier session). */
     display:flex; align-items:center; justify-content:center;
     width:28px; height:28px; flex:0 0 auto; padding:0; box-sizing:border-box;
-    border:0; background:transparent;
+    border:0; border-radius:50%; background:transparent;
     cursor:pointer; user-select:none; transition:background .12s;
   }
 
@@ -1380,13 +1364,14 @@
      overshot). Keyboard focus still uses a plain `:focus-visible` on the
      button — Tab moves in discrete jumps, not a continuously arriving
      cursor, so the earlier overshoot bug doesn't apply there. */
-  .row-action-btn{border-radius:50%; position:relative; transition:border-radius .15s, width .15s;}
+  .row-action-btn{position:relative; transition:border-radius .15s, width .15s;}
+  .row-action-btn:not(.level-btn){border-radius:6px;}
   /* .rect variant (person-requested, 2026-09-05): the copies duplicated
      into each log view's own toolbar (Bookmark/Add note/Add to selection)
      stay square with the toolbar's normal 7px corner radius — only the
      Filter-Toolbar's own row-actions (#viewBar) keep the circle shape
      above. */
-  .row-action-btn.rect{border-radius:7px;}
+  .row-action-btn.rect{border-radius:6px;}
   .row-action-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
   /* Thin vertical divider rendered immediately before a row-action entry
      flagged `separator:true` (see buildRowActionsHtml) — visually groups
@@ -1405,7 +1390,7 @@
   .row-action-label{
     position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
     width:max-content; max-width:240px; opacity:0; margin-left:0; overflow:visible; white-space:normal; text-align:left; line-height:1.3;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:6px; padding:5px 10px 6px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
     box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
     transition:opacity .12s ease, transform .12s ease;
@@ -1437,7 +1422,7 @@
   .tb-label{
     position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
     width:max-content; max-width:240px; opacity:0; margin-left:0; overflow:visible; white-space:normal; text-align:left; line-height:1.3;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:6px; padding:5px 10px 6px;
     font-family:var(--font-mono); font-size:10.5px; font-weight:700; letter-spacing:.3px;
     box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45;
     transition:opacity .12s ease, transform .12s ease;
@@ -1501,8 +1486,7 @@
   body.sidebar-toolbar-labels-inline .sidebar-btn,
   body.view-toolbar-labels-inline .row-action-btn.rect:not(.sidebar-btn),
   body.view-toolbar-labels-inline .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron){width:auto; padding-right:10px;}
-  body.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply),
-  body.level-labels-inline .level-btn, body.level-labels-inline .level-apply{border-radius:20px;}
+  body.level-labels-inline .level-btn{border-radius:20px;}
   body.filter-toolbar-labels-inline .row-action-btn:not(.rect):not(.level-btn):not(.level-apply) .row-action-label,
   body.level-labels-inline .level-btn .row-action-label, body.level-labels-inline .level-apply .row-action-label,
   body.sidebar-toolbar-labels-inline .sidebar-btn .row-action-label,
@@ -1518,7 +1502,7 @@
   body.view-toolbar-labels-inline .row-action-btn.rect:not(.sidebar-btn) .hint-more,
   body.view-toolbar-labels-inline .toolbar-icon-btn:has(.tb-hit):not(.repeat-chevron) .hint-more{
     position:absolute; left:0; bottom:calc(100% + 6px); width:max-content; max-width:240px; white-space:normal; text-align:left;
-    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:10px; padding:5px 10px 6px;
+    background:var(--bg-elevated-2); border:1px solid var(--border); border-radius:6px; padding:5px 10px 6px;
     box-shadow:0 4px 12px rgba(0,0,0,.25); pointer-events:none; z-index:45; opacity:0; transform:translateY(4px);
     transition:opacity .12s ease, transform .12s ease; font-weight:400; letter-spacing:0; text-transform:none;
   }
@@ -1556,10 +1540,6 @@
   /* The hover-reveal rule below (#levelBar .level-btn:hover ...) carries an ID and
      would shift the now-static label by -50% on hover, clipping it in the pill. */
   body.level-labels-inline:not(.layout-phone) #levelBar .level-btn:hover:not(:disabled) .row-action-label{transform:none;}
-  /* View-toolbar on/off toggles in Inline: the "status light" bar spans the pill content symmetrically
-     (icon's visible left edge and label end each 12px from the edge). */
-  body.view-toolbar-labels-inline .toolbar-icon-btn.icon-toggle:has(.tb-hit):not(.repeat-chevron){padding-left:5px; padding-right:12px;}
-  body.view-toolbar-labels-inline .toolbar-icon-btn.icon-toggle:has(.tb-hit):not(.repeat-chevron)::after{left:12px; right:12px; width:auto; transform:none;}
   /* View-toolbar groups: caption above a one-row set of buttons. The caption
      only exists (display) with Group captions on; otherwise the group is
      just its row, so nothing moves. */
@@ -1609,7 +1589,7 @@
      rest, 1 once .expanded — see setupHitExpandGroups, which now includes
      disabled buttons in its hover hit-test) is unaffected either way. */
   .row-action-btn:disabled, .toolbar-icon-btn:has(.tb-hit):disabled{opacity:1;}
-  .row-action-btn:disabled .row-action-hit, .toolbar-icon-btn:has(.tb-hit):disabled .tb-hit{opacity:.32;}
+  .row-action-btn:disabled .row-action-hit, .toolbar-icon-btn:has(.tb-hit):disabled .tb-hit{opacity:.38;}
   .level-btn.lvl-error{box-shadow:inset 0 0 0 1.5px var(--level-error);}
   .level-btn.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 18%, transparent);}
   .level-btn.lvl-warn{box-shadow:inset 0 0 0 1.5px var(--level-warn);}
@@ -4121,13 +4101,14 @@
      (#libraryMenu) + the manage dialog rows. Accent outline pill,
      icon-only: a book segment and a chevron segment, both open the menu. ---------- */
   #btnLibrary{
-    float:left; display:inline-flex; align-items:stretch; height:26px; margin:1px 4px; padding:0;
-    border:1px solid var(--accent); border-radius:99px; overflow:hidden; background:transparent;
-    color:var(--accent-strong); font:inherit; cursor:pointer;
+    float:left; display:inline-flex; align-items:stretch; height:28px; margin:0 4px; padding:0;
+    border:0; border-radius:6px; overflow:hidden; background:transparent;
+    color:var(--text-secondary); font:inherit; cursor:pointer;
   }
-  #btnLibrary > span{display:flex; align-items:center; gap:5px; padding:0 8px; background:var(--accent-soft);}
-  #btnLibrary > span + span{border-left:1px solid var(--accent); padding:0 6px;}
-  #btnLibrary:hover > span, #btnLibrary[aria-expanded="true"] > span{background:var(--accent); color:var(--bg-panel);}
+  #btnLibrary > span{display:flex; align-items:center; gap:5px; padding:0 7px; background:transparent;}
+  #btnLibrary > span + span{border-left:1px solid var(--hairline); padding:0 5px;}
+  #btnLibrary:hover > span{background:var(--btn-hover); color:var(--text-primary);}
+  #btnLibrary[aria-expanded="true"] > span{background:var(--accent-soft); color:var(--accent-strong);}
   #btnLibrary:focus-visible{outline:2px solid var(--accent-strong); outline-offset:2px;}
   #btnLibrary .icon{width:13px; height:13px;}
   #libraryMenu{
@@ -4941,19 +4922,19 @@
      container removes the need for that entirely. */
   .view-tabs{
     display:flex; gap:2px; height:28px;
-    background:var(--bg-app); border:1px solid var(--border); border-radius:7px; padding:2px;
+    background:color-mix(in srgb, var(--text-primary) 7%, transparent); border:0; border-radius:8px; padding:2px;
   }
   .view-tab{
     height:100%; display:flex; align-items:center; justify-content:center;
-    background:transparent; border:none; color:var(--text-tertiary); font-size:11px; font-weight:600;
-    padding:0 11px; border-radius:5px; cursor:pointer; transition:background .12s, color .12s;
+    background:transparent; border:none; color:var(--text-secondary); font-family:var(--font-ui); font-size:12.5px; font-weight:550;
+    padding:0 11px; border-radius:6px; cursor:pointer; transition:background .12s, color .12s;
   }
-  .view-tab:hover:not(:disabled){color:var(--text-secondary);}
-  .view-tab.active{background:var(--bg-elevated-2); color:var(--accent-strong);}
+  .view-tab:hover:not(:disabled){color:var(--text-primary);}
+  .view-tab.active{background:var(--bg-popover); color:var(--text-primary); box-shadow:0 1px 2px rgba(0,0,0,.12), 0 0 0 .5px rgba(0,0,0,.06);}
   /* Table/Plot stay in the tab row even when the active node has nothing to
      tabulate/plot — rendered disabled (person-requested) so the filter buttons
      to their right never jump sideways as tabs appear/disappear. */
-  .view-tab:disabled{opacity:.35; cursor:not-allowed;}
+  .view-tab:disabled{color:var(--text-tertiary); opacity:.55; cursor:not-allowed;}
   .view-tab:disabled:hover{color:var(--text-tertiary);}
 
   /* ---------- Plot view ---------- */
@@ -5626,7 +5607,7 @@
   /* person-reported, 2026-10-08: no negative margin and a 14px hit area (.tb-hit is 28px by default and overhung the toggle's icon), so each click lands on the control it is drawn on. */
   .toolbar-icon-btn.repeat-chevron{width:14px; margin-left:0; background:none; border:none; color:var(--text-secondary);}
   .toolbar-icon-btn.repeat-chevron .tb-hit{width:14px;}
-  .toolbar-icon-btn.repeat-chevron:hover{background:var(--bg-elevated-2);}
+  .toolbar-icon-btn.repeat-chevron:hover{background:var(--btn-hover);}
   .toolbar-icon-btn.repeat-chevron .icon{--icon-md:10px;}
   #repeatMenu{
     position:fixed; z-index:60; width:260px; padding:5px;
