@@ -853,24 +853,23 @@
   body.tree-dragging, body.tree-dragging *{cursor:grabbing !important; user-select:none;}
   .tree-row.dragging{opacity:.4;}
   .tree-row.drag-over{background:var(--accent-soft); box-shadow:inset 0 0 0 1.5px var(--accent);}
-  /* Tree connector lines (replace the removed breadcrumb bar, person-
-     requested): each row carries absolutely positioned .tree-guide segments
-     built by decorateTreeGuides after renderNode — vertical rails at each
-     ancestor's chevron x plus a short elbow into the row. Segments on the
-     path from the root to the active row get .on (accent), so the active
-     filter chain reads straight off the tree. Absolutely positioned, so
-     they don't take part in the row's flex layout (no gap, no shifting).
-     Drawn as 2px BORDERS on zero-size boxes, not as backgrounds: a filled
-     box with a fractional width/offset (the old 1.5px) gets pixel-snapped
-     to 1 or 2 device pixels depending on where it lands, so lines came out
-     visibly uneven (person-reported); border widths snap consistently. */
-  .tree-guide{position:absolute; pointer-events:none; border:0 solid var(--hairline);}
+  /* Tree connector lines (design polish B4): each row carries absolutely
+     positioned .tree-guide segments built by decorateTreeGuides after
+     renderNode: only vertical rails at each ancestor's chevron center (the
+     line to a node's children starts right below its chevron), no
+     horizontal stubs. Segments on the path from the root to the active row
+     get .on (accent, 1.5px), so the active filter chain reads straight off
+     the tree. Absolutely positioned, so they don't take part in the row's
+     flex layout. Drawn as BORDERS on zero-width boxes, not as backgrounds:
+     a filled box with a fractional width/offset gets pixel-snapped to 1 or 2
+     device pixels depending on where it lands (uneven lines, person-reported);
+     border widths snap consistently. */
+  .tree-guide{position:absolute; pointer-events:none; border:0 solid color-mix(in srgb, var(--border-soft) 75%, var(--bg-panel));}
   /* Only the cross axis is zeroed: a .v segment spanning top:0/bottom:0
      needs height:auto to stretch (an explicit height:0 here once silently
      collapsed every rail/stem/lower half, person-reported). */
-  .tree-guide.v{width:0; border-left-width:2px; margin-left:-1px;}
-  .tree-guide.h{height:0; border-top-width:2px; top:50%; margin-top:-1px;}
-  .tree-guide.on{border-color:var(--accent); z-index:1;}
+  .tree-guide.v{width:0; border-left-width:1px;}
+  .tree-guide.on{border-color:var(--accent); border-left-width:1.5px; margin-left:-.25px; z-index:1;}
   /* Ancestors of the active row (file + parent filters) show their name in
      the same accent as the highlighted path lines (person-requested) — the
      path reads from the names too, not just the lines. Overrides the
@@ -888,13 +887,12 @@
      particular row has a button in it, so the icon never shifts sideways
      between rows. Toggles the node's real children — see renderNode. Rotates
      via a transform, not a different glyph, so collapse/expand reads as one
-     smooth flip. The slot is only as wide as the visible glyph (10px) and
+     smooth flip. The slot is its own 14px column (design polish B4) and
      pulls the next item 3px closer: a 16px slot plus the row gap left a
-     wide blank between chevron and swatch, and the elbow into a row
-     without a chevron had to cross all of it (person-reported). The 16px
+     wide blank between chevron and swatch (person-reported). The 16px
      button overflows the slot so the hit target stays the same size;
-     decorateTreeGuides' geometry (TREE_CHEVRON_*) follows these numbers. */
-  .tree-chevron-slot{flex:0 0 auto; width:10px; height:16px; margin-right:-3px; display:flex; align-items:center; justify-content:center;}
+     decorateTreeGuides' geometry (TREE_CHEVRON_CENTER) follows these numbers. */
+  .tree-chevron-slot{flex:0 0 auto; width:14px; height:16px; margin-right:-3px; display:flex; align-items:center; justify-content:center;}
   .tree-chevron{
     flex:0 0 auto; width:16px; height:16px; margin:0; padding:0;
     border:none; background:none; cursor:pointer; display:flex; align-items:center; justify-content:center;
@@ -938,13 +936,6 @@
   .tree-label.tree-label-time{display:flex; align-items:baseline; gap:.3em;}
   .tree-label-time .tl-range{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .tree-label-time .tl-dur{flex:none; white-space:nowrap;}
-  /* Long plain labels are cut in the MIDDLE: the head shrinks with an
-     ellipsis, the last few characters (.tl-tail) always stay visible, since
-     the end is what tells similar nodes apart. white-space:pre keeps the
-     blank at the split point. */
-  .tree-label.tree-label-mid{display:flex; white-space:pre;}
-  .tree-label-mid .tl-head{flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:pre;}
-  .tree-label-mid .tl-tail{flex:none; white-space:pre;}
   /* Inverted (NOT) nodes: small red badge before the label. */
   .tree-not-badge{
     flex:0 0 auto; font-family:var(--font-mono); font-size:8.5px; font-weight:700; letter-spacing:.04em;
@@ -1017,6 +1008,9 @@
      absolutely positioned delete button, so hover never showed it). The compact and phone layouts
      keep the buttons in flow (display:contents), their touch targets are bigger. */
   .tree-actions{display:contents;}
+  /* The hover icons replace the count instead of overlapping it (design polish B4). */
+  body:not(.layout-compact):not(.layout-phone) .tree-row:hover:has(.tree-actions > *) .tree-count,
+  body:not(.layout-compact):not(.layout-phone) .tree-row:has(.tree-actions:focus-within) .tree-count{visibility:hidden;}
   .tree-row{--tree-row-tint:transparent;}
   .tree-row:hover, .tree-row.ctx-target{--tree-row-tint:var(--bg-elevated);}
   .tree-row.active, .tree-row.multi-selected, .tree-row.drag-over{--tree-row-tint:var(--accent-soft);}
@@ -22538,7 +22532,7 @@ function nodeIconHTML(node) {
     : node.filterType === "or" ? ICON_OR
     : node.filterType === "link" ? ICON_LINK
     : (node.filterType === "context" || node.filterType === "countContext") ? ICON_CONTEXT
-    : node.filterType === "level" ? ICON_LEVEL
+    : node.filterType === "level" ? ICON_FILTER
     : node.filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : node.filterType === "notes" ? ICON_NOTE
     : node.filterType === "sources" ? ICON_FILES_SEPARATE
@@ -23129,7 +23123,7 @@ function ghostIconFor(filterType) {
     : filterType === "or" ? ICON_OR
     : filterType === "link" ? ICON_LINK
     : (filterType === "context" || filterType === "countContext") ? ICON_CONTEXT
-    : filterType === "level" ? ICON_LEVEL
+    : filterType === "level" ? ICON_FILTER
     : filterType === "bookmarks" ? ICON_BOOKMARK_FILLED
     : ICON_CLOCK;
 }
@@ -23372,9 +23366,6 @@ function startRenameNode(nodeId) {
 // auto-derived node.name for DISPLAY only — node.name itself is untouched,
 // so anything that needs the actual pattern (Edit dialog, library save
 // default, etc.) still reads it directly.
-// Middle-ellipsis labels (see .tree-label-mid): only labels longer than the
-// minimum are split, the tail is the part that always stays visible.
-const TREE_LABEL_MID_MIN = 24, TREE_LABEL_TAIL = 10;
 // Node id whose context menu is open (outlined via .ctx-target); null otherwise.
 let treeCtxTargetId = null;
 function setTreeCtxTarget(id) {
@@ -23388,19 +23379,14 @@ function nodeDisplayName(node) {
 }
 
 // Horizontal indent per tree level (Files & Filters). Kept tight since the
-// connector lines (decorateTreeGuides) carry the hierarchy: 10px puts a
-// child's chevron just right of its parent's rail, with a short elbow
-// between them (was 18px before the lines, person-reported as wasted space).
-const TREE_INDENT_STEP = 10;
-// Chevron column geometry, mirroring .tree-chevron-slot's CSS: the slot's
-// center (where a parent's rail runs), where the visible chevron glyph
-// starts, and where the next item (swatch/icon) starts, all relative to the
-// row's paddingLeft. An elbow stops TREE_ELBOW_GAP short of whichever comes
-// first, so it never touches the chevron or the swatch (person-reported).
-const TREE_CHEVRON_CENTER = 5;
-const TREE_CHEVRON_GLYPH_START = 2;
-const TREE_CHEVRON_END = 14;
-const TREE_ELBOW_GAP = 2;
+// connector lines (decorateTreeGuides) carry the hierarchy: 18px puts a
+// child's chevron column one step right of its parent's rail (design polish
+// B4; the rails have no horizontal stubs any more).
+const TREE_INDENT_STEP = 18;
+// Chevron column geometry, mirroring .tree-chevron-slot's CSS: the slot is
+// 14px wide and a parent's rail runs at its center, relative to the row's
+// paddingLeft.
+const TREE_CHEVRON_CENTER = 7;
 
 // Grayed placeholder row for a file still waiting its turn in a multi-file
 // load (see createQueuedFileNode/loadFileDescriptors) — visually mirrors
@@ -23658,16 +23644,6 @@ function renderNode(id, depth, opts) {
         dur.textContent = name.slice(durAt + 3);
         label.appendChild(dur);
       } else label.textContent = name;
-    } else if (displayName.length > TREE_LABEL_MID_MIN) {
-      // Middle ellipsis: head shrinks, the last TREE_LABEL_TAIL characters stay.
-      label.classList.add("tree-label-mid");
-      const head = document.createElement("span");
-      head.className = "tl-head";
-      head.textContent = displayName.slice(0, -TREE_LABEL_TAIL);
-      const tail = document.createElement("span");
-      tail.className = "tl-tail";
-      tail.textContent = displayName.slice(-TREE_LABEL_TAIL);
-      label.append(head, tail);
     } else label.textContent = displayName;
   }
   label.title = (node.inverted ? "Inverted (NOT): " : "") + nodeDisplayName(node) +
@@ -23948,18 +23924,13 @@ function decorateTreeGuides(rootWrap) {
     if (link) {
       addGuide(row, "v", link.topOn, { left: link.x + "px", top: "0", height: "50%" });
       if (link.bottomOn !== null) addGuide(row, "v", link.bottomOn, { left: link.x + "px", top: "50%", bottom: "0" });
-      // Elbow ends just before the chevron when there is one, else crosses
-      // the empty chevron slot up to just before the swatch/icon.
-      const pad = parseFloat(row.style.paddingLeft) || 0;
-      const end = pad - TREE_ELBOW_GAP + (row.querySelector(".tree-chevron") ? TREE_CHEVRON_GLYPH_START : TREE_CHEVRON_END);
-      addGuide(row, "h", link.elbowOn, { left: (link.x - 1) + "px", width: Math.max(0, end - link.x + 1) + "px" });
     }
     const kids = [...wrap.children].slice(1).filter(rowOf);
     if (!kids.length) return;
     const x = (parseFloat(row.style.paddingLeft) || 0) + TREE_CHEVRON_CENTER;
     const activeIdx = kids.findIndex(k => onPath.has(k));
     // Stem from below the parent's chevron down to the first child.
-    addGuide(row, "v", activeIdx >= 0, { left: x + "px", top: "calc(50% + 5px)", bottom: "0" });
+    addGuide(row, "v", activeIdx >= 0, { left: x + "px", top: "calc(50% + 7px)", bottom: "0" });
     const childRails = link && link.bottomOn !== null ? [...rails, { x: link.x, on: link.bottomOn }] : rails;
     kids.forEach((k, i) => {
       const last = i === kids.length - 1;
@@ -23967,7 +23938,6 @@ function decorateTreeGuides(rootWrap) {
         x,
         topOn: activeIdx >= i,
         bottomOn: last ? null : activeIdx > i,
-        elbowOn: activeIdx === i,
       });
     });
   })(rootWrap, [], null);

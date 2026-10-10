@@ -45,7 +45,7 @@ await withApp(async (w, d, T) => {
   assert(fileLabels().join(",") === "Nested.log,Root.log", "...and the subfolder's own files by basename, got " + fileLabels().join(","));
   assert(box().querySelector(".tree-dir-row").querySelector(".tree-chevron").classList.contains("expanded"), "chevron flips to expanded");
   const nestedRow = [...box().querySelectorAll(".folder-watch-file")].find(r => r.textContent.includes("Nested.log"));
-  assert(nestedRow.classList.contains("in-tree") && nestedRow.querySelector(".tree-guide.h"), "a nested listed file gets an elbow line into its folder");
+  assert(nestedRow.classList.contains("in-tree") && nestedRow.querySelector(".tree-guide.v") && !nestedRow.querySelector(".tree-guide.h"), "a nested listed file gets its folder's rail (no horizontal stub)");
   assert(parseFloat(nestedRow.style.paddingLeft) > parseFloat(box().querySelector(".tree-dir-row").style.paddingLeft), "and sits one level deeper than its folder row");
 
   fireDblClick(nestedRow, w);

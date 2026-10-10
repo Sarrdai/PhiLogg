@@ -43,6 +43,6 @@ await withApp(async (w, d, T) => {
   assert(/--hairline/.test(bd(".log-row", "border-bottom")), "log row separator");
   assert(/--hairline/.test(bd("#sidebarResizer", "border-right")), "sidebar edge");
   assert(/--hairline/.test(bd(".ctx-sep", "background")), "menu separator");
-  assert(/--hairline/.test(bd(".tree-guide", "border")), "tree guide color");
+  assert(/--border-soft/.test(bd(".tree-guide", "border")), "tree guide color (softer than --hairline since P7)");
   assert(/--border\b(?!-)/.test(bd(".seg-toggle", "border")), "segmented control outline keeps --border");
 });
