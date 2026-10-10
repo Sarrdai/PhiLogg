@@ -64,6 +64,14 @@ filter funnel, as drawn in the mockup's C2) instead of the "L".
   and `color-mix()` derived from existing tokens, never literal colors in
   rules, so every theme and custom theme keeps working.
 
+- **Learned in P1–P6** (put these into every brief):
+  - `tools/log-sim/screenshot.js` has `--scale <n>` and `--hover <selector>`.
+  - Some tests parse the per-theme `:root[data-theme="…"]{…}` blocks textually, so new theme overrides go inside the existing `light` / `catppuccin-latte` blocks, never into a combined top-level selector.
+  - `tests/groups/354-homepage-site.js` probes the CSS comment `Version tag (PHILOGG_VERSION) as a pill`, so don't reword it.
+  - Tokens added so far: `--hairline` (P1), `--btn-hover` and `--bg-popover` (P4); popover rule and `.ctx-danger` (P6).
+  - Header separators are pseudo-elements on `#navHistoryGroup` / `#hdrHistory` (P5).
+  - The empty start screen can't be shot with `screenshot.js` today, because it requires a log file. P12 should add a way.
+
 ## Usage budget, pause and handover (binding)
 
 Follows `.claude/skills/orchestrate/usage-budget.md`, made concrete for
@@ -290,7 +298,7 @@ packages use its tokens.
 | P3 | Row tinting variant A, stripe, selection | B3 | 9 % | done | 4c063fc | 0.59→0.64 |
 | P4 | Toolbar button language, view tabs | C1 | 10 % | done | 835395f | 0.64→0.70 |
 | P5 | Header and brand mark | C2 | 6 % | done | 6ad1fdf | 0.70→0.74 |
-| P6 | Popover token, menus, segmented groups | D1, C4 | 8 % | done | see git log | 0.74→0.78 |
+| P6 | Popover token, menus, segmented groups | D1, C4 | 8 % | done | 89d1343 | 0.74→0.78 |
 | P7 | Filter tree | B4 | 9 % | open | | |
 | P8 | Selects and checkboxes | C3 | 8 % | open | | |
 | P9 | Number formats, extraction table | A3, E2 | 8 % | open | | |
