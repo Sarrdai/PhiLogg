@@ -52,7 +52,7 @@ questions at once with your recommended answer. Wait for the go.
 
 - Write the backlog entries and device checks on the round's branch (a
   `docs:` commit) so they are not lost if the round changes course.
-- Start the orchestrator with `create_session` (Sonnet, see `orchestrate`
+- Start the orchestrator with `create_session` (Opus, see `orchestrate`
   → "Model choice"; branch = the round's branch, title `Orchestrator
   Runde <X>`). Start prompt: the agreed
   package list with each package's findings and known diagnosis, the

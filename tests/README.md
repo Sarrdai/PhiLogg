@@ -241,13 +241,16 @@ throwaway test from scratch. When a session adds a feature:
      time-based (GROUP 266b).
    - Need a tail or folder tick? Call `w.tailTick()` / `w.folderScanTick()`
      yourself; the background polls never run in a test window.
-3. Run `npm test` and fix until green before delivering the feature. Look at
-   the "Slowest groups" list above the total too: a new group in it needs a
-   reason (a big generated log, say), not just an unlucky selector or a
-   sleep. GROUP 346 is slow on purpose: it runs every checked query
-   through jsdom's own slow selector engine as well, and a nested `run.js`. Before the final push run `SHARDS=8 npm test` once: more shards
-   than cores is the load that exposes the rules above being broken, and a
-   failure there is a bug in the test, not a flake to re-run.
+3. While working, run the new group and the existing groups that exercise
+   the changed code (`GROUP=a,b npm test`) until green. The full suite runs
+   once, before the final push: `SHARDS=8 npm test` (the `finish` skill;
+   in an orchestrated session the lead runs it, not the implementer). More
+   shards than cores is the load that exposes the rules above being broken,
+   and a failure there is a bug in the test, not a flake to re-run. Look at
+   its "Slowest groups" list too: a new group in it needs a reason (a big
+   generated log, say), not just an unlucky selector or a sleep. GROUP 346
+   is slow on purpose: it runs every checked query through jsdom's own slow
+   selector engine as well, and a nested `run.js`.
 4. If a session **removes or replaces** behavior an existing group tests
    (e.g. superseding a UI element, changing a function's semantics), update
    or delete that group's assertions in the same session — don't leave a

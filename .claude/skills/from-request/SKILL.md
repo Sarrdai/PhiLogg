@@ -5,6 +5,10 @@ description: Entry point for a new idea, feature or bug the user describes in th
 
 # From a new request to an implementation
 
+This session becomes the orchestrator: before step 1, check the model
+(`orchestrate` → "Model choice" → "Not on Opus?") and wait for the
+user's confirmation if it is not Opus.
+
 ## 1. Classify
 
 | Kind | Sign | Next |

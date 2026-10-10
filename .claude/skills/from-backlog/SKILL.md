@@ -5,6 +5,10 @@ description: Entry point for implementing one or more FEATURE_BACKLOG.md entries
 
 # From a backlog entry to an implementation
 
+This session becomes the orchestrator: before step 1, check the model
+(`orchestrate` → "Model choice" → "Not on Opus?") and wait for the
+user's confirmation if it is not Opus.
+
 The argument is one or more `Nr`s from `FEATURE_BACKLOG.md` (e.g.
 `/from-backlog 87` or `/from-backlog 45 86`).
 

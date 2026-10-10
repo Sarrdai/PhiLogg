@@ -46,8 +46,10 @@ of a session:
 
 - The subagent's prompt is the package start prompt below, with "Report
   back" replaced by: commit on the round's branch after `GROUP` tests of
-  the touched areas and a full `SHARDS=8` run, then report in the package
-  format.
+  the touched areas, then report in the package format. The full suite
+  is the orchestrator's: it runs the affected groups wider after each
+  package and one `SHARDS=8` run at the end of the round (`finish`), and
+  sends failures back to the package as a correction.
 - It shares the orchestrator's container and checkout: at most one
   subagent package at a time, and none while a package session pushes to
   the same branch — pull before starting the next one.
@@ -105,7 +107,7 @@ session-board entry current (orchestrate/session-board.md).
 
 ```
 [<package>] DONE | QUESTIONS | BLOCKED | PAUSED
-Commit <sha> on <branch>; <n> passed (SHARDS=8)
+Commit <sha> on <branch>; <n> passed (SHARDS=8; a subagent package: the GROUPs run)
 Changed: <one line per item>
 Open / questions: <numbered>
 ```
@@ -148,7 +150,7 @@ price. At the end of each round check `get_session` →
 
 - Above ~250k: start no new round. Hand over once no package is running
   (a running package would report to the old session ID).
-- Start the new orchestrator with `create_session` (Sonnet, see
+- Start the new orchestrator with `create_session` (Opus, see
   `orchestrate` → "Model choice"). Start prompt: your session ID as the
   one it continues (session board), open
   items (numbered, with source), decisions made (with mockup links),
