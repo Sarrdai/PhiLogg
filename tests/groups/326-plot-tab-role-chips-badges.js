@@ -121,7 +121,7 @@ await withApp(async (w, d, T) => {
   type("scatter");
   sel("#plotXSelect", -1);
   const xTitle = d.querySelector('#plotSvg .plot-axis-clickable[data-axis="x"]');
-  assert(xTitle && d.querySelector("#plotSvg .plot-axis-caret[data-axis=\"x\"]").textContent === "\u25be" && xTitle.textContent === "Time", "the X title is clickable, keeps its plain text, and has a caret");
+  assert(xTitle && !d.querySelector("#plotSvg .plot-axis-caret") && xTitle.textContent === "Time", "the X title is clickable, keeps its plain text, and has no caret");
   fireClick(xTitle, w);
   assert(menuOpen() && menu().textContent.includes("temperature [C]"), "axis menu lists the columns with units");
   pick("voltage");

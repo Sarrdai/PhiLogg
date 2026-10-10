@@ -73,6 +73,7 @@ filter funnel, as drawn in the mockup's C2) instead of the "L".
   - Tree guides: only vertical `.tree-guide.v` segments, `TREE_INDENT_STEP` 18, `TREE_CHEVRON_CENTER` 7, no middle-cut labels (P7).
   - Global `select` / `input[type="checkbox"]` rules (P8): restyle a select with `background-color` only (the chevron is a `background-image`); a hidden checkbox (e.g. `.settings-switch input`) must set its own width/height. `<option>` text can't be styled per span.
   - Formatters (P9): `formatCount` (de-DE grouping), `formatAxisNumber(v, asMs)` (compact SI / durations, axis labels only), `formatPlotValue` (exact, tooltips and stats), `plotColIsMs(ci)`. A `t (ms)` X axis is drawn as clock time (`plotXIsClock`), not as a duration.
+  - Plot (P10): `niceTimeTicks(lo, hi, target, base)` for clock/ms axes, `.plot-grid-line.v` dashed, `area` mark op for single-series lines, no `plotAxisCaret` any more.
   - The empty start screen can't be shot with `screenshot.js` today, because it requires a log file. P12 should add a way.
 
 ## Usage budget, pause and handover (binding)
@@ -305,7 +306,7 @@ packages use its tokens.
 | P7 | Filter tree | B4 | 9 % | done | f348c52 | 0.00→0.07 |
 | P8 | Selects and checkboxes | C3 | 8 % | done | 3ebe1eb | 0.07→0.13 |
 | P9 | Number formats, extraction table | A3, E2 | 8 % | done | 48f9dba | 0.13→0.21 |
-| P10 | Plot axes and grid | E3 | 10 % | open | | |
+| P10 | Plot axes and grid | E3 | 10 % | done | (this commit) | 0.21→0.27 |
 | P11 | Minimap and stat line | E1 | 10 % | open | | |
 | P12 | Detail empty state, start screen | E4, E5 | 7 % | open | | |
 | P13 | README pictures, `finish`, archive this file | — | 6 % | open | | |
@@ -335,3 +336,4 @@ rules.
 | 2026-10-10T11:19Z | continuation 1 (after P7) | 0.07 | 0.74 | 2026-10-10T15:50Z |
 | 2026-10-10T11:58Z | continuation 1 (after P8) | 0.13 | 0.75 | 2026-10-10T15:50Z |
 | 2026-10-10T12:21Z | continuation 1 (after P9) | 0.21 | 0.76 | 2026-10-10T15:50Z |
+| 2026-10-10T12:57Z | continuation 1 (after P10) | 0.27 | 0.76 | 2026-10-10T15:50Z |
