@@ -1,0 +1,4 @@
+- **feat: MCP: Δt of link pairs per start-entry column, e.g. per axis (2026-10-10, person-requested)**
+  - An extraction filter under a link offers `Δt (ms)` (alias `dt`/`Δt`) as a value column: `get_value_stats` column `Δt` + `groupBy: "axis"` answers "which axis is slower?".
+  - `group_by` on such a filter adds Δt min/median/max per value; the link's Unknown-column hint names this route. `create_filter`/`create_link` refuse Δt as a column/key.
+  - **Tests**: GROUP llm-link-dt-stats. Docs: docs/llm-assistant.md.

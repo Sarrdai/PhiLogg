@@ -56761,17 +56761,22 @@ function llmExtractColumns(ex) {
     }
     anc = state.nodes[anc.parentId];
   }
+  // Under a link the entries are pairs: their Δt is a value column too (as in the
+  // Table's "Δt (ms)"), e.g. get_value_stats column "dt" groupBy "axis". Not a
+  // column of the log line, so it has no pattern/slot (create_filter, create_link refuse it).
+  if (ex.rows.length && ex.rows[0].entry.isPair) out.push({ index: null, name: "Δt (ms)", type: "int", from: null, dt: true, valueAt: i => String(ex.rows[i].entry.dtMs) });
   return out;
 }
+const LLM_DT_NAMES = new Set(["dt", "δt", "δt (ms)", "dt (ms)"]);
 // A column by number (nearest extraction only) or name (case-insensitive).
 function llmFindExtractColumn(cols, want) {
   const w = String(want).trim().toLowerCase();
-  return cols.find(c => c.index != null && String(c.index) === w) || cols.find(c => c.name.toLowerCase() === w);
+  return cols.find(c => c.index != null && String(c.index) === w) || cols.find(c => c.name.toLowerCase() === w) || (LLM_DT_NAMES.has(w) ? cols.find(c => c.dt) : undefined);
 }
 // The column listing of an "Unknown column" error: names, inherited ones
 // marked with the filter they come from.
 function llmColumnLabels(cols) { return cols.map(c => c.name + (c.from ? " (from " + c.from + ")" : "")); }
-const llmPublicColumn = c => (c.index != null ? { index: c.index, name: c.name, type: c.type } : { name: c.name, type: c.type, from: c.from });
+const llmPublicColumn = c => (c.index != null ? { index: c.index, name: c.name, type: c.type } : c.from ? { name: c.name, type: c.type, from: c.from } : { name: c.name, type: c.type });
 
 // The one column resolver of group_by, get_value_stats (column, groupBy) and
 // create_filter (column): a node or pattern id → its entries, facet columns
@@ -56803,7 +56808,7 @@ function llmUnknownColumnError(ctx, want, hints) {
   const names = ctx.facetCols.map(c => c.key).concat(llmColumnLabels(ctx.xcols));
   let fix = "";
   if (hints && ctx.isPattern) fix = " Placeholder columns need an extraction: create_filter with patternId, then use the new node id.";
-  else if (hints && ctx.target.node && isLinkNode(ctx.target.node)) fix = " A link node has no extraction columns: create an extraction filter under the link (create_filter with parentId = the link node) and group that.";
+  else if (hints && ctx.target.node && isLinkNode(ctx.target.node)) fix = " A link node has no extraction columns: create an extraction filter under the link (create_filter with parentId = the link node) and group that — group_by there adds the Δt per value, and get_value_stats on it takes column \"Δt\" with groupBy.";
   return "Unknown column \"" + want + "\". Columns: " + names.join(", ") + "." + fix;
 }
 
@@ -57411,6 +57416,7 @@ function llmToolCreateFilter(args) {
       // this one placeholder fixed to the value.
       if (invert) return { error: "An extraction column can't be inverted (extraction filters have no invert) — drop invert, or use a facet column." };
       const col = found.col;
+      if (col.dt) return { error: "Δt is the time between a link's pair entries, not a column of the log line: it can't be filtered by value here. Use create_link's Δt condition instead." };
       const vals = ctx.ex.rows.map((r, i) => col.valueAt(i));
       const numeric = col.type === "int" || col.type === "float";
       const same = (a, b) => (numeric ? Number(a) === Number(b) && a !== "" : a === b);
@@ -57522,6 +57528,7 @@ function llmToolCreateLink(args) {
         const ex = !col && llmExtractRows(n);
         col = ex ? llmFindExtractColumn(llmExtractColumns(ex), k) : col;
       }
+      if (col && col.dt) return { error: "Δt is the time between a link's pair entries, not a key: key is a column or a wildcard pattern such as \"axis=[*:int]\"." };
       const refEntries = getEntries(ref.id), targetEntries = getEntries(target.id);
       if (!col) {
         const names = new Set();
@@ -57927,7 +57934,9 @@ function llmToolGroupBy(args) {
   const link = !!target.node && isLinkNode(target.node);
   // The reference side, as the Facets panel does (linkStartEntry): on a "before" link the
   // chronologically first entry of a pair is the match, not the reference.
-  const g = analysisGroupBy(target.entries, link ? e => valueOf(linkStartEntry(e)) : valueOf, link ? { dtOf: e => e.dtMs, unpaired: (target.node._linkUnmatched || []).map(linkStartEntry) } : {});
+  // Below a link the entries are pairs too (a pair carries its start's facet values): Δt per value.
+  const pairs = !link && target.entries.length > 0 && !!target.entries[0].isPair;
+  const g = analysisGroupBy(target.entries, link ? e => valueOf(linkStartEntry(e)) : valueOf, link ? { dtOf: e => e.dtMs, unpaired: (target.node._linkUnmatched || []).map(linkStartEntry) } : pairs ? { dtOf: e => e.dtMs } : {});
   const out = { nodeId: target.node ? target.node.id : String(nodeId), column: col.name, total: g.total, distinct: g.distinct, values: g.values.map(v => ({ ...v, value: v.value === "" ? "(empty)" : v.value })) };
   if (link) { out.byStartEntry = true; out.noEnd = (target.node._linkUnmatched || []).length; }
   if (g.others) out.others = g.others;
@@ -58239,7 +58248,7 @@ const LLM_TOOLS = [
   },
   {
     name: "get_value_stats",
-    description: "min/max/mean/p10/median/p90 of one extraction column of a node or message type (pattern id; its placeholders). The node's own pattern or the nearest one it inherits provides the numbered columns; columns of extraction filters further up the chain can be addressed by NAME only (listed as \"name (from nX)\" in the Unknown-column error; the nearest wins a name clash). column: 1-based placeholder number (of the nearest extraction) or column name. groupBy (a facet column such as thread or level, or an extraction column, resolved like group_by) adds groups: per group value rows, n, min, median, mean, p90, max (a non-numeric column: rows and top values), most rows first, at most 20 (others = the remaining group values). sources (2-8 of {nodeId, column, groupBy?}) instead of nodeId/column computes ONE statistic over several formats, e.g. the same duration logged in two message types: combined n/min/max/mean/p10/median/p90, perSource, and with groupBy the groups merged across sources by value; an entry in several sources counts once (duplicatesSkipped).",
+    description: "min/max/mean/p10/median/p90 of one extraction column of a node or message type (pattern id; its placeholders). The node's own pattern or the nearest one it inherits provides the numbered columns; columns of extraction filters further up the chain can be addressed by NAME only (listed as \"name (from nX)\" in the Unknown-column error; the nearest wins a name clash). column: 1-based placeholder number (of the nearest extraction) or column name; on an extraction filter under a link also \"Δt\" (the pairs' Δt in ms), e.g. column \"Δt\" groupBy \"axis\" = which axis is slower. groupBy (a facet column such as thread or level, or an extraction column, resolved like group_by) adds groups: per group value rows, n, min, median, mean, p90, max (a non-numeric column: rows and top values), most rows first, at most 20 (others = the remaining group values). sources (2-8 of {nodeId, column, groupBy?}) instead of nodeId/column computes ONE statistic over several formats, e.g. the same duration logged in two message types: combined n/min/max/mean/p10/median/p90, perSource, and with groupBy the groups merged across sources by value; an entry in several sources counts once (duplicatesSkipped).",
     parameters: { type: "object", properties: {
       nodeId: { type: "string", description: "Node or pattern id (not with sources)" },
       column: { type: "string", description: "1-based placeholder number (nearest extraction) or column name (also those of extraction filters above), default 1" },
@@ -58342,7 +58351,7 @@ const LLM_TOOLS = [
   },
   {
     name: "group_by",
-    description: "Distribution of a node's entries over one column (thread, location, method, level, a format column or an extraction column — of the node's own/nearest extraction by number or name, of ancestor extractions by name, of a pattern id's placeholders): count and levels per value, at most 20 values. On a link node it groups the pairs by their START entry's value and adds, per value, entries without end (noEnd) and the Δt min/median/max.",
+    description: "Distribution of a node's entries over one column (thread, location, method, level, a format column or an extraction column — of the node's own/nearest extraction by number or name, of ancestor extractions by name, of a pattern id's placeholders): count and levels per value, at most 20 values. On a link node it groups the pairs by their START entry's value and adds, per value, entries without end (noEnd) and the Δt min/median/max; an extraction filter under the link (its pattern reads either entry of a pair, e.g. axis) adds the Δt per value too.",
     parameters: { type: "object", properties: {
       nodeId: { type: "string", description: "Node or pattern id" },
       column: { type: "string", description: "Column key/name, or an extraction column's number (nearest extraction) or name (also columns of extraction filters above; for a pattern id its placeholders)" },

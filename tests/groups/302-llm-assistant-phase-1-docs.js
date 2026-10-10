@@ -91,7 +91,7 @@ await withApp(async (w, d, T) => {
   assert(st.n === l.pairs && st.min <= st.p10 && st.p10 <= st.median && st.median <= st.p90 && st.p90 <= st.max, "value stats: ordered percentiles, got " + JSON.stringify(st));
   assert(llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "temperature" }).result.n === st.n, "column by name");
   const unknownCol = llmRun(w, "get_value_stats", { nodeId: vals.nodeId, column: "7" });
-  assert(unknownCol.error && unknownCol.result.columns.length === 1, "unknown column → error + the column list");
+  assert(unknownCol.error && unknownCol.result.columns.map(c => c.name).join() === "temperature,Δt (ms)", "unknown column → error + the column list (under a link with Δt)");
   assert(llmRun(w, "get_value_stats", { nodeId: reached.nodeId }).error.includes("no extraction pattern"), "stats need an extraction");
   const sv = llmRun(w, "show_view", { nodeId: vals.nodeId, view: "plot", plot: { type: "line", x: "time", y: "1" } });
   assert(!sv.error && T.fhActiveTab === "plot" && T.state.activeId === vals.nodeId, "show_view opens the plot on the node");
