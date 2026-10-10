@@ -309,7 +309,7 @@ packages use its tokens.
 | P9 | Number formats, extraction table | A3, E2 | 8 % | done | 48f9dba | 0.13→0.21 |
 | P10 | Plot axes and grid | E3 | 10 % | done | 262b6c6 | 0.21→0.27 |
 | P11 | Minimap and stat line | E1 | 10 % | done | ccd5f75 | 0.27→0.38 |
-| P12 | Detail empty state, start screen | E4, E5 | 7 % | done | (this commit) | 0.38→0.49 |
+| P12 | Detail empty state, start screen | E4, E5 | 7 % | done | e56da47 | 0.38→0.49 |
 | P13 | README pictures, `finish`, archive this file | — | 6 % | open | | |
 
 Status values: `open`, `running`, `done`, `wip` (committed half-done,
