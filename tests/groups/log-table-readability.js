@@ -48,7 +48,7 @@ await withApp(async (w, d, T) => {
 await withApp(async (w, d, T) => {
   section("log-table-readability b. Default widths, selected row, current find hit, tall rows");
   assert(T.state.columnWidths.location === 190 && T.state.columnWidths.method === 110 && T.state.columnWidths.delta === 56, "Message-friendly default widths");
-  assert(/\.log-row\.selected\{box-shadow:inset 3px 0 0 var\(--accent\)/.test(PAGE_CSS), "selected row: 3px accent bar");
+  assert(/\.log-row\.selected\{box-shadow:inset 0 0 0 1px color-mix\(in srgb, var\(--accent\) 55%, transparent\)/.test(PAGE_CSS), "selected row: 1px accent outline (no 3px bar since design polish P3)");
   assert(/\.log-row\.selected, \.log-row\.selected:hover\{background-image:linear-gradient\(var\(--selected-row-tint\)/.test(PAGE_CSS), "selected row: accent tint that survives hover");
   assert(/\.log-row\.selected mark\.find-match-mark\{\s*background:var\(--accent\); color:var\(--accent-on\)/.test(PAGE_CSS), "current find hit: solid accent fill with --accent-on text");
   assert(/mark\.find-match-mark\{[^}]*box-shadow:inset 0 -2px 0 var\(--accent\)/.test(PAGE_CSS), "other find hits: underline, not the filter mark's outline");

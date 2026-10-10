@@ -137,13 +137,13 @@ await withApp(async (w, d, T) => {
   const counts = w.getLevelCounts(f.id);
   segs.forEach(s => {
     const lvl = s.dataset.level;
-    const text = lvl === "OTHER" ? "Other" : lvl.charAt(0);
-    assert(s.textContent === text + " " + (counts[lvl] || 0).toLocaleString("de-DE"), lvl + " segment reads '<letter> <count>' (Other spelled out), got " + s.textContent);
+    const text = lvl === "OTHER" ? "Other " : "";
+    assert(s.textContent === text + (counts[lvl] || 0).toLocaleString("de-DE"), lvl + " segment reads '<count>' (Other spelled out), got " + s.textContent);
   });
   const fatal = f.entries.filter(e => /^FATAL/i.test(e.level)).length;
   assert(fatal > 0, "sanity: the simulated file has FATAL lines");
   const fs = segs.find(s => s.dataset.level === "FATAL");
-  assert(fs && fs.textContent === "F " + fatal.toLocaleString("de-DE"), "FATAL has its own F segment with its own count, got " + (fs && fs.textContent));
+  assert(fs && fs.textContent === fatal.toLocaleString("de-DE"), "FATAL has its own segment with its own count, got " + (fs && fs.textContent));
   const e = segs.find(s => s.dataset.level === "ERROR");
   assert(e.title === "Show/hide Error in this file's view" && !/incl\./.test(e.title), "ERROR's tooltip says show/hide and no longer mentions folded FATAL lines, got " + e.title);
   assert(segs.findIndex(s => s.dataset.level === "FATAL") < segs.findIndex(s => s.dataset.level === "ERROR"), "FATAL comes before ERROR");
@@ -155,8 +155,8 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#filterInput").placeholder === "Text contains… or a pattern with [*:float]", "filter input placeholder is English");
   const ph = d.querySelector("#detailPlaceholder");
   const desk = ph.querySelector(".dp-desktop"), touch = ph.querySelector(".dp-touch");
-  assert(touch.textContent === "Tap a row to see its full message here.", "touch text as specified");
-  assert(/^Select a log entry/.test(desk.textContent), "desktop text unchanged");
+  assert(touch.textContent === "Tap a row to see its full message", "touch text as specified");
+  assert(desk.textContent === "Select a row to see its full message", "desktop text as specified (P12)");
   assert(w.getComputedStyle(touch).display === "none" && w.getComputedStyle(desk).display !== "none", "desktop shows the desktop text");
   thSetWidth(w, 800);
   assert(w.getComputedStyle(touch).display !== "none" && w.getComputedStyle(desk).display === "none", "tablet shows the touch text");

@@ -62,7 +62,7 @@ if (groupSelected()) {
     // Row separators (person-requested 2026-10-01): Filtered text rows get the
     // log view's separator line as a zero-specificity inset shadow (no border,
     // which would eat 1px of TEXT_ROW_HEIGHT); the Context editor lines don't.
-    assert(/:where\(\.log-row\.text-row\)\{box-shadow:inset 0 -1px 0 var\(--border-soft\);\}/.test(html), "Filtered text rows: separator as a :where() inset shadow");
+    assert(/:where\(\.log-row\.text-row\)\{box-shadow:inset 0 -1px 0 var\(--hairline\);\}/.test(html), "Filtered text rows: separator as a :where() inset shadow");
     assert(/\.log-row\.text-row\{[^}]*border-bottom:none/.test(html), "Filtered text rows: no border (keeps the 19px line grid)");
     assert(!/\.itv-line[^{]*\{[^}]*(border-bottom|box-shadow:inset 0 -1px)/.test(html), "Context editor lines: no separator");
     // Toolbar parity: both toolbar rows have the same fixed height.

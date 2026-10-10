@@ -34,7 +34,7 @@ await withApp(async (w, d, T) => {
   assert(btn.querySelectorAll(".add-badge").length === 1, "exactly one badge");
   const badge = btn.querySelector(".add-badge");
   assert(badge.querySelector("svg path") && badge.querySelector("svg").getAttribute("viewBox") === "0 0 8 8", "badge holds the 8x8 plus glyph");
-  assert(btn.classList.contains("row-action-btn") && w.getComputedStyle(btn).borderRadius === "50%", "button is a round row-action circle");
+  assert(btn.classList.contains("row-action-btn") && !btn.classList.contains("level-btn"), "button is a ghost row-action button, not a level circle (P4)");
   const lbl = btn.querySelector(".row-action-label");
   assert(lbl && lbl.querySelector(".hint-name").textContent === "Add level filter" && w.getComputedStyle(lbl).position === "absolute", "floating label 'Add level filter' is absolutely positioned");
   assert(btn.title === "Add level filter", "tooltip stays 'Add level filter'");
@@ -61,7 +61,7 @@ await withApp(async (w, d, T) => {
   const row = d.querySelector('.tree-row[data-node-id="' + lvl.id + '"]');
   assert(row, "level node has a tree row");
   const icon = row.querySelector(".tree-icon");
-  assert(icon.querySelector('svg.icon use[href="#i-level"]'), "tree row draws the level icon");
+  assert(icon.querySelector('svg.icon use[href="#i-filter"]'), "tree row draws the regular filter icon (design polish P7)");
   assert(!row.querySelector(".add-badge"), "no badge on the tree node");
   // Colors come from tokens, not currentColor: an active row's accent tint must not reach the dots.
   assert(!/currentColor/i.test(d.querySelector("#i-level").innerHTML), "symbol never uses currentColor");
@@ -71,5 +71,5 @@ await withApp(async (w, d, T) => {
   section("level-icon-dots d. The library icon grid entry and the ghost icon use the same glyph");
   const lib = w.libraryIconSvg("level");
   assert(lib.includes("#i-level") && !lib.includes("level-add-badge"), "library 'level' icon is the shared level icon (no badge), got " + lib);
-  assert(w.ghostIconFor("level").includes("#i-level"), "ghost level node uses it too");
+  assert(w.ghostIconFor("level").includes("#i-filter"), "ghost level node uses it too");
 });

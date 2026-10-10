@@ -13,7 +13,7 @@
    cursor-only), and renderMainView shows #emptyState with texts built in JS:
    `"<name>" is not loaded` (+ the keys that load it) while the cursor rests
    on an unloaded entry, `No file selected` when files are open but none is
-   selected, the original "No log file loaded yet" otherwise. Everything that
+   selected, the original "Drop log files or a folder here" otherwise. Everything that
    reads state.activeId while it is null must stay a no-op (343f).
    ============================================================ */
 group(343);
@@ -154,7 +154,7 @@ if (groupSelected()) {
     const F = n => w.unloadedNavId("folder", folder.id, n);
     const key = (k, o) => fireKeydown(d, w, k, o);
     const fRow = name => [...d.querySelectorAll("#folderWatchList .folder-watch-file")].find(r => r.querySelector(".folder-watch-file-name").textContent === name);
-    assert(empty(d).h === "No log file loaded yet" && isVisible(empty(d).el, w), "sanity: nothing open, nothing selected -> the original hint");
+    assert(empty(d).h === "Drop log files or a folder here" && isVisible(empty(d).el, w), "sanity: nothing open, nothing selected -> the original hint");
     fireDblClick(fRow("One.log"), w);
     const recOne = folder.files.find(r => r.name === "One.log");
     await waitFor(() => recOne.nodeId && T.state.nodes[recOne.nodeId] && typeof T.state.nodes[recOne.nodeId].loadFraction !== "number" && T.state.activeId === recOne.nodeId);
@@ -184,8 +184,8 @@ if (groupSelected()) {
   await withApp(async (w, d, T) => {
     const zip = await w.openZipSource(new w.File([zipBytes()], "logs.zip"), "logs.zip");
     const key = (k, o) => fireKeydown(d, w, k, o);
-    assert(empty(d).h === "No log file loaded yet" && /Drop one or more log files/.test(empty(d).p) && d.querySelector("#emptyState p b"),
-      "sanity: the original hint (with its <b> markup)");
+    assert(empty(d).h === "Drop log files or a folder here" && /Everything stays on this computer/.test(empty(d).p),
+      "sanity: the original hint ");
     key("ArrowDown", { altKey: true });
     assert(empty(d).h === '"a.log" is not loaded' && empty(d).p === ZIP_BODY && isVisible(empty(d).el, w),
       "no file open yet, cursor on an unloaded entry -> its placeholder, got " + JSON.stringify(empty(d).h));
@@ -198,7 +198,7 @@ if (groupSelected()) {
     // closing the last file: back to the original hint
     T.state.activeId = a.id; w.render();
     w.deleteFilterNodeWithUndo(a.id); w.render();
-    assert(T.state.rootIds.length === 0 && empty(d).h === "No log file loaded yet" && /Drop one or more log files/.test(empty(d).p) && d.querySelector("#emptyState p b"),
+    assert(T.state.rootIds.length === 0 && empty(d).h === "Drop log files or a folder here" && /Everything stays on this computer/.test(empty(d).p),
       "no files at all -> the original heading AND markup are restored, got " + JSON.stringify(empty(d).h));
     // selecting a file hides it again
     const f = await w.addFile("plain.log", simLog(9), () => {});

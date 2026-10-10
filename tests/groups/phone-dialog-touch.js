@@ -59,7 +59,7 @@ await withApp(async (w, d, T) => {
   assert(has(P + ".link-dialog-card .pill-toggle::before", "inset:-12px-6px", true), "link dialog toggles get a 44px hit area");
 
   section("phone-dialog-touch c. Desktop base sizes unchanged, everything tier-scoped");
-  assert(has(".ctx-item", "padding:8px10px") && !rules.some(r => !r.coarse && r.sels.includes(".ctx-item") && r.css.includes("min-height")), "desktop .ctx-item has no min-height");
+  assert(has(".ctx-item", "padding:0px10px") && has(".ctx-item", "min-height:30px") && !rules.some(r => !r.coarse && r.sels.includes(".ctx-item") && r.css.includes("min-height:44px")), "desktop .ctx-item keeps its 30px menu height (design polish P6), no 44px touch size");
   assert(has(".stepper", "height:30px") && has(".link-dialog-card", "width:min(400px,88%)"), "desktop stepper 30px, card width unchanged");
   assert(has("#filterPopup", "width:min(620px,92%)"), "desktop filter popup width unchanged");
   const phoneRules = rules.filter(r => /^body\.layout-phone /.test(r.sels[0]) && !r.sels.some(s => /layout-compact/.test(s)) && /link-dialog-card|ctx-item|lib-it|filterPopup|filterInput|stepper|time-range-clear/.test(r.sels.join()));

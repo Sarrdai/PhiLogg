@@ -4,9 +4,9 @@
 /* ============================================================
    GROUP tree-labels-i4 — Round I, package I4 (filter tree)
    Origin: 2026-10-09 (desktop usability test, person-decided mockup I4).
-   1. Long labels are cut in the MIDDLE (head shrinks, the tail stays),
-      the full text is in the tooltip; the hover buttons no longer reserve
-      width next to the count.
+   1. Long labels: the full text is in the tooltip (cut at the END with an
+      ellipsis since design polish B4, was a middle cut); the hover buttons
+      no longer reserve width next to the count.
    2. Inverted nodes get a red "NOT" badge before the label (no "¬" prefix).
    3. Time-window nodes: one line "08:00:09–08:00:11 · 1.9s", milliseconds
       only in the tooltip (supersedes the old two-line GROUP time-label-wrap).
@@ -23,7 +23,7 @@ group("tree-labels-i4");
 const [TL4_SIM] = LOGSIM.generateToStrings({ entries: 200, seed: 7 });
 
 await withApp(async (w, d, T) => {
-  section("tree-labels-i4 a. Middle ellipsis: head/tail split, textContent and tooltip unchanged, short labels plain");
+  section("tree-labels-i4 a. Long labels: plain text (end ellipsis via CSS), tooltip has the full name");
   const f = await w.addFile("a.log", TL4_SIM.text, () => {});
   T.state.activeId = f.id;
   const long = w.createFilterNode(f.id, "text", "Database connection pool exhausted while waiting for a free slot");
@@ -31,15 +31,11 @@ await withApp(async (w, d, T) => {
   w.render();
   const labelOf = n => d.querySelector(`.tree-row[data-node-id="${n.id}"] .tree-label`);
   const l = labelOf(long);
-  assert(l.classList.contains("tree-label-mid"), "long label is a middle-ellipsis label");
-  const head = l.querySelector(".tl-head"), tail = l.querySelector(".tl-tail");
-  assert(head && tail && tail.textContent.length >= 8 && l.textContent === w.nodeDisplayName(long), "head + tail, textContent equals the name: " + l.textContent);
+  assert(!l.classList.contains("tree-label-mid") && !l.querySelector(".tl-head") && l.textContent === w.nodeDisplayName(long), "long label is one plain text node: " + l.textContent);
   assert(l.title.includes(w.nodeDisplayName(long)), "tooltip carries the full text");
   const s = labelOf(short);
-  assert(!s.classList.contains("tree-label-mid") && !s.querySelector(".tl-head") && s.textContent === w.nodeDisplayName(short), "short label stays one plain text node");
+  assert(s.textContent === w.nodeDisplayName(short), "short label stays one plain text node");
   const css = [...d.querySelectorAll("style")].map(x => x.textContent).join("\n");
-  assert(/\.tree-label-mid \.tl-head\{[^}]*text-overflow:\s*ellipsis/.test(css) && /\.tree-label-mid \.tl-tail\{[^}]*flex:\s*none/.test(css), "CSS: head ellipsis, tail never shrinks");
-  assert(/\.tree-label-mid \.tl-head\{[^}]*white-space:\s*pre/.test(css), "CSS: white-space:pre keeps the blank at the split point");
   assert(/\.tree-actions\{[^}]*position:\s*absolute/.test(css), "CSS: the hover button group overlays the row instead of reserving width");
 });
 

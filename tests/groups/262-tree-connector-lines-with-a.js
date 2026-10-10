@@ -22,35 +22,34 @@ await withApp(async (w, d, T) => {
   const rowOf = n => d.querySelector('#tree .tree-row[data-node-id="' + n.id + '"]');
   const guides = n => [...rowOf(n).querySelectorAll(":scope > .tree-guide")];
   const on = n => guides(n).filter(g => g.classList.contains("on"));
-  // Elbows start 1px left of their rail (square corner), so match both.
   const at = (n, x) => guides(n).filter(g => g.style.left === x + "px" || g.style.left === (x - 1) + "px");
 
   assert(d.querySelector("#breadcrumbBar") === null && d.querySelector("#breadcrumb") === null, "the breadcrumb bar is removed");
 
+  // Geometry (design polish B4): TREE_INDENT_STEP 18, chevron center 7 =>
+  // the root's rail runs at x=15, A's children's rail at x=33.
   T.state.activeId = A1.id;
   w.render();
   assert(guides(f).length === 1 && on(f).length === 1, "the root row gets one stem, highlighted since the active node is below it");
-  assert(on(A).length === 3 && on(A).some(g => g.classList.contains("h")), "A (on the path) highlights its upper link half, its elbow and its own stem, got " + on(A).length);
-  assert(at(A, 13).some(g => g.style.top === "50%" && !g.classList.contains("on")), "A's lower link half toward sibling B stays unhighlighted (the path turns into A)");
-  assert(on(A1).length === 2 && at(A1, 23).filter(g => g.classList.contains("on")).length === 2, "the active row itself highlights its upper link half and its elbow at its parent's x (23px = 8 + TREE_INDENT_STEP + TREE_CHEVRON_CENTER)");
-  assert(at(A1, 13).length === 1 && !at(A1, 13)[0].classList.contains("on"), "A1 carries the root's pass-through rail (A has a later sibling), not highlighted");
+  assert(guides(f).concat(guides(A), guides(A1), guides(A2), guides(B)).every(g => !g.classList.contains("h")), "no horizontal stubs are drawn");
+  assert(on(A).length === 2, "A (on the path) highlights its upper link half and its own stem, got " + on(A).length);
+  assert(at(A, 15).some(g => g.style.top === "50%" && !g.classList.contains("on")), "A's lower link half toward sibling B stays unhighlighted (the path turns into A)");
+  assert(on(A1).length === 1 && at(A1, 33).filter(g => g.classList.contains("on")).length === 1, "the active row highlights its upper link half at its parent's x (33px = 8 + TREE_INDENT_STEP + TREE_CHEVRON_CENTER)");
+  assert(at(A1, 15).length === 1 && !at(A1, 15)[0].classList.contains("on"), "A1 carries the root's pass-through rail (A has a later sibling), not highlighted");
   assert(on(A2).length === 0 && on(B).length === 0, "rows off the path get no highlighted segment");
-  assert(at(A2, 23).length === 2, "the last child gets only an upper half + elbow (no line continues below it)");
+  assert(at(A2, 33).length === 1, "the last child gets only an upper half (no line continues below it)");
   assert(w.getComputedStyle(guides(f)[0]).pointerEvents === "none", "guides never intercept clicks on the row");
-  // Follow-up (person-reported): 1.5px filled boxes rendered at uneven
-  // thickness (pixel snapping of a fractional width) — lines are integer
-  // 2px borders now; and the multi-select outline no longer frames the
-  // active row, where it cut across the lines.
-  const vCs = w.getComputedStyle(at(A1, 23).find(g => g.classList.contains("v")));
-  const hCs = w.getComputedStyle(at(A1, 23).find(g => g.classList.contains("h")));
-  assert(vCs.borderLeftWidth === "2px", "vertical guides are a 2px left border, got " + vCs.borderLeftWidth);
-  assert(hCs.borderTopWidth === "2px", "elbows are a 2px top border, got " + hCs.borderTopWidth);
-  // Follow-up 2 (person-reported): a base height:0 on .tree-guide beat the
-  // top:0/bottom:0 stretch, collapsing every rail, stem and lower half.
-  const rail = at(A1, 13)[0];
+  // Lines are integer-width borders (pixel snapping of fractional filled
+  // boxes made them uneven, person-reported): 1px, the accent path 1.5px.
+  const vCs = w.getComputedStyle(at(A2, 33)[0]);
+  assert(vCs.borderLeftWidth === "1px", "vertical guides are a 1px left border, got " + vCs.borderLeftWidth);
+  const onCs = w.getComputedStyle(on(A1)[0]);
+  assert(/^1(\.5)?px$/.test(onCs.borderLeftWidth), "the accent path line is 1.5px (snapped), got " + onCs.borderLeftWidth);
+  // a base height:0 on .tree-guide once beat the top:0/bottom:0 stretch,
+  // collapsing every rail, stem and lower half.
+  const rail = at(A1, 15)[0];
   assert(rail.style.bottom === "0px" && w.getComputedStyle(rail).height !== "0px",
     "a full-span rail has no fixed height, so top:0/bottom:0 can stretch it, got " + w.getComputedStyle(rail).height);
-  assert(w.getComputedStyle(at(A1, 23).find(g => g.classList.contains("h"))).height === "0px", "elbows are still zero-height (just their border)");
   T.state.multiSelect = new Set([A1.id, A2.id]);
   w.render();
   assert(rowOf(A1).classList.contains("multi-selected") && ["", "none"].includes(w.getComputedStyle(rowOf(A1)).boxShadow),
@@ -71,18 +70,18 @@ await withApp(async (w, d, T) => {
   // Path through a later sibling: the root rail passes A's subtree highlighted.
   T.state.activeId = B.id;
   w.render();
-  assert(at(A1, 13).every(g => g.classList.contains("on")) && at(A2, 13).every(g => g.classList.contains("on")),
+  assert(at(A1, 15).every(g => g.classList.contains("on")) && at(A2, 15).every(g => g.classList.contains("on")),
     "with B active, the root rail running past A's children is highlighted");
-  assert(on(A).length === 2 && !on(A).some(g => g.classList.contains("h")), "A's vertical passes through highlighted but its elbow and stem are not");
-  assert(on(B).length === 2, "B highlights its upper half and elbow");
+  assert(on(A).length === 2, "A's vertical passes through highlighted but its stem is not");
+  assert(on(B).length === 1, "B highlights its upper half");
 
   // A collapsed parent draws no stem and its children no guides at all.
   A.collapsed = true;
   w.render();
-  assert(rowOf(A1) === null && guides(A).length === 3, "collapsed A: no children rendered, A has no stem (top, bottom, elbow only)");
+  assert(rowOf(A1) === null && guides(A).length === 2, "collapsed A: no children rendered, A has no stem (top and bottom link halves only)");
 
   // The whole tree is redrawn per render, so no guide ever doubles up.
   A.collapsed = false;
   w.render(); w.render();
-  assert(guides(A1).length === 4, "re-rendering doesn't accumulate guides (rail + upper/lower half + elbow), got " + guides(A1).length);
+  assert(guides(A1).length === 3, "re-rendering doesn't accumulate guides (rail + upper/lower half), got " + guides(A1).length);
 });

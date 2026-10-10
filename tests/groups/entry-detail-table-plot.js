@@ -150,6 +150,7 @@ await withApp(async (w, d, T) => {
 
   w.applyFhView("filter");
   assert(!isVisible(tabS, w) && !panel.classList.contains("lower-stats") && tabD.getAttribute("aria-selected") === "true", "Filtered: no Statistics tab, the panel shows Entry detail");
+  w.selectEntry(T.currentViewEntries[0].id); // without a selection the panel is only its bar (design-polish-p12)
   assert(isVisible(d.querySelector("#detailBody"), w) && !isVisible(body, w), "Entry detail body shown, stats body hidden");
   assert(w.localStorage.getItem("philogg-lower-tab") === "stats", "the selection is remembered, not reset");
   w.applyFhView("patterns");
@@ -160,6 +161,7 @@ await withApp(async (w, d, T) => {
   fireClick(tabF, w);
   assert(panel.classList.contains("lower-facets") && !panel.classList.contains("lower-stats") && w.localStorage.getItem("philogg-lower-tab") === "facets", "Facets selected on Table");
   fireClick(tabD, w);
+  w.selectEntry(T.extractRowsData[0].entry.id); // a row of this Table (an entry selected elsewhere shows as empty there)
   assert(!panel.classList.contains("lower-stats") && !panel.classList.contains("lower-facets") && isVisible(d.querySelector("#detailBody"), w) && w.localStorage.getItem("philogg-lower-tab") === "detail", "Entry detail selected on Table");
 
   section("entry-detail-table-plot i. the panel's own collapse applies to the Statistics tab");

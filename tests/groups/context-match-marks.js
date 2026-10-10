@@ -40,5 +40,5 @@ await withApp(async (w, d, T) => {
   section("context-match-marks b. selected match stacks both fills");
   assert(/ctx-match\.selected[^{]*\{\s*background-image:linear-gradient\(var\(--selected-row-tint\)[^;]*var\(--accent-soft\)/.test(css),
     "selected + match: selection tint over match tint");
-  assert(/\.log-row\.selected\{box-shadow:inset 3px 0 0/.test(css.replace(/\s+/g, " ").replace(/ ?\{ ?/g, "{")), "selected bar still defined");
+  assert(/\.log-row\.selected\{box-shadow:inset 0 0 0 1px/.test(css.replace(/\s+/g, " ").replace(/ ?\{ ?/g, "{")), "selected outline still defined");
 });

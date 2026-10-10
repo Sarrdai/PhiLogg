@@ -42,18 +42,19 @@ await withApp(async (w, d) => {
   // --- Problem 2 (follow-up, this session): .col-resize-handle gets the same
   // resting-visibility treatment as the three panel resizers above, since it
   // had NO background at all at rest (fully invisible until hover/drag). ---
+  // Superseded by design-polish-p1: the handle is now invisible at rest, the line is a ::before in --hairline.
   const colHandleRule = css.match(/\.col-resize-handle\{[^}]*\}/);
-  assert(colHandleRule && /background:[^;]*--border-hover/.test(colHandleRule[0]),
-    ".col-resize-handle now has a non-transparent resting background derived from --border-hover, got " + (colHandleRule && colHandleRule[0]));
+  assert(colHandleRule && !/background/.test(colHandleRule[0]),
+    ".col-resize-handle has no resting background (divider line is its ::before), got " + (colHandleRule && colHandleRule[0]));
 
   // --- Problem 2: sidebar/minimap seam now agrees on the same border token ---
   const minimapRule = css.match(/#timelineMinimap\{[^}]*\}/);
-  assert(minimapRule && minimapRule[0].includes("border-bottom:1px solid var(--border)") && !minimapRule[0].includes("border-bottom:1px solid var(--border-soft)"),
+  assert(minimapRule && minimapRule[0].includes("border-bottom:1px solid var(--hairline)") && !minimapRule[0].includes("border-bottom:1px solid var(--border-soft)"),
     "#timelineMinimap's border-bottom now uses --border (matching the sidebar/content seam's own token, wherever it currently lives), not --border-soft, got " + (minimapRule && minimapRule[0]));
   // #sidebar's own border-right moved to #sidebarResizer in a later session
   // (see Group 217) — #sidebar.collapsed keeps a fallback for when the
   // resizer is hidden, checked there instead.
   const sidebarResizerRule = css.match(/#sidebarResizer\{[^}]*\}/);
-  assert(sidebarResizerRule && sidebarResizerRule[0].includes("border-right:1px solid var(--border)"),
-    "sanity: the sidebar/content seam's border-right is still var(--border), now carried by #sidebarResizer, got " + (sidebarResizerRule && sidebarResizerRule[0]));
+  assert(sidebarResizerRule && sidebarResizerRule[0].includes("border-right:1px solid var(--hairline)"),
+    "sanity: the sidebar/content seam's border-right is still var(--hairline), now carried by #sidebarResizer, got " + (sidebarResizerRule && sidebarResizerRule[0]));
 });

@@ -4,7 +4,7 @@
 
 group(215);
 await withApp(async (w, d, T) => {
-  section("215. Toggle buttons (Notes/Multiline/Wrap/Columns/TextMatch/HighlightMatch/FilePaths/Pin): no button chrome, accent icon + status-bar LED");
+  section("215. Toggle buttons (Notes/Multiline/Wrap/Columns/TextMatch/HighlightMatch/FilePaths/Pin): ghost button, accent-soft fill when active");
 
   await w.addFile("a.log", makeLog(0, 5, { levels: ["ERROR", "INFO", "INFO", "INFO", "INFO"] }), () => {});
   w.render();
@@ -22,17 +22,11 @@ await withApp(async (w, d, T) => {
   // --- CSS: no chrome at rest/active, accent-strong icon color when active, status-bar bar ---
   const css = d.querySelector("style").textContent;
   const ruleFor = sel => { const m = css.match(new RegExp(sel.replace(/[.:]/g, "\\$&") + "\\{[^}]*\\}")); return m && m[0]; };
-  const base = ruleFor(".toolbar-icon-btn.icon-toggle");
-  assert(base && base.includes("background:none") && base.includes("border:none"), ".icon-toggle has no background/border at rest, got " + base);
-  const active = ruleFor(".toolbar-icon-btn.icon-toggle.active");
-  assert(active && active.includes("color:var(--accent-strong)") && active.includes("background:none"),
-    ".icon-toggle.active stays chrome-free but recolors the icon to --accent-strong, got " + active);
-  const hover = ruleFor(".toolbar-icon-btn.icon-toggle:hover");
-  assert(hover && !hover.includes("color"), ".icon-toggle:hover deliberately sets no color (avoids a hovered ACTIVE toggle losing its accent color), got " + hover);
-  const barRest = css.match(/\.toolbar-icon-btn\.icon-toggle::after\{[^}]*\}/);
-  assert(barRest && barRest[0].includes("background:transparent"), "the status-bar ::after is transparent at rest, got " + (barRest && barRest[0]));
-  assert(css.includes(".toolbar-icon-btn.icon-toggle.active::after{background:var(--accent-strong);}"),
-    "the status-bar ::after turns var(--accent-strong) once .active");
+  // P4 (design polish): ghost look, accent-soft fill when active, no status-bar LED any more.
+  assert(!/\.icon-toggle(\.active)?::after/.test(css), "no status-bar ::after rule remains");
+  const active = css.match(/\.toolbar-icon-btn\.active, \.toolbar-icon-btn\.active:hover\{[^}]*\}/);
+  assert(active && active[0].includes("var(--accent-soft)") && active[0].includes("color:var(--accent-strong)"),
+    "an active toggle is accent-soft with an accent-strong icon, got " + (active && active[0]));
 
   // --- Functional: click still toggles .active (unchanged click wiring) ---
   const notesBtn = d.querySelector(".toggle-notes");

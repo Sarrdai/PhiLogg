@@ -32,6 +32,7 @@ await withApp(async (w, d, T) => {
   assert(!d.querySelector("#btnFacets") && !d.querySelector("#facetResizer") && !d.querySelector("#facetPanel") && !d.querySelector("#facetPanelClose"), "no #btnFacets / #facetResizer / #facetPanel / close button");
   assert(!d.querySelector("#viewArea #facetPanelBody") && !d.querySelector("#viewArea .facet-section"), "#viewArea (and so the log's width) holds no facet panel");
   assert(!rules.some(r => /btnFacets|facetResizer|#facetPanel(?![A-Za-z])/.test(r.selectorText)), "no CSS left for the removed controls");
+  w.selectEntry(f.entries[0].id); // without a selection the panel is only its bar (design-polish-p12)
   assert(!isVisible(body, w) && isVisible(d.querySelector("#detailBody"), w), "Entry detail shows the detail body, not the facets");
 
   section("facets-bottom-tab b. the Facets tab shows the facet body instead of the detail content");

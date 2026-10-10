@@ -26,7 +26,7 @@ group("shortcut-dynamic-tooltips");
     assert(w.eval('shortcutLabel("exportView")') === "Ctrl+Shift+E", "shortcutLabel builds the combo text");
     rebind(d, w, "findInView", "k", { ctrlKey: true, altKey: true });
     assert(title("btnFindPhone") === "Find in view (Ctrl+Alt+K)", "rebinding updates #btnFindPhone, got " + title("btnFindPhone"));
-    assert(d.querySelector('[data-sc-text="{findInView}"]').textContent === "Ctrl+Alt+K", "the welcome text follows too");
+    assert([...d.querySelectorAll("#startKbds > span:first-child kbd")].map(k => k.textContent).join("+") === "Ctrl+Alt+K", "the start screen's kbd hints follow too");
     rebind(d, w, "toggleSidebar", "y", { ctrlKey: true });
     assert(/Ctrl\+Y/.test(title("sidebarToggle")), "sidebar toggle tooltip follows, got " + title("sidebarToggle"));
     rebind(d, w, "toggleDetail", "u", { ctrlKey: true });

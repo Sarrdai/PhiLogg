@@ -137,8 +137,8 @@ await withApp(async (w, d, T) => {
   T.state.activeId = soloFilter.id;
   w.render();
   const ovBars = [...d.querySelectorAll("#timelineMinimapSvg .minimap-ov-bar")];
-  assert(ovBars.length === 1, "exactly one overlay bar for the single matched entry, got " + ovBars.length);
-  const barX = parseFloat(ovBars[0].getAttribute("x"));
+  assert(ovBars.length === 1, "exactly one overlay path for the single matched entry, got " + ovBars.length);
+  const barX = parseFloat(/^M([\d.]+) /.exec(ovBars[0].getAttribute("d"))[1]); // one path per level, a sub-path per bucket
   const expectedBucket = Math.min(T.minimapBucketCount - 1, Math.floor((20 / 40) * T.minimapBucketCount));
   const expectedBarX = expectedBucket * (T.minimapWidth / T.minimapBucketCount);
   assert(Math.abs(barX - expectedBarX) < 0.5,

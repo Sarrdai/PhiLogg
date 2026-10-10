@@ -303,8 +303,8 @@ await withApp(async (w, d, T) => {
   fireClick(rcBtn(d), w);
   const { run, members, ref } = rcMediumRun(entries);
   const rowsBefore = T.currentViewEntries.length;
-  const meta = () => d.querySelector("#timelineMinimapMeta").textContent;
-  assert(new RegExp(" \u00b7 " + rowsBefore.toLocaleString("de-DE").replace(".", "\\.") + " rows \\(" + (entries.length - rowsBefore).toLocaleString("de-DE").replace(".", "\\.") + " folded\\)").test(meta()), "the stats line shows rows and folded count, got " + meta());
+  const meta = () => (d.querySelector("#timelineMinimapMeta .minimap-meta-repeat") || { textContent: "" }).textContent;
+  assert(new RegExp("^" + rowsBefore.toLocaleString("de-DE").replace(".", "\\.") + " rows \\(" + (entries.length - rowsBefore).toLocaleString("de-DE").replace(".", "\\.") + " folded\\)").test(meta()), "the stats line shows rows and folded count, got " + meta());
 
   // entry detail of a head
   w.selectEntry(run.head.id);

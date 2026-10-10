@@ -20,6 +20,13 @@ await withApp(async (w, d, T) => {
 
   const overlay = d.querySelector("#dropOverlay");
   assert(overlay.classList.contains("hidden"), "sanity: the overlay starts hidden");
+  // start screen (no file): the drop zone lights up instead of the full-window overlay (design-polish-p12)
+  w.philoggDropOverlay(true);
+  assert(d.querySelector("#emptyState").classList.contains("drag-over") && overlay.classList.contains("hidden"), "start screen: the wrapper lights the drop zone");
+  w.philoggDropOverlay(false);
+  assert(!d.querySelector("#emptyState").classList.contains("drag-over"), "...and clears it");
+  const f0 = await w.addFile("a.log", makeLog(0, 5), () => {});
+  T.state.activeId = f0.id; w.render();
   w.philoggDropOverlay(true);
   assert(!overlay.classList.contains("hidden"), "the wrapper can show the drop overlay");
   w.philoggDropOverlay(false);
