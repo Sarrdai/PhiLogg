@@ -2,4 +2,5 @@
   - New derived theme token `--hairline` (`--border-soft` mixed into `--bg-app`, 45% dark / 55% light) now colors every pure separator: row, panel, toolbar, table-cell, menu and tree-guide lines. `--border` stays for control outlines and dialog frames.
   - The log table's column-resize handles are invisible at rest; a centered 1px hairline appears, and hover/drag turns it into a 2px accent line.
   - P2: the level-bar counts use the UI font with optical centering and a thinner 1.5px ring (`3058` shows `3k`, not `3,0k`); the level badge is one shared, calmer 17px inline-flex badge with a 14% fill that sits on the row's center line.
-  - **Tests**: GROUPs design-polish-p1, design-polish-p2. Docs: docs/ui-standard.md, docs/ui-and-views.md.
+  - P3: log rows are no longer a wall of color: only WARN (6%) and ERROR/FATAL (7%) rows get a faint tint, every row has one flat 3px level stripe at the left edge (DEBUG fainter), and the selected row is an accent fill with a thin accent outline instead of a 3px bar.
+  - **Tests**: GROUPs design-polish-p1, -p2, -p3. Docs: docs/ui-standard.md, docs/ui-and-views.md.

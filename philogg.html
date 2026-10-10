@@ -24,7 +24,7 @@
     --accent-soft:rgba(79,199,195,.14);
     --accent-strong:#7fe0dc;
     --multi-select-fill:color-mix(in srgb, var(--accent) 24%, var(--bg-app));
-    --selected-row-tint:color-mix(in srgb, var(--accent) 16%, transparent);
+    --selected-row-tint:color-mix(in srgb, var(--accent) 16%, var(--bg-app));
     --level-error:#f16565;
     --level-error-soft:rgba(241,101,101,.14);
     --level-warn:#e8a94a;
@@ -2307,11 +2307,10 @@
     cursor:default;
   }
   .log-row:hover{background:var(--bg-elevated);}
-  /* The selected row (state.selectedId): a 3px accent bar on the left edge
-     plus a light accent tint (the tint is painted as a background-image
-     further down, after the level tints, so it also shows on an ERROR/WARN
-     row where a 1px outline was invisible). */
-  .log-row.selected{box-shadow:inset 3px 0 0 var(--accent);}
+  /* The selected row (state.selectedId): a calm accent fill (--selected-row-tint, painted as a
+     background-image further down, after the level tints) plus a thin inset accent outline. No
+     left bar: the 3px level stripe (.col-bar) stays the only marker at the row's left edge. */
+  .log-row.selected{box-shadow:inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent);}
   /* Ctrl/Shift-click multi-select (see handleLogRowClick): every member row
      gets the SAME full-width fill (--multi-select-fill, painted as a
      background-image gradient further down, after the level tints), no
@@ -2510,7 +2509,7 @@
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
   .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--hairline); flex:0 0 auto; }
-  .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
+  .col-bar{width:3px; justify-self:start; align-self:stretch; padding:0 !important; margin:0; border-radius:0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
      it, a grid track collapsed to 0px (hidden column, or just dragged very
      narrow — see "Log view column visibility / width") doesn't clip its
@@ -2724,30 +2723,15 @@
   .lvl-other .col-bar{background:var(--text-tertiary);}
   .lvl-other .level-badge{color:var(--text-secondary); background:var(--bg-elevated-2);}
 
-  .log-row.lvl-error{background:var(--level-error-soft);}
-  .log-row.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 20%, transparent);}
-  .log-row.lvl-warn{background:var(--level-warn-soft);}
-  .log-row.lvl-warn:hover{background:color-mix(in srgb, var(--level-warn) 20%, transparent);}
-  .log-row.lvl-info{background:var(--level-info-soft);}
-  .log-row.lvl-info:hover{background:color-mix(in srgb, var(--level-info) 16%, transparent);}
-  .log-row.lvl-debug{background:var(--level-debug-soft);}
-  .log-row.lvl-debug:hover{background:color-mix(in srgb, var(--level-debug) 16%, transparent);}
-  .log-row.lvl-fatal{background:var(--level-fatal-soft);}
-  .log-row.lvl-trace{background:var(--level-trace-soft);}
-  .log-row.lvl-fatal:hover{background:color-mix(in srgb, var(--level-fatal) 14%, transparent);}
-  .log-row.lvl-trace:hover{background:color-mix(in srgb, var(--level-trace) 14%, transparent);}
-  .log-row.lvl-custom-1{background:color-mix(in srgb, var(--level-custom-1) 12%, transparent);}
-  .log-row.lvl-custom-1:hover{background:color-mix(in srgb, var(--level-custom-1) 20%, transparent);}
-  .log-row.lvl-custom-2{background:color-mix(in srgb, var(--level-custom-2) 12%, transparent);}
-  .log-row.lvl-custom-2:hover{background:color-mix(in srgb, var(--level-custom-2) 20%, transparent);}
-  .log-row.lvl-custom-3{background:color-mix(in srgb, var(--level-custom-3) 12%, transparent);}
-  .log-row.lvl-custom-3:hover{background:color-mix(in srgb, var(--level-custom-3) 20%, transparent);}
-  .log-row.lvl-custom-4{background:color-mix(in srgb, var(--level-custom-4) 12%, transparent);}
-  .log-row.lvl-custom-4:hover{background:color-mix(in srgb, var(--level-custom-4) 20%, transparent);}
-  .log-row.lvl-custom-5{background:color-mix(in srgb, var(--level-custom-5) 12%, transparent);}
-  .log-row.lvl-custom-5:hover{background:color-mix(in srgb, var(--level-custom-5) 20%, transparent);}
-  .log-row.lvl-custom-6{background:color-mix(in srgb, var(--level-custom-6) 12%, transparent);}
-  .log-row.lvl-custom-6:hover{background:color-mix(in srgb, var(--level-custom-6) 20%, transparent);}
+  /* Row fills (design polish B3, variant A): only WARN and stronger carry a faint tint; INFO, DEBUG, TRACE, OTHER and
+     the custom levels get none (hover falls back to .log-row:hover) and are told apart by the 3px .col-bar stripe. */
+  .log-row.lvl-error{background:color-mix(in srgb, var(--level-error) 7%, transparent);}
+  .log-row.lvl-error:hover{background:color-mix(in srgb, var(--level-error) 12%, transparent);}
+  .log-row.lvl-warn{background:color-mix(in srgb, var(--level-warn) 6%, transparent);}
+  .log-row.lvl-warn:hover{background:color-mix(in srgb, var(--level-warn) 11%, transparent);}
+  .log-row.lvl-fatal{background:color-mix(in srgb, var(--level-fatal) 7%, transparent);}
+  .log-row.lvl-fatal:hover{background:color-mix(in srgb, var(--level-fatal) 12%, transparent);}
+  .lvl-debug .col-bar{opacity:.45;}
   .log-row.flash{background:var(--accent-soft) !important; transition:background 1.2s ease-out;}
 
   #emptyState{
@@ -6124,7 +6108,7 @@
     padding:10px 10px 10px 0; background-clip:padding-box;
   }
   body.layout-phone #tableRows .log-row.row-grid > .col-bar{
-    grid-column:1; grid-row:1 / 3; align-self:stretch; margin:-10px 0; border-radius:0 3px 3px 0;
+    grid-column:1; grid-row:1 / 3; align-self:stretch; margin:-10px 0; border-radius:0;
   }
   body.layout-phone #tableRows .log-row.row-grid > .col-time{grid-column:2; grid-row:1; font-size:12px;}
   body.layout-phone #tableRows .log-row.row-grid > .col-level{grid-column:3; grid-row:1;}
