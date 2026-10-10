@@ -1,6 +1,6 @@
 ---
 name: from-request
-description: Entry point for a new idea, feature or bug the user describes in the prompt — classifies it, finds the root cause first for bugs, clarifies features in one round of questions, decides between doing it now and parking it in the backlog, then runs it through orchestrate or package-sessions. Use when the user brings a new request that is neither a backlog number nor usability-test results ("mir ist aufgefallen…", "ich hätte gern…", "Bug: …"), and whenever the user invokes /from-request.
+description: 'Entry point for a new idea, feature or bug the user describes in the prompt — classifies it, finds the root cause first for bugs, clarifies features in one round of questions, decides between doing it now and parking it in the backlog, then runs it through orchestrate or package-sessions. Use when the user brings a new request that is neither a backlog number nor usability-test results ("mir ist aufgefallen…", "ich hätte gern…", "Bug: …"), and whenever the user invokes /from-request.'
 ---
 
 # From a new request to an implementation
