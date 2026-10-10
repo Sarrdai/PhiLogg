@@ -285,7 +285,7 @@ packages use its tokens.
 
 | # | Package | Findings | Estimate | Status | Commit | Used |
 |---|---|---|---|---|---|---|
-| P1 | Hairline token, column dividers | B2, B1 | 8 % | open | | |
+| P1 | Hairline token, column dividers | B2, B1 | 8 % | done | see git log | 0.50→0.55 |
 | P2 | Level counters and badges | A1, A2 | 7 % | open | | |
 | P3 | Row tinting variant A, stripe, selection | B3 | 9 % | open | | |
 | P4 | Toolbar button language, view tabs | C1 | 10 % | open | | |
@@ -315,3 +315,4 @@ rules.
 | When (UTC) | By | five_hour | seven_day | resets (UTC) |
 |---|---|---|---|---|
 | 2026-10-10T08:09Z | concept session | 0.46 | 0.68 | 2026-10-10T10:50Z |
+| 2026-10-10T08:27Z | orchestrator (after P1) | 0.55 | 0.70 | 2026-10-10T10:50Z |

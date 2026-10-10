@@ -15,6 +15,8 @@
     --bg-elevated-2:#232939;
     --border:#262c3c;
     --border-soft:#1e2330;
+    /* Pure separator lines (row/panel/toolbar/table/menu dividers, tree guides). --border stays for control outlines and dialog frames. Derived, so custom themes inherit it from their own --border-soft/--bg-app. */
+    --hairline:color-mix(in srgb, var(--border-soft) 45%, var(--bg-app));
     --text-primary:#e7eaf1;
     --text-secondary:#8a92a8;
     --text-tertiary:#565f75;
@@ -163,6 +165,7 @@
      those themes also override --level-*-on to light text instead of the
      near-black used against the brighter dark-mode swatches. */
   :root[data-theme="light"]{
+    --hairline:color-mix(in srgb, var(--border-soft) 55%, var(--bg-app));
     --where-dim:rgba(28,33,46,.46);
     --bg-app:#f5f6f8;
     --bg-panel:#ffffff;
@@ -381,6 +384,7 @@
     --selection-bg:color-mix(in srgb, var(--level-debug) 25%, transparent);
   }
   :root[data-theme="catppuccin-latte"]{
+    --hairline:color-mix(in srgb, var(--border-soft) 55%, var(--bg-app));
     --bg-app:#eff1f5;
     --bg-panel:#e6e9ef;
     --bg-elevated:#ccd0da;
@@ -452,7 +456,7 @@
   #toolbar{
     height:50px; flex:0 0 auto;
     display:flex; align-items:center; gap:16px;
-    padding:0 16px; border-bottom:1px solid var(--border);
+    padding:0 16px; border-bottom:1px solid var(--hairline);
     background:var(--bg-panel);
   }
   /* Column layout so the version tag (.brand-version) sits in its own line
@@ -568,10 +572,10 @@
      its own comment) — #sidebarResizer.hidden below removes it entirely
      while collapsed (a collapsed sidebar isn't manually resizable), so the
      40px rail needs its own border against #content. */
-  #sidebar.collapsed{overflow:visible; border-right:1px solid var(--border);}
+  #sidebar.collapsed{overflow:visible; border-right:1px solid var(--hairline);}
   #sidebarHeader{
     flex:0 0 auto; height:34px; display:flex; align-items:center; gap:8px;
-    padding:0 8px 0 14px; border-bottom:1px solid var(--border-soft);
+    padding:0 8px 0 14px; border-bottom:1px solid var(--hairline);
   }
   #sidebarHeaderLabel{
     flex:1 1 auto; font-size:11px; font-weight:650; letter-spacing:.7px;
@@ -603,7 +607,7 @@
     width:max-content; max-width:50vw;
     background:var(--bg-panel); box-shadow:14px 0 34px rgba(0,0,0,.45);
   }
-  .sidebar-rail-sep{width:20px; height:1px; background:var(--border-soft); flex:0 0 auto;}
+  .sidebar-rail-sep{width:20px; height:1px; background:var(--hairline); flex:0 0 auto;}
   .sidebar-rail-markers{display:flex; flex-direction:column; align-items:center; gap:8px; overflow:hidden;}
   .sidebar-rail-marker{
     width:26px; height:26px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;
@@ -635,7 +639,7 @@
        with a single clean border line exactly at the resizer's own far
        edge (touching #content) — the grip overlays this, instead of
        floating in an unstyled void. */
-    background:var(--bg-panel); border-right:1px solid var(--border);
+    background:var(--bg-panel); border-right:1px solid var(--hairline);
   }
   /* Permanent grip affordance, not just an on-hover reveal (this session):
      a bare transparent hit area read as a stray dark seam at rest (this
@@ -726,7 +730,7 @@
     font-size:10px; font-weight:650; padding:0 6px; line-height:14px;
   }
   .folder-watch-reconnect:hover{background:color-mix(in srgb,var(--accent) 28%,transparent);}
-  .folder-watch-files{border-top:1px solid var(--border-soft);}
+  .folder-watch-files{border-top:1px solid var(--hairline);}
   .folder-watch-file{
     display:flex; align-items:center; gap:7px;
     padding:6px 10px 6px 12px; cursor:pointer;
@@ -802,7 +806,7 @@
      tree, unlike #treeActionBar which used to live inside #sidebarScroll. */
   #sidebarToolbar{
     flex:0 0 auto; display:flex; align-items:center; gap:6px 2px; flex-wrap:wrap;
-    padding:4px 8px; border-bottom:1px solid var(--border-soft); background:var(--bg-panel);
+    padding:4px 8px; border-bottom:1px solid var(--hairline); background:var(--bg-panel);
     min-height:36px;
   }
   #sidebarToolbar .row-action-separator{height:16px; align-self:center; margin:0 4px;}
@@ -885,7 +889,7 @@
      box with a fractional width/offset (the old 1.5px) gets pixel-snapped
      to 1 or 2 device pixels depending on where it lands, so lines came out
      visibly uneven (person-reported); border widths snap consistently. */
-  .tree-guide{position:absolute; pointer-events:none; border:0 solid var(--border);}
+  .tree-guide{position:absolute; pointer-events:none; border:0 solid var(--hairline);}
   /* Only the cross axis is zeroed: a .v segment spanning top:0/bottom:0
      needs height:auto to stretch (an explicit height:0 here once silently
      collapsed every rail/stem/lower half, person-reported). */
@@ -976,7 +980,7 @@
   .tree-row.ctx-target{outline:1.5px solid var(--accent); outline-offset:-1.5px; border-radius:4px; background:var(--bg-elevated);}
   #treeContextMenu .ctx-target-head{
     color:var(--text-tertiary); font-family:var(--font-ui); font-size:11px; white-space:nowrap;
-    overflow:hidden; text-overflow:ellipsis; padding:6px 10px 5px; border-bottom:1px solid var(--border);
+    overflow:hidden; text-overflow:ellipsis; padding:6px 10px 5px; border-bottom:1px solid var(--hairline);
   }
   #treeContextMenu .ctx-target-head b{color:var(--text-primary); font-weight:600;}
   [data-type="file"] > .tree-row .tree-label{font-weight:600; color:var(--text-primary);}
@@ -1176,7 +1180,7 @@
      already; keep both declarations. */
   #tourBanner{
     flex:0 0 auto; display:flex; gap:12px; align-items:center; padding:9px 14px;
-    background:var(--accent-soft); border-bottom:1px solid var(--border);
+    background:var(--accent-soft); border-bottom:1px solid var(--hairline);
     font-size:13px; color:var(--text-primary);
   }
   #tourBanner.hidden{display:none;}
@@ -1189,7 +1193,7 @@
   #viewBar{
     flex:0 0 auto; display:flex; flex-wrap:wrap; align-items:center;
     padding:8px 16px; min-height:16px;
-    background:var(--bg-panel); border-bottom:1px solid var(--border);
+    background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   /* Hidden until renderMainView() decides whether to show it (mirrors the
      old #fhTabBar's default-hidden state); .view-tabs below sets
@@ -1388,7 +1392,7 @@
      flagged `separator:true` (see buildRowActionsHtml) — visually groups
      "New" apart from the filter-creation actions preceding it in
      #viewBar's Filter-Toolbar without adding a whole new toolbar group. */
-  .row-action-separator{width:1px; align-self:stretch; margin:4px 6px; background:var(--border); flex:0 0 auto;}
+  .row-action-separator{width:1px; align-self:stretch; margin:4px 6px; background:var(--hairline); flex:0 0 auto;}
   /* Redesigned 2026-09-08 (person-reported: the old inline expand-to-pill
      pushed every sibling button sideways on hover and snapped back on
      leave, making it hard to move from one button to the next). "On
@@ -1854,7 +1858,7 @@
   .row-grid{display:grid; grid-template-columns:var(--row-grid); column-gap:12px; align-items:center;}
 
   #tableHeader, #highlightHeader{
-    flex:0 0 auto; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    flex:0 0 auto; background:var(--bg-panel); border-bottom:1px solid var(--hairline);
     /* Left padding mirrors #tableRows/#highlightRows' own --rows-pad-left
        formula exactly (see that rule's comment) instead of a fixed value —
        a header that's a fixed 14px in while its rows are a dynamic 26px+
@@ -1915,10 +1919,14 @@
   #tableHeader .row-grid{position:relative;}
   .col-resize-handle{
     position:absolute; top:0; bottom:0; width:8px; transform:translateX(-4px);
-    cursor:col-resize; z-index:3; border-radius:2px;
-    background:color-mix(in srgb, var(--border-hover) 60%, transparent);
+    cursor:col-resize; z-index:3;
   }
-  .col-resize-handle:hover, .col-resize-handle.dragging{background:var(--accent-soft);}
+  /* Invisible hit area; the visible divider is a centered line inset 8px from top and bottom. */
+  .col-resize-handle::before{
+    content:""; position:absolute; left:50%; top:8px; bottom:8px; width:1px; margin-left:-.5px;
+    background:var(--hairline); pointer-events:none;
+  }
+  .col-resize-handle:hover::before, .col-resize-handle.dragging::before{width:2px; margin-left:-1px; background:var(--accent);}
 
   /* ---------- Timeline minimap: time-scaled density strip above the table.
      Grey bars = whole root file, colored bars = current filtered/leveled
@@ -1931,7 +1939,7 @@
        the two disagreed at the sidebar/content/minimap corner — a
        lighter-weight token right next to a heavier one at the same visual
        seam reads as a stray gap rather than one consistent divider. */
-    flex:0 0 auto; height:70px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    flex:0 0 auto; height:70px; background:var(--bg-panel); border-bottom:1px solid var(--hairline);
     position:relative; cursor:pointer; display:flex; flex-direction:column;
   }
   #timelineMinimap.hidden{display:none;}
@@ -2291,7 +2299,7 @@
 
   .log-row{
     height:28px; box-sizing:border-box; position:relative;
-    border-bottom:1px solid var(--border-soft);
+    border-bottom:1px solid var(--hairline);
     cursor:default;
   }
   .log-row:hover{background:var(--bg-elevated);}
@@ -2472,7 +2480,7 @@
   #contextToolbar{
     flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
-    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   #contextToolbar.hidden{ display:none; }
   #contextToolbar .toolbar-group{ gap:4px; }
@@ -2494,10 +2502,10 @@
   #filteredToolbar{
     flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
-    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   #filteredToolbar .toolbar-group{ gap:4px; }
-  .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--border); flex:0 0 auto; }
+  .ctx-toolbar-sep{ width:1px; align-self:stretch; margin:7px 0; background:var(--hairline); flex:0 0 auto; }
   .col-bar{border-radius:2px; align-self:stretch; padding:0 !important; margin:4px 0;}
   /* overflow:hidden on col-time/col-delta (bugfix, person-reported): without
      it, a grid track collapsed to 0px (hidden column, or just dragged very
@@ -2626,7 +2634,7 @@
      line grid (the editor itself has no separators). :where() keeps it at
      zero specificity so .selected/.row-multi-selected/.pinned-row shadows
      still win. */
-  :where(.log-row.text-row){box-shadow:inset 0 -1px 0 var(--border-soft);}
+  :where(.log-row.text-row){box-shadow:inset 0 -1px 0 var(--hairline);}
   /* No Entry detail panel (and its resize handle) while a plain-text file's
      node is active — renderMainView toggles body.text-root. */
   body.text-root :is(#detailPanel, #detailResizer){display:none !important;}
@@ -2752,7 +2760,7 @@
   #inlineViewerWrap{display:none; flex-direction:column; height:100%; min-height:0;}
   #inlineViewerHeader{
     flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:8px 14px;
-    background:var(--bg-panel); border-bottom:1px solid var(--border);
+    background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   #inlineViewerName{font-size:12px; font-weight:600; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto;}
   /* No close button here any more (this session, lifecycle unification) —
@@ -2847,7 +2855,7 @@
      updateInlineViewerToolbar. */
   #inlineViewerToolbar{
     flex:0 0 auto; display:flex; align-items:center; gap:8px; padding:6px 14px;
-    background:var(--bg-panel); border-bottom:1px solid var(--border);
+    background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   #inlineViewerToolbar.hidden{display:none;}
   #inlineViewerToolbar .toolbar-group{display:flex; align-items:center; gap:4px;}
@@ -2877,7 +2885,7 @@
   #folderMinimapHeader{
     flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px; padding:0 10px;
-    background:var(--bg-panel); border-bottom:1px solid var(--border);
+    background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   #folderMinimapName{font-size:12px; font-weight:600; color:var(--text-primary); flex:0 0 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   #folderMinimapSelectionInfo{font-size:11px; color:var(--text-tertiary); flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -2892,7 +2900,7 @@
   .fm-bar:hover{opacity:.85;}
   .fm-bar.selected{opacity:1; stroke:var(--accent-strong); stroke-width:1.5;}
   .fm-bar.unranged{fill:var(--text-tertiary); opacity:.3; cursor:pointer;}
-  .fm-axis-line{stroke:var(--border-soft); stroke-width:1;}
+  .fm-axis-line{stroke:var(--hairline); stroke-width:1;}
   /* Hover crosshair + tooltip, and drag band + label — plain siblings of
      the SVG (see the markup's own comment for why), styled after
      #timelineMinimapTooltip/#timelineMinimapDragRect/#timelineMinimapDragLabel.
@@ -2952,7 +2960,7 @@
        through the full resizer height, with a single clean border line
        exactly at the resizer's own far edge (touching #content) — the grip
        overlays this, instead of floating in an unstyled void. */
-    background:var(--bg-panel); border-top:1px solid var(--border);
+    background:var(--bg-panel); border-top:1px solid var(--hairline);
   }
   /* Permanent grip bar — same treatment/reasoning as #fhSplitResizer's own
      comment just above and #sidebarResizer's (see "Main window visual
@@ -3035,7 +3043,7 @@
      #detailResizer's own comment) disappears along with it; restore the
      panel's own border-top here so the collapsed 34px bar still has a
      visible top seam against #content. */
-  #detailPanel.collapsed{overflow:visible; border-top:1px solid var(--border);}
+  #detailPanel.collapsed{overflow:visible; border-top:1px solid var(--hairline);}
   #detailPanel.collapsed.peeking #detailPanelInner{
     position:absolute; left:0; right:0; bottom:0; z-index:30;
     height:auto; max-height:50vh;
@@ -3049,7 +3057,7 @@
      there's no empty hole and no information loss when it's closed. */
   #detailPanelHeader{
     flex:0 0 auto; height:34px; display:flex; align-items:center; gap:10px;
-    padding:0 8px 0 16px; border-bottom:1px solid var(--border-soft);
+    padding:0 8px 0 16px; border-bottom:1px solid var(--hairline);
   }
   /* Bottom-panel tabs: "Entry detail | Statistics | Facets" (the selected one in the accent look). */
   .lower-tab[hidden]{display:none;}
@@ -3063,7 +3071,7 @@
   .lower-tab:disabled{opacity:.55; cursor:default;}
   .lower-tab:disabled[aria-selected="true"]{color:var(--text-tertiary); border-bottom-color:transparent;} /* the strip: a disabled tab never looks selected */
   /* Patterns with the Entry detail tab selected: header-only strip, the persisted collapsed state untouched. */
-  #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--border);}
+  #detailPanel.detail-strip-only{height:auto !important; min-height:0; overflow:hidden; border-top:1px solid var(--hairline);}
   #detailPanel.detail-strip-only :is(#detailBody, #detailMeta, #detailViewTabs, #detailToggle, #facetPanelBody, #whyPanelBody, #nbPanelBody){display:none !important;}
   #detailMeta{
     flex:1 1 auto; display:flex; align-items:center; gap:8px; min-width:0; overflow:hidden;
@@ -3173,12 +3181,12 @@
   #patternsToolbar{
     flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
-    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   #patternsCompareBtn{flex:0 0 auto; padding:0 10px; height:24px; white-space:nowrap;}
   body.layout-phone #patternsCompareBtn{display:none;}
   #patternsCmpBar, #patternsCmpBody{display:none;}
-  #patternsWrap.cmp-on #patternsCmpBar{display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:7px 16px; background:var(--accent-soft); border-bottom:1px solid var(--border); font-size:12.5px; color:var(--text-primary);}
+  #patternsWrap.cmp-on #patternsCmpBar{display:flex; flex:0 0 auto; flex-wrap:wrap; align-items:center; gap:6px 10px; padding:7px 16px; background:var(--accent-soft); border-bottom:1px solid var(--hairline); font-size:12.5px; color:var(--text-primary);}
   #patternsWrap.cmp-on #patternsCmpBody{display:block; flex:1 1 auto; min-height:0; overflow:auto; padding:0 16px 16px;}
   #patternsWrap.cmp-on #patternsHead, #patternsWrap.cmp-on #patternsScroll{display:none;}
   .cmp-side{display:inline-flex; align-items:center; gap:6px; min-width:0;}
@@ -3189,9 +3197,9 @@
   .cmp-chip{display:inline-flex; align-items:center; gap:4px; padding:1px 4px 1px 8px; border:1px solid var(--accent); border-radius:10px; color:var(--accent-strong); background:var(--bg-panel);}
   .cmp-chip button{border:0; background:none; color:inherit; cursor:pointer; font:inherit; padding:0 4px; line-height:1;}
   .cmp-grid{display:grid; grid-template-columns:72px 72px 76px 72px 124px minmax(0,1fr) 64px; align-items:center; column-gap:10px; padding:0 8px;}
-  .cmp-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel); height:26px; font-size:11px; font-weight:650; color:var(--text-secondary); border-bottom:1px solid var(--border);}
+  .cmp-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel); height:26px; font-size:11px; font-weight:650; color:var(--text-secondary); border-bottom:1px solid var(--hairline);}
   .cmp-grp{height:30px; padding-top:10px; box-sizing:border-box; font-size:11px; font-weight:650; letter-spacing:.06em; text-transform:uppercase; color:var(--text-tertiary);}
-  .cmp-row{height:28px; box-sizing:border-box; border-bottom:1px solid var(--border-soft); cursor:pointer; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); color:var(--text-primary);}
+  .cmp-row{height:28px; box-sizing:border-box; border-bottom:1px solid var(--hairline); cursor:pointer; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); color:var(--text-primary);}
   .cmp-row:hover{background:var(--bg-elevated);}
   .cmp-row.gone{cursor:default;}
   .cmp-row > span, .cmp-hrow > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
@@ -3204,7 +3212,7 @@
   .cmp-empty{padding:24px 8px; color:var(--text-tertiary); font-size:12px;}
     .patterns-grid{display:grid; grid-template-columns:78px 48px 124px minmax(0,1fr) 112px 112px 64px; align-items:center;}
   #patternsHead{
-    flex:0 0 auto; padding:0 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
+    flex:0 0 auto; padding:0 16px; border-bottom:1px solid var(--hairline); background:var(--bg-panel);
     color:var(--text-secondary); font-size:11px; font-weight:650; letter-spacing:.2px; user-select:none;
   }
   #patternsHead > span{padding:7px 8px; white-space:nowrap;}
@@ -3216,7 +3224,7 @@
   #patternsSpacer{position:relative;}
   #patternsRows{position:absolute; left:0; right:0; top:0;}
   .pattern-row{
-    box-sizing:border-box; border-bottom:1px solid var(--border-soft); cursor:pointer;
+    box-sizing:border-box; border-bottom:1px solid var(--hairline); cursor:pointer;
     font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); color:var(--text-primary);
   }
   .pattern-row:hover{background:var(--bg-elevated);}
@@ -3254,8 +3262,8 @@
   .nb-empty{padding:14px 16px; color:var(--text-tertiary); font-size:12px;}
   .nb-empty button{margin-left:6px;}
   .nb-grid{display:grid; grid-template-columns:minmax(120px,170px) 56px 108px 80px minmax(0,1fr); align-items:center; column-gap:10px; padding:0 16px;}
-  .nb-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel, var(--bg-app)); height:24px; font-size:10.5px; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary); border-bottom:1px solid var(--border-soft);}
-  .nb-row{height:28px; font-size:12px; border-bottom:1px solid var(--border-soft); cursor:pointer;}
+  .nb-hrow{position:sticky; top:0; z-index:1; background:var(--bg-panel, var(--bg-app)); height:24px; font-size:10.5px; letter-spacing:.5px; text-transform:uppercase; color:var(--text-tertiary); border-bottom:1px solid var(--hairline);}
+  .nb-row{height:28px; font-size:12px; border-bottom:1px solid var(--hairline); cursor:pointer;}
   .nb-row:hover{background:var(--bg-elevated);}
   .nb-row.dim{opacity:.45;}
   .nb-row > span, .nb-hrow > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;}
@@ -3307,7 +3315,7 @@
   #detailPanel.lower-facets.collapsed:not(.peeking) #facetPanelBody{display:none;}
   #detailPanel.lower-facets #detailBody, #detailPanel.lower-facets #detailMeta, #detailPanel.lower-facets #detailViewTabs{display:none;}
   #facetPanelBody > .facet-pending{grid-column:1 / -1;}
-  .facet-section{min-width:0; padding-bottom:6px; border-left:1px solid var(--border-soft);}
+  .facet-section{min-width:0; padding-bottom:6px; border-left:1px solid var(--hairline);}
   .facet-section:first-child{border-left:0;}
   #facetPanelCount{display:none; flex:1 1 auto; font-family:var(--font-mono); font-size:10.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; white-space:nowrap;}
   #detailPanel.lower-facets #facetPanelCount{display:block;}
@@ -3374,7 +3382,7 @@
   .facet-value-name.facet-path{text-overflow:clip;}
   #extractToolbar{
     flex:0 0 auto; display:flex; flex-direction:column; gap:8px;
-    padding:9px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
+    padding:9px 16px; border-bottom:1px solid var(--hairline); background:var(--bg-panel);
   }
   #extractPatternView{
     font-family:var(--font-mono); font-size:12px; color:var(--text-secondary);
@@ -3401,7 +3409,7 @@
     font-family:var(--font-ui); font-size:10px; font-weight:700; letter-spacing:.06em;
     text-transform:uppercase; color:var(--text-tertiary); margin:0 4px 0 2px;
   }
-  .pattern-sep{display:inline-block; width:1px; height:14px; background:var(--border); margin:0 8px; vertical-align:middle;}
+  .pattern-sep{display:inline-block; width:1px; height:14px; background:var(--hairline); margin:0 8px; vertical-align:middle;}
   .plot-axis-clickable{cursor:pointer;}
   .plot-axis-clickable:hover{fill:var(--accent-strong);}
   .plot-axis-caret{opacity:.6; font-size:9px; fill:var(--text-secondary);}
@@ -3426,7 +3434,7 @@
   #extractScroll{flex:1 1 auto; overflow:auto; padding:0 16px 16px;}
   #extractTable{border-collapse:collapse; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); min-width:100%; user-select:none;}
   #extractTable th, #extractTable td{
-    padding:7px 12px; border-bottom:1px solid var(--border-soft); border-right:1px solid var(--border-soft);
+    padding:7px 12px; border-bottom:1px solid var(--hairline); border-right:1px solid var(--hairline);
     white-space:nowrap; text-align:left;
   }
   #extractHead th{
@@ -3498,7 +3506,7 @@
   #linkWrap{flex:1 1 auto; display:none; flex-direction:column; min-height:0;}
   #linkToolbar{
     flex:0 0 auto; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px;
-    padding:9px 16px; border-bottom:1px solid var(--border); background:var(--bg-panel);
+    padding:9px 16px; border-bottom:1px solid var(--hairline); background:var(--bg-panel);
   }
   #linkInfo{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums; flex:0 0 auto;}
   #linkStats{font-size:11.5px; color:var(--text-tertiary); font-variant-numeric:tabular-nums;}
@@ -3560,7 +3568,7 @@
   }
   #linkTreeHead{
     display:none; flex:0 0 auto; grid-template-columns:var(--link-cols); column-gap:10px; align-items:center;
-    padding:7px calc(14px + var(--link-sb, 0px)) 5px 14px; border-bottom:1px solid var(--border-soft);
+    padding:7px calc(14px + var(--link-sb, 0px)) 5px 14px; border-bottom:1px solid var(--hairline);
     font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-tertiary);
   }
   #linkTreeHead .r{text-align:right; text-transform:none;}
@@ -3600,7 +3608,7 @@
   }
   /* Indentation guides: one 1px line per ancestor level, through that ancestor's chevron centre. */
   .tr-tree .tree-chevron-slot{margin-right:1px;}
-  .tr-guide{position:absolute; top:0; bottom:0; width:1px; left:calc(13px + var(--g) * var(--link-indent)); background:var(--border);}
+  .tr-guide{position:absolute; top:0; bottom:0; width:1px; left:calc(13px + var(--g) * var(--link-indent)); background:var(--hairline);}
   .link-trow.pair-selected .tr-guide{background:var(--accent);}
   .tr-dot{flex:0 0 auto; width:8px; height:8px; border-radius:50%; margin-right:8px; background:var(--tl);}
   .link-trow.tr-open .tr-dot{background:none; box-sizing:border-box; border:1.5px solid var(--warn);}
@@ -3890,7 +3898,7 @@
   }
   #exportDialog.hidden{display:none;}
   #exportDialog .link-dialog-card{width:min(600px, 94%); max-height:92%; overflow:auto; box-sizing:border-box;}
-  #exportDialog .settings-row{padding:10px 2px; gap:16px; border-bottom:1px solid var(--border-soft);}
+  #exportDialog .settings-row{padding:10px 2px; gap:16px; border-bottom:1px solid var(--hairline);}
   #exportDialog .settings-row:last-of-type{border-bottom:none;}
   #exportDialog .settings-subsection-title{margin:16px 0 4px;}
   #exportDialog .settings-row.export-stack{grid-template-columns:1fr; gap:8px;}
@@ -3900,7 +3908,7 @@
   #exportDialog .assert-mode-btn .export-seg-n{color:var(--text-tertiary); font-size:11px;}
   #exportDialog .assert-mode-btn.active .export-seg-n{color:inherit;}
   #exportFirstN{width:52px; height:20px; padding:0 4px; box-sizing:border-box; text-align:right; font-size:11.5px; margin:0;}
-  .export-toggles{display:flex; flex-wrap:wrap; gap:8px 28px; padding:10px 2px; border-bottom:1px solid var(--border-soft);}
+  .export-toggles{display:flex; flex-wrap:wrap; gap:8px 28px; padding:10px 2px; border-bottom:1px solid var(--hairline);}
   .export-toggle{display:inline-flex; align-items:center; gap:8px; font-size:13px; color:var(--text-primary);}
   .export-summary{font-size:12px; color:var(--text-secondary);}
   #exportDialog .export-work-btns{display:flex; flex-wrap:wrap; gap:8px;}
@@ -4009,7 +4017,7 @@
   }
   #clockOffsetDialog.hidden{display:none;}
   #clockOffsetDialog .link-dialog-card{width:min(480px, 92%);}
-  #clockOffsetDialog .settings-row{padding:12px 2px; gap:16px; border-bottom:1px solid var(--border-soft);}
+  #clockOffsetDialog .settings-row{padding:12px 2px; gap:16px; border-bottom:1px solid var(--hairline);}
   #clockOffsetDialog .settings-row:last-of-type{border-bottom:none;}
   /* ---------- Prune file to a filter's result (pruneFileToNode): a plain
      confirmation dialog on the shared dialog shell, plus a small kept/total bar. ---------- */
@@ -4063,7 +4071,7 @@
   #filterLibraryList{max-height:min(360px, 50vh); overflow-y:auto; margin:-2px 0 14px;}
   #formatProvidedNotice:empty{display:none;}
   .filter-library-empty{padding:14px 2px; font-size:11.5px; color:var(--text-tertiary); line-height:1.5;}
-  .filter-library-row{display:flex; align-items:center; gap:8px; padding:8px 2px; border-bottom:1px solid var(--border-soft);}
+  .filter-library-row{display:flex; align-items:center; gap:8px; padding:8px 2px; border-bottom:1px solid var(--hairline);}
   .filter-library-row:last-child{border-bottom:none;}
   .filter-library-row-main{flex:1 1 auto; min-width:0;}
   .filter-library-row-name{font-size:12px; color:var(--text-primary); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
@@ -4087,7 +4095,7 @@
   .filter-library-row-icon:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-row-icon.active{color:var(--accent-strong); border-color:var(--accent-strong);}
   .filter-library-icon-grid{
-    display:flex; flex-wrap:wrap; gap:4px; padding:2px 2px 10px 34px; border-bottom:1px solid var(--border-soft);
+    display:flex; flex-wrap:wrap; gap:4px; padding:2px 2px 10px 34px; border-bottom:1px solid var(--hairline);
   }
   .filter-library-icon-grid button{
     width:26px; height:26px; display:flex; align-items:center; justify-content:center;
@@ -4095,7 +4103,7 @@
   }
   .filter-library-icon-grid button:hover{color:var(--accent-strong); background:var(--accent-soft);}
   .filter-library-icon-grid button.active{color:var(--accent-strong); border-color:var(--accent-strong); background:var(--accent-soft);}
-  .filter-library-icon-sep{width:100%; height:1px; margin:4px 0; background:var(--border-soft);}
+  .filter-library-icon-sep{width:100%; height:1px; margin:4px 0; background:var(--hairline);}
   /* Emoji icons (person-reported: not centered) — an explicit line-height
      matching each button's own content-box height centers a single-line
      glyph more reliably across color-emoji fonts/platforms than relying on
@@ -4146,7 +4154,7 @@
   #libraryMenu .lib-search:focus-within{border-color:var(--accent);}
   #libraryMenu .lib-search .icon{width:12px; height:12px; flex:0 0 auto;}
   #libraryMenu .lib-search input{flex:1 1 auto; min-width:0; border:none; outline:none; background:transparent; color:var(--text-primary); font-size:12px; padding:0;}
-  #libraryMenu .lib-target{flex:0 0 auto; padding:0 12px 8px; font-size:11.5px; color:var(--text-secondary); border-bottom:1px solid var(--border-soft); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  #libraryMenu .lib-target{flex:0 0 auto; padding:0 12px 8px; font-size:11.5px; color:var(--text-secondary); border-bottom:1px solid var(--hairline); overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   #libraryMenu .lib-target b{color:var(--accent-strong); font-weight:500;}
   #libraryMenu .lib-target.warn{color:var(--warn);}
   #libraryMenuList{flex:1 1 auto; min-height:0; overflow-y:auto; padding-bottom:2px;}
@@ -4164,7 +4172,7 @@
   #libraryMenu .lib-star.on{color:var(--accent);}
   #libraryMenu .lib-star:hover{color:var(--accent-strong); background:var(--bg-elevated-2);}
   #libraryMenu .lib-empty{padding:14px 14px 10px; color:var(--text-secondary); font-size:12px; line-height:1.5;}
-  #libraryMenu .lib-foot{flex:0 0 auto; border-top:1px solid var(--border-soft); padding:4px 0;}
+  #libraryMenu .lib-foot{flex:0 0 auto; border-top:1px solid var(--hairline); padding:4px 0;}
   #libraryMenu .lib-foot .lib-it{color:var(--text-secondary);}
   #libraryMenu .lib-foot .lib-it:hover{color:var(--accent-strong);}
   #libraryMenu .lib-foot .lib-it.dis:hover{color:var(--text-secondary);}
@@ -4214,7 +4222,7 @@
   .fw-pattern-card{margin-top:12px;}
   .fw-pattern-card:first-child{margin-top:0;}
   .fw-pattern-header{
-    display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid var(--border-soft);
+    display:flex; align-items:center; gap:10px; padding:12px 18px; border-bottom:1px solid var(--hairline);
   }
   .fw-pattern-header input[type="text"]{
     flex:1 1 auto; min-width:0; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
@@ -4225,7 +4233,7 @@
   /* "Start filters" (FEATURE_BACKLOG.md #71) — a checkbox list of saved
      Filter Library presets plus a "Primary" radio among the checked ones,
      reusing .filter-library-row for each item's layout. */
-  .fw-startfilter-block{padding:12px 18px; border-bottom:1px solid var(--border-soft);}
+  .fw-startfilter-block{padding:12px 18px; border-bottom:1px solid var(--hairline);}
   .fw-startfilter-block:last-child{border-bottom:none;}
   .fw-startfilter-list{margin-top:8px; max-height:180px; overflow-y:auto; border:1px solid var(--border-soft); border-radius:8px; padding:0 10px;}
   .fw-startfilter-item{padding:7px 0;}
@@ -4243,7 +4251,7 @@
   }
   .settings-page-header{
     display:flex; align-items:center; justify-content:space-between; flex:0 0 auto;
-    padding:16px 22px; border-bottom:1px solid var(--border);
+    padding:16px 22px; border-bottom:1px solid var(--hairline);
   }
   .settings-page-title{font-size:14.5px; font-weight:650; color:var(--text-primary);}
   .settings-page-main{flex:1 1 auto; display:flex; min-height:0;}
@@ -4254,7 +4262,7 @@
      section is currently in view (see settingsNavItems/IntersectionObserver
      wiring near renderSettingsNav) and scrolls to a section on click. */
   .settings-nav{
-    flex:0 0 216px; border-right:1px solid var(--border); padding:16px 12px;
+    flex:0 0 216px; border-right:1px solid var(--hairline); padding:16px 12px;
     display:flex; flex-direction:column; gap:3px;
   }
   .settings-nav-item{
@@ -4268,7 +4276,7 @@
   .settings-nav-footnote{margin-top:auto; font-size:11px; line-height:1.55; color:var(--text-tertiary); padding:12px;}
 
   .settings-page-body{flex:1 1 auto; overflow-y:auto; padding:4px 28px 28px;}
-  .settings-section{padding:20px 0; border-bottom:1px solid var(--border-soft);}
+  .settings-section{padding:20px 0; border-bottom:1px solid var(--hairline);}
   .settings-section:last-child{border-bottom:none;}
   .settings-section-title{font-size:16px; font-weight:650; color:var(--text-primary); margin:0 0 4px; letter-spacing:-.1px;}
   .settings-section-desc{font-size:12.5px; color:var(--text-secondary); margin:0; line-height:1.55;}
@@ -4373,7 +4381,7 @@
   .settings-mcp-status .ide-status-dot.err{background:var(--danger);}
   .settings-mcp-status.err{color:var(--danger);}
   #btnAssistant{position:relative;}
-  #llmDockPanel{flex:0 0 380px; width:380px; min-width:0; display:flex; border-left:1px solid var(--border); background:var(--bg-panel);}
+  #llmDockPanel{flex:0 0 380px; width:380px; min-width:0; display:flex; border-left:1px solid var(--hairline); background:var(--bg-panel);}
   #llmDockPanel.hidden, html.pip-mode #llmDockPanel{display:none;}
   #llmDockPanel iframe{flex:1 1 auto; width:100%; height:100%; border:0; background:var(--bg-panel);}
   #btnAssistant.llm-busy::after{content:""; position:absolute; top:3px; right:3px; width:6px; height:6px; border-radius:50%; background:var(--accent); animation:llmBusyPulse 1.2s infinite;}
@@ -4438,7 +4446,7 @@
   }
   .settings-row{
     display:grid; grid-template-columns:1fr auto; align-items:center; gap:28px;
-    padding:16px 18px; border-bottom:1px solid var(--border-soft);
+    padding:16px 18px; border-bottom:1px solid var(--hairline);
   }
   /* ---------- Settings control column ----------
      Every row of the Settings dialog has the same fixed right column
@@ -4651,7 +4659,7 @@
   }
   #themeEditorDialog.hidden, #themeEditorTextLightRow.hidden{display:none;}
   .te-card{width:min(1080px, 96%); height:min(760px, 94%);}
-  .te-top{display:flex; gap:16px; align-items:center; padding:12px 22px 0; border-bottom:1px solid var(--border); flex:0 0 auto;}
+  .te-top{display:flex; gap:16px; align-items:center; padding:12px 22px 0; border-bottom:1px solid var(--hairline); flex:0 0 auto;}
   .te-top .link-field{margin-bottom:10px;}
   .te-name-field{flex:0 1 360px; min-width:0;}
   .te-top input[type="text"]{
@@ -4659,7 +4667,7 @@
     border-radius:6px; padding:6px 8px; font-size:12px;
   }
   .te-main{flex:1 1 auto; display:flex; min-height:0;}
-  .te-side{flex:0 0 380px; border-right:1px solid var(--border); padding:10px 14px 14px; overflow-y:auto;}
+  .te-side{flex:0 0 380px; border-right:1px solid var(--hairline); padding:10px 14px 14px; overflow-y:auto;}
   .te-body{flex:1 1 auto; min-width:0; padding:14px 18px; overflow:auto; display:flex; flex-direction:column; gap:8px;}
   .te-group-title{font-size:11px; font-weight:650; color:var(--text-secondary); text-transform:uppercase; letter-spacing:.04em; margin:12px 0 4px;}
   .te-row{display:flex; align-items:center; gap:8px; padding:3px 0;}
@@ -4680,7 +4688,7 @@
     border:1px solid var(--border); border-radius:10px; overflow:hidden; background:var(--bg-app); color:var(--text-primary);
     font-size:12px;
   }
-  .te-prev-bar{display:flex; gap:6px; align-items:center; padding:10px 12px; background:var(--bg-panel); border-bottom:1px solid var(--border);}
+  .te-prev-bar{display:flex; gap:6px; align-items:center; padding:10px 12px; background:var(--bg-panel); border-bottom:1px solid var(--hairline);}
   .te-prev-lvl{font-size:10.5px; font-weight:650; padding:3px 9px; border-radius:999px; border:1.5px solid var(--te-lvl); color:var(--te-lvl);}
   .te-prev-lvl.active{background:var(--te-lvl); color:var(--te-lvl-on);}
   .te-prev-lvl[data-lvl="fatal"], .te-prev-badge[data-lvl="fatal"]{--te-lvl:var(--level-fatal); --te-lvl-soft:var(--level-fatal-soft); --te-lvl-on:var(--level-fatal-on);}
@@ -4691,17 +4699,17 @@
   .te-prev-lvl[data-lvl="trace"], .te-prev-badge[data-lvl="trace"]{--te-lvl:var(--level-trace); --te-lvl-soft:var(--level-trace-soft); --te-lvl-on:var(--level-debug-on);}
   .te-prev-btn{margin-left:auto; background:var(--accent); color:var(--accent-on); font-weight:650; font-size:11px; padding:4px 12px; border-radius:6px;}
   .te-prev-split{display:flex; min-height:0;}
-  .te-prev-tree{flex:0 0 170px; background:var(--bg-panel); border-right:1px solid var(--border-soft); padding:6px 0;}
+  .te-prev-tree{flex:0 0 170px; background:var(--bg-panel); border-right:1px solid var(--hairline); padding:6px 0;}
   .te-prev-tree-row{padding:4px 10px; font-size:11.5px; color:var(--text-primary); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   .te-prev-sub{padding-left:24px; color:var(--text-secondary);}
   .te-prev-selected{background:var(--accent-soft); color:var(--accent-strong); box-shadow:inset 2px 0 0 var(--accent);}
   .te-prev-log{flex:1 1 auto; min-width:0; font-family:var(--font-log); font-size:11.5px;}
-  .te-prev-row{display:flex; gap:10px; align-items:center; padding:4px 10px; border-bottom:1px solid var(--border-soft); white-space:nowrap;}
+  .te-prev-row{display:flex; gap:10px; align-items:center; padding:4px 10px; border-bottom:1px solid var(--hairline); white-space:nowrap;}
   .te-prev-row-sel{background:var(--bg-elevated-2);}
   .te-prev-ts{color:var(--text-secondary);}
   .te-prev-dim{color:var(--text-tertiary);}
   .te-prev-badge{flex:0 0 46px; text-align:center; font-size:10px; font-weight:650; border-radius:4px; padding:1px 0; color:var(--te-lvl); background:var(--te-lvl-soft);}
-  .te-prev-code{margin:0; padding:10px 12px; background:var(--bg-elevated); border-top:1px solid var(--border); font-family:var(--font-log); font-size:11.5px; white-space:pre; overflow:auto;}
+  .te-prev-code{margin:0; padding:10px 12px; background:var(--bg-elevated); border-top:1px solid var(--hairline); font-family:var(--font-log); font-size:11.5px; white-space:pre; overflow:auto;}
   /* The highlight-colour picker opened from the theme editor ("plain"
      mode, see openColorPicker): no Free/Theme toggle, no Clear, and above
      the editor's own z-index. */
@@ -4720,7 +4728,7 @@
   #formatDialog.hidden, #fwzFileInput.hidden, #fwzNormalBody.hidden, #formatEditMetaField.hidden,
   #fwzRegexCols.hidden, #fwzJsonCols.hidden, #fwzRegexField.hidden, .fwz-toolbar-actions .hidden{display:none;}
   .fwz-card{width:min(1320px, 97%); height:min(940px, 95%);}
-  .fwz-top{display:flex; gap:16px; align-items:flex-start; padding:12px 22px 0; border-bottom:1px solid var(--border); flex:0 0 auto;}
+  .fwz-top{display:flex; gap:16px; align-items:flex-start; padding:12px 22px 0; border-bottom:1px solid var(--hairline); flex:0 0 auto;}
   .fwz-top .link-field{margin-bottom:10px;}
   .fwz-top input[type="text"]{
     width:100%; box-sizing:border-box; background:var(--bg-app); border:1px solid var(--border); color:var(--text-primary);
@@ -4731,7 +4739,7 @@
   .fwz-rule-field{flex:1 1 320px; min-width:0;}
   .fwz-rule-field .fwz-hint{margin:4px 0 0;}
   .fwz-main{flex:1 1 auto; display:flex; min-height:0;}
-  .fwz-side{flex:0 0 300px; border-right:1px solid var(--border); padding:14px 14px; overflow-y:auto; position:relative;}
+  .fwz-side{flex:0 0 300px; border-right:1px solid var(--hairline); padding:14px 14px; overflow-y:auto; position:relative;}
   .fwz-levels-title{margin-top:18px;}
   #formatEditLevels .format-level-name-input{
     flex:1; min-width:0; font-size:12px; padding:2px 5px; font-weight:600;
@@ -4815,7 +4823,7 @@
     height:100%; min-height:110px; display:flex; align-items:center; justify-content:center; text-align:center;
     color:var(--text-tertiary); font-family:inherit; font-size:12.5px; padding:16px; box-sizing:border-box;
   }
-  .fwz-line{display:flex; align-items:flex-start; border-bottom:1px solid var(--border-soft);}
+  .fwz-line{display:flex; align-items:flex-start; border-bottom:1px solid var(--hairline);}
   .fwz-line.fwz-learn{background:var(--accent-soft);}
   .fwz-line-no{
     flex:0 0 38px; text-align:right; padding-right:8px; color:var(--text-tertiary); user-select:none;
@@ -4859,12 +4867,12 @@
     flex:1 1 35%; min-height:90px; overflow:auto; border:1px solid var(--border); border-radius:8px;
     background:var(--bg-app); font-family:var(--font-mono); font-size:11.5px;
   }
-  .fwz-prev-row{display:grid; gap:10px; padding:3px 10px; border-bottom:1px solid var(--border-soft); align-items:start; min-width:max-content;}
+  .fwz-prev-row{display:grid; gap:10px; padding:3px 10px; border-bottom:1px solid var(--hairline); align-items:start; min-width:max-content;}
   .fwz-prev-head{position:sticky; top:0; background:var(--bg-elevated-2); color:var(--text-secondary); font-weight:600; font-family:inherit; font-size:11px; z-index:1;}
   .fwz-prev-row > span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
   .fwz-prev-row > span.fwz-prev-msg{white-space:pre; overflow:visible;}
   .fwz-prev-unmatched{color:var(--text-tertiary); font-style:italic;}
-  .fwz-actions{display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:12px 22px; border-top:1px solid var(--border); flex:0 0 auto;}
+  .fwz-actions{display:flex; align-items:center; justify-content:flex-end; gap:8px; padding:12px 22px; border-top:1px solid var(--hairline); flex:0 0 auto;}
   .fwz-actions .time-range-error{margin:0 auto 0 0;}
   .settings-inline-panel-title{font-size:12.5px; font-weight:650; color:var(--text-primary); margin-bottom:12px;}
   .settings-inline-panel textarea{
@@ -4912,12 +4920,12 @@
   .filter-library-row-order:disabled{opacity:.3; cursor:default;}
   .format-preview{max-height:150px; overflow-y:auto; border:1px solid var(--border); border-radius:6px; background:var(--bg-app);}
   .format-preview-empty{padding:9px 10px; font-size:11px; color:var(--text-tertiary);}
-  .format-preview-row{padding:6px 9px; border-bottom:1px solid var(--border-soft); font-size:10.8px; font-family:var(--font-mono); line-height:1.6;}
+  .format-preview-row{padding:6px 9px; border-bottom:1px solid var(--hairline); font-size:10.8px; font-family:var(--font-mono); line-height:1.6;}
   .format-preview-row:last-child{border-bottom:none;}
   .format-preview-field{color:var(--text-tertiary); margin-right:10px; white-space:nowrap;}
   .format-preview-field b{color:var(--text-primary); font-weight:600;}
   .format-preview-row.format-preview-nomatch{color:var(--level-error);}
-  .session-file-row{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--border); font-size:12px;}
+  .session-file-row{display:flex; align-items:center; gap:8px; padding:7px 0; border-bottom:1px solid var(--hairline); font-size:12px;}
   .session-file-row:last-child{border-bottom:none;}
   .session-file-name{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--text-primary); font-family:var(--font-mono);}
   .session-file-meta{flex:0 0 auto; color:var(--text-tertiary); font-size:11px; font-family:var(--font-mono);}
@@ -4965,7 +4973,7 @@
   #extractScroll.hidden{display:none;}
   #plotBody{flex:1 1 auto; display:flex; min-height:0;}
   #plotControls{
-    flex:0 0 250px; overflow-y:auto; padding:14px 14px 20px; border-right:1px solid var(--border);
+    flex:0 0 250px; overflow-y:auto; padding:14px 14px 20px; border-right:1px solid var(--hairline);
     background:var(--bg-panel); display:flex; flex-direction:column; gap:14px;
   }
   .plot-field{display:flex; flex-direction:column; gap:5px;}
@@ -5037,7 +5045,7 @@
   #plot3dCanvas.hidden{display:none;}
   .plot-3d-hint{font-size:10px; color:var(--text-tertiary); line-height:1.5;}
   .plot-axis-line{stroke:var(--border); stroke-width:1;}
-  .plot-grid-line{stroke:var(--border-soft); stroke-width:1;}
+  .plot-grid-line{stroke:var(--hairline); stroke-width:1;}
   .plot-tick-label{fill:var(--text-tertiary); font-size:10px; font-family:var(--font-mono);}
   .plot-axis-title{fill:var(--text-secondary); font-size:10.5px; font-weight:650; font-family:var(--font-ui);}
   .plot-empty-label{fill:var(--text-tertiary); font-size:12px; font-family:var(--font-ui);}
@@ -5059,14 +5067,14 @@
   #plotToolbar{
     flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
-    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   /* Table view's own toolbar row — same pattern as #plotToolbar/#contextToolbar,
      sitting directly above #extractScroll instead of #plotBody. Always shown. */
   #tableToolbar{
     flex:0 0 auto; box-sizing:border-box; height:36px;
     display:flex; align-items:center; gap:10px;
-    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--border);
+    padding:0 10px; background:var(--bg-panel); border-bottom:1px solid var(--hairline);
   }
   #tableToolbar.hidden{ display:none; }
   #tableToolbar .toolbar-group{ gap:4px; }
@@ -5301,7 +5309,7 @@
   }
   .filter-settings-row{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-    padding-top:9px; border-top:1px solid var(--border-soft);
+    padding-top:9px; border-top:1px solid var(--hairline);
   }
   /* Two kinds of toggle, two looks. Text/Regex is an exclusive choice, so
      it's a segmented .view-tabs group — #fhTabs' Context/Filtered/Table/
@@ -5335,7 +5343,7 @@
   .label-toggle-danger[aria-checked="true"]::after{background:var(--level-error);}
   .filter-column-chips{
     display:flex; align-items:center; gap:10px; flex-wrap:wrap;
-    padding-top:9px; border-top:1px solid var(--border-soft);
+    padding-top:9px; border-top:1px solid var(--hairline);
   }
   .filter-token-chips{display:flex; align-items:center; gap:4px; flex-wrap:wrap;}
   .filter-token-chips.hidden{display:none;}
@@ -5358,14 +5366,14 @@
      up into #filterResults). */
   .filter-footer-row{
     display:flex; align-items:center; justify-content:flex-end; gap:10px;
-    padding-top:9px; border-top:1px solid var(--border-soft);
+    padding-top:9px; border-top:1px solid var(--hairline);
   }
   .filter-footer-actions{display:flex; align-items:center; gap:8px; flex:0 0 auto;}
   /* Live result summary (renderLiveResults): big count + "matches in N" /
      "captures: …" meta on the left, a match-over-time histogram on the
      right, then up to FILTER_SAMPLE_ROWS matching rows as a small table
      (level bar, HH:mm:ss.SSS, message with the hit marked). */
-  .live-results{display:flex; flex-direction:column; gap:8px; padding-top:9px; border-top:1px solid var(--border-soft);}
+  .live-results{display:flex; flex-direction:column; gap:8px; padding-top:9px; border-top:1px solid var(--hairline);}
   .live-results.hidden{display:none;}
   .filter-results-head{display:flex; align-items:center; gap:14px; min-height:34px;}
   .live-match{
@@ -5452,7 +5460,7 @@
   .ctx-item:hover{background:var(--accent-soft); color:var(--accent-strong);}
   .ctx-item svg{flex:0 0 auto; color:var(--text-tertiary);}
   .ctx-item:hover svg{color:var(--accent-strong);}
-  .ctx-sep{height:1px; background:var(--border-soft); margin:5px 4px;}
+  .ctx-sep{height:1px; background:var(--hairline); margin:5px 4px;}
   /* Group heading inside a context menu: non-interactive label above a group of
      items (see syncCtxGroups, which hides it together with its separator when
      the whole group is hidden). */
@@ -5564,7 +5572,7 @@
      but this shared class stayed). */
   .bookmarks-panel-title{
     padding:10px 12px; font-size:11.5px; font-weight:650; color:var(--text-primary);
-    border-bottom:1px solid var(--border-soft); flex:0 0 auto;
+    border-bottom:1px solid var(--hairline); flex:0 0 auto;
   }
 
   /* ---------- Note sub-row (FEATURE_BACKLOG.md "Bookmarks rework" —
@@ -5689,7 +5697,7 @@
   .license-subtitle{margin:4px 0 6px; color:var(--text-secondary); font-weight:600;}
   #licenseContent .license-thirdparty{margin:0 0 10px; padding-left:18px;}
   .license-version{
-    padding-top:8px; border-top:1px solid var(--border-soft);
+    padding-top:8px; border-top:1px solid var(--hairline);
     color:var(--text-tertiary); font-size:10.5px; font-family:var(--font-mono);
   }
   .license-build{
@@ -5741,7 +5749,7 @@
   body.layout-compact #sidebar, body.layout-phone #sidebar{
     position:fixed; top:0; left:0; bottom:0; z-index:60;
     width:min(340px, 86vw) !important; max-width:none;
-    border-right:1px solid var(--border);
+    border-right:1px solid var(--hairline);
     transform:translateX(-100%); visibility:hidden;
     transition:transform .18s ease, visibility 0s linear .18s;
   }
@@ -5996,7 +6004,7 @@
   body.layout-phone #settingsDialog .settings-page-main{flex-direction:column;}
   body.layout-phone #settingsDialog .settings-nav{
     flex:0 0 auto; flex-direction:row; gap:4px; padding:4px 8px; overflow-x:auto; overflow-y:hidden;
-    border-right:none; border-bottom:1px solid var(--border); scrollbar-width:none;
+    border-right:none; border-bottom:1px solid var(--hairline); scrollbar-width:none;
   }
   body.layout-phone #settingsDialog .settings-nav::-webkit-scrollbar{display:none;}
   body.layout-phone #settingsDialog .settings-nav-item{flex:0 0 auto; min-height:40px; white-space:nowrap; padding:6px 12px;}
@@ -6029,7 +6037,7 @@
   body.layout-phone #settingsDialog .license-holder, body.layout-phone #licenseContent{overflow-wrap:anywhere;}
   body.layout-phone #detailPanel{
     position:fixed; left:0; right:0; bottom:0; z-index:50; height:var(--sheet-h) !important; min-height:0;
-    border-radius:16px 16px 0 0; border-top:1px solid var(--border); overflow:hidden;
+    border-radius:16px 16px 0 0; border-top:1px solid var(--hairline); overflow:hidden;
     box-shadow:0 -10px 30px rgba(0,0,0,.4);
     transform:translateY(100%); visibility:hidden;
     transition:transform .18s ease, visibility 0s linear .18s;
@@ -6079,12 +6087,12 @@
   body.layout-phone #detailPanel.lower-patterns #phonePatternsBody{display:block; flex:1 1 auto; min-height:0; overflow-y:auto; overflow-x:hidden; -webkit-overflow-scrolling:touch; position:relative; user-select:none; -webkit-user-select:none;}
   #phonePatternsSpacer{position:relative;}
   #phonePatternsRows{position:absolute; left:0; right:0; top:0;}
-  .pp-row{display:flex; align-items:stretch; box-sizing:border-box; overflow:hidden; border-bottom:1px solid var(--border-soft); border-left:3px solid var(--lc, var(--border)); cursor:pointer;}
+  .pp-row{display:flex; align-items:stretch; box-sizing:border-box; overflow:hidden; border-bottom:1px solid var(--hairline); border-left:3px solid var(--lc, var(--border)); cursor:pointer;}
   .pp-main{flex:1 1 auto; min-width:0; padding:6px 8px 6px 10px; display:flex; flex-direction:column; gap:3px;}
   .pp-head{display:flex; align-items:center; gap:8px; font-family:var(--font-mono); font-size:11px; color:var(--text-secondary); white-space:nowrap; min-height:18px;}
   .pp-head b{color:var(--text-primary); font-size:12.5px;}
   .pp-text{font-family:var(--font-log); font-size:12px; line-height:1.35; color:var(--text-primary); overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow-wrap:anywhere;}
-  .pp-hide{flex:0 0 44px; width:44px; border:0; border-left:1px solid var(--border-soft); background:none; color:var(--text-secondary); display:flex; align-items:center; justify-content:center; padding:0; cursor:pointer;}
+  .pp-hide{flex:0 0 44px; width:44px; border:0; border-left:1px solid var(--hairline); background:none; color:var(--text-secondary); display:flex; align-items:center; justify-content:center; padding:0; cursor:pointer;}
   .pp-empty{padding:24px 16px; color:var(--text-tertiary); font-size:12px;}
   #patternMenu{position:fixed; z-index:60; background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:5px; box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;}
   #patternMenu.hidden{display:none;}

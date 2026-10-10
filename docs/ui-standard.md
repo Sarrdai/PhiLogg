@@ -38,7 +38,7 @@ dialog rule (a literal breaks every non-default theme):
 - Text: `--text-primary` (labels, values), `--text-secondary` (secondary
   controls, body), `--text-tertiary` (hints, disabled-ish captions).
 - Surfaces: `--bg-elevated` / `--bg-elevated-2` (dialog body / raised
-  card), `--border` (all 1px separators and control borders).
+  card), `--border` (outlines of inputs, buttons and other controls, dialog frames), `--hairline` (every pure separator: row/panel/toolbar/table/menu dividers, tree guides, column dividers; derived from `--border-soft` and `--bg-app`, so custom themes inherit it).
 - Accent: `--accent` (primary fill), `--accent-on` (text on an accent
   fill), `--accent-strong` (accent text/hover), `--accent-soft` (active
   segmented/pill background).
