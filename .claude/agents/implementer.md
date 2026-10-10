@@ -29,7 +29,10 @@ work (full tests, real-app screenshots) and may send corrections to you.
   update of the superseded group, written to its timing rules ("Extending
   this suite", step 2: `waitFor` instead of fixed sleeps, "nothing
   happened" checked right after the step). Iterate with
-  `cd tests && GROUP=<slug> npm test`; the lead runs the full suite.
+  `cd tests && GROUP=<slug> npm test`, plus the existing groups that
+  exercise the code you changed (`grep -l` the function in
+  `tests/groups/`). Never run the full suite: the lead runs it and sends
+  failures back to you.
 - **Log your progress.** If the brief names a progress file, append one
   short line to it after each milestone (located the code, change done,
   group written, group green, docs done) and whenever you hit a problem —

@@ -17,11 +17,17 @@ checked right after the step, no wall-clock-dependent paths).
 
 ## 2. Tests
 
-- `cd tests && npm test` — full suite, note the pass count, and look at the
-  "Slowest groups" list above it: a new or changed group in it gets a look.
-- The session's final run is `finish`'s `SHARDS=8 npm test` (more shards
-  than cores). A failure only there is a load-dependent test bug: fix it,
-  don't re-run it away.
+- Run the affected groups yourself, wider than the implementer's own:
+  every group that exercises the changed functions or views
+  (`grep -l "<function or selector>" tests/groups/*.js`), as
+  `GROUP=a,b,c npm test`.
+- A plan with several steps: after a step that changed code shared with
+  other areas (renderers, the filter engine, persistence), one plain
+  `npm test` before the next step. Otherwise no full run here.
+- The session's one full run is `finish`'s `SHARDS=8 npm test` (more
+  shards than cores, "Slowest groups" list). A failure there goes back to
+  the same implementer as a correction; one only under load is a
+  load-dependent test bug: fix it, don't re-run it away.
 - Rust / Tauri changes: `cd desktop && npm run build`, plus
   `cargo test -p philogg-logparse` in `desktop/src-tauri/` if the native
   parser changed.

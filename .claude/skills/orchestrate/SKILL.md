@@ -31,27 +31,38 @@ repo stays English (CLAUDE.md).
 
 ## Model choice
 
-Opus only where judgment is the work; everything with a clear spec runs
-on Sonnet. Applies to sessions you start (`create_session` → `model`: the
-current model ID from the model list in your system prompt) and to
-subagents (Agent tool → `model`: `opus` / `sonnet` / `haiku`).
+The orchestrator (lead) runs on Opus; implementation runs on Sonnet and
+the lead verifies it itself. Applies to sessions you start
+(`create_session` → `model`: the current Opus/Sonnet model ID from the
+model list in your system prompt) and to subagents (Agent tool →
+`model`: `opus` / `sonnet` / `haiku`).
 
 | Work | Model |
 |---|---|
-| Scoping with the user, root cause of an unknown bug, concept and mockup, architecture, new persistence fields, performance work | **Opus** |
+| Every orchestrator session: scoping with the user, root cause of an unknown bug, concept and mockup, verification, starting packages and checking their reports | **Opus** |
 | Implementing a clear brief or plan step, a bug fix with a known diagnosis, tests, docs, screenshots | **Sonnet** (`implementer` default) |
-| An orchestrator after the round is agreed: starts packages, relays questions, checks reports | **Sonnet** |
 | A usability test run (`usability-test`: driving the GUI through the scenarios) | **Sonnet** |
-| Read-only lookups (find a function, list callers) | **Haiku** (`Explore` subagent); never for edits to `philogg.html` |
+| Code searches across many files where only the conclusion matters | **Haiku** (`Explore` subagent with `model: "haiku"`); never for edits to `philogg.html` |
 
+- **Not on Opus?** A session that becomes an orchestrator (`from-request`,
+  `from-backlog`, `from-usability-test`, `orchestrate`, the orchestrator
+  of `package-sessions`; not a package session, whose model its
+  orchestrator picked) checks its own model first (`get_session` →
+  `session_context.model`). Anything but Opus: stop before scoping, tell
+  the user in one line, and offer to hand over to a new Opus session
+  (`create_session` with the request and everything found so far in the
+  start prompt). Go on only after the user confirms either way.
 - A package session gets Opus when it starts with a mockup or an
   undiagnosed bug, Sonnet when its start prompt already holds the
   decisions and the diagnosis.
 - Escalate, don't start high: a step that still fails after two
   correction rounds on Sonnet goes to a fresh implementer with
   `model: "opus"`, together with what was tried.
-- The session the user opens runs on what they picked; if the task turns
-  out to be Sonnet work, say so in one line and carry on.
+- Delegate only where it saves more than it costs: a subagent starts cold
+  (system prompt, `CLAUDE.md`, re-reading the code). A lookup of one or
+  two `Grep`s, and test runs, stay in the lead — run tests directly
+  (`run_in_background` for long ones) and read only the summary and the
+  failures.
 
 **Terms** (the user's words map to these, ask if unclear):
 
@@ -134,8 +145,8 @@ Spawning — see `delegation.md` for the brief template:
 Never forward an implementer's "done" unchecked. See `verification.md`:
 
 1. Read the diff (`git diff`) against the brief and CLAUDE.md gotchas.
-2. Full test suite, pass count and slowest groups noted (the final
-   `SHARDS=8` run is part of `finish`).
+2. Tests of the touched areas, wider than the implementer's own group;
+   the one full `SHARDS=8` run is part of `finish` (`verification.md`).
 3. Real-app screenshots of every changed view (simulator data), compared
    against the mockup / expected behavior; both themes if styling changed.
 4. Docs updated as CLAUDE.md requires (`changelog.d/` fragment, `docs/*.md`, README).
