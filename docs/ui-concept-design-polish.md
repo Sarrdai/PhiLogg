@@ -308,7 +308,7 @@ packages use its tokens.
 | P8 | Selects and checkboxes | C3 | 8 % | done | 3ebe1eb | 0.07→0.13 |
 | P9 | Number formats, extraction table | A3, E2 | 8 % | done | 48f9dba | 0.13→0.21 |
 | P10 | Plot axes and grid | E3 | 10 % | done | 262b6c6 | 0.21→0.27 |
-| P11 | Minimap and stat line | E1 | 10 % | done | (this commit) | 0.27→0.38 |
+| P11 | Minimap and stat line | E1 | 10 % | done | ccd5f75 | 0.27→0.38 |
 | P12 | Detail empty state, start screen | E4, E5 | 7 % | open | | |
 | P13 | README pictures, `finish`, archive this file | — | 6 % | open | | |
 
