@@ -113,6 +113,7 @@ fn main() {
             commands::pip_exit,
             commands::pip_enter,
             commands::pip_minimize,
+            commands::pip_set_min_width,
             commands::llm_models,
             commands::llm_model_details,
             commands::llm_chat,

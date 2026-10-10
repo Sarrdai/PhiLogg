@@ -1266,7 +1266,19 @@ render pipeline, same real nodes — and only changes its appearance.
   the far left sits the **ViewMode switcher** —
   `#fhTabs` is not hidden in PiP; `html.pip-mode` collapses `#viewBar` and re-parents
   nothing, instead `position: fixed`-ing `#fhTabs` into the strip's top-left (above the
-  strip, which sits at `z-index:100`). On the right are two buttons: a diagonal `<->`
+  strip, which sits at `z-index:100`). **Every view at every width:** the 420px default
+  lands in the phone tier, but under `state.pipActive` that tier no longer restricts views
+  (`phoneViewsOnly()` gates `phoneEnforceTab`, `applyFhView`, `jumpToViewTab`,
+  `revealInHighlightView` and the phone extract hint; the phone CSS that hides `#fhTabs`/
+  `#vbView` is scoped to `html:not(.pip-mode)`), so Table, Plot, Context and the rest stay
+  switchable; Filtered keeps the phone cards. `philoggSetPip` re-renders, so leaving PiP at
+  phone width falls back to Filtered again. `enter_pip` flags the page *before* shrinking,
+  or the first phone-tier render would already have switched to Filtered. **Minimum
+  width:** `inject.js`'s `setUpPipMinWidth` measures the switcher's right edge + 8px + the
+  two buttons' span (on entry and on every `#fhTabs` resize: tab set, UI scale) and calls
+  `pip_set_min_width`; `set_pip_min_width` applies it as `set_min_size(w, PIP_MIN_H = 120)`
+  while PiP is active, `exit_pip` clears it (`set_min_size(None)`). GROUP
+  pip-phone-all-views covers the page half. On the right are two buttons: a diagonal `<->`
   ("Back to full window") that calls `pip_exit`, and an **X that does not close the app**
   — it calls `pip_minimize`, which ends PiP (restoring the full geometry first) and then
   minimizes the full window back to the taskbar, so the app keeps running in the
