@@ -31,21 +31,11 @@ Regression suite: `tests/` (`tests/README.md`). Optional desktop wrapper:
 
 ## Session workflow
 
-Feature/fix sessions follow the `orchestrate` skill
-(`.claude/skills/orchestrate/`): the main session scopes the task with
-the user, builds a concept mockup first for UI changes and waits for the
-decision, delegates implementation to `implementer` subagents (Sonnet,
-`.claude/agents/implementer.md`) via a brief or a written plan, verifies
-each round itself (full tests + real-app screenshots), and presents the
-result with screenshots. Pure questions and doc-only sessions don't need it.
-Every session that changed files ends with the `finish` skill
-(`.claude/skills/finish/`): merge current `main`, full suite, docs check,
-push, report — no PR. A round split into separate cloud sessions (one
-orchestrator, one session per package) follows the `package-sessions`
-skill: packages report back by message, the orchestrator does not poll.
-Work starts from one of three entry skills: `from-usability-test` (test
-findings → round), `from-backlog` (a `FEATURE_BACKLOG.md` number) or
-`from-request` (a new idea or bug from the prompt).
+Feature/fix sessions start from an entry skill (`from-request`,
+`from-backlog`, `from-usability-test`) and run through `orchestrate`
+(or `package-sessions` for a round split across cloud sessions); pure
+questions and doc-only sessions don't need it. Every session that changed
+files ends with `finish` — no PR.
 
 **Process changes go through `main` on their own.** A change to
 `CLAUDE.md`, `.claude/**` or the rules in `tests/README.md` /
@@ -81,14 +71,9 @@ in a feature branch: parallel sessions only see a rule once it is on
   count in `PROJECT.md` if it moved meaningfully. A concept or plan file
   moves to `docs/archive/` once implemented. A pure doc/planning session
   doesn't need a changelog entry.
-- **Docs over 100 lines get a table of contents.** Every Markdown file
-  in the repo longer than 100 lines (`CLAUDE.md`, `PROJECT.md`, `README.md`,
-  `docs/**`, skills, agent definitions, READMEs; not `LICENSE.md` or the
-  generated third-party notices) starts with a list of its `##`/`###`
-  headings right below the `#` title. It is generated, never hand-edited:
-  run `node scripts/doc-toc.js` after changing any Markdown file (the
-  `finish` skill does); GROUP doc-toc and the Docs CI check fail on a
-  missing or stale one.
+- **Run `node scripts/doc-toc.js` after changing any Markdown file** — it
+  generates the table of contents every doc over 100 lines needs (never
+  hand-edit it); GROUP doc-toc and the Docs CI check fail otherwise.
 - **Keep `README.md` up to date.** It is the human-facing entry point
   (features, screenshots, usage, license): a session that changes a
   user-visible feature updates it; implementation detail stays out of it.
@@ -100,12 +85,8 @@ in a feature branch: parallel sessions only see a rule once it is on
 - **Simplest solution that solves the actual problem** — no speculative
   complexity (size caps, expiry, etc.) until it's a real, current problem.
 - Code and comments in English.
-- **`FEATURE_BACKLOG.md` entries get unique, permanent IDs via `LAST_ID`**
-  in the file's header. Adding an entry: read `LAST_ID`, add 1, use that
-  value as the new entry's ID, then update `LAST_ID` to the same value.
-  Editing or moving an entry never changes its ID. Implementing a feature:
-  remove its entry from the backlog; its ID stays retired and is never
-  reused, and `LAST_ID` does not change.
+- **`FEATURE_BACKLOG.md` IDs are unique and permanent** — take new ones
+  from `LAST_ID` exactly as that file's header describes; never reuse one.
 - **Conventional Commits drive the version.** Prefix a commit `feat: ...`
   (new capability → MINOR) or `fix: ...` (bug fix → PATCH) when it should
   count toward the next release; anything else (`docs:`, `chore:`,
