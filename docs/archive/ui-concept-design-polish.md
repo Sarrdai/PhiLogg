@@ -9,10 +9,10 @@
 - [Budget log](#budget-log)
 <!-- /toc -->
 
-**Status: in progress.** Working document of a multi-session round. The
-session that works on the round keeps the status table in
-"Packages and status" current and commits it after every package. Once
-every package is done, this file moves to `docs/archive/`.
+**Status: implemented (2026-10-10).** All packages P1–P13 are done; this
+file is archived. The current look is described in `docs/ui-standard.md`,
+`docs/ui-and-views.md`, `docs/filters.md` and
+`docs/extraction-and-plotting.md`.
 
 **Mockup (decision document):** https://claude.ai/artifact/WhyZNRNdXNuhxJJWivjyNz,
 with a copy in the repo: `docs/mockups/design-audit-2026-10.html` (open it in a
@@ -310,7 +310,7 @@ packages use its tokens.
 | P10 | Plot axes and grid | E3 | 10 % | done | 262b6c6 | 0.21→0.27 |
 | P11 | Minimap and stat line | E1 | 10 % | done | ccd5f75 | 0.27→0.38 |
 | P12 | Detail empty state, start screen | E4, E5 | 7 % | done | e56da47 | 0.38→0.49 |
-| P13 | README pictures, `finish`, archive this file | — | 6 % | open | | |
+| P13 | README pictures, `finish`, archive this file | — | 6 % | done | (README pictures + archive commits) | 0.49→ |
 
 Status values: `open`, `running`, `done`, `wip` (committed half-done,
 see note), `blocked` (with a reason in the note).
@@ -340,3 +340,4 @@ rules.
 | 2026-10-10T12:57Z | continuation 1 (after P10) | 0.27 | 0.76 | 2026-10-10T15:50Z |
 | 2026-10-10T13:38Z | continuation 1 (after P11) | 0.38 | 0.78 | 2026-10-10T15:50Z |
 | 2026-10-10T14:15Z | continuation 1 (after P12) | 0.49 | 0.79 | 2026-10-10T15:50Z |
+| 2026-10-10T14:20Z | continuation 1 (P13, finish) | 0.49 | 0.79 | 2026-10-10T15:50Z |
