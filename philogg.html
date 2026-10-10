@@ -3418,6 +3418,8 @@
 
   #extractScroll{flex:1 1 auto; overflow:auto; padding:0 16px 16px;}
   #extractTable{border-collapse:collapse; font-family:var(--font-log); font-size:calc(12px * var(--log-text-scale)); min-width:100%; user-select:none;}
+  /* Column width follows the content (nowrap, table not stretched to the panel width). */
+  #extractTable{width:auto; min-width:0;}
   #extractTable th, #extractTable td{
     padding:7px 12px; border-bottom:1px solid var(--hairline); border-right:1px solid var(--hairline);
     white-space:nowrap; text-align:left;
@@ -3428,14 +3430,14 @@
     cursor:pointer; user-select:none;
   }
   #extractHead th:hover{color:var(--accent-strong);}
-  .extract-col-type{display:block; font-size:9px; font-weight:500; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:.4px;}
+  .extract-col-type{display:inline-block; margin-left:6px; vertical-align:baseline; font-size:9px; font-weight:500; color:var(--text-tertiary); text-transform:uppercase; letter-spacing:.4px;}
   .extract-col-rename-input{
     width:100%; max-width:140px; background:var(--bg-app); border:1px solid var(--accent); color:var(--text-primary);
     border-radius:4px; padding:2px 5px; font:inherit; font-size:11px; cursor:text;
   }
   .extract-col-rename-input:focus{outline:none;}
   .extract-sort-btn{
-    float:right; background:none; border:none; cursor:pointer; padding:1px 0 1px 7px;
+    background:none; border:none; cursor:pointer; padding:1px 0 1px 4px;
     font-size:13px; color:var(--text-tertiary); line-height:1;
   }
   .extract-sort-btn:hover{color:var(--text-primary);}
@@ -3447,7 +3449,7 @@
   #extractContextMenu .ctx-array-view.active{color:var(--accent-strong); font-weight:600;}
   .extract-sort-btn.active{color:var(--accent-strong);}
   .extract-gutter{
-    width:1%; color:var(--text-tertiary); font-size:10.5px; text-align:right; cursor:pointer;
+    width:1px; color:var(--text-tertiary); font-size:10.5px; text-align:right; cursor:pointer; /* 1px = shrink to content; 1% would force the whole table to full width */
     background:var(--bg-panel); position:sticky; left:0; z-index:1;
   }
   #extractHead .extract-gutter{z-index:2; cursor:pointer;}
@@ -3456,7 +3458,7 @@
   tbody#extractBody tr.extract-current td:not(.assert-violation){background:color-mix(in srgb, var(--accent) 10%, transparent);}
   #extractTable td.cell-selected, #extractTable th.cell-selected{background:var(--accent-soft) !important;}
   #extractTable td.col-hover, #extractTable th.col-hover{background:var(--bg-elevated-2);}
-  .extract-col-float, .extract-col-int, .extract-col-hex{text-align:right; font-variant-numeric:tabular-nums;}
+  #extractTable .extract-col-float, #extractTable .extract-col-int, #extractTable .extract-col-hex{text-align:right; font-variant-numeric:tabular-nums;} /* cells and header cells; the id selector outranks the th/td text-align:left */
 
   /* ---------- Value assertions (per-column min/max or target±tolerance) ----------
      Set/edited via the Table toolbar's Value assertion button (#tableAssertBtn),
@@ -24121,6 +24123,9 @@ function toggleLevelFromMinimap(rootId, level) {
   toggleLevelFilter(level);
 }
 
+// The one formatter for plain counts in the UI: German grouping ("6.000"), like the tree counts.
+function formatCount(n) { return Number(n).toLocaleString("de-DE"); }
+
 // Count text inside a level-bar circle, at most 4 characters (exact count stays in the
 // title/hover label): 999 -> "999", 1327 -> "1,3k" (floored, German comma), 3058 -> "3k" (no ",0"),
 // 48211 -> "48k", 1204551 -> "1,2M", 12e6 -> "12M".
@@ -26165,12 +26170,49 @@ function niceTicks(min, max, targetCount) {
   for (let v = niceMin; v <= niceMax + step * 0.5; v += step) ticks.push(Math.round(v / step) * step);
   return { ticks, min: niceMin, max: niceMax };
 }
-function formatAxisNumber(v) {
+// Compact SI for integers < 1e12: 100000 -> "100k", 1500000 -> "1,5M", 12500 -> "12,5k" (German comma,
+// no trailing ",0", 3 significant digits), 2e9 -> "2G". Below 1000 the plain integer.
+function compactSi(n) {
+  const abs = Math.abs(n), sign = n < 0 ? "-" : "";
+  if (abs < 1000) return sign + abs;
+  const [div, unit] = abs < 1e6 ? [1e3, "k"] : abs < 1e9 ? [1e6, "M"] : [1e9, "G"];
+  return sign + String(parseFloat((abs / div).toPrecision(3))).replace(".", ",") + unit;
+}
+// A millisecond value as a duration: 500 -> "500ms", 45000 -> "45s", 150000 -> "2m 30s", 3600000 -> "1h".
+function formatAxisDuration(ms) {
+  if (ms === 0) return "0";
+  const sign = ms < 0 ? "\u2212" : "", abs = Math.abs(ms);
+  if (abs < 1000) return sign + String(parseFloat(abs.toPrecision(3))).replace(".", ",") + "ms";
+  const sec = abs / 1000;
+  if (sec < 60) return sign + String(parseFloat(sec.toPrecision(3))).replace(".", ",") + "s";
+  const j = (a, au, b, bu) => a + au + (b ? " " + b + bu : "");
+  const total = Math.round(sec);
+  if (total < 3600) return sign + j(Math.floor(total / 60), "m", total % 60, "s");
+  const min = Math.round(total / 60);
+  if (min < 1440) return sign + j(Math.floor(min / 60), "h", min % 60, "m");
+  const hrs = Math.round(min / 60);
+  return sign + j(Math.floor(hrs / 24), "d", hrs % 24, "h");
+}
+// Axis / colorbar label. `asMs`: the field is a millisecond time, label it as a duration.
+function formatAxisNumber(v, asMs) {
   if (v === 0) return "0";
+  if (asMs) return formatAxisDuration(v);
   const abs = Math.abs(v);
+  if (Number.isInteger(v) && abs < 1e12) return compactSi(v);
   if (abs >= 100000 || abs < 0.0001) return v.toExponential(1);
   const s = parseFloat(v.toPrecision(4)).toString();
   return s;
+}
+// Exact value for tooltips and the statistics line (axis labels are compact, these are not):
+// integers grouped like every count ("1.500.000"), decimals as formatAxisNumber.
+function formatPlotValue(v) {
+  return Number.isInteger(v) && Math.abs(v) < 1e15 ? formatCount(v) : formatAxisNumber(v);
+}
+// Is plot column `ci` a millisecond time (the t (ms) column, a time-typed or "ms"-unit field)?
+// The clock-time X axis is drawn separately and never asks.
+function plotColIsMs(ci) {
+  const c = ci == null ? null : findExtractColumn(ci);
+  return !!c && (c.type === "time" || c.unit === "ms" || (ci === ELAPSED_COL && c.name === "t (ms)"));
 }
 
 // Switches which of the extraction node's two content components is on
@@ -27151,7 +27193,7 @@ function renderValueChart() {
         const v = finiteMean(vals);
         if (!Number.isFinite(v)) return;
         const y1 = yPix(j1), h = yPix(j0) - y1;
-        const title = withTitles ? "<title>" + escapeHtml(src.rangeLabel(j0, j1) + " = " + formatAxisNumber(v) +
+        const title = withTitles ? "<title>" + escapeHtml(src.rangeLabel(j0, j1) + " = " + formatPlotValue(v) +
           " · " + (band.rows.length > 1 ? band.rows.length + " rows from " : "") + arrayRowLabel(band.r)) + "</title>" : "";
         parts.push('<rect class="plot-mark plot-heat-cell" data-row="' + band.r + '" x="' + bx.toFixed(1) + '" y="' + y1.toFixed(1) + '" width="' + (bw + 0.3).toFixed(1) +
           '" height="' + (h + 0.3).toFixed(1) + '" fill="' + plotColorScale((v - vLo) / range.span, plotConfig.colorMap) + '">' + title + "</rect>");
@@ -27201,7 +27243,7 @@ function renderValueChart() {
       row.a.forEach((v, j) => {
         if (!Number.isFinite(v)) return;
         parts.push('<circle class="plot-mark" data-row="' + row.r + '" cx="' + xPix(j).toFixed(1) + '" cy="' + yPix(v).toFixed(1) + '" r="' + (dim ? 2.2 : 3) + '" fill="' + color + '"><title>' +
-          escapeHtml(src.label(j) + " = " + formatAxisNumber(v) + " · " + arrayRowLabel(row.r)) + "</title></circle>");
+          escapeHtml(src.label(j) + " = " + formatPlotValue(v) + " · " + arrayRowLabel(row.r)) + "</title></circle>");
       });
     };
     overlays.forEach((row, i) => drawRow(row, COLUMN_PALETTE[(i + 1) % COLUMN_PALETTE.length], 1.4, true));
@@ -27247,7 +27289,7 @@ function renderRadarChart(src, W, H, empty) {
       '" stroke="' + color + '" stroke-width="' + width + '"' + (dim ? ' stroke-opacity="0.75"' : "") + "/>");
     pts.forEach(p => {
       parts.push('<circle class="plot-mark" data-row="' + row.r + '" cx="' + p.xy[0].toFixed(1) + '" cy="' + p.xy[1].toFixed(1) + '" r="' + (dim ? 2.2 : 3) + '" fill="' + color + '"><title>' +
-        escapeHtml(src.label(p.j) + " = " + formatAxisNumber(p.v) + " · " + arrayRowLabel(row.r)) + "</title></circle>");
+        escapeHtml(src.label(p.j) + " = " + formatPlotValue(p.v) + " · " + arrayRowLabel(row.r)) + "</title></circle>");
     });
   };
   overlays.forEach((row, i) => drawRow(row, COLUMN_PALETTE[(i + 1) % COLUMN_PALETTE.length], 1.4, true));
@@ -27307,7 +27349,7 @@ function renderParallelChart(src, W, H) {
       pen = true;
     });
     if (!d) return;
-    const title = "<title>" + escapeHtml(arrayRowLabel(row.r) + " · " + cols.map((c, k) => c.name + " " + (Number.isFinite(row.a[k]) ? formatAxisNumber(row.a[k]) : "–")).join(", ")) + "</title>";
+    const title = "<title>" + escapeHtml(arrayRowLabel(row.r) + " · " + cols.map((c, k) => c.name + " " + (Number.isFinite(row.a[k]) ? formatPlotValue(row.a[k]) : "–")).join(", ")) + "</title>";
     (lit ? litParts : dimParts).push('<path class="plot-mark plot-pc-line' + (lit ? "" : " plot-pc-dim") + '" data-row="' + row.r + '" d="' + d + '"' +
       (lit ? ' stroke="' + colorOf(row) + '"' : "") + ">" + title + "</path>");
   });
@@ -28051,12 +28093,13 @@ function renderPlotChart() {
   // Gridlines + Y ticks — recomputed from the EFFECTIVE (possibly zoomed)
   // domain every render, so tick density stays sensible at any zoom level
   // instead of only ever showing the home view's tick spacing.
+  const yAxisIsMs = plotConfig.yCols.length > 0 && plotConfig.yCols.every(plotColIsMs); // all series are ms times: duration labels
   const yTicksView = niceTicks(yDomainMin, yDomainMax, Math.max(2, Math.round(plotH / 50)));
   yTicksView.ticks.forEach(t => {
     if (t < yDomainMin - 1e-9 || t > yDomainMax + 1e-9) return;
     const py = yPix(t);
     parts.push('<line class="plot-grid-line" x1="' + left + '" y1="' + py + '" x2="' + (left + plotW) + '" y2="' + py + '"/>');
-    parts.push('<text class="plot-tick-label" x="' + (left - 8) + '" y="' + (py + 3) + '" text-anchor="end">' + formatAxisNumber(t) + "</text>");
+    parts.push('<text class="plot-tick-label" x="' + (left - 8) + '" y="' + (py + 3) + '" text-anchor="end">' + formatAxisNumber(t, yAxisIsMs) + "</text>");
   });
   // X ticks
   if (isBarChart) {
@@ -28080,7 +28123,7 @@ function renderPlotChart() {
       if (t < xDomainMin - 1e-9 || t > xDomainMax + 1e-9) return;
       const px = xPix(t);
       parts.push('<line class="plot-grid-line" x1="' + px + '" y1="' + top + '" x2="' + px + '" y2="' + (top + plotH) + '"/>');
-      parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + (plotXIsClock() ? formatPlotClockTick(t, xDomainMin, xDomainMax) : formatAxisNumber(t)) + "</text>");
+      parts.push('<text class="plot-tick-label" x="' + px + '" y="' + (top + plotH + 16) + '" text-anchor="middle">' + (plotXIsClock() ? formatPlotClockTick(t, xDomainMin, xDomainMax) : formatAxisNumber(t, plotColIsMs(plotConfig.xCol))) + "</text>");
     });
   }
   // Axes
@@ -28217,8 +28260,8 @@ function renderPlotChart() {
       const yTop = legendTop + legendH * (1 - t1), yBot = legendTop + legendH * (1 - t0);
       parts.push('<rect x="' + legendX + '" y="' + yTop.toFixed(1) + '" width="12" height="' + (yBot - yTop + 0.5).toFixed(1) + '" fill="' + plotColorScale((t0 + t1) / 2, plotConfig.colorMap) + '"/>');
     }
-    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + 4) + '">' + formatAxisNumber(scatterColorMax) + "</text>");
-    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH) + '">' + formatAxisNumber(scatterColorMin) + "</text>");
+    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + 4) + '">' + formatAxisNumber(scatterColorMax, plotColIsMs(plotConfig.colorCol)) + "</text>");
+    parts.push('<text class="plot-tick-label" x="' + (legendX + 16) + '" y="' + (legendTop + legendH) + '">' + formatAxisNumber(scatterColorMin, plotColIsMs(plotConfig.colorCol)) + "</text>");
     parts.push('<text class="plot-tick-label plot-axis-clickable" data-axis="color" x="' + (legendX + 16) + '" y="' + (legendTop + legendH / 2) + '" transform="rotate(0 0 0)">' + escapeHtml(columnAxisLabel(findExtractColumn(plotConfig.colorCol))) + "</text>");
     parts.push(plotAxisCaret("color", legendX + 16, legendTop + legendH / 2, columnAxisLabel(findExtractColumn(plotConfig.colorCol)), "start", ""));
   }
@@ -28471,8 +28514,8 @@ function renderPlot3D() {
     ctx.strokeStyle = axisColor;
     ctx.strokeRect(legendX, legendTop, 14, legendH);
     ctx.fillStyle = labelColor;
-    ctx.fillText(formatAxisNumber(colorHi), legendX + 18, legendTop + 8);
-    ctx.fillText(formatAxisNumber(colorLo), legendX + 18, legendTop + legendH);
+    ctx.fillText(formatAxisNumber(colorHi, plotColIsMs(plotConfig.colorCol)), legendX + 18, legendTop + 8);
+    ctx.fillText(formatAxisNumber(colorLo, plotColIsMs(plotConfig.colorCol)), legendX + 18, legendTop + legendH);
   }
 
   plotHoverPoints = hoverPts;
@@ -28758,8 +28801,8 @@ function renderStatsBar(node) {
     const stats = computeColumnStats(c.index);
     if (!stats) return "";
     return '<span class="stat-chip"><span class="stat-chip-name" style="color:' + columnColor(c.index) + '">' + escapeHtml(c.name) + ':</span> ' +
-      'min <b>' + formatAxisNumber(stats.min) + '</b> · max <b>' + formatAxisNumber(stats.max) + '</b> · ' +
-      'mean <b>' + formatAxisNumber(stats.mean) + '</b> · σ <b>' + formatAxisNumber(stats.stddev) + '</b></span>';
+      'min <b>' + formatPlotValue(stats.min) + '</b> · max <b>' + formatPlotValue(stats.max) + '</b> · ' +
+      'mean <b>' + formatPlotValue(stats.mean) + '</b> · σ <b>' + formatPlotValue(stats.stddev) + '</b></span>';
   }).join("");
   extractStatsContent.innerHTML = chips;
   statsPanelBody.classList.toggle("stats-empty", chips === "");
@@ -28943,10 +28986,10 @@ function renderExtractTable(node) {
         escapeHtml(ARRAY_VIEW_LABELS[c.arrayMode] || "Joined") + ' ▾</button>'
       : "";
     headHtml +=
-      '<th data-col="' + i + '" title="Select column · Ctrl+click add · Shift+click extend · F2 rename">' +
-      numBadge + nameHtml + arrayBtn +
+      '<th data-col="' + i + '" class="extract-col-' + escapeHtml(c.type) + '" title="Select column · Ctrl+click add · Shift+click extend · F2 rename">' +
+      numBadge + nameHtml +
       '<button type="button" class="extract-sort-btn' + (extractSortCol === i ? " active" : "") + '" data-sort-col="' + i + '" title="Sort">' + arrow + "</button>" +
-      badge + "</th>";
+      arrayBtn + badge + "</th>";
   });
   headHtml += "</tr>";
   extractHead.innerHTML = headHtml;
@@ -47931,13 +47974,13 @@ function ticketSpanText(ctx, entries) {
 //   filter   chain steps after the file step + " → x of y", null when there's no filter
 function ticketHeaderData(ctx, entries) {
   const span = ticketSpanText(ctx, entries);
-  let tail = " (" + ctx.total + " entries)";
-  if (ctx.selection) tail += " · " + ctx.entries.length + " hand-picked entries";
+  let tail = " (" + formatCount(ctx.total) + " entries)";
+  if (ctx.selection) tail += " · " + formatCount(ctx.entries.length) + " hand-picked entries";
   if (span) tail += " · " + span;
   let filter = null;
   if (!ctx.selection && ctx.steps.length > 1) {
     filter = ctx.steps.slice(1).map(s => exportTruncate(s.text, TICKET_TEXT_MAX_CHARS)).join(" → ") +
-      " → " + ctx.entries.length + " of " + ctx.total;
+      " → " + formatCount(ctx.entries.length) + " of " + formatCount(ctx.total);
   }
   return { heading: ctx.selection ? nodeDisplayName(ctx.active) : null, source: ctx.sources.join(", "), tail, filter };
 }
@@ -48121,12 +48164,12 @@ function buildReportHtmlParts(ctx) {
     "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">" +
     "<title>" + esc(title) + "</title><style>" + EXPORT_REPORT_CSS + "</style></head><body>\n" +
     "<h1>" + esc(title) + "</h1>\n<dl>" +
-    "<dt>Source</dt><dd>" + ctx.sources.map(s => "<code>" + esc(s) + "</code>").join(", ") + " (" + ctx.total + " entries)</dd>";
+    "<dt>Source</dt><dd>" + ctx.sources.map(s => "<code>" + esc(s) + "</code>").join(", ") + " (" + formatCount(ctx.total) + " entries)</dd>";
   if (ctx.entries.length) {
     head += "<dt>Time range</dt><dd><code>" + esc(formatTime(ctx.from)) + "</code> → <code>" + esc(formatTime(ctx.to)) +
       "</code> (" + esc(formatDuration(ctx.to - ctx.from)) + ")</dd>";
   }
-  head += "<dt>Matched</dt><dd>" + ctx.entries.length + " of " + ctx.total + " entries (" + exportPercent(ctx.entries.length, ctx.total) + ")</dd></dl>\n";
+  head += "<dt>Matched</dt><dd>" + formatCount(ctx.entries.length) + " of " + formatCount(ctx.total) + " entries (" + exportPercent(ctx.entries.length, ctx.total) + ")</dd></dl>\n";
   head += "<h2>Filter chain</h2>\n<ol>" + ctx.steps.map(s => "<li>" + esc(s.text) + " — " + s.count + "</li>").join("") + "</ol>\n";
   if (ctx.findings.length) {
     head += "<h2>Bookmarks &amp; notes (" + ctx.findings.length + ")</h2>\n<table><thead><tr><th></th><th>Time</th><th>Level</th><th>Message</th><th>Note</th></tr></thead><tbody>";
@@ -48136,7 +48179,7 @@ function buildReportHtmlParts(ctx) {
     });
     head += "</tbody></table>\n";
   }
-  head += "<h2>Matching entries (" + ctx.entries.length + ")</h2>\n<div class=\"log\">";
+  head += "<h2>Matching entries (" + formatCount(ctx.entries.length) + ")</h2>\n<div class=\"log\">";
   parts.push(head);
   exportChunkedParts(ctx.entries, e => {
     const bm = state.bookmarks.has(e.id);
@@ -48218,14 +48261,14 @@ function renderExportDialog() {
   const ctx = exportDialogCtx;
   if (!ctx) return;
   el("#exportViewLabel").textContent = nodeDisplayName(ctx.active);
-  el("#exportSummary").textContent = ctx.entries.length + " of " + ctx.total + " entries · " +
+  el("#exportSummary").textContent = formatCount(ctx.entries.length) + " of " + formatCount(ctx.total) + " entries · " +
     ctx.steps.length + " step" + (ctx.steps.length === 1 ? "" : "s") + " · " +
     ctx.findings.length + " bookmark" + (ctx.findings.length === 1 ? "" : "s") + "/note" + (ctx.findings.length === 1 ? "" : "s");
   const marked = exportMarkedCount(ctx);
   if (exportDialogMode === "marked" && marked < 2) exportDialogMode = "first";
-  el("#exportNMarked").textContent = "(" + marked + ")";
-  el("#exportNAll").textContent = "(" + ctx.entries.length + ")";
-  el("#exportNBookmarked").textContent = "(" + ctx.findings.length + ")";
+  el("#exportNMarked").textContent = "(" + formatCount(marked) + ")";
+  el("#exportNAll").textContent = "(" + formatCount(ctx.entries.length) + ")";
+  el("#exportNBookmarked").textContent = "(" + formatCount(ctx.findings.length) + ")";
   exportDialog.querySelectorAll("[data-export-lines]").forEach(b => {
     b.classList.toggle("active", b.dataset.exportLines === exportDialogMode);
     if (b.dataset.exportLines === "marked") b.disabled = marked < 2;
@@ -48268,7 +48311,7 @@ function copyTicketSnippet() {
   const opts = Object.assign({}, o, { entries: pickTicketEntries(ctx, o.mode, o.n) });
   const text = buildTicketSnippet(ctx, exportFormat, opts);
   copyTextToClipboard(text, exportFormat === "rich" ? buildTicketSnippetHtml(ctx, opts) : undefined);
-  showCopyToast("Copied for ticket (" + opts.entries.length + " entries)");
+  showCopyToast("Copied for ticket (" + formatCount(opts.entries.length) + " entries)");
 }
 // The direct-copy paths (row context menu, shortcut, tree menu on a selection
 // filter) — no dialog: gaps always on, header per the remembered checkbox,
@@ -48278,7 +48321,7 @@ function copyEntriesForTicket(ctx, entries) {
   if (!ctx || !entries || !entries.length) { showCopyToast("Nothing to copy"); return 0; }
   const opts = { entries, gaps: true, header: exportHeader };
   copyTextToClipboard(buildTicketSnippet(ctx, exportFormat, opts), exportFormat === "rich" ? buildTicketSnippetHtml(ctx, opts) : undefined);
-  showCopyToast("Copied for ticket (" + entries.length + " entries)");
+  showCopyToast("Copied for ticket (" + formatCount(entries.length) + " entries)");
   return entries.length;
 }
 // Marked rows (2+ in the active root file), else `fallback` (one entry or null).
