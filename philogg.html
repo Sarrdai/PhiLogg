@@ -1726,8 +1726,6 @@
   #findBar{
     position:absolute; top:4px; right:14px; z-index:30;
     display:flex; align-items:center; gap:4px;
-    background:var(--bg-elevated); border:1px solid var(--border);
-    border-radius:8px; box-shadow:0 6px 18px rgba(0,0,0,.35);
     padding:4px 4px 4px 6px; max-width:calc(100% - 28px);
   }
   #findBar.hidden{display:none;}
@@ -3862,8 +3860,9 @@
   #exportDialog .settings-row:last-of-type{border-bottom:none;}
   #exportDialog .settings-subsection-title{margin:16px 0 4px;}
   #exportDialog .settings-row.export-stack{grid-template-columns:1fr; gap:8px;}
-  #exportDialog .export-seg{display:flex; flex-wrap:wrap; gap:6px;}
-  #exportDialog .export-seg .assert-mode-btn{flex:0 0 auto; padding:0 12px; height:30px; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;}
+  #exportDialog .export-seg{display:flex; gap:0;}
+  #exportDialog .export-seg .assert-mode-btn{flex:1 1 auto; justify-content:center; padding:0 10px; height:30px; display:inline-flex; align-items:center; gap:6px; white-space:nowrap;}
+  #exportSaveBtn{display:inline-flex; align-items:center; gap:4px;}
   #exportDialog .assert-mode-btn:disabled{opacity:.4; cursor:default;}
   #exportDialog .assert-mode-btn .export-seg-n{color:var(--text-tertiary); font-size:11px;}
   #exportDialog .assert-mode-btn.active .export-seg-n{color:inherit;}
@@ -3958,6 +3957,13 @@
     border-radius:6px; padding:6px 8px; font-size:11.5px; cursor:pointer;
   }
   .assert-mode-btn.active{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
+  /* Connected segmented control (C4): export Lines/Format, settings short choices and the Theme mode row.
+     Neighbouring buttons share one border; the active one is raised so its accent border stays whole. */
+  .export-seg > .assert-mode-btn, .settings-seg > .assert-mode-btn, #settingsThemeModeRow > .assert-mode-btn{border-radius:0; margin-left:-1px; position:relative;}
+  .export-seg > .assert-mode-btn:first-child, .settings-seg > .assert-mode-btn:first-child, #settingsThemeModeRow > .assert-mode-btn:first-child{margin-left:0; border-radius:6px 0 0 6px;}
+  .export-seg > .assert-mode-btn:last-child, .settings-seg > .assert-mode-btn:last-child, #settingsThemeModeRow > .assert-mode-btn:last-child{border-radius:0 6px 6px 0;}
+  .export-seg > .assert-mode-btn:hover, .settings-seg > .assert-mode-btn:hover, #settingsThemeModeRow > .assert-mode-btn:hover,
+  .export-seg > .assert-mode-btn.active, .settings-seg > .assert-mode-btn.active, #settingsThemeModeRow > .assert-mode-btn.active{z-index:1;}
   /* Bugfix: updateAssertModeUI() already toggled this class on
      #assertRangeFields/#assertTargetFields, but no rule targeted it — same
      no-bare-.hidden scoping every other .hidden usage in this stylesheet
@@ -4104,8 +4110,7 @@
   #btnLibrary .icon{width:13px; height:13px;}
   #libraryMenu{
     position:fixed; z-index:50; width:min(320px, calc(100vw - 16px)); max-height:min(560px, calc(100vh - 80px));
-    display:flex; flex-direction:column; background:var(--bg-elevated); border:1px solid var(--border);
-    border-radius:10px; box-shadow:0 12px 30px rgba(0,0,0,.5); font-size:12.5px; overflow:hidden;
+    display:flex; flex-direction:column; font-size:12.5px; overflow:hidden;
   }
   #libraryMenu.hidden{display:none;}
   #libraryMenu .lib-search{
@@ -4121,7 +4126,7 @@
   #libraryMenuList{flex:1 1 auto; min-height:0; overflow-y:auto; padding-bottom:2px;}
   #libraryMenu .lib-grp{padding:7px 12px 3px; font-size:10px; font-weight:600; letter-spacing:.09em; text-transform:uppercase; color:var(--text-tertiary);}
   #libraryMenu .lib-it{display:flex; align-items:center; gap:8px; padding:5px 12px; cursor:pointer; color:var(--text-primary);}
-  #libraryMenu .lib-it:hover, #libraryMenu .lib-it.kb{background:var(--accent-soft);}
+  #libraryMenu .lib-it:hover, #libraryMenu .lib-it.kb{background:var(--btn-hover);}
   #libraryMenu .lib-it.dis{opacity:.45; cursor:default;}
   #libraryMenu .lib-it.dis:hover{background:transparent;}
   #libraryMenu .lib-it > svg{flex:0 0 auto; color:var(--text-tertiary);}
@@ -4419,7 +4424,7 @@
   #settingsDialog .settings-row{grid-template-columns:minmax(0,1fr) var(--settings-ctl-w);}
   #settingsDialog .settings-row-control{display:flex; align-items:center; justify-content:flex-end; gap:8px; min-width:0;}
   #settingsDialog .settings-row-control select{width:100%; min-width:0; box-sizing:border-box; height:30px;}
-  #settingsDialog .settings-row-control.assert-mode-row, #settingsDialog .settings-seg{margin-bottom:0; width:100%; gap:6px;}
+  #settingsDialog .settings-row-control.assert-mode-row, #settingsDialog .settings-seg{margin-bottom:0; width:100%; gap:0;}
   #settingsDialog .settings-seg{display:flex;}
   #settingsDialog .settings-row-control .assert-mode-btn{flex:1 1 0%; min-width:0; padding:0 4px; height:30px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
   select.settings-seg-src{display:none !important;}
@@ -5175,8 +5180,7 @@
   body.layout-phone #whereHint, body.layout-phone #whereIsWhat, body.layout-phone #hoverNudge, body.layout-phone #helpMenu{display:none !important;}
   /* "?" quick-switch menu: same shell as the other click-dismissed menus. */
   #helpMenu{
-    position:fixed; z-index:50; background:var(--bg-elevated); border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:220px; max-width:280px;
+    position:fixed; z-index:50; padding:4px; min-width:220px; max-width:280px;
   }
   #helpMenu.hidden{display:none;}
   #helpMenu .ctx-item{justify-content:space-between; gap:16px; outline:none;}
@@ -5197,8 +5201,6 @@
      small bottom margin so it never touches the viewport edge. */
   #filterPopup{
     position:absolute; top:56px; left:50%; transform:translateX(-50%);
-    background:var(--bg-elevated); border:1px solid var(--border);
-    border-radius:10px; box-shadow:0 12px 30px rgba(0,0,0,.45);
     padding:10px; display:flex; flex-direction:column; gap:6px; z-index:40;
     width:min(620px, 92%); max-height:calc(100vh - 76px); overflow-y:auto;
   }
@@ -5400,9 +5402,14 @@
 
   /* ---------- Context menu ---------- */
   #contextMenu, #treeContextMenu, #openMenu, #saveMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu, #textCopyMenu{
-    position:fixed; z-index:50; background:var(--bg-elevated);
-    border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:240px; max-width:280px;
+    position:fixed; z-index:50; padding:4px; min-width:240px; max-width:280px;
+  }
+  /* Popover look (D1): every menu/popover shares the --bg-popover fill, a hairline border,
+     radius 9px and a two-layer shadow. */
+  #contextMenu, #treeContextMenu, #openMenu, #saveMenu, #extractContextMenu, #plotRoleMenu, #facetValueMenu, #textCopyMenu,
+  #addToSelectionMenu, #treeCtxInfoMenu, #helpMenu, #libraryMenu, #filterPopup, #findBar{
+    background:var(--bg-popover); border:1px solid var(--hairline); border-radius:9px;
+    box-shadow:0 1px 2px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.18);
   }
   #openMenu, #saveMenu{min-width:180px;}
   #saveMenu .ctx-item.disabled{color:var(--text-tertiary); cursor:not-allowed;}
@@ -5415,13 +5422,18 @@
   #facetValueMenu .ctx-meta{user-select:text; -webkit-user-select:text; font-size:11.5px; color:var(--text-primary);}
   #extractContextMenu .ctx-item.hidden{display:none;}
   .ctx-item{
-    display:flex; align-items:center; gap:8px; padding:8px 10px; border-radius:6px;
+    display:flex; align-items:center; gap:8px; padding:0 10px; min-height:30px; box-sizing:border-box; border-radius:6px;
     font-size:12.3px; color:var(--text-primary); cursor:pointer;
   }
-  .ctx-item:hover{background:var(--accent-soft); color:var(--accent-strong);}
+  .ctx-item:hover{background:var(--btn-hover); color:var(--text-primary);}
   .ctx-item svg{flex:0 0 auto; color:var(--text-tertiary);}
-  .ctx-item:hover svg{color:var(--accent-strong);}
-  .ctx-sep{height:1px; background:var(--hairline); margin:5px 4px;}
+  .ctx-item:hover svg{color:var(--text-primary);}
+  .ctx-item kbd, .ctx-item .ctx-kbd{margin-left:auto; color:var(--text-tertiary);}
+  /* Destructive item (Remove filter / Close file / ...). */
+  .ctx-item.ctx-danger, .ctx-item.ctx-danger svg{color:var(--level-error);}
+  .ctx-item.ctx-danger:hover{background:color-mix(in srgb, var(--level-error) 12%, transparent); color:var(--level-error);}
+  .ctx-item.ctx-danger:hover svg{color:var(--level-error);}
+  .ctx-sep{height:1px; background:var(--hairline); margin:4px;}
   /* Group heading inside a context menu: non-interactive label above a group of
      items (see syncCtxGroups, which hides it together with its separator when
      the whole group is hidden). */
@@ -5446,9 +5458,7 @@
      exact same .ctx-item/.ctx-sep/.ctx-meta styling as #contextMenu below. */
   .ctx-submenu-arrow{margin-left:auto;}
   #addToSelectionMenu{
-    position:fixed; z-index:51; background:var(--bg-elevated);
-    border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
+    position:fixed; z-index:51; padding:4px; min-width:200px; max-width:280px;
   }
   #addToSelectionMenu.hidden{display:none;}
   /* "Info" submenu trigger on the tree's filter/file context menu
@@ -5459,9 +5469,7 @@
      Hidden behind this hover/click submenu instead, same shape as
      #addToSelectionMenu just above. */
   #treeCtxInfoMenu{
-    position:fixed; z-index:51; background:var(--bg-elevated);
-    border:1px solid var(--border); border-radius:8px; padding:5px;
-    box-shadow:0 12px 30px rgba(0,0,0,.5); min-width:200px; max-width:280px;
+    position:fixed; z-index:51; padding:4px; min-width:200px; max-width:280px;
   }
   #treeCtxInfoMenu.hidden{display:none;}
   #treeCtxInfoMenu .ctx-info-row{display:flex; gap:10px; padding:2px 10px; font-size:11.5px; line-height:1.4;}
@@ -7692,7 +7700,7 @@
       <div id="exportPreviewRich" class="hidden" aria-label="Rich text preview"></div>
       <div class="link-dialog-actions">
         <div class="export-save-wrap">
-          <button type="button" id="exportSaveBtn" class="btn-mini-secondary" aria-haspopup="true">Save file ▾</button>
+          <button type="button" id="exportSaveBtn" class="btn-mini-secondary" aria-haspopup="true">Save file <svg class="icon" aria-hidden="true"><use href="#i-chev"/></svg></button>
           <div class="export-save-menu hidden" id="exportSaveMenu">
             <button type="button" data-export-file="log">Log (.log)</button>
             <button type="button" data-export-file="csv">CSV (.csv)</button>
@@ -46346,10 +46354,11 @@ function openTreeContextMenu(ev, clickedId) {
         action: "delete",
         label: node.type === "file" ? (node.folderId ? "Close file" : "Remove file") : "Remove filter",
         icon: ICON_CLOSE,
+        danger: true,
       });
     }
 
-    const itemHtml = a => '<div class="ctx-item" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>";
+    const itemHtml = a => '<div class="ctx-item' + (a.danger ? " ctx-danger" : "") + '" data-action="' + a.action + '">' + a.icon + " " + a.label + "</div>";
     const sectionsHtml = ctxGroupsHtml([
       { head: "Edit", items: edit.map(itemHtml) },
       { head: "Create from this", items: create.map(itemHtml) },

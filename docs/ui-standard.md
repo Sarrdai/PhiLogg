@@ -4,6 +4,7 @@
 - [Design tokens (never hardcode these)](#design-tokens-never-hardcode-these)
 - [Icon buttons](#icon-buttons)
 - [Buttons](#buttons)
+- [Popovers and menus](#popovers-and-menus)
 - [Segmented (mode) selector — .assert-mode-btn](#segmented-mode-selector--assert-mode-btn)
 - [Boolean toggle — .pill-toggle (the #69 replacement for checkboxes)](#boolean-toggle--pill-toggle-the-69-replacement-for-checkboxes)
 - [Layout & rows — .settings-row](#layout--rows--settings-row)
@@ -70,6 +71,10 @@ Rules:
 - No per-dialog width/height overrides on buttons. If a button looks
   wrong at the standard size, the container is wrong, not the button.
 
+## Popovers and menus
+
+Every menu and popover (`#contextMenu`, `#treeContextMenu`, `#openMenu`, `#saveMenu`, the help and library menus, `#filterPopup`, `#findBar`, ...) shares one rule: `--bg-popover` fill, 1px `--hairline` border, radius 9px, shadow `0 1px 2px rgba(0,0,0,.08), 0 8px 24px rgba(0,0,0,.18)`, 4px padding. Items (`.ctx-item`) are 30px high with a 6px radius and `--btn-hover` on hover; shortcut hints (`kbd`) sit right-aligned in `--text-tertiary`; separators are 1px `--hairline`. **Destructive items** (Remove filter, Close/Remove file) carry `.ctx-danger`: `--level-error` text, hover `color-mix(in srgb, var(--level-error) 12%, transparent)`. Set `danger: true` on the item descriptor where the menu is built.
+
 ## Segmented (mode) selector — `.assert-mode-btn`
 
 For **mutually exclusive modes** (2–4 options): the existing segmented
@@ -90,6 +95,8 @@ click into `select.value = v` + `change`, and overrides the select's instance
 `value` setter so a programmatic `select.value = x` re-syncs the active
 button. A `<select>` stays only for open lists (themes, fonts, schemes,
 instances, models).
+
+**Connected look**: in dialogs the segmented control is one connected group: neighbouring `.assert-mode-btn`s share a border (no gap, `margin-left:-1px`), only the outer corners are rounded, the active segment is raised above its neighbours. Used by the export dialog's Lines and Format rows (`.export-seg`), `.settings-seg` and the Theme mode row.
 
 ## Boolean toggle — `.pill-toggle` (the #69 replacement for checkboxes)
 
