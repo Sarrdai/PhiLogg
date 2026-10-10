@@ -3545,6 +3545,76 @@
   #linkSpacer{position:relative;}
   #linkBody{position:absolute; top:0; left:0; right:0;}
 
+  /* ---------- Link view: Tree layout (nested links) ----------
+     One .link-trow per pair, a fixed LINK_PAIR_ROW_HEIGHT tall (inline) so the
+     virtualization offsets stay exact; the grid columns are shared with the
+     #linkTreeHead column header. #linkWrap.link-tree-mode is set by
+     renderLinkView. The chevron reuses .tree-chevron(-slot) of the filter tree. */
+  #linkToolbar .link-nested-only.hidden, #linkToolbar .link-tree-only.hidden{display:none;}
+  .link-tool-group{display:inline-flex; align-items:center; gap:6px 12px; flex:0 0 auto;}
+  #linkToolbar .toolbar-icon-btn{width:26px; height:26px;}
+  body.layout-phone #linkToolbar .toolbar-icon-btn{width:36px; height:36px;}
+  #linkWrap{
+    --link-indent:16px;
+    --link-cols:minmax(0,1fr) calc(92px * var(--log-text-scale)) calc(92px * var(--log-text-scale)) calc(62px * var(--log-text-scale)) 110px;
+  }
+  #linkTreeHead{
+    display:none; flex:0 0 auto; grid-template-columns:var(--link-cols); column-gap:10px; align-items:center;
+    padding:7px calc(14px + var(--link-sb, 0px)) 5px 14px; border-bottom:1px solid var(--border-soft);
+    font-size:10.5px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-tertiary);
+  }
+  #linkTreeHead .r{text-align:right; text-transform:none;}
+  #linkWrap.link-tree-mode #linkTreeHead{display:grid;}
+  #linkWrap.link-tree-mode #linkScroll{padding:0 0 12px; overflow-y:scroll;}
+  .link-trow{
+    --tl:var(--text-tertiary);
+    box-sizing:border-box; display:grid; grid-template-columns:var(--link-cols); column-gap:10px; align-items:center;
+    padding-right:14px; position:relative; cursor:default; font-family:var(--font-log);
+    font-size:calc(11.6px * var(--log-text-scale));
+  }
+  .link-trow:hover{background:var(--bg-elevated);}
+  .link-trow.pair-selected{background:var(--accent-soft);}
+  .link-trow.lvl-error{--tl:var(--level-error);}
+  .link-trow.lvl-warn{--tl:var(--level-warn);}
+  .link-trow.lvl-info{--tl:var(--level-info);}
+  .link-trow.lvl-debug{--tl:var(--level-debug);}
+  .link-trow.lvl-fatal{--tl:var(--level-fatal);}
+  .link-trow.lvl-trace{--tl:var(--level-trace);}
+  .link-trow.lvl-custom-1{--tl:var(--level-custom-1);}
+  .link-trow.lvl-custom-2{--tl:var(--level-custom-2);}
+  .link-trow.lvl-custom-3{--tl:var(--level-custom-3);}
+  .link-trow.lvl-custom-4{--tl:var(--level-custom-4);}
+  .link-trow.lvl-custom-5{--tl:var(--level-custom-5);}
+  .link-trow.lvl-custom-6{--tl:var(--level-custom-6);}
+  .link-trow.tr-open{--tl:var(--warn);}
+  .tr-tree{
+    display:flex; align-items:center; min-width:0; height:100%; position:relative;
+    padding-left:calc(8px + var(--d, 0) * var(--link-indent));
+  }
+  /* Indentation guides: one 1px line per ancestor level, through that ancestor's chevron centre. */
+  .tr-tree .tree-chevron-slot{margin-right:1px;}
+  .tr-guide{position:absolute; top:0; bottom:0; width:1px; left:calc(13px + var(--g) * var(--link-indent)); background:var(--border);}
+  .link-trow.pair-selected .tr-guide{background:var(--accent);}
+  .tr-dot{flex:0 0 auto; width:8px; height:8px; border-radius:50%; margin-right:8px; background:var(--tl);}
+  .link-trow.tr-open .tr-dot{background:none; box-sizing:border-box; border:1.5px solid var(--warn);}
+  .tr-msg{white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0; color:var(--text-primary);}
+  .tr-end{color:var(--text-tertiary);}
+  .link-trow.lvl-warn .tr-end, .link-trow.lvl-error .tr-end, .link-trow.lvl-fatal .tr-end{color:var(--tl);}
+  .tr-miss{color:var(--warn);}
+  .tr-nested{
+    flex:0 0 auto; margin-left:8px; padding:0 7px; border:1px solid var(--border); border-radius:999px; cursor:pointer;
+    font-family:var(--font-ui, inherit); font-size:calc(11px * var(--log-text-scale)); color:var(--text-tertiary);
+  }
+  .tr-nested:hover{color:var(--accent); border-color:var(--accent);}
+  .tr-t{color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; font-size:calc(10.8px * var(--log-text-scale));}
+  .tr-t.jump{cursor:pointer;}
+  .tr-t.jump:hover{color:var(--accent-strong); text-decoration:underline; text-underline-offset:3px;}
+  .tr-dt{text-align:right; font-variant-numeric:tabular-nums; color:var(--text-primary); white-space:nowrap;}
+  .tr-dt.miss, .tr-t .miss{color:var(--warn);}
+  .tr-bar{position:relative; height:8px; background:var(--bg-elevated-2); border-radius:2px;}
+  .tr-bar i{position:absolute; top:0; bottom:0; background:var(--tl); border-radius:2px; opacity:.75;}
+  .tr-bar i.open{background:repeating-linear-gradient(90deg, var(--warn) 0 3px, transparent 3px 6px); opacity:1;}
+
   /* Timeline block: [Δt column | rail column | rows]. One 2px rail line
      (.pair-gutter::before) runs from the first to the last row's dot centre;
      every row has an 8px level-coloured dot on it. Heights are exact
@@ -6863,12 +6933,27 @@
               <button type="button" id="linkUnWhyBtn" class="link-un-why-btn hidden" aria-expanded="false" aria-controls="linkUnWhyDetails">Details</button>
               <div id="linkUnWhyDetails" class="link-un-why-details hidden"></div>
               <span class="link-toolbar-sp"></span>
+              <!-- View, Sort and the expand/collapse buttons wrap to the next line together. -->
+              <span class="link-tool-group">
+              <!-- Nested links only: List (pair blocks) | Tree (one row per pair, see renderLinkView). -->
+              <span class="link-sort-lab link-nested-only hidden" id="linkViewLab">View</span>
+              <span class="link-seg link-nested-only hidden" id="linkViewSeg" role="group" aria-label="View">
+                <button type="button" data-link-view="list" aria-pressed="false">List</button>
+                <button type="button" data-link-view="tree" aria-pressed="true">Tree</button>
+              </span>
               <span class="link-sort-lab">Sort</span>
               <span class="link-seg" id="linkSortSeg" role="group" aria-label="Sort">
                 <button type="button" data-link-sort="time" aria-pressed="true">Time</button>
                 <button type="button" data-link-sort="dt" aria-pressed="false">Δt ↓</button>
               </span>
+              <button type="button" id="linkExpandAll" class="toolbar-icon-btn link-tree-only hidden" title="Expand all"></button>
+              <button type="button" id="linkCollapseAll" class="toolbar-icon-btn link-tree-only hidden" title="Collapse all"></button>
+              </span>
               <span class="link-hint" id="linkHintText"></span>
+            </div>
+            <!-- Tree layout only: column header, same grid as .link-trow. -->
+            <div id="linkTreeHead" aria-hidden="true">
+              <span>Pair</span><span>Start</span><span>End</span><span class="r">Δt</span><span>Share of parent</span>
             </div>
             <div id="linkScroll">
               <div id="linkSpacer">
@@ -12731,6 +12816,10 @@ function detailZeroSuffixHtml(entry) {
 }
 function displayTimeText(e, zc) {
   return zc && !isPlainTextFormat(e.formatId) ? formatRelTime(e.ts - zc.ts) : entryTimeText(e);
+}
+// The Time column's text without a leading date (Context run handle tooltips, Link tree Start/End cells).
+function timeOfDayText(e, zc) {
+  return displayTimeText(e, zc).replace(/^\d{4}-\d\d-\d\d[ T]/, "");
 }
 // Row-level extras of a Time cell under relative display: class on the
 // .col-time span (zero row: accent text + "0" badge via CSS), the absolute
@@ -21079,6 +21168,11 @@ const linkUnWhy = el("#linkUnWhy");
 const linkUnWhyBtn = el("#linkUnWhyBtn");
 const linkUnWhyDetails = el("#linkUnWhyDetails");
 const linkSortSeg = el("#linkSortSeg");
+const linkViewSeg = el("#linkViewSeg");
+const linkViewLab = el("#linkViewLab");
+const linkExpandAll = el("#linkExpandAll");
+const linkCollapseAll = el("#linkCollapseAll");
+const linkTreeHead = el("#linkTreeHead");
 const linkHintText = el("#linkHintText");
 const linkScroll = el("#linkScroll");
 const linkSpacer = el("#linkSpacer");
@@ -25285,6 +25379,13 @@ const LINK_BUFFER_PX = 300; // pixels of slack rendered above/below the viewport
 // the "N without end" chip (0 off, 1 inline in time order, 2 only these) and the sort ("time" | "dt").
 let linkViewUnmatched = 0;
 let linkViewSort = "time";
+// Nested links only: "tree" (one row per pair, nested by time containment) | "list" (today's pair blocks).
+// linkTreeCollapsed holds the collapsed pairs' start-entry ids (display-only, never persisted); both reset
+// with the other per-node state. linkTreeMode is the layout renderLinkView actually used.
+let linkViewMode = "tree";
+let linkTreeCollapsed = new Set();
+let linkTreeMode = false;
+let linkTreeLast = { roots: [], nodes: [], byKey: new Map() }; // the tree of the last renderLinkView (every pair, also inside collapsed ones)
 let linkViewWhyOpen = false; // the "Details" list of the unpaired explanation line
 let linkMissingText = ""; // the "no “…” found" line of the current node's unmatched blocks
 function renderLinkView(node) {
@@ -25293,6 +25394,8 @@ function renderLinkView(node) {
     linkSelectedPairIndex = null;
     linkViewUnmatched = 0;
     linkViewSort = "time";
+    linkViewMode = "tree";
+    linkTreeCollapsed = new Set();
     linkViewWhyOpen = false;
     linkScroll.scrollTop = 0;
   }
@@ -25313,14 +25416,57 @@ function renderLinkView(node) {
     : fmt(unmatched.length) + " without end" + (linkViewUnmatched === 1 ? " · inline" : "");
   linkSortSeg.querySelectorAll("[data-link-sort]").forEach(b => b.setAttribute("aria-pressed", b.dataset.linkSort === linkViewSort ? "true" : "false"));
   renderLinkUnpairedWhy(node, unmatched);
-  linkHintText.textContent = isCoarsePointer()
+  // Tree layout: a single-step nested link, view mode Tree, and not the "only without end" chip state (flat list).
+  const nestedLink = node.linkPairing === "nested" && (!hops || hops.hops.length <= 1);
+  const treeMode = nestedLink && linkViewMode === "tree" && linkViewUnmatched !== 2;
+  linkTreeMode = treeMode;
+  linkWrap.classList.toggle("link-tree-mode", treeMode);
+  linkViewSeg.classList.toggle("hidden", !nestedLink);
+  linkViewLab.classList.toggle("hidden", !nestedLink);
+  linkViewSeg.querySelectorAll("[data-link-view]").forEach(b => b.setAttribute("aria-pressed", b.dataset.linkView === linkViewMode ? "true" : "false"));
+  linkExpandAll.classList.toggle("hidden", !treeMode);
+  linkCollapseAll.classList.toggle("hidden", !treeMode);
+  linkHintText.textContent = treeMode
+    ? (isCoarsePointer()
+      ? "Tap a pair to select · tap \u25B8 to expand · double-tap to jump to it"
+      : "Click a pair to select · click \u25B8 to expand · double-click a row to jump to its start, the End time to its end")
+    : isCoarsePointer()
     ? "Tap a pair to select · long-press for actions · double-tap a row to jump to it"
     : "Click a pair to select · right-click for actions · double-click a row to jump to it";
 
   const item = (e, unmatchedItem) => ({ pair: e, realEntries: getTupleEntries(e), unmatched: unmatchedItem });
   let items = shownPairs.map(e => item(e, false));
   const un = linkViewUnmatched ? unmatched.map(e => item(e, true)) : [];
-  if (linkViewSort === "dt") {
+  let minimapItems;
+  if (treeMode) {
+    // The selection is kept by key (the pair's start entry id): the row list changes on every toggle.
+    const prev = linkSelectedPairIndex != null ? linkPairsData[linkSelectedPairIndex] : null;
+    const prevKey = prev && prev.key != null ? prev.key : null;
+    minimapItems = items.concat(un); // the minimap marks every shown pair, not only the rows left after collapsing
+    const tree = linkTreeLast = buildLinkTree(minimapItems);
+    const rows = flattenLinkTree(tree.roots, linkTreeCollapsed, linkViewSort);
+    let expandable = 0, collapsible = 0;
+    for (const n of tree.nodes) if (n.kids.length) { if (linkTreeCollapsed.has(n.key)) expandable++; else collapsible++; }
+    linkExpandAll.disabled = !expandable;
+    linkCollapseAll.disabled = !collapsible;
+    setDisabledReason(linkExpandAll, "nothing left to expand");
+    setDisabledReason(linkCollapseAll, "nothing expanded");
+    const rowIndex = new Map();
+    items = rows.map((n, i) => {
+      rowIndex.set(n.key, i);
+      return Object.assign(n.item, {
+        key: n.key, depth: n.depth, hasKids: n.kids.length > 0, collapsed: n.kids.length > 0 && linkTreeCollapsed.has(n.key),
+        descendants: n.descendants, t0: n.t0, t1: n.t1, parentSpan: n.parent ? { t0: n.parent.t0, t1: n.parent.t1 } : null,
+      });
+    });
+    linkSelectedPairIndex = null;
+    if (prevKey != null) {
+      // A selected pair hidden by a collapse is replaced by its nearest visible ancestor.
+      let n = tree.byKey.get(prevKey);
+      while (n && !rowIndex.has(n.key)) n = n.parent;
+      if (n) linkSelectedPairIndex = rowIndex.get(n.key);
+    }
+  } else if (linkViewSort === "dt") {
     items.sort((a, b) => b.pair.dtMs - a.pair.dtMs);
     items = un.concat(items); // the ones without an end first, in time order
   } else if (un.length) {
@@ -25329,13 +25475,14 @@ function renderLinkView(node) {
   linkPairsData = items;
   computeLinkBlockOffsets();
   renderLinkVisibleBlocks();
+  updateLinkScrollbarGap();
 
   // Flattened across every pair (the FULL set, not just the rendered
   // window — see renderLinkVisibleBlocks) — pairs themselves only carry the
   // reference side's own .ts (see PROJECT.md "Link filter"), which would
   // under-represent the true time span whenever a matched (target-side)
   // entry lands outside its reference's own range.
-  const allRealEntries = linkPairsData.flatMap(p => p.realEntries);
+  const allRealEntries = (minimapItems || linkPairsData).flatMap(p => p.realEntries);
   // The rendered-range sub-rectangle stays deliberately hidden here (same as
   // before virtualization) — see updateMinimapRenderedRange's own comment;
   // it's gated to the table view specifically, not extended to the Link
@@ -25418,7 +25565,7 @@ function computeLinkBlockOffsets() {
   const offsets = new Array(linkPairsData.length + 1);
   offsets[0] = 0;
   for (let i = 0; i < linkPairsData.length; i++) {
-    offsets[i + 1] = offsets[i] + linkBlockHeight(linkPairsData[i].realEntries.length, linkPairsData[i].unmatched);
+    offsets[i + 1] = offsets[i] + (linkTreeMode ? LINK_PAIR_ROW_HEIGHT : linkBlockHeight(linkPairsData[i].realEntries.length, linkPairsData[i].unmatched));
   }
   linkBlockOffsets = offsets;
 }
@@ -25452,6 +25599,8 @@ function renderLinkVisibleBlocks() {
     return;
   }
   const total = linkBlockOffsets[n];
+  // Spacer first: a shrunk list (collapse, filter) clamps scrollTop when it is read below.
+  linkSpacer.style.height = total + "px";
   const viewportH = linkScroll.clientHeight || 400;
   const scrollTop = linkScroll.scrollTop;
   const yStart = Math.max(0, scrollTop - LINK_BUFFER_PX);
@@ -25459,11 +25608,11 @@ function renderLinkVisibleBlocks() {
   const start = linkBlockIndexAtOffset(linkBlockOffsets, yStart);
   const end = Math.min(n, linkBlockIndexAtOffset(linkBlockOffsets, Math.max(yStart, yEnd - 1)) + 1);
 
-  linkSpacer.style.height = total + "px";
   linkBody.style.top = linkBlockOffsets[start] + "px";
 
   const frag = document.createDocumentFragment();
-  for (let i = start; i < end; i++) frag.appendChild(buildPairBlock(linkPairsData[i], i));
+  const zero = linkTreeMode ? timeZeroContext() : null;
+  for (let i = start; i < end; i++) frag.appendChild(linkTreeMode ? buildPairTreeRow(linkPairsData[i], i, zero) : buildPairBlock(linkPairsData[i], i));
   linkBody.innerHTML = "";
   linkBody.appendChild(frag);
 
@@ -25497,7 +25646,7 @@ linkScroll.addEventListener("scroll", () => {
   linkScrollTicking = true;
   requestAnimationFrame(() => { renderLinkVisibleBlocks(); linkScrollTicking = false; });
 });
-window.addEventListener("resize", () => renderLinkVisibleBlocks());
+window.addEventListener("resize", () => { renderLinkVisibleBlocks(); updateLinkScrollbarGap(); });
 
 // Re-applies the .pair-selected class to whichever currently-rendered block
 // matches linkSelectedPairIndex (see that variable's own comment) — call
@@ -25506,7 +25655,7 @@ window.addEventListener("resize", () => renderLinkVisibleBlocks());
 function applyLinkSelectionClasses() {
   linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
   if (linkSelectedPairIndex == null) return;
-  const block = linkBody.querySelector('.pair-block[data-pair-index="' + linkSelectedPairIndex + '"]');
+  const block = linkBody.querySelector('.pair-block[data-pair-index="' + linkSelectedPairIndex + '"], .link-trow[data-pair-index="' + linkSelectedPairIndex + '"]');
   if (block) block.classList.add("pair-selected");
 }
 
@@ -25614,6 +25763,173 @@ function buildPairRow(entry) {
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [entry, row, linkScroll]));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); openContextMenu(ev, entry); });
   return row;
+}
+
+/* ---------- Link view: Tree layout for nested links ----------
+   Pure display on top of the pairs that are shown (Δt post-filter, level filter and the "N without end" chip
+   already applied): one row per pair, a pair is the child of the innermost pair whose time span contains
+   it ("start >= parent.start && end <= parent.end", across all keys; a partial overlap makes siblings).
+   A start without an end (inline chip state) is a leaf at its time position and never becomes a parent.
+   Rows are keyed by the pair's start entry id (stable across recomputes and tail ticks), which is how the
+   collapsed set and the selection survive a relayout. */
+function buildLinkTree(items) {
+  const nodes = items.map((item, i) => {
+    const t0 = item.unmatched ? item.pair.ts : item.pair.tsMin;
+    const t1 = item.unmatched ? t0 : item.pair.tsMax;
+    return { item, i, t0, t1, key: item.unmatched ? item.pair.id : item.pair.first.id, kids: [], parent: null, depth: 0, descendants: 0 };
+  });
+  // By start time; at the same start the longer pair first so it can contain the shorter one.
+  const sorted = nodes.slice().sort((a, b) => a.t0 - b.t0 || (b.t1 - b.t0) - (a.t1 - a.t0) || a.i - b.i);
+  const roots = [], stack = [];
+  for (const n of sorted) {
+    while (stack.length) {
+      const p = stack[stack.length - 1];
+      if (n.t0 >= p.t0 && n.t1 <= p.t1) break;
+      stack.pop();
+    }
+    const p = stack.length ? stack[stack.length - 1] : null;
+    n.parent = p;
+    n.depth = stack.length;
+    (p ? p.kids : roots).push(n);
+    if (!n.item.unmatched) stack.push(n);
+  }
+  // `sorted` is a pre-order: a parent always precedes its descendants, so one reverse pass sums them up.
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const n = sorted[i];
+    if (n.parent) n.parent.descendants += 1 + n.descendants;
+  }
+  const byKey = new Map();
+  for (const n of nodes) byKey.set(n.key, n);
+  return { roots, nodes, byKey };
+}
+// The visible rows in display order: time order, or (sort "dt") each parent's children by Δt descending with
+// the starts without end first. Children of a collapsed pair are left out.
+function flattenLinkTree(roots, collapsed, sortMode) {
+  const byDt = (a, b) => a.item.unmatched !== b.item.unmatched ? (a.item.unmatched ? -1 : 1)
+    : a.item.unmatched ? 0 : b.item.pair.dtMs - a.item.pair.dtMs;
+  const out = [], stack = [];
+  const pushAll = list => {
+    const ordered = sortMode === "dt" ? list.slice().sort(byDt) : list;
+    for (let i = ordered.length - 1; i >= 0; i--) stack.push(ordered[i]);
+  };
+  pushAll(roots);
+  while (stack.length) {
+    const n = stack.pop();
+    out.push(n);
+    if (n.kids.length && !collapsed.has(n.key)) pushAll(n.kids);
+  }
+  return out;
+}
+const LINK_TREE_CHEVRON_SVG = '<svg width="10" height="10" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg>';
+// The share-of-parent bar: the track is the parent's span, the mark the pair's start/Δt inside it.
+function linkTreeBarHtml(it) {
+  const p = it.parentSpan;
+  const span = p ? p.t1 - p.t0 : 0;
+  if (it.unmatched) {
+    const l = p && span > 0 ? Math.min(100, Math.max(0, (it.t0 - p.t0) / span * 100)) : 0;
+    return '<div class="tr-bar" title="no end"><i class="open" style="left:' + l.toFixed(1) + '%;width:' + (100 - l).toFixed(1) + '%"></i></div>';
+  }
+  if (!p) return '<div class="tr-bar" title="top level"><i style="left:0%;width:100%"></i></div>';
+  const dt = it.t1 - it.t0;
+  const w = span > 0 ? Math.min(100, Math.max(1.5, dt / span * 100)) : 100;
+  const l = span > 0 ? Math.min(100 - w, Math.max(0, (it.t0 - p.t0) / span * 100)) : 0;
+  const pct = span > 0 ? Math.round(dt / span * 100) : 100;
+  return '<div class="tr-bar" title="' + pct + ' % of the enclosing pair"><i style="left:' + l.toFixed(1) + '%;width:' + w.toFixed(1) + '%"></i></div>';
+}
+function buildPairTreeRow(it, index, zero) {
+  const startE = it.unmatched ? it.pair : it.pair.first;
+  const endE = it.unmatched ? null : it.pair.second;
+  const row = document.createElement("div");
+  row.className = "link-trow " + (it.unmatched ? "tr-open" : levelClass(endE.level, endE.formatId));
+  row.dataset.pairIndex = index;
+  row.dataset.key = it.key;
+  row.style.height = LINK_PAIR_ROW_HEIGHT + "px";
+  row.style.setProperty("--d", it.depth);
+  row.title = it.unmatched ? entryTimeText(startE) + " \u00B7 " + linkMissingText : entryTimeText(startE) + " \u2192 " + entryTimeText(endE);
+  let guides = "";
+  for (let g = 0; g < it.depth; g++) guides += '<span class="tr-guide" style="--g:' + g + '"></span>';
+  const chevron = it.hasKids
+    ? '<button type="button" class="tree-chevron' + (it.collapsed ? "" : " expanded") + '" data-tg title="' + (it.collapsed ? "Expand" : "Collapse") + '" tabindex="-1">' + LINK_TREE_CHEVRON_SVG + "</button>"
+    : "";
+  const msg = it.unmatched
+    ? escapeHtml(startE.message) + ' <span class="tr-miss">\u00B7 ' + escapeHtml(linkMissingText) + "</span>"
+    : escapeHtml(startE.message) + ' <span class="tr-end">\u27F6 ' + escapeHtml(endE.message) + "</span>";
+  const pill = it.collapsed ? '<span class="tr-nested" data-tg title="Expand">' + it.descendants + " nested</span>" : "";
+  row.innerHTML =
+    '<div class="tr-tree">' + guides + '<span class="tree-chevron-slot">' + chevron + '</span><span class="tr-dot"></span>' +
+      '<span class="tr-msg">' + msg + "</span>" + pill + "</div>" +
+    '<div class="tr-t tr-startt jump">' + escapeHtml(timeOfDayText(startE, zero)) + "</div>" +
+    (it.unmatched ? '<div class="tr-t tr-endt"><span class="miss">\u2014</span></div>'
+      : '<div class="tr-t tr-endt jump">' + escapeHtml(timeOfDayText(endE, zero)) + "</div>") +
+    '<div class="tr-dt' + (it.unmatched ? " miss" : "") + '">' + (it.unmatched ? "\u2014" : escapeHtml(formatMs(it.pair.dtMs))) + "</div>" +
+    "<div>" + linkTreeBarHtml(it) + "</div>";
+  return row;
+}
+// Rebuilds the tree rows after a collapse/expand (selection by key, scroll position kept).
+function rerenderLinkTree() {
+  const node = state.nodes[linkNodeId];
+  if (!node) return;
+  renderLinkView(node);
+  updateMinimapSelectionMarkers();
+}
+function toggleLinkTreeKey(key) {
+  if (linkTreeCollapsed.has(key)) linkTreeCollapsed.delete(key); else linkTreeCollapsed.add(key);
+  rerenderLinkTree();
+}
+function setAllLinkTreeCollapsed(collapse) {
+  if (collapse) {
+    linkTreeCollapsed = new Set(linkTreeLast.nodes.filter(n => n.kids.length).map(n => n.key));
+  } else {
+    linkTreeCollapsed = new Set();
+  }
+  rerenderLinkTree();
+}
+// The header row sits outside the scroller: leave room for its scrollbar so the columns line up.
+function updateLinkScrollbarGap() {
+  const gap = linkTreeMode ? Math.max(0, linkScroll.offsetWidth - linkScroll.clientWidth) : 0;
+  linkWrap.style.setProperty("--link-sb", gap + "px");
+}
+linkBody.addEventListener("click", ev => {
+  const row = ev.target.closest(".link-trow");
+  if (!row) return;
+  if (ev.target.closest("[data-tg]")) {
+    ev.stopPropagation();
+    const it = linkPairsData[+row.dataset.pairIndex];
+    if (it) toggleLinkTreeKey(it.key); // the key itself, not its string form in dataset (Collapse all stores the same values)
+    return;
+  }
+  linkSelectedPairIndex = +row.dataset.pairIndex;
+  applyLinkSelectionClasses();
+  updateMinimapSelectionMarkers();
+});
+// Double-click: the End cell reveals the end entry in the Context view, anywhere else the start entry.
+linkBody.addEventListener("dblclick", ev => {
+  const row = ev.target.closest(".link-trow");
+  if (!row || ev.target.closest("[data-tg]")) return;
+  const it = linkPairsData[+row.dataset.pairIndex];
+  if (!it) return;
+  const entry = it.unmatched ? it.pair : (ev.target.closest(".tr-endt") ? it.pair.second : it.pair.first);
+  jumpAfterPip(revealInHighlightView, [entry, row, linkScroll]);
+});
+linkBody.addEventListener("contextmenu", ev => {
+  const row = ev.target.closest(".link-trow");
+  const it = row && linkPairsData[+row.dataset.pairIndex];
+  if (!it) return;
+  ev.preventDefault();
+  captureCtxSelection(null);
+  openContextMenu(ev, it.pair);
+});
+linkViewSeg.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-link-view]");
+  if (!b || linkViewMode === b.dataset.linkView) return;
+  linkViewMode = b.dataset.linkView;
+  relayoutLinkView();
+});
+function initLinkTreeToolbar() {
+  linkExpandAll.innerHTML = ICON_EXPAND_ALL;
+  linkCollapseAll.innerHTML = ICON_COLLAPSE_ALL;
+  linkExpandAll.addEventListener("click", () => setAllLinkTreeCollapsed(false));
+  linkCollapseAll.addEventListener("click", () => setAllLinkTreeCollapsed(true));
 }
 
 /* ===================== Extraction table: plotting ===================== */
@@ -32195,7 +32511,7 @@ function makeContextRunHandle(run, isTop, isBottom) {
     const zero = timeZeroContext();
     const first = currentHighlightViewEntries[run.firstRow], last = currentHighlightViewEntries[run.lastRow];
     // Time-of-day part only: the Time column's text minus a leading date.
-    const tod = e => displayTimeText(e, zero).replace(/^\d{4}-\d\d-\d\d[ T]/, "");
+    const tod = e => timeOfDayText(e, zero);
     if (first && last) tip += " (" + tod(first) + " \u2013 " + tod(last) + ")";
   }
   btn.title = tip;
@@ -58896,6 +59212,7 @@ initContextExpandStepSetting();
 initContextExpandStepUnitSetting();
 initContextExpandStepMsSetting();
 initContextToolbar();
+initLinkTreeToolbar();
 initMinimapFullRangeSetting();
 initMinimapBurstsSetting();
 initShowSourcesSetting();
