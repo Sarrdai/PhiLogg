@@ -302,7 +302,7 @@ packages use its tokens.
 | P5 | Header and brand mark | C2 | 6 % | done | 6ad1fdf | 0.70→0.74 |
 | P6 | Popover token, menus, segmented groups | D1, C4 | 8 % | done | 89d1343 | 0.74→0.78 |
 | P7 | Filter tree | B4 | 9 % | done | f348c52 | 0.00→0.07 |
-| P8 | Selects and checkboxes | C3 | 8 % | done | (this commit) | 0.07→0.13 |
+| P8 | Selects and checkboxes | C3 | 8 % | done | 3ebe1eb | 0.07→0.13 |
 | P9 | Number formats, extraction table | A3, E2 | 8 % | open | | |
 | P10 | Plot axes and grid | E3 | 10 % | open | | |
 | P11 | Minimap and stat line | E1 | 10 % | open | | |
