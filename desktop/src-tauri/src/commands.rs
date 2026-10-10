@@ -588,6 +588,13 @@ pub async fn pip_enter(app: AppHandle) {
     windows::enter_pip(&app);
 }
 
+/// `inject.js`'s measurement of the PiP strip (view switcher + its two
+/// buttons) in logical pixels: the mini window's minimum width.
+#[tauri::command]
+pub async fn pip_set_min_width(app: AppHandle, width: f64) {
+    windows::set_pip_min_width(&app, width);
+}
+
 /// The mini window's X button: ends picture-in-picture (restoring the full
 /// window) and then minimizes it, so the app goes back to the taskbar showing
 /// the full view rather than quitting — the exact inverse of `pip_enter`.

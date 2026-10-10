@@ -5881,14 +5881,15 @@
 
   body.layout-phone #viewBar{display:flex; flex-wrap:wrap; align-items:center; gap:6px; padding:6px 10px;}
   body.layout-phone #viewBar > :not(#vbView):not(#vbLevel){display:none !important;}
-  body.layout-phone #vbView{display:none !important;}
+  html:not(.pip-mode) body.layout-phone #vbView{display:none !important;}
   /* The Level group wrapper dissolves: #levelBar is a direct flex item of the bar again. */
   body.layout-phone #vbLevel, body.layout-phone #vbLevel > .vb-group-row{display:contents;}
   body.layout-phone #btnApplyLevelToTree{display:none !important;}
   /* Phone has no view tabs at all (only Filtered, see phoneEnforceTab());
      !important because renderMainView() sets fhTabs.style.display inline.
-     #viewBar then holds only #levelBar — no gap beyond its own padding. */
-  body.layout-phone #fhTabs{display:none !important;}
+     #viewBar then holds only #levelBar — no gap beyond its own padding.
+     The desktop mini window (html.pip-mode) keeps them at any width. */
+  html:not(.pip-mode) body.layout-phone #fhTabs{display:none !important;}
   body.layout-phone #levelBar{
     float:none; margin:0; flex:1 1 100%; min-width:0; flex-wrap:nowrap; overflow-x:auto;
     scrollbar-width:none; -webkit-overflow-scrolling:touch;
@@ -21420,7 +21421,7 @@ function jumpToViewTab(n) {
   const t = tabs[n - 1];
   if (!t || t.disabled) return; // a disabled Table/Plot slot is a silent no-op, same as before it was omitted
   clearSidebarForcedPeek();
-  if (currentLayoutTier === "phone") { applyFhView("filter"); state.entriesView = "filter"; state.focusRegion = "entries"; return; } // phone: Filtered only
+  if (phoneViewsOnly()) { applyFhView("filter"); state.entriesView = "filter"; state.focusRegion = "entries"; return; } // phone: Filtered only
   applyFhView(t.tab);
   state.entriesView = t.tab === "highlight" ? "highlight" : "filter";
   state.focusRegion = "entries";
@@ -21586,7 +21587,7 @@ function revealSelectedInContextTab() {
 // follows right away, so the off-log branch skips its own to avoid drawing
 // the Table/Plot twice.
 function applyFhView(view, renderFollows) {
-  if (currentLayoutTier === "phone") view = "filter"; // phone shows Filtered only; no caller may land elsewhere
+  if (phoneViewsOnly()) view = "filter"; // phone shows Filtered only; no caller may land elsewhere
   if (view === "stacked") {
     // Only reached while fhLayout is ALREADY "stacked" (the "Stacked" button
     // only renders in that layout — see renderViewTabs) — this click means
@@ -35846,7 +35847,7 @@ function jumpAfterPip(fn, args) {
 // clientHeight is measurable before scrollToHighlightIndex's centering math
 // runs — a hidden (display:none) panel would measure 0.
 function revealInHighlightView(entry, sourceRowEl, sourceScrollEl) {
-  if (currentLayoutTier === "phone") return; // no Context view on phone (Filtered only)
+  if (phoneViewsOnly()) return; // no Context view on phone (Filtered only)
   commitCurrentNavPosition(); // A2: freeze the Filtered-pane spot we are jumping out of
   state.entriesView = "highlight";
   const previousId = applySelection(entry.id);
@@ -37134,12 +37135,16 @@ btnDrawer.addEventListener("click", () => setDrawerOpen(!isDrawerOpen()));
 statusText.addEventListener("click", () => { if (currentLayoutTier === "compact") setDrawerOpen(true); });
 
 // ---- Phone shell (layout-phone) ----
+// Phone shows the Filtered view only — except in the desktop wrapper's mini
+// window (state.pipActive), which keeps every view at any width: its view
+// switcher sets the window's minimum width instead (docs/desktop.md).
+function phoneViewsOnly() { return currentLayoutTier === "phone" && !state.pipActive; }
 // Phone only shows the Filtered view (no tab bar); wherever a render lands on
 // another one (Patterns/Context/Stacked/Table/Plot, e.g. after activating an
 // extraction node) fall back to Filtered. Called from render() once the
 // outermost render finished.
 function phoneEnforceTab() {
-  if (currentLayoutTier !== "phone") return;
+  if (!phoneViewsOnly()) return;
   if (fhActiveTab === "filter" && fhLayout !== "stacked") return;
   applyFhView("filter");
 }
@@ -37201,7 +37206,7 @@ function phoneExtractHintNode(node) {
 }
 function updatePhoneExtractHint() {
   const node = state.nodes[state.activeId];
-  const show = currentLayoutTier === "phone" && phoneExtractHintNode(node);
+  const show = phoneViewsOnly() && phoneExtractHintNode(node);
   document.getElementById("phoneExtractHint").classList.toggle("show", show);
 }
 el("#phoneExtractHint .peh-icon").innerHTML = ICON_TABLE;
@@ -40286,6 +40291,7 @@ window.philoggDropOverlay = function (show) {
 window.philoggSetPip = function (active) {
   state.pipActive = !!active;
   document.documentElement.classList.toggle("pip-mode", !!active);
+  render(); // phone width: the mini window keeps every view (phoneViewsOnly), leaving it re-applies Filtered only
 };
 window.addEventListener("dragleave", ev => {
   if (nativeDragDropOwnsThis() || !isFileDrag(ev)) return;

@@ -475,6 +475,33 @@ __PHILOGG_PROVIDED_FORMATS__
     });
     document.body.appendChild(pipBar);
     markDragRegion(pipBar);
+    setUpPipMinWidth(pipBar);
+  }
+
+  // The mini window keeps every view at any width (philogg.html's
+  // phoneViewsOnly), so its view switcher (#fhTabs, fixed at the strip's left)
+  // and the strip's two buttons (right-aligned) set the minimum width instead:
+  // switcher's right edge + 8px of drag space + the buttons' span from the
+  // right edge. Re-measured on entry and whenever the switcher's width
+  // changes (tab set, UI scale); the wrapper ignores it outside PiP.
+  function setUpPipMinWidth(pipBar) {
+    var tabs = document.getElementById("fhTabs");
+    if (!tabs) return;
+    var last = 0;
+    function sync() {
+      if (!document.documentElement.classList.contains("pip-mode")) {
+        last = 0;
+        return;
+      }
+      var first = pipBar.querySelector("button");
+      if (!first) return;
+      var w = Math.ceil(tabs.getBoundingClientRect().right + 8 + (pipBar.getBoundingClientRect().right - first.getBoundingClientRect().left));
+      if (!(w > 0) || w === last) return;
+      last = w;
+      invoke("pip_set_min_width", { width: w }).catch(function () {});
+    }
+    new MutationObserver(sync).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    if (typeof ResizeObserver === "function") new ResizeObserver(sync).observe(tabs);
   }
 
   // FEATURE_BACKLOG.md #66: F11 no longer toggles plain OS maximize here.

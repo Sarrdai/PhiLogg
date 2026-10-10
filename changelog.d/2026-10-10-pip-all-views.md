@@ -1,0 +1,4 @@
+- **feat: the desktop mini window keeps Table, Plot and every other view at any width (2026-10-10, person-requested)**
+  - Picture-in-picture (420px by default) landed in the phone tier, which switched Table/Plot back to Filtered and hid the view switcher. In PiP the phone tier no longer restricts views (`phoneViewsOnly()`), the switcher stays in the strip.
+  - The switcher plus the strip's two buttons now set the mini window's minimum width (`inject.js` measures, `pip_set_min_width` applies it, `exit_pip` lifts it).
+  - **Tests**: GROUP pip-phone-all-views. Docs: docs/desktop.md, docs/ui-and-views.md, README.

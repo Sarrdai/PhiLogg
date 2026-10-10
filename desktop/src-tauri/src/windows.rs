@@ -19,6 +19,8 @@ const CHAT_ON_TOP_KEY: &str = "philogg-llm-chat-on-top";
 /// logical pixels, same as the popout's content window was; tune later.
 pub const PIP_W: f64 = 420.0;
 pub const PIP_H: f64 = 320.0;
+/// The mini window's minimum height: the 40px strip plus a few rows.
+pub const PIP_MIN_H: f64 = 120.0;
 
 /// Windows/Linux: a `.log`/`.gz`/`.zip` file association or Explorer context-menu
 /// verb (see `desktop/src-tauri/windows/installer.nsi`) relaunches the app
@@ -258,13 +260,30 @@ pub fn enter_pip(app: &AppHandle) {
             (x, y, PIP_W, PIP_H)
         });
 
+    state.pip_active.store(true, Ordering::Relaxed);
+    // Rust owns geometry; the page owns the CSS class that hides the chrome
+    // (see philogg.html's `philoggSetPip`). Flagged before the shrink: the
+    // page must already know it is the mini window when the resize lands it
+    // in the phone tier, or that tier would switch Table/Plot to Filtered.
+    let _ = window.eval("window.philoggSetPip && window.philoggSetPip(true)");
     let _ = window.set_always_on_top(true);
     let _ = window.set_position(tauri::LogicalPosition::new(mini.0, mini.1));
     let _ = window.set_size(tauri::LogicalSize::new(mini.2, mini.3));
-    state.pip_active.store(true, Ordering::Relaxed);
-    // Rust owns geometry; the page owns the CSS class that hides the chrome
-    // (see philogg.html's `philoggSetPip`).
-    let _ = window.eval("window.philoggSetPip && window.philoggSetPip(true)");
+}
+
+/// The mini window's minimum size: as wide as its strip needs for the view
+/// switcher plus the two PiP buttons (measured by `inject.js`, which calls
+/// `pip_set_min_width` on entry and whenever the switcher's width changes),
+/// and `PIP_MIN_H` tall. Ignored outside picture-in-picture; `exit_pip`
+/// lifts it again.
+pub fn set_pip_min_width(app: &AppHandle, width: f64) {
+    let Some(window) = app.get_webview_window(MAIN) else {
+        return;
+    };
+    if !app.state::<AppState>().pip_active.load(Ordering::Relaxed) || !width.is_finite() || width <= 0.0 {
+        return;
+    }
+    let _ = window.set_min_size(Some(tauri::LogicalSize::new(width.ceil(), PIP_MIN_H)));
 }
 
 /// Exit picture-in-picture: restore the full window's remembered position +
@@ -290,6 +309,7 @@ pub fn exit_pip(app: &AppHandle) {
     }
 
     let _ = window.set_always_on_top(false);
+    let _ = window.set_min_size(None::<tauri::Size>);
     // Always restore the windowed bounds first, even when re-maximizing right
     // after: resizing a normal (non-maximized) window sets the OS's "restore
     // size", so a later unmaximize/drag-out-of-maximize lands on the full

@@ -41,7 +41,8 @@ deployments possible:
   OS's own webview, so the installer stays small. Desktop-only extras
   include close-to-system-tray and picture-in-picture: a diagonal `<->`
   window-control button shrinks the window to a small always-on-top content
-  view (with its own return-to-full and minimize buttons). Log files opened
+  view (with its own return-to-full and minimize buttons and the view
+  switcher, so Table and Plot stay available however small it gets). Log files opened
   from disk are read and parsed natively (Rust, on all CPU cores) with the
   same parsing rules as the browser build. See `desktop/README.md`.
 
