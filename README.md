@@ -506,8 +506,8 @@ deployments possible:
   filters, opens tables and plots, and bookmarks/annotates entries — asking
   back when your request is ambiguous. It never reads the raw log, only
   summaries, and talks to `localhost` only. Everything it creates appears
-  in the filter tree right away (marked ✦); one message = one undo step,
-  and every round has "Undo this round". The node and entry ids in its
+  in the filter tree right away (marked ✦); one message = one undo step
+  (its bookmarks and notes included), and every round has "Undo this round". The node and entry ids in its
   answers are links. The chat is its own window (optionally always on top)
   or docked as a side panel; several chats are kept. A bar above the input
   shows how full the model's context window is (hover for the token
@@ -523,6 +523,12 @@ deployments possible:
   `claude mcp add --transport http philogg http://127.0.0.1:7337/mcp --header "Authorization: Bearer <token>"`.
   Calls wait while the in-app assistant is answering. The token is kept in
   plain text in PhiLogg's settings file.
+- **Prompt injection**: a log can contain text aimed at the model ("ignore
+  your instructions and …"). The assistant and MCP agents are told to treat
+  log text as data, and everything they change — filters, bookmarks and
+  notes — is undone with the round or call. Settings → Assistant explains
+  safe use; above all, connect the MCP server only to an agent session
+  without shell, file or web tools, or approve such calls yourself.
 
 See `PROJECT.md` (and the `docs/*.md` files it links) for how each of these
 actually works internally.

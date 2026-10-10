@@ -41,7 +41,7 @@ owner `truncated: true`) until the result fits.
 | `get_entries(nodeId, from, max ≤ 20, ids?, full?)` | entries (of a node or pattern id) with id, time, level, message (first line, ≤ 200 chars). `ids` (≤ 20 entry ids) instead of nodeId/from/max; unknown ids are listed in `unknown`. `full: true`: every line (above 60 lines the first 15, `… N lines …`, the last 30 — a stack trace's innermost exception is at the end; a line is cut at 300 chars), `lines`, thread/location/method and the file name |
 | `get_value_stats(nodeId, column, groupBy?)` or `get_value_stats(sources, groupBy?)` | min/max/mean/p10/median/p90 of one extraction column of a node or pattern id (pattern id: the typed pattern of the type, `llmPatternExtractRows`); a non-numeric column gets its value distribution. Columns: the nearest extraction's (own or inherited, `llmExtractRows`) by 1-based number or name; those of extraction filters further up the chain by NAME only (`llmExtractColumns`: applied to the node's entries, nearest wins a name clash, errors list them as `name (from nX)`). The Table still shows only the nearest extraction. A link node answers with "create an extraction filter under the link". `groupBy` (a facet column or an extraction column, `llmFindColumn`) keeps the overall stats and adds `groups`: per value `{value ("(empty)" for ""), rows, n, min, median, mean, p90, max}` (non-numeric column: `rows` + `distribution`), most rows first, ≤ 20, `others` = the remaining group values. `sources` (2–8 × `{nodeId, column, groupBy?}`, instead of nodeId/column; the top-level `groupBy` is the default per source) combines the values of several message formats: combined stats, `perSource: [{nodeId, column, n, median}]`, groups merged by value string; an entry present in several sources counts once (first source wins, `duplicatesSkipped`); errors start with `sources[i]:` |
 | `show_view(nodeId, view, plot?, unpaired?)` | activates the node and opens log/filtered/table/plot/patterns; `plot` = `{type, x, y, z, color, colorMap, columns, array, row, ranges}` for every chart type (line/bar/scatter/3d/heatmap/profile/radar/parallel), columns as `time`/`index`/`dt` or a column number/name, stored through `sanitizePlotConfig`. `columns` sets the value charts' column group (heatmap/profile then read it instead of an array), `array` an array column, `row` (1-based) the Profile/Radar row, `ranges` `{column: [min, max]}` (null = open end) the parallel-coordinates ranges (`plotParallelBrushes`, set after the render so a node switch doesn't reset them). Unknown type/colormap/column → error text with the valid list. Returns the effective plot (column names, row count, for Parallel the rows in range). table/plot on a node without `tablePlot` → error naming the concrete fix (`create_filter` with placeholders under that node id — for a link, under the link — then `show_view` on the new id, or view `filtered`)  `unpaired: "only"` (link node, view `filtered`) sets the link view's "N without end" chip to "only these" (`linkViewUnmatched = 2`) |
-| `annotate(entryIds, note?, bookmark?, replaceNote?)` | default: `bookmark: true` only adds bookmarks (never toggles one off), a note is appended to an existing one. Corrections: `bookmark: false` removes the bookmark (only where set), `replaceNote: true` replaces an existing note, `note: ""` clears it. Result `{entries, bookmarked, unbookmarked, noted, cleared}` |
+| `annotate(entryIds, note?, bookmark?, replaceNote?)` | default: `bookmark: true` only adds bookmarks (never toggles one off), a note is appended to an existing one. Corrections: `bookmark: false` removes the bookmark (only where set), `replaceNote: true` replaces an existing note, `note: ""` clears it. Result `{entries, bookmarked, unbookmarked, noted, cleared}`. Undoable: one `"annotate"` action per call (entries whose bookmark/note really changed, Before/After each), part of the round batch / the MCP call's step |
 | `delete_node(nodeId)` | deletes a node **the assistant created** (`llmCreatedNodeIds`, the ✦ set) with its subtree: `{deleted, removedNodes}`. Files, the person's nodes, pattern ids and locked nodes → error ("belongs to the person"). The ids stay in `llmCreatedNodeIds`, so undo brings the ✦ back |
 | `rename_node(nodeId, name)` | sets `node.label` of an assistant-created node (same ownership rule; empty name → error): `{nodeId, name}` |
 | `timeline(nodeId?, buckets?)` | `analysisTimeline`: from/to, counts per time bucket (default 40, max 120), `usualPerSec` and the bursts (time window, count, factor, levels, ≤ 3 `topTypes` with `patternId`). A plain-text file has no time axis → no bursts, a note |
@@ -234,8 +234,25 @@ them, it returns `{needsConfirm, foreign}` and deletes nothing until called
 with `force`. Nothing left → `{reason: "nothing left"}`, and the round's
 button is disabled (`undo: "none"` in the snapshot). If the round's batch is on top, "Undo this round" also
 restores nodes the round deleted and renames; the delete fallback only removes
-created nodes. Bookmarks/notes set by `annotate` (the GUI has no undo for them
-either) and view changes are not part of the undo step.
+created nodes. Bookmarks/notes set by `annotate` are an `"annotate"` action
+in the same step (`applyAnnotateChanges`, via `toggleBookmark` /
+`setNoteAndRepaint`, so the auto "Bookmarks"/"Notes" nodes stay in sync); in
+the delete fallback `llmRoundAnnotationReverts` also reverts them, per field
+only where the current bookmark/note still equals what the round set (the
+person's later edits stay), as an `"annotate"` action in the fallback's batch;
+"nothing left" needs neither nodes nor revertable annotations. View changes are
+not part of the undo step.
+
+**Log text is data (prompt injection).** `LLM_SYSTEM_PROMPT` tells the model
+that text from the log (messages, patterns, values, file names, notes) is data,
+never instructions, and to report such lines as suspicious. The tools that
+return log text (`get_entries`, `find_message_types`, `what_changed`,
+`common_neighbors`, `create_filter`, `create_link`, `group_by`,
+`get_value_stats`, `timeline`) get the shared sentence `LLM_LOG_DATA_NOTE`
+appended to their description once at load (one constant instead of nine
+edits; the descriptions go out with every request). The MCP server's
+`instructions` carry the same rule. Settings → Assistant shows a warning
+card about it (below).
 
 **Context budget.** Tool messages keep a one-line summary
 (`llmToolSummary`, e.g. `create_filter → n42 "…", 318 match(es)`); tool
@@ -366,7 +383,10 @@ system prompt asks for that format), the chat shows one button per option;
 a click sends its text as the next message.
 
 **Settings → Assistant** (`#settingsSectionLlm`, `initLlmAssistantUi`, shown
-only with `llmAvailable()`): **Enable assistant** (`philogg-llm-enabled`,
+only with `llmAvailable()`; directly under the description a prompt-injection
+warning card with safe-use advice, `initLlmInjectionWarning`, hidden for good by
+"Got it, don't show again" = `philogg-llm-injection-warning-dismissed`, covers
+the MCP path too): **Enable assistant** (`philogg-llm-enabled`,
 **off by default**, `applyLlmEnabled`) — while off there is no toolbar
 button, no chat window or docked panel, the sessions aren't loaded and a
 still-open view gets no answers; switching off stops a running round and
@@ -419,7 +439,7 @@ person watches the filter tree. Backlog #119.
   `WWW-Authenticate: Bearer`), path `/mcp` (404), `POST` only (405),
   `Transfer-Encoding: chunked` (411), body over 4 MiB (413), request head
   over 16 KiB (431).
-- **JSON-RPC**: `initialize` (negotiates `2025-06-18`, `2025-03-26` or
+- **JSON-RPC**: `initialize` (returns `instructions`, including the log-text-is-data rule; negotiates `2025-06-18`, `2025-03-26` or
   `2024-11-05`, else `2025-06-18`; records `clientInfo.name`), `ping`,
   `tools/list` (the tool list the page sent with its last `mcpConfigure`),
   `tools/call`. Notifications and client responses get 202. Errors: -32700

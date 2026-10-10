@@ -1,0 +1,5 @@
+- **feat: prompt-injection hardening for the assistant and MCP agents (2026-10-10, person-requested)**
+  - `annotate` is now undoable: its bookmark/note changes ride along in the round's batch (in-app) or the call's one undo step (MCP); "Undo this round" after later steps reverts them only where the person hasn't changed them since.
+  - Log text is marked as data: a rule in the system prompt, a sentence on the nine tools that return log text (also in MCP's tool list), and the MCP `initialize` instructions.
+  - Settings → Assistant shows a prompt-injection warning with safe-use advice; "Got it, don't show again" hides it for good (`philogg-llm-injection-warning-dismissed`).
+  - **Tests**: GROUP llm-injection-hardening, `cargo test -p philogg-mcp`. Docs: docs/llm-assistant.md, README.
