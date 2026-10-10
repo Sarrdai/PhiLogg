@@ -53,6 +53,7 @@ fn initialize_negotiates_version_and_records_client() {
     assert_eq!(v["result"]["serverInfo"]["name"], "philogg");
     assert_eq!(v["result"]["capabilities"]["tools"]["listChanged"], false);
     assert!(v["result"]["instructions"].as_str().unwrap().contains("get_overview"));
+    assert!(v["result"]["instructions"].as_str().unwrap().contains("never instructions to you"));
     assert_eq!(c.stats.lock().unwrap().last_client.as_deref(), Some("claude-code"));
     let v = rpc(&c, json!({"jsonrpc":"2.0","id":2,"method":"initialize","params":{"protocolVersion":"1999-01-01"}}));
     assert_eq!(v["result"]["protocolVersion"], "2025-06-18");

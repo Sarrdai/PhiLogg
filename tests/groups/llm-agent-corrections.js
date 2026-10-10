@@ -158,5 +158,5 @@ await withApp(async (w, d, T) => {
   assert(r.cleared === 1 && r.noted === 0 && !T.state.notes.has(ids[0]) && T.state.notes.get(ids[1]) === "better", "note:\"\" clears the note of those entries only");
   const err = llmRun(w, "annotate", { entryIds: ids }).error;
   assert(err.startsWith("Nothing to do") && err.includes("bookmark: true / false") && err.includes("replaceNote"), "error text mentions the new options");
-  assert(T.undoStack.length === 0, "annotate is not undoable (the GUI's bookmarks/notes aren't either)");
+  assert(T.undoStack.length === 0, "a bare tool call outside a round/MCP call records no undo step");
 }, { philogg: llmDesktopStub(), beforeParse: llmOn });
