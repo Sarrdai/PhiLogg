@@ -17,7 +17,7 @@ await withApp(async (w, d, T) => {
   assert(T.state.rootIds.length === 0, "sanity: no files loaded yet");
   assert(d.querySelector("#dropHint") === null, "#dropHint no longer exists in the tree sidebar");
   assert(d.querySelector("#emptyState").style.display === "flex", "#emptyState (centered hint) is shown");
-  assert(d.querySelector("#emptyState h2").textContent.includes("No log file loaded"), "#emptyState still carries its message");
+  assert(d.querySelector("#emptyState h2").textContent.includes("Drop log files"), "#emptyState still carries its message");
   assert(d.querySelector("#statusText").textContent === "", "toolbar status text carries no 'No files loaded' duplicate hint");
   assert(d.querySelector("#viewBar").style.display === "none", "the toolbar with the level filter/tabs/breadcrumb is hidden entirely");
 

@@ -75,7 +75,7 @@ filter funnel, as drawn in the mockup's C2) instead of the "L".
   - Formatters (P9): `formatCount` (de-DE grouping), `formatAxisNumber(v, asMs)` (compact SI / durations, axis labels only), `formatPlotValue` (exact, tooltips and stats), `plotColIsMs(ci)`. A `t (ms)` X axis is drawn as clock time (`plotXIsClock`), not as a duration.
   - Plot (P10): `niceTimeTicks(lo, hi, target, base)` for clock/ms axes, `.plot-grid-line.v` dashed, `area` mark op for single-series lines, no `plotAxisCaret` any more.
   - Minimap (P11): overlay is one SVG `<path>` per level (`.minimap-ov-bar.minimap-lvl-*`), per-level counts in `minimapOvLevels` (bucket × `MINIMAP_RANKS`); a rect per segment tripled render time.
-  - The empty start screen can't be shot with `screenshot.js` today, because it requires a log file. P12 should add a way.
+  - `screenshot.js --no-files` (alias `--empty`) shoots the start screen (P12). Detail panel empty state = `.no-sel` via `syncDetailEmptyBar()`; Table/Plot treat an entry outside the extraction rows as no selection (`detailEntry()`).
 
 ## Usage budget, pause and handover (binding)
 
@@ -309,7 +309,7 @@ packages use its tokens.
 | P9 | Number formats, extraction table | A3, E2 | 8 % | done | 48f9dba | 0.13→0.21 |
 | P10 | Plot axes and grid | E3 | 10 % | done | 262b6c6 | 0.21→0.27 |
 | P11 | Minimap and stat line | E1 | 10 % | done | ccd5f75 | 0.27→0.38 |
-| P12 | Detail empty state, start screen | E4, E5 | 7 % | open | | |
+| P12 | Detail empty state, start screen | E4, E5 | 7 % | done | (this commit) | 0.38→0.49 |
 | P13 | README pictures, `finish`, archive this file | — | 6 % | open | | |
 
 Status values: `open`, `running`, `done`, `wip` (committed half-done,
@@ -339,3 +339,4 @@ rules.
 | 2026-10-10T12:21Z | continuation 1 (after P9) | 0.21 | 0.76 | 2026-10-10T15:50Z |
 | 2026-10-10T12:57Z | continuation 1 (after P10) | 0.27 | 0.76 | 2026-10-10T15:50Z |
 | 2026-10-10T13:38Z | continuation 1 (after P11) | 0.38 | 0.78 | 2026-10-10T15:50Z |
+| 2026-10-10T14:15Z | continuation 1 (after P12) | 0.49 | 0.79 | 2026-10-10T15:50Z |

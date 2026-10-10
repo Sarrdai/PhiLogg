@@ -2743,6 +2743,33 @@
     gap:10px; color:var(--text-tertiary); text-align:center; padding:40px;
   }
   #emptyState .empty-icon{color:var(--text-tertiary); opacity:.6;}
+  /* Start screen (no file loaded): a drop zone with real open buttons and the key shortcuts.
+     The other #emptyState texts ("No file selected", "<name> is not loaded") stay plain. */
+  #emptyState .start-actions, #emptyState .start-kbds{display:none;}
+  #emptyState .start-zone{display:flex; flex-direction:column; align-items:center; gap:10px;}
+  #emptyState.start .start-zone{
+    gap:14px; width:min(440px, 100%); padding:34px 28px;
+    border:1.5px dashed var(--border-soft); border-radius:14px;
+    background:color-mix(in srgb, var(--bg-panel) 60%, transparent);
+  }
+  #emptyState.start.drag-over .start-zone{border-color:var(--accent); background:var(--accent-soft);}
+  #emptyState.start h2{font-size:16px; font-weight:650; color:var(--text-primary);}
+  #emptyState.start p{color:var(--text-secondary); font-size:13px; max-width:340px;}
+  #emptyState.start .empty-icon{
+    width:46px; height:46px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    background:var(--accent-soft); color:var(--accent-strong); opacity:1;
+  }
+  #emptyState.start .start-actions{display:flex; gap:8px; flex-wrap:wrap; justify-content:center; margin-top:4px;}
+  #emptyState.start .start-kbds{
+    display:flex; gap:6px 14px; flex-wrap:wrap; justify-content:center; max-width:380px;
+    font-size:12px; color:var(--text-tertiary); margin-top:2px;
+  }
+  #emptyState .start-kbds kbd{
+    display:inline-block; font:600 10.5px/1 var(--font-ui); padding:3px 5px; border-radius:4px;
+    border:1px solid var(--border-soft); border-bottom-width:2px; color:var(--text-secondary); background:var(--bg-popover);
+  }
+  #emptyState .start-kbds .sk-combo{display:inline-flex; gap:3px; margin-right:5px; vertical-align:middle;}
+  body.layout-phone #startOpenFolder, #startOpenFolder[hidden]{display:none;}
 
   /* Inline viewers (ZIP feature, this session): a non-log ZIP entry of a
      common type (.txt/.xml/.json, .jpg/.jpeg/.png/.tiff/.tif) renders here,
@@ -3092,10 +3119,15 @@
   }
 
   #detailBody{flex:1 1 auto; overflow:auto; padding:12px 16px;}
+  /* Empty state (no entry selected): the hint sits right-aligned in the tab bar, shown on the
+     Entry tab only; with the panel not user-collapsed the panel shrinks to that bar (.no-sel,
+     set by syncDetailEmptyBar) and reopens to its remembered height on the first selection. */
   #detailPlaceholder{
-    display:none; height:100%; align-items:center; justify-content:center;
-    color:var(--text-tertiary); font-size:12px; text-align:center;
+    display:none; margin-left:auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+    color:var(--text-tertiary); font-size:12px; padding-right:4px;
   }
+  #detailPanel.no-sel{height:34px !important; overflow:hidden; border-top:1px solid var(--hairline);}
+  #detailPanel.no-sel #detailBody{display:none;}
   /* Entry Detail message. Governed by the LOG-view word-wrap toggle
      (state.wrapMessages / body.wrap-messages) — the detail panel shows the
      selected LOG entry, so the same toggle that wraps its row wraps its
@@ -3113,9 +3145,8 @@
   body.layout-compact #detailPlaceholder .dp-touch, body.layout-phone #detailPlaceholder .dp-touch{display:inline;}
   body.layout-compact #detailPlaceholder .dp-desktop, body.layout-phone #detailPlaceholder .dp-desktop{display:none;}
   body.layout-compact .recent-dd .rd-hint, body.layout-phone .recent-dd .rd-hint{display:none;}
-  #detailPanel.empty #detailPlaceholder{display:flex;}
+  #detailPanel.empty:not(.lower-facets, .lower-stats, .lower-why, .lower-neighbors, .lower-patterns, .detail-strip-only) #detailPlaceholder{display:block;}
   #detailPanel.empty #detailMessage{display:none;}
-  #detailPanel:not(.empty) #detailPlaceholder{display:none;}
   #detailPanel:not(.empty) #detailMessage{display:block;}
   /* Syntax-highlight spans for embedded XML/JSON fragments (see
      formatMessageWithHighlight / #detailViewTabs' Pretty) — colors come from
@@ -6972,13 +7003,18 @@
         </div>
       </div>
 
-      <div id="emptyState">
+      <div id="emptyState" class="start"><div class="start-zone">
         <div class="empty-icon">
           <svg width="34" height="34" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1"><path d="M4 1.5h5.5L12.5 4.5V14.5H4Z"/><path d="M9.3 1.5V4.7H12.5"/><path d="M5.7 8h4.6M5.7 10h4.6M5.7 12h3"/></svg>
         </div>
-        <h2>No log file loaded yet</h2>
-        <p>Drop one or more log files (or a whole folder) anywhere on this window, or click “Open…” above. Each file appears on the left — search the current view with <b data-sc-text="{findInView}">Ctrl+F</b>, or build a filter on top of it with <b data-sc-text="{newFilter}">Ctrl+Shift+F</b>.</p>
-      </div>
+        <h2>Drop log files or a folder here</h2>
+        <p>Everything stays on this computer. Each file appears in the tree on the left; filters build on top of it.</p>
+        <div class="start-actions">
+          <button type="button" id="startOpenFiles" class="btn-mini">Open files…</button>
+          <button type="button" id="startOpenFolder" class="btn-mini-secondary">Open folder…</button>
+        </div>
+        <div class="start-kbds" id="startKbds"></div>
+      </div></div>
 
       <!-- Inline viewers (ZIP feature): see #inlineViewerWrap's own CSS
            comment. #inlineImageViewer mirrors Plot View's own zoom/pan/
@@ -7230,6 +7266,7 @@
             <!-- Phone sheet, Patterns tab: "N entries → M patterns" + sort chip (see renderPhonePatterns). -->
             <div id="phonePatternsHead"><span id="phonePatternsInfo"></span><button type="button" id="phonePatternsSort" class="pp-sort" title="Sort by count">Count ↓</button></div>
             <div id="detailMeta"></div>
+            <div id="detailPlaceholder"><span class="dp-desktop">Select a row to see its full message</span><span class="dp-touch">Tap a row to see its full message</span></div>
             <div class="view-tabs" id="detailViewTabs" role="group" aria-label="Detail view">
               <button type="button" class="view-tab" data-detail-view="raw" aria-pressed="false" title="The original text of the entry, unchanged">Raw</button>
               <button type="button" class="view-tab" data-detail-view="parsed" aria-pressed="false" title="The parsed message, fields in the header line">Parsed</button>
@@ -7276,7 +7313,6 @@
           <!-- Phone sheet, Patterns tab body: virtualized fixed-height cards. -->
           <div id="phonePatternsBody"><div id="phonePatternsSpacer"><div id="phonePatternsRows"></div></div></div>
           <div id="detailBody">
-            <div id="detailPlaceholder"><span class="dp-desktop">Select a log entry (click a row, or ↑ / ↓) to see its full message here.</span><span class="dp-touch">Tap a row to see its full message here.</span></div>
             <div id="detailOutside" style="display:none">This entry is not part of the current filter.</div>
             <div id="detailRepeat" style="display:none"></div>
             <div id="detailMessage"></div>
@@ -20164,6 +20200,7 @@ function applyLowerPanel() {
   lowerTabPatterns.setAttribute("aria-selected", patterns ? "true" : "false");
   lowerTabDetail.disabled = onPatternsTab || (currentLayoutTier === "phone" && !selectedEntry()); // phone: Entry needs a selection
   lowerTabDetail.title = lowerTabDetailTitle(onPatternsTab);
+  syncDetailEmptyBar();
   updateDetailResizerVisibility();
   renderFacetPanel();
   renderWhyPanel();
@@ -22189,6 +22226,7 @@ const emptyStateHeadingEl = emptyState.querySelector("h2");
 const emptyStateBodyEl = emptyState.querySelector("p");
 const EMPTY_STATE_DEFAULT = { heading: emptyStateHeadingEl.textContent, bodyHtml: emptyStateBodyEl.innerHTML };
 function showEmptyStateText(heading, body) {
+  emptyState.classList.toggle("start", heading == null); // the start screen = the drop zone with buttons
   if (heading == null) {
     emptyStateHeadingEl.textContent = EMPTY_STATE_DEFAULT.heading;
     emptyStateBodyEl.innerHTML = EMPTY_STATE_DEFAULT.bodyHtml;
@@ -22390,6 +22428,7 @@ function renderMainView() {
     extractWrap.style.display = "flex";
     renderExtractTable(activeNode);
     switchExtractView(fhActiveTab);
+    updateDetailPanel(); // the extraction's rows are known now (detailEntry)
     return;
   }
 
@@ -33145,14 +33184,15 @@ function updateDetailToggleIcon() {
 // of the existing no-files/extract-mode hide conditions.
 function updateDetailResizerVisibility() {
   const strip = detailPanel.classList.contains("detail-strip-only"); // Patterns with Entry detail selected
-  detailResizer.style.display = (state.rootIds.length > 0 && !strip && !isDetailCollapsed()) ? "block" : "none";
+  detailResizer.style.display = (state.rootIds.length > 0 && !strip && !isDetailCollapsed() && !detailPanel.classList.contains("no-sel")) ? "block" : "none";
 }
 
 function toggleDetailCollapsed(collapsed) {
   if (collapsed === undefined) collapsed = !isDetailCollapsed();
   detailPanel.classList.remove("peeking");
   if (collapsed) {
-    detailLastHeight = detailPanel.getBoundingClientRect().height || detailLastHeight;
+    // While the empty bar (.no-sel) shows, the box is 34px: the remembered height is the inline one.
+    detailLastHeight = (detailPanel.classList.contains("no-sel") ? parseFloat(detailPanel.style.height) : detailPanel.getBoundingClientRect().height) || detailLastHeight;
     detailPanel.classList.add("collapsed");
     detailPanel.style.height = "34px";
   } else {
@@ -35867,6 +35907,29 @@ function markRawHtml(mm, text) {
 // The selected entry as an object. A filter under a link node lists link
 // pairs in the ordinary log table, and pairs never enter entryIndex — those
 // are looked up in the current view instead.
+// The entry Entry detail shows: the selection, except in Table/Plot, where an entry that is not
+// one of the extraction's rows (selected in another view) counts as "nothing selected" there.
+let detailRowIdsFor = null, detailRowIds = null;
+function detailEntry() {
+  const e = selectedEntry();
+  if (!e || (fhActiveTab !== "table" && fhActiveTab !== "plot")) return e;
+  if (detailRowIdsFor !== extractRowsData) {
+    detailRowIdsFor = extractRowsData;
+    detailRowIds = new Set(extractRowsData.map(r => r.entry.id));
+  }
+  return detailRowIds.has(e.id) ? e : null;
+}
+// With nothing to show on the Entry tab the panel shrinks to its tab bar (class .no-sel; the
+// inline height, i.e. the remembered one, is untouched and applies again on the first selection).
+// A user collapse (.collapsed) is independent and never undone by a selection.
+function syncDetailEmptyBar() {
+  const lowerOther = ["lower-facets", "lower-stats", "lower-why", "lower-neighbors", "lower-patterns", "detail-strip-only"].some(c => detailPanel.classList.contains(c));
+  const on = detailPanel.classList.contains("empty") && !lowerOther && currentLayoutTier !== "phone" && !isDetailCollapsed();
+  if (detailPanel.classList.contains("no-sel") === on) return;
+  detailPanel.classList.toggle("no-sel", on);
+  updateDetailResizerVisibility();
+}
+
 function selectedEntry() {
   const id = state.selectedId;
   if (!id) return null;
@@ -36240,7 +36303,7 @@ function formatMessageWithHighlight(text) {
 // find, minimap). Closing hides it but keeps the selection; clearing the
 // selection resets it (updateDetailPanel).
 function updateDetailPanel() {
-  const entry = selectedEntry();
+  const entry = detailEntry();
   // Entry tab: the sheet needs a selection. An Analyze tab (Facets) stays open without one.
   if (!entry && (phoneSheetTab === "entry" || phoneSheetTab === "why")) phoneSheetOpen = false;
   // phone: the bottom sheet (CSS only acts in layout-phone). It takes its
@@ -36263,10 +36326,12 @@ function updateDetailPanel() {
     detailNoteEl.textContent = "";
     detailOutsideEl.style.display = "none";
     renderDetailRepeat(null);
+    syncDetailEmptyBar();
     return;
   }
 
   detailPanel.classList.remove("empty");
+  syncDetailEmptyBar();
   detailMeta.className = levelClass(entry.level, entry.formatId);
   renderDetailOutsideNotice(entry); // before the Raw branch below returns early
   renderDetailRepeat(entry); // Collapse repeats: "Repeated ×N · ..." line of a run's head
@@ -36338,6 +36403,7 @@ function updateDetailPanel() {
 // the active view (node + level filter), whether or not a temp-anchor ghost
 // row exists — refreshed by updateDetailPanel and after every table build.
 function renderDetailOutsideNotice(entry) {
+  if (entry && detailEntry() !== entry) entry = null; // Table/Plot: not shown there at all
   detailOutsideEl.style.display = entry && entryOutsideActiveView(entry) ? "block" : "none";
 }
 // True when `entry` is not a member of the view the Filtered pane shows
@@ -37888,6 +37954,25 @@ openMenu.addEventListener("click", ev => {
   else if (item.dataset.action === "zip") openZipPickerFlow();
   else if (item.dataset.action === "import") importFromFilePicker();
 });
+
+// Start screen (#emptyState without files): the same open actions as the Open menu.
+// "Open folder…" is offered only where folder picking exists (the menu shows the item
+// everywhere and toasts instead; the phone layout hides it via CSS in both places).
+const startOpenFilesBtn = el("#startOpenFiles");
+const startOpenFolderBtn = el("#startOpenFolder");
+startOpenFilesBtn.addEventListener("click", () => openFilesPicker());
+startOpenFolderBtn.addEventListener("click", () => openFolderPickerFlow());
+startOpenFolderBtn.hidden = !FOLDER_WATCH_SUPPORTED;
+// Shortcut hints as <kbd> keys, from the registry (follow rebinding).
+function renderStartKbds() {
+  const host = el("#startKbds");
+  const item = (parts, label) => '<span><span class="sk-combo">' + parts.map(p => "<kbd>" + escapeHtml(p) + "</kbd>").join("") + "</span>" + label + "</span>";
+  host.innerHTML =
+    item(comboLabelParts(getShortcutBinding("findInView")), "find") +
+    item(comboLabelParts(getShortcutBinding("newFilter")), "new filter") +
+    item(["?"], "where is what");
+}
+// First call comes from refreshShortcutTooltips() at boot (the registry is defined further down).
 
 /* ===================== ZIP sources (open a .zip as a log source) =====================
    Distinct from folder watch (state.folders): a ZIP is immutable once
@@ -40100,6 +40185,13 @@ textCopyMenu.addEventListener("click", ev => {
 
 let dragCounter = 0;
 const dropOverlay = el("#dropOverlay");
+// Drag-over feedback: on the start screen (no file loaded) the drop zone itself lights up
+// (accent border, accent-soft fill) instead of the full-window overlay, which would cover it.
+function setDropFeedback(on) {
+  const zone = emptyState.classList.contains("start") && emptyState.style.display !== "none";
+  emptyState.classList.toggle("drag-over", on && zone);
+  dropOverlay.classList.toggle("hidden", !(on && !zone));
+}
 // Distinguishes an OS file drag (dataTransfer.types includes "Files") from an
 // in-app drag, like a tree-row filter being reparented (see renderNode's
 // dragstart, which only ever calls setData("text/plain", ...)). Without this
@@ -40133,7 +40225,7 @@ window.addEventListener("dragenter", ev => {
   // of loading it — its own box shows the drop feedback, not this overlay.
   if (formatDialogOpen()) return;
   dragCounter++;
-  dropOverlay.classList.remove("hidden");
+  setDropFeedback(true);
 });
 window.addEventListener("dragover", ev => { if (!nativeDragDropOwnsThis() && isFileDrag(ev)) ev.preventDefault(); });
 // A desktop wrapper that handles OS drags natively (Tauri: its own drag-drop
@@ -40143,7 +40235,7 @@ window.addEventListener("dragover", ev => { if (!nativeDragDropOwnsThis() && isF
 // through a named contract instead of reaching into #dropOverlay itself.
 window.philoggDropOverlay = function (show) {
   dragCounter = show ? 1 : 0;
-  dropOverlay.classList.toggle("hidden", !show);
+  setDropFeedback(!!show);
 };
 
 // The desktop wrapper's picture-in-picture hook (see docs/desktop.md
@@ -40160,7 +40252,7 @@ window.addEventListener("dragleave", ev => {
   if (nativeDragDropOwnsThis() || !isFileDrag(ev)) return;
   ev.preventDefault();
   dragCounter = Math.max(0, dragCounter - 1);
-  if (dragCounter === 0) dropOverlay.classList.add("hidden");
+  if (dragCounter === 0) setDropFeedback(false);
 });
 window.addEventListener("drop", ev => {
   // See nativeDragDropOwnsThis' own comment above: under a wrapper that
@@ -40169,7 +40261,7 @@ window.addEventListener("drop", ev => {
   if (nativeDragDropOwnsThis()) return;
   ev.preventDefault();
   dragCounter = 0;
-  dropOverlay.classList.add("hidden");
+  setDropFeedback(false);
   const dt = ev.dataTransfer;
   if (!dt) return;
   if (formatDialogOpen()) {
@@ -50561,6 +50653,7 @@ function shortcutTemplate(tpl) {
 function refreshShortcutTooltips() {
   document.querySelectorAll("[data-sc-title]").forEach(e => { e.title = shortcutTemplate(e.dataset.scTitle); });
   document.querySelectorAll("[data-sc-text]").forEach(e => { e.textContent = shortcutTemplate(e.dataset.scText); });
+  renderStartKbds();
   decorateHintLabels(); // hover-card shortcut chips follow the bindings
   updateUndoRedoButtons();
   updateSidebarToggleIcon();

@@ -155,8 +155,8 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#filterInput").placeholder === "Text contains… or a pattern with [*:float]", "filter input placeholder is English");
   const ph = d.querySelector("#detailPlaceholder");
   const desk = ph.querySelector(".dp-desktop"), touch = ph.querySelector(".dp-touch");
-  assert(touch.textContent === "Tap a row to see its full message here.", "touch text as specified");
-  assert(/^Select a log entry/.test(desk.textContent), "desktop text unchanged");
+  assert(touch.textContent === "Tap a row to see its full message", "touch text as specified");
+  assert(desk.textContent === "Select a row to see its full message", "desktop text as specified (P12)");
   assert(w.getComputedStyle(touch).display === "none" && w.getComputedStyle(desk).display !== "none", "desktop shows the desktop text");
   thSetWidth(w, 800);
   assert(w.getComputedStyle(touch).display !== "none" && w.getComputedStyle(desk).display === "none", "tablet shows the touch text");
