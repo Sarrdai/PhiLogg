@@ -333,6 +333,8 @@ async function withApp(run, opts = {}) {
       get minimapWidth() { return minimapWidth; },
       get minimapView() { return { tMin: minimapTMin, tMax: minimapTMax, fileTMin: minimapFileTMin, fileTMax: minimapFileTMax, idxLo: minimapIdxLo, idxN: minimapIdxN, trail: minimapViewTrail.slice(), draft: minimapDraft ? { ...minimapDraft } : null }; },
       get minimapBucketCount() { return minimapBucketCount; },
+      get minimapOvLevels() { return minimapOvLevels; },
+      get minimapRanks() { return MINIMAP_RANKS; },
       get minimapBars() { return { bg: minimapBgCounts, ov: minimapOvCounts, rank: minimapOvRank, name: minimapOvName }; },
       get highlightColorMap() { return highlightColorMap; },
       get currentViewEntries() { return currentViewEntries; },

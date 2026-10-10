@@ -1945,11 +1945,14 @@
   #timelineMinimap.hidden{display:none;}
   #timelineMinimap.no-jump{cursor:default;} /* active column sort: bars still shown, click-to-jump withheld */
   #timelineMinimapMeta{
-    flex:0 0 auto; padding:4px 10px 2px; font-size:10.3px; font-family:var(--font-mono);
+    flex:0 0 auto; padding:4px 10px 2px; font-size:11px; font-family:var(--font-ui);
     color:var(--text-tertiary); font-variant-numeric:tabular-nums;
     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  #timelineMinimapMeta b{color:var(--text-secondary); font-weight:650;}
+  /* Labels in the UI font, only the values in mono; items are spaced, not dot-separated. */
+  #timelineMinimapMeta b{color:var(--text-primary); font:500 11px/1 var(--font-mono); font-variant-numeric:tabular-nums;}
+  .minimap-meta-rest > * + *{margin-left:14px;}
+  .minimap-meta-sq{display:inline-block; width:7px; height:7px; border-radius:2px; margin-right:4px; vertical-align:0;}
   /* Zoom breadcrumbs (Whole file > 08:37:05-08:40:27 ...) + resolution hint. */
   .minimap-crumb{
     font:inherit; color:var(--accent-strong); background:none; border:0; padding:0 2px; cursor:pointer; border-radius:3px;
@@ -1970,7 +1973,7 @@
      click listener) — cursor+hover brightening are the only affordance
      needed, same "filled colored control brightens on hover" convention
      `.level-btn`/etc. already use elsewhere in this file. */
-  .minimap-meta-level{font-weight:650; cursor:pointer; transition:filter .12s;}
+  .minimap-meta-level{cursor:pointer; transition:filter .12s;}
   .minimap-meta-level:hover{filter:brightness(1.35);}
   /* Zoom indicator (only while .zoomed): accent frame + glow, bold edge arrows
      (the log continues beyond that side), a 12 px overview strip of the whole
@@ -1999,6 +2002,11 @@
   #timelineMinimapSvg{width:100%; flex:1 1 auto; min-height:0; display:block; touch-action:pan-y;}
   .minimap-bg-bar{fill:var(--text-tertiary); opacity:.3;}
   .minimap-ov-bar{opacity:.95;}
+  /* Stacked bars: the quiet levels are mixed toward the background, WARN and worse keep full strength. */
+  .minimap-ov-bar.minimap-lvl-info{fill:color-mix(in srgb, var(--level-info) 55%, var(--bg-app));}
+  .minimap-ov-bar.minimap-lvl-debug{fill:color-mix(in srgb, var(--level-debug) 45%, var(--bg-app));}
+  .minimap-ov-bar.minimap-lvl-trace{fill:color-mix(in srgb, var(--level-trace) 40%, var(--bg-app));}
+  .minimap-ov-bar.minimap-lvl-other{fill:color-mix(in srgb, var(--text-secondary) 45%, var(--bg-app));}
   .minimap-lvl-error{fill:var(--level-error);}
   .minimap-lvl-warn{fill:var(--level-warn);}
   .minimap-lvl-info{fill:var(--level-info);}
@@ -2042,13 +2050,13 @@
   .minimap-burst:focus-visible{outline:2px solid var(--accent); outline-offset:1px; border-radius:3px;}
   .minimap-burst.sel .minimap-burst-flag{outline:2px solid var(--text-primary); outline-offset:0;}
   .minimap-burst-chip{
-    position:absolute; top:3px; right:8px; z-index:4; font:inherit; font-size:10.3px; font-family:var(--font-mono); line-height:13px;
-    padding:0 7px; border:1px solid var(--border); border-radius:999px; background:var(--bg-panel); color:var(--text-tertiary); cursor:pointer;
+    position:absolute; top:3px; right:10px; z-index:4; font:500 11px/1 var(--font-ui);
+    padding:3px 9px; border:1px solid var(--border); border-radius:999px; background:var(--bg-panel); color:var(--text-tertiary); cursor:pointer;
   }
   .minimap-burst-chip:hover{border-color:var(--accent); color:var(--text-secondary);}
-  .minimap-burst-chip[aria-pressed="true"]{border-color:var(--accent); color:var(--accent-strong); background:var(--accent-soft);}
+  .minimap-burst-chip[aria-pressed="true"]{border-color:transparent; color:var(--accent-strong); background:var(--accent-soft);}
   .minimap-burst-chip.hidden{display:none;}
-  #timelineMinimap.has-burst-chip #timelineMinimapMeta{padding-right:74px;}
+  #timelineMinimap.has-burst-chip #timelineMinimapMeta{padding-right:86px;}
   body.layout-phone .minimap-burst-chip{display:none;}
   body.layout-phone .minimap-burst{min-width:24px; height:18px; top:0;}
   #burstPopover{
@@ -29975,12 +29983,12 @@ function refoldRepeatView(members) {
   updateMinimapRenderedRange();
   updateRepeatMeta();
 }
-// " · <rows> rows (<k> folded)" for the minimap stats line while folding hides something.
+// "<rows> rows (<k> folded)" for the minimap stats line while folding hides something.
 function repeatMetaHtml() {
   if (!repeatFoldActive()) return "";
   const k = repeatUnfolded.length - currentViewEntries.length;
   if (k <= 0) return "";
-  return '<span class="minimap-meta-repeat"> \u00b7 ' + currentViewEntries.length.toLocaleString("de-DE") + " rows (" + k.toLocaleString("de-DE") + " folded)</span>";
+  return '<span class="minimap-meta-repeat"><b>' + currentViewEntries.length.toLocaleString("de-DE") + "</b> rows (" + k.toLocaleString("de-DE") + " folded)</span>";
 }
 function updateRepeatMeta() {
   const rest = timelineMinimapMetaEl.querySelector(".minimap-meta-rest");
@@ -33381,6 +33389,10 @@ let minimapOvRank = [];
 // Bucket NAME behind each minimapOvRank entry — the rank alone no longer
 // names its bucket now that custom levels share the 5..10 rank slots.
 let minimapOvName = [];
+// Per bucket and level rank, the overlay's entry count (flat, bucket * MINIMAP_RANKS + rank): the stacked
+// bars split each bucket's height by it (E1). Filled in the same pass that finds the worst level.
+const MINIMAP_RANKS = LEVEL_SORT_RANK.OTHER + 1;
+let minimapOvLevels = new Uint32Array(0);
 let minimapInteractive = false;
 // Cached inputs so a window resize can rebuild without going through renderTable.
 let minimapLastRootId = null;
@@ -33773,10 +33785,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
     minimapIdxN = rootEntries.length;
   }
   const minimapMeta = nodeIsPlainText(rootId)
-    ? ["Lines <b>" + (minimapFileTMax - minimapFileTMin + 1).toLocaleString("de-DE") + "</b>"]
-    : ["Start <b>" + escapeHtml(formatTime(minimapFileTMin)) + "</b>",
-      "End <b>" + escapeHtml(formatTime(minimapFileTMax)) + "</b>",
-      "Duration <b>" + escapeHtml(formatMs(minimapFileTMax - minimapFileTMin)) + "</b>"];
+    ? ["<span>Lines <b>" + (minimapFileTMax - minimapFileTMin + 1).toLocaleString("de-DE") + "</b></span>"]
+    : ["<span>Start <b>" + escapeHtml(formatTime(minimapFileTMin)) + "</b></span>",
+      "<span>End <b>" + escapeHtml(formatTime(minimapFileTMax)) + "</b></span>",
+      "<span>Duration <b>" + escapeHtml(formatMs(minimapFileTMax - minimapFileTMin)) + "</b></span>"];
   // Per-level entry counts, one number-only segment per active level in the
   // same order/color as #levelBar's own buttons (activeLevelOrder()) —
   // person-requested, this session. Counts the whole ROOT FILE (rootId), not
@@ -33787,28 +33799,28 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // so the level counts should match that same "whole file" scope instead of
   // silently changing meaning with the active node.
   const minimapLvlCounts = getLevelCounts(rootId) || {};
-  // Each count carries its level letter ("E 149 · W 256 · ..."), in the same
+  // Each count carries a small square in the level's color ("■ 149  ■ 256 ..."), in the same
   // order as the level bar, with the same extra buckets (FATAL, TRACE, Other).
   // Buckets the listed formats do not have are shown only when this file has
-  // entries in them; the Other segment is spelled out ("Other 33").
+  // entries in them; the Other segment is spelled out ("■ Other 33").
   const minimapBase = formatLevelUnion();
   activeLevelOrder().forEach(lvl => {
     const n = minimapLvlCounts[lvl] || 0;
     if (n === 0 && !minimapBase.includes(lvl)) return;
     const colorVar = levelColorVar(lvl) || "var(--text-secondary)";
     const fullName = lvl === "OTHER" ? "Other" : lvl.charAt(0) + lvl.slice(1).toLowerCase();
-    const text = lvl === "OTHER" ? "Other" : lvl.charAt(0);
+    const text = lvl === "OTHER" ? "Other " : "";
     // Clickable: toggles this level in the view filter like the level bar's
     // own chip — see the delegated click listener on timelineMinimapMetaEl below.
-    minimapMeta.push('<span class="minimap-meta-level" data-level="' + escapeHtml(lvl) + '" style="color:' + colorVar +
-      '" title="' + escapeHtml("Show/hide " + fullName + " in this file's view") + '">' +
-      escapeHtml(text) + " " + n.toLocaleString("de-DE") + '</span>');
+    minimapMeta.push('<span class="minimap-meta-level" data-level="' + escapeHtml(lvl) +
+      '" title="' + escapeHtml("Show/hide " + fullName + " in this file's view") + '"><i class="minimap-meta-sq" style="background:' + colorVar +
+      '"></i>' + text + "<b>" + n.toLocaleString("de-DE") + "</b></span>");
   });
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
   timelineMinimapMetaEl.innerHTML = (view ? minimapZoomChipHtml(rootId, view) : "") +
     (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
-    '<span class="minimap-meta-rest">' + minimapMeta.join(" · ") + repeatMetaHtml() + "</span>";
+    '<span class="minimap-meta-rest">' + minimapMeta.join("") + repeatMetaHtml() + "</span>";
   updateMinimapZoomIndicator(view);
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
@@ -33876,6 +33888,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const ovCounts = new Array(bucketCount).fill(0);
   const ovRank = new Array(bucketCount).fill(Infinity);
   const ovName = new Array(bucketCount).fill("");
+  const ovLvl = new Uint32Array(bucketCount * MINIMAP_RANKS);
   // The overlay of a view that IS the whole file (its first render, a file
   // node active without a level filter) straight from the aggregate: the
   // same counts as the background, and per bucket the lowest-ranked level
@@ -33889,15 +33902,19 @@ function renderTimelineMinimap(rootId, viewEntries) {
       const bucket = levelBucket(rec.level, rec.formatId);
       const rank = levelSortRank(bucket, rec.formatId);
       const idx = rec.idx;
-      let j = 0;
+      // j = first of this level's entries at or after the bucket's start; the next bucket's j
+      // is this bucket's end, so the difference is the level's count in the bucket.
+      let j = 0, lo = 0, hi = rec.n;
+      while (lo < hi) { const mid = (lo + hi) >> 1; if (idx[mid] < bounds[0]) lo = mid + 1; else hi = mid; }
+      j = lo;
       for (let b = 0; b < bucketCount && j < rec.n; b++) {
-        // First of this level's entries at or after the bucket's start.
-        let lo = j, hi = rec.n;
-        while (lo < hi) { const mid = (lo + hi) >> 1; if (idx[mid] < bounds[b]) lo = mid + 1; else hi = mid; }
-        j = lo;
-        if (j < rec.n && idx[j] < bounds[b + 1] && (rank < ovRank[b] || (rank === ovRank[b] && idx[j] < ovFirst[b]))) {
-          ovRank[b] = rank; ovName[b] = bucket; ovFirst[b] = idx[j];
+        lo = j; hi = rec.n;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (idx[mid] < bounds[b + 1]) lo = mid + 1; else hi = mid; }
+        if (lo > j) {
+          ovLvl[b * MINIMAP_RANKS + rank] += lo - j;
+          if (rank < ovRank[b] || (rank === ovRank[b] && idx[j] < ovFirst[b])) { ovRank[b] = rank; ovName[b] = bucket; ovFirst[b] = idx[j]; }
         }
+        j = lo;
       }
     }
   }
@@ -33939,8 +33956,10 @@ function renderTimelineMinimap(rootId, viewEntries) {
       info = [bucket, levelSortRank(bucket, e.formatId)];
       byLevel.set(e.level, info);
     }
+    ovLvl[b * MINIMAP_RANKS + info[1]]++;
     if (info[1] < ovRank[b]) { ovRank[b] = info[1]; ovName[b] = info[0]; }
   }
+  minimapOvLevels = ovLvl;
   minimapBgCounts = bgCounts;
   minimapOvCounts = ovCounts;
   minimapOvRank = ovRank;
@@ -33955,18 +33974,33 @@ function renderTimelineMinimap(rootId, viewEntries) {
   const usableH = H - 3;
   const heightFor = count => count === 0 ? 0 : Math.max(1.5, (Math.log(count + 1) / Math.log(maxCount + 1)) * usableH);
 
-  let bgParts = "", ovParts = "";
+  // The overlay is one <path> per level (its segments as sub-paths), not one element per segment: a
+  // 400-bucket strip would otherwise be thousands of SVG nodes per render.
+  let bgParts = "";
+  const ovPaths = new Array(MINIMAP_RANKS).fill("");
   for (let i = 0; i < bucketCount; i++) {
-    const x = i * barW;
+    const x = i * barW, xs = x.toFixed(1);
     const w = Math.max(0.6, barW - 0.5).toFixed(1);
     const bh = heightFor(bgCounts[i]);
     if (bh > 0) bgParts += '<rect class="minimap-bg-bar" x="' + x.toFixed(1) + '" y="' + (H - bh).toFixed(1) + '" width="' + w + '" height="' + bh.toFixed(1) + '"/>';
     if (ovCounts[i] > 0) {
+      // Stacked per level, in proportion to the bucket's counts (the log-scaled bar height is split):
+      // the least severe level at the bottom, FATAL on top. A WARN-or-worse segment keeps at least
+      // 1 px, so a lone error in a busy bucket does not vanish.
       const oh = heightFor(ovCounts[i]);
-      ovParts += '<rect class="minimap-ov-bar ' + minimapLevelClass(ovRank[i]) + '" x="' + x.toFixed(1) + '" y="' + (H - oh).toFixed(1) + '" width="' + w + '" height="' + oh.toFixed(1) + '"/>';
+      let y = H;
+      for (let rank = MINIMAP_RANKS - 1; rank >= 0; rank--) {
+        const n = ovLvl[i * MINIMAP_RANKS + rank];
+        if (!n) continue;
+        const sh = Math.max(rank <= 2 ? 1 : 0, oh * n / ovCounts[i]);
+        y -= sh;
+        ovPaths[rank] += "M" + xs + " " + y.toFixed(1) + "h" + w + "v" + sh.toFixed(1) + "h-" + w + "z";
+      }
     }
   }
 
+  let ovParts = "";
+  for (let rank = MINIMAP_RANKS - 1; rank >= 0; rank--) if (ovPaths[rank]) ovParts += '<path class="minimap-ov-bar ' + minimapLevelClass(rank) + '" d="' + ovPaths[rank] + '"/>';
   timelineMinimapSvg.innerHTML = bgParts + ovParts +
     '<rect class="minimap-full-range hidden" id="minimapFullRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
     '<rect class="minimap-rendered-range hidden" id="minimapRenderedRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
@@ -34061,6 +34095,14 @@ function renderMinimapBursts(rootId, viewEntries) {
       escapeHtml("Burst " + label + ", " + b.count + " entries") + '"><span class="minimap-burst-flag">' + b.count.toLocaleString("de-DE") + "</span></button>";
   });
   minimapBurstsEl.innerHTML = html;
+  // Keep every flag fully inside the strip: shift the button inward at the edges, its stem and band
+  // stay at the true x (the stem is the flag's pointer).
+  minimapBurstsEl.querySelectorAll(".minimap-burst").forEach(btn => {
+    const half = btn.offsetWidth / 2, x = parseFloat(btn.style.left);
+    const cx = Math.min(W - half, Math.max(half, x));
+    if (cx !== x) btn.style.left = cx.toFixed(1) + "px";
+    btn.dataset.x = x.toFixed(1);
+  });
   minimapBurstsEl._bursts = shown;
   if (burstPopoverBurst && !shown.some(b => b.from === burstPopoverBurst.from && b.to === burstPopoverBurst.to)) closeBurstPopover();
 }

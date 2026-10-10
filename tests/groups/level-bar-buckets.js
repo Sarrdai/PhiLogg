@@ -118,7 +118,7 @@ await withApp(async (w, d, T) => {
   w.render();
   const segs = [...d.querySelectorAll("#timelineMinimapMeta .minimap-meta-level")];
   assert(segs.map(s => s.dataset.level).join(",") === "FATAL,ERROR,WARN,INFO,DEBUG,TRACE,OTHER", "same order as the bar, got " + segs.map(s => s.dataset.level).join(","));
-  assert(segs.map(s => s.textContent).join(" · ") === "F 15 · E 134 · W 256 · I 1.356 · D 694 · T 12 · Other 33", "texts, got " + segs.map(s => s.textContent).join(" · "));
+  assert(segs.map(s => s.textContent).join(" · ") === "15 · 134 · 256 · 1.356 · 694 · 12 · Other 33", "texts, got " + segs.map(s => s.textContent).join(" · "));
   assert(!segs.some(s => s.title.includes("incl.")), "no '(incl. N Fatal)' note any more");
 });
 
