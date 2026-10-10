@@ -459,6 +459,55 @@
       },
     },
 
+    axes: {
+      label: "Multi-axis moves (optional end)",
+      weight: 4,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): 'Move axes requested' on thread gantry (no correlation id), followed 20-300ms later by 'Axis X moved to P' (always) and, in ~40% of moves, 'Axis Y moved to P' — so most moves have no Y end; no new move starts before the previous one finished ('Gantry busy'). Link pairing 'Before the next start' (a move without Y is not an open end and does not steal the next move's Y). Link: Move axes requested → Axis Y moved",
+      make(g, ts) {
+        const thread = "gantry";
+        const moved = axis => ({ level: "INFO", thread, cls: "axis", method: "OnMoved", msg: "Axis " + axis + " moved to " + g.float(-200, 200).toFixed(2) });
+        // One gantry: no new move while the previous one is still running.
+        if (ts < (g.state.axesBusy || 0)) return { level: "DEBUG", thread, cls: "axis", method: "Poll", msg: "Gantry busy" };
+        let te = ts + g.int(20, 150);
+        g.schedule(te, moved("X"));
+        if (g.chance(0.4)) { te += g.int(5, 150); g.schedule(te, moved("Y")); }
+        g.state.axesBusy = te + 1;
+        return { level: "INFO", thread, cls: "axis", method: "MoveAxes", msg: "Move axes requested" };
+      },
+    },
+
+    flows: {
+      label: "Nested flows (start/end)",
+      weight: 3,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): a flow engine on thread flow-engine logs 'Flow <Name> started run=R-n' ... 'Flow <Name> ended result=OK|FAILED' with 0-3 nested subflows per flow (depth up to 3); ~15% of subflows reuse their parent's name (recursion, e.g. Retry inside Retry), ~4% of flows never end. Link 'Same wildcard values' (Flow [*] started ↔ Flow [*] ended) with Nested pairing, tree view.",
+      make(g, ts) {
+        const NAMES = ["Startup", "Calibrate", "Inspect", "PickPart", "PlacePart", "Retry", "Home"];
+        const thread = "flow-engine";
+        // One engine: no new flow while the previous one is still running.
+        if (ts < (g.state.flowBusy || 0)) return { level: "DEBUG", thread, cls: "scheduler", method: "Poll", msg: "Flow engine busy" };
+        let t = ts;
+        let first = null;
+        const emit = e => { if (!first) { first = e; return; } g.schedule(t, e); };
+        const run = (name, depth) => {
+          emit({ level: "INFO", thread, cls: "scheduler", method: "StartFlow", msg: "Flow " + name + " started run=R-" + pad(++g.state.job, 5) });
+          const kids = depth < 3 ? g.int(0, depth === 0 ? 3 : 2) : 0;
+          for (let k = 0; k < kids; k++) {
+            t += g.int(5, 120);
+            run(g.chance(0.15) ? name : g.pick(NAMES), depth + 1);
+          }
+          t += g.int(10, 400);
+          if (g.chance(0.04)) return; // never ends
+          const ok = g.chance(0.9);
+          emit({ level: ok ? "INFO" : "WARN", thread, cls: "scheduler", method: "EndFlow", msg: "Flow " + name + " ended result=" + (ok ? "OK" : "FAILED") });
+        };
+        run(g.pick(NAMES), 0);
+        g.state.flowBusy = t + 1;
+        return first;
+      },
+    },
+
     grouped: {
       label: "Thousands separators",
       weight: 4,

@@ -54,7 +54,7 @@ await withApp(async (w, d, T) => {
     "caseSensitive", "columns", "isRegex", "wholeWord", "ignoredColumns", "columnRenames", "assertions", // text
     "plotConfig", "arrayViews", // extraction view (nodeIsExtractionView)
     "baked", "bakedA", "bakedB", // and/or/link: baked conditions
-    "linkDirection", "linkN", "linkOrderEnforced", "linkExclusive", "linkDt", "linkKey", // link
+    "linkDirection", "linkN", "linkOrderEnforced", "linkExclusive", "linkPairing", "linkDt", "linkKey", // link
     "contextBefore", "contextAfter", "countBefore", "countAfter", // context / countContext
   ];
   // Own properties that are deliberately NOT carried. One line of reason each.
@@ -115,7 +115,7 @@ await withApp(async (w, d, T) => {
   reg("cctx", w.createCountContextNode(f.id, 2, 3));
   reg("and", w.createAndOrNode([FX.lit, FX.lvl], "and"));
   reg("or", w.createAndOrNode([FX.and, FX.tr], "or")); // a baked combiner nested in a baked list
-  reg("link", w.createLinkNode(FX.lit, FX.rx, "after", 2, { orderEnforced: true, exclusive: true, dt: { op: "<", ms: 5000 }, key: { column: "thread" } }));
+  reg("link", w.createLinkNode(FX.lit, FX.rx, "after", 2, { orderEnforced: true, exclusive: true, pairing: "window", dt: { op: "<", ms: 5000 }, key: { column: "thread" } }));
   reg("link2", w.createLinkNode(FX.link, FX.lvl, "before", 1, { dt: { op: ">", ms: 250 }, key: { pattern: "Queue depth [*:int]" } })); // multi-hop: a link as a baked side
   const ALL_KEYS = Object.keys(FX);
   const TOP_KEYS = ALL_KEYS.filter(k => at(k).parentId === f.id);
@@ -268,11 +268,11 @@ await withApp(async (w, d, T) => {
   const BAKED_RX = { filterType: "text", value: "Queue.*depth", inverted: false, caseSensitive: true, columns: ["message"], isRegex: true };
   const BAKED_TR = { filterType: "timerange", value: { from: 1705312900000, to: null }, inverted: false };
   const BAKED_AND = { filterType: "and", value: null, inverted: false, baked: [BAKED_LIT, BAKED_LVL] };
-  const BAKED_LINK = { filterType: "link", value: null, inverted: false, bakedA: BAKED_LIT, bakedB: BAKED_RX, linkDirection: "after", linkN: 2, linkOrderEnforced: true, linkExclusive: true, linkDt: { op: "<", ms: 5000 }, linkKey: { column: "thread" } };
+  const BAKED_LINK = { filterType: "link", value: null, inverted: false, bakedA: BAKED_LIT, bakedB: BAKED_RX, linkDirection: "after", linkN: 2, linkOrderEnforced: true, linkExclusive: true, linkPairing: "window", linkDt: { op: "<", ms: 5000 }, linkKey: { column: "thread" } };
   Object.assign(WIRE, {
     and: { filterType: "and", name: "fx and", inverted: false, baked: [BAKED_LIT, BAKED_LVL], highlightColor: "#000075", label: "label and" },
     or: { filterType: "or", name: "fx or", inverted: false, baked: [BAKED_AND, BAKED_TR], highlightColor: "#a9a9a9", label: "label or", muted: true },
-    link: { filterType: "link", name: "fx link", inverted: false, bakedA: BAKED_LIT, bakedB: BAKED_RX, linkDirection: "after", linkN: 2, linkOrderEnforced: true, linkExclusive: true, linkDt: { op: "<", ms: 5000 }, linkKey: { column: "thread" }, highlightColor: "#ffd8b1", label: "label link" },
+    link: { filterType: "link", name: "fx link", inverted: false, bakedA: BAKED_LIT, bakedB: BAKED_RX, linkDirection: "after", linkN: 2, linkOrderEnforced: true, linkExclusive: true, linkPairing: "window", linkDt: { op: "<", ms: 5000 }, linkKey: { column: "thread" }, highlightColor: "#ffd8b1", label: "label link" },
     link2: { filterType: "link", name: "fx link2", inverted: false, bakedA: BAKED_LINK, bakedB: BAKED_LVL, linkDirection: "before", linkN: 1, linkOrderEnforced: false, linkExclusive: false, linkDt: { op: ">", ms: 250 }, linkKey: { pattern: "Queue depth [*:int]" }, highlightColor: "#dcbeff", label: "label link2", muted: true },
   });
   assert(Object.keys(WIRE).length === ALL_KEYS.length && ALL_KEYS.every(k => WIRE[k]), "the literal has one entry per fixture");

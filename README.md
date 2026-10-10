@@ -220,7 +220,7 @@ deployments possible:
   Right-click a row → **Pair with…**, click the end row: the Δt between the two
   rows shows at once, and **Pair all like these…** opens the link dialog
   prefilled. Also reachable from the new-filter popup ("Link two events…") and
-  the tree menu ("Link with…", "Edit link…"); chainable into multi-hop tuples.
+  the tree menu ("Link with…", "Edit link…"); chainable into multi-hop tuples. Pair **nearest**, only **before the next start** (starts whose end never came are skipped, not "without end"), or **nested** like brackets, and key start/end on **wildcard values** of their own patterns (`Flow [*] started` ↔ `Flow [*] ended`).
 - **Why is this row here?** — the **Why** tab of the bottom panel (also in the row's right-click menu) lists, for the selected row, every node of the active filter chain with kept / rejected / muted and the reason, and names the node that rejects it.
 - **Context/Filtered split** — the narrowed "Filtered" view plus a
   "Context" view showing the same result *with the log around it*: the

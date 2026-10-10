@@ -122,6 +122,15 @@ exception, order O-xxxxx` on one thread; in about 80 % of cases 1-3 WARN
 precede it by 0.5-2 s (the rest have no cause). For the neighbors analysis
 (`-s causechain,basic`).
 
+`axes` is opt-in: `Move axes requested` on thread `gantry`, 20-300 ms later
+`Axis X moved to P` (always) and in ~40 % of the moves `Axis Y moved to P`; no
+new move before the previous one finished. For the link pairing "Before the
+next start" (`-s axes,basic`). `flows` is opt-in too: `Flow <Name> started
+run=R-n` ... `Flow <Name> ended result=OK|FAILED` on thread `flow-engine`,
+nested up to depth 3, ~15 % of subflows reuse their parent's name, ~4 % never
+end, flows never overlap. For link pairing "Nested" and the "Same → wildcards"
+key (`-s flows,basic`).
+
 `tuples` is opt-in as well: messages that list names first and values after —
 `Probe offset (xo, yo, zo): (1.4 , 7.98, 9.76)`, `=(1.4mm , ...)`,
 `[cx; cy] -> [12px; 40px]`, `{a/b}={3/4}`, `xs, ys: 1.2mu, 3.4mu`,
