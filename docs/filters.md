@@ -280,6 +280,8 @@ An entry without a key is never paired (a reference is dropped, a target is neve
 - **Before the next start** (`"window"`): a start only looks for its end up to its own next same-key start (previous one for direction "previous"; the end must lie before/after that start in log order, `linkLogOrderCmp`). Search is the usual `findNthOccurrenceExcluding` (N works inside the window); a match at or beyond the limit, or no match while a limit exists, makes the start **skipped** (`meta.linkSkipped`, preview "· N skipped") — not paired and not "without end". Only a start with no neighbour start and no end counts as without end. Chained hops: the window is between successive anchors of the same key.
 - **Nested** (`"nested"`): starts and ends merged in log order (two-pointer merge, linear), one stack per key; an end closes the most recent open start of its key, an end with none open is ignored, leftovers are without end. Direction/N are forced to 1st/next (disabled in the dialog, "+ Add step" hidden, unavailable for 2+ steps; a chained hop falls back to nearest). An entry matching both sides closes an open same-key start if there is one (then it is only an end), otherwise it opens one. Pairs come out in reference order; Δt stays a post-filter.
 
+The Link view shows a nested link as an expandable **tree** by default (nesting by time containment, Start/End/Δt and a share-of-parent bar per row; `docs/ui-and-views.md` → "Link pair view").
+
 Tested: GROUP link-pairing (simulator scenarios `axes`, `flows`).
 
 ### Δt condition: "Only pairs with Δt > / < X" (`linkDt`)
