@@ -288,8 +288,8 @@ packages use its tokens.
 | P1 | Hairline token, column dividers | B2, B1 | 8 % | done | 4527fbc | 0.50→0.55 |
 | P2 | Level counters and badges | A1, A2 | 7 % | done | 0a99c6d | 0.55→0.59 |
 | P3 | Row tinting variant A, stripe, selection | B3 | 9 % | done | 4c063fc | 0.59→0.64 |
-| P4 | Toolbar button language, view tabs | C1 | 10 % | done | see git log | 0.64→0.70 |
-| P5 | Header and brand mark | C2 | 6 % | open | | |
+| P4 | Toolbar button language, view tabs | C1 | 10 % | done | 835395f | 0.64→0.70 |
+| P5 | Header and brand mark | C2 | 6 % | done | see git log | 0.70→0.74 |
 | P6 | Popover token, menus, segmented groups | D1, C4 | 8 % | open | | |
 | P7 | Filter tree | B4 | 9 % | open | | |
 | P8 | Selects and checkboxes | C3 | 8 % | open | | |
@@ -319,3 +319,4 @@ rules.
 | 2026-10-10T08:50Z | orchestrator (after P2) | 0.59 | 0.70 | 2026-10-10T10:50Z |
 | 2026-10-10T08:48Z | orchestrator (after P3) | 0.64 | 0.71 | 2026-10-10T10:50Z |
 | 2026-10-10T09:27Z | orchestrator (after P4) | 0.70 | 0.72 | 2026-10-10T10:50Z |
+| 2026-10-10T09:54Z | orchestrator (after P5) | 0.74 | 0.72 | 2026-10-10T10:50Z |

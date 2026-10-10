@@ -33,7 +33,7 @@ if (groupSelected()) {
   assert(rd("app/formats/welcome.logformat.json") === rd("app/tour/welcome.logformat.json"), "the provided welcome format is the tour's own export");
   const app = rd("app/index.html");
   assert(/const PHILOGG_VERSION = "[^"]+"/.test(app), "the hosted app still carries PHILOGG_VERSION");
-  assert(!/\/\* Short commit-hash build tag under the product name/.test(app) && /Short commit-hash build tag under the product name/.test(fs.readFileSync(path.join(__dirname, "..", "philogg.html"), "utf8")),
+  assert(!/\/\* Version tag \(PHILOGG_VERSION\) as a pill/.test(app) && /Version tag \(PHILOGG_VERSION\) as a pill/.test(fs.readFileSync(path.join(__dirname, "..", "philogg.html"), "utf8")),
     "a known block comment is stripped from app/index.html but present in the repo's philogg.html");
   const imgs = [...siteHtml.matchAll(/<img[^>]*\ssrc="([^"]+)"/g)].map(m => m[1]);
   assert(imgs.length === 4 && imgs.every(i => /^img\//.test(i) && fs.existsSync(path.join(out, i))), "the four screenshots referenced by index.html are in img/: " + imgs);

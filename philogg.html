@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PhiLogg</title>
 <!-- Inline icon: the page is one self-contained file, so the browser makes no extra icon request (it used to get a 404) on load. -->
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><defs><linearGradient id='g' x1='0' y1='0' x2='1' y2='1'><stop offset='0' stop-color='%234fc7c3'/><stop offset='1' stop-color='%237fe0dc'/></linearGradient></defs><rect width='32' height='32' rx='8' fill='url(%23g)'/><path d='M11 8v16h11' fill='none' stroke='%2308201f' stroke-width='3.6' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<!-- Favicon: the brand mark with LITERAL colors (default theme's --accent #4fc7c3 / --accent-on #08201f), because CSS vars do not resolve inside a favicon. -->
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><rect width='28' height='28' rx='7' fill='%234fc7c3'/><path d='M7 8.5h14M7 12.5h10M7 16.5h7' stroke='%2308201f' stroke-width='2' stroke-linecap='round'/><path d='M15.5 15.5h6l-2.3 2.8v3.2l-1.4-.8v-2.4z' fill='%2308201f'/></svg>">
 <style>
   :root{
     --icon-md:14px; --icon-sm:12px;
@@ -466,27 +467,23 @@
     padding:0 16px; border-bottom:1px solid var(--hairline);
     background:var(--bg-panel);
   }
-  /* Column layout so the version tag (.brand-version) sits in its own line
-     directly under the wordmark row (.brand-row) instead of beside it —
-     the wordmark itself stays put, only the version tag moved here (see
-     "Toolbar regroup" in docs/ui-and-views.md). */
-  .brand{display:flex; flex-direction:column; justify-content:center; gap:1px;}
-  .brand-row{display:flex; align-items:baseline; gap:9px;}
-  .brand-mark{
-    display:inline-flex; align-items:center; justify-content:center;
-    width:20px; height:20px; border-radius:5px;
-    background:linear-gradient(135deg, var(--accent), var(--accent-strong));
-    color:var(--accent-on); font-weight:800; font-size:12px;
-  }
-  .brand-name{font-weight:650; letter-spacing:.2px; font-size:14.5px;}
-  /* Short commit-hash build tag under the product name — see PHILOGG_VERSION. */
-  .brand-version{margin-left:1px; font-size:9.5px; font-weight:500; color:var(--text-tertiary); letter-spacing:.2px;}
+  /* Brand: SVG mark (accent rounded square, stacked log lines, small funnel),
+     the wordmark and the version as a small pill next to it. */
+  .brand{display:flex; align-items:center; gap:9px;}
+  .brand-mark{flex:0 0 auto; display:block;}
+  .brand-name{font:650 15px/1 var(--font-ui); letter-spacing:-.01em;}
+  /* Version tag (PHILOGG_VERSION) as a pill. */
+  .brand-version{font:500 10.5px/1 var(--font-ui); color:var(--text-tertiary); padding:3px 6px; border-radius:999px; background:color-mix(in srgb, var(--text-primary) 6%, transparent);}
+  /* 1px x 18px hairline separators between header groups (after the brand, after undo/redo). */
+  #navHistoryGroup::before, #hdrHistory::after{content:""; width:1px; height:18px; background:var(--hairline); flex:0 0 auto;}
+  #navHistoryGroup::before{margin-right:6px;}
+  #hdrHistory::after{margin-left:6px;}
   /* Eats the space between the back/forward nav group (kept close to the
      wordmark) and the rest of the toolbar controls (kept flush right) —
      see "Back/forward navigation" in docs/ui-and-views.md. */
   .toolbar-spacer{flex:1 1 auto;}
   .toolbar-right{display:flex; align-items:center; gap:16px;}
-  .status-text{color:var(--text-tertiary); font-size:11.5px; font-variant-numeric:tabular-nums;}
+  .status-text{color:var(--text-tertiary); font-size:12.5px; font-variant-numeric:tabular-nums;}
   /* Shared main-window control system (this session): .toolbar-icon-btn is
      the one shared "icon button" shape (28x28, border-radius:7px,
      flex-centered) — reused as-is by the log-display toggles
@@ -509,14 +506,8 @@
   .toolbar-icon-btn:hover{background:var(--btn-hover); color:var(--text-primary);}
   .toolbar-icon-btn:disabled{opacity:.38; cursor:default; pointer-events:none;}
   .toolbar-icon-btn:disabled:hover{background:transparent; color:var(--text-secondary);}
-  /* The header's buttons (P5 restyles them) keep the framed look for now. */
-  #toolbar .toolbar-icon-btn{background:var(--bg-elevated); border:1px solid var(--border); border-radius:7px;}
-  #toolbar .toolbar-icon-btn:hover{background:var(--bg-elevated-2); border-color:var(--border-hover); color:var(--text-primary);}
-  #toolbar .toolbar-icon-btn:disabled{opacity:.32;}
-  #toolbar .toolbar-icon-btn:disabled:hover{background:var(--bg-elevated);}
   /* Active/on state of an icon button (persistent toggles such as Notes/Wrap/Columns, or a popup trigger whose popup is open): accent-soft fill with the icon in --accent-strong. The old teal bar under toggle icons is gone. */
   .toolbar-icon-btn.active, .toolbar-icon-btn.active:hover{background:var(--accent-soft); color:var(--accent-strong);}
-  #toolbar .toolbar-icon-btn.active{border-color:var(--accent-strong);}
   .toolbar-icon-btn.toggle-repeat:disabled, .toolbar-icon-btn.repeat-chevron:disabled{pointer-events:auto; cursor:default;} /* keep the tooltip that says why */
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
@@ -6397,10 +6388,8 @@
       <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg>
     </button>
     <div class="brand">
-      <div class="brand-row">
-        <span class="brand-mark">L</span>
-        <span class="brand-name">PhiLogg</span>
-      </div>
+      <svg class="brand-mark" viewBox="0 0 28 28" width="26" height="26" aria-hidden="true"><rect width="28" height="28" rx="7" fill="var(--accent)"/><path d="M7 8.5h14M7 12.5h10M7 16.5h7" stroke="var(--accent-on)" stroke-width="2" stroke-linecap="round"/><path d="M15.5 15.5h6l-2.3 2.8v3.2l-1.4-.8v-2.4z" fill="var(--accent-on)"/></svg>
+      <span class="brand-name">PhiLogg</span>
       <span class="brand-version" id="brandVersion"></span>
     </div>
     <div class="toolbar-group" id="navHistoryGroup">

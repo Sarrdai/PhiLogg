@@ -33,9 +33,9 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#toolbar #btnOpen") === null, "Open button is not in the top toolbar");
   assert(d.querySelector("#btnSession") === null, "#btnSession no longer exists");
   assert(d.querySelector("#sessionMenu") === null, "#sessionMenu no longer exists");
-  assert(!!d.querySelector(".brand #brandVersion"), "version tag sits under the wordmark, inside .brand");
+  assert(!!d.querySelector(".brand #brandVersion"), "version pill sits next to the wordmark, inside .brand");
   assert(d.querySelector(".toolbar-right #brandVersion") === null, "version tag no longer sits in the toolbar's right side");
-  assert(!!d.querySelector(".brand .brand-row .brand-name"), "the wordmark itself stays in its own row, unmoved");
+  assert(!!d.querySelector(".brand > .brand-name"), "the wordmark is a direct child of .brand");
   // Nav group must come right after .brand and before the spacer that
   // pushes the rest of the toolbar's controls to the far right.
   // (#btnDrawer, the hamburger for the compact/phone tiers, is the very first child — skipped here.)
