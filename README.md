@@ -300,6 +300,13 @@ deployments possible:
   `.tiff`/`.tif` open in an image viewer with pan/zoom/reset (drag-to-select
   a region to zoom, same as Plot View). Every opened one is closable the same
   way a log file is (✕ or middle-click its row).
+- **Reopen recent files** — the **Open** menu and the start screen list the
+  files, ZIPs and folders you opened recently (not the ones still open), with
+  when you opened them and whether filters are remembered; one click opens
+  them again (in Chrome/Edge after a one-time permission prompt, in the
+  desktop app directly). `Ctrl+Shift+T` (browser: `Alt+Shift+T`) reopens the
+  most recent one. A reopened file offers its filters from last time in one
+  quiet line under the file, with an expandable preview and **Restore**.
 - **Multi-file drag-and-drop** — every dropped file shows up in the tree
   right away (grayed while it waits its turn to load), and loading several
   at once offers to merge them into one chronologically-sorted file. Files
