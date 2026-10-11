@@ -24,5 +24,5 @@ await withApp(async (w, d, T) => {
   const q = w.renderQueuedFileRow({ id: "q", name: "q.log" }, 2).querySelector(".tree-row-queued");
   assert(q.style.paddingLeft === "44px", "queued placeholder row uses the same step, got " + q.style.paddingLeft);
   const g = w.renderGhostRow({ filterType: "text", value: "x", children: [] }, 2);
-  assert(g.style.paddingLeft === "36px", "filter-history ghost rows use the same step, got " + g.style.paddingLeft);
+  assert(g.style.paddingLeft === "46px", "filter-history ghost rows use the same step (10px base inside the guided preview), got " + g.style.paddingLeft);
 });

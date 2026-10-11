@@ -23317,7 +23317,7 @@ function countFilterTreeNodes(roots) {
 function renderGhostRow(sn, depth) {
   const row = document.createElement("div");
   row.className = "tree-ghost-row";
-  if (depth) row.style.paddingLeft = (10 + depth * 14) + "px";
+  if (depth) row.style.paddingLeft = (10 + depth * TREE_INDENT_STEP) + "px";
   const icon = document.createElement("span");
   icon.className = "tree-icon";
   icon.innerHTML = ghostIconFor(sn.filterType);
