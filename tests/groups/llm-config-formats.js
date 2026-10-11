@@ -23,8 +23,8 @@ if (groupSelected()) {
     assert(!def.byAssistant && !f.result.formats.some(x => x.byAssistant), "nothing is marked as the assistant's yet");
     const r = llmRun(w, "list_config", { kind: "filename_rules" });
     assert(!r.error && Array.isArray(r.result.rules) && r.result.rules.length === 0, "no rules yet");
-    const bad = llmRun(w, "list_config", { kind: "folders" });
-    assert(bad.error && /Available: formats, filename_rules/.test(bad.error), "unknown kind lists the available ones, got " + bad.error);
+    const bad = llmRun(w, "list_config", { kind: "bogus" });
+    assert(bad.error && /Available: formats, filename_rules, styles, folders/.test(bad.error), "unknown kind lists the available ones, got " + bad.error);
     assert(llmRun(w, "list_config", {}).error, "kind is required");
     const specs = w.llmToolSpecs().map(s => s.function.name);
     assert(["list_config", "create_format", "set_filename_rule", "delete_config_item"].every(n => specs.includes(n)), "tools are in the shared registry");
