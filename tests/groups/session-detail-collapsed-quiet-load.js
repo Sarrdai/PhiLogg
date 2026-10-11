@@ -13,7 +13,7 @@ group("session-detail-collapsed-quiet-load");
 if (groupSelected()) {
   const TOUR = require(path.join(__dirname, "..", "tools", "log-sim", "tour.js"));
   const files = Object.fromEntries(TOUR.generateTour().map(f => [f.path, f.text]));
-  const BASE = "http://tour.example/t/";
+  const BASE = "http://localhost/t/";
   const stub = extra => win => {
     win.fetch = async u => {
       const text = extra && extra[u] !== undefined ? extra[u] : files[u.replace(BASE, "")];

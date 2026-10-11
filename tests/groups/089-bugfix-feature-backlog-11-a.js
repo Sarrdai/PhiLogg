@@ -47,7 +47,7 @@ await withApp(async (w, d, T) => {
   section("89b. a plain http(s) ?url= report link is NOT tailed");
   const logText = makeLog(0, 2);
   w.fetch = async () => ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(logText).buffer });
-  await w.philoggLoadUrl("http://logs.example/build-42/output.log");
+  await w.philoggLoadUrl("http://localhost/logs/build-42/output.log");
   const node = T.state.nodes[T.state.rootIds[0]];
   assert(!node.tail, "an ordinary http(s) report link stays a static snapshot, not auto-tailed");
 });

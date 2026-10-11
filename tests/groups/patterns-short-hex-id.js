@@ -16,7 +16,7 @@ if (groupSelected()) {
       digitOnly += ids.filter(x => /^\d+$/.test(x)).length;
       letterOnly += ids.filter(x => /^[a-f]+$/.test(x)).length;
       expLike += ids.filter(x => /^\d+e\d+$/.test(x)).length;
-      // An all-digit id ("r-123456") has no marker of its own, but it joins the sibling r-<hex> group (backlog #104).
+      // An all-digit id ("r-123456") normalizes to the same <hex> as its letter siblings (backlog #125).
       const groups = T.patternsAnalysis(f.id).result.groups.filter(g => g.key.startsWith("Request r-"));
       const shapes = groups.map(g => w.patternDisplayText(g.key) + " x" + g.count).sort();
       const want = ["Request r-<hex> rejected: <#> Service Unavailable x" + ids.length];
@@ -32,7 +32,7 @@ if (groupSelected()) {
     assert(disp("load v2 done") === "load v<#> done", "v2 unchanged, got " + disp("load v2 done"));
     assert(disp("Sensor T3 ok") === "Sensor T<#> ok", "T3 unchanged, got " + disp("Sensor T3 ok"));
     assert(disp("Worker-3 up") === "Worker-<#> up", "Worker-3 unchanged, got " + disp("Worker-3 up"));
-    assert(disp("id r-123456 end") === "id r-<#> end" && disp("job=J-00004 x") === "job=J-<#> x" && disp("id r-dedcac end") === "id r-<hex> end" && disp("id r-4e5123 end") === "id r-<hex> end", "prefixed ids of any mix");
+    assert(disp("id r-123456 end") === "id r-<hex> end" && disp("job=J-00004 x") === "job=J-<hex> x" && disp("id r-dedcac end") === "id r-<hex> end" && disp("id r-4e5123 end") === "id r-<hex> end", "prefixed ids of any mix");
     assert(disp("worker-12 and Worker-123 up") === "worker-<#> and Worker-<#> up", "short numbers / long prefixes stay numbers");
     assert(disp("id r-4f2d1a end") === "id r-<hex> end", "short id, got " + disp("id r-4f2d1a end"));
     assert(disp("id deadbe3f end") === "id <hex> end", "8+ hex still hex");

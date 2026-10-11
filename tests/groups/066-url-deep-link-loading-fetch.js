@@ -21,11 +21,11 @@ group(66);
 await withApp(async (w, d, T) => {
   section("66a. ?url= fetch success adds the file");
   const logText = makeLog(0, 3);
-  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://logs.example/build-42/output.log"));
+  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://localhost/logs/build-42/output.log"));
   let requestedUrl = null;
   w.fetch = async (u) => { requestedUrl = u; return { ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(logText).buffer }; };
   await w.loadFromUrlParam();
-  assert(requestedUrl === "http://logs.example/build-42/output.log", "fetch was called with the exact ?url= value");
+  assert(requestedUrl === "http://localhost/logs/build-42/output.log", "fetch was called with the exact ?url= value");
   assert(T.state.rootIds.length === 1, "exactly one file was opened, got " + T.state.rootIds.length);
   const node = T.state.nodes[T.state.rootIds[0]];
   assert(node.name === "output.log", "the file name is derived from the URL's last path segment, got " + node.name);
@@ -34,7 +34,7 @@ await withApp(async (w, d, T) => {
 
 await withApp(async (w, d, T) => {
   section("66b. ?url= HTTP error shows a toast, no file added");
-  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://logs.example/missing.log"));
+  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://localhost/logs/missing.log"));
   w.fetch = async () => ({ ok: false, status: 404, text: async () => "" });
   await w.loadFromUrlParam();
   assert(T.state.rootIds.length === 0, "no file was added on a 404");
@@ -43,7 +43,7 @@ await withApp(async (w, d, T) => {
 
 await withApp(async (w, d, T) => {
   section("66c. ?url= network/CORS failure shows a toast, no file added");
-  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://blocked.example/x.log"));
+  await w.history.replaceState(null, "", "http://localhost/philogg.html?url=" + encodeURIComponent("http://localhost/blocked/x.log"));
   w.fetch = async () => { throw new w.TypeError("Failed to fetch"); };
   await w.loadFromUrlParam();
   assert(T.state.rootIds.length === 0, "no file was added when fetch rejects");

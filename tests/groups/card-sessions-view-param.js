@@ -15,7 +15,7 @@ group("card-sessions-view-param");
 if (groupSelected()) {
   const TOUR = require(path.join(__dirname, "..", "tools", "log-sim", "tour.js"));
   const files = Object.fromEntries(TOUR.generateTour().map(f => [f.path, f.text]));
-  const BASE = "http://tour.example/t/";
+  const BASE = "http://localhost/t/";
   const page = (card, view) => "http://localhost/philogg.html?session=" + encodeURIComponent(BASE + "cards/" + card + ".session.json") + (view ? "&view=" + view : "");
   const stub = win => {
     win.fetch = async u => {

@@ -2,6 +2,22 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<!--
+  Content-Security-Policy (FEATURE_BACKLOG #75, defense in depth): if injected
+  script ever ran, it must not be able to send data (sessions, filters, notes,
+  cached log text in localStorage/IndexedDB) to another server. Nothing leaves
+  the page's own origin: connect-src is 'self' plus the Tauri IPC endpoints of
+  the desktop build (ipc: on macOS/Linux, http://ipc.localhost on Windows);
+  cross-origin ?url=/?session= loads therefore fail on purpose. 'unsafe-inline'
+  for script/style is unavoidable: one self-contained file with inline script
+  and style, no build step to add nonces/hashes. (This chat page renders model output, so it is tighter than philogg.html: no
+  frames, workers, blob: or media.) tauri.conf.json keeps
+  "csp": null (Tauri's own injection would disable 'unsafe-inline'); this tag is
+  the policy for the desktop build too. Every new network target, iframe,
+  worker or image source must be allowed here (PROJECT.md -> Known gotchas).
+  Keep this tag right after the charset meta, before any script/style: it only governs what follows it.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; media-src 'none'; worker-src 'none'; connect-src 'self' ipc: http://ipc.localhost; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>PhiLogg Assistant</title>
 <!--

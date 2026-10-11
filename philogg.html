@@ -2,6 +2,23 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<!--
+  Content-Security-Policy (FEATURE_BACKLOG #75, defense in depth): if injected
+  script ever ran, it must not be able to send data (sessions, filters, notes,
+  cached log text in localStorage/IndexedDB) to another server. Nothing leaves
+  the page's own origin: connect-src is 'self' plus the Tauri IPC endpoints of
+  the desktop build (ipc: on macOS/Linux, http://ipc.localhost on Windows);
+  cross-origin ?url=/?session= loads therefore fail on purpose. 'unsafe-inline'
+  for script/style is unavoidable: one self-contained file with inline script
+  and style, no build step to add nonces/hashes. blob:/data: are for the parse
+  Worker, exported/viewed images and the inline viewers; frame-src 'self' is
+  the docked LLM chat (chat.html). tauri.conf.json keeps
+  "csp": null (Tauri's own injection would disable 'unsafe-inline'); this tag is
+  the policy for the desktop build too. Every new network target, iframe,
+  worker or image source must be allowed here (PROJECT.md -> Known gotchas).
+  Keep this tag right after the charset meta, before any script/style: it only governs what follows it.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PhiLogg</title>
 <!-- Inline icon: the page is one self-contained file, so the browser makes no extra icon request (it used to get a 404) on load. -->
@@ -19785,19 +19802,15 @@ function finishAnalysisFilter(node, tab) {
    filter pattern is built from it. One regex pass per message, alternatives
    in priority order: GUID, IPv4[:port], a "double" or 'single' quoted string (its content; quotes kept), a
    Windows/UNC or multi-segment Unix path, a hex literal/hash (0x…, or 4+
-   hex chars with at least one letter right after a short letter prefix
-   and a dash — an id like "r-4f2d1a" / "r-dedcac" / "r-4e5123" (an all-digit
-   "J-00004" stays a number: it has its own [*:word] Extract handling) — or a free-standing
+   hex/digit chars right after a 1-3 letter prefix and a dash — an id like
+   "r-4f2d1a" / "r-482913" / "J-00004", digit-only ones included so both shapes
+   of one id family are the same type everywhere; not when a decimal fraction
+   follows ("v-1234.5") — or a free-standing
    whole word of 4+ hex chars mixing letters and digits, except the float
    exponent shape 1e10 / 2E5, which stays a number), then any number — a sign only
    when it isn't glued to a word ("Worker-3" keeps its dash), and grouped
    with thousands separators only when both separators are present
-   ("1,234.5", same unambiguous shape a plain [*:float] accepts).
-   Because an all-digit id can't be told from a number per message, the
-   accumulator's finish() merges a group whose "<#>" sits right after such a
-   letter prefix and dash into the sibling group that has "<hex>" there
-   (identical key otherwise), so "r-123456" joins "r-4f2d1a"; with no hex
-   sibling it stays a number ("job=J-<#>"). */
+   ("1,234.5", same unambiguous shape a plain [*:float] accepts). */
 const PATTERN_MAX_CHARS = 400;
 const PATTERN_PH_NUM = "";
 const PATTERN_PH_LABELS = { "": "<#>", "": "<guid>", "": "<ip>", "": "<str>", "": "<path>", "": "<hex>" };
@@ -19807,7 +19820,7 @@ const PATTERN_TOKEN_RE = new RegExp(
   "|((?<![\\w.])\\d{1,3}(?:\\.\\d{1,3}){3}(?::\\d{1,5})?(?![\\w.]))" +
   '|("[^"\\n]*"|(?<![\\w\'])\'[^\'\\n]*\'(?![\\w\']))' +
   "|((?:\\b[A-Za-z]:\\\\|\\\\\\\\)[^\\s\"'<>|,;]+|(?<![\\w.:/])\\/[\\w.-]+(?:\\/[\\w.-]*)+)" +
-  "|(\\b0[xX][0-9a-fA-F]+\\b|(?<=\\b[A-Za-z]{1,3}-)(?=[0-9a-fA-F]*[a-fA-F])[0-9a-fA-F]{4,}\\b|\\b(?!\\d+[eE]\\d+\\b)(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{4,}\\b)" +
+  "|(\\b0[xX][0-9a-fA-F]+\\b|(?<=\\b[A-Za-z]{1,3}-)[0-9a-fA-F]{4,}\\b(?![.,]\\d)|\\b(?!\\d+[eE]\\d+\\b)(?=[0-9a-fA-F]*[a-fA-F])(?=[0-9a-fA-F]*\\d)[0-9a-fA-F]{4,}\\b)" +
   "|((?:(?<![\\w.])[-+])?(?:\\d{1,3}(?:,\\d{3})+\\.\\d+|\\d{1,3}(?:\\.\\d{3})+,\\d+|\\d+(?:\\.\\d+)?))",
   "g"
 );
@@ -19866,57 +19879,6 @@ function patternFilterValue(key, floatMask, typed) {
   return out;
 }
 
-const PATTERN_PH_HEX = "\uE005";
-// True when the placeholder at key[i] directly follows 1-3 letters and a dash
-// that are not themselves glued to a word char or placeholder — the same
-// prefix rule PATTERN_TOKEN_RE's hex alternative uses.
-function patternPrefixedAt(key, i) {
-  if (i < 2 || key[i - 1] !== "-") return false;
-  let n = 0, j = i - 2;
-  while (j >= 0 && n <= 3 && /[A-Za-z]/.test(key[j])) { n++; j--; }
-  if (n < 1 || n > 3) return false;
-  return j < 0 || !(/\w/.test(key[j]) || PATTERN_PH_LABELS[key[j]]);
-}
-// Merges digit-only id groups ("r-<#>") into the sibling hex group ("r-<hex>")
-// whose key differs only by prefixed number->hex swaps (see the block comment
-// above PATTERN_MAX_CHARS). Mutates `groups` (key -> group).
-function mergeDigitIdPatternGroups(groups) {
-  for (const x of [...groups.values()]) {
-    const key = x.key;
-    if (key.indexOf(PATTERN_PH_NUM) === -1) continue;
-    const pos = []; // [index in key, number-placeholder index] of every prefixed number
-    let numIdx = 0;
-    for (let i = 0; i < key.length; i++) {
-      if (key[i] !== PATTERN_PH_NUM) continue;
-      if (patternPrefixedAt(key, i)) pos.push([i, numIdx]);
-      numIdx++;
-    }
-    if (!pos.length || pos.length > 4) continue;
-    for (let s = 1; s < (1 << pos.length); s++) {
-      const chars = key.split("");
-      const removed = new Set();
-      pos.forEach((p, k) => { if (s & (1 << k)) { chars[p[0]] = PATTERN_PH_HEX; removed.add(p[1]); } });
-      const y = groups.get(chars.join(""));
-      if (!y) continue;
-      // Removing number placeholders shifts the float-mask bit of every later one down.
-      let mask = 0, out = 0;
-      for (let b = 0; b < 31; b++) {
-        if (removed.has(b)) continue;
-        if (x.floatMask & (1 << b)) mask |= 1 << out;
-        out++;
-      }
-      y.floatMask |= mask;
-      y.count += x.count;
-      for (const [b, n] of x.levels) y.levels.set(b, (y.levels.get(b) || 0) + n);
-      if (x.rank < y.rank) { y.rank = x.rank; y.level = x.level; y.levelFormatId = x.levelFormatId; }
-      if (x.firstTs < y.firstTs) { y.firstTs = x.firstTs; y.first = x.first; }
-      if (x.lastTs > y.lastTs) y.lastTs = x.lastTs;
-      groups.delete(key);
-      break;
-    }
-  }
-}
-
 function createPatternAcc() {
   const groups = new Map();
   const bucketOf = makeLevelBucketer();
@@ -19937,7 +19899,7 @@ function createPatternAcc() {
       if (e.ts < g.firstTs) g.firstTs = e.ts;
       if (e.ts > g.lastTs) g.lastTs = e.ts;
     },
-    finish() { mergeDigitIdPatternGroups(groups); return { groups: [...groups.values()] }; },
+    finish() { return { groups: [...groups.values()] }; },
   };
 }
 const patternsAnalysis = makeEntryAnalysis(createPatternAcc, () => "", c => {
@@ -40374,12 +40336,26 @@ function applyFolderFileLocation(node, handle) {
   if (path) node.localPath = path;
   return changed;
 }
+// Content-Security-Policy (the <meta> in <head>, backlog #75): connect-src is
+// 'self', so a fetch() to another origin is blocked by the browser and would
+// only surface as a vague "network or CORS error". Say it up front instead.
+// The desktop wrapper's philogg://local/<id>/… file URLs are rewritten to the
+// page's own origin by its fetch shim, so they count as same-origin.
+const CROSS_ORIGIN_URL_TOAST = "Only URLs from this site can be opened (Content-Security-Policy)";
+function isSameOriginUrl(url, base) {
+  if (isDesktopLocalUrl(url)) return true;
+  try {
+    const u = new URL(url, base || location.href);
+    return u.protocol === location.protocol && u.host === location.host;
+  } catch { return false; }
+}
 function loadUrlIntoTree(url) { return trackForegroundLoad(() => loadUrlIntoTreeImpl(...arguments)); } // resolves to the new file node, null on failure
 async function loadUrlIntoTreeImpl(url) {
   if (location.protocol === "file:") {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
     return null;
   }
+  if (!isSameOriginUrl(url)) { showCopyToast(CROSS_ORIGIN_URL_TOAST); return null; }
   let name = "remote.log";
   try {
     const last = decodeURIComponent(new URL(url, location.href).pathname.split("/").filter(Boolean).pop() || "");
@@ -56690,6 +56666,7 @@ async function loadSessionRecordFresh(rec, baseUrl) {
   let sourceUrl = null;
   if (typeof rec.url === "string") {
     try { sourceUrl = new URL(rec.url, baseUrl || location.href).href; } catch { return null; }
+    if (!isSameOriginUrl(sourceUrl)) return null; // blocked by the CSP anyway; the session's other files still load
     if (!name) {
       try { name = decodeURIComponent(new URL(sourceUrl).pathname.split("/").filter(Boolean).pop() || ""); } catch { /* fallback below */ }
     }
@@ -56731,6 +56708,7 @@ async function loadSessionFromUrlImpl(url) {
   }
   let baseUrl;
   try { baseUrl = new URL(url, location.href).href; } catch { showCopyToast("Invalid session URL"); return false; }
+  if (!isSameOriginUrl(baseUrl)) { showCopyToast(CROSS_ORIGIN_URL_TOAST); return false; }
   let res;
   try {
     res = await fetch(baseUrl);

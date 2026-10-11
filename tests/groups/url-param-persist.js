@@ -12,7 +12,7 @@
    ============================================================ */
 group("url-param-persist");
 {
-  const URL_Q = "http://localhost/philogg.html?url=" + encodeURIComponent("http://logs.example/tour/app.log");
+  const URL_Q = "http://localhost/philogg.html?url=" + encodeURIComponent("http://localhost/logs/tour/app.log");
   const fakeFetch = text => w => { w.fetch = async () => { w.__fetched = true; return ({ ok: true, status: 200, arrayBuffer: async () => new w.TextEncoder().encode(text).buffer }); }; };
   const logA = makeLog(0, 6);
   const factory = new IDBFactory();
@@ -23,7 +23,7 @@ group("url-param-persist");
     await T.bootRestore;
     await waitFor(() => T.state.rootIds.length === 1 && T.state.nodes[T.state.rootIds[0]].sourceUrl);
     const f = T.state.nodes[T.state.rootIds[0]];
-    assert(f && f.sourceUrl === "http://logs.example/tour/app.log", "file loaded from ?url=");
+    assert(f && f.sourceUrl === "http://localhost/logs/tour/app.log", "file loaded from ?url=");
     w.createFilterNode(f.id, "text", "message 1");
     cacheKey = f.cacheKey;
     assert(!!cacheKey, "node got a cacheKey");
