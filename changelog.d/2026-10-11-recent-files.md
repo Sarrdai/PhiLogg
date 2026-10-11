@@ -1,0 +1,4 @@
+- **feat: reopen recent files, quieter filter-restore offer (2026-10-11, person-requested)**
+  - The Open menu and the start screen list recently opened files, ZIPs and folders (path/handle kept in IndexedDB `recentFiles`); one click reopens them, Ctrl+Shift+T (browser Alt+Shift+T) the most recent one.
+  - The filter-history restore box under a reopened file is now one collapsible line ("7 filters from Oct 9 · Restore · x") with an expandable preview and an Undo toast.
+  - **Tests**: GROUP recent-files, GROUP 30. Docs: docs/persistence-and-sync.md, docs/ui-and-views.md, README.
