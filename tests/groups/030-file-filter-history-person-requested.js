@@ -40,40 +40,78 @@ await withApp(async (w, d, T) => {
     assert(match.record.filters.length === 1 && match.record.filters[0].filterType === "text",
       "matched record carries the original filter tree");
 
-    // --- Ghost preview appears in the tree for a childless file with a match ---
-    f2.filterHistoryMatch = { filters: match.record.filters, tier: match.tier };
+    // --- The restore line appears collapsed under a childless file with a match ---
+    const DAY = 86400000;
+    f2.filterHistoryMatch = { filters: match.record.filters, tier: match.tier, savedAt: Date.now() };
     w2.render();
+    const line = d2.querySelector(".tree-restore-line");
+    assert(line !== null, "restore line renders under the file when it has no filters yet and a history match exists");
+    assert(d2.querySelector(".tree-ghost") === null, "collapsed by default: no preview rows");
+    assert(line.tabIndex === 0 && line.title === "Show the filters from your last session with this file", "row is focusable and has the tooltip");
+    assert(line.querySelector(".tree-restore-txt").textContent === "2 filters from today", "text: '2 filters from today', got " + line.querySelector(".tree-restore-txt").textContent);
+    assert(line.querySelector(".tree-restore-pill") === null, "no 'grown' pill for a tier-1 match");
+    const restoreBtn = line.querySelector(".tree-restore-lnk");
+    assert(restoreBtn !== null && restoreBtn.textContent === "Restore" && restoreBtn.title === "Restore these filters (Ctrl+Z undoes)", "Restore text button with tooltip");
+    assert(line.querySelector(".tree-restore-icb").title === "Dismiss — the filters stay remembered", "x button with tooltip");
+
+    // --- Date wording: today / yesterday / same year / other year / missing savedAt ---
+    const labelFor = ts => { f2.filterHistoryMatch = { filters: match.record.filters, tier: 1, savedAt: ts }; w2.render(); return d2.querySelector(".tree-restore-txt").textContent; };
+    assert(labelFor(Date.now() - DAY) === "2 filters from yesterday", "yesterday wording");
+    const old = new Date(Date.now() - 400 * DAY);
+    assert(labelFor(old.getTime()) === "2 filters from " + ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"][old.getMonth()] + " " + old.getDate() + ", " + old.getFullYear(), "other-year wording includes the year, got " + d2.querySelector(".tree-restore-txt").textContent);
+    assert(labelFor(null) === "2 filters from a previous session", "no savedAt: 'from a previous session'");
+    f2.filterHistoryMatch = { filters: match.record.filters, tier: 2, savedAt: Date.now() };
+    w2.render();
+    const pill = d2.querySelector(".tree-restore-pill");
+    assert(pill !== null && pill.title === "The file has grown since these filters were saved.", "tier 2 shows the 'grown' pill with tooltip");
+
+    // --- Click toggles the guided preview; the flag lives on the match ---
+    fireClick(d2.querySelector(".tree-restore-line"), w2);
     const ghost = d2.querySelector(".tree-ghost");
-    assert(ghost !== null, "ghost preview renders under the file when it has no filters yet and a history match exists");
-    assert(ghost.querySelectorAll(".tree-ghost-row").length === 2, "ghost preview shows both levels of the saved tree (root + nested child), got " + ghost.querySelectorAll(".tree-ghost-row").length);
-    const restoreBtn = ghost.querySelector(".tree-ghost-restore-btn");
-    assert(restoreBtn !== null && restoreBtn.textContent === "Restore filters", "restore button present with the expected label");
+    assert(ghost !== null, "click on the line expands the preview");
+    assert(ghost.querySelectorAll(".tree-ghost-row").length === 2, "preview shows both levels of the saved tree (root + nested child), got " + ghost.querySelectorAll(".tree-ghost-row").length);
     assert(ghost.querySelectorAll(".tree-ghost-row")[0].hasAttribute("draggable") === false,
       "sanity: ghost rows carry none of a real tree-row's interactive attributes");
+    assert(/^Saved .*file has grown since$/.test(ghost.querySelector(".tree-ghost-meta").textContent), "meta line with 'file has grown since' on tier 2, got " + ghost.querySelector(".tree-ghost-meta").textContent);
+    assert(f2.children.length === 0, "expanding creates no filter");
+    d2.querySelector(".tree-restore-line").dispatchEvent(new w2.KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    assert(d2.querySelector(".tree-ghost") === null, "Enter on the focused line collapses again");
 
-    // --- Cancel dismisses the ghost preview WITHOUT building a filter tree
-    // (person-requested, this session: previously the only way to get rid
-    // of an unwanted ghost was to create a real filter yourself) ---
-    const cancelBtn = ghost.querySelector(".tree-ghost-cancel-btn");
-    assert(cancelBtn !== null && cancelBtn.textContent === "Cancel", "a Cancel button sits alongside Restore filters");
-    fireClick(cancelBtn, w2);
-    assert(d2.querySelector(".tree-ghost") === null, "the ghost preview is gone immediately after Cancel");
-    assert(f2.children.length === 0, "Cancel does NOT create any filter — the file's tree stays empty");
-    assert(f2.filterHistoryMatch === null, "Cancel clears filterHistoryMatch directly, the same field a real Restore also clears");
-
-    // Re-seed the match (Cancel is a plain dismissal, not "forget forever" —
-    // see its own comment) to independently verify the Restore path still
-    // works afterward, unaffected by having been cancelled once already.
-    f2.filterHistoryMatch = { filters: match.record.filters, tier: match.tier };
+    // --- 8-row cap with a '+ N more' button ---
+    const many = [];
+    for (let i = 0; i < 11; i++) many.push({ ref: i + 1, filterType: "text", name: "f" + i, inverted: false, value: "f" + i, children: [] });
+    f2.filterHistoryMatch = { filters: many, tier: 1, savedAt: Date.now(), expanded: true };
     w2.render();
-    const restoreBtn2 = d2.querySelector(".tree-ghost-restore-btn");
-    assert(restoreBtn2 !== null, "sanity: the ghost preview (and its Restore button) can reappear after being re-matched");
+    assert(d2.querySelectorAll(".tree-ghost-row").length === 8, "preview capped at 8 rows, got " + d2.querySelectorAll(".tree-ghost-row").length);
+    const moreBtn = d2.querySelector(".tree-ghost-more .tree-restore-lnk");
+    assert(moreBtn && moreBtn.textContent === "+ 3 more", "'+ 3 more' button, got " + (moreBtn && moreBtn.textContent));
+    fireClick(moreBtn, w2);
+    assert(d2.querySelectorAll(".tree-ghost-row").length === 11 && d2.querySelector(".tree-ghost-more") === null, "'+ N more' shows all rows");
 
-    // --- Clicking Restore materializes the real filter tree and the ghost disappears ---
+    // --- x dismisses the offer WITHOUT building a filter tree ---
+    fireClick(d2.querySelector(".tree-restore-icb"), w2);
+    assert(d2.querySelector(".tree-restore-line") === null, "the offer is gone immediately after dismissing");
+    assert(f2.children.length === 0, "dismissing does NOT create any filter — the file's tree stays empty");
+    assert(f2.filterHistoryMatch === null, "dismissing clears filterHistoryMatch directly, the same field a real Restore also clears");
+
+    // Re-seed the match (a plain dismissal, not "forget forever") to
+    // independently verify the Restore path still works afterward.
+    f2.filterHistoryMatch = { filters: match.record.filters, tier: match.tier, savedAt: Date.now() };
+    w2.render();
+    const restoreBtn2 = d2.querySelector(".tree-restore-lnk");
+    assert(restoreBtn2 !== null, "sanity: the offer can reappear after being re-matched");
+
+    // --- Restore materializes the real filter tree, shows an Undo toast, the offer disappears ---
+    T2.resetUndoRedo();
     fireClick(restoreBtn2, w2);
     assert(f2.children.length === 1, "restore materializes the saved tree onto the file node");
     assert(state_childFilterType(T2, f2) === "text", "materialized root child has the saved filterType");
-    assert(d2.querySelector(".tree-ghost") === null, "ghost preview is gone immediately after restoring (file now has real children)");
+    assert(T2.undoStack.length === 1, "restore is exactly one undo step, got " + T2.undoStack.length);
+    assert(d2.querySelector(".tree-restore-line") === null, "offer is gone immediately after restoring (file now has real children)");
+    const toastEl = d2.querySelector("#copyToast");
+    assert(toastEl && /2 filters restored/.test(toastEl.textContent) && toastEl.querySelector(".toast-action").textContent === "Undo", "toast '2 filters restored' with Undo action");
+    fireClick(toastEl.querySelector(".toast-action"), w2);
+    assert(f2.children.length === 0, "Undo in the toast removes the restored filters");
   }, { indexedDB: idb });
 });
 
@@ -144,10 +182,10 @@ await withApp(async (w, d, T) => {
   const fd = await w.addFile("d.log", makeLog(300, 5), () => {});
   fd.filterHistoryMatch = { filters: [{ ref: 1, filterType: "text", name: "“old”", inverted: false, children: [] }], tier: 1 };
   w.render();
-  assert(d.querySelector(".tree-ghost") !== null, "sanity: ghost preview visible for the childless file with a match");
+  assert(d.querySelector(".tree-restore-line") !== null, "sanity: ghost preview visible for the childless file with a match");
   w.createFilterNode(fd.id, "text", "brand new filter"); // person creates their own filter, never clicked Restore
   w.render();
-  assert(d.querySelector(".tree-ghost") === null, "ghost preview disappears once the file has ANY real filter child, restored or not");
+  assert(d.querySelector(".tree-restore-line") === null, "ghost preview disappears once the file has ANY real filter child, restored or not");
 
   // BUGFIX (person-reported, this session, 2026-08-14 — superseding what
   // used to be asserted here): the match itself USED TO survive
@@ -212,13 +250,13 @@ await withApp(async (w, d, T) => {
     assert(match !== null, "sanity: session 2 finds session 1's stored filter tree");
     f2.filterHistoryMatch = { filters: match.record.filters, tier: match.tier };
     w2.render();
-    assert(d2.querySelector(".tree-ghost") !== null, "sanity: ghost preview with the old filters is showing");
+    assert(d2.querySelector(".tree-restore-line") !== null, "sanity: ghost preview with the old filters is showing");
 
     // --- The person creates their OWN filter (never clicked Restore) — ghost hides ---
     const ownFilter = w2.createFilterNode(f2.id, "text", "a brand new filter, unrelated to the old one");
     w2.render();
     await w2.persistFileHistoryNow();
-    assert(d2.querySelector(".tree-ghost") === null, "sanity: ghost hidden once the file has its own real filter child");
+    assert(d2.querySelector(".tree-restore-line") === null, "sanity: ghost hidden once the file has its own real filter child");
     let stored = await w2.cacheStoreOp("fileHistory", "readonly", s => s.getAll());
     assert(stored.length === 1 && stored[0].filters[0].value === "a brand new filter, unrelated to the old one",
       "creating a filter overwrites the stored record with the NEW tree, replacing the old one (already worked before this bugfix)");
@@ -228,7 +266,7 @@ await withApp(async (w, d, T) => {
     w2.render();
     await w2.persistFileHistoryNow();
     assert(f2.children.length === 0, "sanity: the file's filter tree is empty again");
-    assert(d2.querySelector(".tree-ghost") === null,
+    assert(d2.querySelector(".tree-restore-line") === null,
       "BUGFIX: the ghost preview does NOT reappear after deleting the last filter — it used to resurface here showing the OLD pre-session filters");
     assert(f2.filterHistoryMatch === null || f2.filterHistoryMatch === undefined,
       "the in-memory match stays cleared — nothing left for renderNode's children.length===0 condition to show");
@@ -304,11 +342,12 @@ await withApp(async (w, d, T) => {
     // loadFileDescriptors calls render() itself in its own finally block,
     // so the ghost preview should already be live in the DOM with no
     // test-driven render() call in between.
-    const ghost = d2.querySelector(".tree-ghost");
-    assert(ghost !== null, "ghost preview is already in the DOM right after loadFileDescriptors returns — no extra render() call needed");
-    const restoreBtn = ghost.querySelector(".tree-ghost-restore-btn");
+    const offer = d2.querySelector(".tree-restore-line");
+    assert(offer !== null, "restore line is already in the DOM right after loadFileDescriptors returns — no extra render() call needed");
+    assert(node.filterHistoryMatch.savedAt > 0, "the match carries the record's savedAt");
+    const restoreBtn = offer.querySelector(".tree-restore-lnk");
     fireClick(restoreBtn, w2);
     assert(node.children.length === 1, "Restore button works end-to-end for a file loaded via the real entry point");
-    assert(d2.querySelector(".tree-ghost") === null, "ghost preview is gone after restoring");
+    assert(d2.querySelector(".tree-restore-line") === null, "restore line is gone after restoring");
   }, { indexedDB: idb });
 });

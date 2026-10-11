@@ -86,7 +86,7 @@ await withApp(async (w, d, T) => {
   assert(cardIds(0) === "newFilter,editFilter,renameFilter,muteFilter,focusTree", "Filters group: " + cardIds(0));
   assert(cardIds(1) === "findInView,findNext,findPrev,nextMatch,prevMatch", "Find group: " + cardIds(1));
   assert(cardIds(2) === "viewTab1,viewTab2,viewTab3,viewTab4,viewTab5,toggleSidebar,toggleDetail,toggleFacets,toggleFocus,zoomIn,zoomOut", "Views & panels group: " + cardIds(2));
-  assert(cardIds(3) === "bookmark,addNote,copyForTicket,exportView" && cardIds(4) === "undo,redo,closeFile", "Rows and Edit groups");
+  assert(cardIds(3) === "bookmark,addNote,copyForTicket,exportView" && cardIds(4) === "undo,redo,closeFile,reopenClosed", "Rows and Edit groups");
   const row = id => d.querySelector("[data-action-id='" + id + "']");
   assert(w.getComputedStyle(row("bookmark")).gridTemplateColumns === "minmax(0,1fr) 150px 30px", "shortcut rows use the label | chip | reset-slot grid");
   assert(!d.querySelector(".shortcut-row .btn-mini-outline") && !/Change/.test(sc.textContent), "no 'Change' button any more");

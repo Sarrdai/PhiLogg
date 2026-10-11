@@ -149,9 +149,9 @@ await withApp(async (w, d, T) => {
   T.resetUndoRedo();
   f.filterHistoryMatch = { filters: roots, tier: 1 };
   w.render();
-  d.querySelector(".tree-ghost-restore-btn").click();
+  d.querySelector(".tree-restore-lnk").click();
   const made = f.children.slice();
-  assert(made.length === 2 && T.undoStack.length === 1, "Restore filters: two roots, one step, got " + made.length + "/" + T.undoStack.length);
+  assert(made.length === 2 && T.undoStack.length === 1, "Restore: two roots, one step, got " + made.length + "/" + T.undoStack.length);
   w.undo();
   assert(made.every(id => !T.state.nodes[id]) && T.state.activeId === f.id, "undo removes the restored roots, lands on the file");
   w.redo();
