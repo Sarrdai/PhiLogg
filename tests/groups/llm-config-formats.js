@@ -171,8 +171,8 @@ if (groupSelected()) {
     r = llmRun(w, "create_format", { formatId: "fmt-provided-x", name: "Hack" });
     assert(r.error && /read-only/.test(r.error), "provided refused, got " + r.error);
     T.state.logFormats.push({ id: "fmt-meta-x", name: "Meta", mode: "meta", targetFormatIds: [] });
-    r = llmRun(w, "create_format", { formatId: "fmt-meta-x", name: "Hack" });
-    assert(r.error && /not a regex format/.test(r.error), "meta refused, got " + r.error);
+    r = llmRun(w, "create_format", { formatId: "fmt-meta-x", regex: "(?<ts>.)(?<level>.)" });
+    assert(r.error && /only has targetFormatIds/.test(r.error), "a regex on a meta format is refused, got " + r.error);
     r = llmRun(w, "create_format", { formatId: "fmt-nope" });
     assert(r.error && /Unknown formatId/.test(r.error), "unknown id, got " + r.error);
     // a person's own (not assistant) regex format may be modified, the marker stays absent
@@ -270,5 +270,95 @@ if (groupSelected()) {
     w.philoggMcpCall(3, "delete_config_item", { kind: "format", id: "fmt-default" });
     await waitFor(() => answers.length === 3);
     assert(answers[2].isError === true, "an error result is flagged as isError");
+  });
+  await withApp(async (w, d, T) => {
+    section("llm-config-formats j. meta formats: single formats first, then targetFormatIds; preview per target; errors; modify; rule; delete order");
+    await waitForFormatConfig(T);
+    const mixed = LOGSIM.generateToStrings({ format: "mixed", entries: 60, seed: 3 })[0];
+    const all = mixed.text.split("\n").filter(l => l.trim());
+    const sysLines = all.filter(l => l.startsWith("<")).slice(0, 12);
+    const appLines = all.filter(l => !l.startsWith("<")).slice(0, 12);
+    const app = llmRun(w, "create_format", { name: "Mix app", sampleLines: appLines });
+    const sys = llmRun(w, "create_format", { name: "Mix syslog", sampleLines: sysLines });
+    assert(!app.error && !sys.error, "both single formats created: " + (app.error || sys.error));
+    const appId = app.result.format.id, sysId = sys.result.format.id;
+    const sample = all.slice(0, 30);
+
+    // errors first: nothing is saved by any of them
+    const n0 = T.state.logFormats.length;
+    let r = llmRun(w, "create_format", { name: "M", targetFormatIds: [appId] });
+    assert(r.error && /at least 2/.test(r.error), "one target refused, got " + r.error);
+    r = llmRun(w, "create_format", { name: "M", targetFormatIds: [appId, "Nope"] });
+    assert(r.error && /Unknown format "Nope"/.test(r.error) && /Mix app/.test(r.error), "unknown target lists the available, got " + r.error);
+    r = llmRun(w, "create_format", { name: "M", targetFormatIds: [appId, appId] });
+    assert(r.error && /listed twice/.test(r.error), "duplicate refused, got " + r.error);
+    r = llmRun(w, "create_format", { name: "M", targetFormatIds: [appId, sysId], regex: "(?<ts>.)(?<level>.)" });
+    assert(r.error && /only has targetFormatIds/.test(r.error) && /regex/.test(r.error), "regex mixed with targets refused, got " + r.error);
+    r = llmRun(w, "create_format", { name: "M", targetFormatIds: [appId, sysId], levels: ["INFO"], timeZone: "UTC" });
+    assert(r.error && /timeZone, levels/.test(r.error), "levels/timeZone refused too, got " + r.error);
+    T.state.logFormats.push({ id: "fmt-meta-pre", name: "Pre-meta", mode: "meta", targetFormatIds: [appId, sysId] });
+    r = llmRun(w, "create_format", { name: "M", targetFormatIds: [appId, "fmt-meta-pre"] });
+    assert(r.error && /meta format/.test(r.error), "a meta format as target refused, got " + r.error);
+    T.state.logFormats = T.state.logFormats.filter(x => x.id !== "fmt-meta-pre");
+    r = llmRun(w, "create_format", { formatId: appId, targetFormatIds: [appId, sysId] });
+    assert(r.error && /cannot become a meta format/.test(r.error), "a regex format cannot become meta, got " + r.error);
+    assert(T.state.logFormats.length === n0, "no failed call saved anything");
+
+    // preview, targets by NAME, in priority order
+    r = llmRun(w, "create_format", { name: "Mixed app+sys", targetFormatIds: ["Mix syslog", "mix app"], sampleLines: sample, preview: true });
+    assert(!r.error && r.result.saved === false && r.result.format.mode === "meta", "preview answers, got " + JSON.stringify(r.error || r.result.format));
+    const pv = r.result.preview;
+    assert(pv.targets.length === 2 && pv.targets[0].formatId === sysId && pv.targets[1].formatId === appId, "targets resolved by name, order kept");
+    const nSys = sample.filter(l => l.startsWith("<")).length, nApp = sample.filter(l => /^\d{4}-/.test(l)).length;
+    assert(pv.targets[0].headerLines === nSys && pv.targets[1].headerLines === nApp, "header lines per target: " + JSON.stringify(pv.targets.map(t => t.headerLines)) + " expected " + nSys + "/" + nApp);
+    assert(pv.targets.every(t => t.lines >= t.headerLines) && pv.droppedBeforeFirstHeader === 0 && pv.lines === 30, "lines + dropped counted");
+    assert(pv.targets[0].examples && pv.targets[0].examples.length === 2 && pv.targets[0].examples[0].message, "up to 2 parsed examples per target");
+    assert(T.state.logFormats.length === n0, "preview saves nothing");
+
+    // save with a filename rule; the record shape is the dialog's meta branch
+    r = llmRun(w, "create_format", { name: "Mixed app+sys", targetFormatIds: [appId, sysId], sampleLines: sample, filenameRule: "sim-mixed-*.log" });
+    assert(!r.error && r.result.saved && r.result.format.targetIds.join() === appId + "," + sysId && r.result.format.targets.join() === "Mix app,Mix syslog", "saved: " + r.error);
+    const metaId = r.result.format.id;
+    const rec = T.state.logFormats.find(x => x.id === metaId);
+    assert(rec.mode === "meta" && rec.createdBy === "assistant" && rec.targetFormatIds.join() === appId + "," + sysId, "meta record with the marker");
+    assert(["regex", "tsFormat", "timeZone", "levels", "columnDefs", "sampleSetup", "pattern"].every(k => !(k in rec)), "none of the single-format fields");
+    const lf = llmRun(w, "list_config", { kind: "formats" }).result.formats.find(x => x.id === metaId);
+    assert(lf.mode === "meta" && lf.byAssistant && lf.targets.join() === "Mix app,Mix syslog" && lf.targetIds.length === 2 && !lf.levels, "list_config shows targets + targetIds");
+    assert(T.state.formatRules.some(x => x.glob === "sim-mixed-*.log" && x.formatId === metaId && x.createdBy === "assistant"), "filename rule created");
+    await waitFor(async () => (await w.listLogFormats()).some(x => x.id === metaId && x.mode === "meta"));
+    assert(true, "persisted");
+    // a file opened later splits into the two streams
+    await w.addFile(mixed.name, mixed.text, () => {});
+    await waitFor(() => Object.values(T.state.nodes).filter(n => n.type === "file").length >= 3);
+    assert(Object.values(T.state.nodes).some(n => n.type === "file" && n.merged), "the file opened under the meta format becomes a merge");
+
+    // modify: name only, then targets; a meta cannot turn into a regex format
+    r = llmRun(w, "create_format", { formatId: metaId, name: "Mixed v2" });
+    assert(!r.error && T.state.logFormats.find(x => x.id === metaId).name === "Mixed v2" && T.state.logFormats.find(x => x.id === metaId).targetFormatIds.length === 2 && /not checked/.test(r.result.note), "rename keeps the targets; no sample -> a note, got " + r.error);
+    r = llmRun(w, "create_format", { formatId: metaId, targetFormatIds: [sysId, appId] });
+    assert(!r.error && T.state.logFormats.find(x => x.id === metaId).targetFormatIds.join() === sysId + "," + appId && T.state.logFormats.find(x => x.id === metaId).createdAt === rec.createdAt, "targets reordered in place");
+    r = llmRun(w, "create_format", { formatId: metaId, targetFormatIds: [sysId] });
+    assert(r.error && /at least 2/.test(r.error), "modify with one target refused");
+    r = llmRun(w, "create_format", { formatId: metaId, regex: "(?<ts>.)(?<level>.)" });
+    assert(r.error && /only has targetFormatIds/.test(r.error), "meta -> regex refused");
+
+    // applyToFileId refused with the hint
+    const nomatch = await w.addFile("nomatch.log", sysLines.join("\n"), () => {});
+    assert(nomatch.noFormatMatch, "sanity: a no-match file");
+    r = llmRun(w, "create_format", { name: "M3", targetFormatIds: [appId, sysId], applyToFileId: nomatch.id });
+    assert(r.error && /meta format/.test(r.error) && /filenameRule/.test(r.error), "applyToFileId refused for meta, got " + r.error);
+    assert(!T.state.logFormats.some(x => x.name === "M3"), "nothing saved by the refused call");
+
+    // delete order: the single is blocked while the meta uses it
+    r = llmRun(w, "delete_config_item", { kind: "format", id: appId });
+    assert(r.error && /meta format "Mixed v2" still uses this format as a target|still use/.test(r.error), "a target of a meta (and of a rule? no: only meta) is blocked, got " + r.error);
+    r = llmRun(w, "delete_config_item", { kind: "format", id: metaId });
+    assert(r.error && /still use/.test(r.error), "the meta has a rule: remove that first, got " + r.error);
+    const ruleId = T.state.formatRules.find(x => x.formatId === metaId).id;
+    assert(!llmRun(w, "delete_config_item", { kind: "filename_rule", id: ruleId }).error, "rule deleted");
+    r = llmRun(w, "delete_config_item", { kind: "format", id: metaId });
+    assert(!r.error && !T.state.logFormats.some(x => x.id === metaId), "the assistant's meta format can be deleted");
+    r = llmRun(w, "delete_config_item", { kind: "format", id: appId });
+    assert(!r.error && !T.state.logFormats.some(x => x.id === appId), "then the single format can");
   });
 }
