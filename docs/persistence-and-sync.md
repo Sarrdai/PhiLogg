@@ -283,6 +283,8 @@ The log simulator's `-f tour` output (`tools/log-sim/README.md`) is the worked e
 
 ## Folder watch + lazy loading
 
+The LLM assistant / MCP agents can also watch, configure and open files of a folder (desktop app, with the person's approval): `docs/llm-assistant.md` → "Configuration tools".
+
 FEATURE_BACKLOG.md item, built in two rounds this session (2026-08-16): the initial build, then a person-reported follow-up in the same session covering four refinements — a unified "Open…" menu, files rendered *inside* the folder listing instead of moved out below it, a browser-capability gate, and session-cache persistence. All four are folded into the description below rather than kept as a separate "what changed" appendix.
 
 **Entry points**: pick a whole folder via the **"Open…"** button's dropdown menu (**File(s)…** / **Folder…** — replaced two separate always-visible buttons, since the browser-support asymmetry between them, see below, made two equally-prominent buttons misleading) or drag&drop (a dropped folder resolves to a `FileSystemDirectoryHandle` via `getAsFileSystemHandle()`, same as the single-file drop path already used). Under a desktop wrapper that can list directories itself, both entry points go through the wrapper instead — `philogg.pickFolder()` for the menu item, the wrapper's own native drop for the other (see "Two kinds of directory handle" below).
