@@ -1097,27 +1097,48 @@
     white-space:nowrap; font-size:12.3px;
   }
 
-  /* Filter-history ghost preview (person-requested, this session): shown
-     under a freshly loaded file that has no filters of its own yet, when a
-     previous session's filter tree for this exact (or since-grown) file
-     content was found in the fileHistory cache — see "File filter history"
-     near the end of the script. Purely a preview: ghost rows mimic
-     .tree-row's shape (icon/label/type-tag) closely enough to read as "this
-     is what your filters looked like", but carry no click/drag/context-menu
-     handlers at all. Disappears the instant the file gets a real filter
-     child (restored or freshly created) — driven by node.children.length in
-     renderNode — or the person clicks Cancel (below), which just clears
-     node.filterHistoryMatch directly; neither is a separate dismiss FLAG to
-     track, both just remove the thing renderNode's own gate checks for.  */
-  .tree-ghost{
-    margin:2px 8px 8px; padding:4px 4px 8px;
-    border:1px dashed var(--border); border-radius:8px;
+  /* Filter-history restore offer: ONE quiet collapsible line under a freshly
+     loaded file that has no filters of its own yet, when a previous session's
+     filter tree for this file was found in the fileHistory cache (see "File
+     filter history" near the end of the script). Collapsed by default; a click
+     on the line expands a guided, non-interactive preview (ghost rows with a
+     1px left guide). Disappears the instant the file gets a real filter child
+     (driven by node.children.length in renderNode) or on the x button, which
+     just clears node.filterHistoryMatch. */
+  .tree-restore-line{
+    display:flex; align-items:center; gap:3px; height:26px;
+    padding:0 4px 0 26px; color:var(--text-tertiary); cursor:pointer;
   }
+  .tree-restore-line:hover{background:var(--btn-hover);}
+  .tree-restore-line:focus-visible{outline:1px solid var(--accent); outline-offset:-1px;}
+  .tree-restore-line .chev{flex:0 0 auto; transition:transform .12s;}
+  .tree-restore-line.open .chev{transform:rotate(90deg);}
+  .tree-restore-txt{
+    flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
+    white-space:nowrap; font-size:11.8px;
+  }
+  .tree-restore-txt svg{vertical-align:-2px; margin-right:4px;}
+  .tree-restore-txt b{font-weight:600; color:var(--text-secondary);}
+  .tree-restore-pill{
+    flex:0 0 auto; width:6px; height:6px; border-radius:50%; margin:0 3px;
+    background:var(--warn); font-size:0; overflow:hidden;
+  }
+  .tree-restore-lnk{
+    border:0; background:none; padding:2px 4px; border-radius:5px; cursor:pointer;
+    font:inherit; font-size:11.5px; font-weight:600; color:var(--accent);
+  }
+  .tree-restore-lnk:hover{background:var(--accent-soft);}
+  .tree-restore-icb{
+    width:22px; height:22px; border:0; background:none; padding:0; flex:0 0 auto;
+    color:var(--text-tertiary); border-radius:5px; display:grid; place-items:center; cursor:pointer;
+  }
+  .tree-restore-icb:hover{background:var(--btn-hover); color:var(--text-primary);}
+  .tree-ghost{margin:0 0 4px 34px; border-left:1px solid var(--border-soft); padding:2px 0 4px;}
   .tree-ghost-row{
-    display:flex; align-items:center; gap:7px;
-    padding:4px 6px; opacity:.5; pointer-events:none;
+    display:flex; align-items:center; gap:7px; height:24px;
+    padding:0 10px; color:var(--text-tertiary); pointer-events:none;
   }
-  .tree-ghost-row .tree-icon{flex:0 0 auto; display:flex; color:var(--text-tertiary);}
+  .tree-ghost-row .tree-icon{flex:0 0 auto; display:flex; opacity:.8;}
   .tree-ghost-row .tree-label{
     flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis;
     white-space:nowrap; font-size:12.3px;
@@ -1127,24 +1148,13 @@
     letter-spacing:.3px; color:var(--text-tertiary); background:var(--bg-elevated-2);
     border:1px solid var(--border-soft); border-radius:4px; padding:1px 4px;
   }
-  .tree-ghost-note{padding:2px 6px 6px; font-size:10.5px; color:var(--text-tertiary);}
-  .tree-ghost-actions{display:flex; gap:6px; margin-top:2px;}
-  .tree-ghost-restore-btn{
-    display:flex; align-items:center; justify-content:center; flex:1 1 auto;
-    padding:6px 9px; font-size:11px; font-weight:600;
-    color:var(--accent-strong); background:var(--accent-soft);
-    border:1px solid var(--accent-strong); border-radius:6px; cursor:pointer;
-    transition:filter .12s;
+  .tree-ghost-more{padding:0 10px;}
+  .tree-ghost-more .tree-restore-lnk{padding-left:0;}
+  .tree-ghost-meta{
+    padding:4px 10px 0; font-size:10.8px; color:var(--text-tertiary);
+    display:flex; gap:6px; align-items:center; flex-wrap:wrap;
   }
-  .tree-ghost-restore-btn:hover{filter:brightness(1.15);}
-  .tree-ghost-cancel-btn{
-    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
-    padding:6px 12px; font-size:11px; font-weight:600;
-    color:var(--text-secondary); background:var(--bg-elevated-2);
-    border:1px solid var(--border-soft); border-radius:6px; cursor:pointer;
-    transition:filter .12s, color .12s;
-  }
-  .tree-ghost-cancel-btn:hover{filter:brightness(1.1); color:var(--text-primary);}
+  body.layout-phone .tree-restore-line{height:40px;}
 
   /* ---------- Content ---------- */
   #content{flex:1 1 auto; display:flex; flex-direction:column; min-width:0; min-height:0; position:relative;}
@@ -23247,12 +23257,12 @@ function countFilterTreeNodes(roots) {
 
 // One non-interactive preview row for a serialized filter-history node (see
 // serializeFilterTreeForCache for the shape). depth mirrors renderNode's own
-// per-level step (TREE_INDENT_STEP); ghost rows sit inside their own inset
-// box, hence no base offset.
+// per-level step (TREE_INDENT_STEP); the rows hang inside the guided .tree-ghost
+// block, hence only the nesting offset (depth 0 = a root of the saved tree).
 function renderGhostRow(sn, depth) {
   const row = document.createElement("div");
   row.className = "tree-ghost-row";
-  row.style.paddingLeft = (depth * TREE_INDENT_STEP) + "px";
+  if (depth) row.style.paddingLeft = (10 + depth * 14) + "px";
   const icon = document.createElement("span");
   icon.className = "tree-icon";
   icon.innerHTML = ghostIconFor(sn.filterType);
@@ -23269,36 +23279,73 @@ function renderGhostRow(sn, depth) {
   return row;
 }
 
-// Renders the grayed filter-tree preview + Restore button under a freshly
+const GHOST_PREVIEW_MAX_ROWS = 8;
+const RESTORE_ICON_SVG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.8 8a5.2 5.2 0 1 0 1.6-3.8"/><path d="M2.6 2.2v2.6h2.6"/></svg>';
+const RESTORE_CHEV_SVG = '<svg class="chev" viewBox="0 0 10 10" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 2.5 6.5 5 4 7.5"/></svg>';
+const RESTORE_X_SVG = '<svg viewBox="0 0 10 10" width="9" height="9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 2l6 6M8 2 2 8"/></svg>';
+const SHORT_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+// "today" / "yesterday" / "Oct 9" / "Oct 9, 2025" (day granularity) for a
+// timestamp, relative to `now`.
+function relativeDayLabel(ts, now) {
+  const d = new Date(ts), n = new Date(now == null ? Date.now() : now);
+  const day = x => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+  const diff = Math.round((day(n) - day(d)) / 86400000);
+  if (diff === 0) return "today";
+  if (diff === 1) return "yesterday";
+  return SHORT_MONTHS[d.getMonth()] + " " + d.getDate() + (d.getFullYear() === n.getFullYear() ? "" : ", " + d.getFullYear());
+}
+
+// Renders the quiet restore line (+ optional expanded preview) under a freshly
 // loaded file node, when matchFileHistory (see "File filter history" near
 // the end of the script) found a previous session's filter tree for this
 // file at load time. Called from renderNode only while the file still has
 // zero real children — see the call site there for why that's the whole
-// visibility condition, no separate dismiss state needed.
+// visibility condition, no separate dismiss state needed. The expanded /
+// show-all flags live on the match object itself (session-only, and cleared
+// together with it).
 function renderFilterHistoryPreview(fileNode) {
   const match = fileNode.filterHistoryMatch;
-  const box = document.createElement("div");
-  box.className = "tree-ghost";
-
-  (function walk(list, depth) {
-    list.forEach(sn => { box.appendChild(renderGhostRow(sn, depth)); walk(sn.children || [], depth + 1); });
-  })(match.filters, 1);
-
+  const frag = document.createDocumentFragment();
   const n = countFilterTreeNodes(match.filters);
-  const note = document.createElement("div");
-  note.className = "tree-ghost-note";
-  note.textContent = (match.tier === 2 ? "File has grown since — " : "") +
-    "filter" + (n === 1 ? "" : "s") + " from a previous session (" + n + ")";
-  box.appendChild(note);
 
-  const actions = document.createElement("div");
-  actions.className = "tree-ghost-actions";
+  const line = document.createElement("div");
+  line.className = "tree-restore-line" + (match.expanded ? " open" : "");
+  line.tabIndex = 0;
+  line.title = "Show the filters from your last session with this file";
+  const toggle = () => { match.expanded = !match.expanded; render(); };
+  line.addEventListener("click", ev => { ev.stopPropagation(); toggle(); });
+  line.addEventListener("keydown", ev => {
+    if (ev.target === line && ev.key === "Enter") { ev.preventDefault(); ev.stopPropagation(); toggle(); }
+  });
+  line.insertAdjacentHTML("beforeend", RESTORE_CHEV_SVG);
+
+  const txt = document.createElement("span");
+  txt.className = "tree-restore-txt";
+  txt.insertAdjacentHTML("beforeend", RESTORE_ICON_SVG);
+  const count = document.createElement("b");
+  count.textContent = n + " filter" + (n === 1 ? "" : "s");
+  txt.appendChild(count);
+  txt.appendChild(document.createTextNode(match.savedAt
+    ? " from " + relativeDayLabel(match.savedAt)
+    : " from a previous session"));
+  line.appendChild(txt);
+
+  if (match.tier === 2) {
+    const pill = document.createElement("span");
+    pill.className = "tree-restore-pill";
+    pill.setAttribute("aria-label", "file has grown");
+    pill.title = "The file has grown since these filters were saved.";
+    line.appendChild(pill);
+  }
 
   const btn = document.createElement("button");
   btn.type = "button";
-  btn.className = "tree-ghost-restore-btn";
-  btn.textContent = "Restore filters";
-  btn.addEventListener("click", () => {
+  btn.className = "tree-restore-lnk";
+  btn.textContent = "Restore";
+  btn.title = "Restore these filters (Ctrl+Z undoes)";
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
     // User action: one undo step for the restored roots (materializeCachedFilters
     // itself stays undo-free, session restore uses it too).
     withCreateUndo("filter restore", () => {
@@ -23308,31 +23355,70 @@ function renderFilterHistoryPreview(fileNode) {
     });
     state.activeId = fileNode.id;
     render();
+    showCopyToast(n + " filter" + (n === 1 ? "" : "s") + " restored", { label: "Undo", onClick: () => undo() });
   });
-  actions.appendChild(btn);
+  line.appendChild(btn);
 
-  // Dismisses the preview without building a filter tree — person-
-  // requested: previously the only way to get rid of an unwanted ghost
-  // preview was to create a real filter yourself (children.length > 0 is
-  // the whole visibility gate, see renderNode's call site). Just clears
+  // Dismisses the offer without building a filter tree. Just clears
   // filterHistoryMatch, the same field the real Restore path (and
   // buildFileHistoryRecords, once a real tree exists) already clears — a
   // plain dismissal, not a "forget this history forever": the underlying
   // stored record is untouched (filterHistoryTouched deliberately NOT set
   // here, unlike the add-then-remove-all-filters case that function
   // documents), so the same match can still resurface on a later reload.
-  const cancelBtn = document.createElement("button");
-  cancelBtn.type = "button";
-  cancelBtn.className = "tree-ghost-cancel-btn";
-  cancelBtn.textContent = "Cancel";
-  cancelBtn.addEventListener("click", () => {
+  const x = document.createElement("button");
+  x.type = "button";
+  x.className = "tree-restore-icb";
+  x.title = "Dismiss — the filters stay remembered";
+  x.setAttribute("aria-label", "Dismiss");
+  x.innerHTML = RESTORE_X_SVG;
+  x.addEventListener("click", ev => {
+    ev.stopPropagation();
     fileNode.filterHistoryMatch = null;
     render();
   });
-  actions.appendChild(cancelBtn);
+  line.appendChild(x);
+  frag.appendChild(line);
 
-  box.appendChild(actions);
-  return box;
+  if (match.expanded) {
+    const box = document.createElement("div");
+    box.className = "tree-ghost";
+    let shown = 0;
+    (function walk(list, depth) {
+      list.forEach(sn => {
+        if (!match.showAll && shown >= GHOST_PREVIEW_MAX_ROWS) return;
+        shown++;
+        box.appendChild(renderGhostRow(sn, depth));
+        walk(sn.children || [], depth + 1);
+      });
+    })(match.filters, 0);
+    if (!match.showAll && n > shown) {
+      const more = document.createElement("div");
+      more.className = "tree-ghost-more";
+      const mb = document.createElement("button");
+      mb.type = "button";
+      mb.className = "tree-restore-lnk";
+      mb.textContent = "+ " + (n - shown) + " more";
+      mb.addEventListener("click", ev => { ev.stopPropagation(); match.showAll = true; render(); });
+      more.appendChild(mb);
+      box.appendChild(more);
+    }
+    const meta = document.createElement("div");
+    meta.className = "tree-ghost-meta";
+    if (match.savedAt) {
+      const d = new Date(match.savedAt);
+      const pad = v => String(v).padStart(2, "0");
+      meta.textContent = "Saved " + SHORT_MONTHS[d.getMonth()] + " " + d.getDate() + ", " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+    }
+    if (match.tier === 2) {
+      const g = document.createElement("span");
+      g.textContent = (match.savedAt ? "· " : "") + "file has grown since";
+      meta.appendChild(g);
+    }
+    if (meta.childNodes.length) box.appendChild(meta);
+    frag.appendChild(box);
+  }
+  return frag;
 }
 
 // Tree drag-and-drop reparenting runs on plain mouse events, not HTML5 DnD
@@ -38154,7 +38240,9 @@ async function readZipEntries(source) {
 // comment) — never persisted/restored, since re-opening after a reload
 // would need the actual file picked again anyway (no live handle to a ZIP
 // on disk, same as a plain <input type=file> pick).
-async function openZipSource(source, name) {
+// info (optional): { localPath } (desktop) and/or { handle } (a promise for the
+// dropped FileSystemFileHandle, Chromium) for the Recent files entry.
+async function openZipSource(source, name, info) {
   let entries;
   try {
     entries = await readZipEntries(source);
@@ -38170,6 +38258,10 @@ async function openZipSource(source, name) {
   const zip = { id: newCacheKey(), name, entries, inlineViewers: new Map() };
   state.zips.push(zip);
   render();
+  recordRecent({
+    kind: "zip", name, size: source.size, localPath: info && info.localPath,
+    handle: info && info.handle ? Promise.resolve(info.handle).then(h => realRecentHandle(h, "file")) : null,
+  });
   return zip;
 }
 
@@ -39520,7 +39612,7 @@ async function finishLoadedFileNode(node, res, handle) {
   // (mergeFiles doesn't go through this helper, and starts empty by
   // explicit design anyway — see mergeFiles' own comment).
   const historyMatch = await matchFileHistory(node);
-  if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier };
+  if (historyMatch) node.filterHistoryMatch = { filters: historyMatch.record.filters, tier: historyMatch.tier, savedAt: historyMatch.record.savedAt || null };
   if (handle && !gzip) { // a gzip file is a static snapshot — never tailed
     node.tail = {
       handle,
@@ -39717,9 +39809,11 @@ async function loadFileDescriptorsImpl(descs) {
           finishLoadProgress(qn);
           if (out.err) throw out.err; // -> the catch below removes the placeholder and toasts
           node = await finishLoadedFileNode(qn, out.res, handle);
+          recordRecentFileNode(node, desc);
         } else {
           const file = desc.file || (canParseNatively(handle) ? null : await desc.openFile());
           node = await loadOneFileIntoTree(file ? file.name : desc.name, file, handle, null, queuedNodes[i]);
+          recordRecentFileNode(node, desc);
         }
         render();
         needsFinalRender = false;
@@ -40161,7 +40255,7 @@ async function loadDesktopLocalFiles({ files, folders } = {}) {
     const f = fileList[0];
     const res = await fetch(f.url);
     if (res.ok) {
-      await openZipSource(await res.blob(), f.name);
+      await openZipSource(await res.blob(), f.name, { localPath: f.path });
       return;
     }
     showCopyToast(`Couldn't open "${f.name}" (HTTP ${res.status})`);
@@ -40331,7 +40425,12 @@ window.addEventListener("drop", ev => {
   // file dropped; a zip mixed into a larger drop loads (and fails to
   // parse) as an ordinary file instead, same as loadDesktopLocalFiles.
   if (plainFiles.length === 1 && /\.zip$/i.test(plainFiles[0].name)) {
-    openZipSource(plainFiles[0], plainFiles[0].name);
+    // The handle (Chromium) must be requested synchronously; it resolves later.
+    const zipFile = plainFiles[0];
+    openZipSource(zipFile, zipFile.name, {
+      handle: items.length && typeof items[0].getAsFileSystemHandle === "function"
+        ? Promise.resolve(items[0].getAsFileSystemHandle()).catch(() => null) : null,
+    });
     return;
   }
 
@@ -41193,6 +41292,11 @@ async function addWatchedFolder(handle) {
   };
   state.folders.push(folder);
   persistFolder(folder); // fire-and-forget, same as persistFileNode
+  // Every caller is user-initiated (picker, drop); the boot reconnect never comes through here.
+  recordRecent({
+    kind: "folder", name: folder.name, localPath: handle[NATIVE_DIR_HANDLE] || null,
+    handle: realRecentHandle(handle, "directory"), folderSettings: JSON.parse(JSON.stringify(folder.settings)),
+  });
   await rescanFolder(folder);
 }
 
@@ -49742,6 +49846,96 @@ async function refreshFilterLibraryCache() {
   return filterLibraryCache;
 }
 
+/* ---------- Recent files ----------
+   The newest RECENT_FILES_MAX opened files, ZIPs and folders, kept in the
+   "recentFiles" IndexedDB store (keyPath "key") and mirrored in
+   recentFilesCache (newest first) so the Open menu / start screen can render
+   synchronously. Recorded when something is opened (not closed), by
+   recordRecent(); reopening moves the entry to the top. Record:
+   { key, kind: "file"|"zip"|"folder", name, localPath|null, handle|null,
+     size|null, fullHash|null, openedAt, folderSettings|null, missing? }.
+   `handle` is a real FileSystemFile/DirectoryHandle (browser only; never the
+   desktop url-tail/native-dir stand-ins — those have localPath instead). */
+const RECENT_FILES_MAX = 20;
+let recentFilesCache = [];
+let recentFilesQueue = Promise.resolve(); // serializes recordings: dedupe is async (isSameEntry)
+function getRecentFiles() { return recentFilesCache; }
+function recentFilesIdle() { return recentFilesQueue; }
+// Queued like a recording, so a recording made before the boot read finishes
+// is not overwritten by it.
+function refreshRecentFilesCache() {
+  recentFilesQueue = recentFilesQueue.then(async () => {
+    const all = await cacheStoreOp("recentFiles", "readonly", store => store.getAll());
+    recentFilesCache = Array.isArray(all) ? all.sort((a, b) => b.openedAt - a.openedAt) : [];
+  }).catch(() => {});
+  return recentFilesQueue.then(() => recentFilesCache);
+}
+
+// Same file/ZIP/folder? Desktop: same localPath; browser: handle.isSameEntry;
+// otherwise same name and size.
+async function sameRecentEntry(a, b) {
+  if (a.kind !== b.kind) return false;
+  if (a.localPath || b.localPath) return !!a.localPath && a.localPath === b.localPath;
+  if (a.handle && b.handle && typeof a.handle.isSameEntry === "function") {
+    try { return !!(await a.handle.isSameEntry(b.handle)); } catch { /* fall through */ }
+  }
+  return a.name === b.name && (a.size == null ? null : a.size) === (b.size == null ? null : b.size);
+}
+
+// info: { kind, name, localPath, handle (or a promise for it), size, fullHash, folderSettings }.
+function recordRecent(info) {
+  recentFilesQueue = recentFilesQueue.then(async () => {
+    const entry = {
+      key: null, kind: info.kind, name: info.name, localPath: info.localPath || null,
+      handle: (await info.handle) || null, size: info.size == null ? null : info.size,
+      fullHash: info.fullHash || null, openedAt: Date.now(), folderSettings: info.folderSettings || null,
+    };
+    let reused = null;
+    for (const old of recentFilesCache) if (await sameRecentEntry(entry, old)) { reused = old; break; }
+    entry.key = reused ? reused.key : newCacheKey();
+    const next = [entry].concat(recentFilesCache.filter(o => o !== reused));
+    const dropped = next.splice(RECENT_FILES_MAX);
+    recentFilesCache = next;
+    if (!cacheEnabled()) return;
+    // A handle that can't be structured-cloned must not lose the whole record.
+    if (await cacheStoreOp("recentFiles", "readwrite", store => store.put(entry)) == null && entry.handle) {
+      await cacheStoreOp("recentFiles", "readwrite", store => store.put(Object.assign({}, entry, { handle: null })));
+    }
+    for (const d of dropped) await cacheStoreOp("recentFiles", "readwrite", store => store.delete(d.key));
+  }).catch(() => {});
+  return recentFilesQueue;
+}
+
+function realRecentHandle(handle, kind) {
+  return handle && !isUrlTailHandle(handle) && !handle[NATIVE_DIR_HANDLE] && handle.kind === kind ? handle : null;
+}
+
+// Root files only (never a folder/ZIP entry, merge or merge source, deep-link
+// URL). `desc` is the loadFileDescriptors descriptor the node came from.
+function recordRecentFileNode(node, desc) {
+  if (!node || node.folderId || node.zipId || node.merged || node.mergeOwnerId || (node.sourceUrl && !node.localPath)) return;
+  recordRecent({
+    kind: "file", name: node.name, localPath: node.localPath || null,
+    handle: realRecentHandle(desc && desc.handle, "file"),
+    size: desc && desc.file ? desc.file.size : null, fullHash: node._fullHash || null,
+  });
+}
+
+// Open right now? Then it is not listed. Desktop entries compare by path,
+// the rest by name (a different same-named file is hidden too — accepted).
+function isRecentEntryOpen(entry) {
+  if (entry.kind === "folder") {
+    return state.folders.some(f => entry.localPath ? (f.handle && f.handle[NATIVE_DIR_HANDLE]) === entry.localPath : f.name === entry.name);
+  }
+  if (entry.kind === "zip") return state.zips.some(z => z.name === entry.name);
+  return state.rootIds.some(id => {
+    const n = state.nodes[id];
+    return n && n.type === "file" && !n.folderId && !n.zipId &&
+      (entry.localPath && n.localPath ? n.localPath === entry.localPath : n.name === entry.name);
+  });
+}
+function visibleRecentFiles() { return recentFilesCache.filter(e => !isRecentEntryOpen(e)); }
+
 // Applies one saved record onto targetId — identical mechanism to Load
 // filter's own importFilterJson (loadFilterTargetId + the same JSON
 // envelope), just sourced from IndexedDB instead of a picked file.
@@ -54770,7 +54964,7 @@ function logKeysActive() {
    whole feature (no UI for it — deliberate, see PROJECT.md). */
 
 const CACHE_DB_NAME = "philogg-session-cache";
-const CACHE_DB_VERSION = 5; // bumped for the "logFormats"/"formatRules" stores (see "Log format definitions")
+const CACHE_DB_VERSION = 6; // bumped for the "recentFiles" store (was 5 for "logFormats"/"formatRules", see "Log format definitions")
 const CACHE_META_KEY = "session";
 const CACHE_FORMAT_VERSION = 1;
 const CACHE_ENABLED_KEY = "philogg-cache-enabled"; // localStorage; "0" disables
@@ -54801,6 +54995,7 @@ function openCacheDb() {
       if (!db.objectStoreNames.contains("filterLibrary")) db.createObjectStore("filterLibrary", { keyPath: "key" });
       if (!db.objectStoreNames.contains("logFormats")) db.createObjectStore("logFormats", { keyPath: "id" });
       if (!db.objectStoreNames.contains("formatRules")) db.createObjectStore("formatRules", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("recentFiles")) db.createObjectStore("recentFiles", { keyPath: "key" });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => resolve(null);
@@ -59602,6 +59797,7 @@ const formatConfigReady = loadFormatConfig();
 // and prime filterLibraryCache the same way (see its own comment).
 renderLibraryToolbarPresets();
 refreshFilterLibraryCache();
+const recentFilesReady = refreshRecentFilesCache();
 // Async session restore AFTER the first (empty-state) render — restore's own
 // finally block re-renders once files/filters/bookmarks/settings are back.
 // Watched folders are restored right after (restoreWatchedFolders needs
