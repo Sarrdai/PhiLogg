@@ -1,0 +1,4 @@
+- **feat: strict Content-Security-Policy (2026-10-11, backlog #75)**
+  - `philogg.html` and `desktop/chat.html` carry a CSP `<meta>`: `connect-src 'self'` (plus Tauri IPC in the desktop build), `object-src`/`base-uri`/`form-action 'none'`. Injected script can no longer send sessions, filters, notes or log text to another server.
+  - Cross-origin `?url=` / `?session=` loads (and cross-origin session record URLs) stop working on purpose; they now show "Only URLs from this site can be opened (Content-Security-Policy)". Same-origin links, the homepage tour and the desktop `philogg://local/` files are unaffected.
+  - **Tests**: GROUP content-security-policy (policy text + guard; groups 66, 89, 352, 353, url-param-persist and two session groups moved to same-origin URLs). Verified in Chromium (http + file://) and the headless desktop app. Docs: docs/persistence-and-sync.md, docs/desktop.md, PROJECT.md, README.

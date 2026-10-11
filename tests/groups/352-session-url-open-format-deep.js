@@ -18,7 +18,7 @@
 group(352);
 if (groupSelected()) {
   const simText = (format, entries, seed) => LOGSIM.generateToStrings({ format, entries, seed })[0].text;
-  const SESSION_URL = "http://host.example/tours/t.session.json";
+  const SESSION_URL = "http://localhost/tours/t.session.json";
   const enc = (w, text) => new w.TextEncoder().encode(text).buffer;
   // Fake fetch over { url: text | { status } | Error }.
   const fakeFetch = (w, map, seen) => async u => {
@@ -48,7 +48,7 @@ if (groupSelected()) {
   const makeSession = patch => {
     const doc = JSON.parse(JSON.stringify(sessionDoc));
     doc.files[0].url = "logs/a.log";
-    doc.files[1].url = "http://other.example/b.log";
+    doc.files[1].url = "http://localhost/other/b.log";
     return Object.assign(doc, patch || {});
   };
 
@@ -57,15 +57,15 @@ if (groupSelected()) {
     await T.bootRestore;
     const seen = [];
     const doc = makeSession({ banner: "Read **this** first <b>x</b>" });
-    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(doc), "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB }, seen);
+    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(doc), "http://localhost/tours/logs/a.log": textA, "http://localhost/other/b.log": textB }, seen);
     // The two exported hashes would tier-1 match an open copy — ?session= must not look at open files.
     await w.loadSessionFromUrl(SESSION_URL);
-    assert(seen[0] === SESSION_URL && seen.includes("http://host.example/tours/logs/a.log") && seen.includes("http://other.example/b.log"),
+    assert(seen[0] === SESSION_URL && seen.includes("http://localhost/tours/logs/a.log") && seen.includes("http://localhost/other/b.log"),
       "the relative url resolves against the session file's URL, the absolute one is used as is: " + seen.join(" "));
     assert(T.state.rootIds.length === 2, "two files loaded, got " + T.state.rootIds.length);
     const a = T.state.nodes[T.state.rootIds[0]], b = T.state.nodes[T.state.rootIds[1]];
     assert(a.name === "a.log" && b.name === "b.log" && a.entries.length === 60 && b.entries.length === 40, "names from the records, entries parsed");
-    assert(a.sourceUrl === "http://host.example/tours/logs/a.log", "the file remembers its resolved source URL (Copy URL)");
+    assert(a.sourceUrl === "http://localhost/tours/logs/a.log", "the file remembers its resolved source URL (Copy URL)");
     const textFilter = a.children.map(id => T.state.nodes[id]).find(n => n.filterType === "text" && n.value === wantFilterValue);
     assert(textFilter, "the filter tree was rebuilt under the file");
     assert(T.state.activeId === textFilter.id, "the active node is the exported one");
@@ -82,7 +82,7 @@ if (groupSelected()) {
     // Loading the same link again replaces the banner; a session without a banner clears it.
     await w.loadSessionFromUrl(SESSION_URL);
     assert(isVisible(d.querySelector("#tourBanner"), w), "a new ?session= with a banner shows it again");
-    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(makeSession()), "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB }, seen);
+    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(makeSession()), "http://localhost/tours/logs/a.log": textA, "http://localhost/other/b.log": textB }, seen);
     await w.loadSessionFromUrl(SESSION_URL);
     assert(!isVisible(d.querySelector("#tourBanner"), w), "a session without banner clears it");
     w.setSessionBanner("x");
@@ -141,7 +141,7 @@ if (groupSelected()) {
     assert(/1 file loaded/.test(toast(d)) && /1 file matched automatically/.test(toast(d)) && /1 skipped/.test(toast(d)), "summary counts loaded / matched / skipped, got " + toast(d));
     // A failing url record is skipped, the rest still loads.
     const seen = [];
-    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(makeSession()), "http://other.example/b.log": textB }, seen);
+    w.fetch = fakeFetch(w, { [SESSION_URL]: JSON.stringify(makeSession()), "http://localhost/other/b.log": textB }, seen);
     await w.loadSessionFromUrl(SESSION_URL);
     assert(/1 skipped/.test(toast(d)), "a url that 404s counts as skipped, got " + toast(d));
   }, { indexedDB: new IDBFactory() });
@@ -150,7 +150,7 @@ if (groupSelected()) {
     section("352d. Reload of a ?session= link: restored copies are replaced, the session shows once");
     const factory = new IDBFactory();
     const docText = JSON.stringify(makeSession({ banner: "Tour" }));
-    const urls = { [SESSION_URL]: docText, "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB };
+    const urls = { [SESSION_URL]: docText, "http://localhost/tours/logs/a.log": textA, "http://localhost/other/b.log": textB };
     const query = "?session=" + encodeURIComponent(SESSION_URL);
     await withApp(async (w, d, T) => {
       await T.bootRestore;
@@ -208,7 +208,7 @@ if (groupSelected()) {
       assert(dialogWhileLoading === false, "the dialog is not open while the session is still loading");
       assert(isVisible(d.querySelector("#formatDialog"), w) && T.state.rootIds.length === 2, "it opens once the session (two files) is loaded");
     }, { indexedDB: new IDBFactory(), url: "http://localhost/philogg.html?open=format&session=" + encodeURIComponent(SESSION_URL), beforeParse: win => {
-      const inner = fakeFetch(win, { [SESSION_URL]: JSON.stringify(makeSession()), "http://host.example/tours/logs/a.log": textA, "http://other.example/b.log": textB }, []);
+      const inner = fakeFetch(win, { [SESSION_URL]: JSON.stringify(makeSession()), "http://localhost/tours/logs/a.log": textA, "http://localhost/other/b.log": textB }, []);
       win.fetch = async u => { if (u.endsWith("a.log")) { requested = true; await gate; } return inner(u); };
     } });
   }

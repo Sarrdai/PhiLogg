@@ -2,6 +2,23 @@
 <html lang="de">
 <head>
 <meta charset="UTF-8">
+<!--
+  Content-Security-Policy (FEATURE_BACKLOG #75, defense in depth): if injected
+  script ever ran, it must not be able to send data (sessions, filters, notes,
+  cached log text in localStorage/IndexedDB) to another server. Nothing leaves
+  the page's own origin: connect-src is 'self' plus the Tauri IPC endpoints of
+  the desktop build (ipc: on macOS/Linux, http://ipc.localhost on Windows);
+  cross-origin ?url=/?session= loads therefore fail on purpose. 'unsafe-inline'
+  for script/style is unavoidable: one self-contained file with inline script
+  and style, no build step to add nonces/hashes. blob:/data: are for the parse
+  Worker, exported/viewed images and the inline viewers; frame-src 'self' is
+  the docked LLM chat (chat.html). tauri.conf.json keeps
+  "csp": null (Tauri's own injection would disable 'unsafe-inline'); this tag is
+  the policy for the desktop build too. Every new network target, iframe,
+  worker or image source must be allowed here (PROJECT.md -> Known gotchas).
+  Keep this tag right after the charset meta, before any script/style: it only governs what follows it.
+-->
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; media-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' ipc: http://ipc.localhost; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>PhiLogg</title>
 <!-- Inline icon: the page is one self-contained file, so the browser makes no extra icon request (it used to get a 404) on load. -->
@@ -39914,12 +39931,26 @@ function applyFolderFileLocation(node, handle) {
   if (path) node.localPath = path;
   return changed;
 }
+// Content-Security-Policy (the <meta> in <head>, backlog #75): connect-src is
+// 'self', so a fetch() to another origin is blocked by the browser and would
+// only surface as a vague "network or CORS error". Say it up front instead.
+// The desktop wrapper's philogg://local/<id>/… file URLs are rewritten to the
+// page's own origin by its fetch shim, so they count as same-origin.
+const CROSS_ORIGIN_URL_TOAST = "Only URLs from this site can be opened (Content-Security-Policy)";
+function isSameOriginUrl(url, base) {
+  if (isDesktopLocalUrl(url)) return true;
+  try {
+    const u = new URL(url, base || location.href);
+    return u.protocol === location.protocol && u.host === location.host;
+  } catch { return false; }
+}
 function loadUrlIntoTree(url) { return trackForegroundLoad(() => loadUrlIntoTreeImpl(...arguments)); } // resolves to the new file node, null on failure
 async function loadUrlIntoTreeImpl(url) {
   if (location.protocol === "file:") {
     showCopyToast("?url= needs PhiLogg served over http(s), not opened as a local file");
     return null;
   }
+  if (!isSameOriginUrl(url)) { showCopyToast(CROSS_ORIGIN_URL_TOAST); return null; }
   let name = "remote.log";
   try {
     const last = decodeURIComponent(new URL(url, location.href).pathname.split("/").filter(Boolean).pop() || "");
@@ -56103,6 +56134,7 @@ async function loadSessionRecordFresh(rec, baseUrl) {
   let sourceUrl = null;
   if (typeof rec.url === "string") {
     try { sourceUrl = new URL(rec.url, baseUrl || location.href).href; } catch { return null; }
+    if (!isSameOriginUrl(sourceUrl)) return null; // blocked by the CSP anyway; the session's other files still load
     if (!name) {
       try { name = decodeURIComponent(new URL(sourceUrl).pathname.split("/").filter(Boolean).pop() || ""); } catch { /* fallback below */ }
     }
@@ -56144,6 +56176,7 @@ async function loadSessionFromUrlImpl(url) {
   }
   let baseUrl;
   try { baseUrl = new URL(url, location.href).href; } catch { showCopyToast("Invalid session URL"); return false; }
+  if (!isSameOriginUrl(baseUrl)) { showCopyToast(CROSS_ORIGIN_URL_TOAST); return false; }
   let res;
   try {
     res = await fetch(baseUrl);

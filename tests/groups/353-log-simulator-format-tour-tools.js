@@ -17,10 +17,10 @@ group(353);
 if (groupSelected()) {
   const TOUR = require(path.join(__dirname, "..", "tools", "log-sim", "tour.js"));
   const files = Object.fromEntries(TOUR.generateTour().map(f => [f.path, f.text]));
-  const SESSION_URL = "http://tour.example/t/welcome.session.json";
+  const SESSION_URL = "http://localhost/t/welcome.session.json";
   const enc = (w, text) => new w.TextEncoder().encode(text).buffer;
   const tourFetch = w => async u => {
-    const rel = u.replace("http://tour.example/t/", "");
+    const rel = u.replace("http://localhost/t/", "");
     const text = files[rel];
     if (text === undefined) return { ok: false, status: 404, arrayBuffer: async () => new ArrayBuffer(0), text: async () => "" };
     return { ok: true, status: 200, arrayBuffer: async () => enc(w, text), text: async () => text };
