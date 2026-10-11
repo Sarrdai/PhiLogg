@@ -26,9 +26,10 @@ await withApp(async (w, d, T) => {
   }
   assert(r.bursts.map(b => b.from.slice(11, 19)).join() === "08:00:03,08:01:41,08:03:30,08:06:06", "burst start seconds equal the reference");
   assert(r.bursts[1].count === 73 && r.bursts[2].count === 61, "bursts 2 and 3 have the reference sizes (73, 61)");
-  assert(r.bursts[1].topTypes[0].type.startsWith("Connection pool exhausted"), "the pool warnings lead the burst");
+  // Since backlog #125 the digit and hex request ids are one type, so the rejected requests (35) edge out the pool warnings (34).
+  assert(r.bursts[1].topTypes[0].type.startsWith("Request r-<hex> rejected") && r.bursts[1].topTypes[0].count === 35 && r.bursts[1].topTypes[1].type.startsWith("Connection pool exhausted"), "the merged request type leads the burst, the pool warnings follow");
   const ge = llmRun(w, "get_entries", { nodeId: r.bursts[1].topTypes[0].patternId, max: 1 }).result;
-  assert(ge.entries[0].message.startsWith("Connection pool exhausted"), "topTypes patternId resolves as a virtual node");
+  assert(ge.entries[0].message.startsWith("Request r-"), "topTypes patternId resolves as a virtual node");
   assert(r.counts.length === 40 && r.counts.reduce((s, n) => s + n, 0) === r.entries, "40 buckets by default, counts add up");
   assert(r.usualPerSec >= 1 && r.bucketMs > 0 && r.from < r.to && r.tip.includes("create_window"), "usual rate, bucket width, span and a next-step tip");
 

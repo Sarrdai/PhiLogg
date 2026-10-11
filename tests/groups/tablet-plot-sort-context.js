@@ -205,8 +205,8 @@ await withApp(async (w, d, T) => {
   const orderMsgs = sim.text.split("\n").filter(l => /submitted by user '/.test(l));
   assert(orderMsgs.length >= 3 && new Set(orderMsgs.map(l => /user '(\w+)'/.exec(l)[1])).size >= 2, "sanity: simulated orders with different single-quoted users");
   const key = w.normalizeMessagePattern("Order O-30276 submitted by user 'dave'");
-  assert(w.patternDisplayText(key) === "Order O-<#> submitted by user '<str>'", "single quotes kept, content replaced, got " + w.patternDisplayText(key));
-  assert(key === w.normalizeMessagePattern("Order O-1 submitted by user 'alice'"), "different users share one pattern");
+  assert(w.patternDisplayText(key) === "Order O-<hex> submitted by user '<str>'", "single quotes kept, content replaced, got " + w.patternDisplayText(key));
+  assert(key === w.normalizeMessagePattern("Order O-30277 submitted by user 'alice'"), "different users share one pattern");
   assert(w.patternDisplayText(w.normalizeMessagePattern('opened for user "erin" from')) === 'opened for user "<str>" from', "double quotes as before");
   assert(w.patternDisplayText(w.normalizeMessagePattern("it's the user's call, don't")) === "it's the user's call, don't", "apostrophes inside words are not quotes");
   assert(w.patternFilterValue(key, 0, false) === "Order O-[*] submitted by user '[*]'", "filter value keeps the quotes");

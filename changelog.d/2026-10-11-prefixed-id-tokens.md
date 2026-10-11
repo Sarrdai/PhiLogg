@@ -1,0 +1,4 @@
+- **fix: prefixed ids are one message type everywhere (2026-10-11, backlog #125)**
+  - `r-1a2b3c` and its all-digit twin `r-482913` now normalize to the same `r-<hex>` key in `normalizeMessagePattern` itself: 4+ hex/digit chars after a 1-3 letter prefix and dash are always `<hex>` (not when a decimal follows, `v-1234.5`). Bursts, `what_changed`, `find_message_types`, neighbors, collapse-repeats and key filters no longer split the family (15 + 5 instead of 20).
+  - Removed the Patterns-tab-only merge (`mergeDigitIdPatternGroups`, backlog #104). Accepted consequence: `J-00004` becomes `J-<hex>` and typed Extract gives `[*]` for it instead of `[*:int]`.
+  - **Tests**: GROUP patterns-prefixed-id-tokens (replaces patterns-merge-digit-ids-into-hex). Docs: docs/ui-and-views.md.
