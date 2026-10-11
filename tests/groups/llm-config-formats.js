@@ -23,7 +23,7 @@ if (groupSelected()) {
     assert(!def.byAssistant && !f.result.formats.some(x => x.byAssistant), "nothing is marked as the assistant's yet");
     const r = llmRun(w, "list_config", { kind: "filename_rules" });
     assert(!r.error && Array.isArray(r.result.rules) && r.result.rules.length === 0, "no rules yet");
-    const bad = llmRun(w, "list_config", { kind: "styles" });
+    const bad = llmRun(w, "list_config", { kind: "folders" });
     assert(bad.error && /Available: formats, filename_rules/.test(bad.error), "unknown kind lists the available ones, got " + bad.error);
     assert(llmRun(w, "list_config", {}).error, "kind is required");
     const specs = w.llmToolSpecs().map(s => s.function.name);
@@ -242,7 +242,7 @@ if (groupSelected()) {
     await waitFor(async () => !(await w.listLogFormats()).some(x => x.id === mine) && !(await w.listFormatRules()).some(x => x.id === ruleId));
     assert(true, "removed from IndexedDB");
     assert(/Unknown format id/.test(llmRun(w, "delete_config_item", { kind: "format", id: mine }).error), "second delete: unknown id");
-    assert(/Available: format, filename_rule/.test(llmRun(w, "delete_config_item", { kind: "theme", id: "x" }).error), "other kinds not available yet");
+    assert(/Available: format, filename_rule/.test(llmRun(w, "delete_config_item", { kind: "folder", id: "x" }).error), "unknown kind lists the available ones");
     assert(llmRun(w, "delete_config_item", { kind: "format" }).error, "id required");
     // a file pinned to the deleted format is reported
     const id2 = llmRun(w, "create_format", { name: "Pinned", sampleLines: lines }).result.format.id;
