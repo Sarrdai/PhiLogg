@@ -19,11 +19,11 @@ await withApp(async (w, d, T) => {
   assert(ov.files.length === 1 && ov.files[0].id === f.id && ov.files[0].entries === 2000 && ov.files[0].from && ov.files[0].to, "overview lists the file with count and time span");
   assert(ov.tree.length === 1 && ov.tree[0].id === f.id && ov.tree[0].count === 2000, "overview's tree starts at the file");
   const r = llmRun(w, "find_message_types", { query: "position reached" }).result;
-  assert(r.types.length === 1 && /^Position reached axis=<#> actual=<#> job=J-<#>$/.test(r.types[0].type), "one 'Position reached' type, got " + JSON.stringify(r.types.map(t => t.type)));
+  assert(r.types.length === 1 && /^Position reached axis=<#> actual=<#> job=J-<hex>$/.test(r.types[0].type), "one 'Position reached' type, got " + JSON.stringify(r.types.map(t => t.type)));
   const reached = f.entries.filter(e => e.message.startsWith("Position reached")).length;
   const t = r.types[0];
   assert(t.count === reached, "its count is every 'Position reached' entry (" + reached + "), got " + t.count);
-  assert(t.pattern === "Position reached axis=[*:int] actual=[*:float] job=J-[*:int]", "a ready-made typed extraction pattern, got " + t.pattern);
+  assert(t.pattern === "Position reached axis=[*:int] actual=[*:float] job=J-[*]", "a ready-made typed extraction pattern, got " + t.pattern);
   const axes = Object.keys(t.placeholders[0].values || {}).sort();
   assert(axes.length >= 3 && axes.length <= 4 && axes.every(a => /^[1-4]$/.test(a)), "axis placeholder: few distinct values listed with counts, got " + JSON.stringify(t.placeholders[0]));
   assert(Object.values(t.placeholders[0].values).reduce((s, n) => s + n, 0) === reached, "the value counts add up to the type's count");
