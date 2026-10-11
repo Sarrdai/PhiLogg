@@ -2,6 +2,8 @@
 
 How PhiLogg parses a file: the `LogFormat` model, pattern vs. regex mode, the format dialog, JSON Lines, plain text, worker and native parsing, multi-pattern (`meta`) formats, and file merging. Moved out of `PROJECT.md` (2026-10-01) to keep the entry point short; `PROJECT.md` → "The log formats it parses" keeps the summary.
 
+The LLM assistant / MCP agents can create and change regex formats and filename rules (`create_format`, `set_filename_rule`; records marked `createdBy: "assistant"`): `docs/llm-assistant.md` → "Configuration tools".
+
 Every file is parsed under one `LogFormat`. Every format produces the same
 entry **shape** — `{ts, level, thread, location, method, message, fields}`
 — but not the same fixed set of populated/displayed columns any more

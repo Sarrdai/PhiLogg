@@ -1,0 +1,5 @@
+- **feat: the assistant and MCP agents can configure PhiLogg (2026-10-11, person-requested)**
+  - New tools `list_config`, `create_format` (regex format from example lines, with parse preview), `set_filename_rule`, `create_style` (themes + syntax schemes), `delete_config_item`, `watch_folder`, `configure_folder`, `open_folder_file`; `get_overview` lists watched folders.
+  - Created records carry `createdBy: "assistant"`; only those can be deleted by a tool. Settings changes are not undoable.
+  - Watching a new folder (desktop only) needs the person's approval in a dialog; a denied path is not asked again in the same run.
+  - **Tests**: GROUP llm-config-formats, llm-config-styles, llm-config-folders. Docs: docs/llm-assistant.md, README.

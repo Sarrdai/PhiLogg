@@ -521,7 +521,7 @@ deployments possible:
   answers are links. The chat is its own window (optionally always on top)
   or docked as a side panel; several chats are kept. A bar above the input
   shows how full the model's context window is (hover for the token
-  details). Needs a model with tool-calling support.
+  details). It can also set PhiLogg up: create a log format from example lines (with a preview) and filename rules, add themes and syntax-highlight schemes, and — only after you approve a dialog — watch a folder and configure it; settings changes are not part of the undo step, and it can delete only what it created itself. Needs a model with tool-calling support.
 - **MCP server: let Claude Code operate PhiLogg** (desktop app, off by
   default — Settings → Assistant → External agents (MCP)) — external MCP
   clients use the same tools as the assistant while you watch the filter
