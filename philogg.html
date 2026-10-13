@@ -26,7 +26,7 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 28 28'><rect width='28' height='28' rx='7' fill='%234fc7c3'/><path d='M7 8.5h14M7 12.5h10M7 16.5h7' stroke='%2308201f' stroke-width='2' stroke-linecap='round'/><path d='M15.5 15.5h6l-2.3 2.8v3.2l-1.4-.8v-2.4z' fill='%2308201f'/></svg>">
 <style>
   :root{
-    --icon-md:14px; --icon-sm:12px;
+    --icon-md:14px; --icon-sm:12px; --icon-btn-gap:4px;
     --bg-app:#10131a;
     --bg-panel:#151924;
     --bg-elevated:#1c2130;
@@ -547,8 +547,8 @@
      #btnSave (FEATURE_BACKLOG.md #56) moved into #sidebarHeader and now use
      the smaller .panel-toggle-btn shape shared with #sidebarToggle instead. */
   .toolbar-icon-btn{
-    display:flex; align-items:center; justify-content:center; position:relative;
-    width:28px; height:28px; flex:0 0 auto;
+    position:relative;
+    width:28px; height:28px;
     background:transparent; color:var(--text-secondary);
     border:0; border-radius:6px; padding:0;
     cursor:pointer; transition:background .12s, color .12s;
@@ -959,6 +959,18 @@
      are tinted by kind (an active row's accent still wins). */
   .icon{width:var(--icon-md); height:var(--icon-md); flex:0 0 auto; fill:none; stroke:currentColor; stroke-width:1.5; stroke-linecap:round; stroke-linejoin:round;}
   .icon.icon-xs{width:10px; height:10px;}
+  /* Shared icon-button mechanism (FEATURE_BACKLOG #135): every box that holds a
+     button icon centers it the same way — flex, both axes centered, no line box
+     (line-height:0 keeps a text baseline from nudging the glyph), the svg a block
+     so it never sits on a baseline. A button that holds an icon AND a label
+     separates them by --icon-btn-gap. New icon buttons join this selector list (or
+     use .icon-btn) instead of adding their own alignment rules; the "+"/"-"
+     steppers use the i-plus/i-minus symbols, never a text glyph. */
+  .icon-btn, .toolbar-icon-btn, .stepper-btn, .row-action-hit, .tb-hit{
+    display:flex; align-items:center; justify-content:center; flex:0 0 auto;
+  }
+  .icon-btn{gap:var(--icon-btn-gap);}
+  .icon-btn .icon, .toolbar-icon-btn .icon, .stepper-btn .icon, .row-action-hit .icon, .tb-hit .icon{display:block;}
   .tree-icon, .ctx-item, .ctx-gap-icon{--icon-md:var(--icon-sm);}
   .tree-row.filter-and:not(.active):not(.multi-selected) .tree-icon{color:var(--level-info);}
   .tree-row.filter-or:not(.active):not(.multi-selected) .tree-icon{color:var(--level-warn);}
@@ -1417,7 +1429,7 @@
      Filter-Toolbar's own row-actions (#viewBar) keep the circle shape
      above. */
   .row-action-btn.rect{border-radius:6px;}
-  .row-action-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
+  .row-action-hit{width:28px; height:28px;}
   /* Thin vertical divider rendered immediately before a row-action entry
      flagged `separator:true` (see buildRowActionsHtml) — visually groups
      "New" apart from the filter-creation actions preceding it in
@@ -1463,7 +1475,7 @@
      affects a plain .toolbar-icon-btn elsewhere (header nav, Settings,
      etc.) that was never given the .tb-hit/.tb-label structure. */
   .toolbar-icon-btn:has(.tb-hit){position:relative;}
-  .tb-hit{width:28px; height:28px; flex:0 0 auto; display:flex; align-items:center; justify-content:center;}
+  .tb-hit{width:28px; height:28px;}
   .tb-label{
     position:absolute; left:50%; bottom:calc(100% + 6px); transform:translateX(calc(-50% + var(--label-dx,0px))) translateY(4px);
     width:max-content; max-width:240px; opacity:0; margin-left:0; overflow:visible; white-space:normal; text-align:left; line-height:1.3;
@@ -2077,8 +2089,9 @@
   .minimap-burst:focus-visible{outline:2px solid var(--accent); outline-offset:1px; border-radius:3px;}
   .minimap-burst.sel .minimap-burst-flag{outline:2px solid var(--text-primary); outline-offset:0;}
   .minimap-burst-chip{
-    position:absolute; top:3px; right:10px; z-index:4; font:500 11px/1 var(--font-ui);
-    padding:3px 9px; border:1px solid var(--border); border-radius:999px; background:var(--bg-panel); color:var(--text-tertiary); cursor:pointer;
+    /* top:1px + 2px vertical padding keeps the 17px chip inside the meta row, 2px clear of the strip below (#132). */
+    position:absolute; top:1px; right:10px; z-index:4; font:500 11px/1 var(--font-ui);
+    padding:2px 9px; border:1px solid var(--border); border-radius:999px; background:var(--bg-panel); color:var(--text-tertiary); cursor:pointer;
   }
   .minimap-burst-chip:hover{border-color:var(--accent); color:var(--text-secondary);}
   .minimap-burst-chip[aria-pressed="true"]{border-color:transparent; color:var(--accent-strong); background:var(--accent-soft);}
@@ -4603,17 +4616,16 @@
     -webkit-appearance:none; margin:0;
   }
   .stepper .stepper-btn{
-    flex:0 0 auto; width:32px; height:30px; border:none; border-radius:0; padding:0;
-    display:flex; align-items:center; justify-content:center;
+    width:32px; height:30px; border:none; border-radius:0; padding:0;
     background:transparent; color:var(--text-secondary); cursor:pointer;
-    font-size:15px; line-height:1; transition:background .12s, color .12s;
+    transition:background .12s, color .12s;
   }
   .stepper .stepper-btn:hover{background:var(--bg-elevated-2); color:var(--text-primary);}
   .stepper .stepper-btn:disabled{opacity:.35; cursor:default; pointer-events:none;}
   .stepper.stepper-compact{height:28px;}
   .stepper.stepper-compact .stepper-value{min-width:38px; font-size:11px; font-family:var(--font-mono);}
   .stepper.stepper-compact input.stepper-value{width:38px;}
-  .stepper.stepper-compact .stepper-btn{width:26px; height:28px; font-size:13px;}
+  .stepper.stepper-compact .stepper-btn{width:26px; height:28px; --icon-md:12px;}
   /* Context match nav reuses the toolbar's own .toolbar-icon-btn buttons
      as its dec/inc pair (rather than .stepper-btn) so they still count as
      one of the app's icon buttons — see that class's own comment — and
@@ -6512,6 +6524,7 @@
     <symbol id="i-collapse-in" viewBox="0 0 16 16"><path d="M4 3l4 3 4-3M4 13l4-3 4 3"/></symbol><!-- new: single-row context run grip -->
     <symbol id="i-collapse-all" viewBox="0 0 16 16"><path d="M2.25 1.75h11.5M2.25 14.25h11.5M5 3.5l3 3 3-3M5 12.5l3-3 3 3"/></symbol>
     <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3.5v9M3.5 8h9"/></symbol>
+    <symbol id="i-minus" viewBox="0 0 16 16"><path d="M3.5 8h9"/></symbol>
 </svg>
 <script>(function(){
   // FOUC fix: applies the theme the person would see (theme mode + the
@@ -7129,9 +7142,9 @@
         <div id="inlineViewerToolbar" class="hidden">
           <div class="toolbar-group" data-toolbar-group="controls">
             <div class="stepper stepper-compact">
-              <button type="button" class="stepper-btn" id="imgZoomOutBtn" title="Zoom out">−</button>
+              <button type="button" class="stepper-btn" id="imgZoomOutBtn" title="Zoom out"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
               <span id="imgViewerZoomLevel" class="stepper-value">100%</span>
-              <button type="button" class="stepper-btn" id="imgZoomInBtn" title="Zoom in">+</button>
+              <button type="button" class="stepper-btn" id="imgZoomInBtn" title="Zoom in"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
             </div>
             <button type="button" id="imgZoomResetBtn" title="Reset zoom">Reset</button>
           </div>
@@ -7247,9 +7260,9 @@
               <div class="tg-row">
               <div id="plot2dToolsGroup" class="hidden toolbar-group">
                 <div class="stepper stepper-compact">
-                  <button type="button" class="stepper-btn" id="plotZoomOutBtn" title="Zoom out">−</button>
+                  <button type="button" class="stepper-btn" id="plotZoomOutBtn" title="Zoom out"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
                   <input type="text" class="stepper-value" id="plotZoomLevelInput" inputmode="numeric" title="Zoom level">
-                  <button type="button" class="stepper-btn" id="plotZoomInBtn" title="Zoom in">+</button>
+                  <button type="button" class="stepper-btn" id="plotZoomInBtn" title="Zoom in"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
                 </div>
                 <button type="button" id="plotZoomResetBtn" title="Reset zoom">Reset</button>
               </div>
@@ -7734,9 +7747,9 @@
         <label for="contextBeforeInput">Milliseconds before</label>
         <div class="link-field-row">
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="contextBeforeInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="contextBeforeInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="numeric" class="stepper-value" id="contextBeforeInput" value="0">
-            <button type="button" class="stepper-btn" id="contextBeforeInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="contextBeforeInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
         </div>
       </div>
@@ -7744,9 +7757,9 @@
         <label for="contextAfterInput">Milliseconds after</label>
         <div class="link-field-row">
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="contextAfterInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="contextAfterInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="numeric" class="stepper-value" id="contextAfterInput" value="0">
-            <button type="button" class="stepper-btn" id="contextAfterInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="contextAfterInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
         </div>
       </div>
@@ -7881,9 +7894,9 @@
         <label for="countContextBeforeInput">Entries before</label>
         <div class="link-field-row">
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="countContextBeforeInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="countContextBeforeInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="numeric" class="stepper-value" id="countContextBeforeInput" value="0">
-            <button type="button" class="stepper-btn" id="countContextBeforeInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="countContextBeforeInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
         </div>
       </div>
@@ -7891,9 +7904,9 @@
         <label for="countContextAfterInput">Entries after</label>
         <div class="link-field-row">
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="countContextAfterInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="countContextAfterInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="numeric" class="stepper-value" id="countContextAfterInput" value="0">
-            <button type="button" class="stepper-btn" id="countContextAfterInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="countContextAfterInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
         </div>
       </div>
@@ -8010,15 +8023,15 @@
         <label>Allowed range</label>
         <div class="link-field-row">
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="assertMinInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="assertMinInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="decimal" class="stepper-value" id="assertMinInput" placeholder="min (optional)">
-            <button type="button" class="stepper-btn" id="assertMinInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="assertMinInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
           <span>–</span>
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="assertMaxInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="assertMaxInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="decimal" class="stepper-value" id="assertMaxInput" placeholder="max (optional)">
-            <button type="button" class="stepper-btn" id="assertMaxInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="assertMaxInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
         </div>
       </div>
@@ -8026,15 +8039,15 @@
         <label>Target value ± tolerance</label>
         <div class="link-field-row">
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="assertTargetInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="assertTargetInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="decimal" class="stepper-value" id="assertTargetInput" placeholder="target">
-            <button type="button" class="stepper-btn" id="assertTargetInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="assertTargetInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
           <span>±</span>
           <div class="stepper">
-            <button type="button" class="stepper-btn" id="assertToleranceInputDec" title="Decrease">−</button>
+            <button type="button" class="stepper-btn" id="assertToleranceInputDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
             <input type="text" inputmode="decimal" class="stepper-value" id="assertToleranceInput" placeholder="tolerance">
-            <button type="button" class="stepper-btn" id="assertToleranceInputInc" title="Increase">+</button>
+            <button type="button" class="stepper-btn" id="assertToleranceInputInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
           </div>
         </div>
       </div>
@@ -8251,9 +8264,9 @@
               </div>
               <div class="settings-row-control font-scale-row">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease (Ctrl −)" data-sc-title="Decrease ({zoomOut})">−</button>
+                  <button type="button" class="stepper-btn" id="fontScaleDown" title="Decrease (Ctrl −)" data-sc-title="Decrease ({zoomOut})"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
                   <span id="fontScaleValue" class="stepper-value">100%</span>
-                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase (Ctrl +)" data-sc-title="Increase ({zoomIn})">+</button>
+                  <button type="button" class="stepper-btn" id="fontScaleUp" title="Increase (Ctrl +)" data-sc-title="Increase ({zoomIn})"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
                 </div>
                 <button type="button" class="settings-reset-btn" id="fontScaleReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
@@ -8274,9 +8287,9 @@
               </div>
               <div class="settings-row-control font-scale-row">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="logTextScaleDown" title="Decrease">−</button>
+                  <button type="button" class="stepper-btn" id="logTextScaleDown" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
                   <span id="logTextScaleValue" class="stepper-value">100%</span>
-                  <button type="button" class="stepper-btn" id="logTextScaleUp" title="Increase">+</button>
+                  <button type="button" class="stepper-btn" id="logTextScaleUp" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
                 </div>
                 <button type="button" class="settings-reset-btn" id="logTextScaleReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
@@ -8486,9 +8499,9 @@
               </div>
               <div class="settings-row-control">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="settingsContextExpandStepDec" title="Decrease">−</button>
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
                   <input type="text" inputmode="numeric" class="stepper-value" id="settingsContextExpandStep" value="10">
-                  <button type="button" class="stepper-btn" id="settingsContextExpandStepInc" title="Increase">+</button>
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
                 </div>
                 <button type="button" class="settings-reset-btn" id="settingsContextExpandStepReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
@@ -8500,9 +8513,9 @@
               </div>
               <div class="settings-row-control">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="settingsContextExpandStepMsDec" title="Decrease">−</button>
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepMsDec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
                   <input type="text" inputmode="numeric" class="stepper-value" id="settingsContextExpandStepMs" value="500">
-                  <button type="button" class="stepper-btn" id="settingsContextExpandStepMsInc" title="Increase">+</button>
+                  <button type="button" class="stepper-btn" id="settingsContextExpandStepMsInc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
                 </div>
                 <button type="button" class="settings-reset-btn" id="settingsContextExpandStepMsReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
@@ -8574,9 +8587,9 @@
               </div>
               <div class="settings-row-control temp-anchor-fade-row">
                 <div class="stepper">
-                  <button type="button" class="stepper-btn" id="tempAnchorFadeDown" title="Decrease">−</button>
+                  <button type="button" class="stepper-btn" id="tempAnchorFadeDown" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>
                   <span id="tempAnchorFadeValue" class="stepper-value">3s</span>
-                  <button type="button" class="stepper-btn" id="tempAnchorFadeUp" title="Increase">+</button>
+                  <button type="button" class="stepper-btn" id="tempAnchorFadeUp" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>
                 </div>
                 <button type="button" class="settings-reset-btn" id="tempAnchorFadeReset" title="Reset to default" aria-label="Reset to default"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.2 8a4.8 4.8 0 1 0 1.5-3.5M3 2.4v2.7h2.7"/></svg></button>
               </div>
@@ -11668,9 +11681,9 @@ function stepperInputHtml(id, opts) {
   const placeholder = opts.placeholder ? ' placeholder="' + escapeHtml(opts.placeholder) + '"' : "";
   const cls = opts.compact ? "stepper stepper-compact" : "stepper";
   return '<div class="' + cls + '">' +
-    '<button type="button" class="stepper-btn" id="' + id + 'Dec" title="Decrease">−</button>' +
+    '<button type="button" class="stepper-btn" id="' + id + 'Dec" title="Decrease"><svg class="icon" aria-hidden="true"><use href="#i-minus"/></svg></button>' +
     '<input type="text" inputmode="' + (opts.inputMode || "decimal") + '" class="stepper-value" id="' + id + '"' + placeholder + ' value="' + escapeHtml(String(value)) + '">' +
-    '<button type="button" class="stepper-btn" id="' + id + 'Inc" title="Increase">+</button>' +
+    '<button type="button" class="stepper-btn" id="' + id + 'Inc" title="Increase"><svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg></button>' +
     '</div>';
 }
 
