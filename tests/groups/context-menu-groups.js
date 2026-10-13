@@ -24,6 +24,7 @@ function cmgTokens(menu, w) {
     if (c.classList.contains("ctx-target-head")) continue; // "Menu for <node>" line above the groups (GROUP tree-labels-i4)
     out.push(c.classList.contains("ctx-sep") ? "sep"
       : c.classList.contains("ctx-head") ? "head:" + c.textContent
+      : c.classList.contains("ctx-name-item") ? "name:" + c.dataset.col // "Name this <Column> from message…" (GROUP value-substitution)
       : c.classList.contains("ctx-meta") ? "meta"
       : c.classList.contains("ctx-note") ? "note"
       : c.id || c.dataset.action || c.dataset.act || c.dataset.arrayMode || "?");
@@ -50,7 +51,7 @@ await withApp(async (w, d, T) => {
 
   open(f.entries[3]);
   let t = cmgTokens(menu, w);
-  assert(cmgJoin(t) === ["meta", "sep", "head:Filter", "ctxFilterForColumn", "ctxExtractMessage",
+  assert(cmgJoin(t) === ["meta", "sep", "head:Filter", "ctxFilterForColumn", "name:thread", "name:location", "name:method", "ctxExtractMessage",
     "sep", "head:Time filter", "ctxBefore", "ctxAfter",
     "sep", "head:Analyze", "ctxWhyRow", "ctxPairWith", "ctxTimeZero",
     "sep", "head:Mark", "ctxBookmark", "ctxNote", "ctxAddToSelection",
@@ -106,6 +107,7 @@ await withApp(async (w, d, T) => {
   t = cmgTokens(menu, w);
   assert(!t.includes("head:Mark") && cmgWellFormed(t) && t.filter(x => x === "sep").length === 4, "Mark hidden entirely: heading and one separator go, 4 separators left: " + cmgJoin(t));
   ["ctxFilterForColumn", "ctxExtractMessage"].forEach(id => { d.getElementById(id).style.display = "none"; });
+  menu.querySelectorAll(".ctx-name-item").forEach(n => { n.style.display = "none"; });
   w.syncCtxGroups(menu);
   t = cmgTokens(menu, w);
   assert(t[0] === "meta" && t[1] === "sep" && t[2] === "head:Time filter" && cmgWellFormed(t), "first group hidden: the meta separator now leads into Time filter: " + cmgJoin(t));
