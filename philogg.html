@@ -25823,7 +25823,7 @@ function relayoutLinkView() {
   linkSelectedPairIndex = null;
   linkScroll.scrollTop = 0;
   renderLinkView(node);
-  updateMinimapSelectionMarkers();
+  linkSelectionChanged();
 }
 
 let linkScrollTicking = false;
@@ -25838,6 +25838,14 @@ window.addEventListener("resize", () => { renderLinkVisibleBlocks(); updateLinkN
 // matches linkSelectedPairIndex (see that variable's own comment) — call
 // after any DOM rebuild of the rendered window, not just on selection change,
 // since scrolling can bring the selected pair's block into or out of the DOM.
+// Every change of linkSelectedPairIndex by the user ends here: the selected pair is
+// what the row-action buttons ("Message"/"Extract", see singleMessageActionEntry) and
+// the minimap marker act on, so both follow it (backlog #129).
+function linkSelectionChanged() {
+  applyLinkSelectionClasses();
+  updateMinimapSelectionMarkers();
+  updateRowActionButtons();
+}
 function applyLinkSelectionClasses() {
   linkBody.querySelectorAll(".pair-selected").forEach(el => el.classList.remove("pair-selected"));
   if (linkSelectedPairIndex == null) return;
@@ -25863,7 +25871,7 @@ function setLinkSelectionIndex(next) {
   if (top < linkScroll.scrollTop) linkScroll.scrollTop = top;
   else if (bottom > linkScroll.scrollTop + linkScroll.clientHeight) linkScroll.scrollTop = bottom - linkScroll.clientHeight;
   renderLinkVisibleBlocks();
-  updateMinimapSelectionMarkers();
+  linkSelectionChanged();
 }
 
 // Tree mode, ←/→: → expands a collapsed pair, otherwise moves to its first child; ← collapses an expanded
@@ -25914,8 +25922,7 @@ function buildPairBlock(entryData, index) {
   // events.
   block.addEventListener("click", () => {
     linkSelectedPairIndex = linkSelectedPairIndex === index ? null : index;
-    applyLinkSelectionClasses();
-    updateMinimapSelectionMarkers();
+    linkSelectionChanged();
   });
 
   const rowsWrap = document.createElement("div");
@@ -26080,7 +26087,7 @@ function rerenderLinkTree() {
   const node = state.nodes[linkNodeId];
   if (!node) return;
   renderLinkView(node);
-  updateMinimapSelectionMarkers();
+  linkSelectionChanged();
 }
 function toggleLinkTreeKey(key) {
   if (linkTreeCollapsed.has(key)) linkTreeCollapsed.delete(key); else linkTreeCollapsed.add(key);
@@ -26117,8 +26124,7 @@ linkBody.addEventListener("click", ev => {
     return;
   }
   linkSelectedPairIndex = +row.dataset.pairIndex;
-  applyLinkSelectionClasses();
-  updateMinimapSelectionMarkers();
+  linkSelectionChanged();
 });
 // Double-click: the End cell reveals the end entry in the Context view, anywhere else the start entry.
 linkBody.addEventListener("dblclick", ev => {

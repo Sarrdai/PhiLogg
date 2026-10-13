@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 139
+LAST_ID: 140
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -36,7 +36,6 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | Nr | Vorschlag | Begründung | Aufwand | Prio |
 |---|---|---|---|---|
 | 128 | Bug: Facets stay unchanged when an entry is selected in the Link filter | Selecting an entry in the Link filter does not update the Facets — they keep showing the previous state. Expected: Facets follow the Link filter selection like any other filter result. | klein–mittel | 1 |
-| 129 | Bug: Extract on a Link entry no longer works | Extract on a Link (synthetic pair) entry is broken. Expected: extraction works on the combined text of the linked pair. | mittel | 1 |
 | 130 | Bug: Plot fullscreen button | After toggling fullscreen the plot is first drawn offset to its axes (probably no redraw after resize); afterwards the button stays visually "pressed" and its tooltip stays visible. | klein | 1 |
 | 132 | Bug: Burst pill touches the timeline | The burst pill sits flush against the timeline; needs spacing. | klein | 1 |
 | 135 | Bug: "+" icons on buttons not centered and inconsistently positioned | Centralize the button-icon logic and make the "+" icons render uniformly (centered, same offset) everywhere. | klein | 1 |
@@ -47,6 +46,7 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | 131 | Value substitution rules | Example: a log has a column `server` filled with a random ID per hardware device, and a message from that device says something like `this is Server 'control'`. A per-log-format substitution rule should, once such a message appears, replace every value of that device's ID in the `server` column with the substituted name `control`, propagated through all views (e.g. Facets). Exception: the Raw display in Details keeps the original value. | mittel–groß | 2 |
 | 133 | Export of meta formats | Allow exporting meta formats, bundled together with the reference-value formats. | klein–mittel | 2 |
 | 134 | Full facet name on hover | Hovering a (truncated) facet shows its full name; other elements must not shift, but may be overlaid. | klein | 2 |
+| 140 | Code review: centralize shared logic in classes | A friendly review pass over philogg.html to find logic that is repeated per element (styling rules, small UI helpers, setup code) and fold it into shared CSS classes / helpers, the way #135 did for button icons. Output: a list of candidates with effort, then small follow-up entries — no big-bang refactor. | mittel | 2 |
 | 88 | Very large files (multi-GB) in the desktop build | Keep raw data and a line/time index on the Rust side and hand JS only the window it currently needs, instead of holding every entry in memory. Today the whole file lives in RAM — fine up to a few hundred MB, a hard limit beyond that; Prune (docs/persistence-and-sync.md) only mitigates it. | groß | 3 |
 | 137 | MCP: concept for how data to create a format can be provided | First attempt: the model wanted to analyse the file itself and started searching the disk for it. Needs a concept for how the data required to create a log format is handed to the model via MCP. | mittel | 3 |
 | 138 | Rework the homepage | No details yet. | mittel | 3 |
