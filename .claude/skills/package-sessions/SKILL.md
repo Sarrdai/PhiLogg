@@ -31,9 +31,11 @@ Entry points that lead here: `from-usability-test`, `from-backlog`,
   on the user at different times (a mockup decision in one, a bug fix
   that can go ahead in another). Each package keeps its own context small
   and the user can decide one package while another runs.
-- Packages that edit `philogg.html` on the same branch run one after
-  another (parallel edits to the one big file conflict); parallel
-  packages get their own branches.
+- Packages whose areas don't overlap may run in parallel, `philogg.html`
+  included, each on its own branch off the round's branch; the
+  orchestrator merges them into the round's branch one at a time as they
+  report `DONE` (`orchestrate/merge.md`). Overlapping packages run one
+  after another.
 
 **Session or subagent per package.** Within a round, a package that needs
 nothing from the user can run as a subagent of the orchestrator instead
@@ -50,9 +52,10 @@ of a session:
   is the orchestrator's: it runs the affected groups wider after each
   package and one `SHARDS=8` run at the end of the round (`finish`), and
   sends failures back to the package as a correction.
-- It shares the orchestrator's container and checkout: at most one
-  subagent package at a time, and none while a package session pushes to
-  the same branch — pull before starting the next one.
+- It shares the orchestrator's container: a subagent package that runs
+  next to another one gets `isolation: "worktree"` and commits on its
+  worktree branch, which the orchestrator merges like a package branch
+  (`orchestrate/merge.md`). Pull the round's branch before starting one.
 - Check its report like a session's (commit, test count, open points).
   Screenshots it took stay files; look only at the ones you need, each
   image read stays in your context.
@@ -88,7 +91,8 @@ The session tools may be deferred: load them with ToolSearch
 ## Out of scope
 
 ## Branch
-<branch>; end with the finish skill, no PR.
+<branch> (a parallel package: its own branch off the round's branch,
+ see orchestrate/merge.md); end with the finish skill, no PR.
 
 ## Report back
 Orchestrator session: <your session ID>.

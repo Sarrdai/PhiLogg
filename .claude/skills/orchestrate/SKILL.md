@@ -120,10 +120,11 @@ Spawning — see `delegation.md` for the brief template:
 - `subagent_type: "implementer"` (Sonnet; `model` per "Model choice"),
   `run_in_background: true` unless you
   have nothing else to do meanwhile.
-- **One implementer at a time on `philogg.html`** (one very large file —
-  parallel edits conflict). Parallel agents only for disjoint files
-  (e.g. `tools/log-sim/` vs. `desktop/src-tauri/`), each with
-  `isolation: "worktree"` if they could touch shared files.
+- **Never two agents in one checkout.** Steps whose areas don't overlap
+  may run in parallel, `philogg.html` included: each extra implementer
+  gets `isolation: "worktree"`, and the lead merges the branches one at a
+  time. When to parallelize, worktree setup, integration order and who
+  resolves conflicts (lead, merge agent, user): `merge.md`.
 - Split big plans into steps of at most ~30–45 minutes of implementer
   work and hand them out one at a time; verify each step before the next.
 - **Usage budget** before each step: if the five-hour window can't carry

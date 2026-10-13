@@ -22,7 +22,9 @@ work (full tests, real-app screenshots) and may send corrections to you.
 
 - Stay in scope: no drive-by refactors, renames or "improvements".
 - `philogg.html` is very large: locate with `Grep`, read only the ranges
-  you need.
+  you need. Insert new code at its topical place, not at the end of a
+  section — other agents may edit the file in parallel on their own
+  branches, and appending at the same spot makes their merge conflict.
 - Every change ships with regression tests per `tests/README.md`: a new
   group as its own file `tests/groups/<slug>.js` with its
   `group("<slug>");` marker (never appended to the main test file), or an
