@@ -521,6 +521,23 @@
       },
     },
 
+    devices: {
+      label: "Device IDs announcing a name",
+      weight: 3,
+      optIn: true, // named explicitly only, never part of "all" — keeps every existing seed's output byte-identical
+      hint: "Opt-in (not part of 'all'): four servers log on a thread named after a random device ID ('srv-3f9a2c71'); after a few lines three of them announce 'Hello, this is Server 'control'' (names control/storage/gateway), the fourth never does. Value substitution (an ID column replaced by the announced name, also for lines before the announcement). Substitution: thread ← Hello, this is Server '[*:word]'",
+      make(g) {
+        const devs = g.state.devices || (g.state.devices = ["control", "storage", "gateway", null].map(name => ({ id: "srv-" + g.hex(8), name, lines: 0, announceAt: g.int(3, 12) })));
+        const d = g.pick(devs);
+        d.lines++;
+        if (d.name && d.lines === d.announceAt) return { level: "INFO", thread: d.id, cls: "cluster", method: "Announce", msg: "Hello, this is Server '" + d.name + "'" };
+        const r = g.int(0, 2);
+        if (r === 0) return { level: "DEBUG", thread: d.id, cls: "cluster", method: "Heartbeat", msg: "Heartbeat ok load=" + g.float(0.05, 0.95).toFixed(2) };
+        if (r === 1) return { level: "INFO", thread: d.id, cls: "storage", method: "Report", msg: "Disk usage " + g.int(20, 97) + "%" };
+        return { level: "WARN", thread: d.id, cls: "cluster", method: "Sync", msg: "Replication lag " + g.int(50, 3000) + " ms" };
+      },
+    },
+
     gaps: {
       label: "Idle gaps",
       weight: 0,
