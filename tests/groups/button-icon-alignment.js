@@ -36,6 +36,9 @@ if (groupSelected()) {
     const addBadges = [...d.querySelectorAll(".add-badge-wrap")];
     assert(addBadges.length >= 1 && addBadges.every(x => x.querySelector(".add-badge svg path")), "add badges use the shared markup");
 
+    assert(/\.add-badge\{[^}]*right:-5px; bottom:-5px; width:12px; height:12px/.test(css), "one shared add-badge rule (12px disc, same offset)");
+    assert(/\.add-badge svg\{display:block; width:8px; height:8px/.test(css), "badge plus is an even 8px svg in the 12px disc");
+
     section("button-icon-alignment d. Bursts chip spacing");
     const chip = (css.match(/\.minimap-burst-chip\{[^}]*\}/) || [""])[0];
     assert(/top:1px/.test(chip) && /padding:2px 9px/.test(chip), "chip keeps clear of the strip below: " + chip);
