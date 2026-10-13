@@ -1,0 +1,4 @@
+- **fix: plot fullscreen redraws and releases its button (2026-10-13, backlog #130)**
+  - Opening or closing the plot fullscreen now redraws the plot at once, so axes and marks canvas match the new size instead of being drawn offset until the next resize.
+  - The toolbar's Fullscreen button no longer stays focused ("pressed") and its hover card is dismissed, on open and on close (`dismissHoverTooltips`).
+  - **Tests**: GROUP plot-fullscreen. Docs: docs/extraction-and-plotting.md.
