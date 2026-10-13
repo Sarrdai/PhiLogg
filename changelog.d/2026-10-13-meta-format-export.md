@@ -1,0 +1,4 @@
+- **feat: export and import meta log formats (2026-10-13, backlog #133)**
+  - Settings → Log Formats: a meta format now has an Export button. The file bundles the meta (name, encoding, filename patterns) with the full definitions of all its target formats (`targetFormats`), so it works on another machine.
+  - Importing resolves each target: an identical own or provided format is reused, otherwise a new one is created (a clashing name gets " (2)"); the format dialog then opens prefilled for the meta. Cancel removes the targets the import created again.
+  - **Tests**: GROUP meta-format-export (new), 293 and provided-formats updated. Docs: docs/log-formats.md, README.

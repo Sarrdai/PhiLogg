@@ -145,6 +145,27 @@ save time** in the Format Manager (`saveFormatEdit`) — `compileFormatPattern`/
 format saved before this rule existed, or compiled at runtime for a file
 already on disk, keeps parsing exactly as it always has.
 
+**Value substitution rules** (`FEATURE_BACKLOG.md` #131, engine, display and editing): a format may carry
+`substitutions: [{id, column, pattern, glob?}]` — `column` is a middle column key (thread, location,
+method, a custom key; never time/level/message), `pattern` a message pattern in the extraction placeholder
+syntax with **exactly one** placeholder that captures the name (`Hello, this is Server '[*:word]'`,
+compiled by `compileExtractPattern` — no second pattern language), `glob` an optional file-name glob
+("only for files matching", `fileNameGlobTest`; a meta-format stream matches its physical file name,
+`node.physicalName`). An entry whose message matches maps **its own value** in `column` (the ID) to the
+captured name for the whole file — retroactive, first name wins. The map is runtime only, per file node
+(`node._sub`, one `Map` per column), built incrementally by `updateFileSubstitutions` from
+`updateFileAggregate`, so every load batch and tail tick folds in (a new name drops that file's cached
+filter results, `invalidateNodeSubtreeCaches`); every entry of such a file carries `e.sub` (the file's map
+object). A merge shows each entry with its own source's map. `entryColumnValue` applies it (so rows, Facets,
+Details, Table/Plot columns, exports, "Filter for this ___" and link keys all show the name);
+`entryRawColumnValue` is the original, `entryAltColumnValue` the other representation (the tooltip of a
+cell / facet value). A text filter on the column matches the name **or** the original
+(`testEntryColumn`). The field lives in `LOG_FORMAT_EXPORT_FIELDS` (export/import, session `logFormat`
+record, provided formats) and `normalizeLogFormatExport` drops invalid rules (`normalizeSubstitutions`);
+`setFormatSubstitutions(formatId, rules)` replaces a format's list and rebuilds the loaded files. The
+toolbar toggle and the editing UI (context-menu dialog, format-dialog list) are in `docs/ui-and-views.md` → "Show original values". Simulator scenario: `devices`.
+GROUP value-substitution.
+
 A format also carries its own **ordered level list** (`LogFormat.levels`,
 `formatLevelDefs(formatId)`). It may pick from the six names that own a
 theme color (`ALL_LEVELS` = `FATAL/ERROR/WARN/INFO/DEBUG/TRACE`) *and* add
@@ -338,7 +359,8 @@ file's `fileNamePatterns` become rules `rule-provided-<slug>-<i>` with `order`
 formats. A **meta** format in a provided file is
 `logFormat: {name, mode: "meta", targetFormatNames: [...]}`, targets resolved by
 name against provided and own formats (unresolved → file skipped); that mode is
-accepted only on this route, a user import of a meta file is still rejected.
+accepted on this route with `targetFormatNames` only (a `targetFormats` bundle
+is a user-import file, see "Exporting and importing a meta format").
 The Format Manager tags them "Provided" (tooltip = source) and offers
 **Duplicate** (the format dialog prefilled as a new own format, name
 `"<name> (copy)"`, patterns offered like an import's) and Export instead of
@@ -349,6 +371,31 @@ equals a provided one reuses it. The three former demo seeds are
 `examples/formats/` files (`app-log`, `syslog-rfc5424`, `app-syslog-meta`);
 nothing is seeded into IndexedDB any more except `fmt-default`. The hosted app
 gets `formats/` from `scripts/build-site.js` (`docs/homepage.md`).
+
+**Exporting and importing a meta format** (FEATURE_BACKLOG.md #133). A meta
+row in Settings → Log Formats has the same **Export** button as an ordinary
+format (provided meta formats too). `serializeLogFormatExport` writes the
+usual `philogg-log-format` v1 file as a bundle: `logFormat: {name,
+mode: "meta", targetFormatNames, encoding?}`, the meta's own
+`fileNamePatterns`, and `targetFormats` — one full definition
+(`LOG_FORMAT_EXPORT_FIELDS`) per target, in target order; the targets' own
+filename rules are not exported. Target names are unique within the file (a
+repeated name becomes `"<name> (2)"`, ...), so `targetFormatNames` can name
+them; a meta with fewer than 2 resolvable targets exports nothing. No version
+bump: older readers rejected every `mode: "meta"` file anyway. Import goes
+through the same central path as any format file (`importLogFormatText`):
+`parseLogFormatExport` hands a meta file to `normalizeMetaFormatBundle` (≥2
+`targetFormats`, each validated by `normalizeLogFormatExport`; a bad bundle
+shows the usual error toast and creates nothing). `importMetaTargets` then
+resolves each target synchronously: an own or provided format with an
+identical definition (`findIdenticalLogFormat`, the compare
+`ensureSessionLogFormat` shares) is reused, otherwise a new own format is
+created right away (fresh id; a name clashing with a different format gets
+`" (2)"`, ...). The format dialog opens prefilled as a Meta format with those
+targets preselected and the meta's patterns offered like an ordinary import.
+**Cancel removes the targets the import created** (`fwz.importCreated`,
+`discardImportedTargets`; on Save only created targets the person took out of
+the list are removed) — no orphan formats. GROUP meta-format-export.
 
 **Multi-pattern parsing: the `"meta"` format mode** (FEATURE_BACKLOG.md #81,
 implemented this session). Some files interleave two or more independent

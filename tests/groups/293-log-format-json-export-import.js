@@ -19,10 +19,10 @@ await withApp(async (w, d, T) => {
                            { id: "rule-c", order: 2, createdAt: 0, glob: "shared-*.log", formatId: src.id });
   w.renderFormatList();
 
-  // Export: one button per ordinary format, none on the meta-format.
+  // Export: one button per format, meta-formats included (bundle: group meta-format-export).
   const rowFor = name => [...d.querySelectorAll("#formatList .filter-library-row")].find(r => r.querySelector(".filter-library-row-name").textContent.startsWith(name));
   const exportBtn = row => [...row.querySelectorAll("button")].find(b => b.textContent === "Export");
-  assert(!exportBtn(rowFor("App + Syslog (meta)")), "a meta-format has no Export button");
+  assert(!!exportBtn(rowFor("App + Syslog (meta)")), "a meta-format has an Export button too");
   fireClick(exportBtn(rowFor(src.name)), w);
   await waitFor(() => captured.length === 1 && captured[0].json !== null);
   const file = JSON.parse(captured[0].json);
@@ -37,7 +37,7 @@ await withApp(async (w, d, T) => {
   assert(w.parseLogFormatExport("[1,2]") === null && w.parseLogFormatExport("nope") === null, "arbitrary JSON / text is not a log-format file");
   assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 99, logFormat: {} })).error, "a newer version is rejected");
   assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 1, logFormat: { name: "x", mode: "regex", regex: "(" } })).error, "an invalid regex is rejected");
-  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 1, logFormat: { name: "x", mode: "meta" } })).error, "a meta-format is rejected");
+  assert(w.parseLogFormatExport(JSON.stringify({ format: "philogg-log-format", version: 1, logFormat: { name: "x", mode: "meta" } })).error, "a meta bundle without targetFormats is rejected");
 
   // Drop the exported file anywhere (as on another machine — none of its
   // globs mapped yet): routed to the format wizard, not loaded.

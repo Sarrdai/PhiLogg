@@ -60,7 +60,7 @@ const pfBtns = row => [...row.querySelectorAll("button")].map(b => b.textContent
     const tag = row.querySelector(".link-target-label");
     assert(tag && tag.textContent === "Provided" && tag.title.includes("app-log.logformat.json"), "a Provided tag whose tooltip names the source");
     assert(pfBtns(row).join("|") === "Duplicate|Export", "provided regex format: Duplicate and Export, no Edit/Delete/Reset, got " + pfBtns(row));
-    assert(pfBtns(pfRow(d, "App + Syslog")).join("|") === "Duplicate", "provided meta format: Duplicate only");
+    assert(pfBtns(pfRow(d, "App + Syslog")).join("|") === "Duplicate|Export", "provided meta format: Duplicate and Export (a bundle with its targets), got " + pfBtns(pfRow(d, "App + Syslog")));
     assert(!pfRow(d, "Default").querySelector(".link-target-label + .link-target-label"), "the builtin default is not tagged Provided");
     const before = T.state.logFormats.length;
     w.openFormatEditDialog("fmt-provided-app-log");

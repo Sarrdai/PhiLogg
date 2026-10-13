@@ -1,0 +1,3 @@
+- **feat: hovering a truncated facet value shows its full name (2026-10-13, person-requested, backlog #134)**
+  - In the Facets panel a cut-off value (ellipsis or shortened path) grows in place while its row is hovered, over the bar / count / % columns, on an opaque elevated background with a soft shadow. Layout does not shift; the grown name stops at the panel's right edge. Plain and Link rows, light and dark; desktop/tablet hover only.
+  - **Tests**: GROUP facet-hover-full-name. Docs: docs/ui-and-views.md.

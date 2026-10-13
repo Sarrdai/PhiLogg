@@ -148,3 +148,22 @@ await withApp(async (w, d, T) => {
   assert(x.text.split("\n").filter(l => l.startsWith("  <entry ")).length === 60, "xmldoc: every entry starts on its own line");
   assert(LOGSIM.formatExport("jsondoc") === null && LOGSIM.formatExport("xmldoc") === null, "document formats need no format import");
 });
+
+await withApp(async (w, d, T) => {
+  section("300f. Scenario 'devices': random thread IDs, three servers announce a name, the fourth never does");
+  assert(!LOGSIM.normalizeScenarios("all").includes("devices") && LOGSIM.normalizeScenarios("devices").join() === "devices", "devices: opt-in, never part of 'all'");
+  const gen = logsimEntries2("default", ["devices"], 300, 7);
+  const ids = [...new Set(gen.map(e => e.thread))];
+  assert(ids.length === 4 && ids.every(t => /^srv-[0-9a-f]{8}$/.test(t)), "devices: four threads named after a random device ID, got " + ids);
+  const hello = gen.filter(e => /^Hello, this is Server '\w+'$/.test(e.msg));
+  assert(hello.length === 3 && new Set(hello.map(e => e.thread)).size === 3 && new Set(hello.map(e => e.msg)).size === 3, "devices: three servers announce a distinct name, once");
+  assert(gen.slice(0, gen.indexOf(hello[0])).some(e => e.thread === hello[0].thread), "devices: the announcing server logged lines before its announcement");
+  assert(logsimEntries2("default", ["devices"], 300, 7).every((e, i) => e.thread === gen[i].thread && e.msg === gen[i].msg), "devices: deterministic per seed");
+  // The pattern the substitution rule uses captures exactly the announced name.
+  await waitForFormatConfig(T);
+  const [file] = LOGSIM.generateToStrings({ format: "default", scenarios: ["devices"], entries: 300, seed: 7 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  const spec = w.compileExtractPattern("Hello, this is Server '[*:word]'");
+  const caught = f.entries.map(e => w.wildcardMatch(spec.regex, spec.columns, e.message)).filter(Boolean).map(m => m[1]);
+  assert(caught.join() === hello.map(e => e.msg.match(/'(\w+)'/)[1]).join(), "devices: the extraction pattern captures the three announced names, got " + caught);
+});

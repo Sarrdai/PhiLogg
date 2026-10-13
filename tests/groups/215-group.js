@@ -10,8 +10,8 @@ await withApp(async (w, d, T) => {
   w.render();
 
   const toggles = [...d.querySelectorAll(".icon-toggle")];
-  assert(toggles.length === 16,
-    "exactly 16 .icon-toggle instances (7 log-display toggles x2 toolbars + toggle-pin + the Filtered toolbar's Collapse repeats), got " + toggles.length);
+  assert(toggles.length === 18,
+    "exactly 18 .icon-toggle instances (8 log-display toggles x2 toolbars incl. Show original values + toggle-pin + the Filtered toolbar's Collapse repeats), got " + toggles.length);
   toggles.forEach(t => assert(t.classList.contains("toolbar-icon-btn"), t.className + " still carries the base .toolbar-icon-btn class (28x28 footprint, flex-centering)"));
 
   // A plain (non-toggle) .toolbar-icon-btn in the same toolbar area must NOT get the class.
