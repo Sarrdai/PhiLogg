@@ -558,6 +558,7 @@
   .toolbar-icon-btn:disabled:hover{background:transparent; color:var(--text-secondary);}
   /* Active/on state of an icon button (persistent toggles such as Notes/Wrap/Columns, or a popup trigger whose popup is open): accent-soft fill with the icon in --accent-strong. The old teal bar under toggle icons is gone. */
   .toolbar-icon-btn.active, .toolbar-icon-btn.active:hover{background:var(--accent-soft); color:var(--accent-strong);}
+  .toolbar-icon-btn.toggle-substitutions.hidden{display:none !important;} /* shown only while the scope has substituted values */
   .toolbar-icon-btn.toggle-repeat:disabled, .toolbar-icon-btn.repeat-chevron:disabled{pointer-events:auto; cursor:default;} /* keep the tooltip that says why */
   .toolbar-badge{
     position:absolute; top:-5px; right:-5px; min-width:15px; height:15px; padding:0 3px;
@@ -6509,6 +6510,7 @@
     <symbol id="i-multiline" viewBox="0 0 16 16"><path d="M2.5 4h11M2.5 8h11M2.5 12h7"/></symbol>
     <symbol id="i-wrap" viewBox="0 0 16 16"><path d="M2.5 3.75h11"/><path d="M2.5 8h9a2.25 2.25 0 0 1 0 4.5H7.5"/><path d="M9.25 10.5 7.25 12.5l2 2"/><path d="M2.5 12.5h2.5"/></symbol>
     <symbol id="i-repeat" viewBox="0 0 16 16"><rect x="2.25" y="2.25" width="11.5" height="4" rx="1"/><path d="M4.5 9h7M6.25 11.75h3.5M7.5 14h1"/></symbol>
+    <symbol id="i-substitute" viewBox="0 0 16 16"><path d="M2.5 5.25h10"/><path d="M10 2.75l2.5 2.5L10 7.75"/><path d="M13.5 10.75h-10"/><path d="M6 8.25l-2.5 2.5 2.5 2.5"/></symbol>
     <symbol id="i-columns" viewBox="0 0 16 16"><rect x="1.75" y="2.75" width="12.5" height="10.5" rx="1.25"/><path d="M6 2.75v10.5M10 2.75v10.5"/></symbol>
     <symbol id="i-highlight-pen" viewBox="0 0 16 16"><path d="M9.5 2.5 13.5 6.5 7.25 12.75 3 13.5l.75-4.25Z"/><path d="M2.25 14.5h5"/></symbol>
     <symbol id="i-highlight-text" viewBox="0 0 16 16"><path d="M4 3.25h8M8 3.25v6M2.5 11.75h11M2.5 14.25h11"/></symbol>
@@ -6976,6 +6978,7 @@
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" data-log-only title="Multi-line messages"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" data-log-only title="Columns"></button>
+              <button type="button" class="toolbar-icon-btn icon-toggle toggle-substitutions hidden" data-log-only title="Show original values"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-textmatch" title="Show matches"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-highlightmatch" data-log-only title="Underline highlights"></button>
               <button type="button" class="toolbar-icon-btn icon-toggle toggle-filepaths" data-log-only title="Clickable file paths"></button>
@@ -7033,6 +7036,7 @@
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-multiline" title="Multi-line messages"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-wrap" title="Word wrap"></button>
                 <button type="button" class="toolbar-icon-btn icon-toggle toggle-columns" title="Columns"></button>
+                <button type="button" class="toolbar-icon-btn icon-toggle toggle-substitutions hidden" title="Show original values"></button>
                 <!-- Collapse repeats (FEATURE_BACKLOG #7): toggle + chevron opening #repeatMenu (rule choice). -->
                 <span class="repeat-split">
                   <button type="button" class="toolbar-icon-btn icon-toggle toggle-repeat" id="btnRepeatCollapse" title="Collapse repeats"></button>
@@ -9550,6 +9554,8 @@ const ICON_MULTILINE = icon("multiline");
 // wraps back". Distinct from ICON_MULTILINE's plain stacked lines.
 const ICON_WRAP = icon("wrap");
 const ICON_COLUMNS = icon("columns");
+// "Show original values" toggle (.toggle-substitutions, backlog #131): two opposing arrows, name <-> original.
+const ICON_SUBSTITUTE = icon("substitute");
 // Collapse-repeats toggle (.toggle-repeat, FEATURE_BACKLOG #7): one row over a shortened stack; the caret opens its rule menu.
 const ICON_REPEAT = icon("repeat");
 // Highlighter-pen glyph for #btnTextMatchHighlight — a pen tip drawing an
@@ -11350,6 +11356,21 @@ function updateHighlightMatchTextButton() {
   btnHighlightMatchText.forEach(b => b.classList.toggle("active", highlightMatchTextEnabled));
 }
 
+// "Show original values" (backlog #131): global, persisted. The button is visible only while the
+// active scope has a substituted value; pressed = every view shows the original IDs.
+function initShowOriginalValuesSetting() {
+  try { showOriginalValues = localStorage.getItem(SHOW_ORIGINAL_VALUES_KEY) === "1"; } catch { showOriginalValues = false; }
+  updateSubstitutionToggle();
+}
+function updateSubstitutionToggle() {
+  const rootId = state.activeId ? getRootFileId(state.activeId) : null;
+  const visible = !!rootId && scopeHasSubstitutions(rootId);
+  btnSubstitutions.forEach(b => {
+    b.classList.toggle("hidden", !visible);
+    b.classList.toggle("active", showOriginalValues);
+    b.setAttribute("aria-pressed", showOriginalValues ? "true" : "false");
+  });
+}
 // Twin of the two functions above for the clickable-file-paths toggle.
 function initFilePathLinksSetting() {
   const stored = localStorage.getItem(FILE_PATH_LINKS_KEY);
@@ -12202,6 +12223,15 @@ function activeTextFilterColumns() {
 // textColumnValue with the same (e, key) signature, so every call site
 // keeps working unchanged.
 function entryColumnValue(e, key) {
+  const raw = entryRawColumnValue(e, key);
+  if (e.sub !== undefined && !showOriginalValues) {
+    const m = e.sub.get(key);
+    if (m !== undefined) { const name = m.get(raw); if (name !== undefined) return name; }
+  }
+  return raw;
+}
+// The value exactly as the log line carried it (the ID a substitution rule maps from).
+function entryRawColumnValue(e, key) {
   switch (key) {
     case "time": return e.tsRaw || "";
     case "level": return e.level || "";
@@ -12211,6 +12241,168 @@ function entryColumnValue(e, key) {
     case "message": return e.message || "";
     default: return (e.fields && e.fields[key]) || "";
   }
+}
+
+/* ===================== Value substitution rules (backlog #131) =====================
+   A log format may carry `substitutions: [{id, column, pattern, glob?}]`. A rule names a
+   column (thread/location/method/custom) and a message pattern in the extraction placeholder
+   syntax with exactly ONE placeholder capturing the name: an entry whose message matches
+   gives ITS OWN value in that column (the ID) the captured name, for the whole file
+   (retroactive, first name wins). The map is runtime only: per file node
+   `node._sub = { maps: Map(column -> Map(id -> name)), ver, size, ... }`, built incrementally
+   by updateFileSubstitutions (called from updateFileAggregate, so every load batch and tail
+   tick folds in). Every entry of such a file carries `e.sub = maps` (the same Map object, so a
+   new mapping is visible to all its entries at once); entryColumnValue is the one reader that
+   applies it. A filter on the column matches the name OR the original (testEntryColumn). */
+const SHOW_ORIGINAL_VALUES_KEY = "philogg-show-original-values";
+let showOriginalValues = false;
+let substitutionVersion = 0; // bumped for every (re)built or changed map: part of the Facets cache key
+const SUBSTITUTION_COLUMN_EXCLUDED = new Set(["time", "level", "message", "delta", "source"]);
+
+// The compiled matcher of a rule's pattern, or null when it is not exactly one placeholder.
+const substitutionSpecCache = new Map();
+function substitutionSpec(pattern) {
+  if (typeof pattern !== "string") return null;
+  let spec = substitutionSpecCache.get(pattern);
+  if (spec === undefined) {
+    spec = compileExtractPattern(pattern);
+    if (spec && spec.columns.length !== 1) spec = null;
+    substitutionSpecCache.set(pattern, spec);
+  }
+  return spec;
+}
+// A clean copy of a persisted rule list (drops invalid rules); [] when nothing is left.
+function normalizeSubstitutions(list) {
+  const out = [];
+  if (!Array.isArray(list)) return out;
+  list.forEach((r, i) => {
+    if (!r || typeof r !== "object" || typeof r.column !== "string" || !r.column || SUBSTITUTION_COLUMN_EXCLUDED.has(r.column)) return;
+    if (!substitutionSpec(r.pattern)) return;
+    const rule = { id: typeof r.id === "string" && r.id ? r.id : "sub" + (i + 1), column: r.column, pattern: r.pattern };
+    if (typeof r.glob === "string" && r.glob.trim()) rule.glob = r.glob.trim();
+    out.push(rule);
+  });
+  return out;
+}
+
+// The rules of a file node's format that apply to its file name (a meta-format stream
+// uses the physical file name, node.physicalName).
+function fileSubstitutionRules(node) {
+  const fmt = node.formatId ? findLogFormat(node.formatId) : null;
+  const subs = fmt && fmt.substitutions;
+  if (!subs || !subs.length) return null;
+  const name = node.physicalName || node.name || "";
+  const rules = subs.filter(r => !r.glob || fileNameGlobTest(r.glob, name));
+  return rules.length ? { src: subs, name, rules } : null;
+}
+
+// Catches a file's map up with its entries (incremental, like updateFileAggregate which calls
+// it): builds from scratch when the rule set / file name / entries array changed, otherwise
+// only folds in the entries added since. No rules -> clears a leftover map.
+function updateFileSubstitutions(node) {
+  if (node.type !== "file" || node.merged) return;
+  const entries = node.entries;
+  const active = fileSubstitutionRules(node);
+  let s = node._sub;
+  if (!active) { if (s) clearFileSubstitutions(node); return; }
+  if (!s || s.src !== active.src || s.name !== active.name || s.entries !== entries || s.count > entries.length) {
+    if (s) clearFileSubstitutions(node);
+    s = node._sub = { src: active.src, name: active.name, entries, count: 0, maps: new Map(), ver: ++substitutionVersion, size: 0 };
+  }
+  if (s.count === entries.length) return;
+  const rules = active.rules.map(r => ({ column: r.column, regex: substitutionSpec(r.pattern).regex }));
+  let added = 0;
+  // The last entry already seen can have grown (tail continuation lines): looked at again.
+  for (let i = s.count ? s.count - 1 : 0; i < entries.length; i++) {
+    const e = entries[i];
+    e.sub = s.maps;
+    for (const r of rules) {
+      const m = r.regex.exec(e.message || "");
+      if (!m) continue;
+      const name = (m[1] || "").trim();
+      if (!name) continue;
+      const id = entryRawColumnValue(e, r.column);
+      if (!id || id === name) continue;
+      let map = s.maps.get(r.column);
+      if (!map) { map = new Map(); s.maps.set(r.column, map); }
+      if (!map.has(id)) { map.set(id, name); added++; }
+    }
+  }
+  const hadEntries = s.count > 0;
+  s.count = entries.length;
+  if (added) {
+    s.size += added;
+    s.ver = ++substitutionVersion;
+    // A new name changes what a filter on it matches for EARLIER entries too: the node's
+    // cached results (and the tail-extension base) are stale.
+    if (hadEntries && state.nodes[node.id] === node) invalidateNodeSubtreeCaches(node.id);
+  }
+}
+function clearFileSubstitutions(node) {
+  const s = node._sub;
+  node._sub = null;
+  if (!s) return;
+  for (const e of s.entries) if (e.sub === s.maps) e.sub = undefined;
+  substitutionVersion++;
+}
+// A format's rule list changed: rebuild every file of that format and drop the caches
+// that depend on the names.
+function refreshSubstitutionsForFormat(formatId) {
+  for (const n of Object.values(state.nodes)) {
+    if (n.type !== "file" || n.merged || n.formatId !== formatId) continue;
+    updateFileSubstitutions(n);
+  }
+  invalidateAllCaches();
+}
+// Replaces a format's rules (an own, non-provided format is persisted) and refreshes the views.
+async function setFormatSubstitutions(formatId, list) {
+  const fmt = state.logFormats.find(f => f.id === formatId);
+  if (!fmt) return false;
+  const rules = normalizeSubstitutions(list);
+  if (rules.length) fmt.substitutions = rules; else delete fmt.substitutions;
+  if (!fmt.provided) await saveLogFormat(fmt);
+  refreshSubstitutionsForFormat(formatId);
+  render();
+  return true;
+}
+
+// The files whose maps an active scope shows: the root file and, for a merge, its source files.
+function scopeSubstitutionNodes(rootId) {
+  const root = state.nodes[rootId];
+  if (!root) return [];
+  const out = [root];
+  if (root.sources) for (const src of root.sources) out.push(state.nodes[src.id] || src);
+  return out;
+}
+function scopeSubstitutionKey(rootId) {
+  return scopeSubstitutionNodes(rootId).map(n => (n._sub ? n._sub.ver : 0)).join(".");
+}
+function scopeHasSubstitutions(rootId) {
+  return scopeSubstitutionNodes(rootId).some(n => n._sub && n._sub.size > 0);
+}
+
+// The other representation of a substituted cell (the original while the name is shown, the
+// name while originals are shown), "" when the entry's value in `key` has no name.
+function entryAltColumnValue(e, key) {
+  if (e.sub === undefined) return "";
+  const m = e.sub.get(key);
+  if (m === undefined) return "";
+  const name = m.get(entryRawColumnValue(e, key));
+  if (name === undefined) return "";
+  return showOriginalValues ? name : entryRawColumnValue(e, key);
+}
+// Runs `test(text)` against a column's value; a substituted column matches by its name OR
+// its original, so a filter written against the ID keeps working.
+function testEntryColumn(e, key, test) {
+  if (e.sub !== undefined) {
+    const m = e.sub.get(key);
+    if (m !== undefined) {
+      const raw = entryRawColumnValue(e, key);
+      const name = m.get(raw);
+      if (name !== undefined) return test(name) || test(raw);
+    }
+  }
+  return test(entryRawColumnValue(e, key));
 }
 
 // The CSS class a column's cell/measurement element uses. Every built-in
@@ -12229,9 +12421,10 @@ function columnCssClass(key) { return "col-" + (BUILTIN_FIELD_KEYS.has(key) ? ke
 // characters keep their order. The wrapper takes `html` as is, so marked cells
 // (filter/find/highlight marks) truncate the same way and keep their marks.
 // Text content is the same either way (copy, selection, the title).
-function middleCellHtml(key, val, html) {
+function middleCellHtml(key, val, html, alt) {
   const inner = key === "location" ? '<span class="loc-text">' + html + '</span>' : html;
-  return '<span class="' + columnCssClass(key) + '" data-col="' + key + '" data-sel-col="' + key + '" title="' + escapeHtml(val) + '">' + inner + '</span>';
+  // alt: the other representation of a substituted value (backlog #131) is the tooltip.
+  return '<span class="' + columnCssClass(key) + '" data-col="' + key + '" data-sel-col="' + key + '" title="' + escapeHtml(alt || val) + '">' + inner + '</span>';
 }
 
 // Severity ordering used when the log table is sorted by the Level column,
@@ -12272,8 +12465,8 @@ function entryComparator(column, dir, deltas) {
       cmp = da - db;
     } else if (column === "time") cmp = a.ts - b.ts;
     else if (column === "level") cmp = levelSortRank(levelBucket(a.level, a.formatId), a.formatId) - levelSortRank(levelBucket(b.level, b.formatId), b.formatId);
-    else if (column === "thread") cmp = String(a.thread).localeCompare(String(b.thread));
-    else if (column === "location") cmp = String(a.location).localeCompare(String(b.location));
+    else if (column === "thread") cmp = String(entryColumnValue(a, "thread")).localeCompare(String(entryColumnValue(b, "thread")));
+    else if (column === "location") cmp = String(entryColumnValue(a, "location")).localeCompare(String(entryColumnValue(b, "location")));
     return cmp * sign;
   };
 }
@@ -15018,6 +15211,7 @@ async function loadMetaFormatText(name, text, metaFmt) {
     for (const s of streams) {
       const placeholder = createQueuedFileNode(s.name);
       placeholder.mergeOwnerId = merged.id;
+      placeholder.physicalName = name; // value-substitution globs match the physical file's name
       placeholder.mergeSourceHidden = true; // an implementation artifact of one physical file, never a standalone top-level row
       merged.loadSources.push({ id: placeholder.id, weight: s.text.length });
       render(); // the placeholder appears nested under Sources before this stream is even read
@@ -17094,6 +17288,7 @@ function buildPairEntry(refEntry, targetEntry, orderIndexMap) {
     // custom column / the Source idset also works on pairs (a chained link's reference is a
     // pair that already carries its own start's values).
     fields: refEntry.fields,
+    sub: refEntry.sub, // value-substitution maps (backlog #131), so pairs show the same names
     sourceId: refEntry.sourceId,
     message: first.message + PAIR_SEPARATOR + second.message,
     raw: first.raw + PAIR_SEPARATOR + second.raw,
@@ -17526,12 +17721,12 @@ function includesWholeWord(hay, needle) {
 
 function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wildcardColumns, regexObj, wholeWord) {
   if (regexObj) {
-    if (columns && columns.length) return columns.some(key => regexObj.test(entryColumnValue(e, key)));
+    if (columns && columns.length) return columns.some(key => testEntryColumn(e, key, t => regexObj.test(t)));
     return regexObj.test(e.raw);
   }
   if (wildcardRegex) {
     if (columns && columns.length) {
-      return columns.some(key => !!wildcardMatch(wildcardRegex, wildcardColumns, entryColumnValue(e, key)));
+      return columns.some(key => testEntryColumn(e, key, t => !!wildcardMatch(wildcardRegex, wildcardColumns, t)));
     }
     // Person-reported bug: a "text" filter carrying [*:...]/[*] tokens
     // (see "A text filter's value can itself contain wildcard tokens"
@@ -17552,11 +17747,10 @@ function textFilterMatches(e, value, caseSensitive, columns, wildcardRegex, wild
   }
   const q = caseSensitive ? value : value.toLowerCase();
   if (columns && columns.length) {
-    return columns.some(key => {
-      const text = entryColumnValue(e, key);
+    return columns.some(key => testEntryColumn(e, key, text => {
       const hay = caseSensitive ? text : text.toLowerCase();
       return wholeWord ? includesWholeWord(hay, q) : hay.includes(q);
-    });
+    }));
   }
   const text = caseSensitive ? e.raw : e.raw.toLowerCase();
   return wholeWord ? includesWholeWord(text, q) : text.includes(q);
@@ -18829,6 +19023,7 @@ function updateFileAggregate(node) {
     if (a.sorted && !(i === 0 ? ts === ts : ts >= entries[i - 1].ts)) a.sorted = false;
   }
   a.count = entries.length;
+  updateFileSubstitutions(node); // value substitution rules (backlog #131): same incremental catch-up
   return a;
 }
 function fileAggregate(node) {
@@ -20161,7 +20356,7 @@ try { facetsCollapsed = new Set(JSON.parse(localStorage.getItem(FACETS_COLLAPSED
 const facetsShown = new Map(); // column key -> values shown beyond FACET_TOP_N ("+k more"), per session
 
 function facetColumnsFor(nodeId) {
-  const cols = activeColumnDefs().map(d => ({ key: d.key, label: d.label, value: e => entryColumnValue(e, d.key) }));
+  const cols = activeColumnDefs().map(d => ({ key: d.key, label: d.label, value: e => entryColumnValue(e, d.key), alt: e => entryAltColumnValue(e, d.key) }));
   if (!allRootsPlainText()) {
     const bucketOf = makeLevelBucketer();
     cols.push({ key: "level", label: "Level", value: e => bucketOf(e.level, e.formatId) });
@@ -20173,7 +20368,11 @@ function facetColumnsFor(nodeId) {
   }
   return cols;
 }
-function facetColumnsKey(nodeId) { return (isLinkNode(state.nodes[nodeId]) ? "link:" : "") + facetColumnsFor(nodeId).map(c => c.key).join(","); }
+// The substitution state is part of the key: a new name or the "show original values" toggle regroups every value.
+function facetColumnsKey(nodeId) {
+  return (isLinkNode(state.nodes[nodeId]) ? "link:" : "") + facetColumnsFor(nodeId).map(c => c.key).join(",") +
+    "|" + scopeSubstitutionKey(getRootFileId(nodeId)) + (showOriginalValues ? "o" : "");
+}
 
 /* On a LINK node the facets break down the PAIRS by the columns of their START entry (the reference
    side of the link): per value the pair count, how many starts stayed without an end, and the Δt
@@ -20229,17 +20428,18 @@ function createFacetAcc(nodeId) {
         const v = cols[i].value(e);
         const m = maps[i];
         let a = m.get(v);
-        if (!a) { a = { count: 0, rank: Infinity, level: "", formatId: null }; m.set(v, a); }
+        if (!a) { a = { count: 0, rank: Infinity, level: "", formatId: null, alt: "" }; m.set(v, a); }
         a.count++;
+        if (e.sub !== undefined && !a.alt && cols[i].alt) a.alt = cols[i].alt(e); // the other representation (tooltip)
         if (r < a.rank) { a.rank = r; a.level = b; a.formatId = e.formatId; }
       }
     },
     finish() {
       return {
-        // values: [value, count, lvl-* class of its most severe level]
+        // values: [value, count, lvl-* class of its most severe level, other representation of a substituted value]
         columns: cols.map((col, i) => ({
           key: col.key, label: col.label,
-          values: [...maps[i]].map(([v, a]) => [v, a.count, a.level ? levelClass(a.level, a.formatId) : ""])
+          values: [...maps[i]].map(([v, a]) => [v, a.count, a.level ? levelClass(a.level, a.formatId) : "", a.alt])
             .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1)),
         })),
       };
@@ -20837,10 +21037,10 @@ function renderFacetPanel() {
       const max = col.values.length ? col.values[0][1] : 1;
       let rank = 1;
       for (let i = 0; i < shown; i++) {
-        const [value, count, lvlCls] = col.values[i];
+        const [value, count, lvlCls, alt] = col.values[i];
         if (i && count !== col.values[i - 1][1]) rank = i + 1;
         const pct = count / total * 100;
-        html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
+        html += '<div class="facet-value" data-idx="' + i + '" title="' + escapeHtml(alt || value || "(empty)") + " — click: filter · Alt+click / right-click: exclude\">" +
           '<span class="facet-rank">' + rank + "</span>" +
           '<span class="facet-value-name' + (value ? "" : " facet-empty") + (lvlCls ? " " + lvlCls : "") + (/[\\/]/.test(value) ? " facet-path" : "") + '">' + escapeHtml(value || "(empty)") + "</span>" +
           '<span class="facet-bar"><i style="width:' + Math.max(1, Math.round(count / max * 100)) + '%"></i></span>' +
@@ -21355,6 +21555,7 @@ const linkBody = el("#linkBody");
 const tableHeaderEl = el("#tableHeader");
 const highlightHeaderEl = el("#highlightHeader");
 const btnColumns = elAll(".toggle-columns");
+const btnSubstitutions = elAll(".toggle-substitutions");
 const btnRepeat = elAll(".toggle-repeat");
 const btnRepeatMenu = elAll(".repeat-chevron");
 const repeatMenu = el("#repeatMenu");
@@ -22313,6 +22514,7 @@ function renderInner() {
   }
   renderMainView();
   updateWrapMsgButton(); // the Wrap button follows the active root's kind (text root: the editor wrap)
+  updateSubstitutionToggle();
   findRefresh(); // FEATURE_BACKLOG.md #3: re-scan the find bar's hits if the current view's list changed
   renderStatus();
   updateDetailPanel();
@@ -30765,7 +30967,7 @@ function appendLogRow(frag, i, rc) {
   for (const col of rc.columnDefs) {
     const val = entryColumnValue(e, col.key);
     const html = markFieldHtml(rc.mm, val, col.key);
-    middleHtml += middleCellHtml(col.key, val, html);
+    middleHtml += middleCellHtml(col.key, val, html, entryAltColumnValue(e, col.key));
   }
   const syntaxRanges = plainTextSyntaxRanges(e, rc.syntax);
   const msgHtmlBase = markFieldHtml(rc.mm, e.message, "message",
@@ -32787,7 +32989,7 @@ function renderHighlightVisibleRows() {
     for (const col of columnDefs) {
       const val = entryColumnValue(e, col.key);
       const html = markFieldHtml(mm, val, col.key);
-      middleHtml += middleCellHtml(col.key, val, html);
+      middleHtml += middleCellHtml(col.key, val, html, entryAltColumnValue(e, col.key));
     }
     row.innerHTML =
       markerHtml +
@@ -36569,6 +36771,9 @@ function updateDetailPanel() {
   // button (see getHighlightMatchNodes).
   const mm = buildMatchMarkContext(textMatchHighlightInDetail);
   const markField = (text, columnKey) => markFieldHtml(mm, text, columnKey);
+  // A substituted value (backlog #131) shows as "name (original)", or the reverse with the toggle pressed.
+  const detailField = key => { const v = entryColumnValue(entry, key), alt = entryAltColumnValue(entry, key); return alt ? v + " (" + alt + ")" : v; };
+  const detailThread = detailField("thread"), detailLocation = detailField("location"), detailMethod = detailField("method");
 
   if (isDetailCollapsed() && !isDetailPeeking()) {
     // Collapsed and not peeking: no room for the full field set, so the
@@ -36589,9 +36794,9 @@ function updateDetailPanel() {
       levelBadgeHtml(entry) +
       '<span class="detail-time">' + markField(entryTimeText(entry), "time") + detailZeroSuffixHtml(entry) + '</span>' +
       // Empty fields (thread/location/method) print neither a span nor a separator.
-      (entry.thread ? '<span class="detail-sep">·</span><span class="detail-thread">' + markField(entry.thread, "thread") + '</span>' : "") +
-      (entry.location ? '<span class="detail-sep">·</span><span class="detail-loc" title="' + escapeHtml(entry.location) + '"><bdi dir="ltr">' + markField(entry.location, "location") + '</bdi></span>' : "") +
-      (entry.method ? '<span class="detail-sep">·</span><span class="detail-method">' + markField(entry.method, "method") + '</span>' : "");
+      (detailThread ? '<span class="detail-sep">·</span><span class="detail-thread">' + markField(detailThread, "thread") + '</span>' : "") +
+      (detailLocation ? '<span class="detail-sep">·</span><span class="detail-loc" title="' + escapeHtml(detailLocation) + '"><bdi dir="ltr">' + markField(detailLocation, "location") + '</bdi></span>' : "") +
+      (detailMethod ? '<span class="detail-sep">·</span><span class="detail-method">' + markField(detailMethod, "method") + '</span>' : "");
   }
   // Plain textContent (message can never be interpreted as markup) unless
   // there's actually something to mark or format, in which case both
@@ -37154,6 +37359,13 @@ btnFilePathLinks.forEach(b => b.addEventListener("click", () => {
   updateFilePathLinksButton();
   renderVisibleRows();
   renderHighlightVisibleRows();
+}));
+
+// "Show original values" (backlog #131): see initShowOriginalValuesSetting.
+btnSubstitutions.forEach(b => b.addEventListener("click", () => {
+  showOriginalValues = !showOriginalValues;
+  try { localStorage.setItem(SHOW_ORIGINAL_VALUES_KEY, showOriginalValues ? "1" : "0"); } catch { /* storage unavailable: session only */ }
+  render(); // rows, Facets, Details and the Table/Plot columns all read the value through entryColumnValue
 }));
 
 /* ===================== Log view column visibility / width (FEATURE_BACKLOG.md
@@ -41133,6 +41345,9 @@ function showAlertNode(id) {
 }
 
 function onTailChange(changedRootIds, appendedFrom) {
+  // Fold the new entries into the value-substitution maps first: a new name drops the file's
+  // cached results, which must happen before the scoped invalidation below plans its extension.
+  changedRootIds.forEach(id => { const n = state.nodes[id]; if (n) updateFileSubstitutions(n); });
   const alertBase = alertBaselines(changedRootIds, appendedFrom);
   invalidateCachesForRoots(changedRootIds, appendedFrom);
   // Grown or rotated: the File the node was loaded from no longer matches
@@ -45746,6 +45961,7 @@ const TOOLBAR_HINTS = {
   "toggle-multiline": { desc: "Show every line of multi-line messages instead of only the first." },
   "toggle-wrap": { desc: "Wrap long messages onto several lines instead of scrolling sideways." },
   "toggle-columns": { desc: "Choose which columns are shown." },
+  "toggle-substitutions": { desc: "Show the original values (IDs) instead of the names that substitution rules gave them." },
   btnRepeatCollapse: { desc: "Fold consecutive repeated rows into one row with a ×N badge." },
   btnRepeatMenu: { desc: "Choose what counts as a repeat: identical rows or the same pattern." },
   "toggle-textmatch": { desc: "Mark the text matched by the active filter inside the rows." },
@@ -51586,7 +51802,7 @@ function openFormatDuplicateDialog(id) {
 const LOG_FORMAT_FILE_FORMAT = "philogg-log-format";
 const LOG_FORMAT_FILE_VERSION = 1;
 const FORMAT_ENCODINGS = ["utf-8", "windows-1252", "iso-8859-15", "windows-1250", "windows-1251"];
-const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "timeZone", "encoding", "tsKey", "levelKey", "messageKey", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup"];
+const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat", "timeZone", "encoding", "tsKey", "levelKey", "messageKey", "levels", "levelValueType", "columnDefs", "messageVisible", "sampleSetup", "substitutions"];
 
 function serializeLogFormatExport(formatId) {
   const fmt = state.logFormats.find(f => f.id === formatId);
@@ -51737,6 +51953,10 @@ function normalizeLogFormatExport(src, rawFileNamePatterns) {
   else logFormat.columnDefs = logFormat.columnDefs.filter(c => c && typeof c.key === "string");
   if (logFormat.messageVisible !== undefined) logFormat.messageVisible = !!logFormat.messageVisible;
   if (!(logFormat.sampleSetup && Array.isArray(logFormat.sampleSetup.lines))) delete logFormat.sampleSetup;
+  if (logFormat.substitutions !== undefined) { // value substitution rules (backlog #131): invalid rules are dropped
+    const subs = normalizeSubstitutions(logFormat.substitutions);
+    if (subs.length) logFormat.substitutions = subs; else delete logFormat.substitutions;
+  }
   const fileNamePatterns = [...new Set((Array.isArray(rawFileNamePatterns) ? rawFileNamePatterns : [])
     .filter(g => typeof g === "string" && g.trim()).map(g => g.trim()))];
   return { logFormat, fileNamePatterns };
@@ -53252,6 +53472,7 @@ function openFormatEditDialog(id, importData) {
     redo: [],
     importPatterns: importData ? importData.fileNamePatterns : null,
     importCreated: importData && importData.importCreated && importData.importCreated.ids.length ? importData.importCreated : null, // targets a meta import created: removed again on Cancel
+    importSubstitutions: importData && importData.logFormat ? importData.logFormat.substitutions : undefined, // carried over to the new format on save
     duplicate: !!(importData && importData.duplicate), // a copy of a provided format (toast wording)
     fileSource: null, // the bytes behind the example lines read from a file (fwzLoadBytes)
     // JSON Lines kind (fwzJsonSync): the three mapped keys, the column
@@ -54218,6 +54439,7 @@ async function saveFormatEdit() {
     }
     delete fmt.targetFormatIds;
   }
+  if (!existing && formatEditMode !== "meta" && fwz.importSubstitutions) fmt.substitutions = fwz.importSubstitutions;
   // See "Log format definitions" — editing the builtin default takes it off
   // the untouched-HEADER_RE fast path from now on.
   if (fmt.builtin) fmt.edited = true;
@@ -58338,9 +58560,9 @@ function llmFullEntry(timeNodeId, e) {
   }
   const out = { id: llmEntryId(e), time: llmTime(timeNodeId, e.ts), level: e.level || undefined, lines: lines.length };
   out.message = shown.map(l => (l.length > LLM_FULL_LINE_CHARS ? l.slice(0, LLM_FULL_LINE_CHARS) + "…" : l)).join("\n");
-  if (e.thread) out.thread = e.thread;
-  if (e.location) out.location = e.location;
-  if (e.method) out.method = e.method;
+  if (e.thread) out.thread = entryColumnValue(e, "thread");
+  if (e.location) out.location = entryColumnValue(e, "location");
+  if (e.method) out.method = entryColumnValue(e, "method");
   const root = state.nodes[findRootIdForEntry(llmEntryId(e))];
   if (root) {
     const src = root.sources && root.sources.find(s => s.id === e.sourceId);
@@ -61165,6 +61387,7 @@ btnNotes.forEach(b => b.innerHTML = ICON_NOTE);
 btnMultilineMsg.forEach(b => b.innerHTML = ICON_MULTILINE);
 btnWrapMsg.forEach(b => b.innerHTML = ICON_WRAP);
 btnColumns.forEach(b => b.innerHTML = ICON_COLUMNS);
+btnSubstitutions.forEach(b => b.innerHTML = ICON_SUBSTITUTE);
 btnRepeat.forEach(b => b.innerHTML = ICON_REPEAT);
 btnRepeatMenu.forEach(b => b.innerHTML = ICON_CARET_DOWN);
 updateRepeatButton();
@@ -61216,6 +61439,7 @@ initMinimapBinningModeSetting();
 initTextMatchHighlightSettings();
 initHighlightMatchTextSetting();
 initFilePathLinksSetting();
+initShowOriginalValuesSetting();
 initDetailViewSetting();
 updateApplyLevelToTreeButtonVisibility();
 initTreeIndicatorModeSetting();

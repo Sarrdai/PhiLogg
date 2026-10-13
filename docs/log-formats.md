@@ -145,6 +145,27 @@ save time** in the Format Manager (`saveFormatEdit`) — `compileFormatPattern`/
 format saved before this rule existed, or compiled at runtime for a file
 already on disk, keeps parsing exactly as it always has.
 
+**Value substitution rules** (`FEATURE_BACKLOG.md` #131, engine and display; the rule-editing UI follows): a format may carry
+`substitutions: [{id, column, pattern, glob?}]` — `column` is a middle column key (thread, location,
+method, a custom key; never time/level/message), `pattern` a message pattern in the extraction placeholder
+syntax with **exactly one** placeholder that captures the name (`Hello, this is Server '[*:word]'`,
+compiled by `compileExtractPattern` — no second pattern language), `glob` an optional file-name glob
+("only for files matching", `fileNameGlobTest`; a meta-format stream matches its physical file name,
+`node.physicalName`). An entry whose message matches maps **its own value** in `column` (the ID) to the
+captured name for the whole file — retroactive, first name wins. The map is runtime only, per file node
+(`node._sub`, one `Map` per column), built incrementally by `updateFileSubstitutions` from
+`updateFileAggregate`, so every load batch and tail tick folds in (a new name drops that file's cached
+filter results, `invalidateNodeSubtreeCaches`); every entry of such a file carries `e.sub` (the file's map
+object). A merge shows each entry with its own source's map. `entryColumnValue` applies it (so rows, Facets,
+Details, Table/Plot columns, exports, "Filter for this ___" and link keys all show the name);
+`entryRawColumnValue` is the original, `entryAltColumnValue` the other representation (the tooltip of a
+cell / facet value). A text filter on the column matches the name **or** the original
+(`testEntryColumn`). The field lives in `LOG_FORMAT_EXPORT_FIELDS` (export/import, session `logFormat`
+record, provided formats) and `normalizeLogFormatExport` drops invalid rules (`normalizeSubstitutions`);
+`setFormatSubstitutions(formatId, rules)` replaces a format's list and rebuilds the loaded files. The
+toolbar toggle is in `docs/ui-and-views.md` → "Show original values". Simulator scenario: `devices`.
+GROUP value-substitution.
+
 A format also carries its own **ordered level list** (`LogFormat.levels`,
 `formatLevelDefs(formatId)`). It may pick from the six names that own a
 theme color (`ALL_LEVELS` = `FATAL/ERROR/WARN/INFO/DEBUG/TRACE`) *and* add
