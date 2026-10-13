@@ -1012,6 +1012,8 @@ Raw/Parsed/Pretty are replaced by the entry count (`#facetPanelCount`) and
 `applyLowerPanel()` (from `renderMainView`) sets the tab state from
 `fhActiveTab`; `renderFacetPanel()` fills the facet body. The facet body is a grid with `align-content:start`: in a panel taller than its sections the rows stay packed at the top instead of stretching into empty bands (backlog #128, GROUP facets-grid-align).
 
+**Full name on hover (backlog #134).** `facetMarkTruncated` (end of `fitFacetPathNames`, so after every render and resize) flags names whose text is cut (ellipsis, or a path shortened to its tail) with `.facet-trunc`. Under `@media (hover:hover)` such a name grows while its row is hovered (`.facet-value:hover > .facet-trunc`) to its natural width (`width:max-content`) over the bar / count / % columns on an opaque `--bg-elevated-2` background with a shadow, `z-index:3`; nothing else moves. A delegated `mouseover`/`mouseout` on `#facetPanelBody` (entering/leaving the row) swaps a shortened path to `dataset.full` and back, and sets `--facet-hover-max` so the grown name stops at the panel's visible right edge (no scrollbar). The row title keeps the click hint; plain and Link rows share it; the phone sheet keeps no hover. GROUP facet-hover-full-name.
+
 **Why tab** ("Why is this row here?", FEATURE_BACKLOG #15). With Why selected
 (`.lower-why`, `whyActive()`) `#whyPanelBody` replaces the entry body. It shows
 `explainEntry(selectedEntry, activeId)` (see docs/filters.md → "Why is this row

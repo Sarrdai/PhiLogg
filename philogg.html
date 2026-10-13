@@ -3439,6 +3439,15 @@
   .facet-pending{padding:2px 12px 4px 28px; font-size:11px; color:var(--text-tertiary);}
   /* Path-like values keep their end visible: shortened from the left in JS (fitFacetPathNames). */
   .facet-value-name.facet-path{text-overflow:clip;}
+  /* Hover on a truncated name (.facet-trunc, set by facetMarkTruncated) shows the full text in place: the name cell grows
+     over the bar / count / % columns without moving them. --facet-hover-max (JS) clamps it to the panel's right edge. */
+  @media (hover:hover){
+    .facet-value:hover > .facet-value-name.facet-trunc{
+      z-index:3; width:max-content; max-width:var(--facet-hover-max, 100%); text-overflow:ellipsis;
+      background:var(--bg-elevated-2); border-radius:4px;
+      box-shadow:inset 3px 0 0 var(--lvl, transparent), 0 2px 8px rgba(0,0,0,.22);
+    }
+  }
   #extractToolbar{
     flex:0 0 auto; display:flex; flex-direction:column; gap:8px;
     padding:9px 16px; border-bottom:1px solid var(--hairline); background:var(--bg-panel);
@@ -20997,7 +21006,33 @@ function fitFacetPathNames() {
     }
     nameEl.textContent = head + seg.slice(0, lo) + "…";
   });
+  facetMarkTruncated();
 }
+// Flags value names whose text is cut (ellipsis, or a path shortened above) with .facet-trunc;
+// only those get the full-name-on-hover treatment. No layout (jsdom) → no flags.
+function facetMarkTruncated() {
+  facetPanelBody.querySelectorAll(".facet-value-name").forEach(nameEl => {
+    const full = nameEl.dataset.full;
+    const cut = !!nameEl.clientWidth && ((full != null && nameEl.textContent !== full) || nameEl.scrollWidth > nameEl.clientWidth);
+    nameEl.classList.toggle("facet-trunc", cut);
+    if (cut) nameEl.dataset.short = nameEl.textContent; else delete nameEl.dataset.short;
+  });
+}
+// Hover on a facet row with a truncated name: paths swap to their full text, and the grown cell is clamped to the panel's visible right edge.
+facetPanelBody.addEventListener("mouseover", ev => {
+  const row = ev.target.closest && ev.target.closest(".facet-value");
+  const nameEl = row && row.querySelector(".facet-value-name.facet-trunc");
+  if (!nameEl || row.contains(ev.relatedTarget)) return;
+  if (nameEl.dataset.full != null) nameEl.textContent = nameEl.dataset.full;
+  nameEl.style.setProperty("--facet-hover-max", Math.max(60, Math.floor(facetPanelBody.getBoundingClientRect().right - nameEl.getBoundingClientRect().left - 4)) + "px");
+});
+facetPanelBody.addEventListener("mouseout", ev => {
+  const row = ev.target.closest && ev.target.closest(".facet-value");
+  const nameEl = row && row.querySelector(".facet-value-name.facet-trunc");
+  if (!nameEl || row.contains(ev.relatedTarget)) return;
+  if (nameEl.dataset.short != null && nameEl.dataset.full != null) nameEl.textContent = nameEl.dataset.short;
+  nameEl.style.removeProperty("--facet-hover-max");
+});
 if (typeof ResizeObserver === "function") {
   let facetFitFrame = 0;
   new ResizeObserver(() => {
