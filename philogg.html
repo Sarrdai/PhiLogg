@@ -9418,11 +9418,11 @@ SOFTWARE.</pre>
     <div class="link-dialog-card link-dialog-card-wide">
       <div class="link-dialog-title" id="substTitle">Name this value from message</div>
       <div class="link-field">
-        <label>Message <span class="time-range-hint">(click the word that is the name)</span></label>
-        <div id="substChips" class="subst-chips"></div>
+        <label>Message <span class="time-range-hint">(click the word(s) that form the name)</span></label>
+        <div id="substChips" class="subst-chips" title="Click a word to mark it as the name. Shift+click to extend to several words."></div>
       </div>
       <div class="link-field">
-        <label for="substPattern">Pattern <span class="time-range-hint">(exactly one placeholder)</span></label>
+        <label for="substPattern">Pattern <span class="time-range-hint">(mark the name with [*:name], once)</span></label>
         <input type="text" id="substPattern" autocomplete="off" spellcheck="false">
       </div>
       <div class="link-field">
@@ -12309,7 +12309,7 @@ function entryRawColumnValue(e, key) {
 /* ===================== Value substitution rules (backlog #131) =====================
    A log format may carry `substitutions: [{id, column, pattern, glob?}]`. A rule names a
    column (thread/location/method/custom) and a message pattern in the extraction placeholder
-   syntax with exactly ONE placeholder capturing the name: an entry whose message matches
+   syntax with exactly ONE `[*:name]` placeholder marking the name (other placeholders are wildcards): an entry whose message matches
    gives ITS OWN value in that column (the ID) the captured name, for the whole file
    (retroactive, first name wins). The map is runtime only: per file node
    `node._sub = { maps: Map(column -> Map(id -> name)), ver, size, ... }`, built incrementally
@@ -12322,14 +12322,31 @@ let showOriginalValues = false;
 let substitutionVersion = 0; // bumped for every (re)built or changed map: part of the Facets cache key
 const SUBSTITUTION_COLUMN_EXCLUDED = new Set(["time", "level", "message", "delta", "source"]);
 
-// The compiled matcher of a rule's pattern, or null when it is not exactly one placeholder.
+// The compiled matcher of a rule's pattern, or null when the name is not marked. `[*:name]` (valid
+// only here, not in filter syntax) marks the capture that is the name, exactly once; it compiles as
+// the text wildcard [*], every other placeholder is a plain wildcard. spec.nameIndex = how many
+// placeholders precede it, so the name is regex capture nameIndex + 1. Old rules without a
+// `[*:name]` and with exactly one placeholder keep working (that placeholder is the name).
+const SUBST_NAME_TOKEN = "[*:name]";
 const substitutionSpecCache = new Map();
 function substitutionSpec(pattern) {
   if (typeof pattern !== "string") return null;
   let spec = substitutionSpecCache.get(pattern);
   if (spec === undefined) {
-    spec = compileExtractPattern(pattern);
-    if (spec && spec.columns.length !== 1) spec = null;
+    spec = null;
+    const parts = pattern.split(SUBST_NAME_TOKEN);
+    if (parts.length === 2) {
+      spec = compileExtractPattern(parts[0] + "[*]" + parts[1]);
+      if (spec) {
+        EXTRACT_TOKEN_RE.lastIndex = 0;
+        let n = 0;
+        while (EXTRACT_TOKEN_RE.exec(parts[0]) !== null) n++;
+        spec.nameIndex = n;
+      }
+    } else if (parts.length === 1) {
+      spec = compileExtractPattern(pattern);
+      if (spec && spec.columns.length === 1) spec.nameIndex = 0; else spec = null;
+    }
     substitutionSpecCache.set(pattern, spec);
   }
   return spec;
@@ -12373,7 +12390,7 @@ function updateFileSubstitutions(node) {
     s = node._sub = { src: active.src, name: active.name, entries, count: 0, maps: new Map(), ver: ++substitutionVersion, size: 0 };
   }
   if (s.count === entries.length) return;
-  const rules = active.rules.map(r => ({ column: r.column, regex: substitutionSpec(r.pattern).regex }));
+  const rules = active.rules.map(r => ({ column: r.column, regex: substitutionSpec(r.pattern).regex, group: substitutionSpec(r.pattern).nameIndex + 1 }));
   let added = 0;
   // The last entry already seen can have grown (tail continuation lines): looked at again.
   for (let i = s.count ? s.count - 1 : 0; i < entries.length; i++) {
@@ -12382,7 +12399,7 @@ function updateFileSubstitutions(node) {
     for (const r of rules) {
       const m = r.regex.exec(e.message || "");
       if (!m) continue;
-      const name = (m[1] || "").trim();
+      const name = (m[r.group] || "").trim();
       if (!name) continue;
       const id = entryRawColumnValue(e, r.column);
       if (!id || id === name) continue;
@@ -45272,12 +45289,23 @@ function collapseNewlinesToWildcard(pattern) {
 // the [*:word] ones (the Patterns "Extract" action passes identifier-suffix
 // number columns). Pure: `texts` is any iterable of strings (the column values
 // to match against).
-function freezeConstantWordCaptures(pattern, texts, candidate) {
+// Optional `nameIndex`: the placeholder with that index (counted before any freezing) comes back
+// as the substitution name token [*:name] (markSubstName), whatever else happens.
+function markSubstName(pattern, nameIndex) {
+  if (nameIndex === undefined) return pattern;
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  let idx = 0, m;
+  while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
+    if (idx++ === nameIndex) return pattern.slice(0, m.index) + SUBST_NAME_TOKEN + pattern.slice(EXTRACT_TOKEN_RE.lastIndex);
+  }
+  return pattern;
+}
+function freezeConstantWordCaptures(pattern, texts, candidate, nameIndex) {
   const spec = compileExtractPattern(pattern);
-  if (!spec) return pattern;
+  if (!spec) return markSubstName(pattern, nameIndex);
   const wordCols = [];
   spec.columns.forEach((c, i) => { if (candidate ? candidate(c, i) : c.type === "word") wordCols.push(i); });
-  if (!wordCols.length) return pattern;
+  if (!wordCols.length) return markSubstName(pattern, nameIndex);
   const seen = wordCols.map(() => new Set());
   let matches = 0;
   for (const text of texts) {
@@ -45287,16 +45315,16 @@ function freezeConstantWordCaptures(pattern, texts, candidate) {
     matches++;
     let allVary = true;
     wordCols.forEach((ci, k) => { seen[k].add(m[ci + 1]); if (seen[k].size < 2) allVary = false; });
-    if (allVary) return pattern; // every word capture already differs: nothing to freeze
+    if (allVary) return markSubstName(pattern, nameIndex); // every word capture already differs: nothing to freeze
   }
-  if (matches < 2) return pattern;
+  if (matches < 2) return markSubstName(pattern, nameIndex);
   const frozen = new Map(); // column index -> literal
   wordCols.forEach((ci, k) => { if (seen[k].size === 1) frozen.set(ci, [...seen[k]][0]); });
-  if (!frozen.size) return pattern;
+  if (!frozen.size) return markSubstName(pattern, nameIndex);
   EXTRACT_TOKEN_RE.lastIndex = 0;
   let out = "", last = 0, idx = 0, m;
   while ((m = EXTRACT_TOKEN_RE.exec(pattern)) !== null) {
-    out += pattern.slice(last, m.index) + (frozen.has(idx) ? frozen.get(idx) : m[0]);
+    out += pattern.slice(last, m.index) + (frozen.has(idx) ? frozen.get(idx) : idx === nameIndex ? SUBST_NAME_TOKEN : m[0]);
     last = EXTRACT_TOKEN_RE.lastIndex;
     idx++;
   }
@@ -45415,18 +45443,32 @@ function substMessageWords(message) {
   }
   return out;
 }
-function substPatternFor(message, w) {
-  return message.slice(0, w.start + w.pre.length) + "[*:word]" + message.slice(w.end - w.suf.length);
+// The "Filter for this message" pattern of the message with words a..b (core start of the first to
+// core end of the last, pre/suf stay literal) turned into the [*:name] placeholder. The range is
+// swapped for a sentinel first, so numbers inside it never become captures of their own.
+const SUBST_SENTINEL = "\u0001";
+function substPatternFor(message, words, a, b, root) {
+  const from = words[a].start + words[a].pre.length, to = words[b].end - words[b].suf.length;
+  const numeric = buildNumericExtractPattern(message.slice(0, from) + SUBST_SENTINEL + message.slice(to));
+  const pattern = collapseNewlinesToWildcard(numeric === null ? message.slice(0, from) + SUBST_SENTINEL + message.slice(to) : numeric);
+  const at = pattern.indexOf(SUBST_SENTINEL);
+  EXTRACT_TOKEN_RE.lastIndex = 0;
+  let nameIndex = 0;
+  const before = pattern.slice(0, at);
+  while (EXTRACT_TOKEN_RE.exec(before) !== null) nameIndex++;
+  const marked = before + "[*]" + pattern.slice(at + 1);
+  if (!root || !root.entries || !marked.includes("[*:word")) return markSubstName(marked, nameIndex);
+  return freezeConstantWordCaptures(marked, (function* () { for (const e of root.entries) yield entryColumnValue(e, "message"); })(), undefined, nameIndex);
 }
 function openSubstDialog(entry, columnKey) {
   const info = substContextFor(entry);
   if (!info || info.fmt.provided) return;
   const message = entryRawColumnValue(entry, "message");
-  substState = { entry, fmt: info.fmt, node: info.node, columns: info.columns, words: substMessageWords(message), picked: -1 };
+  substState = { entry, fmt: info.fmt, node: info.node, columns: info.columns, words: substMessageWords(message), picked: -1, pickedTo: -1, typed: false };
   substColumn.innerHTML = info.columns.map(c => '<option value="' + escapeHtml(c.key) + '">' + escapeHtml(c.label) + "</option>").join("");
   substColumn.value = columnKey;
   substGlob.value = substPrefillGlob(info.fmt, info.node);
-  substPattern.value = "";
+  substPattern.value = generatedEntryPattern(entry, "message", getRootFileId(state.activeId));
   el("#substChips").innerHTML = substState.words.map((w, i) => w.core
     ? '<button type="button" class="subst-chip" data-i="' + i + '">' + escapeHtml(w.text) + "</button>"
     : '<span class="subst-chip-plain">' + escapeHtml(w.text) + "</span>").join(" ");
@@ -45444,22 +45486,28 @@ function closeSubstDialog() {
   substState = null;
   clearTimeout(substPreviewTimer);
 }
+// The dialog only accepts an explicit [*:name]: the legacy single-placeholder fallback would let the
+// untouched prefill (one [*:int]) pass as a rule naming IDs by that number.
+function substDialogSpec(pattern) {
+  return pattern.includes(SUBST_NAME_TOKEN) ? substitutionSpec(pattern) : null;
+}
 // Validity gate (Save + inline error) at once; the preview scan is debounced.
 function refreshSubstDialog() {
   if (!substState) return;
   const pattern = substPattern.value;
-  const valid = !!substitutionSpec(pattern);
-  substError.textContent = valid || !pattern ? "" : "The pattern needs exactly one placeholder, e.g. [*:word].";
-  substError.classList.toggle("hidden", valid || !pattern);
+  const valid = !!substDialogSpec(pattern);
+  const showError = !valid && !!pattern && substState.typed; // the untouched prefill only gets the hint
+  substError.textContent = showError ? "Mark the name with [*:name] \u2014 exactly once." : "";
+  substError.classList.toggle("hidden", !showError);
   substSave.disabled = !valid;
-  if (!valid) { substPreview.textContent = pattern ? "" : "Pick the word in the message that is the name."; return; }
+  if (!valid) { substPreview.textContent = showError ? "" : "Click the word(s) in the message that form the name."; return; }
   clearTimeout(substPreviewTimer);
   substPreviewTimer = setTimeout(updateSubstPreview, 120);
 }
 // "N of M <Column> values get a name": a pass over the entry's file with the pattern as typed.
 function updateSubstPreview() {
   if (!substState) return;
-  const spec = substitutionSpec(substPattern.value);
+  const spec = substDialogSpec(substPattern.value);
   if (!spec) return;
   const key = substColumn.value;
   const col = substState.columns.find(c => c.key === key);
@@ -45468,7 +45516,7 @@ function updateSubstPreview() {
     const id = entryRawColumnValue(e, key);
     if (id) ids.add(id);
     const m = spec.regex.exec(e.message || "");
-    const name = m && (m[1] || "").trim();
+    const name = m && (m[spec.nameIndex + 1] || "").trim();
     if (id && name && name !== id && !named.has(id)) named.set(id, name);
   }
   const names = [...new Set(named.values())];
@@ -45480,14 +45528,20 @@ el("#substChips").addEventListener("click", ev => {
   if (!chip || !substState) return;
   ev.stopPropagation();
   const i = +chip.dataset.i;
-  substState.picked = i;
-  el("#substChips").querySelectorAll(".subst-chip").forEach(c => c.classList.toggle("picked", +c.dataset.i === i));
-  substPattern.value = substPatternFor(entryRawColumnValue(substState.entry, "message"), substState.words[i]);
+  // Shift+click extends the pick to the contiguous range between the first picked word and this one.
+  const extend = ev.shiftKey && substState.picked >= 0;
+  const a = extend ? Math.min(substState.picked, i) : i, b = extend ? Math.max(substState.picked, i) : i;
+  if (!extend) substState.picked = i;
+  substState.pickedTo = extend ? i : -1;
+  el("#substChips").querySelectorAll(".subst-chip").forEach(c => c.classList.toggle("picked", +c.dataset.i >= a && +c.dataset.i <= b));
+  substPattern.value = substPatternFor(entryRawColumnValue(substState.entry, "message"), substState.words, a, b, state.nodes[getRootFileId(state.activeId)]);
   refreshSubstDialog();
 });
 substPattern.addEventListener("input", () => {
   if (substState) {
     substState.picked = -1;
+    substState.pickedTo = -1;
+    substState.typed = true;
     el("#substChips").querySelectorAll(".subst-chip").forEach(c => c.classList.remove("picked"));
   }
   refreshSubstDialog();
@@ -45503,7 +45557,7 @@ substDialog.addEventListener("click", ev => { if (ev.target === substDialog) clo
 el("#substCancel").addEventListener("click", closeSubstDialog);
 substSave.addEventListener("click", async ev => {
   ev.stopPropagation();
-  if (!substState || !substitutionSpec(substPattern.value)) return;
+  if (!substState || !substDialogSpec(substPattern.value)) return;
   const { fmt } = substState;
   const rule = { id: "sub-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 6), column: substColumn.value, pattern: substPattern.value };
   const glob = substGlob.value.trim();
@@ -53684,7 +53738,7 @@ function renderFormatEditSubstitutions() {
     pattern.type = "text"; pattern.value = rule.pattern; pattern.spellcheck = false; pattern.autocomplete = "off";
     pattern.setAttribute("aria-label", "Pattern");
     pattern.classList.toggle("invalid", !substitutionSpec(rule.pattern));
-    pattern.title = "Message pattern with exactly one placeholder, e.g. Hello, this is Server '[*:word]'";
+    pattern.title = "Message pattern with the name marked by [*:name], e.g. Hello, this is Server '[*:name]', pid [*:int]";
     pattern.addEventListener("input", () => { rule.pattern = pattern.value; pattern.classList.toggle("invalid", !substitutionSpec(rule.pattern)); });
     const glob = document.createElement("input");
     glob.type = "text"; glob.value = rule.glob || ""; glob.placeholder = "all files of this format"; glob.spellcheck = false; glob.autocomplete = "off";
@@ -54649,7 +54703,7 @@ async function saveFormatEdit() {
 
   if (formatEditMode !== "meta") {
     const badRule = formatEditSubs.find(r => !r || !substitutionSpec(r.pattern));
-    if (badRule) return fail("A value substitution pattern needs exactly one placeholder, e.g. [*:word].");
+    if (badRule) return fail("A value substitution pattern must mark the name with [*:name] — exactly once.");
   }
   const afterSave = formatEditAfterSave;
   const existing = formatEditId ? state.logFormats.find(f => f.id === formatEditId) : null;

@@ -148,8 +148,11 @@ already on disk, keeps parsing exactly as it always has.
 **Value substitution rules** (`FEATURE_BACKLOG.md` #131, engine, display and editing): a format may carry
 `substitutions: [{id, column, pattern, glob?}]` — `column` is a middle column key (thread, location,
 method, a custom key; never time/level/message), `pattern` a message pattern in the extraction placeholder
-syntax with **exactly one** placeholder that captures the name (`Hello, this is Server '[*:word]'`,
-compiled by `compileExtractPattern` — no second pattern language), `glob` an optional file-name glob
+syntax in which **exactly one `[*:name]`** marks the capture that is the name (`Hello, this is Server '[*:name]', pid [*:int]`;
+`[*:name]` is valid only here, not in filter syntax). It behaves as the text wildcard `[*]` (so multi-word names are
+captured); every other placeholder is a plain wildcard. `substitutionSpec` compiles the pattern with `compileExtractPattern`
+(no second pattern language) and records `nameIndex` (placeholders before the name), the name being regex capture
+`nameIndex + 1`. Old rules without `[*:name]` and with exactly one placeholder still work (that one is the name), `glob` an optional file-name glob
 ("only for files matching", `fileNameGlobTest`; a meta-format stream matches its physical file name,
 `node.physicalName`). An entry whose message matches maps **its own value** in `column` (the ID) to the
 captured name for the whole file — retroactive, first name wins. The map is runtime only, per file node

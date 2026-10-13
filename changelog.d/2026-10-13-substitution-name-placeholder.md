@@ -1,0 +1,4 @@
+- **feat: value substitution rules mark the name with [*:name] (2026-10-13, person-requested)**
+  - "Name this <Column> from message…" now prefills the same generalized pattern as "Filter for this message"; click the word(s) that form the name (Shift+click for several), which become `[*:name]`. Every other placeholder is a wildcard, so one rule names every thread/ID whose own announcement matches, also multi-word names.
+  - `[*:name]` exists only in substitution patterns (exactly once); old rules with a single placeholder keep working. The simulator scenario `devices` now announces `Hello, this is Server 'edge gateway 2', pid 4711`.
+  - **Tests**: GROUP value-substitution, GROUP 300. Docs: docs/log-formats.md, docs/ui-and-views.md, README.

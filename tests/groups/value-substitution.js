@@ -14,7 +14,7 @@
    ============================================================ */
 group("value-substitution");
 
-const vsRule = { id: "sub-1", column: "thread", pattern: "Hello, this is Server '[*:word]'" };
+const vsRule = { id: "sub-1", column: "thread", pattern: "Hello, this is Server '[*:name]', pid [*:int]" };
 const vsDevices = (entries, seed) => LOGSIM.generateToStrings({ format: "default", scenarios: ["devices"], entries, seed })[0];
 // The announced names by thread ID, straight from the generated entries.
 const vsGenerated = (entries, seed) => {
@@ -23,7 +23,7 @@ const vsGenerated = (entries, seed) => {
 };
 const vsNames = (entries, seed) => {
   const names = {};
-  vsGenerated(entries, seed).forEach(e => { const m = /^Hello, this is Server '(.+)'$/.exec(e.msg); if (m && !names[e.thread]) names[e.thread] = m[1]; });
+  vsGenerated(entries, seed).forEach(e => { const m = /^Hello, this is Server '(.+)', pid \d+$/.exec(e.msg); if (m && !names[e.thread]) names[e.thread] = m[1]; });
   return names;
 };
 const vsSetRules = (w, rules) => { w.findLogFormat("fmt-default").substitutions = rules; };
@@ -32,11 +32,12 @@ const vsRowThreads = d => [...d.querySelectorAll("#tableRows .col-thread")].map(
 await withApp(async (w, d, T) => {
   section("value-substitution a. Rules survive the format export/import/session carriers; invalid ones are dropped");
   await waitForFormatConfig(T);
-  const ok = { id: "r1", column: "thread", pattern: "Hello, this is Server '[*:word]'", glob: "app-*.log" };
+  const ok = { id: "r1", column: "thread", pattern: "Hello, this is Server '[*:name]', pid [*:int]", glob: "app-*.log" };
   const bad = [
     { id: "b1", column: "message", pattern: "Hello [*:word]" },            // message column is not substitutable
     { id: "b2", column: "time", pattern: "Hello [*:word]" },
-    { id: "b3", column: "thread", pattern: "Hello [*:word] [*:int]" },     // two placeholders
+    { id: "b3", column: "thread", pattern: "Hello [*:word] [*:int]" },     // several placeholders, none marked as the name
+    { id: "b7", column: "thread", pattern: "Hello [*:name] [*:name]" },    // two names
     { id: "b4", column: "thread", pattern: "no placeholder" },
     { id: "b5", column: "thread" },                                         // no pattern
     { id: "b6", column: "", pattern: "x [*:word]" },
@@ -56,6 +57,25 @@ await withApp(async (w, d, T) => {
   assert(JSON.stringify(exported.logFormat.substitutions) === JSON.stringify([ok]), "the .logformat.json export carries the rules");
   assert(w.parseLogFormatExport(JSON.stringify(exported)).logFormat.substitutions.length === 1, "...and imports them again");
   assert(fmt.substitutions[0].glob === "app-*.log", "glob preserved");
+
+  section("value-substitution a2. substitutionSpec: [*:name] marks the name, other placeholders are wildcards");
+  const sp = w.substitutionSpec("Hello, this is Server '[*:name]', pid [*:int]");
+  assert(sp && sp.nameIndex === 0 && sp.columns.length === 2, "name + int: valid, name first");
+  const sp2 = w.substitutionSpec("[*:int] says [*:name] at [*:time]");
+  assert(sp2 && sp2.nameIndex === 1, "placeholders before the name are counted, got " + (sp2 && sp2.nameIndex));
+  const announce = vsGenerated(300, 7).find(e => /Server 'edge gateway 2'/.test(e.msg)).msg; // real simulator announce line
+  const sp3 = w.substitutionSpec("Hello, this is Server '[*:name]', pid [*:int]");
+  const m3 = sp3.regex.exec(announce);
+  assert(m3 && m3[sp3.nameIndex + 1] === "edge gateway 2", "the name capture spans several words, got " + (m3 && m3[1]));
+  assert(w.substitutionSpec("a [*:name] b [*:name]") === null, "two [*:name]: invalid");
+  assert(w.substitutionSpec("a [*:int] b [*:word]") === null, "no [*:name] and several placeholders: invalid");
+  assert(w.substitutionSpec("no placeholder") === null && w.substitutionSpec("[*:name]") !== null, "no placeholder invalid; a lone [*:name] valid");
+  const pw = w.substMessageWords(announce);
+  assert(pw.length === 9, "sanity: nine words in the announce line");
+  assert(w.substPatternFor(announce, pw, 4, 6, null) === "Hello, this is Server '[*:name]', pid [*:int]", "the 2 inside the picked range stays part of the name, the pid is generalized, got " + w.substPatternFor(announce, pw, 4, 6, null));
+  assert(w.compileExtractPattern("x [*:name]") === null, "[*:name] is not filter/extraction syntax");
+  const legacy = w.substitutionSpec("Hello, this is Server '[*:word]'");
+  assert(legacy && legacy.nameIndex === 0, "legacy single placeholder still valid");
 });
 
 await withApp(async (w, d, T) => {
@@ -96,7 +116,7 @@ await withApp(async (w, d, T) => {
   const names = vsNames(300, 7);
   T.state.activeId = f.id; w.render();
   const shown = vsRowThreads(d);
-  assert(shown.length > 0 && shown.every(t => /^(control|storage|gateway|srv-[0-9a-f]{8})$/.test(t)), "row cells show names or unannounced IDs, got " + [...new Set(shown)].join(","));
+  assert(shown.length > 0 && shown.every(t => /^(control|storage|edge gateway 2|srv-[0-9a-f]{8})$/.test(t)), "row cells show names or unannounced IDs, got " + [...new Set(shown)].join(","));
   const named = [...d.querySelectorAll("#tableRows .col-thread")].find(c => names[Object.keys(names).find(id => names[id] === c.textContent)]);
   if (named) {
     const id = Object.keys(names).find(k => names[k] === named.textContent);
@@ -111,7 +131,7 @@ await withApp(async (w, d, T) => {
   await waitFor(() => d.querySelector('.facet-section[data-col="thread"] .facet-value'));
   const rows = [...d.querySelectorAll('.facet-section[data-col="thread"] .facet-value')];
   const facetNames = rows.map(r => r.querySelector(".facet-value-name").textContent);
-  assert(facetNames.length === 4 && ["control", "storage", "gateway"].every(n => facetNames.includes(n)), "Facets group by name, got " + facetNames);
+  assert(facetNames.length === 4 && ["control", "storage", "edge gateway 2"].every(n => facetNames.includes(n)), "Facets group by name, got " + facetNames);
   const ctl = rows.find(r => r.querySelector(".facet-value-name").textContent === "control");
   const ctlId = Object.keys(names).find(k => names[k] === "control");
   assert(ctl.title.startsWith(ctlId + " "), "a facet value's tooltip names the original ID, got " + ctl.title);
@@ -236,7 +256,7 @@ await withApp(async (w, d, T) => {
   assert(await w.setFormatSubstitutions("fmt-default", [vsRule, { id: "x", column: "thread", pattern: "no placeholder" }]), "setFormatSubstitutions accepts the list");
   assert(w.findLogFormat("fmt-default").substitutions.length === 1, "invalid rules are dropped from the list");
   assert(f._sub && f._sub.size === 3, "the loaded file got its map without a reload");
-  assert(vsRowThreads(d).join() !== before && vsRowThreads(d).some(t => /^(control|storage|gateway)$/.test(t)), "the rows re-rendered with names");
+  assert(vsRowThreads(d).join() !== before && vsRowThreads(d).some(t => /^(control|storage|edge gateway 2)$/.test(t)), "the rows re-rendered with names");
   const node = w.createFilterNode(f.id, "text", "control", false, null, true, ["thread"]);
   const n1 = w.getEntries(node.id).length;
   assert(n1 > 0, "the filter on the name matches");
@@ -280,7 +300,7 @@ await withApp(async (w, d, T) => {
   assert(f.entries.length > earlier, "the tail picked up the rest, got " + f.entries.length);
   const names = vsNames(200, 7);
   assert(f._sub && f._sub.size === Object.keys(names).length, "the announcements added their names, got " + (f._sub && f._sub.size));
-  const gwId = Object.keys(names).find(k => names[k] === "gateway");
+  const gwId = Object.keys(names).find(k => names[k] === "edge gateway 2");
   const gwLines = f.entries.filter(e => e.thread === gwId).length;
   assert(gwLines > 0 && w.getEntries(node.id).length === gwLines, "the cached filter was refreshed: it now matches ALL the server's lines, incl. earlier ones, got " + w.getEntries(node.id).length + "/" + gwLines);
   assert(!btn().classList.contains("hidden"), "the toggle appears");
@@ -308,7 +328,7 @@ await withApp(async (w, d, T) => {
   fireClick(d.querySelector("#lowerTabFacets"), w);
   await waitFor(() => d.querySelector('.facet-section[data-col="thread"] .facet-value'));
   const fn = [...d.querySelectorAll('.facet-section[data-col="thread"] .facet-value-name')].map(n => n.textContent);
-  assert(fn.includes("control") && fn.includes("storage") && fn.includes("gateway"), "the merge's Facets group by name, got " + fn);
+  assert(fn.includes("control") && fn.includes("storage") && fn.includes("edge gateway 2"), "the merge's Facets group by name, got " + fn);
 });
 
 const vsMenuItems = d => [...d.querySelectorAll("#contextMenu .ctx-name-item")];
@@ -367,23 +387,45 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#substTitle").textContent === "Name this Thread from message", "title names the column");
   assert(d.querySelector("#substGlob").value === "sim-*.log", "the glob of the filename rule that resolved the file is prefilled, got " + d.querySelector("#substGlob").value);
   const chips = [...d.querySelectorAll("#substChips .subst-chip")].map(c => c.textContent);
-  assert(chips.length === 5 && chips[4].startsWith("'"), "the message words are chips, got " + chips.join(" "));
-  assert(save.disabled && pat.value === "", "nothing picked: no pattern, Save disabled");
-  fireClick(d.querySelectorAll("#substChips .subst-chip")[4], w);
-  assert(pat.value === "Hello, this is Server '[*:word]'", "picking a quoted word keeps the quotes literal, got " + pat.value);
+  assert(chips.length === 7 && chips[4].startsWith("'"), "the message words are chips, got " + chips.join(" "));
+  const names = vsNames(300, 7);
+  const generated = w.generatedEntryPattern(hello, "message", f.id);
+  assert(pat.value === generated && generated.includes("[*:int]"), "the pattern is prefilled with the 'Filter for this message' pattern, got " + pat.value);
+  assert(save.disabled && err.classList.contains("hidden"), "no name marked yet: Save disabled, no error for the untouched prefill");
+  assert(/Click the word/.test(d.querySelector("#substPreview").textContent), "...with a hint to click the name");
+  const chipEls = () => [...d.querySelectorAll("#substChips .subst-chip")];
+  fireClick(chipEls()[4], w);
+  assert(pat.value === "Hello, this is Server '[*:name]', pid [*:int]", "picking a quoted word keeps the quotes literal and the pid generalized, got " + pat.value);
   assert(d.querySelectorAll("#substChips .subst-chip.picked").length === 1 && !save.disabled && err.classList.contains("hidden"), "the chip is marked, Save enabled, no error");
   await waitFor(() => /get a name/.test(d.querySelector("#substPreview").textContent));
-  const names = vsNames(300, 7);
   assert(d.querySelector("#substPreview").textContent.startsWith("3 of 4 Thread values get a name"), "live preview counts the IDs that get a name, got " + d.querySelector("#substPreview").textContent);
   assert(Object.values(names).every(n => d.querySelector("#substPreview").textContent.includes(n)), "...and lists the names");
+  // Shift+click extends to a range; a plain click restarts.
+  fireClick(chipEls()[2], w);
+  assert(pat.value.startsWith("Hello, this [*:name] Server"), "plain click picks one word, got " + pat.value);
+  chipEls()[3].dispatchEvent(new w.MouseEvent("click", { bubbles: true, shiftKey: true }));
+  assert(d.querySelectorAll("#substChips .subst-chip.picked").length === 2 && pat.value.startsWith("Hello, this [*:name] 'control'"), "shift+click extends the range, got " + pat.value);
+  fireClick(chipEls()[4], w);
+  assert(d.querySelectorAll("#substChips .subst-chip.picked").length === 1, "a plain click restarts the pick");
+  // A name of several words: "'edge gateway 2'" is three chips; the pid stays [*:int].
+  const edge = f.entries.find(e => /Server 'edge gateway 2', pid/.test(e.message));
+  w.closeSubstDialog();
+  w.openSubstDialog(edge, "thread");
+  assert(chipEls().length === 9, "three-word name: nine chips");
+  fireClick(chipEls()[4], w);
+  chipEls()[6].dispatchEvent(new w.MouseEvent("click", { bubbles: true, shiftKey: true }));
+  assert(pat.value === "Hello, this is Server '[*:name]', pid [*:int]", "shift+click over the three words (incl. the 2) yields ONE [*:name], got " + pat.value);
+  assert(d.querySelectorAll("#substChips .subst-chip.picked").length === 3, "all three chips marked");
+  await waitFor(() => /get a name/.test(d.querySelector("#substPreview").textContent));
+  assert(d.querySelector("#substPreview").textContent.startsWith("3 of 4 Thread values get a name") && d.querySelector("#substPreview").textContent.includes("edge gateway 2"), "preview names all three, got " + d.querySelector("#substPreview").textContent);
   // Invalid patterns: inline error, Save disabled.
   pat.value = "Hello, this is Server '[*:word]' [*:int]"; fireInput(pat, w);
-  assert(save.disabled && !err.classList.contains("hidden") && /exactly one placeholder/.test(err.textContent), "two placeholders: inline error, Save disabled");
+  assert(save.disabled && !err.classList.contains("hidden") && /\[\*:name\]/.test(err.textContent), "no name marked: inline error, Save disabled");
   pat.value = "no placeholder here"; fireInput(pat, w);
   assert(save.disabled && !err.classList.contains("hidden"), "no placeholder: error too");
   assert(d.querySelectorAll("#substChips .subst-chip.picked").length === 0, "editing the pattern by hand unmarks the chip");
   // A different column re-previews.
-  pat.value = "Hello, this is Server '[*:word]'"; fireInput(pat, w);
+  pat.value = "Hello, this is Server '[*:name]', pid [*:int]"; fireInput(pat, w);
   d.querySelector("#substColumn").value = "method"; d.querySelector("#substColumn").dispatchEvent(new w.Event("change", { bubbles: true }));
   assert(d.querySelector("#substTitle").textContent === "Name this Method from message", "the title follows the column select");
   d.querySelector("#substColumn").value = "thread"; d.querySelector("#substColumn").dispatchEvent(new w.Event("change", { bubbles: true }));
@@ -392,13 +434,14 @@ await withApp(async (w, d, T) => {
   fireClick(save, w);
   await waitFor(() => w.findLogFormat("fmt-default").substitutions);
   const subs = w.findLogFormat("fmt-default").substitutions;
-  assert(subs.length === 1 && subs[0].column === "thread" && subs[0].pattern === "Hello, this is Server '[*:word]'" && subs[0].glob === "sim-*.log", "the rule is saved to the format with its glob, got " + JSON.stringify(subs));
+  assert(subs.length === 1 && subs[0].column === "thread" && subs[0].pattern === "Hello, this is Server '[*:name]', pid [*:int]" && subs[0].glob === "sim-*.log", "the rule is saved to the format with its glob, got " + JSON.stringify(subs));
   assert(dlg.classList.contains("hidden"), "the dialog closed");
-  assert(f._sub && f._sub.size === 3 && f.entries.every(e => w.entryColumnValue(e, "thread") === (names[e.thread] || e.thread)), "the names show at once, in the loaded file");
+  assert(f._sub && f._sub.size === 3 && f.entries.every(e => w.entryColumnValue(e, "thread") === (names[e.thread] || e.thread)), "the names show at once, in the loaded file (all three threads, also the two-word one)");
   assert(!d.querySelector("#filteredToolbar .toggle-substitutions").classList.contains("hidden"), "...and the toggle appears");
   // Saving the same rule again adds no duplicate.
   w.openSubstDialog(hello, "thread");
   fireClick(d.querySelectorAll("#substChips .subst-chip")[4], w);
+  assert(!d.querySelector("#substSave").disabled, "sanity: re-picked, Save enabled");
   fireClick(d.querySelector("#substSave"), w);
   await waitFor(() => d.querySelector("#substDialog").classList.contains("hidden"));
   assert(w.findLogFormat("fmt-default").substitutions.length === 1, "the identical rule is not added twice");
@@ -434,10 +477,10 @@ await withApp(async (w, d, T) => {
   assert(rows().length === 1, "the delete button removes the row");
   // An invalid pattern marks the row and blocks Save.
   const p0 = rows()[0].querySelectorAll("input")[0];
-  p0.value = "two [*:word] [*:int]"; fireInput(p0, w);
+  p0.value = "two [*:name] [*:name]"; fireInput(p0, w);
   assert(p0.classList.contains("invalid"), "an invalid pattern is marked");
   fireClick(d.querySelector("#formatEditSave"), w);
-  assert(/exactly one placeholder/.test(d.querySelector("#formatEditError").textContent) && w.findLogFormat("fmt-default").substitutions.length === 2, "Save is refused with the reason, the format is unchanged");
+  assert(/\[\*:name\]/.test(d.querySelector("#formatEditError").textContent) && w.findLogFormat("fmt-default").substitutions.length === 2, "Save is refused with the reason, the format is unchanged");
   p0.value = "Hello, this is Server '[*:word]'"; fireInput(p0, w);
   fireClick(d.querySelector("#formatEditSave"), w);
   await waitFor(() => w.findLogFormat("fmt-default").substitutions.length === 1);
