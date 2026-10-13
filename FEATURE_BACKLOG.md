@@ -1,6 +1,6 @@
 # PhiLogg — Feature Backlog
 
-LAST_ID: 127
+LAST_ID: 139
 
 Raw ideas only, not yet elaborated. Pick items up individually before
 implementation.
@@ -35,10 +35,22 @@ Wiedervorlage → empty, Verworfen → verworfen).
 
 | Nr | Vorschlag | Begründung | Aufwand | Prio |
 |---|---|---|---|---|
+| 128 | Bug: Facets stay unchanged when an entry is selected in the Link filter | Selecting an entry in the Link filter does not update the Facets — they keep showing the previous state. Expected: Facets follow the Link filter selection like any other filter result. | klein–mittel | 1 |
+| 129 | Bug: Extract on a Link entry no longer works | Extract on a Link (synthetic pair) entry is broken. Expected: extraction works on the combined text of the linked pair. | mittel | 1 |
+| 130 | Bug: Plot fullscreen button | After toggling fullscreen the plot is first drawn offset to its axes (probably no redraw after resize); afterwards the button stays visually "pressed" and its tooltip stays visible. | klein | 1 |
+| 132 | Bug: Burst pill touches the timeline | The burst pill sits flush against the timeline; needs spacing. | klein | 1 |
+| 135 | Bug: "+" icons on buttons not centered and inconsistently positioned | Centralize the button-icon logic and make the "+" icons render uniformly (centered, same offset) everywhere. | klein | 1 |
+| 136 | Bug: "Show in Explorer" missing from the Files context menu | The entry is gone from the file context menu. Expected at least in the Tauri (desktop) build. | klein | 1 |
 | 73 | Custom plots — a script window as a Plot variant | A small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint. | groß | 2 |
 | 124 | One value statistic over several message types in Table/Plot | MCP usability test 2026-10-09 (task 19): the demo log has two GET formats (`Request GET … completed in Nms status=N` and `GET https://… -> N (N ms)`). For agents this is solved since round H (`get_value_stats` `sources`); the Table/Plot still work on one extraction only. Idea: an OR group of extraction filters whose columns map onto shared names. Needs a mockup and new persistence. | mittel–groß | 2 |
 | 127 | Split plot series by a word column | Desktop usability test 2026-10-09 (task 13): Extract on a `Sensor T1 …` row yields `Sensor [*:word] …`, so the Plot joins T1, T2 and T3 into one saw-tooth line; the `Sensor` column chip only offers "Ignore column". Idea: a "Split series by" choice under the Y axis that draws one line per value of a word column (own color, legend entry, click to hide); the column chip gets "Split by". Needs persistence (plot settings, sessions) and a decision for the Table view. Mockup variant A: https://claude.ai/artifact/BKWsrguFZ4UR17cRMPav9s (package I5). The column chip's smaller "Keep only <value>" already shipped (round I, 2026-10-09); only the split itself is open. | mittel | 2 |
+| 131 | Value substitution rules | Example: a log has a column `server` filled with a random ID per hardware device, and a message from that device says something like `this is Server 'control'`. A per-log-format substitution rule should, once such a message appears, replace every value of that device's ID in the `server` column with the substituted name `control`, propagated through all views (e.g. Facets). Exception: the Raw display in Details keeps the original value. | mittel–groß | 2 |
+| 133 | Export of meta formats | Allow exporting meta formats, bundled together with the reference-value formats. | klein–mittel | 2 |
+| 134 | Full facet name on hover | Hovering a (truncated) facet shows its full name; other elements must not shift, but may be overlaid. | klein | 2 |
 | 88 | Very large files (multi-GB) in the desktop build | Keep raw data and a line/time index on the Rust side and hand JS only the window it currently needs, instead of holding every entry in memory. Today the whole file lives in RAM — fine up to a few hundred MB, a hard limit beyond that; Prune (docs/persistence-and-sync.md) only mitigates it. | groß | 3 |
+| 137 | MCP: concept for how data to create a format can be provided | First attempt: the model wanted to analyse the file itself and started searching the disk for it. Needs a concept for how the data required to create a log format is handed to the model via MCP. | mittel | 3 |
+| 138 | Rework the homepage | No details yet. | mittel | 3 |
+| 139 | Challenges as "better" UI tests | Create challenges in which features must/can be used in combination — as a richer form of UI test. | mittel–groß | 3 |
 | 12 | Dedup check on filter-file / session import | Prevents duplicate branches when the same filter (tree) is loaded/imported again. | klein |  |
 | 22 | Diff view between two filter results | E.g. comparing two runs of the same log. | groß |  |
 | 28 | Time sync between two open files | Selecting an entry in one file scrolls a second, side-by-side file to the nearest timestamp (device log vs. application log), without the destructive `mergeFiles` step. Would need a second file pane; the Filter/Highlight split is the closest existing precedent. | groß |  |
