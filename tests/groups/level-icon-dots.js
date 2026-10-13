@@ -39,8 +39,8 @@ await withApp(async (w, d, T) => {
   assert(lbl && lbl.querySelector(".hint-name").textContent === "Add level filter" && w.getComputedStyle(lbl).position === "absolute", "floating label 'Add level filter' is absolutely positioned");
   assert(btn.title === "Add level filter", "tooltip stays 'Add level filter'");
   const bcs = w.getComputedStyle(badge);
-  assert(bcs.position === "absolute" && bcs.width === "12px" && bcs.height === "12px" && bcs.right === "-5px" && bcs.bottom === "-5px",
-    "badge is the shared 12px disc on the icon's bottom-right edge, got " + [bcs.position, bcs.width, bcs.height, bcs.right, bcs.bottom].join(" "));
+  assert(bcs.position === "absolute" && bcs.width === "10px" && bcs.height === "10px" && bcs.right === "-4px" && bcs.bottom === "-4px",
+    "badge is the shared 10px disc on the icon's bottom-right edge, got " + [bcs.position, bcs.width, bcs.height, bcs.right, bcs.bottom].join(" "));
   assert(isVisible(btn, w) && btn.disabled, "button stays in its slot, disabled, while nothing is selected");
   fireClick(d.querySelector('#levelBar .level-btn[data-level="ERROR"]'), w);
   assert(isVisible(btn, w) && !btn.disabled, "...and enabled once a chip is selected");

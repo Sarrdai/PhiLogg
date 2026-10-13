@@ -34,19 +34,19 @@ await withApp(async (w, d, T) => {
   assert(op.querySelector('path[d="M4 1.5h5.5L12.5 4.5V14.5H4Z"]'), "#btnOpen shows the file glyph");
   assert(!op.querySelector('path[d="M8 2.5v11M2.5 8h11"]'), "no plain '+' in #btnOpen");
   assert(op.querySelector(".btn-short-label").textContent === "Open", "phone short label stays 'Open'");
-  assert(w.getComputedStyle(op.querySelector(".add-badge")).width === "12px", "badge in the header button is the shared 12px disc");
+  assert(w.getComputedStyle(op.querySelector(".add-badge")).width === "10px", "badge in the header button is the shared 10px disc");
   const lib = one(d.querySelector('#sidebarToolbar [data-row-action="addToLibrary"]'), "Add to library…");
   assert(lib.querySelector('svg.icon use[href="#i-book"]'), "Add to library… shows the plain book");
   assert(!lib.querySelector('use[href="#i-bookplus"]'), "no bookplus left there");
   const lv = one(d.querySelector("#btnApplyLevelToTree"), "Add level filter");
   assert(lv.querySelector('svg.icon use[href="#i-level-add"]'), "Add level filter keeps the level dots (badge-safe arrangement)");
-  assert(w.getComputedStyle(lv.querySelector(".add-badge")).width === "12px", "badge elsewhere is the same 12px disc");
+  assert(w.getComputedStyle(lv.querySelector(".add-badge")).width === "10px", "badge elsewhere is the same 10px disc");
   // One shared, icon-anchored rule (#135): every badge sits in a relative .add-badge-wrap, no per-site anchor/size overrides.
   const pos = e => w.getComputedStyle(e).position;
   for (const [btn, what] of [[lv, "Add level filter"], [nw, "New"], [op, "#btnOpen"], [lib, "Add to library…"]]) {
     assert(pos(btn.querySelector(".add-badge-wrap")) === "relative", what + ": badge positioned against the icon wrapper");
     const b = w.getComputedStyle(btn.querySelector(".add-badge"));
-    assert(b.right === "-5px" && b.bottom === "-5px" && b.width === "12px" && b.height === "12px", what + ": shared offset/size, got " + b.right + " " + b.bottom + " " + b.width);
+    assert(b.right === "-4px" && b.bottom === "-4px" && b.width === "10px" && b.height === "10px", what + ": shared offset/size, got " + b.right + " " + b.bottom + " " + b.width);
   }
   const css = d.querySelector("style").textContent.replace(/\/\*[\s\S]*?\*\//g, "");
   assert(!/(#viewBar|\.panel-toggle-btn)[^{}]*\.add-badge[^{}]*\{/.test(css) && !/\.add-badge-wrap\{position:static/.test(css), "no per-site badge anchor/size overrides in the CSS");
