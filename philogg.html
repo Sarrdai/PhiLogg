@@ -51476,16 +51476,14 @@ function renderFormatList() {
       editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatDuplicateDialog(fmt.id); });
     } else editBtn.addEventListener("click", ev => { ev.stopPropagation(); openFormatEditDialog(fmt.id); });
     row.appendChild(editBtn);
-    // A meta-format only names other formats by id — nothing standalone to export (its slot stays empty).
-    if (fmt.mode !== "meta") {
-      const exportBtn = document.createElement("button");
-      exportBtn.type = "button";
-      exportBtn.className = "btn-mini-outline";
-      exportBtn.title = "Export as JSON";
-      exportBtn.textContent = "Export";
-      exportBtn.addEventListener("click", ev => { ev.stopPropagation(); exportLogFormatToFile(fmt.id); });
-      row.appendChild(exportBtn);
-    } else row.appendChild(settingsListSlot());
+    // A meta-format exports as a bundle: itself plus every target format it names.
+    const exportBtn = document.createElement("button");
+    exportBtn.type = "button";
+    exportBtn.className = "btn-mini-outline";
+    exportBtn.title = fmt.mode === "meta" ? "Export as JSON, including its target formats" : "Export as JSON";
+    exportBtn.textContent = "Export";
+    exportBtn.addEventListener("click", ev => { ev.stopPropagation(); exportLogFormatToFile(fmt.id); });
+    row.appendChild(exportBtn);
     if (fmt.provided) {
       row.appendChild(settingsListSlot()); // read-only: neither Reset nor Delete
     } else if (fmt.builtin) {
@@ -51578,7 +51576,13 @@ function openFormatDuplicateDialog(id) {
    included) and appends the checked globs as rules after the existing ones
    (first match wins, so an import never overrides an existing rule's
    precedence). Reached through the central import (Open → "Import…" or a
-   dropped file — see importPhiloggJsonText). */
+   dropped file — see importPhiloggJsonText).
+   A meta format exports as a bundle: logFormat {name, mode:"meta",
+   targetFormatNames, encoding?} + its own fileNamePatterns + targetFormats
+   (full definitions in target order; their filename rules are not exported).
+   Importing resolves each target (importMetaTargets): an identical stored
+   format is reused, else a new one is created, then the dialog opens for
+   the meta. */
 const LOG_FORMAT_FILE_FORMAT = "philogg-log-format";
 const LOG_FORMAT_FILE_VERSION = 1;
 const FORMAT_ENCODINGS = ["utf-8", "windows-1252", "iso-8859-15", "windows-1250", "windows-1251"];
@@ -51586,7 +51590,30 @@ const LOG_FORMAT_EXPORT_FIELDS = ["name", "mode", "pattern", "regex", "tsFormat"
 
 function serializeLogFormatExport(formatId) {
   const fmt = state.logFormats.find(f => f.id === formatId);
-  if (!fmt || fmt.mode === "meta") return null;
+  if (!fmt) return null;
+  if (fmt.mode === "meta") {
+    // Target names must be unique in the file (the meta names them): a
+    // repeated name gets " (2)", " (3)", ... in target order.
+    const used = new Set();
+    const targetFormats = [];
+    (fmt.targetFormatIds || []).forEach(id => {
+      const t = state.logFormats.find(f => f.id === id);
+      if (!t || t.mode === "meta") return;
+      const def = {};
+      LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (t[k] !== undefined) def[k] = t[k]; });
+      let name = t.name, n = 2;
+      while (used.has(name)) name = t.name + " (" + n++ + ")";
+      used.add(name);
+      def.name = name;
+      targetFormats.push(def);
+    });
+    if (targetFormats.length < 2) return null;
+    const logFormat = { name: fmt.name, mode: "meta", targetFormatNames: targetFormats.map(t => t.name) };
+    if (fmt.encoding) logFormat.encoding = fmt.encoding;
+    const fileNamePatterns = [...state.formatRules].sort((a, b) => a.order - b.order)
+      .filter(r => r.formatId === formatId).map(r => r.glob);
+    return { format: LOG_FORMAT_FILE_FORMAT, version: LOG_FORMAT_FILE_VERSION, savedAt: new Date().toISOString(), logFormat, fileNamePatterns, targetFormats };
+  }
   const logFormat = {};
   LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (fmt[k] !== undefined) logFormat[k] = fmt[k]; });
   const fileNamePatterns = [...state.formatRules].sort((a, b) => a.order - b.order)
@@ -51609,7 +51636,82 @@ function parseLogFormatExport(text) {
   try { data = JSON.parse(text); } catch { return null; }
   if (!data || typeof data !== "object" || data.format !== LOG_FORMAT_FILE_FORMAT) return null;
   if (!(data.version <= LOG_FORMAT_FILE_VERSION)) return { error: "Log format file was saved by a newer version" };
+  if (data.logFormat && typeof data.logFormat === "object" && data.logFormat.mode === "meta") return normalizeMetaFormatBundle(data);
   return normalizeLogFormatExport(data.logFormat, data.fileNamePatterns);
+}
+
+// A meta bundle (see the section comment) -> { logFormat: {name, mode:"meta",
+// encoding?}, fileNamePatterns, targetFormats: [normalized logFormat, ...] }
+// or { error }.
+function normalizeMetaFormatBundle(data) {
+  const src = data.logFormat;
+  if (typeof src.name !== "string" || !src.name.trim()) return { error: "Log format file is incomplete" };
+  if (!Array.isArray(data.targetFormats) || data.targetFormats.length < 2) return { error: "Meta log format file needs at least 2 target formats" };
+  const targetFormats = [];
+  for (const t of data.targetFormats) {
+    const n = normalizeLogFormatExport(t, []);
+    if (n.error) return { error: "Meta log format file has an invalid target format: " + n.error.replace(/^Log format file /, "") };
+    targetFormats.push(n.logFormat);
+  }
+  const logFormat = { name: src.name.slice(0, 80), mode: "meta" };
+  if (FORMAT_ENCODINGS.includes(src.encoding)) logFormat.encoding = src.encoding;
+  const fileNamePatterns = [...new Set((Array.isArray(data.fileNamePatterns) ? data.fileNamePatterns : [])
+    .filter(g => typeof g === "string" && g.trim()).map(g => g.trim()))];
+  return { logFormat, fileNamePatterns, targetFormats };
+}
+
+// The stored (own or provided) ordinary format with exactly this
+// normalized definition (name included), or undefined.
+function findIdenticalLogFormat(logFormat) {
+  const pick = f => { const o = {}; LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (f[k] !== undefined) o[k] = f[k]; }); return o; };
+  const wanted = canonicalJson(logFormat);
+  return state.logFormats.find(f => {
+    if (f.mode === "meta" || f.name !== logFormat.name) return false;
+    const n = normalizeLogFormatExport(pick(f), []);
+    return !n.error && canonicalJson(n.logFormat) === wanted;
+  });
+}
+
+// Resolves a meta bundle's targets SYNCHRONOUSLY (so the import queue never
+// sees a gap between "queued" and "dialog open"): identical stored formats
+// are reused, the rest are created in state.logFormats right away (fresh id;
+// a name clashing with a different format gets " (2)", ...) and persisted in
+// the background. Returns the importData for openFormatEditDialog; the
+// created ids ride along so Cancel removes them again (closeFormatEditDialog)
+// - no orphan formats.
+function importMetaTargets(parsed) {
+  const ids = [], created = [], persist = [];
+  parsed.targetFormats.forEach(t => {
+    const same = findIdenticalLogFormat(t);
+    if (same) { if (!ids.includes(same.id)) ids.push(same.id); return; }
+    let name = t.name, n = 2;
+    while (state.logFormats.some(f => f.name === name)) name = t.name + " (" + n++ + ")";
+    const fmt = Object.assign({
+      id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
+      builtin: false, edited: false, createdAt: Date.now(),
+    }, t, { name });
+    state.logFormats.push(fmt);
+    persist.push(saveLogFormat(fmt));
+    ids.push(fmt.id);
+    created.push(fmt.id);
+  });
+  if (created.length) { renderFormatList(); renderFormatRuleFormatOptions(); }
+  return {
+    logFormat: Object.assign({}, parsed.logFormat, { targetFormatIds: ids }),
+    fileNamePatterns: parsed.fileNamePatterns,
+    importCreated: { ids: created, persisted: Promise.all(persist) },
+  };
+}
+
+// Removes the formats an abandoned meta import created (all of them on
+// Cancel; on Save only the ones the person took out of the target list).
+function discardImportedTargets(importCreated, keepIds) {
+  const drop = importCreated.ids.filter(id => !(keepIds || []).includes(id));
+  if (!drop.length) return;
+  state.logFormats = state.logFormats.filter(f => !drop.includes(f.id));
+  importCreated.persisted.then(() => Promise.all(drop.map(id => deleteLogFormatEntry(id)))).catch(() => {});
+  renderFormatList();
+  renderFormatRuleFormatOptions();
 }
 
 // The validation + field reduction shared by a .logformat.json import
@@ -51647,7 +51749,7 @@ function importLogFormatText(text) {
   const parsed = parseLogFormatExport(text);
   if (!parsed) return false;
   if (parsed.error) { showCopyToast(parsed.error); return true; }
-  queueImportEditor(() => openFormatEditDialog(null, parsed));
+  queueImportEditor(() => openFormatEditDialog(null, parsed.targetFormats ? importMetaTargets(parsed) : parsed));
   return true;
 }
 
@@ -53149,6 +53251,7 @@ function openFormatEditDialog(id, importData) {
     undo: [],
     redo: [],
     importPatterns: importData ? importData.fileNamePatterns : null,
+    importCreated: importData && importData.importCreated && importData.importCreated.ids.length ? importData.importCreated : null, // targets a meta import created: removed again on Cancel
     duplicate: !!(importData && importData.duplicate), // a copy of a provided format (toast wording)
     fileSource: null, // the bytes behind the example lines read from a file (fwzLoadBytes)
     // JSON Lines kind (fwzJsonSync): the three mapped keys, the column
@@ -53193,6 +53296,7 @@ function closeFormatEditDialog() {
   const wasOpen = formatDialogOpen();
   formatDialog.classList.add("hidden");
   fwzSampleEl.classList.remove("fwz-drop-active");
+  if (fwz && fwz.importCreated) discardImportedTargets(fwz.importCreated, []);
   fwz = null;
   formatEditId = null;
   formatEditAfterSave = null;
@@ -54120,6 +54224,10 @@ async function saveFormatEdit() {
   const globs = [formatEditRuleGlob.value.trim()].concat(Array.from(el("#formatEditImportRules").querySelectorAll("input[data-idx]"))
     .filter(cb => cb.checked).map(cb => (fwz.importPatterns || [])[+cb.dataset.idx])).filter(Boolean);
   const imported = !!fwz.importPatterns;
+  if (fwz.importCreated) { // saved: keep the created targets the meta still uses
+    discardImportedTargets(fwz.importCreated, formatEditMode === "meta" ? formatEditMetaTargets : []);
+    fwz.importCreated = null;
+  }
   const duplicated = !!fwz.duplicate;
 
   await saveLogFormat(fmt);
@@ -56721,13 +56829,7 @@ async function ensureSessionLogFormat(src) {
   const parsed = normalizeLogFormatExport(src, []);
   if (parsed.error) return null;
   await formatConfigReady; // state.logFormats must be settled before looking up / appending
-  const pick = f => { const o = {}; LOG_FORMAT_EXPORT_FIELDS.forEach(k => { if (f[k] !== undefined) o[k] = f[k]; }); return o; };
-  const wanted = canonicalJson(parsed.logFormat);
-  const same = state.logFormats.find(f => {
-    if (f.mode === "meta" || f.name !== parsed.logFormat.name) return false;
-    const n = normalizeLogFormatExport(pick(f), []);
-    return !n.error && canonicalJson(n.logFormat) === wanted;
-  });
+  const same = findIdenticalLogFormat(parsed.logFormat);
   if (same) return same.id;
   const fmt = Object.assign({
     id: "fmt-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 8),
