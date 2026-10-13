@@ -452,7 +452,10 @@ deployments possible:
   above) instead of being parsed as one grammar.
   **Share formats as JSON**: each format has an **Export** button (the file
   includes its filename patterns); importing it opens the format dialog
-  prefilled, where you pick which filename patterns to take over.
+  prefilled, where you pick which filename patterns to take over. A **Meta**
+  format exports together with all the target formats it uses, so the file
+  works on another machine; importing reuses targets you already have and
+  creates the missing ones.
   **Provided formats**: `*.logformat.json` files placed next to the app
   (hosted: `formats/` listed in `formats/index.json`; desktop: a `formats/`
   folder beside the executable or in your config folder) are loaded at every

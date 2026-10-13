@@ -338,7 +338,8 @@ file's `fileNamePatterns` become rules `rule-provided-<slug>-<i>` with `order`
 formats. A **meta** format in a provided file is
 `logFormat: {name, mode: "meta", targetFormatNames: [...]}`, targets resolved by
 name against provided and own formats (unresolved → file skipped); that mode is
-accepted only on this route, a user import of a meta file is still rejected.
+accepted on this route with `targetFormatNames` only (a `targetFormats` bundle
+is a user-import file, see "Exporting and importing a meta format").
 The Format Manager tags them "Provided" (tooltip = source) and offers
 **Duplicate** (the format dialog prefilled as a new own format, name
 `"<name> (copy)"`, patterns offered like an import's) and Export instead of
@@ -349,6 +350,31 @@ equals a provided one reuses it. The three former demo seeds are
 `examples/formats/` files (`app-log`, `syslog-rfc5424`, `app-syslog-meta`);
 nothing is seeded into IndexedDB any more except `fmt-default`. The hosted app
 gets `formats/` from `scripts/build-site.js` (`docs/homepage.md`).
+
+**Exporting and importing a meta format** (FEATURE_BACKLOG.md #133). A meta
+row in Settings → Log Formats has the same **Export** button as an ordinary
+format (provided meta formats too). `serializeLogFormatExport` writes the
+usual `philogg-log-format` v1 file as a bundle: `logFormat: {name,
+mode: "meta", targetFormatNames, encoding?}`, the meta's own
+`fileNamePatterns`, and `targetFormats` — one full definition
+(`LOG_FORMAT_EXPORT_FIELDS`) per target, in target order; the targets' own
+filename rules are not exported. Target names are unique within the file (a
+repeated name becomes `"<name> (2)"`, ...), so `targetFormatNames` can name
+them; a meta with fewer than 2 resolvable targets exports nothing. No version
+bump: older readers rejected every `mode: "meta"` file anyway. Import goes
+through the same central path as any format file (`importLogFormatText`):
+`parseLogFormatExport` hands a meta file to `normalizeMetaFormatBundle` (≥2
+`targetFormats`, each validated by `normalizeLogFormatExport`; a bad bundle
+shows the usual error toast and creates nothing). `importMetaTargets` then
+resolves each target synchronously: an own or provided format with an
+identical definition (`findIdenticalLogFormat`, the compare
+`ensureSessionLogFormat` shares) is reused, otherwise a new own format is
+created right away (fresh id; a name clashing with a different format gets
+`" (2)"`, ...). The format dialog opens prefilled as a Meta format with those
+targets preselected and the meta's patterns offered like an ordinary import.
+**Cancel removes the targets the import created** (`fwz.importCreated`,
+`discardImportedTargets`; on Save only created targets the person took out of
+the list are removed) — no orphan formats. GROUP meta-format-export.
 
 **Multi-pattern parsing: the `"meta"` format mode** (FEATURE_BACKLOG.md #81,
 implemented this session). Some files interleave two or more independent
