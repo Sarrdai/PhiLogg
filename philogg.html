@@ -26740,12 +26740,24 @@ function openPlotFullscreen() {
   plotFullscreenActive = true;
   plotFullscreenChartHost.appendChild(plotChartArea);
   plotFullscreenOverlay.classList.remove("hidden");
+  plotFullscreenSettle();
 }
 function closePlotFullscreen() {
   if (!plotFullscreenActive) return;
   plotFullscreenActive = false;
   plotBody.appendChild(plotChartArea); // back after #plotControls, its original spot
   plotFullscreenOverlay.classList.add("hidden");
+  plotFullscreenSettle();
+}
+// After the reparent the SVG axes and the marks/3D canvases still have the old
+// size: redraw once, layout already applied (renderPlotChart measures
+// #plotChartArea). The overlay now covers the toolbar button, which would keep
+// its focus look and its hover card (no mouseleave ever arrives) — drop both.
+function plotFullscreenSettle() {
+  dismissHoverTooltips();
+  const a = document.activeElement;
+  if (a && a !== document.body && a.blur) a.blur();
+  renderPlotChart();
 }
 function plotLastRenderExists() {
   return !!plotLastRender || plotConfig.type === "3d";
