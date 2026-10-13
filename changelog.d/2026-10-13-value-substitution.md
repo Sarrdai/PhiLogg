@@ -1,0 +1,4 @@
+- **feat: value substitution rules, engine and display (2026-10-13, backlog #131)**
+  - A log format can carry rules (`substitutions`: column, message pattern with one placeholder, optional file glob) that name an ID column value from a message such as `Hello, this is Server '[*:word]'`: per file, retroactive, first name wins, also while tailing.
+  - Rows, Facets, Details, Table/Plot and exports show the name (tooltip: the original); filters on the column match name or original; the new "Show original values" toolbar toggle (global, remembered) shows the IDs.
+  - Rule-editing UI follows in step 2. **Tests**: GROUP value-substitution, GROUP 300 (simulator scenario `devices`). Docs: docs/log-formats.md, docs/ui-and-views.md.
