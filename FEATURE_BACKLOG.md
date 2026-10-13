@@ -36,7 +36,6 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | Nr | Vorschlag | Begründung | Aufwand | Prio |
 |---|---|---|---|---|
 | 128 | Bug: Facets stay unchanged when an entry is selected in the Link filter | Selecting an entry in the Link filter does not update the Facets — they keep showing the previous state. Expected: Facets follow the Link filter selection like any other filter result. | klein–mittel | 1 |
-| 132 | Bug: Burst pill touches the timeline | The burst pill sits flush against the timeline; needs spacing. | klein | 1 |
 | 135 | Bug: "+" icons on buttons not centered and inconsistently positioned | Centralize the button-icon logic and make the "+" icons render uniformly (centered, same offset) everywhere. | klein | 1 |
 | 136 | Bug: "Show in Explorer" missing from the Files context menu | The entry is gone from the file context menu. Expected at least in the Tauri (desktop) build. | klein | 1 |
 | 73 | Custom plots — a script window as a Plot variant | A small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint. | groß | 2 |
