@@ -310,3 +310,135 @@ await withApp(async (w, d, T) => {
   const fn = [...d.querySelectorAll('.facet-section[data-col="thread"] .facet-value-name')].map(n => n.textContent);
   assert(fn.includes("control") && fn.includes("storage") && fn.includes("gateway"), "the merge's Facets group by name, got " + fn);
 });
+
+const vsMenuItems = d => [...d.querySelectorAll("#contextMenu .ctx-name-item")];
+const vsShown = (w, d, sel) => !d.querySelector(sel).classList.contains("hidden");
+
+await withApp(async (w, d, T) => {
+  section("value-substitution k. Context menu: 'Name this <Column> from message…' per column with a value; provided formats read-only");
+  await waitForFormatConfig(T);
+  const file = vsDevices(300, 7);
+  const f = await w.addFile(file.name, file.text, () => {});
+  T.state.activeId = f.id; w.render();
+  const entry = f.entries[0];
+  w.openContextMenu({ clientX: 10, clientY: 10 }, entry);
+  const items = vsMenuItems(d);
+  const labels = items.map(i => i.textContent.trim());
+  assert(labels.join("|") === "Name this Thread from message…|Name this Location from message…|Name this Method from message…", "one item per column with a value, got " + labels.join("|"));
+  assert(items.every(i => !i.classList.contains("disabled") && !i.title), "enabled on an own format");
+  assert(d.querySelector("#contextMenu .ctx-name-item").nextElementSibling && items[0].previousElementSibling.textContent.includes("Filter for this"), "the items sit in the Filter group");
+  fireClick(items[0], w);
+  assert(vsShown(w, d, "#contextMenu") === false && !d.querySelector("#substDialog").classList.contains("hidden"), "a click closes the menu and opens the dialog");
+  assert(d.querySelector("#substColumn").value === "thread", "the clicked column is preselected");
+  w.closeSubstDialog();
+  assert(d.querySelector("#substDialog").classList.contains("hidden"), "closeSubstDialog hides it");
+
+  // A pair row / plain text never offers it.
+  w.openContextMenu({ clientX: 10, clientY: 10 }, Object.assign({}, entry, { isPair: true }));
+  assert(vsMenuItems(d).length === 0, "no items for a link pair row");
+
+  // Provided format: disabled with an explaining tooltip, a click does nothing.
+  const fmt = w.findLogFormat("fmt-default");
+  fmt.provided = true;
+  w.openContextMenu({ clientX: 10, clientY: 10 }, entry);
+  const dis = vsMenuItems(d);
+  assert(dis.length === 3 && dis.every(i => i.classList.contains("disabled") && /read-only/.test(i.title) && /duplicate/i.test(i.title)), "provided format: disabled with a tooltip about read-only/duplicate");
+  fireClick(dis[0], w);
+  assert(d.querySelector("#substDialog").classList.contains("hidden"), "a disabled item opens nothing");
+  fmt.provided = false;
+});
+
+await withApp(async (w, d, T) => {
+  section("value-substitution l. Dialog: word chips, pattern, preview, validation, glob prefill, save to format");
+  await waitForFormatConfig(T);
+  T.state.formatRules.push({ id: "rule-sim", glob: "sim-*.log", formatId: "fmt-default", order: 0, createdAt: 0 });
+  const file = vsDevices(300, 7);
+  const f = await w.addFile(file.name, file.text, () => {});
+  T.state.activeId = f.id; w.render();
+  const hello = f.entries.find(e => /^Hello, this is Server/.test(e.message));
+  w.openSubstDialog(hello, "thread");
+  const dlg = d.querySelector("#substDialog");
+  const save = d.querySelector("#substSave"), pat = d.querySelector("#substPattern"), err = d.querySelector("#substError");
+  assert(d.querySelector("#substTitle").textContent === "Name this Thread from message", "title names the column");
+  assert(d.querySelector("#substGlob").value === "sim-*.log", "the glob of the filename rule that resolved the file is prefilled, got " + d.querySelector("#substGlob").value);
+  const chips = [...d.querySelectorAll("#substChips .subst-chip")].map(c => c.textContent);
+  assert(chips.length === 5 && chips[4].startsWith("'"), "the message words are chips, got " + chips.join(" "));
+  assert(save.disabled && pat.value === "", "nothing picked: no pattern, Save disabled");
+  fireClick(d.querySelectorAll("#substChips .subst-chip")[4], w);
+  assert(pat.value === "Hello, this is Server '[*:word]'", "picking a quoted word keeps the quotes literal, got " + pat.value);
+  assert(d.querySelectorAll("#substChips .subst-chip.picked").length === 1 && !save.disabled && err.classList.contains("hidden"), "the chip is marked, Save enabled, no error");
+  await waitFor(() => /get a name/.test(d.querySelector("#substPreview").textContent));
+  const names = vsNames(300, 7);
+  assert(d.querySelector("#substPreview").textContent.startsWith("3 of 4 Thread values get a name"), "live preview counts the IDs that get a name, got " + d.querySelector("#substPreview").textContent);
+  assert(Object.values(names).every(n => d.querySelector("#substPreview").textContent.includes(n)), "...and lists the names");
+  // Invalid patterns: inline error, Save disabled.
+  pat.value = "Hello, this is Server '[*:word]' [*:int]"; fireInput(pat, w);
+  assert(save.disabled && !err.classList.contains("hidden") && /exactly one placeholder/.test(err.textContent), "two placeholders: inline error, Save disabled");
+  pat.value = "no placeholder here"; fireInput(pat, w);
+  assert(save.disabled && !err.classList.contains("hidden"), "no placeholder: error too");
+  assert(d.querySelectorAll("#substChips .subst-chip.picked").length === 0, "editing the pattern by hand unmarks the chip");
+  // A different column re-previews.
+  pat.value = "Hello, this is Server '[*:word]'"; fireInput(pat, w);
+  d.querySelector("#substColumn").value = "method"; d.querySelector("#substColumn").dispatchEvent(new w.Event("change", { bubbles: true }));
+  assert(d.querySelector("#substTitle").textContent === "Name this Method from message", "the title follows the column select");
+  d.querySelector("#substColumn").value = "thread"; d.querySelector("#substColumn").dispatchEvent(new w.Event("change", { bubbles: true }));
+  // Save.
+  assert(!save.disabled, "valid again");
+  fireClick(save, w);
+  await waitFor(() => w.findLogFormat("fmt-default").substitutions);
+  const subs = w.findLogFormat("fmt-default").substitutions;
+  assert(subs.length === 1 && subs[0].column === "thread" && subs[0].pattern === "Hello, this is Server '[*:word]'" && subs[0].glob === "sim-*.log", "the rule is saved to the format with its glob, got " + JSON.stringify(subs));
+  assert(dlg.classList.contains("hidden"), "the dialog closed");
+  assert(f._sub && f._sub.size === 3 && f.entries.every(e => w.entryColumnValue(e, "thread") === (names[e.thread] || e.thread)), "the names show at once, in the loaded file");
+  assert(!d.querySelector("#filteredToolbar .toggle-substitutions").classList.contains("hidden"), "...and the toggle appears");
+  // Saving the same rule again adds no duplicate.
+  w.openSubstDialog(hello, "thread");
+  fireClick(d.querySelectorAll("#substChips .subst-chip")[4], w);
+  fireClick(d.querySelector("#substSave"), w);
+  await waitFor(() => d.querySelector("#substDialog").classList.contains("hidden"));
+  assert(w.findLogFormat("fmt-default").substitutions.length === 1, "the identical rule is not added twice");
+  // Empty glob = all files; Esc closes.
+  w.openSubstDialog(hello, "thread");
+  d.dispatchEvent(new w.KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+  assert(d.querySelector("#substDialog").classList.contains("hidden"), "Esc closes the dialog");
+  // No filename rule: empty glob prefilled.
+  T.state.formatRules.length = 0;
+  w.openSubstDialog(hello, "thread");
+  assert(d.querySelector("#substGlob").value === "", "no filename rule: the glob stays empty (= all files of the format)");
+  w.closeSubstDialog();
+});
+
+await withApp(async (w, d, T) => {
+  section("value-substitution m. Format dialog: 'Value substitutions' list with inline edit and delete, saved with the format");
+  await waitForFormatConfig(T);
+  const fmt = w.findLogFormat("fmt-default");
+  fmt.substitutions = [{ id: "a", column: "thread", pattern: "Hello, this is Server '[*:word]'", glob: "sim-*.log" }, { id: "b", column: "method", pattern: "Started by [*:word]" }];
+  w.openSettingsDialog();
+  w.openFormatEditDialog("fmt-default");
+  const section_ = d.querySelector("#fwzSubstSection");
+  assert(!section_.classList.contains("hidden"), "the section shows for a format with rules");
+  const rows = () => [...d.querySelectorAll("#formatEditSubstitutions .fwz-subst-row")];
+  assert(rows().length === 2, "one row per rule, got " + rows().length);
+  const r0 = rows()[0];
+  assert(r0.querySelector("select").value === "thread" && r0.querySelectorAll("input")[0].value === "Hello, this is Server '[*:word]'" && r0.querySelectorAll("input")[1].value === "sim-*.log", "a row shows column, pattern and glob");
+  // Edit inline: the glob.
+  const g = r0.querySelectorAll("input")[1];
+  g.value = "other-*.log"; fireInput(g, w);
+  // Delete the second rule.
+  fireClick(rows()[1].querySelector(".filter-library-row-del"), w);
+  assert(rows().length === 1, "the delete button removes the row");
+  // An invalid pattern marks the row and blocks Save.
+  const p0 = rows()[0].querySelectorAll("input")[0];
+  p0.value = "two [*:word] [*:int]"; fireInput(p0, w);
+  assert(p0.classList.contains("invalid"), "an invalid pattern is marked");
+  fireClick(d.querySelector("#formatEditSave"), w);
+  assert(/exactly one placeholder/.test(d.querySelector("#formatEditError").textContent) && w.findLogFormat("fmt-default").substitutions.length === 2, "Save is refused with the reason, the format is unchanged");
+  p0.value = "Hello, this is Server '[*:word]'"; fireInput(p0, w);
+  fireClick(d.querySelector("#formatEditSave"), w);
+  await waitFor(() => w.findLogFormat("fmt-default").substitutions.length === 1);
+  const saved = w.findLogFormat("fmt-default").substitutions;
+  assert(saved[0].glob === "other-*.log" && saved[0].pattern === "Hello, this is Server '[*:word]'", "edit and delete were saved with the format, got " + JSON.stringify(saved));
+  // A format without rules: no section. Meta kind: none either.
+  w.openFormatEditDialog(null);
+  assert(d.querySelector("#fwzSubstSection").classList.contains("hidden"), "a new format has no section");
+});

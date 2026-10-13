@@ -145,7 +145,7 @@ save time** in the Format Manager (`saveFormatEdit`) — `compileFormatPattern`/
 format saved before this rule existed, or compiled at runtime for a file
 already on disk, keeps parsing exactly as it always has.
 
-**Value substitution rules** (`FEATURE_BACKLOG.md` #131, engine and display; the rule-editing UI follows): a format may carry
+**Value substitution rules** (`FEATURE_BACKLOG.md` #131, engine, display and editing): a format may carry
 `substitutions: [{id, column, pattern, glob?}]` — `column` is a middle column key (thread, location,
 method, a custom key; never time/level/message), `pattern` a message pattern in the extraction placeholder
 syntax with **exactly one** placeholder that captures the name (`Hello, this is Server '[*:word]'`,
@@ -163,7 +163,7 @@ cell / facet value). A text filter on the column matches the name **or** the ori
 (`testEntryColumn`). The field lives in `LOG_FORMAT_EXPORT_FIELDS` (export/import, session `logFormat`
 record, provided formats) and `normalizeLogFormatExport` drops invalid rules (`normalizeSubstitutions`);
 `setFormatSubstitutions(formatId, rules)` replaces a format's list and rebuilds the loaded files. The
-toolbar toggle is in `docs/ui-and-views.md` → "Show original values". Simulator scenario: `devices`.
+toolbar toggle and the editing UI (context-menu dialog, format-dialog list) are in `docs/ui-and-views.md` → "Show original values". Simulator scenario: `devices`.
 GROUP value-substitution.
 
 A format also carries its own **ordered level list** (`LogFormat.levels`,
