@@ -1262,19 +1262,19 @@
      doesn't say so by itself: New, Open…, Add to library…, Add level filter.
      Never used in menus. withAddBadge() wraps the icon in .add-badge-wrap, so
      the badge anchors to the ICON's box (not the whole button — on phone the
-     button also holds a text label under the icon) and overhangs it by 5px.
+     button also holds a text label under the icon) and overhangs it by 4px.
      No ancestor may clip that overhang (#viewBar's tablet overflow axis keeps
      the row's own padding as headroom; the buttons themselves are 28px+ wide
      around a 13-14px icon). One rule for every site (no per-button size/anchor
-     overrides, #135): the 12px disc and its 8px plus are even sizes, so the
+     overrides, #135): the 10px disc and its 6px plus are even sizes, so the
      cross is pixel-centered. Colors are tokens, so every theme follows. */
   .add-badge-wrap{position:relative; display:inline-grid; place-items:center; flex:0 0 auto;}
   .add-badge{
-    position:absolute; right:-5px; bottom:-5px; width:12px; height:12px; border-radius:50%;
+    position:absolute; right:-4px; bottom:-4px; width:10px; height:10px; border-radius:50%;
     background:var(--accent); color:var(--accent-on); box-shadow:0 0 0 2px var(--bg-panel);
     display:grid; place-items:center; pointer-events:none; z-index:1;
   }
-  .add-badge svg{display:block; width:8px; height:8px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;}
+  .add-badge svg{display:block; width:6px; height:6px; fill:none; stroke:currentColor; stroke-width:2.2; stroke-linecap:round;}
   /* #btnApplyLevelToTree is a static round .row-action-btn: its floating label
      reveals on plain :hover (same as #libraryPresetBar — the label floats and
      shifts nothing, so the JS hit-expand mechanism isn't needed). */
