@@ -36,7 +36,6 @@ Wiedervorlage → empty, Verworfen → verworfen).
 | Nr | Vorschlag | Begründung | Aufwand | Prio |
 |---|---|---|---|---|
 | 128 | Bug: Facets stay unchanged when an entry is selected in the Link filter | Selecting an entry in the Link filter does not update the Facets — they keep showing the previous state. Expected: Facets follow the Link filter selection like any other filter result. | klein–mittel | 1 |
-| 135 | Bug: "+" icons on buttons not centered and inconsistently positioned | Centralize the button-icon logic and make the "+" icons render uniformly (centered, same offset) everywhere. | klein | 1 |
 | 136 | Bug: "Show in Explorer" missing from the Files context menu | The entry is gone from the file context menu. Expected at least in the Tauri (desktop) build. | klein | 1 |
 | 73 | Custom plots — a script window as a Plot variant | A small script/expression window that produces a user-defined chart from the extracted data, alongside the built-in Plot tab. Open question: scripting surface (which data it gets, sandboxing) given the dependency-free/offline constraint. | groß | 2 |
 | 124 | One value statistic over several message types in Table/Plot | MCP usability test 2026-10-09 (task 19): the demo log has two GET formats (`Request GET … completed in Nms status=N` and `GET https://… -> N (N ms)`). For agents this is solved since round H (`get_value_stats` `sources`); the Table/Plot still work on one extraction only. Idea: an OR group of extraction filters whose columns map onto shared names. Needs a mockup and new persistence. | mittel–groß | 2 |
