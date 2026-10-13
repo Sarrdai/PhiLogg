@@ -1,0 +1,3 @@
+- **fix: no empty band in the Facets of a tall bottom panel (2026-10-13, backlog #128)**
+  - With the Facets tab open on a link node, selecting a pair could leave a large empty band between the header line and the sections; it looked like the Entry detail drawn over the Facets. The Facets grid stretched its rows to fill a panel taller than its content; it now packs them at the top.
+  - **Tests**: GROUP facets-grid-align. Docs: docs/ui-and-views.md.

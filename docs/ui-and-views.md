@@ -1010,7 +1010,7 @@ Raw/Parsed/Pretty are replaced by the entry count (`#facetPanelCount`) and
 (`.lower-stats`) `#statsPanelBody` (the extraction's stats chips,
 `renderStatsBar`) replaces it and the header shows no Raw/Parsed/Pretty.
 `applyLowerPanel()` (from `renderMainView`) sets the tab state from
-`fhActiveTab`; `renderFacetPanel()` fills the facet body.
+`fhActiveTab`; `renderFacetPanel()` fills the facet body. The facet body is a grid with `align-content:start`: in a panel taller than its sections the rows stay packed at the top instead of stretching into empty bands (backlog #128, GROUP facets-grid-align).
 
 **Why tab** ("Why is this row here?", FEATURE_BACKLOG #15). With Why selected
 (`.lower-why`, `whyActive()`) `#whyPanelBody` replaces the entry body. It shows

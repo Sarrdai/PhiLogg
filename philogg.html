@@ -3362,10 +3362,13 @@
   /* ---------- Facet panel (value distribution per column) ----------
      The second tab of the bottom panel (#detailPanel, "Entry detail | Facets"):
      the sections stand side by side as grid columns and the body scrolls as a
-     whole. The panel gets its height from #detailResizer like the detail tab. */
+     whole. The panel gets its height from #detailResizer like the detail tab.
+     align-content:start: in a panel taller than its sections the grid would
+     otherwise stretch its rows and open empty bands between the header line
+     and the sections (backlog #128). */
   #facetPanelBody{
     display:none; flex:1 1 auto; min-height:0; overflow:auto; padding:6px 0 10px; user-select:none;
-    grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); align-items:start;
+    grid-template-columns:repeat(auto-fill, minmax(260px, 1fr)); align-items:start; align-content:start;
   }
   #detailPanel.lower-facets #facetPanelBody{display:grid;}
   #detailPanel.lower-facets.collapsed:not(.peeking) #facetPanelBody{display:none;}
