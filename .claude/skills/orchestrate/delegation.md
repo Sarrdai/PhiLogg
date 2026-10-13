@@ -20,6 +20,11 @@ the brief — it must not re-derive it.
  located; relevant PROJECT.md / docs/*.md sections; gotchas that apply
  (e.g. new filter-node field → all persistence carriers)>
 
+## Parallel (only when other agents run at the same time)
+<Worktree: link tests/node_modules first (merge.md → "Setup"), commit
+ on your worktree branch. Insert new code at its topical place, not at
+ the end of a section. Areas the other running steps touch — stay out.>
+
 ## Root cause (bugs only)
 <Your diagnosis — fix that, not the symptom>
 

@@ -25,7 +25,7 @@ Never rebase or force-push a branch that is already pushed. Conflict rules:
 | `tests/philogg.regression.test.js` | Harness and shared helpers only since 2026-10-01. A branch started earlier that added or changed a group in it: move that group's change into its `tests/groups/NNN-*.js` file (a new group becomes a new file) and take `main`'s side of the main file. |
 | `FEATURE_BACKLOG.md` | Keep both sides' rows. `LAST_ID` = the higher value; if both sides used the same new ID, give yours the next free one (`LAST_ID` + 1) and fix any reference to it in your branch. |
 | `PROJECT.md`, `docs/*.md`, `README.md` | Merge by content: the result must describe the current state of both changes, not two narratives. |
-| `philogg.html` | Resolve by understanding both changes; re-run the groups of both sides (`GROUP=a,b npm test`). |
+| `philogg.html` | Resolve by understanding both changes; re-run the groups of both sides (`GROUP=a,b npm test`). Many hunks or unclear intent: `orchestrate/merge.md` → "Resolving conflicts". |
 
 ## 2. Tests (only when code changed)
 
