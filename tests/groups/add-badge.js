@@ -34,24 +34,22 @@ await withApp(async (w, d, T) => {
   assert(op.querySelector('path[d="M4 1.5h5.5L12.5 4.5V14.5H4Z"]'), "#btnOpen shows the file glyph");
   assert(!op.querySelector('path[d="M8 2.5v11M2.5 8h11"]'), "no plain '+' in #btnOpen");
   assert(op.querySelector(".btn-short-label").textContent === "Open", "phone short label stays 'Open'");
-  const bs = w.getComputedStyle(op.querySelector(".add-badge"));
-  assert(bs.width === "9px", "badge in the 24px header button is 9px, got " + bs.width);
+  assert(w.getComputedStyle(op.querySelector(".add-badge")).width === "10px", "badge in the header button is the shared 10px disc");
   const lib = one(d.querySelector('#sidebarToolbar [data-row-action="addToLibrary"]'), "Add to library…");
   assert(lib.querySelector('svg.icon use[href="#i-book"]'), "Add to library… shows the plain book");
   assert(!lib.querySelector('use[href="#i-bookplus"]'), "no bookplus left there");
   const lv = one(d.querySelector("#btnApplyLevelToTree"), "Add level filter");
-  assert(lv.querySelector('svg.icon use[href="#i-level"]'), "Add level filter keeps the level dots");
-  assert(w.getComputedStyle(lv.querySelector(".add-badge")).width === "11px", "badge elsewhere is 11px");
-  // On #viewBar's circles the badge anchors to the 28px .row-action-hit (button edge),
-  // not the 13px icon, so it covers none of the glyph (the level icon's INFO dot).
+  assert(lv.querySelector('svg.icon use[href="#i-level-add"]'), "Add level filter keeps the level dots (badge-safe arrangement)");
+  assert(w.getComputedStyle(lv.querySelector(".add-badge")).width === "10px", "badge elsewhere is the same 10px disc");
+  // One shared, icon-anchored rule (#135): every badge sits in a relative .add-badge-wrap, no per-site anchor/size overrides.
   const pos = e => w.getComputedStyle(e).position;
-  for (const [btn, what] of [[lv, "Add level filter"], [nw, "New"]]) {
-    const b = btn.querySelector(".add-badge");
-    assert(pos(b.parentElement) === "static" && pos(b.closest(".row-action-hit")) === "relative",
-      what + ": badge positioned against .row-action-hit (wrap static, hit relative)");
+  for (const [btn, what] of [[lv, "Add level filter"], [nw, "New"], [op, "#btnOpen"], [lib, "Add to library…"]]) {
+    assert(pos(btn.querySelector(".add-badge-wrap")) === "relative", what + ": badge positioned against the icon wrapper");
+    const b = w.getComputedStyle(btn.querySelector(".add-badge"));
+    assert(b.right === "-4px" && b.bottom === "-4px" && b.width === "10px" && b.height === "10px", what + ": shared offset/size, got " + b.right + " " + b.bottom + " " + b.width);
   }
-  for (const [btn, what] of [[op, "#btnOpen"], [lib, "Add to library…"]])
-    assert(pos(btn.querySelector(".add-badge-wrap")) === "relative", what + " (borderless): badge positioned against the icon wrapper");
+  const css = d.querySelector("style").textContent.replace(/\/\*[\s\S]*?\*\//g, "");
+  assert(!/(#viewBar|\.panel-toggle-btn)[^{}]*\.add-badge[^{}]*\{/.test(css) && !/\.add-badge-wrap\{position:static/.test(css), "no per-site badge anchor/size overrides in the CSS");
 
   // Nothing else gets one.
   assert(d.querySelectorAll("#viewBar .add-badge").length === 2, "#viewBar holds exactly two badges (level + New)");

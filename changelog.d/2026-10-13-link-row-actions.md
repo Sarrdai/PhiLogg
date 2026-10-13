@@ -1,0 +1,3 @@
+- **fix: "Message"/"Extract" work again on a selected Link pair (2026-10-13, backlog #129)**
+  - Selecting a pair in the Link view (List block, Tree row, ↑/↓) left the toolbar's "Filter for this message" and "Extract" grayed out: the selection never refreshed the row-action buttons. Every Link selection change now goes through `linkSelectionChanged()`.
+  - **Tests**: GROUP link-row-actions. Docs: docs/filters.md.

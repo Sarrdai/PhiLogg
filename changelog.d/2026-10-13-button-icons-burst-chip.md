@@ -1,0 +1,5 @@
+- **fix: centered, uniform button icons; spacing for the Bursts chip (2026-10-13, backlog #135, #132)**
+  - Button icon centering is one shared CSS rule (`.icon-btn`, `.toolbar-icon-btn`, `.stepper-btn`, `.row-action-hit`, `.tb-hit`) instead of per-button copies; the stepper -/+ buttons now use the `i-minus`/`i-plus` sprite icons instead of text glyphs, so they center like all other icons (#135).
+  - The "+" add badge is one shared rule: same 10px disc, same icon-anchored offset and a pixel-centered plus at all four sites (New, Add level filter, Open, Add to library); "Add level filter" uses `i-level-add` so the badge covers none of its dots (#135).
+  - The minimap "Bursts" chip no longer sits flush on the timeline strip (#132).
+  - **Tests**: GROUP button-icon-alignment. Docs: docs/ui-standard.md.

@@ -30,7 +30,7 @@ await withApp(async (w, d, T) => {
   T.state.activeId = f.id;
   w.render();
   const btn = d.querySelector("#btnApplyLevelToTree");
-  assert(btn.querySelector('svg.icon use[href="#i-level"]'), "button draws the level icon");
+  assert(btn.querySelector('svg.icon use[href="#i-level-add"]'), "button draws the level icon (badge-safe arrangement)");
   assert(btn.querySelectorAll(".add-badge").length === 1, "exactly one badge");
   const badge = btn.querySelector(".add-badge");
   assert(badge.querySelector("svg path") && badge.querySelector("svg").getAttribute("viewBox") === "0 0 8 8", "badge holds the 8x8 plus glyph");
@@ -39,8 +39,8 @@ await withApp(async (w, d, T) => {
   assert(lbl && lbl.querySelector(".hint-name").textContent === "Add level filter" && w.getComputedStyle(lbl).position === "absolute", "floating label 'Add level filter' is absolutely positioned");
   assert(btn.title === "Add level filter", "tooltip stays 'Add level filter'");
   const bcs = w.getComputedStyle(badge);
-  assert(bcs.position === "absolute" && bcs.width === "11px" && bcs.height === "11px" && bcs.right === "-3px" && bcs.bottom === "-3px",
-    "badge is an 11px disc on the icon's bottom-right edge, got " + [bcs.position, bcs.width, bcs.height, bcs.right, bcs.bottom].join(" "));
+  assert(bcs.position === "absolute" && bcs.width === "10px" && bcs.height === "10px" && bcs.right === "-4px" && bcs.bottom === "-4px",
+    "badge is the shared 10px disc on the icon's bottom-right edge, got " + [bcs.position, bcs.width, bcs.height, bcs.right, bcs.bottom].join(" "));
   assert(isVisible(btn, w) && btn.disabled, "button stays in its slot, disabled, while nothing is selected");
   fireClick(d.querySelector('#levelBar .level-btn[data-level="ERROR"]'), w);
   assert(isVisible(btn, w) && !btn.disabled, "...and enabled once a chip is selected");
