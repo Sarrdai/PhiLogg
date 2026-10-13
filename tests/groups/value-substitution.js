@@ -315,16 +315,21 @@ const vsMenuItems = d => [...d.querySelectorAll("#contextMenu .ctx-name-item")];
 const vsShown = (w, d, sel) => !d.querySelector(sel).classList.contains("hidden");
 
 await withApp(async (w, d, T) => {
-  section("value-substitution k. Context menu: 'Name this <Column> from message…' per column with a value; provided formats read-only");
+  section("value-substitution k. Context menu: 'Name this <Column> from message…' only for the clicked column (as 'Filter for this ___'); provided formats read-only");
   await waitForFormatConfig(T);
   const file = vsDevices(300, 7);
   const f = await w.addFile(file.name, file.text, () => {});
   T.state.activeId = f.id; w.render();
   const entry = f.entries[0];
-  w.openContextMenu({ clientX: 10, clientY: 10 }, entry);
+  const cell = key => { const c = d.createElement("span"); c.dataset.col = key; d.body.appendChild(c); return { clientX: 10, clientY: 10, target: c }; };
+  w.openContextMenu(cell("message"), entry);
+  assert(vsMenuItems(d).length === 0, "right-click on Message: no item");
+  w.openContextMenu(cell("method"), entry);
+  assert(vsMenuItems(d).map(i => i.textContent.trim()).join("|") === "Name this Method from message…", "right-click on Method: only its item");
+  w.openContextMenu(cell("thread"), entry);
   const items = vsMenuItems(d);
   const labels = items.map(i => i.textContent.trim());
-  assert(labels.join("|") === "Name this Thread from message…|Name this Location from message…|Name this Method from message…", "one item per column with a value, got " + labels.join("|"));
+  assert(labels.join("|") === "Name this Thread from message…", "right-click on Thread: only its item, got " + labels.join("|"));
   assert(items.every(i => !i.classList.contains("disabled") && !i.title), "enabled on an own format");
   assert(d.querySelector("#contextMenu .ctx-name-item").nextElementSibling && items[0].previousElementSibling.textContent.includes("Filter for this"), "the items sit in the Filter group");
   fireClick(items[0], w);
@@ -334,15 +339,15 @@ await withApp(async (w, d, T) => {
   assert(d.querySelector("#substDialog").classList.contains("hidden"), "closeSubstDialog hides it");
 
   // A pair row / plain text never offers it.
-  w.openContextMenu({ clientX: 10, clientY: 10 }, Object.assign({}, entry, { isPair: true }));
+  w.openContextMenu(cell("thread"), Object.assign({}, entry, { isPair: true }));
   assert(vsMenuItems(d).length === 0, "no items for a link pair row");
 
   // Provided format: disabled with an explaining tooltip, a click does nothing.
   const fmt = w.findLogFormat("fmt-default");
   fmt.provided = true;
-  w.openContextMenu({ clientX: 10, clientY: 10 }, entry);
+  w.openContextMenu(cell("thread"), entry);
   const dis = vsMenuItems(d);
-  assert(dis.length === 3 && dis.every(i => i.classList.contains("disabled") && /read-only/.test(i.title) && /duplicate/i.test(i.title)), "provided format: disabled with a tooltip about read-only/duplicate");
+  assert(dis.length === 1 && dis.every(i => i.classList.contains("disabled") && /read-only/.test(i.title) && /duplicate/i.test(i.title)), "provided format: disabled with a tooltip about read-only/duplicate");
   fireClick(dis[0], w);
   assert(d.querySelector("#substDialog").classList.contains("hidden"), "a disabled item opens nothing");
   fmt.provided = false;

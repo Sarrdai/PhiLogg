@@ -45369,13 +45369,14 @@ function substPrefillGlob(fmt, node) {
   const hit = rules.find(r => r.formatId === fmt.id && fileNameGlobTest(r.glob, name));
   return hit ? hit.glob : "";
 }
-// One row per substitutable column; a provided format's rows are disabled (read-only).
+// One row for the clicked column (ctxFilterColumn, the same column "Filter for this ___" uses) when it is
+// substitutable; none for Time/Level/Message. A provided format's row is disabled (read-only).
 function renderCtxNameItems(entry) {
   contextMenu.querySelectorAll(".ctx-name-item").forEach(n => n.remove());
   const info = substContextFor(entry);
   if (!info) return;
   const anchor = el("#ctxNameSlot");
-  info.columns.forEach(col => {
+  info.columns.filter(col => ctxFilterColumn && col.key === ctxFilterColumn.key).forEach(col => {
     const row = document.createElement("div");
     row.className = "ctx-item ctx-name-item" + (info.fmt.provided ? " disabled" : "");
     row.dataset.col = col.key;

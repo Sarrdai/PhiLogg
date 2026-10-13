@@ -51,7 +51,7 @@ await withApp(async (w, d, T) => {
 
   open(f.entries[3]);
   let t = cmgTokens(menu, w);
-  assert(cmgJoin(t) === ["meta", "sep", "head:Filter", "ctxFilterForColumn", "name:thread", "name:location", "name:method", "ctxExtractMessage",
+  assert(cmgJoin(t) === ["meta", "sep", "head:Filter", "ctxFilterForColumn", "ctxExtractMessage",
     "sep", "head:Time filter", "ctxBefore", "ctxAfter",
     "sep", "head:Analyze", "ctxWhyRow", "ctxPairWith", "ctxTimeZero",
     "sep", "head:Mark", "ctxBookmark", "ctxNote", "ctxAddToSelection",
