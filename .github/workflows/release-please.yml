@@ -35,9 +35,9 @@ permissions:
 jobs:
   propose-release:
     if: github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
@@ -45,13 +45,13 @@ jobs:
 
   cut-release:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
       version: ${{ steps.version.outputs.version }}
     steps:
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         id: release
         with:
           config-file: release-please-config.json
@@ -75,7 +75,7 @@ jobs:
 
   publish:
     needs: [cut-release, build]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       # The HTML artifact is a regular zip (page + LICENSE.md) and gets
       # unpacked; the desktop files were uploaded unzipped and must not be,
