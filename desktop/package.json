@@ -1,6 +1,6 @@
 {
   "name": "philogg-desktop",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Tauri v2 desktop wrapper for philogg.html: frameless window, .log file associations, tray, settings mirroring and a native folder watch, built on the OS webview. philogg.html itself is loaded unmodified through a custom philogg:// scheme.",
   "scripts": {
