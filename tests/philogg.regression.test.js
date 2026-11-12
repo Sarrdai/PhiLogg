@@ -339,6 +339,8 @@ async function withApp(run, opts = {}) {
       get highlightColorMap() { return highlightColorMap; },
       get currentViewEntries() { return currentViewEntries; },
       get currentHighlightViewEntries() { return currentHighlightViewEntries; },
+      get tableRowsWindow() { return tableRowsWindow; },
+      get highlightRowsWindow() { return highlightRowsWindow; },
       get contextActive() { return contextActive; },
       get contextGaps() { return contextGaps; },
       get contextMatchIds() { return contextMatchIds; },

@@ -19895,6 +19895,98 @@ function getChain(id) {
 const el = sel => document.querySelector(sel);
 const elAll = sel => [...document.querySelectorAll(sel)];
 
+// --- syncChildren: re-render without rebuilding what did not change --------
+// A render function builds its elements exactly as before, then hands them to
+// syncChildren(container, freshNodes) instead of `innerHTML = ""` + append.
+// Every existing child that is identical to its freshly built counterpart
+// stays in the DOM untouched (same element object, no mutation, so hover,
+// focus, animations and native click/dblclick sequences survive); only what
+// differs is replaced, inserted or removed. A unit is kept whole or replaced
+// whole — attributes/children inside a unit are never patched, because its
+// event listeners are closures created together with it.
+//
+// Matching: by `el._syncKey` (a string, unique per container; the first
+// holder wins, a duplicate counts as unmatched) or, without a key, in order
+// against the next unused unkeyed old child.
+// Keeping: `domSame(old, fresh)` — same markup (isEqualNode), same
+// `_syncToken` (identity of whatever the unit's listeners captured: the entry
+// object, the filter node, ...; an array token is compared element-wise;
+// undefined === undefined passes), no <canvas> inside (pixels are not markup)
+// and equal form-control state (value/checked/indeterminate/selectedIndex).
+// `_syncDeep = true` on both sides with the same key makes the unit a
+// transparent container: its attributes are synced and its children are synced
+// recursively with these same rules.
+// A builder that sets an expando property (`el._x = ...`) another function
+// reads later must put that value into `_syncToken` (or keep it a function of
+// the markup), or a kept element would carry a stale one.
+// A post-build change to the live DOM (a class added later, ...) only makes
+// the old element differ from its fresh twin: it is replaced and the post-step
+// runs again, as before — correct, just not reused.
+// Returns the resulting children in `fresh` order (the kept old element or
+// the fresh one).
+function syncTokenSame(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function domSame(old, fresh) {
+  if (old.nodeType !== fresh.nodeType) return false;
+  if (old.nodeType !== 1) return old.isEqualNode(fresh);
+  if (!syncTokenSame(old._syncToken, fresh._syncToken)) return false;
+  if (!old.isEqualNode(fresh)) return false;
+  if (old.tagName === "CANVAS" || old.querySelector("canvas")) return false;
+  const ctl = "input,select,textarea";
+  const same = (a, b) => a.value === b.value && a.checked === b.checked && a.indeterminate === b.indeterminate &&
+    a.selectedIndex === b.selectedIndex;
+  if (old.matches(ctl) && !same(old, fresh)) return false;
+  const oc = old.querySelectorAll(ctl);
+  if (oc.length) {
+    const fc = fresh.querySelectorAll(ctl);
+    for (let i = 0; i < oc.length; i++) if (!same(oc[i], fc[i])) return false;
+  }
+  return true;
+}
+function syncAttributes(target, source) {
+  for (const a of Array.from(target.attributes)) if (!source.hasAttribute(a.name)) target.removeAttribute(a.name);
+  for (const a of Array.from(source.attributes)) if (target.getAttribute(a.name) !== a.value) target.setAttribute(a.name, a.value);
+}
+function syncChildren(parent, fresh, opts) {
+  const old = Array.from(parent.childNodes);
+  const byKey = new Map(), unkeyed = [];
+  for (const o of old) {
+    const k = o._syncKey;
+    if (k === undefined) unkeyed.push(o);
+    else if (!byKey.has(k)) byKey.set(k, o);
+  }
+  let ui = 0;
+  const result = [], kept = new Set();
+  for (const f of fresh) {
+    const k = f._syncKey;
+    let o;
+    if (k !== undefined) { o = byKey.get(k); byKey.delete(k); } else o = unkeyed[ui++];
+    let chosen = f;
+    if (o) {
+      if (domSame(o, f)) chosen = o;
+      else if (o.nodeType === 1 && o._syncDeep && f._syncDeep && k !== undefined) {
+        syncAttributes(o, f);
+        o._syncToken = f._syncToken;
+        syncChildren(o, Array.from(f.childNodes), opts);
+        chosen = o;
+      }
+    }
+    if (chosen === o) kept.add(o);
+    result.push(chosen);
+  }
+  for (const o of old) if (!kept.has(o)) parent.removeChild(o);
+  let cur = parent.firstChild;
+  for (const r of result) {
+    if (r === cur) cur = cur.nextSibling;
+    else parent.insertBefore(r, cur);
+  }
+  return result;
+}
+
 // --- Boolean pill toggle (docs/ui-standard.md #69) -------------------------
 // A single on/off option is a <button role="switch" class="pill-toggle"
 // aria-checked>, NOT a native checkbox. State lives in aria-checked (+ an
@@ -30927,11 +31019,16 @@ function renderVisibleRows(reuseRows) {
       tableRows.appendChild(frag);
     }
   } else {
+    // Build every row as before, then keep the ones already in the DOM that
+    // came out identical (syncChildren); `groups` must hold the elements that
+    // really are in #tableRows afterwards, kept or fresh.
     const frag = document.createDocumentFragment();
+    const built = [];
+    for (let i = start; i < end; i++) built.push(appendLogRow(frag, i, rc));
+    const synced = syncChildren(tableRows, built.flat());
     groups = [];
-    for (let i = start; i < end; i++) groups.push(appendLogRow(frag, i, rc));
-    tableRows.innerHTML = "";
-    tableRows.appendChild(frag);
+    let k = 0;
+    for (const g of built) { groups.push(synced.slice(k, k + g.length)); k += g.length; }
   }
   tableRowsWindow = { entries: currentViewEntries, total, start, end, groups, first: tableRows.firstElementChild };
   verifyVisibleFpCandidates(tableRows);
@@ -31096,6 +31193,8 @@ function appendLogRow(frag, i, rc) {
     }
     row.title = tips.join("\n");
   }
+  row._syncKey = "e:" + e.id;
+  row._syncToken = e; // the listeners below capture the entry object
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
@@ -31134,6 +31233,8 @@ function appendNoteRow(frag, e) {
   noteRow.className = "note-row";
   noteRow.style.height = noteHeightForEntry(e) + "px";
   noteRow.dataset.entryId = e.id;
+  noteRow._syncKey = "note:" + e.id;
+  noteRow._syncToken = e;
   noteRow.textContent = note;
   noteRow.title = "Double-click to edit";
   noteRow.addEventListener("dblclick", ev => { ev.stopPropagation(); openNoteEditor(e.id); });
@@ -32974,7 +33075,18 @@ function highlightRowDeltaMs(i, e) {
   const prevE = i > 0 ? currentHighlightViewEntries[i - 1] : null;
   return prevE && !isPlainTextFormat(e.formatId) ? (e.ts - prevE.ts) : null;
 }
-function renderHighlightVisibleRows() {
+// The elements currently in #highlightRows, recorded by every
+// renderHighlightVisibleRows() call so the next SCROLL render can keep the ones
+// still inside its window (same idea as tableRowsWindow). units[k] holds
+// everything of entry start + k: its row, its note row and the filler rows
+// hanging off it; `lead` the leading filler rows above row 0 (only when
+// start === 0).
+let highlightRowsWindow = null;
+
+// reuseRows: see renderVisibleRows — only the #highlightBody scroll listener
+// passes it. Every other call builds all rows of the window and syncs them
+// into the DOM (syncChildren), so unchanged rows keep their element.
+function renderHighlightVisibleRows(reuseRows) {
   if (textEditorShown()) { editorRender(false); return; } // the editor has its own window — see editorRender
   const total = currentHighlightViewEntries.length;
   const viewportH = highlightBody.clientHeight || 400;
@@ -32988,8 +33100,18 @@ function renderHighlightVisibleRows() {
   // so rebuildHighlightOffsets always produces an offsets array.
   const offsets = highlightRowOffsets || buildContextRowOffsets(currentHighlightViewEntries, contextStrips);
   const centerIdx = findOffsetIndex(offsets, scrollTop);
-  const start = Math.max(0, centerIdx - BUFFER_ROWS);
-  const end = Math.min(total, findOffsetIndex(offsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
+  const lastIdx = findOffsetIndex(offsets, scrollTop + viewportH);
+  // A full render uses the small BUFFER_ROWS; a scroll render only builds what
+  // is new to the window, so it can afford a whole screen on each side (and a
+  // jump with no overlap falls back to the small one) — see renderVisibleRows.
+  const w = highlightRowsWindow;
+  const canReuse = !!(reuseRows && w && w.entries === currentHighlightViewEntries && w.total === total &&
+    w.strips === contextStrips && w.viewportW === viewportW && highlightRows.firstElementChild === w.first);
+  let pad = canReuse ? Math.max(BUFFER_ROWS, Math.ceil(viewportH / ROW_HEIGHT)) : BUFFER_ROWS;
+  let start = Math.max(0, centerIdx - pad);
+  let end = Math.min(total, lastIdx + pad + 1);
+  const reuse = canReuse && start < w.end && end > w.start;
+  if (canReuse && !reuse) { start = Math.max(0, centerIdx - BUFFER_ROWS); end = Math.min(total, lastIdx + BUFFER_ROWS + 1); }
   // offsets[0] carries the LEADING strip's height (it has no row to hang off),
   // so row 0's window must still start at 0 — the strip is rendered inside this
   // same container, above row 0.
@@ -33009,100 +33131,144 @@ function renderHighlightVisibleRows() {
   const syntax = activePlainTextSyntax();
   const hlZero = timeZeroContext();
 
-  const frag = document.createDocumentFragment();
-  // A leading gap's filler rows have no row to hang off — they belong above
-  // row 0, and their height is already folded into offsets[0].
-  if (start === 0 && contextStrips.has(-1)) appendContextFillers(frag, contextStrips.get(-1), -1, viewportW);
-  for (let i = start; i < end; i++) {
-    const e = currentHighlightViewEntries[i];
-    const row = document.createElement("div");
-    let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
-      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") + pairPickRowClass(e);
-
-    const colors = highlightColorMap.get(e.id);
-    let markerHtml = colors && colors.length
-      ? '<span class="hl-markers">' + colors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>'
-      : "";
-    // Match rows carry the SAME dot the context/countContext filter draws next
-    // to its reference entries in the Filtered view (.ctx-anchor-dot) — one
-    // marker per result, in the gutter lane, so a match reads as a match
-    // without the row itself being decorated. Revealed context rows
-    // (.ctx-context) get no treatment of their own at all any more: not dimmed
-    // (that fought the .lvl-error/.lvl-warn row tinting, the most important
-    // colour information in a log view) and not indented either
-    // (person-requested — their run's connecting line lives in the same gutter
-    // lane as the dots, so no log text ever moves sideways). `run` is the
-    // revealed run this row belongs to, looked up per visible row rather than
-    // stored per row — see contextRunAt.
-    let run = null;
-    if (contextActive) {
-      if (contextMatchIds.has(e.id)) {
-        cls += " ctx-row ctx-match";
-        markerHtml += '<span class="ctx-anchor-dot" title="Filter match"></span>';
-      } else {
-        cls += " ctx-context";
-        run = contextRunAt(i);
-      }
+  const hc = { mm, columnDefs, messageVisible, syntax, hlZero, viewportW };
+  const lead = start === 0 && contextStrips.has(-1);
+  let leadEls, units;
+  if (reuse) {
+    // Keep what is still inside the window, drop what scrolled out, build only
+    // what scrolled in (a leading filler group lives with row 0's window).
+    const keepLead = start === 0 && w.start === 0;
+    if (!keepLead) w.lead.forEach(el => el.remove());
+    for (let i = w.start; i < Math.min(start, w.end); i++) w.units[i - w.start].forEach(el => el.remove());
+    for (let i = Math.max(end, w.start); i < w.end; i++) w.units[i - w.start].forEach(el => el.remove());
+    units = w.units.slice(Math.max(start, w.start) - w.start, Math.min(end, w.end) - w.start);
+    leadEls = keepLead ? w.lead : [];
+    if (start < w.start) {
+      const frag = document.createDocumentFragment();
+      if (lead) leadEls = appendContextFillers(frag, contextStrips.get(-1), -1, viewportW);
+      const above = [];
+      for (let i = start; i < w.start; i++) above.push(buildHighlightRowUnit(i, frag, hc));
+      highlightRows.insertBefore(frag, highlightRows.firstChild);
+      units = above.concat(units);
     }
-    const deltaMs = highlightRowDeltaMs(i, e);
-
-    const rowH = baseRowHeightForEntry(e, highlightWrapCols);
-    if (rowH > ROW_HEIGHT) cls += " row-tall";
-    row.className = cls;
-    row.style.height = rowH + "px";
-    row.dataset.entryId = e.id;
-    row.dataset.viewIdx = String(i); // table text selection: this row's index in currentHighlightViewEntries
-    // markFieldHtml short-circuits to a plain escapeHtml before any range
-    // search when nothing can contribute a mark (no coloured rules, or the
-    // rule-marking toggle off), so this stays a plain escapeHtml call in the
-    // common case — same shape as renderVisibleRows.
-    const timeText = displayTimeText(e, hlZero);
-    const timeAttrs = relTimeCellAttrs(e, hlZero);
-    const isZeroRow = !!hlZero && e.id === hlZero.id;
-    if (isZeroRow) cls += " row-zero";
-    const timeCls = hlZero && !isPlainTextFormat(e.formatId) ? (isZeroRow ? " t-rel t-zero" : " t-rel") : "";
-    const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message", plainTextSyntaxRanges(e, syntax));
-    const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
-    // Custom Columns: same generalized middle-column loop as
-    // renderVisibleRows — see its own comment.
-    let middleHtml = "";
-    for (const col of columnDefs) {
-      const val = entryColumnValue(e, col.key);
-      const html = markFieldHtml(mm, val, col.key);
-      middleHtml += middleCellHtml(col.key, val, html, entryAltColumnValue(e, col.key));
+    if (end > w.end) {
+      const frag = document.createDocumentFragment();
+      for (let i = w.end; i < end; i++) units.push(buildHighlightRowUnit(i, frag, hc));
+      highlightRows.appendChild(frag);
     }
-    row.innerHTML =
-      markerHtml +
-      (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
-      '<span class="col-bar"></span>' +
-      '<span class="col-time' + timeCls + '" data-col="time" data-sel-col="time"' + timeAttrs + '>' + markFieldHtml(mm, timeText, "time") + '</span>' +
-      '<span class="col-delta' + deltaClass(deltaMs) + '" data-sel-col="delta">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      levelCellHtml(e, markFieldHtml(mm, e.level, "level")) +
-      middleHtml +
-      (messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message" data-sel-col="message">' + hlMsgHtml + '</span>' : "");
-    // A PLAIN click is a jump to that match and gets the expansion treatment
-    // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
-    // gesture and must leave the row list alone, or the range the person is
-    // building moves under them mid-gesture.
-    row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
-      (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
-    row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
-    row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
-    // Every revealed context row carries its slice of its run's connecting
-    // line — appended as a real child AFTER innerHTML is set (a plain HTML
-    // string can't carry its own click listener), with its own
-    // stopPropagation so clicking the line collapses the run instead of also
-    // selecting the row underneath it.
-    if (run) row.appendChild(makeContextRunHandle(run, i === run.firstRow, i === run.lastRow));
-    frag.appendChild(row);
-    appendNoteRow(frag, e);
-    if (contextStrips.has(i)) appendContextFillers(frag, contextStrips.get(i), i, viewportW);
+  } else {
+    // Build the whole window as before, then keep the rows already in the DOM
+    // that came out identical (syncChildren); the window records the elements
+    // that really are in #highlightRows afterwards.
+    const frag = document.createDocumentFragment();
+    const builtLead = lead ? appendContextFillers(frag, contextStrips.get(-1), -1, viewportW) : [];
+    const built = [];
+    for (let i = start; i < end; i++) built.push(buildHighlightRowUnit(i, frag, hc));
+    const synced = syncChildren(highlightRows, builtLead.concat(built.flat()));
+    let k = 0;
+    leadEls = synced.slice(0, builtLead.length);
+    k = builtLead.length;
+    units = [];
+    for (const g of built) { units.push(synced.slice(k, k + g.length)); k += g.length; }
   }
-  highlightRows.innerHTML = "";
-  highlightRows.appendChild(frag);
+  highlightRowsWindow = { entries: currentHighlightViewEntries, total, start, end, units, lead: leadEls,
+    strips: contextStrips, viewportW, first: highlightRows.firstElementChild };
   verifyVisibleFpCandidates(highlightRows);
   syncHighlightHeaderWidth();
   paintTableTextSel();
+}
+
+// Builds currentHighlightViewEntries[i]'s row into `frag` together with its
+// note row and the filler rows hanging off it; returns those elements in order.
+function buildHighlightRowUnit(i, frag, hc) {
+  const e = currentHighlightViewEntries[i];
+  const row = document.createElement("div");
+  let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
+    (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") + pairPickRowClass(e);
+
+  const colors = highlightColorMap.get(e.id);
+  let markerHtml = colors && colors.length
+    ? '<span class="hl-markers">' + colors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>'
+    : "";
+  // Match rows carry the SAME dot the context/countContext filter draws next
+  // to its reference entries in the Filtered view (.ctx-anchor-dot) — one
+  // marker per result, in the gutter lane, so a match reads as a match
+  // without the row itself being decorated. Revealed context rows
+  // (.ctx-context) get no treatment of their own at all any more: not dimmed
+  // (that fought the .lvl-error/.lvl-warn row tinting, the most important
+  // colour information in a log view) and not indented either
+  // (person-requested — their run's connecting line lives in the same gutter
+  // lane as the dots, so no log text ever moves sideways). `run` is the
+  // revealed run this row belongs to, looked up per visible row rather than
+  // stored per row — see contextRunAt.
+  let run = null;
+  if (contextActive) {
+    if (contextMatchIds.has(e.id)) {
+      cls += " ctx-row ctx-match";
+      markerHtml += '<span class="ctx-anchor-dot" title="Filter match"></span>';
+    } else {
+      cls += " ctx-context";
+      run = contextRunAt(i);
+    }
+  }
+  const deltaMs = highlightRowDeltaMs(i, e);
+
+  const rowH = baseRowHeightForEntry(e, highlightWrapCols);
+  if (rowH > ROW_HEIGHT) cls += " row-tall";
+  row.className = cls;
+  row.style.height = rowH + "px";
+  row.dataset.entryId = e.id;
+  row.dataset.viewIdx = String(i); // table text selection: this row's index in currentHighlightViewEntries
+  // markFieldHtml short-circuits to a plain escapeHtml before any range
+  // search when nothing can contribute a mark (no coloured rules, or the
+  // rule-marking toggle off), so this stays a plain escapeHtml call in the
+  // common case — same shape as renderVisibleRows.
+  const timeText = displayTimeText(e, hc.hlZero);
+  const timeAttrs = relTimeCellAttrs(e, hc.hlZero);
+  const isZeroRow = !!hc.hlZero && e.id === hc.hlZero.id;
+  if (isZeroRow) cls += " row-zero";
+  const timeCls = hc.hlZero && !isPlainTextFormat(e.formatId) ? (isZeroRow ? " t-rel t-zero" : " t-rel") : "";
+  const hlMsgHtmlBase = markFieldHtml(hc.mm, e.message, "message", plainTextSyntaxRanges(e, hc.syntax));
+  const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
+  // Custom Columns: same generalized middle-column loop as
+  // renderVisibleRows — see its own comment.
+  let middleHtml = "";
+  for (const col of hc.columnDefs) {
+    const val = entryColumnValue(e, col.key);
+    const html = markFieldHtml(hc.mm, val, col.key);
+    middleHtml += middleCellHtml(col.key, val, html, entryAltColumnValue(e, col.key));
+  }
+  row.innerHTML =
+    markerHtml +
+    (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
+    '<span class="col-bar"></span>' +
+    '<span class="col-time' + timeCls + '" data-col="time" data-sel-col="time"' + timeAttrs + '>' + markFieldHtml(hc.mm, timeText, "time") + '</span>' +
+    '<span class="col-delta' + deltaClass(deltaMs) + '" data-sel-col="delta">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
+    levelCellHtml(e, markFieldHtml(hc.mm, e.level, "level")) +
+    middleHtml +
+    (hc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message" data-sel-col="message">' + hlMsgHtml + '</span>' : "");
+  // A PLAIN click is a jump to that match and gets the expansion treatment
+  // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
+  // gesture and must leave the row list alone, or the range the person is
+  // building moves under them mid-gesture.
+  row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
+    (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
+  row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
+  row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
+  // Every revealed context row carries its slice of its run's connecting
+  // line — appended as a real child AFTER innerHTML is set (a plain HTML
+  // string can't carry its own click listener), with its own
+  // stopPropagation so clicking the line collapses the run instead of also
+  // selecting the row underneath it.
+  if (run) row.appendChild(makeContextRunHandle(run, i === run.firstRow, i === run.lastRow));
+  row._syncKey = "e:" + e.id;
+  row._syncToken = [e, run]; // the listeners capture the entry and the run (collapse handle)
+  frag.appendChild(row);
+  const unit = [row];
+  const noteRow = appendNoteRow(frag, e);
+  if (noteRow) unit.push(noteRow);
+  if (contextStrips.has(i)) unit.push(...appendContextFillers(frag, contextStrips.get(i), i, hc.viewportW));
+  return unit;
 }
 
 // One revealed row's slice of its run's connecting band: a full-row-height
@@ -33179,7 +33345,8 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
   // with local density), so showing it on the button would promise a
   // precision the setting doesn't actually offer.
   const timeMode = contextExpandStepUnit === "time";
-  fillers.forEach(f => {
+  const out = [];
+  fillers.forEach((f, fi) => {
     if (f.kind === "pruned") {
       // Not a gap and not clickable: just marks where entries were cut out.
       const row = document.createElement("div");
@@ -33189,7 +33356,9 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
       row.title = label;
       row.innerHTML = '<span class="ctx-filler-inner"' + (viewportW ? ' style="width:' + viewportW + 'px"' : '') + '>' +
         '<span class="ctx-gap-icon">' + ICON_FILE_PRUNED + '</span><span>' + escapeHtml(label) + '</span></span>';
+      row._syncKey = "f:" + rowKey + ":" + fi;
       frag.appendChild(row);
+      out.push(row);
       return;
     }
     const n = f.to - f.from;
@@ -33209,8 +33378,12 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
         ? "Show more (+" + (timeMode ? formatMs(contextExpandStepMs) : n.toLocaleString("de-DE")) + ")"
         : n.toLocaleString("de-DE") + (n === 1 ? " line" : " lines")) + '</span></span>';
     row.addEventListener("click", () => revealContextLines(f, rowKey));
+    row._syncKey = "f:" + rowKey + ":" + fi;
+    row._syncToken = [f, rowKey]; // the click listener captures both
     frag.appendChild(row);
+    out.push(row);
   });
+  return out;
 }
 
 // Scroll-triggered renders run at most once per animation frame: a burst of
@@ -33252,7 +33425,7 @@ function makeScrollRenderer(renderFn) {
   };
 }
 
-const highlightScrollRender = makeScrollRenderer(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); });
+const highlightScrollRender = makeScrollRenderer(() => { renderHighlightVisibleRows(true); updateMinimapRenderedRange(); });
 highlightBody.addEventListener("scroll", () => {
   // Twin of #tableBody's own listener below (FEATURE_BACKLOG #25): manual
   // scrolling away from the bottom of a tailed Highlight/Full view disengages
