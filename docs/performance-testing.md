@@ -111,7 +111,9 @@ unmapped Xvfb window never ticks `requestAnimationFrame`). Prints:
 
 - the scroll scale (`tableScrollHeightScale`; 1 = uncompressed) and the
   cost of a full `renderVisibleRows()` rebuild vs. a scroll render
-  (`renderVisibleRows(true)`, 100px steps), style + layout included;
+  (`renderVisibleRows(true)`, 100px steps), style + layout included — once
+  for the Filtered view and once for the Context view
+  (`renderHighlightVisibleRows` / `(true)`, same scenarios);
 - per scroll scenario (real `mouse.wheel` events): rows moved, renders,
   **blank** — renders where the viewport, just before the render, had no
   rows at its top or bottom (the old rows at the new scroll offset: what
@@ -384,6 +386,18 @@ viewport; "blank"/"jumps" per scroll render, see Level 2b):
 | 2026-09-24 | cap fix, per-frame renders, row reuse | 1 | 5.5 ms | 0.8 ms | 0 | 0/40 blank | 0/40 blank |
 
 Before the fix one wheel notch moved 68 rows; after, 4.
+
+Context view (render reuse, 2026-11-13, same file/viewport; the bench now
+runs both views). "before" is the Context view rebuilding every row on each
+scroll render:
+
+| View | State | full rebuild | scroll render | wheel down x40 | wheel up x40 | 400px flick x40 |
+|---|---|---|---|---|---|---|
+| Context | before (rows rebuilt per scroll render) | 6.5 ms | 6.5 ms | - | - | 40/40 blank |
+| Context | after (rows reused, one-screen overscan) | 6.5 ms | 0.9 ms | 0 blank, 0 jumps | 0 blank, 0 jumps | 0/40 blank |
+| Filtered | unchanged by the change | 6.7 ms | 1.1 ms | 0 blank, 0 jumps | 0 blank, 0 jumps | 0/40 blank |
+
+The Filtered scroll render reads 0.8-1.1 ms between runs. The "before" Context row is the number from before the change (taken by the lead).
 
 Prune (2026-10-07, "Prune file to this result…", headless Chromium, the
 650k-entry `perf-650k.log`, a time-range filter keeping 171,202 of 650,000

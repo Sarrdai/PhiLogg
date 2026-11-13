@@ -20470,8 +20470,17 @@ function renderPatternsVisibleRows() {
         '<span class="pattern-act" data-act="jump" title="Jump to its first entry">' + PATTERN_ACTION_ICONS.jump + "</span>" +
       "</span></div>";
   }
-  patternsRows.style.top = (start * rowH) + "px";
-  patternsRows.innerHTML = html;
+  setStyleSynced(patternsRows, "top", (start * rowH) + "px");
+  syncPatternRows(patternsRows, html);
+}
+// The pattern rows are plain markup read by one delegated click handler through data-idx (no per-row
+// listener, no expando), so markup-equal rows are kept; keyed by data-idx so a scroll keeps the overlap.
+function syncPatternRows(host, html) {
+  const twin = document.createElement("div");
+  twin.innerHTML = html;
+  const rows = Array.from(twin.children);
+  for (const r of rows) r._syncKey = r.dataset.idx;
+  syncChildren(host, rows);
 }
 patternsScroll.addEventListener("scroll", makeScrollRenderer(renderPatternsVisibleRows));
 
@@ -21642,8 +21651,8 @@ function renderPhonePatternRows() {
       '<div class="pp-text">' + text + "</div></div>" +
       '<button type="button" class="pp-hide" data-act="hide" aria-label="Hide this pattern" title="Hide this pattern">' + PATTERN_ACTION_ICONS.hide + "</button></div>";
   }
-  rowsEl.style.top = (start * rowH) + "px";
-  rowsEl.innerHTML = html;
+  setStyleSynced(rowsEl, "top", (start * rowH) + "px");
+  syncPatternRows(rowsEl, html);
 }
 el("#phonePatternsBody").addEventListener("scroll", makeScrollRenderer(renderPhonePatternRows));
 el("#phonePatternsSort").addEventListener("click", ev => {
@@ -21903,9 +21912,9 @@ function currentViewTabsList(extractCapable) {
 function renderViewTabs(extractCapable) {
   const tabs = currentViewTabsList(extractCapable);
   const activeVal = fhLayout === "stacked" && !isOffLogTab(fhActiveTab) ? "stacked" : fhActiveTab;
-  fhTabs.innerHTML = tabs.map(t =>
+  setHtmlSynced(fhTabs, tabs.map(t =>
     `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${t.disabled ? " disabled" : ""}>${t.label}</button>`
-  ).join("");
+  ).join(""));
 }
 // Ctrl+1-5: jump to the Nth tab currently shown in the View Selector (1-based,
 // left to right) — person-requested. In tabs layout that's Patterns, Context,
@@ -23982,10 +23991,10 @@ document.addEventListener("mouseup", ev => {
 
 // Manual double-click detection for tree rows, instead of a native
 // "dblclick" listener: a tree row's own click handler always ends in a full
-// render(), which rebuilds every #tree row from scratch (see CLAUDE.md's
-// "DOM identity across clicks" gotcha) — so by the time a second physical
-// click lands, the row it landed on is a different DOM node than the one
-// the first click fired on, and a real browser never pairs the two clicks
+// render(), which (before the tree synced its rows, see docs/ui-and-views.md
+// "Render reuse") rebuilt every #tree row from scratch — a row whose state
+// changed is still replaced, so the second physical click can land on a
+// different DOM node than the first, and a real browser never pairs the two clicks
 // into a native "dblclick". Tracking the clicked node id + timestamp in JS
 // instead sidesteps that entirely, since it doesn't depend on element
 // identity surviving the render in between.
@@ -26279,11 +26288,16 @@ function renderLinkVisibleBlocks() {
 
   linkBody.style.top = linkBlockOffsets[start] + "px";
 
-  const frag = document.createDocumentFragment();
+  // Unchanged blocks/rows keep their element (syncChildren, docs/ui-and-views.md "Render reuse"); the key
+  // is the position in the shown list, the markup (data-pair-index, texts) and the token decide the rest.
+  const units = [];
   const zero = linkTreeMode ? timeZeroContext() : null;
-  for (let i = start; i < end; i++) frag.appendChild(linkTreeMode ? buildPairTreeRow(linkPairsData[i], i, zero) : buildPairBlock(linkPairsData[i], i));
-  linkBody.innerHTML = "";
-  linkBody.appendChild(frag);
+  for (let i = start; i < end; i++) {
+    const u = linkTreeMode ? buildPairTreeRow(linkPairsData[i], i, zero) : buildPairBlock(linkPairsData[i], i);
+    u._syncKey = "l:" + i;
+    units.push(u);
+  }
+  syncChildren(linkBody, units);
 
   applyLinkSelectionClasses();
 }
@@ -26384,6 +26398,9 @@ function buildPairBlock(entryData, index) {
   block.className = "pair-block" + (entryData.unmatched ? " pair-unmatched" : "");
   block.dataset.pairIndex = index;
   block.style.setProperty("--pair-h", LINK_PAIR_ROW_HEIGHT + "px");
+  // Listeners capture the pair and its entries (context menu, dblclick reveal) and each row carries
+  // `_pickEntry` (buildPairRow): all of them are part of the token, so a block over other objects is replaced.
+  block._syncToken = [pair, ...realEntries];
 
   // The gutter (Δt column + rail column) is the block's handle: it carries
   // the title, the combined pair entry's context menu and the entry ids the
@@ -29816,16 +29833,22 @@ function renderExtractVisibleRows() {
   const start = Math.max(0, Math.floor(bodyScrollTop / EXTRACT_ROW_HEIGHT) - EXTRACT_BUFFER_ROWS);
   const end = Math.min(total, start + maxVisible);
 
-  const frag = document.createDocumentFragment();
+  // Rows are kept across renders when unchanged (syncChildren, see docs/ui-and-views.md "Render reuse"):
+  // key = entry id, token = what the row's listeners capture (the entry, the column indexes; the column
+  // objects themselves are rebuilt on every render and only read for colIndex).
+  const units = [];
   if (start > 0) {
     const topSpacer = document.createElement("tr");
     topSpacer.className = "extract-spacer";
+    topSpacer._syncKey = "sp-top";
     topSpacer.innerHTML = '<td colspan="' + colCount + '" style="height:' + (start * EXTRACT_ROW_HEIGHT) + 'px;padding:0;border:none;"></td>';
-    frag.appendChild(topSpacer);
+    units.push(topSpacer);
   }
   for (let r = start; r < end; r++) {
     const row = extractRowsData[r];
     const tr = document.createElement("tr");
+    tr._syncKey = "x:" + row.entry.id;
+    tr._syncToken = [row.entry, ...extractColumns.map(c => c.colIndex)];
     tr.style.height = EXTRACT_ROW_HEIGHT + "px";
     tr.dataset.extractEntryId = row.entry.id;
     if (row.entry.id === state.selectedId) tr.className = "extract-current";
@@ -29853,16 +29876,16 @@ function renderExtractVisibleRows() {
       td.addEventListener("mouseenter", () => highlightColumn(c.colIndex));
       td.addEventListener("mouseleave", clearColumnHighlight);
     });
-    frag.appendChild(tr);
+    units.push(tr);
   }
   if (end < total) {
     const bottomSpacer = document.createElement("tr");
     bottomSpacer.className = "extract-spacer";
+    bottomSpacer._syncKey = "sp-bot";
     bottomSpacer.innerHTML = '<td colspan="' + colCount + '" style="height:' + ((total - end) * EXTRACT_ROW_HEIGHT) + 'px;padding:0;border:none;"></td>';
-    frag.appendChild(bottomSpacer);
+    units.push(bottomSpacer);
   }
-  extractBody.innerHTML = "";
-  extractBody.appendChild(frag);
+  syncChildren(extractBody, units);
 
   applyExtractSelectionClasses();
 }
@@ -31293,9 +31316,10 @@ function appendLogRow(frag, i, rc) {
 // one (FEATURE_BACKLOG.md "Bookmarks rework" — general-purpose per-entry
 // notes). A plain block element, not part of .row-grid — no level marker, own
 // colour, indented (see .note-row's CSS). Its own click/dblclick listeners
-// are attached fresh every render, same as every other per-row listener in
-// this file (renderVisibleRows/renderNode) — DOM identity across renders is
-// never assumed (see CLAUDE.md's "renderVisibleRows() rebuilds nodes" gotcha).
+// are created together with the row on every render, same as every other
+// per-row listener in this file; syncChildren keeps the old row (and so its
+// listeners) only when it is markup-equal to the fresh one and its token
+// matches, otherwise the fresh row replaces it (docs/ui-and-views.md "Render reuse").
 // Returns the note row (or undefined) so renderVisibleRows can track it with
 // its entry's row for reuse.
 function appendNoteRow(frag, e) {
@@ -33396,10 +33420,10 @@ function makeContextRunHandle(run, isTop, isBottom) {
 // signals "this is a stand-in, click it", the opposite reasoning from why a
 // real context row is no longer dimmed. The whole row is the click target,
 // same as any other row-shaped control in this file (.tree-row, …)
-// rather than requiring the icon itself to be hit. Listeners are attached
-// fresh on every render, same as every other per-row listener here — DOM
-// identity across renders is never assumed (see CLAUDE.md's
-// "renderVisibleRows() rebuilds nodes" gotcha).
+// rather than requiring the icon itself to be hit. Listeners are created with
+// the row on every render, as for every per-row listener here; the row is kept
+// across renders only when its fresh twin is markup-equal (syncChildren, see
+// docs/ui-and-views.md "Render reuse"), so a kept filler's closure is equivalent.
 // "<n> entries pruned · <from> – <to>" for one cut of root.pruned.cuts.
 function prunedPlaceholderText(cut) {
   return cut.count.toLocaleString("de-DE") + (cut.count === 1 ? " entry" : " entries") + " pruned · " +

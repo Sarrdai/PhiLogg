@@ -71,7 +71,7 @@ if (!process.argv[2]) { console.error("usage: node chromium-scroll-bench.js <log
     }, cfg);
     console.log("scroll scale", cost.scale, "| viewport", cost.viewportH, "px");
     console.log("full rebuild ms   p50", cost.full.p50, "p95", cost.full.p95);
-    console.log("scroll render ms  p50", cost.scroll100px.p50, "p95", cost.scroll100px.p95, "(100px steps; the old Context view rebuilds on every one)");
+    console.log("scroll render ms  p50", cost.scroll100px.p50, "p95", cost.scroll100px.p95, "(100px steps)");
 
     await page.evaluate(cfg => {
       const body = eval(cfg.body), rows = eval(cfg.rows);

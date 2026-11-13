@@ -280,3 +280,160 @@ await withApp(async (w, d, T) => {
   checkWindow("after a filter change");
   mon.stop();
 });
+
+// --- Remaining virtualized lists (step 3) ------------------------------------
+await withApp(async (w, d, T) => {
+  section("render-reuse-rows e. Table (extraction) view: identity, selection, scroll, filter change");
+  const [file] = LOGSIM.generateToStrings({ format: "default", scenarios: ["position"], entries: 300, seed: 7 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  const node = w.createFilterNode(f.id, "text", "Position update x=[*:float] y=[*:float] z=[*:float]");
+  T.state.activeId = node.id;
+  w.render();
+  w.applyFhView("table");
+  const body = d.querySelector("#extractBody");
+  const trs = () => [...body.querySelectorAll(":scope > tr:not(.extract-spacer)")];
+  const idOf = tr => tr.dataset.extractEntryId;
+  assert(trs().length > 10 && T.extractRowsData.length > 100, "sanity: the Table view renders a window of a longer list, " + trs().length + " of " + T.extractRowsData.length);
+
+  const before = [...body.children];
+  const mon = watchMutations(w, body);
+  w.renderExtractVisibleRows();
+  assert(mon.take() === 0, "renderExtractVisibleRows() with no state change writes nothing to #extractBody");
+  assert([...body.children].length === before.length && [...body.children].every((r, i) => r === before[i]), "...and keeps every row and spacer element");
+  w.render();
+  mon.take();
+  assert([...body.children].every((r, i) => r === before[i]), "a full render() with no state change keeps them too");
+
+  // Selecting a cell changes classes in the live DOM: only the affected row is replaced.
+  const snap = new Map(trs().map(r => [idOf(r), r]));
+  const row3 = snap.get(T.extractRowsData[3].entry.id);
+  fireClick(row3.querySelector("td[data-col]"), w);
+  d.dispatchEvent(new w.MouseEvent("mouseup", { bubbles: true }));
+  w.renderExtractVisibleRows();
+  const changed = trs().filter(r => snap.get(idOf(r)) !== r).length;
+  assert(changed <= 1, "a render after a cell selection replaces at most the selected row, replaced: " + changed);
+
+  // Scroll: the overlap is kept, rows show the right entries.
+  const scrollEl = d.querySelector("#extractScroll");
+  const before2 = new Map(trs().map(r => [idOf(r), r]));
+  scrollEl.scrollTop = 6 * T.EXTRACT_ROW_HEIGHT;
+  w.renderExtractVisibleRows();
+  const now = trs();
+  const overlap = now.filter(r => before2.has(idOf(r)));
+  assert(overlap.length > 0 && overlap.every(r => before2.get(idOf(r)) === r), "a scroll render keeps the rows that stay in the window (" + overlap.length + ")");
+  const rowsOk = () => trs().every(r => {
+    const i = Number(r.querySelector(".extract-gutter").dataset.row);
+    return T.extractRowsData[i].entry.id === idOf(r) && r.querySelector(".extract-gutter").textContent === String(i + 1);
+  });
+  assert(rowsOk(), "...and every row shows its own data row");
+  scrollEl.scrollTop = 0;
+  w.renderExtractVisibleRows();
+  assert(rowsOk() && Number(trs()[0].querySelector(".extract-gutter").dataset.row) === 0, "back at the top the window starts at row 0");
+  assert(body.querySelectorAll(":scope > tr.extract-spacer").length === 1, "...with just the bottom spacer");
+
+  // Filter change: no stale row.
+  const node2 = w.createFilterNode(f.id, "text", "Position update x=[*:float] y=[*:float] z=[*:float > 0]");
+  T.state.activeId = node2.id;
+  w.render();
+  assert(rowsOk(), "after another extraction node every row matches extractRowsData");
+  mon.stop();
+});
+
+await withApp(async (w, d, T) => {
+  section("render-reuse-rows f. Link view: identity, selection, pair tokens");
+  const [file] = LOGSIM.generateToStrings({ format: "default", scenarios: ["motion"], entries: 400, seed: 3 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  const moves = w.createFilterNode(f.id, "text", "Move requested");
+  const reached = w.createFilterNode(f.id, "text", "Position reached");
+  const link = w.createLinkNode(moves.id, reached.id, "after", 1);
+  T.state.activeId = link.id;
+  w.render();
+  const body = d.querySelector("#linkBody");
+  const blocks = () => [...body.children];
+  assert(blocks().length > 5 && body.querySelector(".pair-block"), "sanity: the Link view renders pair blocks, got " + blocks().length);
+
+  const before = blocks();
+  const mon = watchMutations(w, body);
+  w.renderLinkVisibleBlocks();
+  assert(mon.take() === 0, "renderLinkVisibleBlocks() with no state change writes nothing to #linkBody");
+  assert(blocks().length === before.length && blocks().every((b, i) => b === before[i]), "...and keeps every block element");
+  w.render();
+  mon.take();
+  assert(blocks().every((b, i) => b === before[i]), "a full render() with no state change keeps them too");
+
+  // Selecting a block: the selection class is applied after the build; neighbours keep identity.
+  fireClick(before[2], w);
+  assert(T.linkSelectedPairIndex === 2 && before[2].classList.contains("pair-selected"), "a click on a block selects it");
+  w.renderLinkVisibleBlocks();
+  const afterSel = blocks();
+  const replaced = afterSel.filter((b, i) => b !== before[i]).length;
+  assert(replaced <= 1 && afterSel.filter(b => b.classList.contains("pair-selected")).length === 1, "a render with a selected block replaces at most that block, replaced: " + replaced);
+  fireClick(afterSel[4], w);
+  assert(T.linkSelectedPairIndex === 4 && afterSel[4].classList.contains("pair-selected") && !body.querySelector('[data-pair-index="2"]').classList.contains("pair-selected"),
+    "a click on a kept block selects its own pair");
+
+  // _pickEntry of a kept row is the entry of its own block.
+  const rowsOk = () => blocks().every(b => {
+    const pair = T.linkPairsData[Number(b.dataset.pairIndex)];
+    const ids = [...b.querySelectorAll(".pair-row")].map(r => r._pickEntry && r._pickEntry.id);
+    return ids.length === pair.realEntries.length && ids.every((id, i) => id === pair.realEntries[i].id);
+  });
+  assert(rowsOk(), "every pair row's _pickEntry is the entry of its own block");
+
+  // Scroll: overlap kept, entries right.
+  const scrollEl = d.querySelector("#linkScroll");
+  fireClick(blocks().find(b => b.classList.contains("pair-selected")), w); // deselect: a selected block carries a live-DOM class
+  const prev = new Map(blocks().map(b => [b.dataset.pairIndex, b]));
+  scrollEl.scrollTop = T.linkBlockOffsets[3];
+  w.renderLinkVisibleBlocks();
+  const over = blocks().filter(b => prev.has(b.dataset.pairIndex) && !b.classList.contains("pair-selected"));
+  assert(over.length > 0 && over.every(b => prev.get(b.dataset.pairIndex) === b), "a scroll render keeps the blocks that stay in the window (" + over.length + ")");
+  assert(rowsOk(), "...and every block shows its own pair");
+
+  // A different link node: no stale block.
+  scrollEl.scrollTop = 0;
+  const link2 = w.createLinkNode(reached.id, moves.id, "before", 1);
+  T.state.activeId = link2.id;
+  w.render();
+  assert(blocks().length > 0 && rowsOk(), "after another link node every block matches linkPairsData");
+  mon.stop();
+});
+
+await withApp(async (w, d, T) => {
+  section("render-reuse-rows g. Patterns list and view tabs");
+  const [file] = LOGSIM.generateToStrings({ entries: 800, seed: 7 });
+  const f = await w.addFile(file.name, file.text, () => {});
+  T.state.activeId = f.id;
+  w.render();
+  w.applyFhView("patterns");
+  const rows = d.querySelector("#patternsRows");
+  const els = () => [...rows.children];
+  assert(els().length > 5, "sanity: the Patterns view renders rows, got " + els().length);
+  const before = els();
+  const mon = watchMutations(w, rows);
+  w.renderPatternsVisibleRows();
+  assert(mon.take() === 0, "renderPatternsVisibleRows() with no state change writes nothing to #patternsRows");
+  assert(els().every((r, i) => r === before[i]) && els().length === before.length, "...and keeps every row element");
+  // Sorting reorders the data: every row must show the group of its index (no stale kept row).
+  const counts = () => els().map(r => Number(r.querySelector(".patterns-num").textContent.replace(/\./g, "")));
+  const idxs = () => els().map(r => Number(r.dataset.idx));
+  const sortedBy = dir => counts().every((c, i, a) => i === 0 || (dir === "desc" ? a[i - 1] >= c : a[i - 1] <= c)) && idxs().every((v, i, a) => i === 0 || v === a[i - 1] + 1);
+  const countHead = () => d.querySelector('#patternsHead [data-sort="count"]'); // the header is rebuilt on each sort
+  fireClick(countHead(), w); // count is the default sort (desc): the first click flips it
+  const asc = sortedBy("asc");
+  fireClick(countHead(), w);
+  const desc = sortedBy("desc");
+  assert(asc && desc, "after re-sorting asc and desc every row shows the group of its index");
+  mon.stop();
+
+  const tabs = d.querySelector("#fhTabs");
+  const tbefore = [...tabs.children];
+  assert(tbefore.length >= 3, "sanity: the view tabs are rendered, got " + tbefore.length);
+  const tmon = watchMutations(w, tabs);
+  w.render();
+  assert(tmon.take() === 0 && [...tabs.children].every((b, i) => b === tbefore[i]), "a render() with no state change leaves the view tabs untouched");
+  w.applyFhView("filter");
+  const active = [...tabs.children].filter(b => b.classList.contains("active"));
+  assert(active.length === 1 && active[0].dataset.fhTab === "filter", "switching the view marks exactly the new tab active");
+  tmon.stop();
+});

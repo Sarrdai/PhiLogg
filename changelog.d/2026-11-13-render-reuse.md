@@ -1,0 +1,4 @@
+- **feat: the display no longer rebuilds elements that did not change (2026-11-13, person-requested)**
+  - Filtered/Context rows, tree, level bar, minimap, detail panel, status, Table/Link/Patterns lists and view tabs are synced into the DOM (`syncChildren`): a `render()` that changed nothing writes nothing, a bookmark toggle replaces one row; hover, focus and native click/dblclick survive unrelated renders.
+  - The Context view reuses rows on scroll like Filtered (650k rows: scroll render 6.5 ms to 0.9 ms, 400px flick 40/40 blank to 0/40). Folder-watch/ZIP lists keep their own row cache.
+  - **Tests**: GROUP render-reuse-rows, render-reuse-tree. Docs: docs/ui-and-views.md "Render reuse", PROJECT.md gotchas, docs/performance-testing.md.
