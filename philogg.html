@@ -19895,6 +19895,132 @@ function getChain(id) {
 const el = sel => document.querySelector(sel);
 const elAll = sel => [...document.querySelectorAll(sel)];
 
+// --- syncChildren: re-render without rebuilding what did not change --------
+// A render function builds its elements exactly as before, then hands them to
+// syncChildren(container, freshNodes) instead of `innerHTML = ""` + append.
+// Every existing child that is identical to its freshly built counterpart
+// stays in the DOM untouched (same element object, no mutation, so hover,
+// focus, animations and native click/dblclick sequences survive); only what
+// differs is replaced, inserted or removed. A unit is kept whole or replaced
+// whole — attributes/children inside a unit are never patched, because its
+// event listeners are closures created together with it.
+//
+// Matching: by `el._syncKey` (a string, unique per container; the first
+// holder wins, a duplicate counts as unmatched) or, without a key, in order
+// against the next unused unkeyed old child.
+// Keeping: `domSame(old, fresh)` — same markup (isEqualNode), same
+// `_syncToken` (identity of whatever the unit's listeners captured: the entry
+// object, the filter node, ...; an array token is compared element-wise;
+// undefined === undefined passes), no <canvas> inside (pixels are not markup)
+// and equal form-control state (value/checked/indeterminate/selectedIndex;
+// except a control flagged `_syncKeepState` on both sides: its live value/focus
+// is the truth, the fresh twin only carries the initial one).
+// `_syncDeep = true` on both sides with the same key makes the unit a
+// transparent container: its attributes are synced and its children are synced
+// recursively with these same rules (it is always walked, never compared as a whole).
+// A builder that sets an expando property (`el._x = ...`) another function
+// reads later must put that value into `_syncToken` (or keep it a function of
+// the markup), or a kept element would carry a stale one.
+// A post-build change to the live DOM (a class added later, ...) only makes
+// the old element differ from its fresh twin: it is replaced and the post-step
+// runs again, as before — correct, just not reused.
+// Returns the resulting children in `fresh` order (the kept old element or
+// the fresh one).
+function syncTokenSame(a, b) {
+  if (a === b) return true;
+  if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+function domSame(old, fresh) {
+  if (old.nodeType !== fresh.nodeType) return false;
+  if (old.nodeType !== 1) return old.isEqualNode(fresh);
+  if (!syncTokenSame(old._syncToken, fresh._syncToken)) return false;
+  if (!old.isEqualNode(fresh)) return false;
+  if (old.tagName === "CANVAS" || old.querySelector("canvas")) return false;
+  const ctl = "input,select,textarea";
+  // `_syncKeepState` on both (the tree's rename input): the live control's typed text/focus
+  // is the truth, a fresh twin's value is only its initial one — never a reason to replace.
+  const same = (a, b) => (a._syncKeepState && b._syncKeepState) || (a.value === b.value && a.checked === b.checked &&
+    a.indeterminate === b.indeterminate && a.selectedIndex === b.selectedIndex);
+  if (old.matches(ctl) && !same(old, fresh)) return false;
+  const oc = old.querySelectorAll(ctl);
+  if (oc.length) {
+    const fc = fresh.querySelectorAll(ctl);
+    for (let i = 0; i < oc.length; i++) if (!same(oc[i], fc[i])) return false;
+  }
+  return true;
+}
+function syncAttributes(target, source) {
+  for (const a of Array.from(target.attributes)) if (!source.hasAttribute(a.name)) target.removeAttribute(a.name);
+  for (const a of Array.from(source.attributes)) if (target.getAttribute(a.name) !== a.value) target.setAttribute(a.name, a.value);
+}
+function syncChildren(parent, fresh, opts) {
+  const old = Array.from(parent.childNodes);
+  const byKey = new Map(), unkeyed = [];
+  for (const o of old) {
+    const k = o._syncKey;
+    if (k === undefined) unkeyed.push(o);
+    else if (!byKey.has(k)) byKey.set(k, o);
+  }
+  let ui = 0;
+  const result = [], kept = new Set();
+  for (const f of fresh) {
+    const k = f._syncKey;
+    let o;
+    if (k !== undefined) { o = byKey.get(k); byKey.delete(k); } else o = unkeyed[ui++];
+    let chosen = f;
+    if (o) {
+      // A transparent container is always walked, even when its whole markup is equal: the
+      // units inside carry their own tokens, which isEqualNode on the container cannot see.
+      if (o.nodeType === 1 && o._syncDeep && f._syncDeep && k !== undefined) {
+        syncAttributes(o, f);
+        o._syncToken = f._syncToken;
+        syncChildren(o, Array.from(f.childNodes), opts);
+        chosen = o;
+      } else if (domSame(o, f)) chosen = o;
+    }
+    if (chosen === o) kept.add(o);
+    result.push(chosen);
+  }
+  for (const o of old) if (!kept.has(o)) parent.removeChild(o);
+  let cur = parent.firstChild;
+  for (const r of result) {
+    if (r === cur) cur = cur.nextSibling;
+    else parent.insertBefore(r, cur);
+  }
+  return result;
+}
+// Single-container helpers for regions rendered from a string or a text: the
+// content is only touched when it differs, so a render that changed nothing
+// writes nothing (no childList/characterData record, no layout).
+// setHtmlSynced: parses `html` in a detached twin of `host` and syncChildren's
+// the result in — units are the host's top-level child nodes, kept when markup
+// equal (they carry no listeners: strings cannot; a delegated listener on the
+// host or a later post-step is fine).
+function setHtmlSynced(host, html) {
+  const twin = document.createElementNS(host.namespaceURI, host.localName);
+  twin.innerHTML = html;
+  syncChildren(host, Array.from(twin.childNodes));
+}
+// setTextSynced: host.textContent = text, skipped when the host already is
+// exactly that single text node (or empty for "") — NOT when only the
+// flattened textContent matches (markup around the same text must go).
+function setTextSynced(host, text) {
+  const c = host.firstChild;
+  if (text === "" ? !c : (c && !c.nextSibling && c.nodeType === 3 && c.data === text)) return;
+  host.textContent = text;
+}
+// setAttrSynced: setAttribute that writes nothing when the value is unchanged.
+function setAttrSynced(elm, name, value) {
+  if (elm.getAttribute(name) !== String(value)) elm.setAttribute(name, value);
+}
+
+// setStyleSynced: elm.style[prop] = value, written only when it differs.
+function setStyleSynced(elm, prop, value) {
+  if (elm.style[prop] !== value) elm.style[prop] = value;
+}
+
 // --- Boolean pill toggle (docs/ui-standard.md #69) -------------------------
 // A single on/off option is a <button role="switch" class="pill-toggle"
 // aria-checked>, NOT a native checkbox. State lives in aria-checked (+ an
@@ -20344,8 +20470,17 @@ function renderPatternsVisibleRows() {
         '<span class="pattern-act" data-act="jump" title="Jump to its first entry">' + PATTERN_ACTION_ICONS.jump + "</span>" +
       "</span></div>";
   }
-  patternsRows.style.top = (start * rowH) + "px";
-  patternsRows.innerHTML = html;
+  setStyleSynced(patternsRows, "top", (start * rowH) + "px");
+  syncPatternRows(patternsRows, html);
+}
+// The pattern rows are plain markup read by one delegated click handler through data-idx (no per-row
+// listener, no expando), so markup-equal rows are kept; keyed by data-idx so a scroll keeps the overlap.
+function syncPatternRows(host, html) {
+  const twin = document.createElement("div");
+  twin.innerHTML = html;
+  const rows = Array.from(twin.children);
+  for (const r of rows) r._syncKey = r.dataset.idx;
+  syncChildren(host, rows);
 }
 patternsScroll.addEventListener("scroll", makeScrollRenderer(renderPatternsVisibleRows));
 
@@ -21516,8 +21651,8 @@ function renderPhonePatternRows() {
       '<div class="pp-text">' + text + "</div></div>" +
       '<button type="button" class="pp-hide" data-act="hide" aria-label="Hide this pattern" title="Hide this pattern">' + PATTERN_ACTION_ICONS.hide + "</button></div>";
   }
-  rowsEl.style.top = (start * rowH) + "px";
-  rowsEl.innerHTML = html;
+  setStyleSynced(rowsEl, "top", (start * rowH) + "px");
+  syncPatternRows(rowsEl, html);
 }
 el("#phonePatternsBody").addEventListener("scroll", makeScrollRenderer(renderPhonePatternRows));
 el("#phonePatternsSort").addEventListener("click", ev => {
@@ -21777,9 +21912,9 @@ function currentViewTabsList(extractCapable) {
 function renderViewTabs(extractCapable) {
   const tabs = currentViewTabsList(extractCapable);
   const activeVal = fhLayout === "stacked" && !isOffLogTab(fhActiveTab) ? "stacked" : fhActiveTab;
-  fhTabs.innerHTML = tabs.map(t =>
+  setHtmlSynced(fhTabs, tabs.map(t =>
     `<button type="button" class="view-tab${t.tab === activeVal ? " active" : ""}" data-fh-tab="${t.tab}" title="${escapeHtml(t.title)}"${t.disabled ? " disabled" : ""}>${t.label}</button>`
-  ).join("");
+  ).join(""));
 }
 // Ctrl+1-5: jump to the Nth tab currently shown in the View Selector (1-based,
 // left to right) — person-requested. In tabs layout that's Patterns, Context,
@@ -22949,7 +23084,7 @@ function renderStatus() {
   // #emptyState now (person-requested consolidation: one hint, center
   // screen, instead of duplicating it in the toolbar and the tree sidebar).
   updatePhoneTitle();
-  if (fileCount === 0) { statusText.textContent = ""; return; }
+  if (fileCount === 0) { setTextSynced(statusText, ""); return; }
   const total = state.rootIds.reduce((sum, id) => sum + state.nodes[id].entries.length, 0);
   // With level chips active the entry count becomes "<shown> of <total> entries shown"
   // (the active node's figures, from levelFilterCounts).
@@ -22964,9 +23099,9 @@ function renderStatus() {
   const active = currentLayoutTier === "compact" && state.activeId ? state.nodes[state.activeId] : null;
   if (active && !state.rootIds.includes(active.id)) {
     const shown = (getEntries(active.id) || []).length;
-    statusText.textContent = `${active.inverted ? "¬ " : ""}${nodeDisplayName(active)} · ${shown.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} entries`;
+    setTextSynced(statusText, `${active.inverted ? "¬ " : ""}${nodeDisplayName(active)} · ${shown.toLocaleString("de-DE")} / ${total.toLocaleString("de-DE")} entries`);
   } else {
-    statusText.textContent = filesText;
+    setTextSynced(statusText, filesText);
   }
 }
 
@@ -23059,7 +23194,10 @@ function renderTree() {
   if (activeNode && activeNode._alertUnseen) activeNode._alertUnseen = 0;
   renderFolderWatchList();
   renderZipList();
-  treeEl.innerHTML = "";
+  // Built detached, then synced into #tree: a render() that changed nothing
+  // keeps every row element (and writes nothing), a changed node replaces only
+  // its own row (renderNode's wrap is a _syncDeep container keyed by node id).
+  const freshTree = [];
   // A file loaded from a watched folder renders inside its folder's own
   // section (renderFolderSection, above) instead of here, so its position
   // in the folder's file order stays visible — skip it in this plain list.
@@ -23073,7 +23211,7 @@ function renderTree() {
     // that was already an independent top-level file BEFORE a manual merge
     // (mergeOwnerId set, mergeSourceHidden NOT set) stays visible here too.
     if (node && (node.folderId || node.zipId || (node.mergeOwnerId && node.mergeSourceHidden))) return;
-    treeEl.appendChild(renderNode(id, 0));
+    freshTree.push(renderNode(id, 0));
   });
   // Directly opened/dropped non-log inline-viewable files (this session):
   // no owning zip/folder container, so each renders as its own top-level
@@ -23083,11 +23221,16 @@ function renderTree() {
   // rows, in state.looseInlineViewers insertion (= open) order — matches
   // flattenTreeIds' own loose-viewer ordering.
   state.looseInlineViewers.forEach((viewer, mapKey) => {
-    treeEl.appendChild(renderInlineViewerEntryRow("loose", "loose", state.looseInlineViewers, mapKey, viewer.name, () => {
+    const vrow = renderInlineViewerEntryRow("loose", "loose", state.looseInlineViewers, mapKey, viewer.name, () => {
       activateInlineViewer(viewer);
       render();
-    }));
+    });
+    // Its listeners captured the viewer object (an unopened row is the cached one: same element, always kept).
+    vrow._syncKey = "v:" + mapKey;
+    vrow._syncToken = viewer;
+    freshTree.push(vrow);
   });
+  syncChildren(treeEl, freshTree);
   renderSidebarToolbar();
   // Keep the collapsed rail's markers (active-node ancestor chain) in sync
   // with the full tree.
@@ -23848,10 +23991,10 @@ document.addEventListener("mouseup", ev => {
 
 // Manual double-click detection for tree rows, instead of a native
 // "dblclick" listener: a tree row's own click handler always ends in a full
-// render(), which rebuilds every #tree row from scratch (see CLAUDE.md's
-// "DOM identity across clicks" gotcha) — so by the time a second physical
-// click lands, the row it landed on is a different DOM node than the one
-// the first click fired on, and a real browser never pairs the two clicks
+// render(), which (before the tree synced its rows, see docs/ui-and-views.md
+// "Render reuse") rebuilt every #tree row from scratch — a row whose state
+// changed is still replaced, so the second physical click can land on a
+// different DOM node than the first, and a real browser never pairs the two clicks
 // into a native "dblclick". Tracking the clicked node id + timestamp in JS
 // instead sidesteps that entirely, since it doesn't depend on element
 // identity surviving the render in between.
@@ -23959,6 +24102,7 @@ const TREE_CHEVRON_CENTER = 7;
 // clears node.queued and this file's turn to load arrives.
 function renderQueuedFileRow(node, depth) {
   const wrap = document.createElement("div");
+  wrap._syncKey = "n:" + node.id; // no listeners: kept whenever the markup is the same
   wrap.dataset.type = "file";
   const row = document.createElement("div");
   const kbLoadId = kbLoadNavIdOf(node);
@@ -23997,6 +24141,7 @@ function renderRenameInput(id, node) {
   input.className = "tree-rename-input";
   input.value = node.label || "";
   input.placeholder = node.name;
+  input._syncKeepState = true; // an unrelated render() keeps the live input (typed text, focus) — see domSame
   let done = false;
   const commit = () => {
     if (done) return;
@@ -24034,10 +24179,21 @@ function renderNode(id, depth, opts) {
   // file node (see the tail of this function and the swatch block below).
   // The "Show Sources" setting is a pure display toggle — the node/data
   // are untouched, only rendering is skipped.
-  if (node.type === "filter" && node.filterType === "sources" && !showSourcesSetting) return document.createElement("div");
+  if (node.type === "filter" && node.filterType === "sources" && !showSourcesSetting) {
+    const hidden = document.createElement("div");
+    hidden._syncKey = "n:" + id;
+    return hidden;
+  }
   const sourcesOwnerFile = (node.type === "filter" && node.filterType === "sources") ? state.nodes[node.parentId] : null;
   const wrap = document.createElement("div");
   wrap.dataset.type = node.type;
+  // syncChildren: the wrap is a transparent container (its children are synced one by one), the
+  // row inside is kept whole or replaced whole. The row's listeners close over `node` and the
+  // merge-source record, so those two are the row's token (undo's restoreSubtree makes new node
+  // objects: same markup, stale listeners -> replaced). Everything else they read lives in the
+  // markup or is read from globals at click time.
+  wrap._syncDeep = true;
+  wrap._syncKey = "n:" + id;
 
   const row = document.createElement("div");
   const clip = state.clipboard;
@@ -24068,6 +24224,7 @@ function renderNode(id, depth, opts) {
   // render() — every row, not just file rows, since a filter created under
   // a still-loading file needs its own count to keep updating live too.
   row.dataset.nodeId = id;
+  row._syncToken = [node, opts && opts.mergeSourceColor];
 
   // Expand/collapse chevron — ALWAYS in the same fixed-width slot, whether
   // or not this particular row actually has anything to collapse (person-
@@ -24427,7 +24584,11 @@ function renderNode(id, depth, opts) {
 
   wrap.appendChild(row);
   if (node.type === "file" && node.children.length === 0 && node.filterHistoryMatch) {
-    wrap.appendChild(renderFilterHistoryPreview(node));
+    const preview = renderFilterHistoryPreview(node);
+    // Its listeners and ghost rows capture the history match and its filters, which are not
+    // part of the markup: never reused (a rare, short-lived element).
+    Array.from(preview.children || []).forEach(c => { c._syncToken = {}; });
+    wrap.appendChild(preview);
   }
   // node.collapsed hides real children the normal way (chevron above). A
   // "sources" node's own node.children is always empty by design (see the
@@ -24675,7 +24836,7 @@ function levelCountShort(n) {
 }
 
 function renderLevelBar() {
-  levelBarEl.innerHTML = "";
+  const freshChips = []; // synced into #levelBar below: an unchanged chip keeps its element (no flicker, hover survives)
   const counts = getLevelCounts(state.activeId) || {};
   const activeLevels = state.levelFilter;
 
@@ -24689,6 +24850,7 @@ function renderLevelBar() {
     // tie.
     btn.className = "level-btn row-action-btn " + levelClass(lvl) + (isActive ? " active" : "");
     btn.type = "button";
+    btn._syncKey = "l:" + lvl;
     btn.dataset.level = lvl; // queried directly by name elsewhere (tests, format editor rows) without needing a rebuild
     const label = levelBarTitle(lvl, counts[lvl] || 0);
     btn.title = label; // accessible name, since the button itself carries no visible text
@@ -24700,8 +24862,9 @@ function renderLevelBar() {
     btn.innerHTML = '<span class="row-action-hit"></span><span class="level-count' + (countText.length > 3 ? " level-count-long" : "") + '"><span>' + countText + '</span></span><span class="level-short">' + escapeHtml(shortText) + '</span><span class="row-action-label">' + escapeHtml(label) + '</span>';
     btn.addEventListener("click", () => toggleLevelFilter(lvl));
     decorateHintLabel(btn);
-    levelBarEl.appendChild(btn);
+    freshChips.push(btn);
   });
+  syncChildren(levelBarEl, freshChips);
   updateApplyLevelToTreeButtonVisibility();
   renderStatus(); // the header's "<n> of <total> entries shown" follows the chips
   updateLevelBarLayout();
@@ -26125,11 +26288,16 @@ function renderLinkVisibleBlocks() {
 
   linkBody.style.top = linkBlockOffsets[start] + "px";
 
-  const frag = document.createDocumentFragment();
+  // Unchanged blocks/rows keep their element (syncChildren, docs/ui-and-views.md "Render reuse"); the key
+  // is the position in the shown list, the markup (data-pair-index, texts) and the token decide the rest.
+  const units = [];
   const zero = linkTreeMode ? timeZeroContext() : null;
-  for (let i = start; i < end; i++) frag.appendChild(linkTreeMode ? buildPairTreeRow(linkPairsData[i], i, zero) : buildPairBlock(linkPairsData[i], i));
-  linkBody.innerHTML = "";
-  linkBody.appendChild(frag);
+  for (let i = start; i < end; i++) {
+    const u = linkTreeMode ? buildPairTreeRow(linkPairsData[i], i, zero) : buildPairBlock(linkPairsData[i], i);
+    u._syncKey = "l:" + i;
+    units.push(u);
+  }
+  syncChildren(linkBody, units);
 
   applyLinkSelectionClasses();
 }
@@ -26230,6 +26398,9 @@ function buildPairBlock(entryData, index) {
   block.className = "pair-block" + (entryData.unmatched ? " pair-unmatched" : "");
   block.dataset.pairIndex = index;
   block.style.setProperty("--pair-h", LINK_PAIR_ROW_HEIGHT + "px");
+  // Listeners capture the pair and its entries (context menu, dblclick reveal) and each row carries
+  // `_pickEntry` (buildPairRow): all of them are part of the token, so a block over other objects is replaced.
+  block._syncToken = [pair, ...realEntries];
 
   // The gutter (Δt column + rail column) is the block's handle: it carries
   // the title, the combined pair entry's context menu and the entry ids the
@@ -29662,16 +29833,22 @@ function renderExtractVisibleRows() {
   const start = Math.max(0, Math.floor(bodyScrollTop / EXTRACT_ROW_HEIGHT) - EXTRACT_BUFFER_ROWS);
   const end = Math.min(total, start + maxVisible);
 
-  const frag = document.createDocumentFragment();
+  // Rows are kept across renders when unchanged (syncChildren, see docs/ui-and-views.md "Render reuse"):
+  // key = entry id, token = what the row's listeners capture (the entry, the column indexes; the column
+  // objects themselves are rebuilt on every render and only read for colIndex).
+  const units = [];
   if (start > 0) {
     const topSpacer = document.createElement("tr");
     topSpacer.className = "extract-spacer";
+    topSpacer._syncKey = "sp-top";
     topSpacer.innerHTML = '<td colspan="' + colCount + '" style="height:' + (start * EXTRACT_ROW_HEIGHT) + 'px;padding:0;border:none;"></td>';
-    frag.appendChild(topSpacer);
+    units.push(topSpacer);
   }
   for (let r = start; r < end; r++) {
     const row = extractRowsData[r];
     const tr = document.createElement("tr");
+    tr._syncKey = "x:" + row.entry.id;
+    tr._syncToken = [row.entry, ...extractColumns.map(c => c.colIndex)];
     tr.style.height = EXTRACT_ROW_HEIGHT + "px";
     tr.dataset.extractEntryId = row.entry.id;
     if (row.entry.id === state.selectedId) tr.className = "extract-current";
@@ -29699,16 +29876,16 @@ function renderExtractVisibleRows() {
       td.addEventListener("mouseenter", () => highlightColumn(c.colIndex));
       td.addEventListener("mouseleave", clearColumnHighlight);
     });
-    frag.appendChild(tr);
+    units.push(tr);
   }
   if (end < total) {
     const bottomSpacer = document.createElement("tr");
     bottomSpacer.className = "extract-spacer";
+    bottomSpacer._syncKey = "sp-bot";
     bottomSpacer.innerHTML = '<td colspan="' + colCount + '" style="height:' + ((total - end) * EXTRACT_ROW_HEIGHT) + 'px;padding:0;border:none;"></td>';
-    frag.appendChild(bottomSpacer);
+    units.push(bottomSpacer);
   }
-  extractBody.innerHTML = "";
-  extractBody.appendChild(frag);
+  syncChildren(extractBody, units);
 
   applyExtractSelectionClasses();
 }
@@ -30551,7 +30728,7 @@ function repeatSpanText(run, zero) {
 }
 function renderDetailRepeat(entry) {
   const run = entry && repeatRunByEntry.size ? repeatRunByEntry.get(entry.id) : null;
-  if (!run || run.head !== entry) { detailRepeatEl.style.display = "none"; detailRepeatEl.textContent = ""; return; }
+  if (!run || run.head !== entry) { setStyleSynced(detailRepeatEl, "display", "none"); setTextSynced(detailRepeatEl, ""); return; }
   let text = "Repeated \u00d7" + run.members.length;
   const span = repeatSpanText(run, timeZeroContext());
   if (span) text += " \u00b7 " + span;
@@ -30559,8 +30736,8 @@ function renderDetailRepeat(entry) {
     const vary = repeatVaryRanges(run);
     if (vary.length) text += " \u00b7 varying: " + vary.map(v => v.title.replace(" \u2013 ", "\u2013")).join(", ");
   }
-  detailRepeatEl.textContent = text;
-  detailRepeatEl.style.display = "block";
+  setTextSynced(detailRepeatEl, text);
+  setStyleSynced(detailRepeatEl, "display", "block");
 }
 function setRepeatRunOpen(headId, open) {
   if (open === repeatExpanded.has(headId)) return;
@@ -30638,8 +30815,19 @@ function spliceTempAnchor(list) {
   const entry = entryIndex[a.entryId];
   if (!entry || list.some(e => e.id === entry.id)) return list;
   const out = list.slice();
-  out.splice(tempAnchorInsertIndex(out, entry), 0, Object.assign({}, entry, { _tempAnchor: true }));
+  out.splice(tempAnchorInsertIndex(out, entry), 0, tempAnchorClone(entry));
   return out;
+}
+// The ghost clone of an entry, the same object on every render while the entry's own fields are
+// unchanged: its row is keyed/tokened on the entry object (syncChildren), so a clone made anew
+// each render would replace the row every time. A changed field (shallow compare) makes a new one.
+const tempAnchorClones = new WeakMap(); // entry -> clone
+function tempAnchorClone(entry) {
+  const c = tempAnchorClones.get(entry);
+  if (c && Object.keys(entry).every(k => c[k] === entry[k])) return c;
+  const fresh = Object.assign({}, entry, { _tempAnchor: true });
+  tempAnchorClones.set(entry, fresh);
+  return fresh;
 }
 
 let tempAnchorFadeTimer = null;
@@ -30927,11 +31115,16 @@ function renderVisibleRows(reuseRows) {
       tableRows.appendChild(frag);
     }
   } else {
+    // Build every row as before, then keep the ones already in the DOM that
+    // came out identical (syncChildren); `groups` must hold the elements that
+    // really are in #tableRows afterwards, kept or fresh.
     const frag = document.createDocumentFragment();
+    const built = [];
+    for (let i = start; i < end; i++) built.push(appendLogRow(frag, i, rc));
+    const synced = syncChildren(tableRows, built.flat());
     groups = [];
-    for (let i = start; i < end; i++) groups.push(appendLogRow(frag, i, rc));
-    tableRows.innerHTML = "";
-    tableRows.appendChild(frag);
+    let k = 0;
+    for (const g of built) { groups.push(synced.slice(k, k + g.length)); k += g.length; }
   }
   tableRowsWindow = { entries: currentViewEntries, total, start, end, groups, first: tableRows.firstElementChild };
   verifyVisibleFpCandidates(tableRows);
@@ -31096,6 +31289,8 @@ function appendLogRow(frag, i, rc) {
     }
     row.title = tips.join("\n");
   }
+  row._syncKey = "e:" + e.id;
+  row._syncToken = e; // the listeners below capture the entry object
   row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentViewEntries, selectEntry));
   row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectEntry); openContextMenu(ev, e); });
   row.addEventListener("dblclick", () => jumpAfterPip(revealInHighlightView, [e, row, tableBody]));
@@ -31121,9 +31316,10 @@ function appendLogRow(frag, i, rc) {
 // one (FEATURE_BACKLOG.md "Bookmarks rework" — general-purpose per-entry
 // notes). A plain block element, not part of .row-grid — no level marker, own
 // colour, indented (see .note-row's CSS). Its own click/dblclick listeners
-// are attached fresh every render, same as every other per-row listener in
-// this file (renderVisibleRows/renderNode) — DOM identity across renders is
-// never assumed (see CLAUDE.md's "renderVisibleRows() rebuilds nodes" gotcha).
+// are created together with the row on every render, same as every other
+// per-row listener in this file; syncChildren keeps the old row (and so its
+// listeners) only when it is markup-equal to the fresh one and its token
+// matches, otherwise the fresh row replaces it (docs/ui-and-views.md "Render reuse").
 // Returns the note row (or undefined) so renderVisibleRows can track it with
 // its entry's row for reuse.
 function appendNoteRow(frag, e) {
@@ -31134,6 +31330,8 @@ function appendNoteRow(frag, e) {
   noteRow.className = "note-row";
   noteRow.style.height = noteHeightForEntry(e) + "px";
   noteRow.dataset.entryId = e.id;
+  noteRow._syncKey = "note:" + e.id;
+  noteRow._syncToken = e;
   noteRow.textContent = note;
   noteRow.title = "Double-click to edit";
   noteRow.addEventListener("dblclick", ev => { ev.stopPropagation(); openNoteEditor(e.id); });
@@ -32974,7 +33172,18 @@ function highlightRowDeltaMs(i, e) {
   const prevE = i > 0 ? currentHighlightViewEntries[i - 1] : null;
   return prevE && !isPlainTextFormat(e.formatId) ? (e.ts - prevE.ts) : null;
 }
-function renderHighlightVisibleRows() {
+// The elements currently in #highlightRows, recorded by every
+// renderHighlightVisibleRows() call so the next SCROLL render can keep the ones
+// still inside its window (same idea as tableRowsWindow). units[k] holds
+// everything of entry start + k: its row, its note row and the filler rows
+// hanging off it; `lead` the leading filler rows above row 0 (only when
+// start === 0).
+let highlightRowsWindow = null;
+
+// reuseRows: see renderVisibleRows — only the #highlightBody scroll listener
+// passes it. Every other call builds all rows of the window and syncs them
+// into the DOM (syncChildren), so unchanged rows keep their element.
+function renderHighlightVisibleRows(reuseRows) {
   if (textEditorShown()) { editorRender(false); return; } // the editor has its own window — see editorRender
   const total = currentHighlightViewEntries.length;
   const viewportH = highlightBody.clientHeight || 400;
@@ -32988,8 +33197,18 @@ function renderHighlightVisibleRows() {
   // so rebuildHighlightOffsets always produces an offsets array.
   const offsets = highlightRowOffsets || buildContextRowOffsets(currentHighlightViewEntries, contextStrips);
   const centerIdx = findOffsetIndex(offsets, scrollTop);
-  const start = Math.max(0, centerIdx - BUFFER_ROWS);
-  const end = Math.min(total, findOffsetIndex(offsets, scrollTop + viewportH) + BUFFER_ROWS + 1);
+  const lastIdx = findOffsetIndex(offsets, scrollTop + viewportH);
+  // A full render uses the small BUFFER_ROWS; a scroll render only builds what
+  // is new to the window, so it can afford a whole screen on each side (and a
+  // jump with no overlap falls back to the small one) — see renderVisibleRows.
+  const w = highlightRowsWindow;
+  const canReuse = !!(reuseRows && w && w.entries === currentHighlightViewEntries && w.total === total &&
+    w.strips === contextStrips && w.viewportW === viewportW && highlightRows.firstElementChild === w.first);
+  let pad = canReuse ? Math.max(BUFFER_ROWS, Math.ceil(viewportH / ROW_HEIGHT)) : BUFFER_ROWS;
+  let start = Math.max(0, centerIdx - pad);
+  let end = Math.min(total, lastIdx + pad + 1);
+  const reuse = canReuse && start < w.end && end > w.start;
+  if (canReuse && !reuse) { start = Math.max(0, centerIdx - BUFFER_ROWS); end = Math.min(total, lastIdx + BUFFER_ROWS + 1); }
   // offsets[0] carries the LEADING strip's height (it has no row to hang off),
   // so row 0's window must still start at 0 — the strip is rendered inside this
   // same container, above row 0.
@@ -33009,100 +33228,144 @@ function renderHighlightVisibleRows() {
   const syntax = activePlainTextSyntax();
   const hlZero = timeZeroContext();
 
-  const frag = document.createDocumentFragment();
-  // A leading gap's filler rows have no row to hang off — they belong above
-  // row 0, and their height is already folded into offsets[0].
-  if (start === 0 && contextStrips.has(-1)) appendContextFillers(frag, contextStrips.get(-1), -1, viewportW);
-  for (let i = start; i < end; i++) {
-    const e = currentHighlightViewEntries[i];
-    const row = document.createElement("div");
-    let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
-      (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") + pairPickRowClass(e);
-
-    const colors = highlightColorMap.get(e.id);
-    let markerHtml = colors && colors.length
-      ? '<span class="hl-markers">' + colors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>'
-      : "";
-    // Match rows carry the SAME dot the context/countContext filter draws next
-    // to its reference entries in the Filtered view (.ctx-anchor-dot) — one
-    // marker per result, in the gutter lane, so a match reads as a match
-    // without the row itself being decorated. Revealed context rows
-    // (.ctx-context) get no treatment of their own at all any more: not dimmed
-    // (that fought the .lvl-error/.lvl-warn row tinting, the most important
-    // colour information in a log view) and not indented either
-    // (person-requested — their run's connecting line lives in the same gutter
-    // lane as the dots, so no log text ever moves sideways). `run` is the
-    // revealed run this row belongs to, looked up per visible row rather than
-    // stored per row — see contextRunAt.
-    let run = null;
-    if (contextActive) {
-      if (contextMatchIds.has(e.id)) {
-        cls += " ctx-row ctx-match";
-        markerHtml += '<span class="ctx-anchor-dot" title="Filter match"></span>';
-      } else {
-        cls += " ctx-context";
-        run = contextRunAt(i);
-      }
+  const hc = { mm, columnDefs, messageVisible, syntax, hlZero, viewportW };
+  const lead = start === 0 && contextStrips.has(-1);
+  let leadEls, units;
+  if (reuse) {
+    // Keep what is still inside the window, drop what scrolled out, build only
+    // what scrolled in (a leading filler group lives with row 0's window).
+    const keepLead = start === 0 && w.start === 0;
+    if (!keepLead) w.lead.forEach(el => el.remove());
+    for (let i = w.start; i < Math.min(start, w.end); i++) w.units[i - w.start].forEach(el => el.remove());
+    for (let i = Math.max(end, w.start); i < w.end; i++) w.units[i - w.start].forEach(el => el.remove());
+    units = w.units.slice(Math.max(start, w.start) - w.start, Math.min(end, w.end) - w.start);
+    leadEls = keepLead ? w.lead : [];
+    if (start < w.start) {
+      const frag = document.createDocumentFragment();
+      if (lead) leadEls = appendContextFillers(frag, contextStrips.get(-1), -1, viewportW);
+      const above = [];
+      for (let i = start; i < w.start; i++) above.push(buildHighlightRowUnit(i, frag, hc));
+      highlightRows.insertBefore(frag, highlightRows.firstChild);
+      units = above.concat(units);
     }
-    const deltaMs = highlightRowDeltaMs(i, e);
-
-    const rowH = baseRowHeightForEntry(e, highlightWrapCols);
-    if (rowH > ROW_HEIGHT) cls += " row-tall";
-    row.className = cls;
-    row.style.height = rowH + "px";
-    row.dataset.entryId = e.id;
-    row.dataset.viewIdx = String(i); // table text selection: this row's index in currentHighlightViewEntries
-    // markFieldHtml short-circuits to a plain escapeHtml before any range
-    // search when nothing can contribute a mark (no coloured rules, or the
-    // rule-marking toggle off), so this stays a plain escapeHtml call in the
-    // common case — same shape as renderVisibleRows.
-    const timeText = displayTimeText(e, hlZero);
-    const timeAttrs = relTimeCellAttrs(e, hlZero);
-    const isZeroRow = !!hlZero && e.id === hlZero.id;
-    if (isZeroRow) cls += " row-zero";
-    const timeCls = hlZero && !isPlainTextFormat(e.formatId) ? (isZeroRow ? " t-rel t-zero" : " t-rel") : "";
-    const hlMsgHtmlBase = markFieldHtml(mm, e.message, "message", plainTextSyntaxRanges(e, syntax));
-    const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
-    // Custom Columns: same generalized middle-column loop as
-    // renderVisibleRows — see its own comment.
-    let middleHtml = "";
-    for (const col of columnDefs) {
-      const val = entryColumnValue(e, col.key);
-      const html = markFieldHtml(mm, val, col.key);
-      middleHtml += middleCellHtml(col.key, val, html, entryAltColumnValue(e, col.key));
+    if (end > w.end) {
+      const frag = document.createDocumentFragment();
+      for (let i = w.end; i < end; i++) units.push(buildHighlightRowUnit(i, frag, hc));
+      highlightRows.appendChild(frag);
     }
-    row.innerHTML =
-      markerHtml +
-      (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
-      '<span class="col-bar"></span>' +
-      '<span class="col-time' + timeCls + '" data-col="time" data-sel-col="time"' + timeAttrs + '>' + markFieldHtml(mm, timeText, "time") + '</span>' +
-      '<span class="col-delta' + deltaClass(deltaMs) + '" data-sel-col="delta">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
-      levelCellHtml(e, markFieldHtml(mm, e.level, "level")) +
-      middleHtml +
-      (messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message" data-sel-col="message">' + hlMsgHtml + '</span>' : "");
-    // A PLAIN click is a jump to that match and gets the expansion treatment
-    // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
-    // gesture and must leave the row list alone, or the range the person is
-    // building moves under them mid-gesture.
-    row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
-      (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
-    row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
-    row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
-    // Every revealed context row carries its slice of its run's connecting
-    // line — appended as a real child AFTER innerHTML is set (a plain HTML
-    // string can't carry its own click listener), with its own
-    // stopPropagation so clicking the line collapses the run instead of also
-    // selecting the row underneath it.
-    if (run) row.appendChild(makeContextRunHandle(run, i === run.firstRow, i === run.lastRow));
-    frag.appendChild(row);
-    appendNoteRow(frag, e);
-    if (contextStrips.has(i)) appendContextFillers(frag, contextStrips.get(i), i, viewportW);
+  } else {
+    // Build the whole window as before, then keep the rows already in the DOM
+    // that came out identical (syncChildren); the window records the elements
+    // that really are in #highlightRows afterwards.
+    const frag = document.createDocumentFragment();
+    const builtLead = lead ? appendContextFillers(frag, contextStrips.get(-1), -1, viewportW) : [];
+    const built = [];
+    for (let i = start; i < end; i++) built.push(buildHighlightRowUnit(i, frag, hc));
+    const synced = syncChildren(highlightRows, builtLead.concat(built.flat()));
+    let k = 0;
+    leadEls = synced.slice(0, builtLead.length);
+    k = builtLead.length;
+    units = [];
+    for (const g of built) { units.push(synced.slice(k, k + g.length)); k += g.length; }
   }
-  highlightRows.innerHTML = "";
-  highlightRows.appendChild(frag);
+  highlightRowsWindow = { entries: currentHighlightViewEntries, total, start, end, units, lead: leadEls,
+    strips: contextStrips, viewportW, first: highlightRows.firstElementChild };
   verifyVisibleFpCandidates(highlightRows);
   syncHighlightHeaderWidth();
   paintTableTextSel();
+}
+
+// Builds currentHighlightViewEntries[i]'s row into `frag` together with its
+// note row and the filler rows hanging off it; returns those elements in order.
+function buildHighlightRowUnit(i, frag, hc) {
+  const e = currentHighlightViewEntries[i];
+  const row = document.createElement("div");
+  let cls = "log-row row-grid " + levelClass(e.level, e.formatId) + (e.id === state.selectedId ? " selected" : "") +
+    (state.logMultiSelect.has(e.id) ? " row-multi-selected" : "") + (state.bookmarks.has(e.id) ? " row-bookmarked" : "") + pairPickRowClass(e);
+
+  const colors = highlightColorMap.get(e.id);
+  let markerHtml = colors && colors.length
+    ? '<span class="hl-markers">' + colors.map(c => '<span class="hl-marker" style="background:' + c + '"></span>').join("") + '</span>'
+    : "";
+  // Match rows carry the SAME dot the context/countContext filter draws next
+  // to its reference entries in the Filtered view (.ctx-anchor-dot) — one
+  // marker per result, in the gutter lane, so a match reads as a match
+  // without the row itself being decorated. Revealed context rows
+  // (.ctx-context) get no treatment of their own at all any more: not dimmed
+  // (that fought the .lvl-error/.lvl-warn row tinting, the most important
+  // colour information in a log view) and not indented either
+  // (person-requested — their run's connecting line lives in the same gutter
+  // lane as the dots, so no log text ever moves sideways). `run` is the
+  // revealed run this row belongs to, looked up per visible row rather than
+  // stored per row — see contextRunAt.
+  let run = null;
+  if (contextActive) {
+    if (contextMatchIds.has(e.id)) {
+      cls += " ctx-row ctx-match";
+      markerHtml += '<span class="ctx-anchor-dot" title="Filter match"></span>';
+    } else {
+      cls += " ctx-context";
+      run = contextRunAt(i);
+    }
+  }
+  const deltaMs = highlightRowDeltaMs(i, e);
+
+  const rowH = baseRowHeightForEntry(e, highlightWrapCols);
+  if (rowH > ROW_HEIGHT) cls += " row-tall";
+  row.className = cls;
+  row.style.height = rowH + "px";
+  row.dataset.entryId = e.id;
+  row.dataset.viewIdx = String(i); // table text selection: this row's index in currentHighlightViewEntries
+  // markFieldHtml short-circuits to a plain escapeHtml before any range
+  // search when nothing can contribute a mark (no coloured rules, or the
+  // rule-marking toggle off), so this stays a plain escapeHtml call in the
+  // common case — same shape as renderVisibleRows.
+  const timeText = displayTimeText(e, hc.hlZero);
+  const timeAttrs = relTimeCellAttrs(e, hc.hlZero);
+  const isZeroRow = !!hc.hlZero && e.id === hc.hlZero.id;
+  if (isZeroRow) cls += " row-zero";
+  const timeCls = hc.hlZero && !isPlainTextFormat(e.formatId) ? (isZeroRow ? " t-rel t-zero" : " t-rel") : "";
+  const hlMsgHtmlBase = markFieldHtml(hc.mm, e.message, "message", plainTextSyntaxRanges(e, hc.syntax));
+  const hlMsgHtml = filePathLinksEnabled ? linkifyPaths(hlMsgHtmlBase) : hlMsgHtmlBase;
+  // Custom Columns: same generalized middle-column loop as
+  // renderVisibleRows — see its own comment.
+  let middleHtml = "";
+  for (const col of hc.columnDefs) {
+    const val = entryColumnValue(e, col.key);
+    const html = markFieldHtml(hc.mm, val, col.key);
+    middleHtml += middleCellHtml(col.key, val, html, entryAltColumnValue(e, col.key));
+  }
+  row.innerHTML =
+    markerHtml +
+    (state.bookmarks.has(e.id) ? '<span class="col-bookmark-icon">' + ICON_BOOKMARK_FILLED + '</span>' : "") +
+    '<span class="col-bar"></span>' +
+    '<span class="col-time' + timeCls + '" data-col="time" data-sel-col="time"' + timeAttrs + '>' + markFieldHtml(hc.mm, timeText, "time") + '</span>' +
+    '<span class="col-delta' + deltaClass(deltaMs) + '" data-sel-col="delta">' + (deltaMs == null ? "—" : escapeHtml(formatDelta(deltaMs))) + '</span>' +
+    levelCellHtml(e, markFieldHtml(hc.mm, e.level, "level")) +
+    middleHtml +
+    (hc.messageVisible ? '<span class="' + msgColClass(e) + '" data-col="message" data-sel-col="message">' + hlMsgHtml + '</span>' : "");
+  // A PLAIN click is a jump to that match and gets the expansion treatment
+  // (selectContextRowByClick); a Shift/Ctrl click is a multi-selection
+  // gesture and must leave the row list alone, or the range the person is
+  // building moves under them mid-gesture.
+  row.addEventListener("click", ev => handleLogRowClick(ev, e.id, currentHighlightViewEntries,
+    (ev.shiftKey || ev.ctrlKey || ev.metaKey) ? selectHighlightEntry : id => selectContextRowByClick(id, row)));
+  row.addEventListener("contextmenu", ev => { ev.preventDefault(); captureCtxSelection(ev.currentTarget); selectRowForContextMenu(e.id, selectHighlightEntry); openContextMenu(ev, e); });
+  row.addEventListener("dblclick", () => selectHighlightEntry(e.id, { scroll: true }));
+  // Every revealed context row carries its slice of its run's connecting
+  // line — appended as a real child AFTER innerHTML is set (a plain HTML
+  // string can't carry its own click listener), with its own
+  // stopPropagation so clicking the line collapses the run instead of also
+  // selecting the row underneath it.
+  if (run) row.appendChild(makeContextRunHandle(run, i === run.firstRow, i === run.lastRow));
+  row._syncKey = "e:" + e.id;
+  row._syncToken = [e, run]; // the listeners capture the entry and the run (collapse handle)
+  frag.appendChild(row);
+  const unit = [row];
+  const noteRow = appendNoteRow(frag, e);
+  if (noteRow) unit.push(noteRow);
+  if (contextStrips.has(i)) unit.push(...appendContextFillers(frag, contextStrips.get(i), i, hc.viewportW));
+  return unit;
 }
 
 // One revealed row's slice of its run's connecting band: a full-row-height
@@ -33157,10 +33420,10 @@ function makeContextRunHandle(run, isTop, isBottom) {
 // signals "this is a stand-in, click it", the opposite reasoning from why a
 // real context row is no longer dimmed. The whole row is the click target,
 // same as any other row-shaped control in this file (.tree-row, …)
-// rather than requiring the icon itself to be hit. Listeners are attached
-// fresh on every render, same as every other per-row listener here — DOM
-// identity across renders is never assumed (see CLAUDE.md's
-// "renderVisibleRows() rebuilds nodes" gotcha).
+// rather than requiring the icon itself to be hit. Listeners are created with
+// the row on every render, as for every per-row listener here; the row is kept
+// across renders only when its fresh twin is markup-equal (syncChildren, see
+// docs/ui-and-views.md "Render reuse"), so a kept filler's closure is equivalent.
 // "<n> entries pruned · <from> – <to>" for one cut of root.pruned.cuts.
 function prunedPlaceholderText(cut) {
   return cut.count.toLocaleString("de-DE") + (cut.count === 1 ? " entry" : " entries") + " pruned · " +
@@ -33179,7 +33442,8 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
   // with local density), so showing it on the button would promise a
   // precision the setting doesn't actually offer.
   const timeMode = contextExpandStepUnit === "time";
-  fillers.forEach(f => {
+  const out = [];
+  fillers.forEach((f, fi) => {
     if (f.kind === "pruned") {
       // Not a gap and not clickable: just marks where entries were cut out.
       const row = document.createElement("div");
@@ -33189,7 +33453,9 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
       row.title = label;
       row.innerHTML = '<span class="ctx-filler-inner"' + (viewportW ? ' style="width:' + viewportW + 'px"' : '') + '>' +
         '<span class="ctx-gap-icon">' + ICON_FILE_PRUNED + '</span><span>' + escapeHtml(label) + '</span></span>';
+      row._syncKey = "f:" + rowKey + ":" + fi;
       frag.appendChild(row);
+      out.push(row);
       return;
     }
     const n = f.to - f.from;
@@ -33209,8 +33475,12 @@ function appendContextFillers(frag, fillers, rowKey, viewportW) {
         ? "Show more (+" + (timeMode ? formatMs(contextExpandStepMs) : n.toLocaleString("de-DE")) + ")"
         : n.toLocaleString("de-DE") + (n === 1 ? " line" : " lines")) + '</span></span>';
     row.addEventListener("click", () => revealContextLines(f, rowKey));
+    row._syncKey = "f:" + rowKey + ":" + fi;
+    row._syncToken = [f, rowKey]; // the click listener captures both
     frag.appendChild(row);
+    out.push(row);
   });
+  return out;
 }
 
 // Scroll-triggered renders run at most once per animation frame: a burst of
@@ -33252,7 +33522,7 @@ function makeScrollRenderer(renderFn) {
   };
 }
 
-const highlightScrollRender = makeScrollRenderer(() => { renderHighlightVisibleRows(); updateMinimapRenderedRange(); });
+const highlightScrollRender = makeScrollRenderer(() => { renderHighlightVisibleRows(true); updateMinimapRenderedRange(); });
 highlightBody.addEventListener("scroll", () => {
   // Twin of #tableBody's own listener below (FEATURE_BACKLOG #25): manual
   // scrolling away from the bottom of a tailed Highlight/Full view disengages
@@ -34283,8 +34553,8 @@ function renderTimelineMinimap(rootId, viewEntries) {
     timelineMinimapEl.classList.remove("zoomed", "has-crumbs", "has-draft");
     minimapDraft = null;
     renderMinimapDraft();
-    timelineMinimapSvg.innerHTML = "";
-    timelineMinimapMetaEl.textContent = "";
+    syncChildren(timelineMinimapSvg, []);
+    setTextSynced(timelineMinimapMetaEl, "");
     timelineMinimapTooltip.classList.add("hidden");
     minimapInteractive = false;
     renderMinimapBursts(rootId, viewEntries); // clears the flags and hides the chip
@@ -34316,7 +34586,7 @@ function renderTimelineMinimap(rootId, viewEntries) {
   // using it here would under-report the bars' actual height.
   const W = Math.max(120, timelineMinimapEl.clientWidth || 600);
   const H = Math.max(20, timelineMinimapSvg.clientHeight || 52);
-  timelineMinimapSvg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  setAttrSynced(timelineMinimapSvg, "viewBox", "0 0 " + W + " " + H);
   minimapWidth = W;
 
   // Root file entries are relied on elsewhere (link filter's binary search,
@@ -34367,9 +34637,9 @@ function renderTimelineMinimap(rootId, viewEntries) {
   });
   // Zoomed: breadcrumbs back out + the resolution of the drawn window before
   // the file facts; on the phone only the crumbs stay (CSS hides the rest).
-  timelineMinimapMetaEl.innerHTML = (view ? minimapZoomChipHtml(rootId, view) : "") +
+  setHtmlSynced(timelineMinimapMetaEl, (view ? minimapZoomChipHtml(rootId, view) : "") +
     (view || shownDraft ? minimapCrumbsHtml(rootId) : "") +
-    '<span class="minimap-meta-rest">' + minimapMeta.join("") + repeatMetaHtml() + "</span>";
+    '<span class="minimap-meta-rest">' + minimapMeta.join("") + repeatMetaHtml() + "</span>");
   updateMinimapZoomIndicator(view);
   minimapInteractive = !state.sortColumn;
   timelineMinimapEl.classList.toggle("no-jump", !minimapInteractive);
@@ -34550,10 +34820,25 @@ function renderTimelineMinimap(rootId, viewEntries) {
 
   let ovParts = "";
   for (let rank = MINIMAP_RANKS - 1; rank >= 0; rank--) if (ovPaths[rank]) ovParts += '<path class="minimap-ov-bar ' + minimapLevelClass(rank) + '" d="' + ovPaths[rank] + '"/>';
-  timelineMinimapSvg.innerHTML = bgParts + ovParts +
+  // Bars (the part that depends on the data) are synced: an unchanged strip writes nothing. The
+  // two range rects and the marker group are LIVE elements their own updaters keep writing to
+  // (updateMinimapFullRange/RenderedRange/SelectionMarkers), so they are never compared with a
+  // fresh twin — the existing ones are handed back as they are (a fresh one only on the first
+  // render / after the strip was emptied), with the as-built height and, for the rendered-range
+  // rect, the old rebuild's "hidden until updateMinimapRenderedRange() says otherwise".
+  const svgTwin = document.createElementNS(timelineMinimapSvg.namespaceURI, "svg");
+  svgTwin.innerHTML = bgParts + ovParts +
     '<rect class="minimap-full-range hidden" id="minimapFullRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
     '<rect class="minimap-rendered-range hidden" id="minimapRenderedRangeRect" x="0" y="0" width="0" height="' + H + '"/>' +
     '<g id="minimapSelectionMarkers"></g>';
+  const svgFresh = Array.from(svgTwin.childNodes).map(n => {
+    const live = n.id && Array.from(timelineMinimapSvg.children).find(c => c.id === n.id);
+    if (!live) return n;
+    if (n.tagName === "rect") setAttrSynced(live, "height", H);
+    if (n.id === "minimapRenderedRangeRect" && !live.classList.contains("hidden")) live.classList.add("hidden");
+    return live;
+  });
+  syncChildren(timelineMinimapSvg, svgFresh);
 
   // Full range and the selection markers are meaningful for every caller
   // (table view and Link view alike — see renderLinkView) since both only
@@ -34612,7 +34897,7 @@ function renderMinimapBursts(rootId, viewEntries) {
   timelineMinimapEl.classList.toggle("has-burst-chip", timeFile);
   minimapBurstChip.setAttribute("aria-pressed", showMinimapBursts ? "true" : "false");
   if (!timeFile || !showMinimapBursts || !viewEntries || !viewEntries.length) {
-    minimapBurstsEl.innerHTML = "";
+    if (minimapBurstsEl._burstsHtml !== "") { minimapBurstsEl._burstsHtml = ""; minimapBurstsEl.innerHTML = ""; }
     minimapBurstChip.title = "Mark bursts on the minimap";
     closeBurstPopover();
     return;
@@ -34628,8 +34913,8 @@ function renderMinimapBursts(rootId, viewEntries) {
   // The overlay covers exactly the <svg>'s box (the meta line and the zoom overview sit above it).
   const sr = timelineMinimapSvg.getBoundingClientRect(), cr = timelineMinimapEl.getBoundingClientRect();
   const top = Math.round(sr.top - cr.top), h = Math.round(sr.height);
-  minimapBurstsEl.style.top = top + "px";
-  minimapBurstsEl.style.height = h + "px";
+  if (minimapBurstsEl.style.top !== top + "px") minimapBurstsEl.style.top = top + "px";
+  if (minimapBurstsEl.style.height !== h + "px") minimapBurstsEl.style.height = h + "px";
   const W = minimapWidth;
   const clampX = x => Math.min(W, Math.max(0, x));
   let html = "";
@@ -34643,15 +34928,21 @@ function renderMinimapBursts(rootId, viewEntries) {
       '" data-burst="' + i + '" style="left:' + x.toFixed(1) + 'px" title="' + escapeHtml(label + " \u00b7 " + b.count + " entries") + '" aria-label="' +
       escapeHtml("Burst " + label + ", " + b.count + " entries") + '"><span class="minimap-burst-flag">' + b.count.toLocaleString("de-DE") + "</span></button>";
   });
-  minimapBurstsEl.innerHTML = html;
-  // Keep every flag fully inside the strip: shift the button inward at the edges, its stem and band
-  // stay at the true x (the stem is the flag's pointer).
-  minimapBurstsEl.querySelectorAll(".minimap-burst").forEach(btn => {
-    const half = btn.offsetWidth / 2, x = parseFloat(btn.style.left);
-    const cx = Math.min(W - half, Math.max(half, x));
-    if (cx !== x) btn.style.left = cx.toFixed(1) + "px";
-    btn.dataset.x = x.toFixed(1);
-  });
+  // The flags are measured and shifted on the live DOM below, so a fresh twin never equals them:
+  // the string that produced the current flags is the comparison instead (this function is the
+  // only writer; the popover only toggles .sel, which is part of the string).
+  if (minimapBurstsEl._burstsHtml !== html) {
+    minimapBurstsEl._burstsHtml = html;
+    minimapBurstsEl.innerHTML = html;
+    // Keep every flag fully inside the strip: shift the button inward at the edges, its stem and band
+    // stay at the true x (the stem is the flag's pointer).
+    minimapBurstsEl.querySelectorAll(".minimap-burst").forEach(btn => {
+      const half = btn.offsetWidth / 2, x = parseFloat(btn.style.left);
+      const cx = Math.min(W - half, Math.max(half, x));
+      if (cx !== x) btn.style.left = cx.toFixed(1) + "px";
+      btn.dataset.x = x.toFixed(1);
+    });
+  }
   minimapBurstsEl._bursts = shown;
   if (burstPopoverBurst && !shown.some(b => b.from === burstPopoverBurst.from && b.to === burstPopoverBurst.to)) closeBurstPopover();
 }
@@ -35008,12 +35299,16 @@ function updateMinimapSelectionMarkers() {
         return '<rect class="minimap-zero-line" x="' + (x - 0.75).toFixed(1) + '" y="0" width="1.5" height="' + H + '"/>' +
           '<text class="minimap-zero-label" x="' + (x + 3).toFixed(1) + '" y="9">0</text>'; })()
     : "";
-  if (marked.length === 0) { g.innerHTML = zeroHtml; return; }
-  g.innerHTML = zeroHtml + marked.filter(e => !minimapRangeOutOfView(e.ts, e.ts)).map(e => {
+  const html = marked.length === 0 ? zeroHtml : zeroHtml + marked.filter(e => !minimapRangeOutOfView(e.ts, e.ts)).map(e => {
     const x = minimapTsToX(e.ts);
     return '<rect class="minimap-marker-line" x="' + (x - 1).toFixed(1) + '" y="0" width="2" height="' + H + '"/>' +
       '<path class="minimap-marker-flag" d="M ' + (x - 4).toFixed(1) + ' 0 L ' + (x + 4).toFixed(1) + ' 0 L ' + x.toFixed(1) + ' 6 Z"/>';
   }).join("");
+  // Only this function writes the group's content, so the last string written is the truth: an
+  // unchanged marker set is not re-parsed into fresh nodes (a fresh group starts without a memo).
+  if (g._markersHtml === html) return;
+  g._markersHtml = html;
+  g.innerHTML = html;
 }
 
 // Clicking a per-level count in the meta line toggles that level in the view
@@ -35238,9 +35533,9 @@ function renderMinimapDraft() {
   rect.style.height = h + "px";
   rect.style.left = lo.toFixed(1) + "px";
   rect.style.width = Math.max(1, hi - lo).toFixed(1) + "px";
-  timelineMinimapDraftLabel.textContent = minimapDraftLabelText(d);
+  setTextSynced(timelineMinimapDraftLabel, minimapDraftLabelText(d));
   const shortEl = timelineMinimapMetaEl.querySelector(".minimap-draft-text");
-  if (shortEl) shortEl.textContent = minimapDraftLabelText(d, false);
+  if (shortEl) setTextSynced(shortEl, minimapDraftLabelText(d, false));
   timelineMinimapDraftLabel.classList.remove("hidden");
   minimapDraftHandles.forEach(hd => {
     const bound = hd.dataset.side === "from" ? d.from : d.to;
@@ -36827,21 +37122,21 @@ function updateDetailPanel() {
   renderWhyPanel(); // follows the selection; no-op unless the Why tab shows
 
   if (!entry) {
-    detailPanel.classList.add("empty");
-    detailMeta.className = "";
-    detailMeta.innerHTML = "";
-    detailMessageEl.textContent = "";
-    detailNoteEl.style.display = "none";
-    detailNoteEl.textContent = "";
-    detailOutsideEl.style.display = "none";
+    detailPanel.classList.toggle("empty", true); // toggle(force) writes nothing when the state already matches (add/remove always do)
+    setAttrSynced(detailMeta, "class", "");
+    setHtmlSynced(detailMeta, "");
+    setTextSynced(detailMessageEl, "");
+    setStyleSynced(detailNoteEl, "display", "none");
+    setTextSynced(detailNoteEl, "");
+    setStyleSynced(detailOutsideEl, "display", "none");
     renderDetailRepeat(null);
     syncDetailEmptyBar();
     return;
   }
 
-  detailPanel.classList.remove("empty");
+  detailPanel.classList.toggle("empty", false);
   syncDetailEmptyBar();
-  detailMeta.className = levelClass(entry.level, entry.formatId);
+  setAttrSynced(detailMeta, "class", levelClass(entry.level, entry.formatId));
   renderDetailOutsideNotice(entry); // before the Raw branch below returns early
   renderDetailRepeat(entry); // Collapse repeats: "Repeated ×N · ..." line of a run's head
 
@@ -36865,19 +37160,19 @@ function updateDetailPanel() {
     // expanded — see #detailPanel.collapsed.peeking #detailPanelInner's own
     // comment: the peek overlay IS the expanded look, not a reduced one.
     const firstLine = entry.message.split("\n", 1)[0];
-    detailMeta.innerHTML =
+    setHtmlSynced(detailMeta,
       levelBadgeHtml(entry) +
       '<span class="detail-time">' + markField(entryTimeText(entry), "time") + detailZeroSuffixHtml(entry) + '</span>' +
       '<span class="detail-sep">·</span>' +
-      '<span class="detail-collapsed-msg">' + markField(firstLine, "message") + '</span>';
+      '<span class="detail-collapsed-msg">' + markField(firstLine, "message") + '</span>');
   } else {
-    detailMeta.innerHTML =
+    setHtmlSynced(detailMeta,
       levelBadgeHtml(entry) +
       '<span class="detail-time">' + markField(entryTimeText(entry), "time") + detailZeroSuffixHtml(entry) + '</span>' +
       // Empty fields (thread/location/method) print neither a span nor a separator.
       (detailThread ? '<span class="detail-sep">·</span><span class="detail-thread">' + markField(detailThread, "thread") + '</span>' : "") +
       (detailLocation ? '<span class="detail-sep">·</span><span class="detail-loc" title="' + escapeHtml(detailLocation) + '"><bdi dir="ltr">' + markField(detailLocation, "location") + '</bdi></span>' : "") +
-      (detailMethod ? '<span class="detail-sep">·</span><span class="detail-method">' + markField(detailMethod, "method") + '</span>' : "");
+      (detailMethod ? '<span class="detail-sep">·</span><span class="detail-method">' + markField(detailMethod, "method") + '</span>' : ""));
   }
   // Plain textContent (message can never be interpreted as markup) unless
   // there's actually something to mark or format, in which case both
@@ -36893,20 +37188,20 @@ function updateDetailPanel() {
   // text-match highlighting in the default view.
   if (detailView === "raw") {
     const parts = entryRawParts(entry);
-    detailMessageEl.innerHTML = parts.length === 1 ? markRawHtml(mm, parts[0]) :
-      parts.map(raw => '<div class="detail-raw-part">' + markRawHtml(mm, raw) + "</div>").join("");
+    setHtmlSynced(detailMessageEl, parts.length === 1 ? markRawHtml(mm, parts[0]) :
+      parts.map(raw => '<div class="detail-raw-part">' + markRawHtml(mm, raw) + "</div>").join(""));
     renderDetailNote(entry);
     return;
   }
   const formatted = detailView === "pretty" ? formatMessageWithHighlight(entry.message) : null;
   if (formatted !== null && /class="syn-block/.test(formatted)) {
-    detailMessageEl.innerHTML = formatted;
+    setHtmlSynced(detailMessageEl, formatted);
   } else if (mm.active) {
-    detailMessageEl.innerHTML = markFieldHtml(mm, entry.message, "message");
+    setHtmlSynced(detailMessageEl, markFieldHtml(mm, entry.message, "message"));
   } else if (formatted !== null) {
-    detailMessageEl.innerHTML = formatted; // no match marking active — the (fragment-free) escaped output is equivalent to plain text
+    setHtmlSynced(detailMessageEl, formatted); // no match marking active — the (fragment-free) escaped output is equivalent to plain text
   } else {
-    detailMessageEl.textContent = entry.message;
+    setTextSynced(detailMessageEl, entry.message);
   }
   renderDetailNote(entry);
 }
@@ -36916,7 +37211,7 @@ function updateDetailPanel() {
 // row exists — refreshed by updateDetailPanel and after every table build.
 function renderDetailOutsideNotice(entry) {
   if (entry && detailEntry() !== entry) entry = null; // Table/Plot: not shown there at all
-  detailOutsideEl.style.display = entry && entryOutsideActiveView(entry) ? "block" : "none";
+  setStyleSynced(detailOutsideEl, "display", entry && entryOutsideActiveView(entry) ? "block" : "none");
 }
 // True when `entry` is not a member of the view the Filtered pane shows
 // (active node + level filter). Binary search by ts in the chronological
@@ -36935,11 +37230,11 @@ function entryOutsideActiveView(entry) {
 function renderDetailNote(entry) {
   const note = state.notes.get(entry.id);
   if (note) {
-    detailNoteEl.style.display = "block";
-    detailNoteEl.textContent = note;
+    setStyleSynced(detailNoteEl, "display", "block");
+    setTextSynced(detailNoteEl, note);
   } else {
-    detailNoteEl.style.display = "none";
-    detailNoteEl.textContent = "";
+    setStyleSynced(detailNoteEl, "display", "none");
+    setTextSynced(detailNoteEl, "");
   }
 }
 
@@ -37632,15 +37927,15 @@ function updatePhoneTitle() {
   const node = state.nodes[state.activeId];
   const b = titleEl.querySelector("b"), sub = titleEl.querySelector("span");
   if (!node) {
-    b.textContent = "PhiLogg";
-    sub.textContent = state.rootIds.length ? "" : "no file open";
+    setTextSynced(b, "PhiLogg");
+    setTextSynced(sub, state.rootIds.length ? "" : "no file open");
     return;
   }
   let root = node;
   while (root.parentId && state.nodes[root.parentId]) root = state.nodes[root.parentId];
   const n = getEntries(node.id).length.toLocaleString("de-DE") + " entries";
-  b.textContent = (node.inverted ? "¬ " : "") + nodeDisplayName(node);
-  sub.textContent = root === node ? n : nodeDisplayName(root) + " · " + n;
+  setTextSynced(b, (node.inverted ? "¬ " : "") + nodeDisplayName(node));
+  setTextSynced(sub, root === node ? n : nodeDisplayName(root) + " · " + n);
 }
 // Hides the sheet only; the selection (highlighted card, find counter) stays.
 function closePhoneSheet() {

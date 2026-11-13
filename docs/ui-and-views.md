@@ -30,6 +30,7 @@
 - [Show original values (value substitution, FEATURE_BACKLOG.md #131)](#show-original-values-value-substitution-feature_backlogmd-131)
 - [Log row multi-select + copy (FEATURE_BACKLOG.md suggestion, person-requested this session)](#log-row-multi-select--copy-feature_backlogmd-suggestion-person-requested-this-session)
 - [Context menus: order, groups and headings](#context-menus-order-groups-and-headings)
+- [Render reuse (syncChildren): rendering without rebuilding unchanged elements](#render-reuse-syncchildren-rendering-without-rebuilding-unchanged-elements)
 - [Tree interactions](#tree-interactions)
   - [Tree row layout: indentation, collapse/expand, type indicator](#tree-row-layout-indentation-collapseexpand-type-indicator)
 - [Responsive layout (compact / phone)](#responsive-layout-compact--phone)
@@ -1632,6 +1633,91 @@ Every right-click / long-press context menu is a **flat list** of children (`.ct
 - **Facet value menu** `#facetValueMenu` (long-press): value · **Filter**: Show only this, Exclude this · **Copy**: Copy value. **Phone pattern menu** `#patternMenu`: pattern · **Filter**: Show only this, Hide this · **Navigate**: Jump to first entry · **Copy**: Copy pattern.
 
 Not part of the scheme (no headings): the plot role/axis picker, the link/AND-OR dialog "▾" side menus, the Open/Save/Library menus, `#addToSelectionMenu`, `#treeCtxInfoMenu`. Regression-tested: **GROUP context-menu-groups** (plus 223, 060, link-pair-with, explain-row, ctx-time-arrows for their own items).
+
+## Render reuse (`syncChildren`): rendering without rebuilding unchanged elements
+
+(2026-11-13, person-requested: no re-rendering of elements that did not
+change; stable, flicker-free display and scrolling.) The render functions
+still build every unit of their region fresh — no framework, no virtual DOM,
+no dirty tracking — but instead of `container.innerHTML = ""` + append they
+hand the fresh elements to **one shared helper**, `syncChildren(parent,
+fresh)` (next to `setHtmlSynced`, search `function syncChildren`; the header
+comment there states the rules). It keeps every existing child that is
+identical to its fresh twin and only inserts, removes or replaces what
+differs. A `render()` that changed nothing writes nothing to the DOM (zero
+`MutationObserver` records); toggling one bookmark replaces that one row.
+What this buys: hover, focus, animations, text selection and native
+`click`/`dblclick` sequences survive an unrelated render, and scroll renders
+touch only the rows entering the window.
+
+**Where it is used**: Filtered rows (`renderVisibleRows`, incl. the scroll
+reuse via `tableRowsWindow`), Context rows/strips/fillers
+(`renderHighlightVisibleRows`, scroll reuse via `highlightRowsWindow`), the
+tree (`renderTree`/`renderNode`), level bar, timeline minimap, detail panel,
+status, the Table (`renderExtractVisibleRows`), Link
+(`renderLinkVisibleBlocks`) and Patterns (`renderPatternsVisibleRows`,
+`renderPhonePatternRows`) lists and the view tabs (`#fhTabs`). **Not
+converted**: `renderFolderWatchList`/`renderZipList` (their sections are
+built from `cachedInactiveRow`, which moves cached live rows, so row
+identity is already handled by that cache) and the message-measuring helper
+`msgMeasureEl`.
+
+**How a unit is kept** (`domSame`, all must hold):
+- same markup (`isEqualNode`) and an equal **`_syncToken`** — the identity of
+  whatever the unit's listeners captured by object (the entry, the filter
+  node, ...); an array token is compared element-wise, `undefined ===
+  undefined` passes;
+- no `<canvas>` inside (pixels are not markup);
+- equal form-control state inside (`value`/`checked`/`indeterminate`/
+  `selectedIndex`), unless the control carries `_syncKeepState` on both
+  sides — then the live control (typed text, focus) is the truth and the
+  element is kept (the tree's rename input).
+Otherwise the fresh element replaces the old one. Matching is by
+**`_syncKey`** (a string, unique within the container, e.g. `"e:" + id`;
+first holder wins on a duplicate), else in order against the next unused
+unkeyed old child. Kept elements that already sit in the right place are not
+touched at all; only misplaced ones are moved.
+
+**Deep containers**: an element with `_syncDeep = true` on both sides and
+the same key (the tree `wrap` of a node and its children) is never compared
+as a whole — its attributes are synced and its children are synced
+recursively with the same rules, and it is *always* walked, so the child
+tokens are always checked.
+
+**Rules for a new builder**
+1. Render into a container with `syncChildren(container, units)`; give each
+   unit a `_syncKey` unless the list is positional.
+2. A unit is kept or replaced **whole**; never patch attributes/children
+   inside a unit — its listeners are closures created with it, so only
+   "identical markup + identical captured objects" guarantees identical
+   behaviour. Put every captured object (entry, filter node, pair, column
+   index ...) into `_syncToken`. After an undo, `restoreSubtree` creates new
+   node objects: the token mismatch is what replaces the stale row.
+3. **Expando properties** (`el._pickEntry = entry`, anything read back by
+   other code): either a function of the markup or part of the token (the
+   link block puts `[pair, ...realEntries]` into its token because its rows
+   carry `_pickEntry`). Grep the builder for `\._[a-zA-Z]+ =` and `dataset`.
+4. **Post-build mutations** of the live DOM (a class added later, guides,
+   verified marks, selection paint) make the old element differ from its
+   fresh twin: it is replaced and the post-step runs again — correct, but no
+   reuse. Prefer moving the decoration into the build, or make the post-step
+   idempotent (it runs on kept elements too). Never leave a stale display for
+   the sake of reuse; when in doubt, replace.
+5. Regions rendered from a string or text use the synced setters, which write
+   only on a difference: `setHtmlSynced(host, html)`, `setTextSynced`,
+   `setAttrSynced`, `setStyleSynced`.
+6. Elements that hold state outside the markup (canvas pixels, an `<input>`'s
+   typed text) are never kept by markup equality; use `_syncKeepState` only
+   for a control whose live value must win.
+
+**Consequences worth knowing**: a ghost/temp-anchor row reuses a cached clone
+(`tempAnchorClone`); clicking a Context row still replaces the Filtered rows
+when the ghost row is dropped (every `data-view-idx` shifts); activating a
+node after scrolling calls `renderVisibleRows` twice (the scroll reset fires
+a scroll event that is a cheap reuse render). Tests: GROUP
+`render-reuse-rows` (helper unit tests, Filtered/Context/Table/Link/Patterns
+identity and no-stale-row checks) and `render-reuse-tree`. Measurements:
+`docs/performance-testing.md` → Level 2b and "Recorded results".
 
 ## Tree interactions
 
